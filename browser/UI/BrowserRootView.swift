@@ -2,6 +2,7 @@ import SwiftUI
 
 struct BrowserRootView: View {
 	@State private var browser = Browser()
+	@Environment(\.scenePhase) private var scenePhase
 
 	#if os(iOS)
 		@Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -21,6 +22,11 @@ struct BrowserRootView: View {
 		#else
 			DesktopBrowserShell(browser: browser)
 		#endif
+			.onChange(of: scenePhase) { _, phase in
+				if phase != .active {
+					browser.flushPersistence()
+				}
+			}
 	}
 }
 

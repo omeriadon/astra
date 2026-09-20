@@ -1,32 +1,65 @@
 import Foundation
 import Observation
 
+@MainActor
 @Observable
 final class Browser {
 	private(set) var tabs: [BrowserTab]
 	private(set) var selectedTabID: UUID
+	private(set) var persistenceErrorDescription: String?
+
+	@ObservationIgnored
+	private let persistence: BrowserPersistence?
+
+	@ObservationIgnored
+	private var persistenceTask: Task<Void, Never>?
 
 	var selectedTab: BrowserTab? {
 		tabs.first { $0.id == selectedTabID }
 	}
 
 	init() {
-		let tab = BrowserTab()
-		tabs = [tab]
-		selectedTabID = tab.id
+		do {
+			let persistence = try BrowserPersistence()
+			let savedTabs = try persistence.loadOpenTabs()
+			let snapshot = try persistence.loadBrowserSnapshot()
+			let restoredTabs = savedTabs.map {
+				BrowserTab(
+					id: $0.id,
+					title: $0.title.isEmpty ? "New Tab" : $0.title,
+					initialURL: $0.url
+				)
+			}
+			tabs = restoredTabs.isEmpty ? [BrowserTab()] : restoredTabs
+			selectedTabID = tabs.first(where: { $0.id == snapshot?.selectedTabID })?.id ?? tabs[0].id
+			self.persistence = persistence
+		} catch {
+			let tab = BrowserTab()
+			tabs = [tab]
+			selectedTabID = tab.id
+			persistence = nil
+			persistenceErrorDescription = error.localizedDescription
+		}
+
+		for tab in tabs {
+			attachPersistence(to: tab)
+		}
 	}
 
 	@discardableResult
 	func addTab() -> BrowserTab {
 		let tab = BrowserTab()
+		attachPersistence(to: tab)
 		tabs.append(tab)
 		selectedTabID = tab.id
+		schedulePersistence()
 		return tab
 	}
 
 	func selectTab(_ id: UUID) {
 		guard tabs.contains(where: { $0.id == id }) else { return }
 		selectedTabID = id
+		schedulePersistence()
 	}
 
 	func closeTab(_ id: UUID) {
@@ -36,8 +69,45 @@ final class Browser {
 
 		if tabs.isEmpty {
 			addTab()
-		} else if wasSelected {
+			return
+		}
+
+		if wasSelected {
 			selectedTabID = tabs[min(index, tabs.count - 1)].id
+		}
+		schedulePersistence()
+	}
+
+	func flushPersistence() {
+		persistenceTask?.cancel()
+		persistenceTask = nil
+		persist()
+	}
+
+	private func attachPersistence(to tab: BrowserTab) {
+		tab.didChange = { [weak self] in
+			self?.schedulePersistence()
+		}
+	}
+
+	private func schedulePersistence() {
+		guard persistence != nil else { return }
+		persistenceTask?.cancel()
+		persistenceTask = Task { @MainActor [weak self] in
+			try? await Task.sleep(for: .milliseconds(300))
+			guard !Task.isCancelled, let self else { return }
+			persist()
+		}
+	}
+
+	private func persist() {
+		guard let persistence else { return }
+		do {
+			try persistence.saveOpenTabs(tabs.map(\.openTab))
+			try persistence.saveBrowserSnapshot(BrowserSnapshot(selectedTabID: selectedTabID))
+			persistenceErrorDescription = nil
+		} catch {
+			persistenceErrorDescription = error.localizedDescription
 		}
 	}
 }

@@ -11,11 +11,21 @@ struct DesktopBrowserShell: View {
 			BrowserSplitView(sidebarShown: $sidebarShown) {
 				ScrollView {
 					VStack(spacing: 18) {
-						ForEach(0 ..< 40) { _ in
-							RoundedRectangle(cornerRadius: 24)
-								.fill(.green)
-								.frame(height: 28)
+						Button("New Tab", systemImage: "plus") {
+							browser.addTab()
 						}
+						.buttonStyle(.plain)
+						.accessibilityIdentifier("new-tab")
+
+						ForEach(browser.tabs) { tab in
+							BrowserTabRow(
+								tab: tab,
+								isSelected: browser.selectedTabID == tab.id,
+								onSelect: browser.selectTab,
+								onClose: browser.closeTab
+							)
+						}
+
 						Spacer(minLength: 0)
 					}
 					.padding(12)
