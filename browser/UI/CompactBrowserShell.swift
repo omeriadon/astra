@@ -1,10 +1,12 @@
 import SwiftUI
 
 struct CompactBrowserShell: View {
+	let browser: Browser
+
 	var body: some View {
 		VStack(spacing: 0) {
-			RoundedRectangle(cornerRadius: 28)
-				.fill(.background)
+			BrowserContentView(browser: browser)
+				.clipShape(RoundedRectangle(cornerRadius: 28))
 				.padding(10)
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -31,5 +33,5 @@ struct CompactBrowserShell: View {
 }
 
 #Preview {
-	CompactBrowserShell()
+	CompactBrowserShell(browser: Browser())
 }

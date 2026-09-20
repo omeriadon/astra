@@ -1,8 +1,14 @@
+import Foundation
 import Observation
-import WebKit
 
+@MainActor
 @Observable
 final class BrowserTab: Identifiable {
-	let id = UUID()
-	let page = WebPage()
+	let id: UUID
+	let controller: BrowserController
+
+	init(id: UUID = UUID()) {
+		self.id = id
+		controller = BrowserController()
+	}
 }

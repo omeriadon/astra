@@ -3,6 +3,7 @@ import SwiftUI
 import WebKit
 
 struct DesktopBrowserShell: View {
+	let browser: Browser
 	@State private var sidebarShown = true
 
 	var body: some View {
@@ -23,12 +24,19 @@ struct DesktopBrowserShell: View {
 				}
 
 			} content: {
-				Color.teal
-					.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? 13 : 15))
-					.animation(.smooth(duration: 0.3)) { view in
-						view
-							.padding(sidebarShown ? 4 : 0)
-					}
+				BrowserContentView(
+					browser: browser,
+					insets: BrowserViewportInsets(
+						obscured: EdgeInsets(top: 35, leading: 0, bottom: 0, trailing: 0),
+						minimum: EdgeInsets(top: 35, leading: 0, bottom: 0, trailing: 0),
+						maximum: EdgeInsets(top: 35, leading: 0, bottom: 0, trailing: 0)
+					)
+				)
+				.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? 13 : 15))
+				.animation(.smooth(duration: 0.3)) { view in
+					view
+						.padding(sidebarShown ? 4 : 0)
+				}
 			}
 			.background(.blue)
 
@@ -82,5 +90,5 @@ struct DesktopBrowserShell: View {
 }
 
 #Preview {
-	DesktopBrowserShell()
+	DesktopBrowserShell(browser: Browser())
 }
