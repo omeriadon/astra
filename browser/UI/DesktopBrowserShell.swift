@@ -101,6 +101,15 @@ struct DesktopBrowserShell: View {
 				.disabled(!(browser.selectedTab?.controller.canGoForward ?? false))
 				.accessibilityIdentifier("browser-forward")
 
+				Button {
+					browser.selectedTab?.controller.reload()
+				} label: {
+					Label("Reload", systemImage: "arrow.clockwise")
+						.labelStyle(.iconOnly)
+				}
+				.buttonStyle(.plain)
+				.accessibilityIdentifier("browser-reload")
+
 				Spacer()
 			}
 			.padding(.top, 10)
