@@ -17,15 +17,15 @@ final class BrowserController: NSObject {
 		super.init()
 
 		observations = [
-			webView.observe(\.canGoBack, options: [.initial, .new]) { [weak self] webView, _ in
-				Task { @MainActor in
-					self?.canGoBack = webView.canGoBack
+			webView.observe(\.canGoBack, options: [.initial, .new]) { [weak self] webView, change in
+				MainActor.assumeIsolated {
+					self?.canGoBack = change.newValue ?? webView.canGoBack
 				}
 			},
 
-			webView.observe(\.canGoForward, options: [.initial, .new]) { [weak self] webView, _ in
-				Task { @MainActor in
-					self?.canGoForward = webView.canGoForward
+			webView.observe(\.canGoForward, options: [.initial, .new]) { [weak self] webView, change in
+				MainActor.assumeIsolated {
+					self?.canGoForward = change.newValue ?? webView.canGoForward
 				}
 			},
 		]
