@@ -81,6 +81,26 @@ struct DesktopBrowserShell: View {
 				}
 				.animation(.smooth(duration: 0.3), value: sidebarShown)
 
+				Button {
+					browser.selectedTab?.controller.goBack()
+				} label: {
+					Label("Back", systemImage: "chevron.backward")
+						.labelStyle(.iconOnly)
+				}
+				.buttonStyle(.plain)
+				.disabled(!(browser.selectedTab?.controller.canGoBack ?? false))
+				.accessibilityIdentifier("browser-back")
+
+				Button {
+					browser.selectedTab?.controller.goForward()
+				} label: {
+					Label("Forward", systemImage: "chevron.forward")
+						.labelStyle(.iconOnly)
+				}
+				.buttonStyle(.plain)
+				.disabled(!(browser.selectedTab?.controller.canGoForward ?? false))
+				.accessibilityIdentifier("browser-forward")
+
 				Spacer()
 			}
 			.padding(.top, 10)

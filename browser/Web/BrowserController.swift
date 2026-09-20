@@ -4,6 +4,8 @@ import WebKit
 @MainActor
 @Observable
 final class BrowserController: NSObject {
+	private static let startURL = URL(string: "https://www.google.com/search?q=colourful+images")!
+
 	@ObservationIgnored
 	let webView = WKWebView()
 
@@ -29,6 +31,8 @@ final class BrowserController: NSObject {
 				}
 			},
 		]
+
+		load(Self.startURL)
 	}
 
 	func load(_ url: URL) {
