@@ -13,5 +13,6 @@ struct browserApp: App {
         WindowGroup {
             ContentView()
         }
+		.windowStyle(.hiddenTitleBar)
     }
 }
