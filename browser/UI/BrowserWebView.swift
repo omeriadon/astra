@@ -5,15 +5,13 @@
 //  Created by Adon Omeri on 20/9/2026.
 //
 
+import Observation
 import SwiftUI
 import WebKit
-import Observation
-
 
 @MainActor
 @Observable
 final class BrowserController: NSObject {
-
 	@ObservationIgnored
 	let webView = WKWebView()
 
@@ -37,7 +35,7 @@ final class BrowserController: NSObject {
 				Task { @MainActor in
 					self?.canGoForward = webView.canGoForward
 				}
-			}
+			},
 		]
 	}
 
@@ -54,9 +52,7 @@ final class BrowserController: NSObject {
 	}
 }
 
-
 struct BrowserWebView {
-
 	let url: URL
 	let controller: BrowserController
 
@@ -78,100 +74,92 @@ struct BrowserWebView {
 	}
 }
 
-
 #if os(iOS)
 
-extension BrowserWebView: UIViewRepresentable {
+	extension BrowserWebView: UIViewRepresentable {
+		func makeUIView(context: Context) -> WKWebView {
+			let webView = controller.webView
 
-	func makeUIView(context: Context) -> WKWebView {
-		let webView = controller.webView
+			configure(webView)
 
-		configure(webView)
-
-		context.coordinator.loadedURL = url
-		webView.load(URLRequest(url: url))
-
-		return webView
-	}
-
-	func updateUIView(_ webView: WKWebView, context: Context) {
-		configure(webView)
-
-		if context.coordinator.loadedURL != url {
 			context.coordinator.loadedURL = url
 			webView.load(URLRequest(url: url))
+
+			return webView
+		}
+
+		func updateUIView(_ webView: WKWebView, context: Context) {
+			configure(webView)
+
+			if context.coordinator.loadedURL != url {
+				context.coordinator.loadedURL = url
+				webView.load(URLRequest(url: url))
+			}
+		}
+
+		private func configure(_ webView: WKWebView) {
+			webView.obscuredContentInsets = obscuredInsets.uiInsets
+
+			webView.setMinimumViewportInset(
+				minimumViewportInsets.uiInsets,
+				maximumViewportInset: maximumViewportInsets.uiInsets
+			)
 		}
 	}
 
-	private func configure(_ webView: WKWebView) {
-		webView.obscuredContentInsets = obscuredInsets.uiInsets
-
-		webView.setMinimumViewportInset(
-			minimumViewportInsets.uiInsets,
-			maximumViewportInset: maximumViewportInsets.uiInsets
-		)
+	private extension EdgeInsets {
+		var uiInsets: UIEdgeInsets {
+			UIEdgeInsets(
+				top: top,
+				left: leading,
+				bottom: bottom,
+				right: trailing
+			)
+		}
 	}
-}
-
-
-private extension EdgeInsets {
-
-	var uiInsets: UIEdgeInsets {
-		UIEdgeInsets(
-			top: top,
-			left: leading,
-			bottom: bottom,
-			right: trailing
-		)
-	}
-}
-
 
 #elseif os(macOS)
 
-extension BrowserWebView: NSViewRepresentable {
+	extension BrowserWebView: NSViewRepresentable {
+		func makeNSView(context: Context) -> WKWebView {
+			let webView = controller.webView
 
-	func makeNSView(context: Context) -> WKWebView {
-		let webView = controller.webView
+			configure(webView)
 
-		configure(webView)
-
-		context.coordinator.loadedURL = url
-		webView.load(URLRequest(url: url))
-
-		return webView
-	}
-
-	func updateNSView(_ webView: WKWebView, context: Context) {
-		configure(webView)
-
-		if context.coordinator.loadedURL != url {
 			context.coordinator.loadedURL = url
 			webView.load(URLRequest(url: url))
+
+			return webView
+		}
+
+		func updateNSView(_ webView: WKWebView, context: Context) {
+			configure(webView)
+
+			if context.coordinator.loadedURL != url {
+				context.coordinator.loadedURL = url
+				webView.load(URLRequest(url: url))
+			}
+		}
+
+		private func configure(_ webView: WKWebView) {
+			webView.obscuredContentInsets = obscuredInsets.nsInsets
+
+			webView.setMinimumViewportInset(
+				minimumViewportInsets.nsInsets,
+				maximumViewportInset: maximumViewportInsets.nsInsets
+			)
 		}
 	}
 
-	private func configure(_ webView: WKWebView) {
-		webView.obscuredContentInsets = obscuredInsets.nsInsets
-
-		webView.setMinimumViewportInset(
-			minimumViewportInsets.nsInsets,
-			maximumViewportInset: maximumViewportInsets.nsInsets
-		)
+	private extension EdgeInsets {
+		var nsInsets: NSEdgeInsets {
+			NSEdgeInsets(
+				top: top,
+				left: leading,
+				bottom: bottom,
+				right: trailing
+			)
+		}
 	}
-}
-
-
-private extension EdgeInsets {
-
-	var nsInsets: NSEdgeInsets {
-		NSEdgeInsets(
-			top: top,
-			left: leading,
-			bottom: bottom,
-			right: trailing
-		)
-	}
-}
 
 #endif

@@ -14,7 +14,7 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View {
 		@ViewBuilder sidebar: () -> Sidebar,
 		@ViewBuilder content: () -> Content
 	) {
-		self._sidebarShown = sidebarShown
+		_sidebarShown = sidebarShown
 		self.sidebarWidth = sidebarWidth
 		self.sidebar = sidebar()
 		self.content = content()
