@@ -127,7 +127,7 @@ struct DesktopBrowserShell: View {
 		BrowserSplitView(sidebarShown: $sidebarShown) {
 			ZStack(alignment: .top) {
 				ScrollView {
-					LazyVStack(spacing: 0) {
+					LazyVStack(spacing: 2) {
 						ForEach(browser.tabs) { tab in
 							BrowserTabRow(
 								tab: tab,

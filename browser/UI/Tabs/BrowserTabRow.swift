@@ -6,6 +6,7 @@ struct BrowserTabRow: View {
 	let onSelect: (UUID) -> Void
 	let onClose: (UUID) -> Void
 	@State private var isRenaming = false
+	@State private var isHovered = false
 	@FocusState private var isTitleFocused: Bool
 
 	private var closeButton: some View {
@@ -65,11 +66,24 @@ struct BrowserTabRow: View {
 					.keyboardShortcut("W", modifiers: .command)
 			} else {
 				closeButton
+					.opacity(isHovered ? 1 : 0)
+					.allowsHitTesting(isHovered)
+					.accessibilityHidden(!isHovered)
+					.animation(.smooth(duration: 0.1), value: isHovered)
 			}
 		}
 		.padding(.horizontal, 8)
 		.frame(height: 28)
-		.glassEffect(isSelected ? .clear.interactive() : .identity, in: RoundedRectangle(cornerRadius: 13))
+		.background {
+			Rectangle()
+				.fill(.clear)
+				.glassEffect(
+					isSelected ? .clear.interactive() : isHovered ? .regular : .identity,
+					in: RoundedRectangle(cornerRadius: 13)
+				)
+				.animation(.smooth(duration: 0.1), value: isHovered)
+		}
+		.onHover { isHovered = $0 }
 		.onChange(of: isSelected) { _, selected in
 			if !selected {
 				finishRenaming()
