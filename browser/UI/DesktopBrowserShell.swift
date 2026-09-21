@@ -22,6 +22,17 @@ struct TopBarButton: Identifiable {
 struct DesktopBrowserShell: View {
 	let browser: Browser
 	@State private var sidebarShown = true
+	#if os(macOS)
+		@AppStorage("tabSwitchingOrder") private var tabSwitchingOrder = TabSwitchingOrder.visibleTabList.rawValue
+		@State private var controlTabSwitcher: ControlTabSwitcher
+	#endif
+
+	init(browser: Browser) {
+		self.browser = browser
+		#if os(macOS)
+			_controlTabSwitcher = State(initialValue: ControlTabSwitcher(browser: browser))
+		#endif
+	}
 
 	private var navigationButtons: [TopBarButton] {
 		[
@@ -179,6 +190,24 @@ struct DesktopBrowserShell: View {
 		.overlay(alignment: .top) {
 			topBar
 		}
+		#if os(macOS)
+		.overlay {
+			ControlTabSwitcherPreview(browser: browser, switcher: controlTabSwitcher)
+				.animation(.easeInOut(duration: 0.15), value: controlTabSwitcher.isPreviewVisible)
+		}
+		.onAppear {
+			controlTabSwitcher.start(order: TabSwitchingOrder(rawValue: tabSwitchingOrder) ?? .visibleTabList)
+		}
+		.onChange(of: tabSwitchingOrder) { _, value in
+			controlTabSwitcher.start(order: TabSwitchingOrder(rawValue: value) ?? .visibleTabList)
+		}
+		.onChange(of: browser.tabs.map(\.id)) { _, _ in
+			controlTabSwitcher.tabsDidChange()
+		}
+		.onDisappear {
+			controlTabSwitcher.stop()
+		}
+		#endif
 		.ignoresSafeArea()
 	}
 }

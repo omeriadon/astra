@@ -15,5 +15,21 @@ struct browserApp: App {
 		}
 		.windowStyle(.hiddenTitleBar)
 		.commandsRemoved()
+		#if os(macOS)
+			.commands {
+				CommandGroup(replacing: .appSettings) {
+					SettingsLink {
+						Label("Settings…", systemImage: "gear")
+					}
+				}
+			}
+		#endif // os(macOS)
+
+		#if os(macOS)
+
+			Settings {
+				BrowserSettingsView()
+			}
+		#endif // os(macOS)
 	}
 }

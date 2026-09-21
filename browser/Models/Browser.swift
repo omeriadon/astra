@@ -6,6 +6,7 @@ import Observation
 final class Browser {
 	private(set) var tabs: [BrowserTab]
 	private(set) var selectedTabID: UUID
+	private(set) var recentlyUsedTabIDs: [UUID]
 	private(set) var persistenceErrorDescription: String?
 
 	@ObservationIgnored
@@ -52,6 +53,7 @@ final class Browser {
 
 		tabs = loadedTabs
 		selectedTabID = loadedSelectedTabID
+		recentlyUsedTabIDs = [loadedSelectedTabID]
 		persistence = loadedPersistence
 		persistenceErrorDescription = loadedErrorDescription
 		persistenceTask = nil
@@ -66,21 +68,48 @@ final class Browser {
 		let tab = BrowserTab()
 		attachPersistence(to: tab)
 		tabs.append(tab)
-		selectedTabID = tab.id
-		schedulePersistence()
+		recentlyUsedTabIDs.insert(tab.id, at: min(1, recentlyUsedTabIDs.count))
+		selectTab(tab.id)
 		return tab
 	}
 
 	func selectTab(_ id: UUID) {
 		guard tabs.contains(where: { $0.id == id }) else { return }
 		selectedTabID = id
+		recentlyUsedTabIDs.removeAll { $0 == id }
+		recentlyUsedTabIDs.insert(id, at: 0)
 		schedulePersistence()
+	}
+
+	func switchCandidates(forward: Bool, order: TabSwitchingOrder) -> [UUID] {
+		guard tabs.count > 1, let selectedIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) else { return [] }
+		let ids: [UUID]
+		if order == .visibleTabList {
+			ids = tabs.map(\.id)
+		} else {
+			let validRecentIDs = recentlyUsedTabIDs.filter { id in
+				tabs.contains { $0.id == id } && id != selectedTabID
+			}
+			ids = [selectedTabID] + validRecentIDs + tabs.map(\.id).filter {
+				$0 != selectedTabID && !validRecentIDs.contains($0)
+			}
+		}
+		let origin = ids.firstIndex(of: selectedTabID) ?? selectedIndex
+		return (1 ... ids.count).map { offset in
+			let direction = forward ? offset : ids.count - offset
+			return ids[(origin + direction) % ids.count]
+		}
+	}
+
+	func commitTabSwitch(to id: UUID) {
+		selectTab(id)
 	}
 
 	func closeTab(_ id: UUID) {
 		guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
 		let wasSelected = selectedTabID == id
 		tabs.remove(at: index)
+		recentlyUsedTabIDs.removeAll { $0 == id }
 
 		if tabs.isEmpty {
 			addTab()
@@ -89,6 +118,8 @@ final class Browser {
 
 		if wasSelected {
 			selectedTabID = tabs[min(index, tabs.count - 1)].id
+			recentlyUsedTabIDs.removeAll { $0 == selectedTabID }
+			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
 		}
 		schedulePersistence()
 	}
