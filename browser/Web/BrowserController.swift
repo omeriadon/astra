@@ -32,6 +32,8 @@ final class BrowserController: NSObject {
 	private var observations: [NSKeyValueObservation] = []
 	@ObservationIgnored
 	private var navigationGeneration = 0
+	@ObservationIgnored
+	private var hasDeclaredThemeColor = false
 
 	init(initialURL: URL? = nil, history: [URL] = [], historyIndex: Int = 0) {
 		let restoredHistory = history.isEmpty ? [initialURL ?? Self.startURL] : history
@@ -55,8 +57,13 @@ final class BrowserController: NSObject {
 			},
 			webView.observe(\.themeColor, options: [.initial, .new]) { [weak self] webView, change in
 				MainActor.assumeIsolated {
-					guard let color = change.newValue ?? webView.themeColor else { return }
-					self?.updateThemeColor(color)
+					guard let self else { return }
+					guard let color = change.newValue ?? webView.themeColor else {
+						self.hasDeclaredThemeColor = false
+						return
+					}
+					self.hasDeclaredThemeColor = true
+					self.updateThemeColor(color)
 				}
 			},
 		]
@@ -119,7 +126,7 @@ final class BrowserController: NSObject {
 	}
 
 	private func samplePageColor(generation: Int) async {
-		guard webView.themeColor == nil else { return }
+		guard !hasDeclaredThemeColor else { return }
 		let configuration = WKSnapshotConfiguration()
 		configuration.rect = webView.bounds
 
@@ -127,7 +134,7 @@ final class BrowserController: NSObject {
 		      let cgImage = Self.cgImage(from: image),
 		      let color = Self.dominantPageColor(in: cgImage),
 		      generation == navigationGeneration,
-		      webView.themeColor == nil
+		      !hasDeclaredThemeColor
 		else { return }
 
 		updateThemeColor(color)
@@ -213,12 +220,14 @@ final class BrowserController: NSObject {
 extension BrowserController: WKNavigationDelegate {
 	func webView(_: WKWebView, didStartProvisionalNavigation _: WKNavigation!) {
 		navigationGeneration += 1
+		hasDeclaredThemeColor = false
 	}
 
 	func webView(_: WKWebView, didFinish _: WKNavigation!) {
 		let generation = navigationGeneration
 		Task { @MainActor [weak self] in
 			guard let self else { return }
+			try? await Task.sleep(for: .milliseconds(200))
 			await samplePageColor(generation: generation)
 		}
 	}
