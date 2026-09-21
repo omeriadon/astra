@@ -182,7 +182,7 @@ struct DesktopBrowserShell: View {
 						endOpacity: 1.0,
 						isSmooth: false
 					),
-					maxBlurRadius: 10
+					maxBlurRadius: 6
 				)
 				.frame(height: topHeight)
 				.frame(maxWidth: .infinity)
