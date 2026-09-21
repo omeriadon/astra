@@ -6,6 +6,15 @@ struct BrowserTabRow: View {
 	let onSelect: (UUID) -> Void
 	let onClose: (UUID) -> Void
 
+	private var closeButton: some View {
+		Button("Close Tab", systemImage: "xmark") {
+			onClose(tab.id)
+		}
+		.labelStyle(.iconOnly)
+		.buttonStyle(.plain)
+		.accessibilityIdentifier("close-tab-\(tab.id.uuidString)")
+	}
+
 	var body: some View {
 		HStack(spacing: 6) {
 			Button("Select Tab", systemImage: "globe") {
@@ -18,13 +27,12 @@ struct BrowserTabRow: View {
 			TextField("Tab Name", text: $tab.title)
 				.textFieldStyle(.plain)
 
-			Button("Close Tab", systemImage: "xmark") {
-				onClose(tab.id)
+			if isSelected {
+				closeButton
+					.keyboardShortcut("W", modifiers: .command)
+			} else {
+				closeButton
 			}
-			.keyboardShortcut("W", modifiers: .command)
-			.labelStyle(.iconOnly)
-			.buttonStyle(.plain)
-			.accessibilityIdentifier("close-tab-\(tab.id.uuidString)")
 		}
 		.padding(.horizontal, 8)
 		.frame(height: 28)

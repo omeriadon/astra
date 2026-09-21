@@ -14,7 +14,7 @@ struct BrowserContentView: View {
 			)
 			.id(tab.id)
 		} else {
-			Color.clear
+			ContentUnavailableView("Tab Unavailable", systemImage: "exclamationmark.triangle")
 		}
 	}
 }
