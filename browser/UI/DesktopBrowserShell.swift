@@ -191,10 +191,6 @@ struct DesktopBrowserShell: View {
 						themeColor.opacity(0.6)
 					}
 				}
-
-//					LinearGradient(colors: [.blue, .clear], startPoint: .top, endPoint: .bottom)
-//						.frame(height: topHeight)
-//						.frame(maxWidth: .infinity)
 			}
 			.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? 13 : 16))
 			.animation(.smooth(duration: 0.3)) { view in
