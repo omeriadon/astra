@@ -19,12 +19,15 @@ final class BrowserPersistence {
 		try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
 	}
 
-	func loadFavourites() throws -> [Favourite] {
-		try read([Favourite].self, named: "favourites.json") ?? []
+	func loadBookmarks() throws -> [Bookmark] {
+		if let bookmarks = try read([Bookmark].self, named: "bookmarks.json") {
+			return bookmarks
+		}
+		return try read([Bookmark].self, named: "favourites.json") ?? []
 	}
 
-	func saveFavourites(_ favourites: [Favourite]) throws {
-		try write(favourites, named: "favourites.json")
+	func saveBookmarks(_ bookmarks: [Bookmark]) throws {
+		try write(bookmarks, named: "bookmarks.json")
 	}
 
 	func loadFavicons() throws -> [String: Data] {

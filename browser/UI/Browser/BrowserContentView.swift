@@ -14,8 +14,9 @@ struct BrowserContentView: View {
 			)
 			.id(tab.id)
 		} else if browser.selectedTab != nil {
-			Color.black
-				.ignoresSafeArea()
+			NewTabView(browser: browser)
+				.padding(.top, insets.obscured.top)
+				.background(.black)
 		} else {
 			ContentUnavailableView("Tab Unavailable", systemImage: "exclamationmark.triangle")
 		}

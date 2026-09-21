@@ -7,6 +7,7 @@ final class Browser {
 	private(set) var tabs: [BrowserTab]
 	private(set) var selectedTabID: UUID
 	private(set) var recentlyUsedTabIDs: [UUID]
+	private(set) var bookmarks: [Bookmark]
 	private(set) var persistenceErrorDescription: String?
 
 	@ObservationIgnored
@@ -22,6 +23,7 @@ final class Browser {
 	init() {
 		let loadedTabs: [BrowserTab]
 		let loadedSelectedTabID: UUID
+		let loadedBookmarks: [Bookmark]
 		let loadedPersistence: BrowserPersistence?
 		let loadedErrorDescription: String?
 
@@ -29,6 +31,7 @@ final class Browser {
 			let store = try BrowserPersistence()
 			let savedTabs = try store.loadOpenTabs()
 			let snapshot = try store.loadBrowserSnapshot()
+			let bookmarks = try store.loadBookmarks()
 			let restoredTabs = savedTabs.map {
 				BrowserTab(
 					id: $0.id,
@@ -42,12 +45,14 @@ final class Browser {
 			let tabs = restoredTabs.isEmpty ? [BrowserTab()] : restoredTabs
 			loadedTabs = tabs
 			loadedSelectedTabID = tabs.first(where: { $0.id == snapshot?.selectedTabID })?.id ?? tabs[0].id
+			loadedBookmarks = bookmarks
 			loadedPersistence = store
 			loadedErrorDescription = nil
 		} catch {
 			let tab = BrowserTab()
 			loadedTabs = [tab]
 			loadedSelectedTabID = tab.id
+			loadedBookmarks = []
 			loadedPersistence = nil
 			loadedErrorDescription = error.localizedDescription
 		}
@@ -55,6 +60,7 @@ final class Browser {
 		tabs = loadedTabs
 		selectedTabID = loadedSelectedTabID
 		recentlyUsedTabIDs = [loadedSelectedTabID]
+		bookmarks = loadedBookmarks
 		persistence = loadedPersistence
 		persistenceErrorDescription = loadedErrorDescription
 		persistenceTask = nil
@@ -105,6 +111,29 @@ final class Browser {
 
 	func commitTabSwitch(to id: UUID) {
 		selectTab(id)
+	}
+
+	var canBookmarkSelectedPage: Bool {
+		guard let url = selectedTab?.controller.url else { return false }
+		return !bookmarks.contains { $0.url == url }
+	}
+
+	func bookmarkSelectedPage() {
+		guard let tab = selectedTab,
+		      let url = tab.controller.url,
+		      !bookmarks.contains(where: { $0.url == url })
+		else { return }
+		bookmarks.append(Bookmark(name: tab.title, url: url))
+		schedulePersistence()
+	}
+
+	func openBookmark(_ bookmark: Bookmark) {
+		selectedTab?.controller.load(bookmark.url)
+	}
+
+	func removeBookmark(_ id: UUID) {
+		bookmarks.removeAll { $0.id == id }
+		schedulePersistence()
 	}
 
 	func duplicateTab(_ id: UUID) {
@@ -190,6 +219,7 @@ final class Browser {
 	private func persist() {
 		guard let persistence else { return }
 		do {
+			try persistence.saveBookmarks(bookmarks)
 			try persistence.saveOpenTabs(tabs.map(\.openTab))
 			try persistence.saveBrowserSnapshot(BrowserSnapshot(selectedTabID: selectedTabID))
 			persistenceErrorDescription = nil

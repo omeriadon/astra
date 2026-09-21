@@ -10,6 +10,12 @@
 		@FocusedValue(\.browser) private var browser
 
 		var body: some Commands {
+			CommandMenu("Bookmarks") {
+				Button("Add Bookmark", systemImage: "bookmark", action: addBookmark)
+					.keyboardShortcut("B", modifiers: .command)
+					.disabled(!(browser?.canBookmarkSelectedPage ?? false))
+			}
+
 			CommandMenu("Tab") {
 				Button("Duplicate Tab", systemImage: "plus.square.on.square", action: duplicateSelectedTab)
 					.keyboardShortcut("D", modifiers: .command)
@@ -19,6 +25,10 @@
 					.keyboardShortcut("C", modifiers: .option)
 					.disabled(browser?.selectedTab?.controller.url == nil)
 			}
+		}
+
+		private func addBookmark() {
+			browser?.bookmarkSelectedPage()
 		}
 
 		private func duplicateSelectedTab() {
