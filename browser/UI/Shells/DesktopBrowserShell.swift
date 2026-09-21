@@ -127,7 +127,7 @@ struct DesktopBrowserShell: View {
 		BrowserSplitView(sidebarShown: $sidebarShown) {
 			ZStack(alignment: .top) {
 				ScrollView {
-					LazyVStack(spacing: 5) {
+					LazyVStack(spacing: 0) {
 						ForEach(browser.tabs) { tab in
 							BrowserTabRow(
 								tab: tab,
@@ -143,9 +143,11 @@ struct DesktopBrowserShell: View {
 							browser.addTab()
 						}
 						.keyboardShortcut("T", modifiers: .command)
-						.padding(.leading, 8)
+						.padding(.leading, 8.5)
 						.buttonStyle(.plain)
 						.frame(maxWidth: .infinity, alignment: .leading)
+						.padding(.top, 10)
+						.foregroundStyle(.secondary)
 						.accessibilityIdentifier("new-tab")
 					}
 					.padding(.horizontal, 7)
