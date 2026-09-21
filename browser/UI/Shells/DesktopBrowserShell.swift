@@ -86,6 +86,10 @@ struct DesktopBrowserShell: View {
 				.accessibilityIdentifier("sidebar-toggle")
 			}
 			.frame(width: sidebarShown ? 224 : 125, alignment: .leading)
+			.environment(
+				\.colorScheme,
+				sidebarShown ? colorScheme : topBarColorScheme
+			)
 
 			HStack(spacing: 6) {
 				ForEach(navigationButtons) { item in
