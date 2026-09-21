@@ -32,6 +32,10 @@ struct BrowserTabRow: View {
 					.textFieldStyle(.plain)
 					.focused($isTitleFocused)
 					.onSubmit(finishRenaming)
+					.onKeyPress(.escape) {
+						finishRenaming()
+						return .handled
+					}
 					.onChange(of: isTitleFocused) { _, isFocused in
 						if !isFocused {
 							isRenaming = false
