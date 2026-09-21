@@ -93,6 +93,12 @@ final class BrowserController: NSObject {
 		webView.reload()
 	}
 
+	#if os(macOS)
+		func previewSnapshot() async -> NSImage? {
+			try? await webView.takeSnapshot(configuration: WKSnapshotConfiguration())
+		}
+	#endif
+
 	private func recordNavigation(to url: URL) {
 		guard !history.isEmpty else {
 			history = [url]

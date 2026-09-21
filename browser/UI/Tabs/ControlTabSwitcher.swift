@@ -8,6 +8,7 @@
 	final class ControlTabSwitcher {
 		private(set) var candidateIDs: [UUID] = []
 		private(set) var highlightedTabID: UUID?
+		private(set) var candidateWindowAnchorID: UUID?
 		private(set) var isPreviewVisible = false
 
 		@ObservationIgnored
@@ -20,6 +21,8 @@
 		private var switchingOrder: TabSwitchingOrder = .visibleTabList
 		@ObservationIgnored
 		private var sessionForward = true
+		@ObservationIgnored
+		private var isCancelledUntilControlRelease = false
 
 		init(browser: Browser) {
 			self.browser = browser
@@ -31,12 +34,14 @@
 			eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
 				let isKeyDown = event.type == .keyDown
 				let isTab = event.keyCode == 48
+				let isEscape = event.keyCode == 53
 				let isControlPressed = event.modifierFlags.contains(.control)
 				let isShiftPressed = event.modifierFlags.contains(.shift)
 				let isHandled = MainActor.assumeIsolated {
 					self?.handle(
 						isKeyDown: isKeyDown,
 						isTab: isTab,
+						isEscape: isEscape,
 						isControlPressed: isControlPressed,
 						isShiftPressed: isShiftPressed
 					) ?? false
@@ -52,6 +57,7 @@
 			}
 			previewTask?.cancel()
 			previewTask = nil
+			isCancelledUntilControlRelease = false
 			endSession()
 		}
 
@@ -65,15 +71,44 @@
 			if let highlightedTabID, !validTabIDs.contains(highlightedTabID) {
 				self.highlightedTabID = candidateIDs[0]
 			}
+			if let candidateWindowAnchorID, !validTabIDs.contains(candidateWindowAnchorID) {
+				self.candidateWindowAnchorID = highlightedTabID ?? candidateIDs[0]
+			}
+		}
+
+		func select(_ tabID: UUID) {
+			guard candidateIDs.contains(tabID) else { return }
+			browser.commitTabSwitch(to: tabID)
+			isCancelledUntilControlRelease = NSEvent.modifierFlags.contains(.control)
+			endSession()
+		}
+
+		func highlight(_ tabID: UUID) {
+			guard candidateIDs.contains(tabID) else { return }
+			highlightedTabID = tabID
 		}
 
 		private func handle(
 			isKeyDown: Bool,
 			isTab: Bool,
+			isEscape: Bool,
 			isControlPressed: Bool,
 			isShiftPressed: Bool
 		) -> Bool {
+			if isCancelledUntilControlRelease {
+				if !isControlPressed {
+					isCancelledUntilControlRelease = false
+				} else if isKeyDown, isTab {
+					return true
+				}
+			}
+
 			if isKeyDown {
+				if isEscape, !candidateIDs.isEmpty {
+					isCancelledUntilControlRelease = isControlPressed
+					endSession()
+					return true
+				}
 				guard isControlPressed, isTab else { return false }
 				if candidateIDs.isEmpty {
 					sessionForward = !isShiftPressed
@@ -84,6 +119,7 @@
 					guard !order.isEmpty else { return true }
 					candidateIDs = order
 					highlightedTabID = order[0]
+					candidateWindowAnchorID = order[0]
 					previewTask = Task { @MainActor [weak self] in
 						try? await Task.sleep(for: .milliseconds(200))
 						guard !Task.isCancelled, let self, !candidateIDs.isEmpty else { return }
@@ -94,6 +130,7 @@
 					let isForward = !isShiftPressed
 					let step = isForward == sessionForward ? 1 : -1
 					highlightedTabID = candidateIDs[(currentIndex + step + candidateIDs.count) % candidateIDs.count]
+					candidateWindowAnchorID = highlightedTabID
 				}
 				return true
 			}
@@ -112,6 +149,7 @@
 			previewTask = nil
 			candidateIDs = []
 			highlightedTabID = nil
+			candidateWindowAnchorID = nil
 			isPreviewVisible = false
 		}
 	}

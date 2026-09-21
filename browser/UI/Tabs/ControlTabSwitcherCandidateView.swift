@@ -1,9 +1,15 @@
 #if os(macOS)
+	import AppKit
 	import SwiftUI
 
 	struct ControlTabSwitcherCandidateView: View {
+		static let totalWidth: CGFloat = 196
+
 		let tab: BrowserTab
 		let isSelected: Bool
+		let onHover: () -> Void
+		let action: () -> Void
+		@State private var snapshot: NSImage?
 
 		private var host: String {
 			tab.controller.url?.host ?? "New Tab"
@@ -18,21 +24,43 @@
 		}
 
 		var body: some View {
-			VStack(spacing: 6) {
-				Image(systemName: "globe")
-					.font(.title2)
-				Text(verbatim: tab.title)
-					.lineLimit(1)
-				HStack(spacing: 4) {
-					Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+			Button(action: action) {
+				VStack(spacing: 7) {
+					Group {
+						if let snapshot {
+							Image(nsImage: snapshot)
+								.resizable()
+								.aspectRatio(contentMode: .fill)
+						} else {
+							Color.white.opacity(0.08)
+						}
+					}
+					.frame(width: 180, height: 100)
+					.clipped()
+					.clipShape(RoundedRectangle(cornerRadius: 7))
+					Text(verbatim: tab.title)
+						.lineLimit(1)
 					Text(verbatim: host)
+						.font(.caption)
+						.foregroundStyle(.secondary)
 				}
-				.font(.caption)
-				.foregroundStyle(.secondary)
+				.frame(width: 180)
+				.padding(8)
+				.glassEffect(
+					isSelected ? .regular.tint(.white.opacity(0.2)) : .regular,
+					in: RoundedRectangle(cornerRadius: 12)
+				)
+				.animation(.smooth(duration: 0.15), value: isSelected)
 			}
-			.frame(width: 140, height: 78)
-			.padding(8)
-			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+			.buttonStyle(.plain)
+			.onHover { isHovering in
+				if isHovering {
+					onHover()
+				}
+			}
+			.task(id: tab.id) {
+				snapshot = await tab.controller.previewSnapshot()
+			}
 			.accessibilityElement(children: .combine)
 			.accessibilityLabel(Text(verbatim: "\(tab.title), \(host)"))
 			.accessibilityValue(isSelected ? "Selected" : "")
