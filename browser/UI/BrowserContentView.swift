@@ -12,6 +12,7 @@ struct BrowserContentView: View {
 				minimumViewportInsets: insets.minimum,
 				maximumViewportInsets: insets.maximum
 			)
+			.id(tab.id)
 		} else {
 			Color.clear
 		}

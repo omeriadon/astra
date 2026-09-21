@@ -9,8 +9,16 @@ final class BrowserController: NSObject {
 	@ObservationIgnored
 	let webView = WKWebView()
 
-	var canGoBack = false
-	var canGoForward = false
+	private(set) var history: [URL]
+	private(set) var historyIndex: Int
+	var canGoBack: Bool {
+		historyIndex > 0
+	}
+
+	var canGoForward: Bool {
+		historyIndex < history.count - 1
+	}
+
 	var url: URL?
 
 	@ObservationIgnored
@@ -19,32 +27,27 @@ final class BrowserController: NSObject {
 	@ObservationIgnored
 	private var observations: [NSKeyValueObservation] = []
 
-	init(initialURL: URL? = nil) {
+	init(initialURL: URL? = nil, history: [URL] = [], historyIndex: Int = 0) {
+		let restoredHistory = history.isEmpty ? [initialURL ?? Self.startURL] : history
+		let restoredHistoryIndex = min(max(historyIndex, 0), restoredHistory.count - 1)
+		self.history = restoredHistory
+		self.historyIndex = restoredHistoryIndex
+		url = restoredHistory[restoredHistoryIndex]
 		super.init()
 
 		observations = [
-			webView.observe(\.canGoBack, options: [.initial, .new]) { [weak self] webView, change in
-				MainActor.assumeIsolated {
-					self?.canGoBack = change.newValue ?? webView.canGoBack
-				}
-			},
-
-			webView.observe(\.canGoForward, options: [.initial, .new]) { [weak self] webView, change in
-				MainActor.assumeIsolated {
-					self?.canGoForward = change.newValue ?? webView.canGoForward
-				}
-			},
-
 			webView.observe(\.url, options: [.initial, .new]) { [weak self] webView, change in
 				MainActor.assumeIsolated {
 					guard let self else { return }
-					self.url = change.newValue ?? webView.url
+					guard let url = change.newValue ?? webView.url else { return }
+					self.url = url
+					self.recordNavigation(to: url)
 					self.navigationDidChange?()
 				}
 			},
 		]
 
-		load(initialURL ?? Self.startURL)
+		load(restoredHistory[restoredHistoryIndex])
 	}
 
 	func load(_ url: URL) {
@@ -53,15 +56,28 @@ final class BrowserController: NSObject {
 
 	func goBack() {
 		guard canGoBack else { return }
-		webView.goBack()
+		historyIndex -= 1
+		navigationDidChange?()
+		load(history[historyIndex])
 	}
 
 	func goForward() {
 		guard canGoForward else { return }
-		webView.goForward()
+		historyIndex += 1
+		navigationDidChange?()
+		load(history[historyIndex])
 	}
 
 	func reload() {
 		webView.reload()
+	}
+
+	private func recordNavigation(to url: URL) {
+		guard history[historyIndex] != url else { return }
+		history.removeSubrange((historyIndex + 1) ..< history.count)
+		if history.last != url {
+			history.append(url)
+		}
+		historyIndex = history.count - 1
 	}
 }

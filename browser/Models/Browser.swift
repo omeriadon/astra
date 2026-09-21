@@ -32,7 +32,9 @@ final class Browser {
 				BrowserTab(
 					id: $0.id,
 					title: $0.title.isEmpty ? "New Tab" : $0.title,
-					initialURL: $0.url
+					initialURL: $0.url,
+					history: $0.history,
+					historyIndex: $0.historyIndex
 				)
 			}
 			let tabs = restoredTabs.isEmpty ? [BrowserTab()] : restoredTabs
