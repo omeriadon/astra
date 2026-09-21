@@ -13,6 +13,7 @@ struct TopBarButton: Identifiable {
 	let accessibilityIdentifier: String
 	let isDisabled: Bool
 	let action: () -> Void
+	let modifier: String
 
 	var id: String {
 		accessibilityIdentifier
@@ -21,6 +22,7 @@ struct TopBarButton: Identifiable {
 
 struct DesktopBrowserShell: View {
 	let browser: Browser
+	@Environment(\.colorScheme) private var colorScheme
 	@State private var sidebarShown = true
 	#if os(macOS)
 		@AppStorage("tabSwitchingOrder") private var tabSwitchingOrder = TabSwitchingOrder.visibleTabList.rawValue
@@ -41,21 +43,24 @@ struct DesktopBrowserShell: View {
 				systemImage: "chevron.backward",
 				accessibilityIdentifier: "browser-back",
 				isDisabled: !(browser.selectedTab?.controller.canGoBack ?? false),
-				action: { browser.selectedTab?.controller.goBack() }
+				action: { browser.selectedTab?.controller.goBack() },
+				modifier: "["
 			),
 			TopBarButton(
 				title: "Forward",
 				systemImage: "chevron.forward",
 				accessibilityIdentifier: "browser-forward",
 				isDisabled: !(browser.selectedTab?.controller.canGoForward ?? false),
-				action: { browser.selectedTab?.controller.goForward() }
+				action: { browser.selectedTab?.controller.goForward() },
+				modifier: "]"
 			),
 			TopBarButton(
 				title: "Refresh",
 				systemImage: "arrow.clockwise",
 				accessibilityIdentifier: "browser-reload",
 				isDisabled: false,
-				action: { browser.selectedTab?.controller.reload() }
+				action: { browser.selectedTab?.controller.reload() },
+				modifier: "R"
 			),
 		]
 	}
@@ -89,6 +94,7 @@ struct DesktopBrowserShell: View {
 							.labelStyle(.iconOnly)
 							.frame(width: topBarItemWidth, height: topBarItemHeight)
 					}
+					.keyboardShortcut(KeyEquivalent(item.modifier.first!), modifiers: .command)
 					.disabled(item.isDisabled)
 					.controlSize(.regular)
 					.buttonSizing(.fitted)
@@ -107,6 +113,11 @@ struct DesktopBrowserShell: View {
 		}
 		.frame(width: nil, height: topHeight, alignment: .center)
 		.animation(.smooth(duration: 0.3), value: sidebarShown)
+	}
+
+	private var topBarColorScheme: ColorScheme {
+		guard let themeColorIsLight = browser.selectedTab?.controller.themeColorIsLight else { return colorScheme }
+		return themeColorIsLight ? .light : .dark
 	}
 
 	var body: some View {
@@ -157,24 +168,29 @@ struct DesktopBrowserShell: View {
 				BrowserContentView(
 					browser: browser,
 					insets: BrowserViewportInsets(
-						obscured: EdgeInsets(top: topHeight - 5, leading: 0, bottom: 0, trailing: 0),
-						minimum: EdgeInsets(top: topHeight - 5, leading: 0, bottom: 0, trailing: 0),
-						maximum: EdgeInsets(top: topHeight - 5, leading: 0, bottom: 0, trailing: 0)
+						obscured: EdgeInsets(top: topHeight, leading: 0, bottom: 0, trailing: 0),
+						minimum: EdgeInsets(top: topHeight, leading: 0, bottom: 0, trailing: 0),
+						maximum: EdgeInsets(top: topHeight, leading: 0, bottom: 0, trailing: 0)
 					)
 				)
 
 				HazeEffect(
 					maskProvider: LinearGradientMaskProvider(
-						startPoint: .center,
+						startPoint: .top,
 						endPoint: .bottom,
 						startOpacity: 1.0,
-						endOpacity: 1,
-						isSmooth: true
+						endOpacity: 1.0,
+						isSmooth: false
 					),
-					maxBlurRadius: 5
+					maxBlurRadius: 1
 				)
 				.frame(height: topHeight)
 				.frame(maxWidth: .infinity)
+				.overlay {
+					if let themeColor = browser.selectedTab?.controller.themeColor {
+						themeColor.opacity(0.6)
+					}
+				}
 
 //					LinearGradient(colors: [.blue, .clear], startPoint: .top, endPoint: .bottom)
 //						.frame(height: topHeight)
@@ -189,11 +205,12 @@ struct DesktopBrowserShell: View {
 		.background(.blue)
 		.overlay(alignment: .top) {
 			topBar
+				.environment(\.colorScheme, topBarColorScheme)
 		}
 		#if os(macOS)
 		.overlay {
 			ControlTabSwitcherPreview(browser: browser, switcher: controlTabSwitcher)
-				.animation(.easeInOut(duration: 0.15), value: controlTabSwitcher.isPreviewVisible)
+				.animation(.easeInOut(duration: 0.05), value: controlTabSwitcher.isPreviewVisible)
 		}
 		.onAppear {
 			controlTabSwitcher.start(order: TabSwitchingOrder(rawValue: tabSwitchingOrder) ?? .visibleTabList)
@@ -206,6 +223,20 @@ struct DesktopBrowserShell: View {
 		}
 		.onDisappear {
 			controlTabSwitcher.stop()
+		}
+		#endif
+		#if DEBUG
+		.overlay(alignment: .bottomTrailing) {
+			Circle()
+				.fill(browser.selectedTab?.controller.themeColor ?? .white)
+				.frame(width: 32, height: 32)
+				.overlay {
+					Circle()
+						.stroke(.primary, lineWidth: 1)
+				}
+				.padding(12)
+				.accessibilityLabel("Detected page theme color")
+				.shadow(radius: 5)
 		}
 		#endif
 		.ignoresSafeArea()
