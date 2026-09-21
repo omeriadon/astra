@@ -36,6 +36,6 @@ struct BrowserTabRow: View {
 		}
 		.padding(.horizontal, 8)
 		.frame(height: 28)
-		.glassEffect(.regular.tint(.white.opacity(isSelected ? 0.2 : 0.0)), in: RoundedRectangle(cornerRadius: 10))
+		.glassEffect(isSelected ? .clear.interactive() : .identity, in: RoundedRectangle(cornerRadius: 10))
 	}
 }

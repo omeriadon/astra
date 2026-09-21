@@ -23,6 +23,7 @@ struct TopBarButton: Identifiable {
 struct DesktopBrowserShell: View {
 	let browser: Browser
 	@Environment(\.colorScheme) private var colorScheme
+	@AppStorage("addressDisplayStyle") private var addressDisplayStyle = AddressDisplayStyle.simple.rawValue
 	@State private var sidebarShown = true
 	@State private var addressText = ""
 	@State private var addressSelection: TextSelection?
@@ -109,9 +110,18 @@ struct DesktopBrowserShell: View {
 				TextField("", text: $addressText, selection: $addressSelection)
 					.textFieldStyle(.plain)
 					.lineLimit(1)
+					.foregroundStyle(isDimmedAddress ? .clear : .primary)
 					.focused($addressFieldFocused)
 					.submitLabel(.go)
 					.onSubmit(submitAddress)
+					.overlay(alignment: .leading) {
+						if isDimmedAddress {
+							Text(dimmedAddressText)
+								.lineLimit(1)
+								.allowsHitTesting(false)
+								.accessibilityHidden(true)
+						}
+					}
 					.accessibilityLabel("Address")
 					.accessibilityIdentifier("browser-address")
 
@@ -235,26 +245,129 @@ struct DesktopBrowserShell: View {
 		}
 		#endif
 		.onChange(of: browser.selectedTabID) { _, _ in
-			addressText = browser.selectedTab?.controller.url?.absoluteString ?? ""
+			addressText = addressDisplayString(for: browser.selectedTab?.controller.url)
 			if addressFieldFocused {
 				addressSelection = TextSelection(range: addressText.startIndex ..< addressText.endIndex)
 			}
 		}
 		.onChange(of: browser.selectedTab?.controller.url) { _, url in
 			guard !addressFieldFocused else { return }
-			addressText = url?.absoluteString ?? ""
+			addressText = addressDisplayString(for: url)
+		}
+		.onChange(of: addressDisplayStyle) { _, _ in
+			addressText = addressDisplayString(for: browser.selectedTab?.controller.url)
+		}
+		.onChange(of: addressFieldFocused) { _, _ in
+			addressText = addressDisplayString(for: browser.selectedTab?.controller.url)
 		}
 		.ignoresSafeArea()
 		.onAppear {
-			addressText = browser.selectedTab?.controller.url?.absoluteString ?? ""
+			addressText = addressDisplayString(for: browser.selectedTab?.controller.url)
 		}
 	}
 
 	private func submitAddress() {
 		guard let destination = Self.destination(for: addressText) else { return }
 		browser.selectedTab?.controller.load(destination)
-		addressText = destination.absoluteString
+		addressText = addressDisplayString(for: destination)
 		addressFieldFocused = false
+	}
+
+	private func addressDisplayString(for url: URL?) -> String {
+		guard let url else { return "" }
+		let style = AddressDisplayStyle(rawValue: addressDisplayStyle) ?? .simple
+		if style == .full {
+			return url.absoluteString
+		}
+
+		if let query = Self.googleSearchQuery(for: url) {
+			return query
+		}
+
+		if !addressFieldFocused, style == .simple {
+			return Self.hostWithoutWWW(for: url) ?? url.absoluteString
+		}
+
+		if !addressFieldFocused, style == .dimmed {
+			return Self.urlWithoutWWW(for: url)
+		}
+
+		return url.absoluteString
+	}
+
+	private var isDimmedAddress: Bool {
+		addressDisplayStyle == AddressDisplayStyle.dimmed.rawValue && !addressFieldFocused
+	}
+
+	private var dimmedAddressText: AttributedString {
+		var text = AttributedString(addressText)
+		text.foregroundColor = Color.primary.opacity(0.2)
+		guard let url = browser.selectedTab?.controller.url,
+		      Self.googleSearchQuery(for: url) == nil,
+		      let components = URLComponents(string: addressText),
+		      let host = components.host,
+		      let schemeEnd = addressText.range(of: "://")?.upperBound
+		else {
+			text.foregroundColor = .primary
+			return text
+		}
+
+		let authorityEnd = addressText[schemeEnd...].firstIndex(where: { "/?#".contains($0) }) ?? addressText.endIndex
+		let authorityRange = schemeEnd ..< authorityEnd
+		if let hostRange = addressText.range(of: host, options: .caseInsensitive, range: authorityRange),
+		   let attributedHostRange = Range(hostRange, in: text)
+		{
+			text[attributedHostRange].foregroundColor = .primary
+		}
+
+		if let pathRange = addressText.range(of: components.percentEncodedPath, range: authorityEnd ..< addressText.endIndex),
+		   let attributedPathRange = Range(pathRange, in: text)
+		{
+			text[attributedPathRange].foregroundColor = .primary
+		}
+		return text
+	}
+
+	private static func hostWithoutWWW(for url: URL) -> String? {
+		guard let host = URLComponents(url: url, resolvingAgainstBaseURL: false)?.host else { return nil }
+		return host.lowercased().hasPrefix("www.") ? String(host.dropFirst(4)) : host
+	}
+
+	private static func urlWithoutWWW(for url: URL) -> String {
+		guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+		      let host = components.host,
+		      host.lowercased().hasPrefix("www.")
+		else { return url.absoluteString }
+		var output = url.absoluteString
+		guard let schemeEnd = output.range(of: "://")?.upperBound else { return output }
+		let authorityEnd = output[schemeEnd...].firstIndex(where: { "/?#".contains($0) }) ?? output.endIndex
+		guard
+			let hostRange = output.range(of: host, options: .caseInsensitive, range: schemeEnd ..< authorityEnd)
+		else { return output }
+		output.replaceSubrange(hostRange, with: String(host.dropFirst(4)))
+		return output
+	}
+
+	private static func googleSearchQuery(for url: URL) -> String? {
+		guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+		      let host = components.host?.lowercased(),
+		      isGoogleHost(host),
+		      components.path == "/search",
+		      let encodedQuery = components.percentEncodedQueryItems?.first(where: { $0.name == "q" })?.value,
+		      let query = encodedQuery.replacingOccurrences(of: "+", with: " ").removingPercentEncoding,
+		      !query.isEmpty
+		else { return nil }
+		return query
+	}
+
+	private static func isGoogleHost(_ host: String) -> Bool {
+		let labels = host.split(separator: ".")
+		guard let googleIndex = labels.lastIndex(of: "google"), googleIndex + 1 < labels.count else { return false }
+		let domainSuffix = labels[googleIndex...]
+		let region = Array(domainSuffix.dropFirst())
+		return region == ["com"]
+			|| region.count == 1 && region[0].count == 2
+			|| region.count == 2 && ["com", "co"].contains(region[0]) && region[1].count == 2
 	}
 
 	private static func destination(for input: String) -> URL? {
