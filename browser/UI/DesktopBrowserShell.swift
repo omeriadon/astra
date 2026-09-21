@@ -6,6 +6,8 @@ import WebKit
 let topBarItemWidth: CGFloat = 8
 let topBarItemHeight: CGFloat = 14
 
+let topHeight: CGFloat = 33
+
 struct TopBarButton: Identifiable {
 	let id = UUID()
 	let title: String
@@ -73,49 +75,45 @@ struct DesktopBrowserShell: View {
 				}
 
 			} content: {
-				BrowserContentView(
-					browser: browser,
-					insets: BrowserViewportInsets(
-						obscured: EdgeInsets(top: 55, leading: 0, bottom: 0, trailing: 0),
-						minimum: EdgeInsets(top: 55, leading: 0, bottom: 0, trailing: 0),
-						maximum: EdgeInsets(top: 55, leading: 0, bottom: 0, trailing: 0)
+				ZStack(alignment: .top) {
+					BrowserContentView(
+						browser: browser,
+						insets: BrowserViewportInsets(
+							obscured: EdgeInsets(top: topHeight - 5, leading: 0, bottom: 0, trailing: 0),
+							minimum: EdgeInsets(top: topHeight - 5, leading: 0, bottom: 0, trailing: 0),
+							maximum: EdgeInsets(top: topHeight - 5, leading: 0, bottom: 0, trailing: 0)
+						)
 					)
-				)
+
+					HazeEffect(
+						maskProvider: LinearGradientMaskProvider(
+							startPoint: .center,
+							endPoint: .bottom,
+							startOpacity: 1.0,
+							endOpacity: 1,
+							isSmooth: true
+						),
+						maxBlurRadius: 5
+					)
+					.frame(height: topHeight)
+					.frame(maxWidth: .infinity)
+
+//					LinearGradient(colors: [.blue, .clear], startPoint: .top, endPoint: .bottom)
+//						.frame(height: topHeight)
+//						.frame(maxWidth: .infinity)
+				}
 				.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? 13 : 15))
 				.animation(.smooth(duration: 0.3)) { view in
 					view
 						.padding(sidebarShown ? 4 : 0)
 				}
 			}
-			.background(.black)
-
-			HazeEffect(
-				maskProvider: LinearGradientMaskProvider(
-					startPoint: .center,
-					endPoint: .bottom,
-					startOpacity: 1.0,
-					endOpacity: 0.0,
-					isSmooth: true
-				),
-				maxBlurRadius: 10
-			)
-			.frame(height: 55)
-			.frame(maxWidth: .infinity)
-
-			SmoothLinearGradient(
-				from: .black.opacity(0.8),
-				to: .clear,
-				startPoint: .top,
-				endPoint: .bottom,
-				curve: .easeInOut
-			)
-			.frame(height: 55)
-			.frame(maxWidth: .infinity)
+			.background(.blue)
 
 			HStack {
-				HStack(spacing: 12) {
+				HStack(spacing: 0) {
 					Spacer()
-						.frame(width: 85)
+						.frame(width: 90)
 
 					let sidebarToggle = Button {
 						sidebarShown.toggle()
@@ -131,8 +129,8 @@ struct DesktopBrowserShell: View {
 					ZStack {
 						if !sidebarShown {
 							sidebarToggle
-								.buttonStyle(.glass)
-								.glassEffectTransition(.materialize)
+								.buttonStyle(.bordered)
+								.transition(.opacity)
 
 						} else {
 							sidebarToggle
@@ -149,7 +147,7 @@ struct DesktopBrowserShell: View {
 				}
 				.frame(width: sidebarShown ? 224 : nil)
 
-				HStack(spacing: 12) {
+				HStack(spacing: 6) {
 					ForEach(navigationButtons) { item in
 						Button(action: item.action) {
 							Label(item.title, systemImage: item.systemImage)
@@ -160,7 +158,7 @@ struct DesktopBrowserShell: View {
 						.controlSize(.regular)
 						.buttonSizing(.fitted)
 						.buttonBorderShape(.roundedRectangle(radius: 6))
-						.buttonStyle(.glass(.regular))
+						.buttonStyle(.bordered)
 						.accessibilityIdentifier(item.accessibilityIdentifier)
 					}
 
@@ -169,9 +167,9 @@ struct DesktopBrowserShell: View {
 
 					Spacer()
 				}
-				.padding(.leading, 10)
+				.padding(.leading, sidebarShown ? 0 : 20)
 			}
-			.padding(.top, 10)
+			.frame(width: nil, height: topHeight, alignment: .bottom)
 			.animation(.smooth(duration: 0.3), value: sidebarShown)
 		}
 		.ignoresSafeArea()
