@@ -34,32 +34,60 @@ enum BrowserAddress {
 		if let query = googleSearchQuery(for: url) {
 			return query
 		}
-		return hostWithoutWWW(for: url) ?? url.absoluteString
+		guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+		      let host = hostWithoutWWW(for: components)
+		else { return url.absoluteString }
+		return host + components.percentEncodedPath
 	}
 
 	static func primaryTextRanges(for url: URL?) -> [Range<String.Index>] {
 		guard let url else { return [] }
 		let text = url.absoluteString
 		guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-		      let host = components.host,
-		      let schemeEnd = text.range(of: "://")?.upperBound
+		      components.string == text,
+		      let hostRange = components.rangeOfHost
 		else { return [] }
 
-		let authorityEnd = text[schemeEnd...].firstIndex(where: { "/?#".contains($0) }) ?? text.endIndex
-		var ranges: [Range<String.Index>] = []
-		if let hostRange = text.range(of: host, options: .caseInsensitive, range: schemeEnd ..< authorityEnd) {
-			ranges.append(hostRange)
+		if googleSearchQuery(for: url) != nil,
+		   let range = googleQueryValueRange(in: text, components: components)
+		{
+			return [range]
 		}
-		let pathEnd = text[authorityEnd...].firstIndex(where: { "?#".contains($0) }) ?? text.endIndex
-		if authorityEnd < pathEnd {
-			ranges.append(authorityEnd ..< pathEnd)
+
+		let host = text[hostRange]
+		let visibleHostStart = host.lowercased().hasPrefix("www.")
+			? text.index(hostRange.lowerBound, offsetBy: 4)
+			: hostRange.lowerBound
+		var ranges = [visibleHostStart ..< hostRange.upperBound]
+		if let pathRange = components.rangeOfPath, !pathRange.isEmpty {
+			ranges.append(pathRange)
 		}
 		return ranges
 	}
 
-	private static func hostWithoutWWW(for url: URL) -> String? {
-		guard let host = URLComponents(url: url, resolvingAgainstBaseURL: false)?.host else { return nil }
+	private static func hostWithoutWWW(for components: URLComponents) -> String? {
+		guard let host = components.host else { return nil }
 		return host.lowercased().hasPrefix("www.") ? String(host.dropFirst(4)) : host
+	}
+
+	private static func googleQueryValueRange(in text: String, components: URLComponents) -> Range<String.Index>? {
+		guard let queryRange = components.rangeOfQuery,
+		      let items = components.percentEncodedQueryItems
+		else { return nil }
+
+		let query = text[queryRange]
+		var itemStart = query.startIndex
+		for item in items {
+			let itemEnd = query[itemStart...].firstIndex(of: "&") ?? query.endIndex
+			let itemRange = itemStart ..< itemEnd
+			let equals = query[itemRange].firstIndex(of: "=")
+			if item.name == "q", item.value.flatMap(decodedQuery) != nil, let equals {
+				return query.index(after: equals) ..< itemEnd
+			}
+			guard itemEnd < query.endIndex else { break }
+			itemStart = query.index(after: itemEnd)
+		}
+		return nil
 	}
 
 	private static func googleSearchQuery(for url: URL) -> String? {
@@ -67,8 +95,18 @@ enum BrowserAddress {
 		      let host = components.host?.lowercased(),
 		      isGoogleHost(host),
 		      components.path == "/search",
-		      let encodedQuery = components.percentEncodedQueryItems?.first(where: { $0.name == "q" })?.value,
-		      let query = encodedQuery.replacingOccurrences(of: "+", with: " ").removingPercentEncoding,
+		      let items = components.percentEncodedQueryItems
+		else { return nil }
+		for item in items where item.name == "q" {
+			if let query = item.value.flatMap(decodedQuery) {
+				return query
+			}
+		}
+		return nil
+	}
+
+	private nonisolated static func decodedQuery(_ value: String) -> String? {
+		guard let query = value.replacingOccurrences(of: "+", with: " ").removingPercentEncoding,
 		      !query.isEmpty
 		else { return nil }
 		return query

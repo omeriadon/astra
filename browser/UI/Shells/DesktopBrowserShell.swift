@@ -181,7 +181,7 @@ struct DesktopBrowserShell: View {
 						endOpacity: 1.0,
 						isSmooth: false
 					),
-					maxBlurRadius: 6
+					maxBlurRadius: 9
 				)
 				.frame(height: topHeight)
 				.frame(maxWidth: .infinity)
@@ -196,7 +196,6 @@ struct DesktopBrowserShell: View {
 				view
 					.padding(sidebarShown ? 4 : 0)
 			}
-			.shadow(color: browser.selectedTab?.controller.themeColor?.opacity(0.8) ?? .black.opacity(0.8), radius: 11)
 		}
 		.background(.blue)
 		.overlay(alignment: .top) {

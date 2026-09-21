@@ -5,6 +5,7 @@ struct BrowserAddressField: View {
 	@AppStorage("addressDisplayStyle") private var addressDisplayStyle = AddressDisplayStyle.simple.rawValue
 	@State private var addressText = ""
 	@State private var addressSelection: TextSelection?
+	@State private var isEditing = false
 	@FocusState private var isFocused: Bool
 
 	private var displayStyle: AddressDisplayStyle {
@@ -12,7 +13,7 @@ struct BrowserAddressField: View {
 	}
 
 	private var isDimmed: Bool {
-		displayStyle == .dimmed && !isFocused
+		displayStyle == .dimmed && !isEditing
 	}
 
 	var body: some View {
@@ -33,34 +34,54 @@ struct BrowserAddressField: View {
 					style: displayStyle,
 					isEditing: focused
 				)
+				if focused {
+					selectAddress()
+				} else {
+					isEditing = false
+				}
 			}
 			.onAppear {
 				updateForSelectedTab()
 			}
 	}
 
-	private var addressInput: some View {
-		TextField("", text: $addressText, selection: $addressSelection)
-			.textFieldStyle(.plain)
-			.lineLimit(1)
-			.foregroundStyle(isDimmed ? .clear : .primary)
-			.focused($isFocused)
-			.submitLabel(.go)
-			.onSubmit(submitAddress)
-			.overlay(alignment: .leading) {
-				dimmedOverlay()
-			}
-			.accessibilityLabel("Address")
-			.accessibilityIdentifier("browser-address")
-	}
-
 	@ViewBuilder
-	private func dimmedOverlay() -> some View {
-		if isDimmed {
-			Text(dimmedAddressText)
+	private var addressInput: some View {
+		if isEditing {
+			TextField("", text: $addressText, selection: $addressSelection)
+				.textFieldStyle(.plain)
+				.fontDesign(.monospaced)
 				.lineLimit(1)
-				.allowsHitTesting(false)
-				.accessibilityHidden(true)
+				.focused($isFocused)
+				.submitLabel(.go)
+				.onSubmit(submitAddress)
+				.onKeyPress(.escape) {
+					isFocused = false
+					return .handled
+				}
+				.accessibilityLabel("Address")
+				.accessibilityIdentifier("browser-address")
+		} else {
+			Button(action: beginAddressEditing) {
+				Label {
+					if isDimmed {
+						Text(dimmedAddressText)
+					} else {
+						Text(addressText)
+					}
+				} icon: {
+					Image(systemName: "cursorarrow.click")
+				}
+				.labelStyle(.titleOnly)
+				.fontDesign(.monospaced)
+				.lineLimit(1)
+				.frame(maxWidth: .infinity, alignment: .leading)
+				.contentShape(.rect)
+			}
+			.buttonStyle(.plain)
+			.accessibilityLabel("Address")
+			.accessibilityValue(addressText)
+			.accessibilityIdentifier("browser-address")
 		}
 	}
 
@@ -81,8 +102,20 @@ struct BrowserAddressField: View {
 	private func updateForSelectedTab() {
 		updateAddressFromURL()
 		if browser.selectedTab?.controller.url == nil {
+			beginAddressEditing()
+		}
+	}
+
+	private func selectAddress() {
+		addressSelection = TextSelection(range: addressText.startIndex ..< addressText.endIndex)
+	}
+
+	private func beginAddressEditing() {
+		isEditing = true
+		Task { @MainActor in
+			await Task.yield()
+			guard isEditing else { return }
 			isFocused = true
-			addressSelection = TextSelection(range: addressText.startIndex ..< addressText.endIndex)
 		}
 	}
 
