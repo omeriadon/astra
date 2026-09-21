@@ -30,7 +30,16 @@ enum BrowserAddress {
 
 	static func displayString(for url: URL?, style: AddressDisplayStyle, isEditing: Bool) -> String {
 		guard let url else { return "" }
-		guard style == .simple, !isEditing else { return url.absoluteString }
+		guard style == .simple, !isEditing else {
+			if style == .dimmed, !isEditing,
+			   let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+			   let range = googleQueryValueRange(in: url.absoluteString, components: components),
+			   let query = googleSearchQuery(for: url)
+			{
+				return url.absoluteString.replacingCharacters(in: range, with: query)
+			}
+			return url.absoluteString
+		}
 		if let query = googleSearchQuery(for: url) {
 			return query
 		}
@@ -40,7 +49,7 @@ enum BrowserAddress {
 		return host + components.percentEncodedPath
 	}
 
-	static func primaryTextRanges(for url: URL?) -> [Range<String.Index>] {
+	static func primaryTextRanges(for url: URL?, displayedText: String) -> [Range<String.Index>] {
 		guard let url else { return [] }
 		let text = url.absoluteString
 		guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
@@ -48,12 +57,18 @@ enum BrowserAddress {
 		      let hostRange = components.rangeOfHost
 		else { return [] }
 
-		if googleSearchQuery(for: url) != nil,
-		   let range = googleQueryValueRange(in: text, components: components)
-		{
-			return [range]
+		if let query = googleSearchQuery(for: url) {
+			if displayedText == query {
+				return [displayedText.startIndex ..< displayedText.endIndex]
+			}
+			guard let range = googleQueryValueRange(in: text, components: components) else { return [] }
+			let startOffset = text[..<range.lowerBound].utf16.count
+			let start = String.Index(utf16Offset: startOffset, in: displayedText)
+			let end = String.Index(utf16Offset: startOffset + query.utf16.count, in: displayedText)
+			return [start ..< end]
 		}
 
+		guard components.string == displayedText else { return [] }
 		let host = text[hostRange]
 		let visibleHostStart = host.lowercased().hasPrefix("www.")
 			? text.index(hostRange.lowerBound, offsetBy: 4)
@@ -63,6 +78,11 @@ enum BrowserAddress {
 			ranges.append(pathRange)
 		}
 		return ranges
+	}
+
+	static func isGoogleSearchURL(_ url: URL?) -> Bool {
+		guard let url else { return false }
+		return googleSearchQuery(for: url) != nil
 	}
 
 	private static func hostWithoutWWW(for components: URLComponents) -> String? {

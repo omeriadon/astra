@@ -14,6 +14,10 @@ struct BrowserAddressField: View {
 		displayStyle == .dimmed && !isFocused
 	}
 
+	private var isGoogleSearch: Bool {
+		BrowserAddress.isGoogleSearchURL(browser.selectedTab?.controller.url)
+	}
+
 	var body: some View {
 		addressInput
 			.onChange(of: browser.selectedTabID) { _, _ in
@@ -44,6 +48,7 @@ struct BrowserAddressField: View {
 			.fontDesign(.monospaced)
 			.lineLimit(1)
 			.foregroundStyle(isDimmed ? .clear : .primary)
+			.padding(.leading, isGoogleSearch ? 20 : 0)
 			.focused($isFocused)
 			.submitLabel(.go)
 			.onSubmit(submitAddress)
@@ -52,13 +57,20 @@ struct BrowserAddressField: View {
 				return .handled
 			}
 			.overlay(alignment: .leading) {
-				if isDimmed {
-					Text(dimmedAddressText)
-						.fontDesign(.monospaced)
-						.lineLimit(1)
-						.allowsHitTesting(false)
-						.accessibilityHidden(true)
+				HStack(spacing: 6) {
+					if isGoogleSearch {
+						Image(systemName: "magnifyingglass")
+							.accessibilityHidden(true)
+					}
+					if isDimmed {
+						Text(dimmedAddressText)
+							.fontDesign(.monospaced)
+							.lineLimit(1)
+							.frame(maxWidth: .infinity, alignment: .leading)
+					}
 				}
+				.allowsHitTesting(false)
+				.accessibilityHidden(true)
 			}
 			.accessibilityLabel("Address")
 			.accessibilityIdentifier("browser-address")
@@ -71,7 +83,7 @@ struct BrowserAddressField: View {
 			text.foregroundColor = .primary
 			return text
 		}
-		for range in BrowserAddress.primaryTextRanges(for: url) {
+		for range in BrowserAddress.primaryTextRanges(for: url, displayedText: addressText) {
 			guard let attributedRange = Range(range, in: text) else { continue }
 			text[attributedRange].foregroundColor = .primary
 		}
