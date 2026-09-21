@@ -209,6 +209,7 @@ struct DesktopBrowserShell: View {
 				view
 					.padding(sidebarShown ? 4 : 0)
 			}
+			.shadow(color: browser.selectedTab?.controller.themeColor?.opacity(0.8) ?? .black.opacity(0.8), radius: 11)
 		}
 		.background(.blue)
 		.overlay(alignment: .top) {
@@ -243,20 +244,6 @@ struct DesktopBrowserShell: View {
 			guard !addressFieldFocused else { return }
 			addressText = url?.absoluteString ?? ""
 		}
-		#if DEBUG
-		.overlay(alignment: .bottomTrailing) {
-			Circle()
-				.fill(browser.selectedTab?.controller.themeColor ?? .white)
-				.frame(width: 32, height: 32)
-				.overlay {
-					Circle()
-						.stroke(.primary, lineWidth: 1)
-				}
-				.padding(12)
-				.accessibilityLabel("Detected page theme color")
-				.shadow(radius: 5)
-		}
-		#endif
 		.ignoresSafeArea()
 		.onAppear {
 			addressText = browser.selectedTab?.controller.url?.absoluteString ?? ""
