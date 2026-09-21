@@ -19,10 +19,15 @@ final class Browser {
 	}
 
 	init() {
+		let loadedTabs: [BrowserTab]
+		let loadedSelectedTabID: UUID
+		let loadedPersistence: BrowserPersistence?
+		let loadedErrorDescription: String?
+
 		do {
-			let persistence = try BrowserPersistence()
-			let savedTabs = try persistence.loadOpenTabs()
-			let snapshot = try persistence.loadBrowserSnapshot()
+			let store = try BrowserPersistence()
+			let savedTabs = try store.loadOpenTabs()
+			let snapshot = try store.loadBrowserSnapshot()
 			let restoredTabs = savedTabs.map {
 				BrowserTab(
 					id: $0.id,
@@ -30,18 +35,26 @@ final class Browser {
 					initialURL: $0.url
 				)
 			}
-			tabs = restoredTabs.isEmpty ? [BrowserTab()] : restoredTabs
-			selectedTabID = tabs.first(where: { $0.id == snapshot?.selectedTabID })?.id ?? tabs[0].id
-			self.persistence = persistence
+			let tabs = restoredTabs.isEmpty ? [BrowserTab()] : restoredTabs
+			loadedTabs = tabs
+			loadedSelectedTabID = tabs.first(where: { $0.id == snapshot?.selectedTabID })?.id ?? tabs[0].id
+			loadedPersistence = store
+			loadedErrorDescription = nil
 		} catch {
 			let tab = BrowserTab()
-			tabs = [tab]
-			selectedTabID = tab.id
-			persistence = nil
-			persistenceErrorDescription = error.localizedDescription
+			loadedTabs = [tab]
+			loadedSelectedTabID = tab.id
+			loadedPersistence = nil
+			loadedErrorDescription = error.localizedDescription
 		}
 
-		for tab in tabs {
+		tabs = loadedTabs
+		selectedTabID = loadedSelectedTabID
+		persistence = loadedPersistence
+		persistenceErrorDescription = loadedErrorDescription
+		persistenceTask = nil
+
+		for tab in loadedTabs {
 			attachPersistence(to: tab)
 		}
 	}

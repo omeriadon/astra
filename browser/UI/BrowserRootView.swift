@@ -9,24 +9,27 @@ struct BrowserRootView: View {
 	#endif
 
 	var body: some View {
-		#if os(macOS)
-			DesktopBrowserShell(browser: browser)
-		#elseif os(iOS)
-			Group {
-				if horizontalSizeClass == .compact {
-					CompactBrowserShell(browser: browser)
-				} else {
-					DesktopBrowserShell(browser: browser)
-				}
-			}
-		#else
-			DesktopBrowserShell(browser: browser)
-		#endif
+		shell
 			.onChange(of: scenePhase) { _, phase in
 				if phase != .active {
 					browser.flushPersistence()
 				}
 			}
+	}
+
+	@ViewBuilder
+	private var shell: some View {
+		#if os(macOS)
+			DesktopBrowserShell(browser: browser)
+		#elseif os(iOS)
+			if horizontalSizeClass == .compact {
+				CompactBrowserShell(browser: browser)
+			} else {
+				DesktopBrowserShell(browser: browser)
+			}
+		#else
+			DesktopBrowserShell(browser: browser)
+		#endif
 	}
 }
 

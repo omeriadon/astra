@@ -38,8 +38,8 @@ final class BrowserController: NSObject {
 			webView.observe(\.url, options: [.initial, .new]) { [weak self] webView, change in
 				MainActor.assumeIsolated {
 					guard let self else { return }
-					url = change.newValue ?? webView.url
-					navigationDidChange?()
+					self.url = change.newValue ?? webView.url
+					self.navigationDidChange?()
 				}
 			},
 		]

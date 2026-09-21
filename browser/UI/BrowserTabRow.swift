@@ -27,7 +27,7 @@ struct BrowserTabRow: View {
 		}
 		.padding(.horizontal, 8)
 		.frame(height: 28)
-		.background(.green.opacity(isSelected ? 1 : 0.72), in: RoundedRectangle(cornerRadius: 24))
+		.background(.gray.opacity(isSelected ? 1 : 0.72), in: RoundedRectangle(cornerRadius: 24))
 		.overlay {
 			RoundedRectangle(cornerRadius: 24)
 				.strokeBorder(.white.opacity(isSelected ? 0.9 : 0), lineWidth: 1.5)
