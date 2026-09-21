@@ -2,20 +2,23 @@ import Foundation
 
 struct OpenTab: Codable, Identifiable, Equatable {
 	var id: UUID
-	var title: String
+	var pageTitle: String
+	var customTitle: String?
 	var url: URL?
 	var history: [URL]
 	var historyIndex: Int
 
 	init(
 		id: UUID = UUID(),
-		title: String = "",
+		pageTitle: String = "New Tab",
+		customTitle: String? = nil,
 		url: URL? = nil,
 		history: [URL] = [],
 		historyIndex: Int = 0
 	) {
 		self.id = id
-		self.title = title
+		self.pageTitle = pageTitle
+		self.customTitle = customTitle
 		self.url = url
 		self.history = history
 		self.historyIndex = Self.clampedIndex(historyIndex, count: history.count)
@@ -24,6 +27,8 @@ struct OpenTab: Codable, Identifiable, Equatable {
 	private enum CodingKeys: String, CodingKey {
 		case id
 		case title
+		case pageTitle
+		case customTitle
 		case url
 		case history
 		case historyIndex
@@ -32,13 +37,31 @@ struct OpenTab: Codable, Identifiable, Equatable {
 	init(from decoder: Decoder) throws {
 		let container = try decoder.container(keyedBy: CodingKeys.self)
 		id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-		title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+		let legacyTitle = try container.decodeIfPresent(String.self, forKey: .title)
+		pageTitle = try container.decodeIfPresent(String.self, forKey: .pageTitle) ?? "New Tab"
+		if container.contains(.customTitle) {
+			customTitle = try container.decodeIfPresent(String.self, forKey: .customTitle)
+		} else if let legacyTitle, !legacyTitle.isEmpty, legacyTitle != "New Tab" {
+			customTitle = legacyTitle
+		} else {
+			customTitle = nil
+		}
 		url = try container.decodeIfPresent(URL.self, forKey: .url)
 		history = try container.decodeIfPresent([URL].self, forKey: .history) ?? url.map { [$0] } ?? []
 		historyIndex = try Self.clampedIndex(
 			container.decodeIfPresent(Int.self, forKey: .historyIndex) ?? 0,
 			count: history.count
 		)
+	}
+
+	func encode(to encoder: Encoder) throws {
+		var container = encoder.container(keyedBy: CodingKeys.self)
+		try container.encode(id, forKey: .id)
+		try container.encode(pageTitle, forKey: .pageTitle)
+		try container.encodeIfPresent(customTitle, forKey: .customTitle)
+		try container.encodeIfPresent(url, forKey: .url)
+		try container.encode(history, forKey: .history)
+		try container.encode(historyIndex, forKey: .historyIndex)
 	}
 
 	private static func clampedIndex(_ index: Int, count: Int) -> Int {

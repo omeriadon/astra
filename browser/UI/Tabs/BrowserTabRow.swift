@@ -1,17 +1,35 @@
+#if os(macOS)
+	import AppKit
+#elseif os(iOS)
+	import UIKit
+#endif
 import SwiftUI
 
 struct BrowserTabRow: View {
-	@Bindable var tab: BrowserTab
+	let tab: BrowserTab
+	let browser: Browser
 	let isSelected: Bool
-	let onSelect: (UUID) -> Void
-	let onClose: (UUID) -> Void
 	@State private var isRenaming = false
 	@State private var isHovered = false
+	@State private var renameText = ""
 	@FocusState private var isTitleFocused: Bool
+
+	private var tabIndex: Int? {
+		browser.tabs.firstIndex(where: { $0.id == tab.id })
+	}
+
+	private var canCloseAbove: Bool {
+		(tabIndex ?? 0) > 0
+	}
+
+	private var canCloseBelow: Bool {
+		guard let tabIndex else { return false }
+		return tabIndex < browser.tabs.count - 1
+	}
 
 	private var closeButton: some View {
 		Button("Close Tab", systemImage: "xmark") {
-			onClose(tab.id)
+			browser.closeTab(tab.id)
 		}
 		.labelStyle(.iconOnly)
 		.buttonStyle(.plain)
@@ -21,24 +39,24 @@ struct BrowserTabRow: View {
 	var body: some View {
 		HStack(spacing: 6) {
 			Button("Select Tab", systemImage: "globe") {
-				onSelect(tab.id)
+				browser.selectTab(tab.id)
 			}
 			.labelStyle(.iconOnly)
 			.buttonStyle(.plain)
 			.accessibilityIdentifier("select-tab-\(tab.id.uuidString)")
 
 			if isRenaming {
-				TextField("Tab Name", text: $tab.title)
+				TextField("Tab Name", text: $renameText)
 					.textFieldStyle(.plain)
 					.focused($isTitleFocused)
-					.onSubmit(finishRenaming)
+					.onSubmit(commitRenaming)
 					.onKeyPress(.escape) {
-						finishRenaming()
+						cancelRenaming()
 						return .handled
 					}
 					.onChange(of: isTitleFocused) { _, isFocused in
-						if !isFocused {
-							isRenaming = false
+						if !isFocused, isRenaming {
+							commitRenaming()
 						}
 					}
 					.accessibilityIdentifier("tab-name-\(tab.id.uuidString)")
@@ -48,7 +66,7 @@ struct BrowserTabRow: View {
 					.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 					.contentShape(Rectangle())
 					.onTapGesture {
-						onSelect(tab.id)
+						browser.selectTab(tab.id)
 					}
 					.simultaneousGesture(
 						TapGesture(count: 2)
@@ -57,7 +75,7 @@ struct BrowserTabRow: View {
 					.accessibilityLabel(Text(verbatim: tab.title))
 					.accessibilityAddTraits(.isButton)
 					.accessibilityAction(.default) {
-						onSelect(tab.id)
+						browser.selectTab(tab.id)
 					}
 					.accessibilityAction(named: "Rename") {
 						beginRenaming()
@@ -88,21 +106,79 @@ struct BrowserTabRow: View {
 				.animation(.smooth(duration: 0.1), value: isHovered)
 		}
 		.onHover { isHovered = $0 }
+		.contextMenu {
+			Button("Revert Tab Name", systemImage: "arrow.uturn.backward", action: tab.revertTitle)
+				.disabled(!tab.hasCustomTitle)
+
+			Button("Duplicate Tab", systemImage: "plus.square.on.square") {
+				browser.duplicateTab(tab.id)
+			}
+
+			Button("Pin Tab", systemImage: "pin") {}
+				.disabled(true)
+
+			Divider()
+
+			Button("Reload", systemImage: "arrow.clockwise", action: tab.controller.reload)
+
+			Button("Copy URL", systemImage: "doc.on.doc", action: copyURL)
+				.disabled(tab.controller.url == nil)
+
+			Divider()
+
+			Button("Close Tabs Above", systemImage: "arrow.up.to.line") {
+				browser.closeTabsAbove(tab.id)
+			}
+			.disabled(!canCloseAbove)
+
+			Button("Close Tabs Below", systemImage: "arrow.down.to.line") {
+				browser.closeTabsBelow(tab.id)
+			}
+			.disabled(!canCloseBelow)
+
+			Button("Close Other Tabs", systemImage: "xmark.circle") {
+				browser.closeOtherTabs(tab.id)
+			}
+			.disabled(browser.tabs.count < 2)
+
+			Button(role: .destructive) {
+				browser.closeTab(tab.id)
+			} label: {
+				Label("Close Tab", systemImage: "xmark")
+			}
+		}
 		.onChange(of: isSelected) { _, selected in
-			if !selected {
-				finishRenaming()
+			if !selected, isRenaming {
+				commitRenaming()
 			}
 		}
 	}
 
 	private func beginRenaming() {
-		onSelect(tab.id)
+		browser.selectTab(tab.id)
+		renameText = tab.title
 		isRenaming = true
 		isTitleFocused = true
 	}
 
-	private func finishRenaming() {
-		isTitleFocused = false
+	private func commitRenaming() {
+		tab.rename(to: renameText)
 		isRenaming = false
+		isTitleFocused = false
+	}
+
+	private func cancelRenaming() {
+		isRenaming = false
+		isTitleFocused = false
+	}
+
+	private func copyURL() {
+		guard let url = tab.controller.url else { return }
+		#if os(macOS)
+			NSPasteboard.general.clearContents()
+			NSPasteboard.general.setString(url.absoluteString, forType: .string)
+		#elseif os(iOS)
+			UIPasteboard.general.url = url
+		#endif
 	}
 }

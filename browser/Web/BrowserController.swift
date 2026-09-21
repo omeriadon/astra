@@ -28,6 +28,8 @@ final class BrowserController: NSObject {
 
 	@ObservationIgnored
 	var navigationDidChange: (@MainActor () -> Void)?
+	@ObservationIgnored
+	var titleDidChange: (@MainActor (String?) -> Void)?
 
 	@ObservationIgnored
 	private var observations: [NSKeyValueObservation] = []
@@ -71,6 +73,11 @@ final class BrowserController: NSObject {
 					}
 					self.hasDeclaredThemeColor = true
 					self.updateThemeColor(color)
+				}
+			},
+			webView.observe(\.title, options: [.initial, .new]) { [weak self] webView, change in
+				MainActor.assumeIsolated {
+					self?.titleDidChange?(change.newValue ?? webView.title)
 				}
 			},
 		]

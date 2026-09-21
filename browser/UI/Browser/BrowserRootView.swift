@@ -10,6 +10,9 @@ struct BrowserRootView: View {
 
 	var body: some View {
 		shell
+		#if os(macOS)
+			.focusedSceneValue(\.browser, browser)
+		#endif
 			.onChange(of: scenePhase) { _, phase in
 				if phase != .active {
 					browser.flushPersistence()

@@ -131,9 +131,8 @@ struct DesktopBrowserShell: View {
 						ForEach(browser.tabs) { tab in
 							BrowserTabRow(
 								tab: tab,
-								isSelected: browser.selectedTabID == tab.id,
-								onSelect: browser.selectTab,
-								onClose: browser.closeTab
+								browser: browser,
+								isSelected: browser.selectedTabID == tab.id
 							)
 						}
 

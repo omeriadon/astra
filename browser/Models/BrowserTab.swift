@@ -5,8 +5,20 @@ import Observation
 @Observable
 final class BrowserTab: Identifiable {
 	let id: UUID
-	var title: String {
+	private(set) var pageTitle: String {
 		didSet { didChange?() }
+	}
+
+	private(set) var customTitle: String? {
+		didSet { didChange?() }
+	}
+
+	var title: String {
+		customTitle ?? pageTitle
+	}
+
+	var hasCustomTitle: Bool {
+		customTitle != nil
 	}
 
 	let controller: BrowserController
@@ -17,7 +29,8 @@ final class BrowserTab: Identifiable {
 	var openTab: OpenTab {
 		OpenTab(
 			id: id,
-			title: title,
+			pageTitle: pageTitle,
+			customTitle: customTitle,
 			url: controller.url,
 			history: controller.history,
 			historyIndex: controller.historyIndex
@@ -26,13 +39,15 @@ final class BrowserTab: Identifiable {
 
 	init(
 		id: UUID = UUID(),
-		title: String = "New Tab",
+		pageTitle: String = "New Tab",
+		customTitle: String? = nil,
 		initialURL: URL? = nil,
 		history: [URL] = [],
 		historyIndex: Int = 0
 	) {
 		self.id = id
-		self.title = title
+		self.pageTitle = pageTitle
+		self.customTitle = customTitle
 		controller = BrowserController(
 			initialURL: initialURL,
 			history: history,
@@ -41,5 +56,27 @@ final class BrowserTab: Identifiable {
 		controller.navigationDidChange = { [weak self] in
 			self?.didChange?()
 		}
+		controller.titleDidChange = { [weak self] title in
+			self?.updatePageTitle(title)
+		}
+	}
+
+	func rename(to title: String) {
+		customTitle = title
+	}
+
+	func revertTitle() {
+		customTitle = nil
+	}
+
+	private func updatePageTitle(_ title: String?) {
+		let title = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+		let nextTitle: String = if let title, !title.isEmpty {
+			title
+		} else {
+			"New Tab"
+		}
+		guard pageTitle != nextTitle else { return }
+		pageTitle = nextTitle
 	}
 }

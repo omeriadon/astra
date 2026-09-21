@@ -17,6 +17,8 @@ struct browserApp: App {
 		.commandsRemoved()
 		#if os(macOS)
 			.commands {
+				BrowserCommands()
+
 				CommandGroup(replacing: .appSettings) {
 					SettingsLink {
 						Label("Settings…", systemImage: "gear")

@@ -32,7 +32,8 @@ final class Browser {
 			let restoredTabs = savedTabs.map {
 				BrowserTab(
 					id: $0.id,
-					title: $0.title.isEmpty ? "New Tab" : $0.title,
+					pageTitle: $0.pageTitle,
+					customTitle: $0.customTitle,
 					initialURL: $0.url,
 					history: $0.history,
 					historyIndex: $0.historyIndex
@@ -105,6 +106,21 @@ final class Browser {
 		selectTab(id)
 	}
 
+	func duplicateTab(_ id: UUID) {
+		guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+		let source = tabs[index]
+		let tab = BrowserTab(
+			pageTitle: source.pageTitle,
+			customTitle: source.customTitle,
+			initialURL: source.controller.url,
+			history: source.controller.history,
+			historyIndex: source.controller.historyIndex
+		)
+		attachPersistence(to: tab)
+		tabs.insert(tab, at: index + 1)
+		selectTab(tab.id)
+	}
+
 	func closeTab(_ id: UUID) {
 		guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
 		let wasSelected = selectedTabID == id
@@ -124,6 +140,21 @@ final class Browser {
 		schedulePersistence()
 	}
 
+	func closeTabsAbove(_ id: UUID) {
+		guard let index = tabs.firstIndex(where: { $0.id == id }), index > 0 else { return }
+		removeTabs(Set(tabs[..<index].map(\.id)), selecting: id)
+	}
+
+	func closeTabsBelow(_ id: UUID) {
+		guard let index = tabs.firstIndex(where: { $0.id == id }), index < tabs.count - 1 else { return }
+		removeTabs(Set(tabs[(index + 1)...].map(\.id)), selecting: id)
+	}
+
+	func closeOtherTabs(_ id: UUID) {
+		guard tabs.contains(where: { $0.id == id }), tabs.count > 1 else { return }
+		removeTabs(Set(tabs.lazy.map(\.id).filter { $0 != id }), selecting: id)
+	}
+
 	func flushPersistence() {
 		persistenceTask?.cancel()
 		persistenceTask = nil
@@ -134,6 +165,15 @@ final class Browser {
 		tab.didChange = { [weak self] in
 			self?.schedulePersistence()
 		}
+	}
+
+	private func removeTabs(_ ids: Set<UUID>, selecting selectedID: UUID) {
+		tabs.removeAll { ids.contains($0.id) }
+		recentlyUsedTabIDs.removeAll { ids.contains($0) }
+		selectedTabID = selectedID
+		recentlyUsedTabIDs.removeAll { $0 == selectedID }
+		recentlyUsedTabIDs.insert(selectedID, at: 0)
+		schedulePersistence()
 	}
 
 	private func schedulePersistence() {
