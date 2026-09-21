@@ -75,7 +75,12 @@ enum BrowserAddress {
 			: hostRange.lowerBound
 		var ranges = [visibleHostStart ..< hostRange.upperBound]
 		if let pathRange = components.rangeOfPath, !pathRange.isEmpty {
-			ranges.append(pathRange)
+			let pathEnd = text[pathRange].last == "/"
+				? text.index(before: pathRange.upperBound)
+				: pathRange.upperBound
+			if pathRange.lowerBound < pathEnd {
+				ranges.append(pathRange.lowerBound ..< pathEnd)
+			}
 		}
 		return ranges
 	}
