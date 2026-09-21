@@ -60,7 +60,6 @@ struct DesktopBrowserShell: View {
 				}
 				.controlSize(.regular)
 				.buttonSizing(.fitted)
-				.buttonBorderShape(.roundedRectangle(radius: 6))
 				.keyboardShortcut("S", modifiers: .command)
 
 				ZStack {
@@ -71,7 +70,7 @@ struct DesktopBrowserShell: View {
 
 					} else {
 						sidebarToggle
-							.buttonStyle(.plain)
+							.buttonStyle(.glass)
 							.transition(.opacity)
 					}
 				}
