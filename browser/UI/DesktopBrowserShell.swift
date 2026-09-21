@@ -129,13 +129,13 @@ struct DesktopBrowserShell: View {
 
 				HazeEffect(
 					maskProvider: LinearGradientMaskProvider(
-						startPoint: .center,
+						startPoint: .top,
 						endPoint: .bottom,
 						startOpacity: 1,
 						endOpacity: 0,
 						isSmooth: true
 					),
-					maxBlurRadius: 5
+					maxBlurRadius: 2
 				)
 				.frame(height: topHeight)
 				.frame(maxWidth: .infinity)
