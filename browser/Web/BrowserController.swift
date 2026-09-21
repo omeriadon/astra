@@ -6,8 +6,6 @@ import WebKit
 @MainActor
 @Observable
 final class BrowserController: NSObject {
-	private static let startURL = URL(string: "https://www.google.com/search?q=colourful+images")!
-
 	@ObservationIgnored
 	let webView = WKWebView()
 
@@ -36,14 +34,14 @@ final class BrowserController: NSObject {
 	private var hasDeclaredThemeColor = false
 
 	init(initialURL: URL? = nil, history: [URL] = [], historyIndex: Int = 0) {
-		let restoredHistory = history.isEmpty ? [initialURL ?? Self.startURL] : history
-		let restoredHistoryIndex = min(max(historyIndex, 0), restoredHistory.count - 1)
+		let restoredHistory = history.isEmpty ? initialURL.map { [$0] } ?? [] : history
+		let restoredHistoryIndex = restoredHistory.isEmpty ? 0 : min(max(historyIndex, 0), restoredHistory.count - 1)
 		self.history = restoredHistory
 		self.historyIndex = restoredHistoryIndex
-		url = restoredHistory[restoredHistoryIndex]
+		url = restoredHistory.isEmpty ? nil : restoredHistory[restoredHistoryIndex]
 		super.init()
 		webView.navigationDelegate = self
-		updateThemeColor(webView.underPageBackgroundColor ?? .white)
+		updateThemeColor(url == nil ? .black : webView.underPageBackgroundColor ?? .white)
 
 		observations = [
 			webView.observe(\.url, options: [.initial, .new]) { [weak self] webView, change in
@@ -68,7 +66,9 @@ final class BrowserController: NSObject {
 			},
 		]
 
-		load(restoredHistory[restoredHistoryIndex])
+		if let url {
+			load(url)
+		}
 	}
 
 	func load(_ url: URL) {
@@ -94,6 +94,11 @@ final class BrowserController: NSObject {
 	}
 
 	private func recordNavigation(to url: URL) {
+		guard !history.isEmpty else {
+			history = [url]
+			historyIndex = 0
+			return
+		}
 		guard history[historyIndex] != url else { return }
 		history.removeSubrange((historyIndex + 1) ..< history.count)
 		if history.last != url {

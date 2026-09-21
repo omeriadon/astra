@@ -24,6 +24,9 @@ struct DesktopBrowserShell: View {
 	let browser: Browser
 	@Environment(\.colorScheme) private var colorScheme
 	@State private var sidebarShown = true
+	@State private var addressText = ""
+	@State private var addressSelection: TextSelection?
+	@FocusState private var addressFieldFocused: Bool
 	#if os(macOS)
 		@AppStorage("tabSwitchingOrder") private var tabSwitchingOrder = TabSwitchingOrder.visibleTabList.rawValue
 		@State private var controlTabSwitcher: ControlTabSwitcher
@@ -103,8 +106,14 @@ struct DesktopBrowserShell: View {
 					.accessibilityIdentifier(item.accessibilityIdentifier)
 				}
 
-				Text(browser.selectedTab?.controller.url?.absoluteString ?? "new tab")
+				TextField("", text: $addressText, selection: $addressSelection)
+					.textFieldStyle(.plain)
 					.lineLimit(1)
+					.focused($addressFieldFocused)
+					.submitLabel(.go)
+					.onSubmit(submitAddress)
+					.accessibilityLabel("Address")
+					.accessibilityIdentifier("browser-address")
 
 				Spacer()
 			}
@@ -138,6 +147,9 @@ struct DesktopBrowserShell: View {
 
 						Button("New Tab", systemImage: "plus") {
 							browser.addTab()
+							addressText = ""
+							addressSelection = TextSelection(range: addressText.startIndex ..< addressText.endIndex)
+							addressFieldFocused = true
 						}
 						.keyboardShortcut("T", modifiers: .command)
 						.padding(.leading, 8)
@@ -221,6 +233,16 @@ struct DesktopBrowserShell: View {
 			controlTabSwitcher.stop()
 		}
 		#endif
+		.onChange(of: browser.selectedTabID) { _, _ in
+			addressText = browser.selectedTab?.controller.url?.absoluteString ?? ""
+			if addressFieldFocused {
+				addressSelection = TextSelection(range: addressText.startIndex ..< addressText.endIndex)
+			}
+		}
+		.onChange(of: browser.selectedTab?.controller.url) { _, url in
+			guard !addressFieldFocused else { return }
+			addressText = url?.absoluteString ?? ""
+		}
 		#if DEBUG
 		.overlay(alignment: .bottomTrailing) {
 			Circle()
@@ -236,6 +258,49 @@ struct DesktopBrowserShell: View {
 		}
 		#endif
 		.ignoresSafeArea()
+		.onAppear {
+			addressText = browser.selectedTab?.controller.url?.absoluteString ?? ""
+		}
+	}
+
+	private func submitAddress() {
+		guard let destination = Self.destination(for: addressText) else { return }
+		browser.selectedTab?.controller.load(destination)
+		addressText = destination.absoluteString
+		addressFieldFocused = false
+	}
+
+	private static func destination(for input: String) -> URL? {
+		let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard !text.isEmpty else { return nil }
+
+		if let components = URLComponents(string: text),
+		   let scheme = components.scheme?.lowercased(), ["http", "https"].contains(scheme)
+		{
+			guard !text.contains(where: \.isWhitespace),
+			      let host = components.host, !host.isEmpty,
+			      !host.contains(where: \.isWhitespace)
+			else { return searchURL(for: text) }
+			return components.url ?? searchURL(for: text)
+		}
+
+		if !text.contains(where: \.isWhitespace),
+		   let components = URLComponents(string: "https://" + text),
+		   let host = components.host,
+		   host.contains(".") || host.lowercased() == "localhost",
+		   !host.contains(where: \.isWhitespace),
+		   let url = components.url
+		{
+			return url
+		}
+
+		return searchURL(for: text)
+	}
+
+	private static func searchURL(for query: String) -> URL? {
+		var components = URLComponents(string: "https://www.google.com/search")
+		components?.queryItems = [URLQueryItem(name: "q", value: query)]
+		return components?.url
 	}
 }
 
