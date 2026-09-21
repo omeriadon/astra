@@ -8,12 +8,15 @@ let topBarItemHeight: CGFloat = 14
 let topHeight: CGFloat = 33
 
 struct TopBarButton: Identifiable {
-	let id = UUID()
 	let title: String
 	let systemImage: String
 	let accessibilityIdentifier: String
 	let isDisabled: Bool
 	let action: () -> Void
+
+	var id: String {
+		accessibilityIdentifier
+	}
 }
 
 struct DesktopBrowserShell: View {
@@ -50,38 +53,23 @@ struct DesktopBrowserShell: View {
 		HStack {
 			HStack(spacing: 0) {
 				Spacer()
-					.frame(width: 90)
+					.frame(width: 85)
 
-				let sidebarToggle = Button {
+				Button {
 					sidebarShown.toggle()
 				} label: {
 					Label("Toggle Sidebar", systemImage: "sidebar.leading")
 						.labelStyle(.iconOnly)
+						.frame(width: topBarItemWidth, height: topBarItemHeight)
 				}
 				.controlSize(.regular)
 				.buttonSizing(.fitted)
 				.keyboardShortcut("S", modifiers: .command)
-
-				ZStack {
-					if !sidebarShown {
-						sidebarToggle
-							.buttonStyle(.bordered)
-							.transition(.opacity)
-
-					} else {
-						sidebarToggle
-							.buttonStyle(.glass)
-							.transition(.opacity)
-					}
-				}
-				.frame(width: topBarItemWidth, height: topBarItemHeight)
+				.buttonStyle(.bordered)
+				.clipShape(RoundedRectangle(cornerRadius: 8))
 				.accessibilityIdentifier("sidebar-toggle")
-
-				if sidebarShown {
-					Spacer()
-				}
 			}
-			.frame(width: sidebarShown ? 224 : nil)
+			.frame(width: sidebarShown ? 224 : 125, alignment: .leading)
 
 			HStack(spacing: 6) {
 				ForEach(navigationButtons) { item in
@@ -93,7 +81,7 @@ struct DesktopBrowserShell: View {
 					.disabled(item.isDisabled)
 					.controlSize(.regular)
 					.buttonSizing(.fitted)
-					.clipShape(RoundedRectangle(cornerRadius: (sidebarShown ? 13 : 15) - 5))
+					.clipShape(RoundedRectangle(cornerRadius: 8))
 					.buttonStyle(.bordered)
 					.accessibilityIdentifier(item.accessibilityIdentifier)
 				}
@@ -104,6 +92,7 @@ struct DesktopBrowserShell: View {
 				Spacer()
 			}
 			.padding(.leading, sidebarShown ? 1.5 : 20)
+			.padding(.top, sidebarShown ? 8 : 0)
 		}
 		.frame(width: nil, height: topHeight, alignment: .center)
 		.animation(.smooth(duration: 0.3), value: sidebarShown)
@@ -111,28 +100,43 @@ struct DesktopBrowserShell: View {
 
 	var body: some View {
 		BrowserSplitView(sidebarShown: $sidebarShown) {
-			ScrollView {
-				VStack(spacing: 18) {
-					Button("New Tab", systemImage: "plus") {
-						browser.addTab()
-					}
-					.buttonStyle(.plain)
-					.accessibilityIdentifier("new-tab")
+			ZStack(alignment: .top) {
+				ScrollView {
+					VStack(spacing: 18) {
+						Button("New Tab", systemImage: "plus") {
+							browser.addTab()
+						}
+						.buttonStyle(.plain)
+						.accessibilityIdentifier("new-tab")
 
-					ForEach(browser.tabs) { tab in
-						BrowserTabRow(
-							tab: tab,
-							isSelected: browser.selectedTabID == tab.id,
-							onSelect: browser.selectTab,
-							onClose: browser.closeTab
-						)
-					}
+						ForEach(browser.tabs) { tab in
+							BrowserTabRow(
+								tab: tab,
+								isSelected: browser.selectedTabID == tab.id,
+								onSelect: browser.selectTab,
+								onClose: browser.closeTab
+							)
+						}
 
-					Spacer(minLength: 0)
+						Spacer(minLength: 0)
+					}
+					.padding(12)
+					.padding(.top, 22)
+					.frame(maxHeight: .infinity)
 				}
-				.padding(12)
-				.padding(.top, 22)
-				.frame(maxHeight: .infinity)
+
+				HazeEffect(
+					maskProvider: LinearGradientMaskProvider(
+						startPoint: .center,
+						endPoint: .bottom,
+						startOpacity: 1,
+						endOpacity: 0,
+						isSmooth: true
+					),
+					maxBlurRadius: 5
+				)
+				.frame(height: topHeight)
+				.frame(maxWidth: .infinity)
 			}
 
 		} content: {
@@ -163,7 +167,7 @@ struct DesktopBrowserShell: View {
 //						.frame(height: topHeight)
 //						.frame(maxWidth: .infinity)
 			}
-			.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? 13 : 15))
+			.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? 13 : 16))
 			.animation(.smooth(duration: 0.3)) { view in
 				view
 					.padding(sidebarShown ? 4 : 0)
@@ -172,7 +176,6 @@ struct DesktopBrowserShell: View {
 		.background(.blue)
 		.overlay(alignment: .top) {
 			topBar
-				.padding(.top, sidebarShown ? 4 : 0)
 		}
 		.ignoresSafeArea()
 	}
