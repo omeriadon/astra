@@ -30,25 +30,47 @@
 			return Array(ids[startIndex ..< startIndex + visibleCount])
 		}
 
+		private func refreshVisibleCandidates(fitting width: CGFloat) async {
+			let controllers = visibleCandidateIDs(fitting: width).compactMap { id in
+				browser.tabs.first(where: { $0.id == id })?.controller
+			}
+
+			await withTaskGroup(of: Void.self) { group in
+				for controller in controllers {
+					group.addTask { @MainActor in
+						try? await Task.sleep(for: .milliseconds(Int.random(in: 0 ... 40)))
+						guard !Task.isCancelled else { return }
+						await controller.refreshPreviewSnapshot()
+					}
+				}
+			}
+		}
+
 		var body: some View {
 			GeometryReader { geometry in
-				if switcher.isPreviewVisible {
-					HStack(spacing: spacing) {
-						ForEach(visibleCandidateIDs(fitting: geometry.size.width), id: \.self) { id in
-							if let tab = browser.tabs.first(where: { $0.id == id }) {
-								ControlTabSwitcherCandidateView(
-									tab: tab,
-									isSelected: switcher.highlightedTabID == id,
-									onHover: { switcher.highlight(id) },
-									action: { switcher.select(id) }
-								)
+				ZStack {
+					if switcher.isPreviewVisible {
+						HStack(spacing: spacing) {
+							ForEach(visibleCandidateIDs(fitting: geometry.size.width), id: \.self) { id in
+								if let tab = browser.tabs.first(where: { $0.id == id }) {
+									ControlTabSwitcherCandidateView(
+										tab: tab,
+										isSelected: switcher.highlightedTabID == id,
+										onHover: { switcher.highlight(id) },
+										action: { switcher.select(id) }
+									)
+								}
 							}
 						}
+						.padding(padding)
+						.glassEffect(.clear, in: RoundedRectangle(cornerRadius: 27))
+						.accessibilityIdentifier("control-tab-switcher-preview")
+						.frame(maxWidth: .infinity, maxHeight: .infinity)
 					}
-					.padding(padding)
-					.glassEffect(.clear, in: RoundedRectangle(cornerRadius: 24))
-					.accessibilityIdentifier("control-tab-switcher-preview")
-					.frame(maxWidth: .infinity, maxHeight: .infinity)
+				}
+				.task(id: switcher.candidateIDs) {
+					guard !switcher.candidateIDs.isEmpty else { return }
+					await refreshVisibleCandidates(fitting: geometry.size.width)
 				}
 			}
 		}

@@ -22,6 +22,9 @@ final class BrowserController: NSObject {
 	var url: URL?
 	private(set) var themeColor: Color?
 	private(set) var themeColorIsLight: Bool?
+	#if os(macOS)
+		private(set) var previewSnapshot: NSImage?
+	#endif
 
 	@ObservationIgnored
 	var navigationDidChange: (@MainActor () -> Void)?
@@ -32,6 +35,12 @@ final class BrowserController: NSObject {
 	private var navigationGeneration = 0
 	@ObservationIgnored
 	private var hasDeclaredThemeColor = false
+	#if os(macOS)
+		@ObservationIgnored
+		private var previewSnapshotRefreshTask: Task<Void, Never>?
+		@ObservationIgnored
+		private var isRefreshingPreviewSnapshot = false
+	#endif
 
 	init(initialURL: URL? = nil, history: [URL] = [], historyIndex: Int = 0) {
 		let restoredHistory = history.isEmpty ? initialURL.map { [$0] } ?? [] : history
@@ -65,10 +74,19 @@ final class BrowserController: NSObject {
 				}
 			},
 		]
+		#if os(macOS)
+			startPreviewSnapshotRefresh()
+		#endif
 
 		if let url {
 			load(url)
 		}
+	}
+
+	deinit {
+		#if os(macOS)
+			previewSnapshotRefreshTask?.cancel()
+		#endif
 	}
 
 	func load(_ url: URL) {
@@ -94,8 +112,9 @@ final class BrowserController: NSObject {
 	}
 
 	#if os(macOS)
-		func previewSnapshot() async -> NSImage? {
-			try? await webView.takeSnapshot(configuration: WKSnapshotConfiguration())
+		func refreshPreviewSnapshot() async {
+			guard let image = await takeSnapshot() else { return }
+			previewSnapshot = image
 		}
 	#endif
 
@@ -136,20 +155,53 @@ final class BrowserController: NSObject {
 		themeColorIsLight = red + green + blue > 1.5
 	}
 
-	private func samplePageColor(generation: Int) async {
-		guard !hasDeclaredThemeColor else { return }
+	private func takeSnapshot() async -> SnapshotImage? {
+		guard url != nil, !webView.bounds.isEmpty else { return nil }
+		#if os(macOS)
+			guard !isRefreshingPreviewSnapshot else { return nil }
+			isRefreshingPreviewSnapshot = true
+			defer { isRefreshingPreviewSnapshot = false }
+		#endif
+
 		let configuration = WKSnapshotConfiguration()
 		configuration.rect = webView.bounds
+		configuration.snapshotWidth = 180
+		return try? await webView.takeSnapshot(configuration: configuration)
+	}
 
-		guard let image = try? await webView.takeSnapshot(configuration: configuration),
+	private func capturePageSnapshot(generation: Int) async {
+		guard let image = await takeSnapshot(),
+		      generation == navigationGeneration
+		else { return }
+
+		#if os(macOS)
+			previewSnapshot = image
+		#endif
+
+		guard !hasDeclaredThemeColor,
 		      let cgImage = Self.cgImage(from: image),
-		      let color = Self.dominantPageColor(in: cgImage),
-		      generation == navigationGeneration,
-		      !hasDeclaredThemeColor
+		      let color = Self.dominantPageColor(in: cgImage)
 		else { return }
 
 		updateThemeColor(color)
 	}
+
+	#if os(macOS)
+		private func startPreviewSnapshotRefresh() {
+			previewSnapshotRefreshTask = Task { @MainActor [weak self] in
+				while !Task.isCancelled {
+					do {
+						try await Task.sleep(for: .seconds(Double.random(in: 50 ... 58)))
+					} catch {
+						return
+					}
+
+					guard let self else { return }
+					await refreshPreviewSnapshot()
+				}
+			}
+		}
+	#endif
 
 	private static func cgImage(from image: SnapshotImage) -> CGImage? {
 		#if os(iOS)
@@ -239,7 +291,7 @@ extension BrowserController: WKNavigationDelegate {
 		Task { @MainActor [weak self] in
 			guard let self else { return }
 			try? await Task.sleep(for: .milliseconds(200))
-			await samplePageColor(generation: generation)
+			await capturePageSnapshot(generation: generation)
 		}
 	}
 }

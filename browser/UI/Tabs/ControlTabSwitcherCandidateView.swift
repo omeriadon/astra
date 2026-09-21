@@ -9,7 +9,6 @@
 		let isSelected: Bool
 		let onHover: () -> Void
 		let action: () -> Void
-		@State private var snapshot: NSImage?
 
 		private var host: String {
 			tab.controller.url?.host ?? "New Tab"
@@ -27,7 +26,7 @@
 			Button(action: action) {
 				VStack(spacing: 7) {
 					Group {
-						if let snapshot {
+						if let snapshot = tab.controller.previewSnapshot {
 							Image(nsImage: snapshot)
 								.resizable()
 								.aspectRatio(contentMode: .fill)
@@ -48,7 +47,7 @@
 				.padding(8)
 				.glassEffect(
 					isSelected ? .regular.tint(.white.opacity(0.2)) : .regular,
-					in: RoundedRectangle(cornerRadius: 12)
+					in: RoundedRectangle(cornerRadius: 15)
 				)
 				.animation(.smooth(duration: 0.15), value: isSelected)
 			}
@@ -57,9 +56,6 @@
 				if isHovering {
 					onHover()
 				}
-			}
-			.task(id: tab.id) {
-				snapshot = await tab.controller.previewSnapshot()
 			}
 			.accessibilityElement(children: .combine)
 			.accessibilityLabel(Text(verbatim: "\(tab.title), \(host)"))
