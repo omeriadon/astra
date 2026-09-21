@@ -25,6 +25,14 @@ struct BrowserSettingsView: View {
 				}
 				.accessibilityIdentifier("address-display-style-picker")
 			}
+
+			Section("Website Data") {
+				Button(role: .destructive, action: FaviconStore.shared.clear) {
+					Label("Clear All Favicons", systemImage: "trash")
+				}
+				.disabled(FaviconStore.shared.isEmpty)
+				.accessibilityIdentifier("clear-all-favicons")
+			}
 		}
 		.navigationTitle("Settings")
 		.frame(minWidth: 360, minHeight: 180)

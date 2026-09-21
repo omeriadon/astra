@@ -75,10 +75,11 @@ final class Browser {
 	}
 
 	func selectTab(_ id: UUID) {
-		guard tabs.contains(where: { $0.id == id }) else { return }
+		guard let tab = tabs.first(where: { $0.id == id }) else { return }
 		selectedTabID = id
 		recentlyUsedTabIDs.removeAll { $0 == id }
 		recentlyUsedTabIDs.insert(id, at: 0)
+		tab.controller.loadFaviconIfMissing()
 		schedulePersistence()
 	}
 

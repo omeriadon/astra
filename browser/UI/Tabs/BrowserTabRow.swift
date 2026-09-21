@@ -38,10 +38,26 @@ struct BrowserTabRow: View {
 
 	var body: some View {
 		HStack(spacing: 6) {
-			Button("Select Tab", systemImage: "globe") {
+			Button {
 				browser.selectTab(tab.id)
+			} label: {
+				Label {
+					Text("Select Tab")
+				} icon: {
+					if let favicon = FaviconStore.shared.image(
+						for: tab.controller.url,
+						in: tab.controller.webView
+					) {
+						favicon
+							.resizable()
+							.scaledToFit()
+					} else {
+						Image(systemName: "globe")
+					}
+				}
+				.labelStyle(.iconOnly)
+				.frame(width: 16, height: 16)
 			}
-			.labelStyle(.iconOnly)
 			.buttonStyle(.plain)
 			.accessibilityIdentifier("select-tab-\(tab.id.uuidString)")
 

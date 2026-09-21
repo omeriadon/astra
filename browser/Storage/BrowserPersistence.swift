@@ -27,6 +27,14 @@ final class BrowserPersistence {
 		try write(favourites, named: "favourites.json")
 	}
 
+	func loadFavicons() throws -> [String: Data] {
+		try read([String: Data].self, named: "favicons.json") ?? [:]
+	}
+
+	func saveFavicons(_ favicons: [String: Data]) throws {
+		try write(favicons, named: "favicons.json")
+	}
+
 	func loadOpenTabs() throws -> [OpenTab] {
 		try read([OpenTab].self, named: "open-tabs.json") ?? [OpenTab()]
 	}

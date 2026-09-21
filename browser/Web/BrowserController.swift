@@ -7,7 +7,13 @@ import WebKit
 @Observable
 final class BrowserController: NSObject {
 	@ObservationIgnored
-	let webView = WKWebView()
+	let webView: WKWebView = {
+		let configuration = WKWebViewConfiguration()
+		FaviconStore.shared.configureFaviconObservation(
+			in: configuration.userContentController
+		)
+		return WKWebView(frame: .zero, configuration: configuration)
+	}()
 
 	private(set) var history: [URL]
 	private(set) var historyIndex: Int
@@ -116,6 +122,17 @@ final class BrowserController: NSObject {
 
 	func reload() {
 		webView.reload()
+	}
+
+	func loadFaviconIfMissing() {
+		guard let url else { return }
+		Task { @MainActor in
+			await FaviconStore.shared.loadFavicon(
+				for: url,
+				from: webView,
+				onlyIfMissing: true
+			)
+		}
 	}
 
 	#if os(macOS)
@@ -295,6 +312,11 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webView(_: WKWebView, didFinish _: WKNavigation!) {
 		let generation = navigationGeneration
+		if let url {
+			Task { @MainActor in
+				await FaviconStore.shared.loadFavicon(for: url, from: webView)
+			}
+		}
 		Task { @MainActor [weak self] in
 			guard let self else { return }
 			try? await Task.sleep(for: .milliseconds(200))
