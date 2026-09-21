@@ -102,13 +102,7 @@ struct DesktopBrowserShell: View {
 		BrowserSplitView(sidebarShown: $sidebarShown) {
 			ZStack(alignment: .top) {
 				ScrollView {
-					VStack(spacing: 18) {
-						Button("New Tab", systemImage: "plus") {
-							browser.addTab()
-						}
-						.buttonStyle(.plain)
-						.accessibilityIdentifier("new-tab")
-
+					LazyVStack(spacing: 5) {
 						ForEach(browser.tabs) { tab in
 							BrowserTabRow(
 								tab: tab,
@@ -119,10 +113,18 @@ struct DesktopBrowserShell: View {
 						}
 
 						Spacer(minLength: 0)
+
+						Button("New Tab", systemImage: "plus") {
+							browser.addTab()
+						}
+						.keyboardShortcut("T", modifiers: .command)
+						.padding(.leading, 8)
+						.buttonStyle(.plain)
+						.frame(maxWidth: .infinity, alignment: .leading)
+						.accessibilityIdentifier("new-tab")
 					}
-					.padding(12)
-					.padding(.top, 22)
-					.frame(maxHeight: .infinity)
+					.padding(.horizontal, 7)
+					.padding(.top, 35)
 				}
 
 				HazeEffect(

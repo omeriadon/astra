@@ -14,5 +14,6 @@ struct browserApp: App {
 			ContentView()
 		}
 		.windowStyle(.hiddenTitleBar)
+		.commandsRemoved()
 	}
 }

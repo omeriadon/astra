@@ -21,16 +21,13 @@ struct BrowserTabRow: View {
 			Button("Close Tab", systemImage: "xmark") {
 				onClose(tab.id)
 			}
+			.keyboardShortcut("W", modifiers: .command)
 			.labelStyle(.iconOnly)
 			.buttonStyle(.plain)
 			.accessibilityIdentifier("close-tab-\(tab.id.uuidString)")
 		}
 		.padding(.horizontal, 8)
 		.frame(height: 28)
-		.background(.gray.opacity(isSelected ? 1 : 0.72), in: RoundedRectangle(cornerRadius: 24))
-		.overlay {
-			RoundedRectangle(cornerRadius: 24)
-				.strokeBorder(.white.opacity(isSelected ? 0.9 : 0), lineWidth: 1.5)
-		}
+		.glassEffect(.regular.tint(.white.opacity(isSelected ? 0.2 : 0.0)), in: RoundedRectangle(cornerRadius: 10))
 	}
 }
