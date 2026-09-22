@@ -5,6 +5,8 @@ struct BrowserSettingsView: View {
 	@Default(.tabSwitchingOrder) private var tabSwitchingOrder
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
 	@Default(.topBarBackgroundStyle) private var topBarBackgroundStyle
+	@Default(.peekLevel) private var peekLevel
+	@Default(.secondPeekUses105PercentZoom) private var secondPeekUses105PercentZoom
 
 	var body: some View {
 		List {
@@ -36,6 +38,21 @@ struct BrowserSettingsView: View {
 					}
 				}
 				.accessibilityIdentifier("top-bar-background-style-picker")
+			}
+
+			Section("Peek") {
+				Picker("Levels", selection: $peekLevel) {
+					ForEach(PeekLevel.allCases) { level in
+						Text(level.title)
+							.tag(level)
+					}
+				}
+				.accessibilityIdentifier("peek-level-picker")
+
+				if peekLevel == .two {
+					Toggle("Zoom second Peek to 105%", isOn: $secondPeekUses105PercentZoom)
+						.accessibilityIdentifier("second-peek-zoom-toggle")
+				}
 			}
 
 			Section("Website Data") {

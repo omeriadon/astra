@@ -13,6 +13,7 @@ struct DesktopBrowserShell: View {
 	@Environment(\.colorScheme) private var colorScheme
 	@Default(.topBarBackgroundStyle) private var topBarBackgroundStyle
 	@State private var sidebarShown = true
+	@State private var toastManager = ToastManager.shared
 	#if os(macOS)
 		@Default(.tabSwitchingOrder) private var tabSwitchingOrder
 		@State private var controlTabSwitcher: ControlTabSwitcher
@@ -209,6 +210,32 @@ struct DesktopBrowserShell: View {
 						.id(browser.selectedTabID)
 					}
 				}
+				.overlay {
+					GeometryReader { proxy in
+						ForEach(browser.peekRequests) { request in
+							PeekOverlayView(
+								request: request,
+								availableSize: proxy.size,
+								onDismiss: {
+									browser.dismissPeekRequest(request.id)
+								},
+								onNewWindow: { url, point, depth in
+									browser.requestPeek(url: url, point: point, depth: depth)
+								}
+							)
+							.id(request.id)
+						}
+					}
+				}
+				.overlay(alignment: .topTrailing) {
+					if let toast = toastManager.toast {
+						BrowserToastView(toast: toast)
+							.padding(.top, topHeight + 12)
+							.padding(.trailing, 14)
+							.transition(.move(edge: .trailing))
+					}
+				}
+				.animation(.smooth(duration: 0.22), value: toastManager.toast)
 			}
 			.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? 13 : 16))
 			.overlay {
@@ -248,6 +275,7 @@ struct DesktopBrowserShell: View {
 		}
 		#endif
 		.ignoresSafeArea()
+		.focusedValue(\.browser, browser)
 	}
 }
 

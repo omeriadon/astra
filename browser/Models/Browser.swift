@@ -1,3 +1,5 @@
+import CoreGraphics
+import Defaults
 import Foundation
 import Observation
 
@@ -9,6 +11,7 @@ final class Browser {
 	private(set) var recentlyUsedTabIDs: [UUID]
 	private(set) var bookmarks: [Bookmark]
 	private(set) var persistenceErrorDescription: String?
+	private(set) var peekRequests: [PeekRequest] = []
 
 	@ObservationIgnored
 	private let persistence: BrowserPersistence?
@@ -66,14 +69,14 @@ final class Browser {
 		persistenceTask = nil
 
 		for tab in loadedTabs {
-			attachPersistence(to: tab)
+			configure(tab)
 		}
 	}
 
 	@discardableResult
 	func addTab() -> BrowserTab {
 		let tab = BrowserTab()
-		attachPersistence(to: tab)
+		configure(tab)
 		tabs.append(tab)
 		recentlyUsedTabIDs.insert(tab.id, at: min(1, recentlyUsedTabIDs.count))
 		selectTab(tab.id)
@@ -131,6 +134,15 @@ final class Browser {
 		selectedTab?.controller.load(bookmark.url)
 	}
 
+	func dismissPeekRequest(_ id: UUID) {
+		peekRequests.removeAll { $0.id == id }
+	}
+
+	func requestPeek(url: URL, point: CGPoint, depth: Int) {
+		guard depth <= Defaults[.peekLevel].maximumDepth else { return }
+		peekRequests.append(PeekRequest(url: url, point: point, depth: depth))
+	}
+
 	func removeBookmark(_ id: UUID) {
 		bookmarks.removeAll { $0.id == id }
 		schedulePersistence()
@@ -146,7 +158,7 @@ final class Browser {
 			history: source.controller.history,
 			historyIndex: source.controller.historyIndex
 		)
-		attachPersistence(to: tab)
+		configure(tab)
 		tabs.insert(tab, at: index + 1)
 		selectTab(tab.id)
 	}
@@ -194,6 +206,19 @@ final class Browser {
 	private func attachPersistence(to tab: BrowserTab) {
 		tab.didChange = { [weak self] in
 			self?.schedulePersistence()
+		}
+	}
+
+	private func configure(_ tab: BrowserTab) {
+		attachPersistence(to: tab)
+		tab.controller.newWindowRequested = { [weak self] url, point in
+			guard let self else { return }
+			if Defaults[.peekLevel] == .none {
+				let newTab = addTab()
+				newTab.controller.load(url)
+				return
+			}
+			requestPeek(url: url, point: point, depth: 1)
 		}
 	}
 

@@ -28,6 +28,16 @@
 				Button("Force Reload", systemImage: "arrow.trianglehead.2.clockwise.rotate.90", action: forceReload)
 					.keyboardShortcut("R", modifiers: [.command, .shift])
 					.disabled(browser?.selectedTab?.controller.url == nil)
+
+				Divider()
+
+				Button("Zoom In", systemImage: "plus.magnifyingglass", action: zoomIn)
+					.keyboardShortcut("=", modifiers: .command)
+					.disabled(browser?.selectedTab?.controller.url == nil)
+
+				Button("Zoom Out", systemImage: "minus.magnifyingglass", action: zoomOut)
+					.keyboardShortcut("-", modifiers: .command)
+					.disabled(browser?.selectedTab?.controller.url == nil)
 			}
 
 			CommandMenu("Bookmarks") {
@@ -61,6 +71,14 @@
 
 		private func forceReload() {
 			browser?.selectedTab?.controller.reloadFromOrigin()
+		}
+
+		private func zoomIn() {
+			browser?.selectedTab?.controller.zoomIn()
+		}
+
+		private func zoomOut() {
+			browser?.selectedTab?.controller.zoomOut()
 		}
 
 		private func addBookmark() {

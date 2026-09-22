@@ -2,6 +2,9 @@ import CoreGraphics
 import Observation
 import SwiftUI
 import WebKit
+#if os(macOS)
+	import AppKit
+#endif
 
 @MainActor
 @Observable
@@ -35,6 +38,8 @@ final class BrowserController: NSObject {
 	var navigationDidChange: (@MainActor () -> Void)?
 	@ObservationIgnored
 	var titleDidChange: (@MainActor (String?) -> Void)?
+	@ObservationIgnored
+	var newWindowRequested: (@MainActor (URL, CGPoint) -> Void)?
 
 	@ObservationIgnored
 	private var observations: [NSKeyValueObservation] = []
@@ -57,6 +62,7 @@ final class BrowserController: NSObject {
 		url = restoredHistory.isEmpty ? nil : restoredHistory[restoredHistoryIndex]
 		super.init()
 		webView.navigationDelegate = self
+		webView.uiDelegate = self
 		updateThemeColor(url == nil ? .black : webView.underPageBackgroundColor ?? .white)
 
 		observations = [
@@ -142,6 +148,22 @@ final class BrowserController: NSObject {
 
 	func reloadFromOrigin() {
 		webView.reloadFromOrigin()
+	}
+
+	func zoomIn() {
+		webView.pageZoom = min(webView.pageZoom + 0.1, 5)
+		ToastManager.shared.show(
+			symbol: "plus.magnifyingglass",
+			message: "Zoom (Int(webView.pageZoom * 100))%"
+		)
+	}
+
+	func zoomOut() {
+		webView.pageZoom = max(webView.pageZoom - 0.1, 0.25)
+		ToastManager.shared.show(
+			symbol: "minus.magnifyingglass",
+			message: "Zoom (Int(webView.pageZoom * 100))%"
+		)
 	}
 
 	func loadFaviconIfMissing() {
@@ -342,6 +364,34 @@ extension BrowserController: WKNavigationDelegate {
 			try? await Task.sleep(for: .milliseconds(200))
 			await capturePageSnapshot(generation: generation)
 		}
+	}
+}
+
+extension BrowserController: WKUIDelegate {
+	func webView(
+		_ webView: WKWebView,
+		createWebViewWith _: WKWebViewConfiguration,
+		for navigationAction: WKNavigationAction,
+		windowFeatures _: WKWindowFeatures
+	) -> WKWebView? {
+		guard navigationAction.targetFrame == nil,
+		      let url = navigationAction.request.url
+		else { return nil }
+
+		#if os(macOS)
+			let point: CGPoint
+			if let window = webView.window {
+				let windowPoint = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+				point = webView.convert(windowPoint, from: nil)
+			} else {
+				point = CGPoint(x: webView.bounds.midX, y: webView.bounds.midY)
+			}
+		#else
+			let point = CGPoint(x: webView.bounds.midX, y: webView.bounds.midY)
+		#endif
+
+		newWindowRequested?(url, point)
+		return nil
 	}
 }
 
