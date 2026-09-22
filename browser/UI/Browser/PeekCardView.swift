@@ -63,6 +63,7 @@ struct PeekCardView: View {
 				}
 			}
 //			.shadow(color: .black.opacity(0.38), radius: 32, y: 18)
+			.scaleEffect(reduceMotion || peek.isPresented ? 1 : 0.001)
 			.offset(reduceMotion || peek.isPresented ? .zero : sourceOffset)
 			.position(x: cardRect.midX, y: cardRect.midY)
 			.opacity(reduceMotion && !peek.isPresented ? 0 : 1)
