@@ -1,9 +1,10 @@
+import Defaults
 import SwiftUI
 
 struct BrowserSettingsView: View {
-	@AppStorage("tabSwitchingOrder") private var tabSwitchingOrder = TabSwitchingOrder.visibleTabList.rawValue
-	@AppStorage("addressDisplayStyle") private var addressDisplayStyle = AddressDisplayStyle.simple.rawValue
-	@AppStorage("topBarBackgroundStyle") private var topBarBackgroundStyle = TopBarBackgroundStyle.blur.rawValue
+	@Default(.tabSwitchingOrder) private var tabSwitchingOrder
+	@Default(.addressDisplayStyle) private var addressDisplayStyle
+	@Default(.topBarBackgroundStyle) private var topBarBackgroundStyle
 
 	var body: some View {
 		List {
@@ -11,7 +12,7 @@ struct BrowserSettingsView: View {
 				Picker("Control-Tab order", selection: $tabSwitchingOrder) {
 					ForEach(TabSwitchingOrder.allCases) { order in
 						Text(order.title)
-							.tag(order.rawValue)
+							.tag(order)
 					}
 				}
 				.accessibilityIdentifier("tab-switching-order-picker")
@@ -21,7 +22,7 @@ struct BrowserSettingsView: View {
 				Picker("Display", selection: $addressDisplayStyle) {
 					ForEach(AddressDisplayStyle.allCases) { style in
 						Text(style.title)
-							.tag(style.rawValue)
+							.tag(style)
 					}
 				}
 				.accessibilityIdentifier("address-display-style-picker")
@@ -31,7 +32,7 @@ struct BrowserSettingsView: View {
 				Picker("Background", selection: $topBarBackgroundStyle) {
 					ForEach(TopBarBackgroundStyle.allCases) { style in
 						Text(style.title)
-							.tag(style.rawValue)
+							.tag(style)
 					}
 				}
 				.accessibilityIdentifier("top-bar-background-style-picker")

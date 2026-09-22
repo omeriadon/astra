@@ -1,17 +1,14 @@
+import Defaults
 import SwiftUI
 
 struct BrowserAddressField: View {
 	let browser: Browser
-	@AppStorage("addressDisplayStyle") private var addressDisplayStyle = AddressDisplayStyle.simple.rawValue
+	@Default(.addressDisplayStyle) private var addressDisplayStyle
 	@State private var addressText = ""
 	@FocusState private var isFocused: Bool
 
-	private var displayStyle: AddressDisplayStyle {
-		AddressDisplayStyle(rawValue: addressDisplayStyle) ?? .simple
-	}
-
 	private var isDimmed: Bool {
-		displayStyle == .dimmed && !isFocused
+		addressDisplayStyle == .dimmed && !isFocused
 	}
 
 	private var isGoogleSearch: Bool {
@@ -25,7 +22,7 @@ struct BrowserAddressField: View {
 			}
 			.onChange(of: browser.selectedTab?.controller.url) { _, url in
 				guard !isFocused else { return }
-				addressText = BrowserAddress.displayString(for: url, style: displayStyle, isEditing: false)
+				addressText = BrowserAddress.displayString(for: url, style: addressDisplayStyle, isEditing: false)
 			}
 			.onChange(of: addressDisplayStyle) { _, _ in
 				updateAddressFromURL()
@@ -33,7 +30,7 @@ struct BrowserAddressField: View {
 			.onChange(of: isFocused) { _, focused in
 				addressText = BrowserAddress.displayString(
 					for: browser.selectedTab?.controller.url,
-					style: displayStyle,
+					style: addressDisplayStyle,
 					isEditing: focused
 				)
 			}
@@ -100,7 +97,7 @@ struct BrowserAddressField: View {
 	private func updateAddressFromURL() {
 		addressText = BrowserAddress.displayString(
 			for: browser.selectedTab?.controller.url,
-			style: displayStyle,
+			style: addressDisplayStyle,
 			isEditing: isFocused
 		)
 	}
@@ -108,7 +105,7 @@ struct BrowserAddressField: View {
 	private func submitAddress() {
 		guard let destination = BrowserAddress.destination(for: addressText) else { return }
 		browser.selectedTab?.controller.load(destination)
-		addressText = BrowserAddress.displayString(for: destination, style: displayStyle, isEditing: false)
+		addressText = BrowserAddress.displayString(for: destination, style: addressDisplayStyle, isEditing: false)
 		isFocused = false
 	}
 }

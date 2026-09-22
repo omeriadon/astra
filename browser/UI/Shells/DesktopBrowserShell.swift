@@ -1,3 +1,4 @@
+import Defaults
 import Haze
 import SwiftUI
 import WebKit
@@ -23,10 +24,10 @@ struct TopBarButton: Identifiable {
 struct DesktopBrowserShell: View {
 	let browser: Browser
 	@Environment(\.colorScheme) private var colorScheme
-	@AppStorage("topBarBackgroundStyle") private var topBarBackgroundStyle = TopBarBackgroundStyle.blur.rawValue
+	@Default(.topBarBackgroundStyle) private var topBarBackgroundStyle
 	@State private var sidebarShown = true
 	#if os(macOS)
-		@AppStorage("tabSwitchingOrder") private var tabSwitchingOrder = TabSwitchingOrder.visibleTabList.rawValue
+		@Default(.tabSwitchingOrder) private var tabSwitchingOrder
 		@State private var controlTabSwitcher: ControlTabSwitcher
 	#endif
 
@@ -124,13 +125,14 @@ struct DesktopBrowserShell: View {
 		return themeColorIsLight ? .light : .dark
 	}
 
-	private var topBarBackgroundShape: UnevenRoundedRectangle {
-		UnevenRoundedRectangle(
-			topLeadingRadius: sidebarShown ? 13 : 16,
-			bottomLeadingRadius: 10,
-			bottomTrailingRadius: 10,
-			topTrailingRadius: sidebarShown ? 13 : 16
-		)
+	private var topBarBackgroundShape: RoundedRectangle {
+		RoundedRectangle(cornerRadius: sidebarShown ? 13 : 16)
+//		UnevenRoundedRectangle(
+//			topLeadingRadius: sidebarShown ? 13 : 16,
+//			bottomLeadingRadius: 10,
+//			bottomTrailingRadius: 10,
+//			topTrailingRadius: sidebarShown ? 13 : 16
+//		)
 	}
 
 	var body: some View {
@@ -189,7 +191,7 @@ struct DesktopBrowserShell: View {
 				)
 
 				Group {
-					if TopBarBackgroundStyle(rawValue: topBarBackgroundStyle) == .glass {
+					if topBarBackgroundStyle == .glass {
 						VStack {}
 							.frame(height: topHeight)
 							.frame(maxWidth: .infinity)
@@ -234,10 +236,10 @@ struct DesktopBrowserShell: View {
 				.animation(.easeInOut(duration: 0.05), value: controlTabSwitcher.isPreviewVisible)
 		}
 		.onAppear {
-			controlTabSwitcher.start(order: TabSwitchingOrder(rawValue: tabSwitchingOrder) ?? .visibleTabList)
+			controlTabSwitcher.start(order: tabSwitchingOrder)
 		}
 		.onChange(of: tabSwitchingOrder) { _, value in
-			controlTabSwitcher.start(order: TabSwitchingOrder(rawValue: value) ?? .visibleTabList)
+			controlTabSwitcher.start(order: value)
 		}
 		.onChange(of: browser.tabs.map(\.id)) { _, _ in
 			controlTabSwitcher.tabsDidChange()
