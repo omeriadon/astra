@@ -26,6 +26,8 @@ final class BrowserController: NSObject {
 	}
 
 	var url: URL?
+	private(set) var isLoading = false
+	private(set) var estimatedProgress = 0.0
 	private(set) var themeColor: Color?
 	private(set) var themeColorIsLight: Bool?
 	#if os(macOS)
@@ -61,6 +63,16 @@ final class BrowserController: NSObject {
 		updateThemeColor(url == nil ? .black : webView.underPageBackgroundColor ?? .white)
 
 		observations = [
+			webView.observe(\.isLoading, options: [.initial, .new]) { [weak self] webView, _ in
+				MainActor.assumeIsolated {
+					self?.isLoading = webView.isLoading
+				}
+			},
+			webView.observe(\.estimatedProgress, options: [.initial, .new]) { [weak self] webView, _ in
+				MainActor.assumeIsolated {
+					self?.estimatedProgress = webView.estimatedProgress
+				}
+			},
 			webView.observe(\.url, options: [.initial, .new]) { [weak self] webView, change in
 				MainActor.assumeIsolated {
 					guard let self else { return }

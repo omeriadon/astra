@@ -23,8 +23,11 @@ struct TopBarButton: Identifiable {
 
 struct DesktopBrowserShell: View {
 	let browser: Browser
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@Environment(\.colorScheme) private var colorScheme
 	@Default(.topBarBackgroundStyle) private var topBarBackgroundStyle
+	@State private var displayedLoadingProgress = 0.0
+	@State private var isLoadingProgressVisible = false
 	@State private var sidebarShown = true
 	#if os(macOS)
 		@Default(.tabSwitchingOrder) private var tabSwitchingOrder
@@ -117,7 +120,47 @@ struct DesktopBrowserShell: View {
 			.padding(.top, sidebarShown ? 8 : 0)
 		}
 		.frame(width: nil, height: topHeight, alignment: .center)
+		.overlay(alignment: .bottom) {
+			if isLoadingProgressVisible {
+				ProgressView(value: displayedLoadingProgress)
+					.progressViewStyle(.linear)
+					.frame(height: 2)
+					.clipped()
+					.accessibilityLabel("Page loading progress")
+			}
+		}
 		.animation(.smooth(duration: 0.3), value: sidebarShown)
+	}
+
+	private func selectedTabDidChange() {
+		guard let controller = browser.selectedTab?.controller else {
+			isLoadingProgressVisible = false
+			return
+		}
+		displayedLoadingProgress = controller.estimatedProgress
+		isLoadingProgressVisible = controller.isLoading
+	}
+
+	private func loadingDidChange(_ isLoading: Bool?) {
+		guard let isLoading else {
+			isLoadingProgressVisible = false
+			return
+		}
+		if isLoading {
+			isLoadingProgressVisible = true
+			displayedLoadingProgress = browser.selectedTab?.controller.estimatedProgress ?? 0
+			return
+		}
+
+		withAnimation(
+			reduceMotion ? nil : .easeOut(duration: 0.15),
+			completionCriteria: .logicallyComplete
+		) {
+			displayedLoadingProgress = 1
+		} completion: {
+			guard browser.selectedTab?.controller.isLoading == false else { return }
+			isLoadingProgressVisible = false
+		}
 	}
 
 	private var topBarColorScheme: ColorScheme {
@@ -247,6 +290,16 @@ struct DesktopBrowserShell: View {
 			controlTabSwitcher.stop()
 		}
 		#endif
+		.onChange(of: browser.selectedTabID, initial: true) { _, _ in
+			selectedTabDidChange()
+		}
+		.onChange(of: browser.selectedTab?.controller.isLoading) { _, isLoading in
+			loadingDidChange(isLoading)
+		}
+		.onChange(of: browser.selectedTab?.controller.estimatedProgress) { _, progress in
+			guard browser.selectedTab?.controller.isLoading == true, let progress else { return }
+			displayedLoadingProgress = progress
+		}
 		.ignoresSafeArea()
 	}
 }
