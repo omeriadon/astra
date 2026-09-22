@@ -22,6 +22,7 @@ final class BrowserTab: Identifiable {
 	}
 
 	let controller: BrowserController
+	private(set) var peeks: [BrowserPeek]
 
 	@ObservationIgnored
 	var didChange: (@MainActor () -> Void)?
@@ -33,7 +34,8 @@ final class BrowserTab: Identifiable {
 			customTitle: customTitle,
 			url: controller.url,
 			history: controller.history,
-			historyIndex: controller.historyIndex
+			historyIndex: controller.historyIndex,
+			peeks: peeks.map(\.openPeek)
 		)
 	}
 
@@ -43,7 +45,8 @@ final class BrowserTab: Identifiable {
 		customTitle: String? = nil,
 		initialURL: URL? = nil,
 		history: [URL] = [],
-		historyIndex: Int = 0
+		historyIndex: Int = 0,
+		openPeeks: [OpenPeek] = []
 	) {
 		self.id = id
 		self.pageTitle = pageTitle
@@ -53,12 +56,28 @@ final class BrowserTab: Identifiable {
 			history: history,
 			historyIndex: historyIndex
 		)
+		peeks = openPeeks.map(BrowserPeek.init(openPeek:))
 		controller.navigationDidChange = { [weak self] in
 			self?.didChange?()
 		}
 		controller.titleDidChange = { [weak self] title in
 			self?.updatePageTitle(title)
 		}
+		for peek in peeks {
+			observe(peek)
+		}
+	}
+
+	func addPeek(_ peek: BrowserPeek) {
+		observe(peek)
+		peeks.append(peek)
+		didChange?()
+	}
+
+	func dismissPeek(_ id: UUID) {
+		guard let index = peeks.firstIndex(where: { $0.id == id }) else { return }
+		peeks.removeSubrange(index...)
+		didChange?()
 	}
 
 	func rename(to title: String) {
@@ -78,5 +97,11 @@ final class BrowserTab: Identifiable {
 		}
 		guard pageTitle != nextTitle else { return }
 		pageTitle = nextTitle
+	}
+
+	private func observe(_ peek: BrowserPeek) {
+		peek.controller.navigationDidChange = { [weak self] in
+			self?.didChange?()
+		}
 	}
 }

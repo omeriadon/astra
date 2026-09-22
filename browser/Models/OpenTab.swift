@@ -7,6 +7,7 @@ struct OpenTab: Codable, Identifiable, Equatable {
 	var url: URL?
 	var history: [URL]
 	var historyIndex: Int
+	var peeks: [OpenPeek]
 
 	init(
 		id: UUID = UUID(),
@@ -14,7 +15,8 @@ struct OpenTab: Codable, Identifiable, Equatable {
 		customTitle: String? = nil,
 		url: URL? = nil,
 		history: [URL] = [],
-		historyIndex: Int = 0
+		historyIndex: Int = 0,
+		peeks: [OpenPeek] = []
 	) {
 		self.id = id
 		self.pageTitle = pageTitle
@@ -22,6 +24,7 @@ struct OpenTab: Codable, Identifiable, Equatable {
 		self.url = url
 		self.history = history
 		self.historyIndex = Self.clampedIndex(historyIndex, count: history.count)
+		self.peeks = peeks
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -32,6 +35,7 @@ struct OpenTab: Codable, Identifiable, Equatable {
 		case url
 		case history
 		case historyIndex
+		case peeks
 	}
 
 	init(from decoder: Decoder) throws {
@@ -52,6 +56,7 @@ struct OpenTab: Codable, Identifiable, Equatable {
 			container.decodeIfPresent(Int.self, forKey: .historyIndex) ?? 0,
 			count: history.count
 		)
+		peeks = try container.decodeIfPresent([OpenPeek].self, forKey: .peeks) ?? []
 	}
 
 	func encode(to encoder: Encoder) throws {
@@ -62,6 +67,7 @@ struct OpenTab: Codable, Identifiable, Equatable {
 		try container.encodeIfPresent(url, forKey: .url)
 		try container.encode(history, forKey: .history)
 		try container.encode(historyIndex, forKey: .historyIndex)
+		try container.encode(peeks, forKey: .peeks)
 	}
 
 	private static func clampedIndex(_ index: Int, count: Int) -> Int {

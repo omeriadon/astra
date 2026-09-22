@@ -216,7 +216,10 @@ struct DesktopBrowserShell: View {
 						.frame(height: topHeight)
 						.allowsHitTesting(false)
 
-					PeekStackView(browser: browser)
+					if let tab = browser.selectedTab {
+						PeekStackView(tab: tab)
+							.id(tab.id)
+					}
 				}
 			}
 			.overlay(alignment: .topTrailing) {

@@ -31,9 +31,12 @@ struct BrowserNavigationControls: View {
 					.labelStyle(.iconOnly)
 					.frame(width: topBarItemWidth, height: topBarItemHeight)
 					.foregroundStyle(controller?.canGoBack == true ? .primary : .tertiary)
+					.clipShape(.rect(cornerRadius: 8))
+
 			} primaryAction: {
 				controller?.goBack()
 			}
+			.clipShape(.rect(cornerRadius: 8))
 			.accessibilityIdentifier("browser-back")
 
 			Menu {
@@ -55,12 +58,14 @@ struct BrowserNavigationControls: View {
 			} primaryAction: {
 				controller?.goForward()
 			}
+			.clipShape(.rect(cornerRadius: 8))
 			.accessibilityIdentifier("browser-forward")
 
 			Menu {
 				Button("Force Reload", systemImage: "arrow.trianglehead.2.clockwise.rotate.90") {
 					controller?.reloadFromOrigin()
 				}
+
 			} label: {
 				Label {
 					Text("Reload")
@@ -75,13 +80,13 @@ struct BrowserNavigationControls: View {
 			} primaryAction: {
 				controller?.reload()
 			}
+			.clipShape(.rect(cornerRadius: 8))
 			.accessibilityIdentifier("browser-reload")
 		}
 		.controlSize(.regular)
 		.buttonSizing(.fitted)
 		.buttonStyle(.bordered)
 		.menuIndicator(.hidden)
-		.clipShape(.rect(cornerRadius: 8))
 	}
 
 	private var isReloadAnimating: Bool {

@@ -12,7 +12,6 @@ final class Browser {
 	private(set) var recentlyUsedTabIDs: [UUID]
 	private(set) var bookmarks: [Bookmark]
 	private(set) var persistenceErrorDescription: String?
-	private(set) var peeks: [BrowserPeek] = []
 
 	@ObservationIgnored
 	private let persistence: BrowserPersistence?
@@ -43,7 +42,8 @@ final class Browser {
 					customTitle: $0.customTitle,
 					initialURL: $0.url,
 					history: $0.history,
-					historyIndex: $0.historyIndex
+					historyIndex: $0.historyIndex,
+					openPeeks: $0.peeks
 				)
 			}
 			let tabs = restoredTabs.isEmpty ? [BrowserTab()] : restoredTabs
@@ -86,9 +86,6 @@ final class Browser {
 
 	func selectTab(_ id: UUID) {
 		guard let tab = tabs.first(where: { $0.id == id }) else { return }
-		if selectedTabID != id {
-			peeks.removeAll()
-		}
 		selectedTabID = id
 		recentlyUsedTabIDs.removeAll { $0 == id }
 		recentlyUsedTabIDs.insert(id, at: 0)
@@ -138,11 +135,6 @@ final class Browser {
 		selectedTab?.controller.load(bookmark.url)
 	}
 
-	func dismissPeek(_ id: UUID) {
-		guard let index = peeks.firstIndex(where: { $0.id == id }) else { return }
-		peeks.removeSubrange(index...)
-	}
-
 	func removeBookmark(_ id: UUID) {
 		bookmarks.removeAll { $0.id == id }
 		schedulePersistence()
@@ -156,7 +148,8 @@ final class Browser {
 			customTitle: source.customTitle,
 			initialURL: source.controller.url,
 			history: source.controller.history,
-			historyIndex: source.controller.historyIndex
+			historyIndex: source.controller.historyIndex,
+			openPeeks: source.peeks.map(\.openPeek)
 		)
 		configure(tab)
 		tabs.insert(tab, at: index + 1)
@@ -212,22 +205,27 @@ final class Browser {
 	private func configure(_ tab: BrowserTab) {
 		attachPersistence(to: tab)
 		let controller = tab.controller
-		controller.newWindowRequested = { [weak self, weak controller] url, source in
-			guard let self, let controller else { return }
+		controller.newWindowRequested = { [weak self, weak controller, weak tab] url, source in
+			guard let self, let controller, let tab else { return }
 			if Defaults[.peekLevel] == .none {
 				openNewTab(url)
 				return
 			}
 			openPeek(
+				in: tab,
 				url: url,
 				source: source,
 				depth: 1,
 				parentZoom: controller.webView.pageZoom
 			)
 		}
+		for peek in tab.peeks {
+			configure(peek, in: tab)
+		}
 	}
 
 	private func openPeek(
+		in tab: BrowserTab,
 		url: URL,
 		source: UnitPoint,
 		depth: Int,
@@ -245,16 +243,21 @@ final class Browser {
 			parentZoom: parentZoom,
 			zoomsOut: Defaults[.zoomOutInPeeks]
 		)
-		peek.controller.newWindowRequested = { [weak self, weak peek] url, source in
-			guard let self, let peek else { return }
+		configure(peek, in: tab)
+		tab.addPeek(peek)
+	}
+
+	private func configure(_ peek: BrowserPeek, in tab: BrowserTab) {
+		peek.controller.newWindowRequested = { [weak self, weak peek, weak tab] url, source in
+			guard let self, let peek, let tab else { return }
 			openPeek(
+				in: tab,
 				url: url,
 				source: source,
 				depth: peek.depth + 1,
 				parentZoom: peek.controller.webView.pageZoom
 			)
 		}
-		peeks.append(peek)
 	}
 
 	private func openNewTab(_ url: URL) {
