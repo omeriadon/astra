@@ -15,7 +15,7 @@ final class BrowserController: NSObject {
 		FaviconStore.shared.configureFaviconObservation(
 			in: configuration.userContentController
 		)
-		return WKWebView(frame: .zero, configuration: configuration)
+		return PeekSourceWebView(frame: .zero, configuration: configuration)
 	}()
 
 	private(set) var history: [URL]
@@ -40,6 +40,10 @@ final class BrowserController: NSObject {
 	var titleDidChange: (@MainActor (String?) -> Void)?
 	@ObservationIgnored
 	var newWindowRequested: (@MainActor (URL, UnitPoint) -> Void)?
+	@ObservationIgnored
+	var escapeRequested: (@MainActor () -> Void)? {
+		didSet { (webView as? PeekSourceWebView)?.onEscape = escapeRequested }
+	}
 
 	@ObservationIgnored
 	private var observations: [NSKeyValueObservation] = []
@@ -47,6 +51,10 @@ final class BrowserController: NSObject {
 	private var navigationGeneration = 0
 	@ObservationIgnored
 	private var hasDeclaredThemeColor = false
+	@ObservationIgnored
+	private var pendingHistoryIndex: Int?
+	@ObservationIgnored
+	private var usesRestoredHistory = false
 	#if os(macOS)
 		@ObservationIgnored
 		private var previewSnapshotRefreshTask: Task<Void, Never>?
@@ -59,21 +67,31 @@ final class BrowserController: NSObject {
 		let restoredHistoryIndex = restoredHistory.isEmpty ? 0 : min(max(historyIndex, 0), restoredHistory.count - 1)
 		self.history = restoredHistory
 		self.historyIndex = restoredHistoryIndex
+		pendingHistoryIndex = restoredHistory.isEmpty ? nil : restoredHistoryIndex
+		usesRestoredHistory = !history.isEmpty
+		canGoBack = restoredHistoryIndex > 0
+		canGoForward = restoredHistoryIndex + 1 < restoredHistory.count
 		url = restoredHistory.isEmpty ? nil : restoredHistory[restoredHistoryIndex]
 		super.init()
 		webView.navigationDelegate = self
 		webView.uiDelegate = self
+		if let webView = webView as? PeekSourceWebView {
+			webView.onZoomIn = { [weak self] in self?.zoomIn() }
+			webView.onZoomOut = { [weak self] in self?.zoomOut() }
+		}
 		updateThemeColor(url == nil ? .black : webView.underPageBackgroundColor ?? .white)
 
 		observations = [
-			webView.observe(\.canGoBack, options: [.initial, .new]) { [weak self] webView, _ in
+			webView.observe(\.canGoBack, options: [.initial, .new]) { [weak self] _, _ in
 				MainActor.assumeIsolated {
-					self?.canGoBack = webView.canGoBack
+					guard let self else { return }
+					self.canGoBack = self.historyIndex > 0
 				}
 			},
-			webView.observe(\.canGoForward, options: [.initial, .new]) { [weak self] webView, _ in
+			webView.observe(\.canGoForward, options: [.initial, .new]) { [weak self] _, _ in
 				MainActor.assumeIsolated {
-					self?.canGoForward = webView.canGoForward
+					guard let self else { return }
+					self.canGoForward = self.historyIndex + 1 < self.history.count
 				}
 			},
 			webView.observe(\.isLoading, options: [.initial, .new]) { [weak self] webView, _ in
@@ -91,7 +109,9 @@ final class BrowserController: NSObject {
 					guard let self else { return }
 					guard let url = change.newValue ?? webView.url else { return }
 					self.url = url
-					self.updateHistory()
+					if !webView.isLoading {
+						self.updateHistory()
+					}
 				}
 			},
 			webView.observe(\.themeColor, options: [.initial, .new]) { [weak self] webView, change in
@@ -110,13 +130,18 @@ final class BrowserController: NSObject {
 					self?.titleDidChange?(change.newValue ?? webView.title)
 				}
 			},
+			webView.observe(\.pageZoom, options: [.new]) { [weak self] _, _ in
+				MainActor.assumeIsolated {
+					self?.navigationDidChange?()
+				}
+			},
 		]
 		#if os(macOS)
 			startPreviewSnapshotRefresh()
 		#endif
 
 		if let url {
-			load(url)
+			webView.load(URLRequest(url: url))
 		}
 	}
 
@@ -127,18 +152,36 @@ final class BrowserController: NSObject {
 	}
 
 	func load(_ url: URL) {
+		pendingHistoryIndex = nil
 		webView.load(URLRequest(url: url))
 	}
 
 	func goBack() {
-		webView.goBack()
+		guard historyIndex > 0 else { return }
+		pendingHistoryIndex = historyIndex - 1
+		if !usesRestoredHistory, webView.canGoBack {
+			webView.goBack()
+		} else {
+			webView.load(URLRequest(url: history[historyIndex - 1]))
+		}
 	}
 
 	func goForward() {
-		webView.goForward()
+		guard historyIndex + 1 < history.count else { return }
+		pendingHistoryIndex = historyIndex + 1
+		if !usesRestoredHistory, webView.canGoForward {
+			webView.goForward()
+		} else {
+			webView.load(URLRequest(url: history[historyIndex + 1]))
+		}
 	}
 
 	func go(to item: WKBackForwardListItem) {
+		if let index = backHistoryItems.firstIndex(where: { $0 === item }) {
+			pendingHistoryIndex = historyIndex - index - 1
+		} else if let index = forwardHistoryItems.firstIndex(where: { $0 === item }) {
+			pendingHistoryIndex = historyIndex + index + 1
+		}
 		webView.go(to: item)
 	}
 
@@ -186,14 +229,22 @@ final class BrowserController: NSObject {
 
 	private func updateHistory() {
 		let backForwardList = webView.backForwardList
-		backHistoryItems = Array(backForwardList.backList.reversed())
-		forwardHistoryItems = backForwardList.forwardList
-		history = backForwardList.backList.map(\.url)
-		historyIndex = history.count
-		if let currentItem = backForwardList.currentItem {
-			history.append(currentItem.url)
+		backHistoryItems = usesRestoredHistory ? [] : Array(backForwardList.backList.reversed())
+		forwardHistoryItems = usesRestoredHistory ? [] : backForwardList.forwardList
+		guard let currentURL = webView.url else { return }
+		if let index = pendingHistoryIndex, history.indices.contains(index) {
+			historyIndex = index
+			history[index] = currentURL
+			pendingHistoryIndex = nil
+		} else if history.isEmpty || history[historyIndex] != currentURL {
+			if !history.isEmpty {
+				history.removeSubrange((historyIndex + 1)...)
+			}
+			history.append(currentURL)
+			historyIndex = history.count - 1
 		}
-		history.append(contentsOf: backForwardList.forwardList.map(\.url))
+		canGoBack = historyIndex > 0
+		canGoForward = historyIndex + 1 < history.count
 		navigationDidChange?()
 	}
 
@@ -346,6 +397,14 @@ final class BrowserController: NSObject {
 }
 
 extension BrowserController: WKNavigationDelegate {
+	func webView(_: WKWebView, didFailProvisionalNavigation _: WKNavigation!, withError _: Error) {
+		pendingHistoryIndex = nil
+	}
+
+	func webView(_: WKWebView, didFail _: WKNavigation!, withError _: Error) {
+		pendingHistoryIndex = nil
+	}
+
 	func webView(_: WKWebView, didStartProvisionalNavigation _: WKNavigation!) {
 		navigationGeneration += 1
 		hasDeclaredThemeColor = false
@@ -383,21 +442,110 @@ extension BrowserController: WKUIDelegate {
 	}
 
 	private func newWindowSource(in webView: WKWebView) -> UnitPoint {
-		guard webView.bounds.width > 0, webView.bounds.height > 0 else { return .center }
-
-		#if os(macOS)
-			guard let window = webView.window else { return .center }
-			let windowPoint = window.convertPoint(fromScreen: NSEvent.mouseLocation)
-			let point = webView.convert(windowPoint, from: nil)
-			return UnitPoint(
-				x: min(max(point.x / webView.bounds.width, 0), 1),
-				y: min(max(1 - point.y / webView.bounds.height, 0), 1)
-			)
-		#else
-			return .center
-		#endif
+		(webView as? PeekSourceWebView)?.consumeSource() ?? .center
 	}
 }
+
+private final class PeekSourceWebView: WKWebView {
+	var onEscape: (() -> Void)?
+	var onZoomIn: (() -> Void)?
+	var onZoomOut: (() -> Void)?
+	private var clickSource: UnitPoint?
+	private var clickTime: TimeInterval = 0
+
+	func consumeSource() -> UnitPoint {
+		defer { clickSource = nil }
+		#if os(macOS)
+			if NSApp.currentEvent?.type == .keyDown {
+				return .center
+			}
+		#endif
+		guard ProcessInfo.processInfo.systemUptime - clickTime < 2 else { return .center }
+		return clickSource ?? .center
+	}
+
+	func recordSource(at point: CGPoint) {
+		let insets = obscuredContentInsets
+		let width = bounds.width - insets.left - insets.right
+		let height = bounds.height - insets.top - insets.bottom
+		guard width > 0, height > 0 else { return }
+		#if os(macOS)
+			let y = isFlipped ? point.y - bounds.minY : bounds.maxY - point.y
+		#else
+			let y = point.y - bounds.minY
+		#endif
+		clickSource = UnitPoint(
+			x: min(max((point.x - bounds.minX - insets.left) / width, 0), 1),
+			y: min(max((y - insets.top) / height, 0), 1)
+		)
+		clickTime = ProcessInfo.processInfo.systemUptime
+	}
+
+	#if os(macOS)
+		override func hitTest(_ point: NSPoint) -> NSView? {
+			let target = super.hitTest(point)
+			if target != nil,
+			   let event = NSApp.currentEvent,
+			   event.type == .leftMouseDown || event.type == .otherMouseDown
+			{
+				recordSource(at: convert(point, from: superview))
+			}
+			return target
+		}
+	#elseif os(iOS)
+		override var keyCommands: [UIKeyCommand]? {
+			let escape = UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(dismissPeek))
+			escape.wantsPriorityOverSystemBehavior = true
+			let zoomIn = UIKeyCommand(input: "=", modifierFlags: .command, action: #selector(increaseZoom))
+			let zoomOut = UIKeyCommand(input: "-", modifierFlags: .command, action: #selector(decreaseZoom))
+			zoomIn.wantsPriorityOverSystemBehavior = true
+			zoomOut.wantsPriorityOverSystemBehavior = true
+			return (super.keyCommands ?? []) + [zoomIn, zoomOut] + (onEscape == nil ? [] : [escape])
+		}
+
+		@objc private func increaseZoom() {
+			onZoomIn?()
+		}
+
+		@objc private func decreaseZoom() {
+			onZoomOut?()
+		}
+
+		override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+			clickSource = nil
+			super.pressesBegan(presses, with: event)
+		}
+
+		@objc private func dismissPeek() {
+			onEscape?()
+		}
+
+		override init(frame: CGRect, configuration: WKWebViewConfiguration) {
+			super.init(frame: frame, configuration: configuration)
+			let recorder = PeekTouchRecorder(target: nil, action: nil)
+			recorder.cancelsTouchesInView = false
+			recorder.delaysTouchesBegan = false
+			recorder.delaysTouchesEnded = false
+			addGestureRecognizer(recorder)
+		}
+
+		@available(*, unavailable)
+		required init?(coder _: NSCoder) {
+			fatalError("init(coder:) has not been implemented")
+		}
+	#endif
+}
+
+#if os(iOS)
+	private final class PeekTouchRecorder: UIGestureRecognizer {
+		override func touchesBegan(_ touches: Set<UITouch>, with _: UIEvent) {
+			if let webView = view as? PeekSourceWebView, let touch = touches.first {
+				webView.recordSource(at: touch.location(in: webView))
+			}
+			state = .failed
+		}
+	}
+#endif
 
 #if os(iOS)
 	private typealias PlatformColor = UIColor

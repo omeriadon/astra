@@ -217,7 +217,7 @@ struct DesktopBrowserShell: View {
 						.allowsHitTesting(false)
 
 					if let tab = browser.selectedTab {
-						PeekStackView(tab: tab)
+						PeekStackView(tab: tab, browser: browser)
 							.id(tab.id)
 					}
 				}
@@ -230,7 +230,7 @@ struct DesktopBrowserShell: View {
 						.transition(.move(edge: .trailing))
 				}
 			}
-			.animation(.smooth(duration: 0.22), value: toastManager.toast)
+			.animation(.easeOut(duration: 0.1), value: toastManager.toast != nil)
 			.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? 13 : 16))
 			.overlay {
 				if isLocalhost {

@@ -22,6 +22,10 @@ final class BrowserTab: Identifiable {
 	}
 
 	let controller: BrowserController
+	var activeController: BrowserController {
+		peeks.last?.controller ?? controller
+	}
+
 	private(set) var peeks: [BrowserPeek]
 
 	@ObservationIgnored
@@ -35,6 +39,7 @@ final class BrowserTab: Identifiable {
 			url: controller.url,
 			history: controller.history,
 			historyIndex: controller.historyIndex,
+			pageZoom: controller.webView.pageZoom,
 			peeks: peeks.map(\.openPeek)
 		)
 	}
@@ -46,16 +51,21 @@ final class BrowserTab: Identifiable {
 		initialURL: URL? = nil,
 		history: [URL] = [],
 		historyIndex: Int = 0,
-		openPeeks: [OpenPeek] = []
+		openPeeks: [OpenPeek] = [],
+		pageZoom: Double = 1,
+		existingController: BrowserController? = nil
 	) {
 		self.id = id
 		self.pageTitle = pageTitle
 		self.customTitle = customTitle
-		controller = BrowserController(
+		controller = existingController ?? BrowserController(
 			initialURL: initialURL,
 			history: history,
 			historyIndex: historyIndex
 		)
+		if existingController == nil {
+			controller.webView.pageZoom = pageZoom
+		}
 		peeks = openPeeks.map(BrowserPeek.init(openPeek:))
 		controller.navigationDidChange = { [weak self] in
 			self?.didChange?()

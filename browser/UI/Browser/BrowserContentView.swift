@@ -5,6 +5,16 @@ struct BrowserContentView: View {
 	var insets = BrowserViewportInsets()
 
 	var body: some View {
+		GeometryReader { proxy in
+			content
+				.frame(width: proxy.size.width, height: proxy.size.height)
+				.allowsHitTesting(browser.selectedTab?.peeks.isEmpty ?? true)
+				.accessibilityHidden(!(browser.selectedTab?.peeks.isEmpty ?? true))
+		}
+	}
+
+	@ViewBuilder
+	private var content: some View {
 		if let tab = browser.selectedTab, tab.controller.url != nil {
 			BrowserWebView(
 				controller: tab.controller,

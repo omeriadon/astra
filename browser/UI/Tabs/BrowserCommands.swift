@@ -13,11 +13,11 @@
 			CommandMenu("Navigation") {
 				Button("Back", systemImage: "chevron.backward", action: goBack)
 					.keyboardShortcut("[", modifiers: .command)
-					.disabled(!(browser?.selectedTab?.controller.canGoBack ?? false))
+					.disabled(!(browser?.selectedTab?.activeController.canGoBack ?? false))
 
 				Button("Forward", systemImage: "chevron.forward", action: goForward)
 					.keyboardShortcut("]", modifiers: .command)
-					.disabled(!(browser?.selectedTab?.controller.canGoForward ?? false))
+					.disabled(!(browser?.selectedTab?.activeController.canGoForward ?? false))
 
 				Divider()
 
@@ -58,27 +58,27 @@
 		}
 
 		private func goBack() {
-			browser?.selectedTab?.controller.goBack()
+			browser?.selectedTab?.activeController.goBack()
 		}
 
 		private func goForward() {
-			browser?.selectedTab?.controller.goForward()
+			browser?.selectedTab?.activeController.goForward()
 		}
 
 		private func reload() {
-			browser?.selectedTab?.controller.reload()
+			browser?.selectedTab?.activeController.reload()
 		}
 
 		private func forceReload() {
-			browser?.selectedTab?.controller.reloadFromOrigin()
+			browser?.selectedTab?.activeController.reloadFromOrigin()
 		}
 
 		private func zoomIn() {
-			browser?.selectedTab?.controller.zoomIn()
+			browser?.selectedTab?.activeController.zoomIn()
 		}
 
 		private func zoomOut() {
-			browser?.selectedTab?.controller.zoomOut()
+			browser?.selectedTab?.activeController.zoomOut()
 		}
 
 		private func addBookmark() {

@@ -5,6 +5,7 @@ struct PeekCardView: View {
 	let viewportSize: CGSize
 	let isTopmost: Bool
 	let onDismiss: () -> Void
+	let onPromote: () -> Void
 
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var isPresented: Bool
@@ -13,12 +14,14 @@ struct PeekCardView: View {
 		peek: BrowserPeek,
 		viewportSize: CGSize,
 		isTopmost: Bool,
-		onDismiss: @escaping () -> Void
+		onDismiss: @escaping () -> Void,
+		onPromote: @escaping () -> Void
 	) {
 		self.peek = peek
 		self.viewportSize = viewportSize
 		self.isTopmost = isTopmost
 		self.onDismiss = onDismiss
+		self.onPromote = onPromote
 		_isPresented = State(initialValue: peek.hasPresented)
 	}
 
@@ -53,19 +56,12 @@ struct PeekCardView: View {
 	}
 
 	private func cardRect(for depth: Int) -> CGRect {
-		let horizontalInset = viewportSize.width * 0.07
-		let topInset = viewportSize.height * 0.02
-		let bottomInset = viewportSize.height * 0.04
-		let firstPeekRect = CGRect(
-			x: horizontalInset,
-			y: topInset,
-			width: max(0, viewportSize.width - horizontalInset * 2),
-			height: max(0, viewportSize.height - topInset - bottomInset)
-		)
-
-		guard depth > 1 else { return firstPeekRect }
-		let offset = min(max(min(viewportSize.width, viewportSize.height) * 0.025, 20), 32)
-		return firstPeekRect.offsetBy(dx: offset, dy: offset)
+		var rect = CGRect(origin: .zero, size: viewportSize)
+		for _ in 0 ..< max(depth, 0) {
+			let horizontalInset = min(max(rect.width * 0.07, 72), rect.width * 0.25)
+			rect = rect.insetBy(dx: horizontalInset, dy: rect.height * 0.03)
+		}
+		return rect
 	}
 
 	var body: some View {
@@ -74,24 +70,24 @@ struct PeekCardView: View {
 			.clipShape(.rect(cornerRadius: cornerRadius))
 			.overlay(alignment: .topLeading) {
 				if isTopmost {
-					Button("Close Peek", systemImage: "xmark", action: dismiss)
-						.labelStyle(.iconOnly)
-						.frame(width: 52, height: 52)
-						.buttonStyle(.glass)
-						.buttonBorderShape(.circle)
-						.offset(x: -26, y: 16)
-						.accessibilityIdentifier("close-peek-\(peek.depth)")
+					VStack(spacing: 10) {
+						peekButton("Close Peek", symbol: "xmark", identifier: "close-peek", action: dismiss)
+						peekButton("Open Peek in New Tab", symbol: "arrow.up.left.and.arrow.down.right", identifier: "promote-peek", action: onPromote)
+					}
+					.offset(x: -controlSize - 8, y: 16)
 				}
 			}
 			.shadow(color: .black.opacity(0.38), radius: 32, y: 18)
-			.position(x: cardRect.midX, y: cardRect.midY)
 			.scaleEffect(reduceMotion || isPresented ? 1 : 0.04)
 			.offset(reduceMotion || isPresented ? .zero : sourceOffset)
+			.position(x: cardRect.midX, y: cardRect.midY)
 			.opacity(isPresented ? 1 : 0)
 			.allowsHitTesting(isTopmost)
 			.accessibilityHidden(!isTopmost)
 			.task {
 				guard !peek.hasPresented else { return }
+				await Task.yield()
+				guard !Task.isCancelled else { return }
 				withAnimation(presentationAnimation) {
 					isPresented = true
 				}
@@ -100,14 +96,28 @@ struct PeekCardView: View {
 	}
 
 	private var presentationAnimation: Animation {
-		reduceMotion ? .easeOut(duration: 0.1) : .smooth(duration: 0.24)
+		.easeOut(duration: reduceMotion ? 0.08 : 0.1)
+	}
+
+	private var controlSize: CGFloat {
+		min(60, max(24, cardRect.minX - 12))
+	}
+
+	private func peekButton(_ title: String, symbol: String, identifier: String, action: @escaping () -> Void) -> some View {
+		Button(action: action) {
+			Label(title, systemImage: symbol)
+				.labelStyle(.iconOnly)
+				.font(.system(size: 22, weight: .medium))
+				.frame(width: controlSize, height: controlSize)
+				.contentShape(Circle())
+		}
+		.buttonStyle(.plain)
+		.glassEffect(.regular.interactive(), in: .circle)
+		.accessibilityLabel(title)
+		.accessibilityIdentifier("\(identifier)-\(peek.depth)")
 	}
 
 	private func dismiss() {
-		withAnimation(presentationAnimation, completionCriteria: .logicallyComplete) {
-			isPresented = false
-		} completion: {
-			onDismiss()
-		}
+		onDismiss()
 	}
 }

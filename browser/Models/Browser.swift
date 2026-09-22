@@ -43,7 +43,8 @@ final class Browser {
 					initialURL: $0.url,
 					history: $0.history,
 					historyIndex: $0.historyIndex,
-					openPeeks: $0.peeks
+					openPeeks: $0.peeks,
+					pageZoom: $0.pageZoom
 				)
 			}
 			let tabs = restoredTabs.isEmpty ? [BrowserTab()] : restoredTabs
@@ -149,7 +150,8 @@ final class Browser {
 			initialURL: source.controller.url,
 			history: source.controller.history,
 			historyIndex: source.controller.historyIndex,
-			openPeeks: source.peeks.map(\.openPeek)
+			openPeeks: source.peeks.map(\.openPeek),
+			pageZoom: source.controller.webView.pageZoom
 		)
 		configure(tab)
 		tabs.insert(tab, at: index + 1)
@@ -173,6 +175,18 @@ final class Browser {
 			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
 		}
 		schedulePersistence()
+	}
+
+	func promotePeek(in source: BrowserTab, id: UUID) {
+		guard let peek = source.peeks.last, peek.id == id else { return }
+		let tab = BrowserTab(
+			pageTitle: peek.controller.webView.title ?? "New Tab",
+			existingController: peek.controller
+		)
+		source.dismissPeek(id)
+		configure(tab)
+		tabs.append(tab)
+		selectTab(tab.id)
 	}
 
 	func closeTabsAbove(_ id: UUID) {
@@ -205,6 +219,12 @@ final class Browser {
 	private func configure(_ tab: BrowserTab) {
 		attachPersistence(to: tab)
 		let controller = tab.controller
+		controller.escapeRequested = { [weak tab] in
+			guard let tab, let peek = tab.peeks.last else { return }
+			withAnimation(.easeOut(duration: 0.1)) {
+				tab.dismissPeek(peek.id)
+			}
+		}
 		controller.newWindowRequested = { [weak self, weak controller, weak tab] url, source in
 			guard let self, let controller, let tab else { return }
 			if Defaults[.peekLevel] == .none {
@@ -231,7 +251,9 @@ final class Browser {
 		depth: Int,
 		parentZoom: Double
 	) {
-		guard depth <= Defaults[.peekLevel].maximumDepth else {
+		guard depth <= Defaults[.peekLevel].maximumDepth,
+		      depth == tab.peeks.count + 1
+		else {
 			openNewTab(url)
 			return
 		}
@@ -248,6 +270,12 @@ final class Browser {
 	}
 
 	private func configure(_ peek: BrowserPeek, in tab: BrowserTab) {
+		peek.controller.escapeRequested = { [weak tab] in
+			guard let tab, let deepest = tab.peeks.last else { return }
+			withAnimation(.easeOut(duration: 0.1)) {
+				tab.dismissPeek(deepest.id)
+			}
+		}
 		peek.controller.newWindowRequested = { [weak self, weak peek, weak tab] url, source in
 			guard let self, let peek, let tab else { return }
 			openPeek(
