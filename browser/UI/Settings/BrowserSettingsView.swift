@@ -3,6 +3,7 @@ import SwiftUI
 struct BrowserSettingsView: View {
 	@AppStorage("tabSwitchingOrder") private var tabSwitchingOrder = TabSwitchingOrder.visibleTabList.rawValue
 	@AppStorage("addressDisplayStyle") private var addressDisplayStyle = AddressDisplayStyle.simple.rawValue
+	@AppStorage("topBarBackgroundStyle") private var topBarBackgroundStyle = TopBarBackgroundStyle.blur.rawValue
 
 	var body: some View {
 		List {
@@ -24,6 +25,16 @@ struct BrowserSettingsView: View {
 					}
 				}
 				.accessibilityIdentifier("address-display-style-picker")
+			}
+
+			Section("Top Bar") {
+				Picker("Background", selection: $topBarBackgroundStyle) {
+					ForEach(TopBarBackgroundStyle.allCases) { style in
+						Text(style.title)
+							.tag(style.rawValue)
+					}
+				}
+				.accessibilityIdentifier("top-bar-background-style-picker")
 			}
 
 			Section("Website Data") {

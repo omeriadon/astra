@@ -14,12 +14,6 @@
     {
       "kind": "local",
       "path": "../../Haze",
-    }, {
-      "kind": "remote",
-      "repository": "https://github.com/raymondjavaxx/SmoothGradient",
-      "version": {
-        "up-to-next-major-version": "1.0.1",
-      },
     },
   ],
   "files": [
@@ -46,10 +40,6 @@
       "package-product-members": [
         {
           "product-name": "Haze",
-          "build-phase": { "build-phase": "frameworks" },
-        }, {
-          "package": "SmoothGradient",
-          "product-name": "SmoothGradient",
           "build-phase": { "build-phase": "frameworks" },
         },
       ],

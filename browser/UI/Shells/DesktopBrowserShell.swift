@@ -23,6 +23,7 @@ struct TopBarButton: Identifiable {
 struct DesktopBrowserShell: View {
 	let browser: Browser
 	@Environment(\.colorScheme) private var colorScheme
+	@AppStorage("topBarBackgroundStyle") private var topBarBackgroundStyle = TopBarBackgroundStyle.blur.rawValue
 	@State private var sidebarShown = true
 	#if os(macOS)
 		@AppStorage("tabSwitchingOrder") private var tabSwitchingOrder = TabSwitchingOrder.visibleTabList.rawValue
@@ -123,6 +124,15 @@ struct DesktopBrowserShell: View {
 		return themeColorIsLight ? .light : .dark
 	}
 
+	private var topBarBackgroundShape: UnevenRoundedRectangle {
+		UnevenRoundedRectangle(
+			topLeadingRadius: sidebarShown ? 13 : 16,
+			bottomLeadingRadius: 10,
+			bottomTrailingRadius: 10,
+			topTrailingRadius: sidebarShown ? 13 : 16
+		)
+	}
+
 	var body: some View {
 		BrowserSplitView(sidebarShown: $sidebarShown) {
 			ZStack(alignment: .top) {
@@ -178,40 +188,32 @@ struct DesktopBrowserShell: View {
 					)
 				)
 
-//				VStack {}
-
-				HazeEffect(
-					maskProvider: LinearGradientMaskProvider(
-						startPoint: .top,
-						endPoint: .bottom,
-						startOpacity: 1.0,
-						endOpacity: 1.0,
-						isSmooth: false
-					),
-					maxBlurRadius: 6
-				)
-				.frame(height: topHeight)
-				.frame(maxWidth: .infinity)
-				.clipShape(UnevenRoundedRectangle(
-					topLeadingRadius: sidebarShown ? 13 : 16,
-					bottomLeadingRadius: 10,
-					bottomTrailingRadius: 10,
-					topTrailingRadius: sidebarShown ? 13 : 16
-				))
-//				.glassEffect(.clear, in: UnevenRoundedRectangle(
-//					topLeadingRadius: sidebarShown ? 13 : 16,
-//					bottomLeadingRadius: 10,
-//					bottomTrailingRadius: 10,
-//					topTrailingRadius: sidebarShown ? 13 : 16))
+				Group {
+					if TopBarBackgroundStyle(rawValue: topBarBackgroundStyle) == .glass {
+						VStack {}
+							.frame(height: topHeight)
+							.frame(maxWidth: .infinity)
+							.glassEffect(.clear, in: topBarBackgroundShape)
+					} else {
+						HazeEffect(
+							maskProvider: LinearGradientMaskProvider(
+								startPoint: .top,
+								endPoint: .bottom,
+								startOpacity: 1.0,
+								endOpacity: 1.0,
+								isSmooth: false
+							),
+							maxBlurRadius: 6
+						)
+						.frame(height: topHeight)
+						.frame(maxWidth: .infinity)
+						.clipShape(topBarBackgroundShape)
+					}
+				}
 				.overlay {
 					if let themeColor = browser.selectedTab?.controller.themeColor {
 						themeColor.opacity(0.6)
-							.clipShape(UnevenRoundedRectangle(
-								topLeadingRadius: sidebarShown ? 13 : 16,
-								bottomLeadingRadius: 10,
-								bottomTrailingRadius: 10,
-								topTrailingRadius: sidebarShown ? 13 : 16
-							))
+							.clipShape(topBarBackgroundShape)
 					}
 				}
 			}
