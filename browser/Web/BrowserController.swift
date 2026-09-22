@@ -78,6 +78,7 @@ final class BrowserController: NSObject {
 		if let webView = webView as? PeekSourceWebView {
 			webView.onZoomIn = { [weak self] in self?.zoomIn() }
 			webView.onZoomOut = { [weak self] in self?.zoomOut() }
+			webView.onResetZoom = { [weak self] in self?.resetZoom() }
 		}
 		updateThemeColor(url == nil ? .black : webView.underPageBackgroundColor ?? .white)
 
@@ -187,6 +188,15 @@ final class BrowserController: NSObject {
 
 	func reload() {
 		webView.reload()
+	}
+
+	func stopLoading() {
+		webView.stopLoading()
+	}
+
+	func resetZoom() {
+		webView.pageZoom = 1
+		ToastManager.shared.show(symbol: "1.magnifyingglass", message: "Zoom 100%")
 	}
 
 	func reloadFromOrigin() {
@@ -397,6 +407,29 @@ final class BrowserController: NSObject {
 }
 
 extension BrowserController: WKNavigationDelegate {
+	func webView(
+		_ webView: WKWebView,
+		decidePolicyFor navigationAction: WKNavigationAction,
+		decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+	) {
+		#if os(macOS)
+			let shiftPressed = navigationAction.modifierFlags.contains(.shift)
+		#else
+			let shiftPressed = (webView as? PeekSourceWebView)?.hasShiftClick == true
+		#endif
+		guard navigationAction.navigationType == .linkActivated,
+		      shiftPressed,
+		      let url = navigationAction.request.url,
+		      let newWindowRequested
+		else {
+			decisionHandler(.allow)
+			return
+		}
+		let source = newWindowSource(in: webView)
+		decisionHandler(.cancel)
+		newWindowRequested(url, source)
+	}
+
 	func webView(_: WKWebView, didFailProvisionalNavigation _: WKNavigation!, withError _: Error) {
 		pendingHistoryIndex = nil
 	}
@@ -450,11 +483,19 @@ private final class PeekSourceWebView: WKWebView {
 	var onEscape: (() -> Void)?
 	var onZoomIn: (() -> Void)?
 	var onZoomOut: (() -> Void)?
+	var onResetZoom: (() -> Void)?
 	private var clickSource: UnitPoint?
 	private var clickTime: TimeInterval = 0
+	var shiftClick = false
+	var hasShiftClick: Bool {
+		shiftClick && ProcessInfo.processInfo.systemUptime - clickTime < 2
+	}
 
 	func consumeSource() -> UnitPoint {
-		defer { clickSource = nil }
+		defer {
+			clickSource = nil
+			shiftClick = false
+		}
 		#if os(macOS)
 			if NSApp.currentEvent?.type == .keyDown {
 				return .center
@@ -486,9 +527,10 @@ private final class PeekSourceWebView: WKWebView {
 			let target = super.hitTest(point)
 			if target != nil,
 			   let event = NSApp.currentEvent,
+			   event.window === window,
 			   event.type == .leftMouseDown || event.type == .otherMouseDown
 			{
-				recordSource(at: convert(point, from: superview))
+				recordSource(at: convert(event.locationInWindow, from: nil))
 			}
 			return target
 		}
@@ -500,7 +542,13 @@ private final class PeekSourceWebView: WKWebView {
 			let zoomOut = UIKeyCommand(input: "-", modifierFlags: .command, action: #selector(decreaseZoom))
 			zoomIn.wantsPriorityOverSystemBehavior = true
 			zoomOut.wantsPriorityOverSystemBehavior = true
-			return (super.keyCommands ?? []) + [zoomIn, zoomOut] + (onEscape == nil ? [] : [escape])
+			let resetZoom = UIKeyCommand(input: "0", modifierFlags: .command, action: #selector(resetPageZoom))
+			resetZoom.wantsPriorityOverSystemBehavior = true
+			return (super.keyCommands ?? []) + [zoomIn, zoomOut, resetZoom] + (onEscape == nil ? [] : [escape])
+		}
+
+		@objc private func resetPageZoom() {
+			onResetZoom?()
 		}
 
 		@objc private func increaseZoom() {
@@ -538,8 +586,9 @@ private final class PeekSourceWebView: WKWebView {
 
 #if os(iOS)
 	private final class PeekTouchRecorder: UIGestureRecognizer {
-		override func touchesBegan(_ touches: Set<UITouch>, with _: UIEvent) {
+		override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
 			if let webView = view as? PeekSourceWebView, let touch = touches.first {
+				webView.shiftClick = event.modifierFlags.contains(.shift)
 				webView.recordSource(at: touch.location(in: webView))
 			}
 			state = .failed

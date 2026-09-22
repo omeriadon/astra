@@ -220,10 +220,7 @@ final class Browser {
 		attachPersistence(to: tab)
 		let controller = tab.controller
 		controller.escapeRequested = { [weak tab] in
-			guard let tab, let peek = tab.peeks.last else { return }
-			withAnimation(.easeOut(duration: 0.1)) {
-				tab.dismissPeek(peek.id)
-			}
+			tab?.requestPeekDismissal()
 		}
 		controller.newWindowRequested = { [weak self, weak controller, weak tab] url, source in
 			guard let self, let controller, let tab else { return }
@@ -271,10 +268,7 @@ final class Browser {
 
 	private func configure(_ peek: BrowserPeek, in tab: BrowserTab) {
 		peek.controller.escapeRequested = { [weak tab] in
-			guard let tab, let deepest = tab.peeks.last else { return }
-			withAnimation(.easeOut(duration: 0.1)) {
-				tab.dismissPeek(deepest.id)
-			}
+			tab?.requestPeekDismissal()
 		}
 		peek.controller.newWindowRequested = { [weak self, weak peek, weak tab] url, source in
 			guard let self, let peek, let tab else { return }

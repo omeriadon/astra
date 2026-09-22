@@ -68,28 +68,36 @@ struct BrowserNavigationControls: View {
 
 			} label: {
 				Label {
-					Text("Reload")
+					Text(controller?.isLoading == true ? "Stop Loading" : "Reload")
 				} icon: {
-					Image(systemName: "arrow.clockwise")
-						.symbolEffect(.pulse, options: .repeating, isActive: isReloadAnimating)
-						.symbolEffect(.breathe, options: .repeating, isActive: isReloadAnimating)
-						.symbolEffect(.rotate, options: .repeating, isActive: isReloadAnimating)
+					if controller?.isLoading == true {
+						if reduceMotion {
+							Image(systemName: "xmark")
+						} else {
+							ProgressView()
+								.controlSize(.mini)
+								.accessibilityLabel("Loading page")
+						}
+					} else {
+						Image(systemName: "arrow.clockwise")
+					}
 				}
 				.labelStyle(.iconOnly)
 				.frame(width: topBarItemWidth, height: topBarItemHeight)
 			} primaryAction: {
-				controller?.reload()
+				if controller?.isLoading == true {
+					controller?.stopLoading()
+				} else {
+					controller?.reload()
+				}
 			}
 			.clipShape(.rect(cornerRadius: 8))
+			.accessibilityLabel(controller?.isLoading == true ? "Stop Loading" : "Reload")
 			.accessibilityIdentifier("browser-reload")
 		}
 		.controlSize(.regular)
 		.buttonSizing(.fitted)
 		.buttonStyle(.bordered)
 		.menuIndicator(.hidden)
-	}
-
-	private var isReloadAnimating: Bool {
-		controller?.isLoading == true && !reduceMotion
 	}
 }

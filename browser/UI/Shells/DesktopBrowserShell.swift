@@ -27,7 +27,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	var isLocalhost: Bool {
-		browser.selectedTab?.controller.url?.host.map { host in
+		browser.selectedTab?.activeController.url?.host.map { host in
 			host == "localhost"
 				|| host.hasSuffix(".localhost")
 				|| host == "127.0.0.1"
@@ -68,7 +68,7 @@ struct DesktopBrowserShell: View {
 			)
 
 			HStack(spacing: 6) {
-				BrowserNavigationControls(controller: browser.selectedTab?.controller)
+				BrowserNavigationControls(controller: browser.selectedTab?.activeController)
 
 				BrowserAddressField(browser: browser)
 
@@ -90,7 +90,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	private var topBarColorScheme: ColorScheme {
-		guard let themeColorIsLight = browser.selectedTab?.controller.themeColorIsLight else { return colorScheme }
+		guard let themeColorIsLight = browser.selectedTab?.activeController.themeColorIsLight else { return colorScheme }
 		return themeColorIsLight ? .light : .dark
 	}
 
@@ -188,13 +188,13 @@ struct DesktopBrowserShell: View {
 					}
 				}
 				.overlay {
-					if let themeColor = browser.selectedTab?.controller.themeColor {
+					if let themeColor = browser.selectedTab?.activeController.themeColor {
 						themeColor.opacity(0.6)
 							.clipShape(topBarBackgroundShape)
 					}
 				}
 				.overlay(alignment: .bottom) {
-					if let controller = browser.selectedTab?.controller {
+					if let controller = browser.selectedTab?.activeController {
 						VStack {
 							Spacer()
 

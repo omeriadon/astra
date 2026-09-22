@@ -1,14 +1,18 @@
 import Foundation
+import Observation
 import SwiftUI
 import WebKit
 
 @MainActor
+@Observable
 final class BrowserPeek: Identifiable {
 	let id: UUID
 	let depth: Int
 	let source: UnitPoint
 	let controller: BrowserController
 	var hasPresented: Bool
+	var isPresented: Bool
+	var isDismissing = false
 
 	var openPeek: OpenPeek {
 		OpenPeek(
@@ -35,6 +39,7 @@ final class BrowserPeek: Identifiable {
 		self.source = source
 		controller = BrowserController(initialURL: url)
 		hasPresented = false
+		isPresented = false
 
 		if zoomsOut {
 			controller.webView.pageZoom = parentZoom * (depth == 1 ? 0.95 : 0.85)
@@ -57,5 +62,6 @@ final class BrowserPeek: Identifiable {
 		)
 		controller.webView.pageZoom = openPeek.pageZoom
 		hasPresented = true
+		isPresented = true
 	}
 }

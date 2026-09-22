@@ -6,24 +6,9 @@ struct PeekCardView: View {
 	let isTopmost: Bool
 	let onDismiss: () -> Void
 	let onPromote: () -> Void
+	let onDismissCompleted: () -> Void
 
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
-	@State private var isPresented: Bool
-
-	init(
-		peek: BrowserPeek,
-		viewportSize: CGSize,
-		isTopmost: Bool,
-		onDismiss: @escaping () -> Void,
-		onPromote: @escaping () -> Void
-	) {
-		self.peek = peek
-		self.viewportSize = viewportSize
-		self.isTopmost = isTopmost
-		self.onDismiss = onDismiss
-		self.onPromote = onPromote
-		_isPresented = State(initialValue: peek.hasPresented)
-	}
 
 	private var sourcePoint: CGPoint {
 		if peek.depth == 1 {
@@ -65,49 +50,56 @@ struct PeekCardView: View {
 	}
 
 	var body: some View {
-		BrowserWebView(controller: peek.controller)
+		BrowserWebView(controller: peek.controller, cornerRadius: cornerRadius)
 			.frame(width: cardRect.width, height: cardRect.height)
-			.clipShape(.rect(cornerRadius: cornerRadius))
 			.overlay(alignment: .topLeading) {
 				if isTopmost {
 					VStack(spacing: 10) {
 						peekButton("Close Peek", symbol: "xmark", identifier: "close-peek", action: dismiss)
 						peekButton("Open Peek in New Tab", symbol: "arrow.up.left.and.arrow.down.right", identifier: "promote-peek", action: onPromote)
 					}
-					.offset(x: -controlSize - 8, y: 16)
+					.offset(x: -controlSize - 15, y: 16)
 				}
 			}
-			.shadow(color: .black.opacity(0.38), radius: 32, y: 18)
-			.scaleEffect(reduceMotion || isPresented ? 1 : 0.04)
-			.offset(reduceMotion || isPresented ? .zero : sourceOffset)
+//			.shadow(color: .black.opacity(0.38), radius: 32, y: 18)
+			.scaleEffect(reduceMotion || peek.isPresented ? 1 : 0.001)
+			.offset(reduceMotion || peek.isPresented ? .zero : sourceOffset)
 			.position(x: cardRect.midX, y: cardRect.midY)
-			.opacity(isPresented ? 1 : 0)
-			.allowsHitTesting(isTopmost)
+			.opacity(reduceMotion && !peek.isPresented ? 0 : 1)
+			.allowsHitTesting(isTopmost && !peek.isDismissing)
 			.accessibilityHidden(!isTopmost)
 			.task {
 				guard !peek.hasPresented else { return }
 				await Task.yield()
 				guard !Task.isCancelled else { return }
 				withAnimation(presentationAnimation) {
-					isPresented = true
+					peek.isPresented = true
 				}
 				peek.hasPresented = true
+			}
+			.onChange(of: peek.isDismissing) { _, dismissing in
+				guard dismissing else { return }
+				withAnimation(.easeOut(duration: reduceMotion ? 0.08 : 0.1), completionCriteria: .removed) {
+					peek.isPresented = false
+				} completion: {
+					onDismissCompleted()
+				}
 			}
 	}
 
 	private var presentationAnimation: Animation {
-		.easeOut(duration: reduceMotion ? 0.08 : 0.1)
+		reduceMotion ? .easeOut(duration: 0.08) : .spring(duration: 0.2, bounce: 0.2)
 	}
 
 	private var controlSize: CGFloat {
-		min(60, max(24, cardRect.minX - 12))
+		min(40, max(24, cardRect.minX - 12))
 	}
 
 	private func peekButton(_ title: String, symbol: String, identifier: String, action: @escaping () -> Void) -> some View {
 		Button(action: action) {
 			Label(title, systemImage: symbol)
 				.labelStyle(.iconOnly)
-				.font(.system(size: 22, weight: .medium))
+				.font(.system(size: 20, weight: .medium))
 				.frame(width: controlSize, height: controlSize)
 				.contentShape(Circle())
 		}

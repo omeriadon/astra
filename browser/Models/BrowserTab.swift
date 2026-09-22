@@ -93,6 +93,10 @@ final class BrowserTab: Identifiable {
 		didChange?()
 	}
 
+	func requestPeekDismissal() {
+		peeks.last?.isDismissing = true
+	}
+
 	func rename(to title: String) {
 		customTitle = title
 	}

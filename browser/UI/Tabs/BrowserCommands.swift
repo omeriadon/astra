@@ -23,21 +23,28 @@
 
 				Button("Reload", systemImage: "arrow.clockwise", action: reload)
 					.keyboardShortcut("R", modifiers: .command)
-					.disabled(browser?.selectedTab?.controller.url == nil)
+					.disabled(browser?.selectedTab?.activeController.url == nil)
 
 				Button("Force Reload", systemImage: "arrow.trianglehead.2.clockwise.rotate.90", action: forceReload)
 					.keyboardShortcut("R", modifiers: [.command, .shift])
-					.disabled(browser?.selectedTab?.controller.url == nil)
+					.disabled(browser?.selectedTab?.activeController.url == nil)
 
 				Divider()
 
 				Button("Zoom In", systemImage: "plus.magnifyingglass", action: zoomIn)
 					.keyboardShortcut("=", modifiers: .command)
-					.disabled(browser?.selectedTab?.controller.url == nil)
+					.disabled(browser?.selectedTab?.activeController.url == nil)
 
 				Button("Zoom Out", systemImage: "minus.magnifyingglass", action: zoomOut)
 					.keyboardShortcut("-", modifiers: .command)
-					.disabled(browser?.selectedTab?.controller.url == nil)
+					.disabled(browser?.selectedTab?.activeController.url == nil)
+
+				Button("Actual Size", systemImage: "1.magnifyingglass") {
+					browser?.selectedTab?.activeController.resetZoom()
+				}
+				.keyboardShortcut("0", modifiers: .command)
+				.disabled(browser?.selectedTab?.activeController.url == nil)
+				.accessibilityIdentifier("browser-reset-zoom")
 			}
 
 			CommandMenu("Bookmarks") {
@@ -53,7 +60,7 @@
 
 				Button("Copy URL", systemImage: "doc.on.doc", action: copySelectedURL)
 					.keyboardShortcut("C", modifiers: .option)
-					.disabled(browser?.selectedTab?.controller.url == nil)
+					.disabled(browser?.selectedTab?.activeController.url == nil)
 			}
 		}
 
@@ -91,7 +98,7 @@
 		}
 
 		private func copySelectedURL() {
-			guard let url = browser?.selectedTab?.controller.url else { return }
+			guard let url = browser?.selectedTab?.activeController.url else { return }
 			NSPasteboard.general.clearContents()
 			NSPasteboard.general.setString(url.absoluteString, forType: .string)
 		}

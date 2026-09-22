@@ -13,6 +13,7 @@ struct PeekStackView: View {
 						onDismiss: dismissTopPeek
 					)
 					.frame(width: proxy.size.width, height: proxy.size.height)
+					.opacity(peek.isPresented ? 1 : 0)
 					.accessibilityLabel("Dismiss Peek")
 					.accessibilityIdentifier("dismiss-peek-\(peek.depth)")
 
@@ -26,10 +27,12 @@ struct PeekStackView: View {
 						},
 						onPromote: {
 							browser.promotePeek(in: tab, id: peek.id)
+						},
+						onDismissCompleted: {
+							tab.dismissPeek(peek.id)
 						}
 					)
 					.id(peek.id)
-					.transition(.opacity)
 				}
 			}
 			.frame(width: proxy.size.width, height: proxy.size.height)
@@ -47,15 +50,8 @@ struct PeekStackView: View {
 		#endif
 	}
 
-	private func dismiss(_ peek: BrowserPeek) {
-		withAnimation(.easeOut(duration: 0.1)) {
-			tab.dismissPeek(peek.id)
-		}
-	}
-
 	private func dismissTopPeek() {
-		guard let peek = tab.peeks.last else { return }
-		dismiss(peek)
+		tab.requestPeekDismissal()
 	}
 }
 
