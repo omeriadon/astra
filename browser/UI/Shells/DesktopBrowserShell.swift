@@ -8,19 +8,6 @@ let topBarItemHeight: CGFloat = 14
 
 let topHeight: CGFloat = 33
 
-struct TopBarButton: Identifiable {
-	let title: String
-	let systemImage: String
-	let accessibilityIdentifier: String
-	let isDisabled: Bool
-	let action: () -> Void
-	let modifier: String
-
-	var id: String {
-		accessibilityIdentifier
-	}
-}
-
 struct DesktopBrowserShell: View {
 	let browser: Browser
 	@Environment(\.colorScheme) private var colorScheme
@@ -38,33 +25,13 @@ struct DesktopBrowserShell: View {
 		#endif
 	}
 
-	private var navigationButtons: [TopBarButton] {
-		[
-			TopBarButton(
-				title: "Back",
-				systemImage: "chevron.backward",
-				accessibilityIdentifier: "browser-back",
-				isDisabled: !(browser.selectedTab?.controller.canGoBack ?? false),
-				action: { browser.selectedTab?.controller.goBack() },
-				modifier: "["
-			),
-			TopBarButton(
-				title: "Forward",
-				systemImage: "chevron.forward",
-				accessibilityIdentifier: "browser-forward",
-				isDisabled: !(browser.selectedTab?.controller.canGoForward ?? false),
-				action: { browser.selectedTab?.controller.goForward() },
-				modifier: "]"
-			),
-			TopBarButton(
-				title: "Refresh",
-				systemImage: "arrow.clockwise",
-				accessibilityIdentifier: "browser-reload",
-				isDisabled: false,
-				action: { browser.selectedTab?.controller.reload() },
-				modifier: "R"
-			),
-		]
+	var isLocalhost: Bool {
+		browser.selectedTab?.controller.url?.host.map { host in
+			host == "localhost"
+				|| host.hasSuffix(".localhost")
+				|| host == "127.0.0.1"
+				|| host == "::1"
+		} ?? false
 	}
 
 	private var topBar: some View {
@@ -86,6 +53,12 @@ struct DesktopBrowserShell: View {
 				.buttonStyle(.bordered)
 				.clipShape(RoundedRectangle(cornerRadius: 8))
 				.accessibilityIdentifier("sidebar-toggle")
+
+				#if os(macOS)
+					Spacer()
+						.contentShape(Rectangle())
+						.gesture(WindowDragGesture())
+				#endif
 			}
 			.frame(width: sidebarShown ? 224 : 125, alignment: .leading)
 			.environment(
@@ -94,20 +67,7 @@ struct DesktopBrowserShell: View {
 			)
 
 			HStack(spacing: 6) {
-				ForEach(navigationButtons) { item in
-					Button(action: item.action) {
-						Label(item.title, systemImage: item.systemImage)
-							.labelStyle(.iconOnly)
-							.frame(width: topBarItemWidth, height: topBarItemHeight)
-					}
-					.keyboardShortcut(KeyEquivalent(item.modifier.first!), modifiers: .command)
-					.disabled(item.isDisabled)
-					.controlSize(.regular)
-					.buttonSizing(.fitted)
-					.clipShape(RoundedRectangle(cornerRadius: 8))
-					.buttonStyle(.bordered)
-					.accessibilityIdentifier(item.accessibilityIdentifier)
-				}
+				BrowserNavigationControls(controller: browser.selectedTab?.controller)
 
 				BrowserAddressField(browser: browser)
 
@@ -115,6 +75,14 @@ struct DesktopBrowserShell: View {
 			}
 			.padding(.leading, sidebarShown ? 1.5 : 20)
 			.padding(.top, sidebarShown ? 8 : 0)
+			#if os(macOS)
+				.overlay(alignment: .top) {
+					Color.clear
+						.frame(height: sidebarShown ? 8 : 0)
+						.contentShape(Rectangle())
+						.gesture(WindowDragGesture())
+				}
+			#endif
 		}
 		.frame(width: nil, height: topHeight, alignment: .center)
 		.animation(.smooth(duration: 0.3), value: sidebarShown)
@@ -159,6 +127,14 @@ struct DesktopBrowserShell: View {
 						.padding(.top, 10)
 						.foregroundStyle(.secondary)
 						.accessibilityIdentifier("new-tab")
+
+						#if os(macOS)
+							Color.clear
+								.containerRelativeFrame(.vertical)
+								.contentShape(Rectangle())
+								.gesture(WindowDragGesture())
+								.accessibilityHidden(true)
+						#endif
 					}
 					.padding(.horizontal, 7)
 					.padding(.top, 35)
@@ -235,6 +211,14 @@ struct DesktopBrowserShell: View {
 				}
 			}
 			.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? 13 : 16))
+			.overlay {
+				if isLocalhost {
+					RoundedRectangle(cornerRadius: sidebarShown ? 13 : 16)
+						.inset(by: -2)
+						.strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [10, 5]))
+						.foregroundStyle(.yellow)
+				}
+			}
 			.animation(.smooth(duration: 0.3)) { view in
 				view
 					.padding(sidebarShown ? 4 : 0)

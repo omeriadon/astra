@@ -14,7 +14,10 @@ struct browserApp: App {
 			ContentView()
 		}
 		.windowStyle(.hiddenTitleBar)
-		.commandsRemoved()
+		#if os(macOS)
+			.windowBackgroundDragBehavior(.disabled)
+		#endif
+			.commandsRemoved()
 		#if os(macOS)
 			.commands {
 				BrowserCommands()

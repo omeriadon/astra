@@ -17,13 +17,10 @@ final class BrowserController: NSObject {
 
 	private(set) var history: [URL]
 	private(set) var historyIndex: Int
-	var canGoBack: Bool {
-		historyIndex > 0
-	}
-
-	var canGoForward: Bool {
-		historyIndex < history.count - 1
-	}
+	private(set) var canGoBack = false
+	private(set) var canGoForward = false
+	private(set) var backHistoryItems: [WKBackForwardListItem] = []
+	private(set) var forwardHistoryItems: [WKBackForwardListItem] = []
 
 	var url: URL?
 	private(set) var isLoading = false
@@ -63,6 +60,16 @@ final class BrowserController: NSObject {
 		updateThemeColor(url == nil ? .black : webView.underPageBackgroundColor ?? .white)
 
 		observations = [
+			webView.observe(\.canGoBack, options: [.initial, .new]) { [weak self] webView, _ in
+				MainActor.assumeIsolated {
+					self?.canGoBack = webView.canGoBack
+				}
+			},
+			webView.observe(\.canGoForward, options: [.initial, .new]) { [weak self] webView, _ in
+				MainActor.assumeIsolated {
+					self?.canGoForward = webView.canGoForward
+				}
+			},
 			webView.observe(\.isLoading, options: [.initial, .new]) { [weak self] webView, _ in
 				MainActor.assumeIsolated {
 					self?.isLoading = webView.isLoading
@@ -78,8 +85,7 @@ final class BrowserController: NSObject {
 					guard let self else { return }
 					guard let url = change.newValue ?? webView.url else { return }
 					self.url = url
-					self.recordNavigation(to: url)
-					self.navigationDidChange?()
+					self.updateHistory()
 				}
 			},
 			webView.observe(\.themeColor, options: [.initial, .new]) { [weak self] webView, change in
@@ -119,21 +125,23 @@ final class BrowserController: NSObject {
 	}
 
 	func goBack() {
-		guard canGoBack else { return }
-		historyIndex -= 1
-		navigationDidChange?()
-		load(history[historyIndex])
+		webView.goBack()
 	}
 
 	func goForward() {
-		guard canGoForward else { return }
-		historyIndex += 1
-		navigationDidChange?()
-		load(history[historyIndex])
+		webView.goForward()
+	}
+
+	func go(to item: WKBackForwardListItem) {
+		webView.go(to: item)
 	}
 
 	func reload() {
 		webView.reload()
+	}
+
+	func reloadFromOrigin() {
+		webView.reloadFromOrigin()
 	}
 
 	func loadFaviconIfMissing() {
@@ -154,18 +162,17 @@ final class BrowserController: NSObject {
 		}
 	#endif
 
-	private func recordNavigation(to url: URL) {
-		guard !history.isEmpty else {
-			history = [url]
-			historyIndex = 0
-			return
+	private func updateHistory() {
+		let backForwardList = webView.backForwardList
+		backHistoryItems = Array(backForwardList.backList.reversed())
+		forwardHistoryItems = backForwardList.forwardList
+		history = backForwardList.backList.map(\.url)
+		historyIndex = history.count
+		if let currentItem = backForwardList.currentItem {
+			history.append(currentItem.url)
 		}
-		guard history[historyIndex] != url else { return }
-		history.removeSubrange((historyIndex + 1) ..< history.count)
-		if history.last != url {
-			history.append(url)
-		}
-		historyIndex = history.count - 1
+		history.append(contentsOf: backForwardList.forwardList.map(\.url))
+		navigationDidChange?()
 	}
 
 	private func updateThemeColor(_ color: PlatformColor) {
@@ -323,6 +330,7 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webView(_: WKWebView, didFinish _: WKNavigation!) {
+		updateHistory()
 		let generation = navigationGeneration
 		if let url {
 			Task { @MainActor in
