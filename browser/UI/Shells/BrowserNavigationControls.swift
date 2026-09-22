@@ -3,7 +3,6 @@ import WebKit
 
 struct BrowserNavigationControls: View {
 	let controller: BrowserController?
-	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	private var backItems: [WKBackForwardListItem] {
 		controller?.backHistoryItems ?? []
@@ -11,6 +10,17 @@ struct BrowserNavigationControls: View {
 
 	private var forwardItems: [WKBackForwardListItem] {
 		controller?.forwardHistoryItems ?? []
+	}
+
+	private func navigationLabel(
+		_ title: String,
+		systemImage: String,
+		foregroundStyle: HierarchicalShapeStyle = .primary
+	) -> some View {
+		Label(title, systemImage: systemImage)
+			.labelStyle(.iconOnly)
+			.foregroundStyle(foregroundStyle)
+			.frame(width: topBarItemWidth, height: topBarItemHeight)
 	}
 
 	var body: some View {
@@ -21,18 +31,23 @@ struct BrowserNavigationControls: View {
 						.disabled(true)
 				} else {
 					ForEach(backItems.enumerated(), id: \.offset) { _, item in
-						Button(item.title ?? item.url.absoluteString, systemImage: "clock.arrow.circlepath") {
+						Button(
+							item.title ?? item.url.absoluteString,
+							systemImage: "clock.arrow.circlepath"
+						) {
 							controller?.go(to: item)
 						}
 					}
 				}
 			} label: {
-				Label("Back", systemImage: "chevron.backward")
-					.labelStyle(.iconOnly)
-					.frame(width: topBarItemWidth, height: topBarItemHeight)
-					.foregroundStyle(controller?.canGoBack == true ? .primary : .tertiary)
-					.clipShape(.rect(cornerRadius: 8))
-
+				navigationLabel(
+					"Back",
+					systemImage: "chevron.backward",
+					foregroundStyle:
+					controller?.canGoBack == true
+						? .primary
+						: .tertiary
+				)
 			} primaryAction: {
 				controller?.goBack()
 			}
@@ -45,16 +60,23 @@ struct BrowserNavigationControls: View {
 						.disabled(true)
 				} else {
 					ForEach(forwardItems.enumerated(), id: \.offset) { _, item in
-						Button(item.title ?? item.url.absoluteString, systemImage: "clock.arrow.circlepath") {
+						Button(
+							item.title ?? item.url.absoluteString,
+							systemImage: "clock.arrow.circlepath"
+						) {
 							controller?.go(to: item)
 						}
 					}
 				}
 			} label: {
-				Label("Forward", systemImage: "chevron.forward")
-					.labelStyle(.iconOnly)
-					.frame(width: topBarItemWidth, height: topBarItemHeight)
-					.foregroundStyle(controller?.canGoForward == true ? .primary : .tertiary)
+				navigationLabel(
+					"Forward",
+					systemImage: "chevron.forward",
+					foregroundStyle:
+					controller?.canGoForward == true
+						? .primary
+						: .tertiary
+				)
 			} primaryAction: {
 				controller?.goForward()
 			}
@@ -62,27 +84,20 @@ struct BrowserNavigationControls: View {
 			.accessibilityIdentifier("browser-forward")
 
 			Menu {
-				Button("Force Reload", systemImage: "arrow.trianglehead.2.clockwise.rotate.90") {
+				Button(
+					"Force Reload",
+					systemImage: "arrow.trianglehead.2.clockwise.rotate.90"
+				) {
 					controller?.reloadFromOrigin()
 				}
-
 			} label: {
-				Label {
-					Text(controller?.isLoading == true ? "Stop Loading" : "Reload")
-				} icon: {
-					if controller?.isLoading == true, reduceMotion {
-						Image(systemName: "xmark")
-					} else {
-						Image(systemName: "arrow.clockwise")
-							.symbolEffect(
-								.rotate,
-								options: .repeat(.continuous),
-								isActive: controller?.isLoading == true
-							)
-					}
-				}
-				.labelStyle(.iconOnly)
-				.frame(width: topBarItemWidth, height: topBarItemHeight)
+				Label("Reload", systemImage: "arrow.clockwise")
+					.hidden()
+					.labelStyle(.iconOnly)
+					.frame(
+						width: topBarItemWidth,
+						height: topBarItemHeight
+					)
 			} primaryAction: {
 				if controller?.isLoading == true {
 					controller?.stopLoading()
@@ -90,13 +105,34 @@ struct BrowserNavigationControls: View {
 					controller?.reload()
 				}
 			}
+			.overlay {
+				ZStack {
+					if controller?.isLoading == true {
+						Image(systemName: "xmark")
+							.transition(.blurReplace)
+					} else {
+						Image(systemName: "arrow.clockwise")
+							.transition(.blurReplace)
+					}
+				}
+				.animation(
+					.bouncy(duration: 0.3),
+					value: controller?.isLoading
+				)
+				.allowsHitTesting(false)
+			}
 			.clipShape(.rect(cornerRadius: 8))
-			.accessibilityLabel(controller?.isLoading == true ? "Stop Loading" : "Reload")
+			.accessibilityLabel(
+				controller?.isLoading == true
+					? "Stop Loading"
+					: "Reload"
+			)
 			.accessibilityIdentifier("browser-reload")
 		}
 		.controlSize(.regular)
 		.buttonSizing(.fitted)
 		.buttonStyle(.bordered)
 		.menuIndicator(.hidden)
+		.menuStyle(.borderedButton)
 	}
 }

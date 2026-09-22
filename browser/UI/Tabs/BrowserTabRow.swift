@@ -135,8 +135,6 @@ struct BrowserTabRow: View {
 
 			Divider()
 
-			Button("Reload", systemImage: "arrow.clockwise", action: tab.controller.reload)
-
 			Button("Copy URL", systemImage: "doc.on.doc", action: copyURL)
 				.disabled(tab.controller.url == nil)
 
