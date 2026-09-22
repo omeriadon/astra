@@ -178,6 +178,8 @@ struct DesktopBrowserShell: View {
 					)
 				)
 
+//				VStack {}
+
 				HazeEffect(
 					maskProvider: LinearGradientMaskProvider(
 						startPoint: .top,
@@ -186,13 +188,30 @@ struct DesktopBrowserShell: View {
 						endOpacity: 1.0,
 						isSmooth: false
 					),
-					maxBlurRadius: 9
+					maxBlurRadius: 6
 				)
 				.frame(height: topHeight)
 				.frame(maxWidth: .infinity)
+				.clipShape(UnevenRoundedRectangle(
+					topLeadingRadius: sidebarShown ? 13 : 16,
+					bottomLeadingRadius: 10,
+					bottomTrailingRadius: 10,
+					topTrailingRadius: sidebarShown ? 13 : 16
+				))
+//				.glassEffect(.clear, in: UnevenRoundedRectangle(
+//					topLeadingRadius: sidebarShown ? 13 : 16,
+//					bottomLeadingRadius: 10,
+//					bottomTrailingRadius: 10,
+//					topTrailingRadius: sidebarShown ? 13 : 16))
 				.overlay {
 					if let themeColor = browser.selectedTab?.controller.themeColor {
 						themeColor.opacity(0.6)
+							.clipShape(UnevenRoundedRectangle(
+								topLeadingRadius: sidebarShown ? 13 : 16,
+								bottomLeadingRadius: 10,
+								bottomTrailingRadius: 10,
+								topTrailingRadius: sidebarShown ? 13 : 16
+							))
 					}
 				}
 			}
