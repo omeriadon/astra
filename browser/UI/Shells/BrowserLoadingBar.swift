@@ -18,14 +18,14 @@ struct BrowserLoadingBar: View {
 			.accessibilityLabel("Page loading progress")
 			.accessibilityValue(Text(displayedProgress, format: .percent))
 			.accessibilityHidden(!isVisible)
+			.onChange(of: isLoading, initial: true) { _, isLoading in
+				loadingDidChange(isLoading)
+			}
 			.onChange(of: estimatedProgress, initial: true) { _, progress in
 				guard isLoading else { return }
 				withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
 					displayedProgress = min(clamped(progress), 0.99)
 				}
-			}
-			.onChange(of: isLoading, initial: true) { _, isLoading in
-				loadingDidChange(isLoading)
 			}
 	}
 
@@ -33,7 +33,9 @@ struct BrowserLoadingBar: View {
 		completionGeneration += 1
 
 		if isLoading {
-			displayedProgress = min(clamped(estimatedProgress), 0.99)
+			withAnimation(nil) {
+				displayedProgress = 0
+			}
 			isVisible = true
 			return
 		}
