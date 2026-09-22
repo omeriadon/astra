@@ -125,14 +125,13 @@ struct DesktopBrowserShell: View {
 		return themeColorIsLight ? .light : .dark
 	}
 
-	private var topBarBackgroundShape: RoundedRectangle {
-		RoundedRectangle(cornerRadius: sidebarShown ? 13 : 16)
-//		UnevenRoundedRectangle(
-//			topLeadingRadius: sidebarShown ? 13 : 16,
-//			bottomLeadingRadius: 10,
-//			bottomTrailingRadius: 10,
-//			topTrailingRadius: sidebarShown ? 13 : 16
-//		)
+	private var topBarBackgroundShape: UnevenRoundedRectangle {
+		UnevenRoundedRectangle(
+			topLeadingRadius: sidebarShown ? 10 : 16,
+			bottomLeadingRadius: sidebarShown ? 12 : 6,
+			bottomTrailingRadius: sidebarShown ? 12 : 6,
+			topTrailingRadius: sidebarShown ? 10 : 16
+		)
 	}
 
 	var body: some View {
