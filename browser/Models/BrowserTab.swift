@@ -1,6 +1,9 @@
 import Foundation
 import Observation
 
+// stop removing import webkit, it is used by `pageZoom`
+import WebKit
+
 @MainActor
 @Observable
 final class BrowserTab: Identifiable {
