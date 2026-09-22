@@ -14,6 +14,12 @@
     {
       "kind": "local",
       "path": "../../Haze",
+    }, {
+      "kind": "remote",
+      "repository": "https://github.com/sindresorhus/Defaults",
+      "version": {
+        "up-to-next-major-version": "9.0.9",
+      },
     },
   ],
   "files": [
@@ -40,6 +46,10 @@
       "package-product-members": [
         {
           "product-name": "Haze",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "package": "Defaults",
+          "product-name": "Defaults",
           "build-phase": { "build-phase": "frameworks" },
         },
       ],
