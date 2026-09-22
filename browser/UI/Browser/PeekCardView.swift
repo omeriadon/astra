@@ -9,6 +9,9 @@ struct PeekCardView: View {
 	let onDismissCompleted: () -> Void
 
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	@Namespace private var controlsNamespace
+	@State private var showsWebContent = false
+	@State private var showsPlaceholder = true
 
 	private var sourcePoint: CGPoint {
 		if peek.depth == 1 {
@@ -50,46 +53,79 @@ struct PeekCardView: View {
 	}
 
 	var body: some View {
-		BrowserWebView(controller: peek.controller)
-			.frame(width: cardRect.width, height: cardRect.height)
-			.clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-			.overlay(alignment: .topLeading) {
-				if isTopmost {
-					VStack(spacing: 10) {
+		ZStack {
+			BrowserWebView(controller: peek.controller)
+				.clipShape(.rect(cornerRadius: cornerRadius))
+				.opacity(showsWebContent ? 1 : 0)
+
+			if showsPlaceholder {
+				RoundedRectangle(cornerRadius: cornerRadius)
+					.fill(peek.controller.themeColor ?? .black)
+					.scaleEffect(reduceMotion || peek.isPresented ? 1 : 0.001)
+					.offset(reduceMotion || peek.isPresented ? .zero : sourceOffset)
+					.transition(.opacity)
+			}
+		}
+		.frame(width: cardRect.width, height: cardRect.height)
+		.overlay(alignment: .topLeading) {
+			GlassEffectContainer(spacing: 10) {
+				VStack(spacing: 10) {
+					if isTopmost, !showsPlaceholder {
 						peekButton("Close Peek", symbol: "xmark", identifier: "close-peek", action: dismiss)
-						peekButton("Open Peek in New Tab", symbol: "arrow.up.left.and.arrow.down.right", identifier: "promote-peek", action: onPromote)
+						peekButton("Open Peek in New Tab", symbol: "arrow.up.left.and.arrow.down.right", identifier: "promote-peek", action: promote)
 					}
-					.offset(x: -controlSize - 15, y: 16)
 				}
 			}
+			.animation(controlsAnimation, value: isTopmost)
+			.offset(x: -controlSize - 15, y: 16)
+		}
 //			.shadow(color: .black.opacity(0.38), radius: 32, y: 18)
-			.scaleEffect(reduceMotion || peek.isPresented ? 1 : 0.001)
-			.offset(reduceMotion || peek.isPresented ? .zero : sourceOffset)
-			.position(x: cardRect.midX, y: cardRect.midY)
-			.opacity(reduceMotion && !peek.isPresented ? 0 : 1)
-			.allowsHitTesting(isTopmost && !peek.isDismissing)
-			.accessibilityHidden(!isTopmost)
-			.task {
-				guard !peek.hasPresented else { return }
-				await Task.yield()
-				guard !Task.isCancelled else { return }
-				withAnimation(presentationAnimation) {
-					peek.isPresented = true
-				}
-				peek.hasPresented = true
+		.position(x: cardRect.midX, y: cardRect.midY)
+		.allowsHitTesting(showsWebContent && isTopmost && !peek.isDismissing)
+		.accessibilityHidden(!isTopmost)
+		.task {
+			guard !peek.hasPresented else {
+				showsWebContent = true
+				showsPlaceholder = false
+				return
 			}
-			.onChange(of: peek.isDismissing) { _, dismissing in
-				guard dismissing else { return }
+			await Task.yield()
+			guard !Task.isCancelled else { return }
+			withAnimation(presentationAnimation, completionCriteria: .logicallyComplete) {
+				peek.isPresented = true
+			} completion: {
+				withAnimation(nil) {
+					showsWebContent = true
+				}
+				withAnimation(.easeIn(duration: reduceMotion ? 0.01 : 0.2)) {
+					showsPlaceholder = false
+				}
+			}
+			peek.hasPresented = true
+		}
+		.onChange(of: peek.isDismissing) { _, dismissing in
+			guard dismissing else { return }
+			withAnimation(.easeOut(duration: reduceMotion ? 0.01 : 0.2), completionCriteria: .removed) {
+				showsPlaceholder = true
+			} completion: {
+				withAnimation(nil) {
+					showsWebContent = false
+				}
 				withAnimation(.easeOut(duration: reduceMotion ? 0.08 : 0.1), completionCriteria: .removed) {
 					peek.isPresented = false
 				} completion: {
 					onDismissCompleted()
 				}
 			}
+		}
 	}
 
 	private var presentationAnimation: Animation {
 		reduceMotion ? .easeOut(duration: 0.08) : .spring(duration: 0.2, bounce: 0.2)
+	}
+
+	private var controlsAnimation: Animation {
+		.easeOut(duration: reduceMotion ? 0.01 : 0.2)
 	}
 
 	private var controlSize: CGFloat {
@@ -106,11 +142,24 @@ struct PeekCardView: View {
 		}
 		.buttonStyle(.plain)
 		.glassEffect(.regular.interactive(), in: .circle)
+		.glassEffectID(identifier, in: controlsNamespace)
+		.glassEffectTransition(.materialize)
 		.accessibilityLabel(title)
 		.accessibilityIdentifier("\(identifier)-\(peek.depth)")
 	}
 
 	private func dismiss() {
 		onDismiss()
+	}
+
+	private func promote() {
+		withAnimation(.easeOut(duration: reduceMotion ? 0.01 : 0.2), completionCriteria: .removed) {
+			showsPlaceholder = true
+		} completion: {
+			withAnimation(nil) {
+				showsWebContent = false
+			}
+			onPromote()
+		}
 	}
 }

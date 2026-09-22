@@ -70,16 +70,15 @@ struct BrowserNavigationControls: View {
 				Label {
 					Text(controller?.isLoading == true ? "Stop Loading" : "Reload")
 				} icon: {
-					if controller?.isLoading == true {
-						if reduceMotion {
-							Image(systemName: "xmark")
-						} else {
-							ProgressView()
-								.controlSize(.mini)
-								.accessibilityLabel("Loading page")
-						}
+					if controller?.isLoading == true, reduceMotion {
+						Image(systemName: "xmark")
 					} else {
 						Image(systemName: "arrow.clockwise")
+							.symbolEffect(
+								.rotate,
+								options: .repeat(.continuous),
+								isActive: controller?.isLoading == true
+							)
 					}
 				}
 				.labelStyle(.iconOnly)
