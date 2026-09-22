@@ -67,8 +67,11 @@ struct DesktopBrowserShell: View {
 				sidebarShown ? colorScheme : topBarColorScheme
 			)
 
-			HStack(spacing: 6) {
-				BrowserNavigationControls(controller: browser.selectedTab?.activeController)
+			HStack(spacing: 10) {
+				if let controller = browser.selectedTab?.activeController {
+					BrowserNavigationControls(controller: controller)
+						.id(ObjectIdentifier(controller))
+				}
 
 				BrowserAddressField(browser: browser)
 

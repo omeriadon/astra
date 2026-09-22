@@ -18,12 +18,22 @@ final class BrowserController: NSObject {
 		return PeekSourceWebView(frame: .zero, configuration: configuration)
 	}()
 
-	private(set) var history: [URL]
-	private(set) var historyIndex: Int
-	private(set) var canGoBack = false
-	private(set) var canGoForward = false
-	private(set) var backHistoryItems: [WKBackForwardListItem] = []
-	private(set) var forwardHistoryItems: [WKBackForwardListItem] = []
+	private var historyManager: BrowserHistory
+	var history: [URL] {
+		historyManager.entries
+	}
+
+	var historyIndex: Int {
+		historyManager.index
+	}
+
+	var canGoBack: Bool {
+		historyManager.canGoBack
+	}
+
+	var canGoForward: Bool {
+		historyManager.canGoForward
+	}
 
 	var url: URL?
 	private(set) var isLoading = false
@@ -52,11 +62,11 @@ final class BrowserController: NSObject {
 	@ObservationIgnored
 	private var hasDeclaredThemeColor = false
 	@ObservationIgnored
-	private var pendingHistoryIndex: Int?
-	@ObservationIgnored
-	private var usesRestoredHistory = false
-	@ObservationIgnored
 	private var pendingRequest: URLRequest?
+	@ObservationIgnored
+	private var currentNavigation: WKNavigation?
+	@ObservationIgnored
+	private var awaitsNavigationCommit = false
 	#if os(macOS)
 		@ObservationIgnored
 		private var previewSnapshotRefreshTask: Task<Void, Never>?
@@ -65,15 +75,9 @@ final class BrowserController: NSObject {
 	#endif
 
 	init(initialURL: URL? = nil, history: [URL] = [], historyIndex: Int = 0) {
-		let restoredHistory = history.isEmpty ? initialURL.map { [$0] } ?? [] : history
-		let restoredHistoryIndex = restoredHistory.isEmpty ? 0 : min(max(historyIndex, 0), restoredHistory.count - 1)
-		self.history = restoredHistory
-		self.historyIndex = restoredHistoryIndex
-		pendingHistoryIndex = restoredHistory.isEmpty ? nil : restoredHistoryIndex
-		usesRestoredHistory = !history.isEmpty
-		canGoBack = restoredHistoryIndex > 0
-		canGoForward = restoredHistoryIndex + 1 < restoredHistory.count
-		url = restoredHistory.isEmpty ? nil : restoredHistory[restoredHistoryIndex]
+		let restoredHistory = BrowserHistory(entries: history, index: historyIndex, initialURL: initialURL)
+		historyManager = restoredHistory
+		url = restoredHistory.currentURL
 		super.init()
 		webView.navigationDelegate = self
 		webView.uiDelegate = self
@@ -88,18 +92,6 @@ final class BrowserController: NSObject {
 		updateThemeColor(url == nil ? .black : webView.underPageBackgroundColor ?? .white)
 
 		observations = [
-			webView.observe(\.canGoBack, options: [.initial, .new]) { [weak self] _, _ in
-				MainActor.assumeIsolated {
-					guard let self else { return }
-					self.canGoBack = self.historyIndex > 0
-				}
-			},
-			webView.observe(\.canGoForward, options: [.initial, .new]) { [weak self] _, _ in
-				MainActor.assumeIsolated {
-					guard let self else { return }
-					self.canGoForward = self.historyIndex + 1 < self.history.count
-				}
-			},
 			webView.observe(\.isLoading, options: [.initial, .new]) { [weak self] webView, _ in
 				MainActor.assumeIsolated {
 					self?.isLoading = webView.isLoading
@@ -113,9 +105,13 @@ final class BrowserController: NSObject {
 			webView.observe(\.url, options: [.initial, .new]) { [weak self] webView, change in
 				MainActor.assumeIsolated {
 					guard let self else { return }
+					guard !self.awaitsNavigationCommit else { return }
 					guard let url = change.newValue ?? webView.url else { return }
 					self.url = url
 					if !webView.isLoading {
+						if (webView as? PeekSourceWebView)?.consumeRecentClick() == true {
+							self.historyManager.beginVisit()
+						}
 						self.updateHistory()
 					}
 				}
@@ -158,38 +154,28 @@ final class BrowserController: NSObject {
 	}
 
 	func load(_ url: URL) {
-		pendingHistoryIndex = nil
+		webView.stopLoading()
+		(webView as? PeekSourceWebView)?.consumeRecentClick()
+		historyManager.beginVisit()
 		self.url = url
 		load(URLRequest(url: url))
 	}
 
 	func goBack() {
-		guard historyIndex > 0 else { return }
-		pendingHistoryIndex = historyIndex - 1
-		if !usesRestoredHistory, webView.canGoBack {
-			webView.goBack()
-		} else {
-			load(URLRequest(url: history[historyIndex - 1]))
-		}
+		go(toHistoryIndex: historyIndex - 1)
 	}
 
 	func goForward() {
-		guard historyIndex + 1 < history.count else { return }
-		pendingHistoryIndex = historyIndex + 1
-		if !usesRestoredHistory, webView.canGoForward {
-			webView.goForward()
-		} else {
-			load(URLRequest(url: history[historyIndex + 1]))
-		}
+		go(toHistoryIndex: historyIndex + 1)
 	}
 
-	func go(to item: WKBackForwardListItem) {
-		if let index = backHistoryItems.firstIndex(where: { $0 === item }) {
-			pendingHistoryIndex = historyIndex - index - 1
-		} else if let index = forwardHistoryItems.firstIndex(where: { $0 === item }) {
-			pendingHistoryIndex = historyIndex + index + 1
-		}
-		webView.go(to: item)
+	func go(toHistoryIndex index: Int) {
+		guard let destination = historyManager.select(index) else { return }
+		webView.stopLoading()
+		(webView as? PeekSourceWebView)?.consumeRecentClick()
+		url = destination
+		navigationDidChange?()
+		load(URLRequest(url: destination))
 	}
 
 	func reload() {
@@ -244,33 +230,20 @@ final class BrowserController: NSObject {
 	#endif
 
 	private func updateHistory() {
-		let backForwardList = webView.backForwardList
-		backHistoryItems = usesRestoredHistory ? [] : Array(backForwardList.backList.reversed())
-		forwardHistoryItems = usesRestoredHistory ? [] : backForwardList.forwardList
 		guard let currentURL = webView.url else { return }
-		if let index = pendingHistoryIndex, history.indices.contains(index) {
-			historyIndex = index
-			history[index] = currentURL
-			pendingHistoryIndex = nil
-		} else if history.isEmpty || history[historyIndex] != currentURL {
-			if !history.isEmpty {
-				history.removeSubrange((historyIndex + 1)...)
-			}
-			history.append(currentURL)
-			historyIndex = history.count - 1
-		}
-		canGoBack = historyIndex > 0
-		canGoForward = historyIndex + 1 < history.count
+		url = currentURL
+		historyManager.record(currentURL)
 		navigationDidChange?()
 	}
 
 	private func load(_ request: URLRequest) {
+		awaitsNavigationCommit = true
 		guard !webView.bounds.isEmpty else {
 			pendingRequest = request
 			return
 		}
 		pendingRequest = nil
-		webView.load(request)
+		currentNavigation = webView.load(request)
 	}
 
 	private func loadPendingRequest() {
@@ -442,6 +415,15 @@ extension BrowserController: WKNavigationDelegate {
 		      let url = navigationAction.request.url,
 		      let newWindowRequested
 		else {
+			if navigationAction.targetFrame?.isMainFrame == true {
+				switch navigationAction.navigationType {
+					case .linkActivated, .formSubmitted, .formResubmitted:
+						historyManager.beginVisit()
+						(webView as? PeekSourceWebView)?.consumeRecentClick()
+					default:
+						break
+				}
+			}
 			decisionHandler(.allow)
 			return
 		}
@@ -450,20 +432,35 @@ extension BrowserController: WKNavigationDelegate {
 		newWindowRequested(url, source)
 	}
 
-	func webView(_: WKWebView, didFailProvisionalNavigation _: WKNavigation!, withError _: Error) {
-		pendingHistoryIndex = nil
+	func webView(_: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+		guard navigation === currentNavigation else { return }
+		guard (error as NSError).code != NSURLErrorCancelled else { return }
+		awaitsNavigationCommit = false
+		historyManager.cancelVisit()
 	}
 
-	func webView(_: WKWebView, didFail _: WKNavigation!, withError _: Error) {
-		pendingHistoryIndex = nil
+	func webView(_: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+		guard navigation === currentNavigation else { return }
+		guard (error as NSError).code != NSURLErrorCancelled else { return }
+		awaitsNavigationCommit = false
+		historyManager.cancelVisit()
 	}
 
-	func webView(_: WKWebView, didStartProvisionalNavigation _: WKNavigation!) {
+	func webView(_: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+		currentNavigation = navigation
+		awaitsNavigationCommit = true
 		navigationGeneration += 1
 		hasDeclaredThemeColor = false
 	}
 
-	func webView(_: WKWebView, didFinish _: WKNavigation!) {
+	func webView(_: WKWebView, didCommit navigation: WKNavigation!) {
+		guard navigation === currentNavigation else { return }
+		awaitsNavigationCommit = false
+		updateHistory()
+	}
+
+	func webView(_: WKWebView, didFinish navigation: WKNavigation!) {
+		guard navigation === currentNavigation else { return }
 		updateHistory()
 		let generation = navigationGeneration
 		if let url {
@@ -512,9 +509,19 @@ private final class PeekSourceWebView: WKWebView {
 		shiftClick && ProcessInfo.processInfo.systemUptime - clickTime < 2
 	}
 
+	@discardableResult
+	func consumeRecentClick() -> Bool {
+		guard clickTime > 0,
+		      ProcessInfo.processInfo.systemUptime - clickTime < 2
+		else { return false }
+		clickTime = 0
+		return true
+	}
+
 	func consumeSource() -> UnitPoint {
 		defer {
 			clickSource = nil
+			clickTime = 0
 			shiftClick = false
 		}
 		#if os(macOS)
@@ -522,7 +529,9 @@ private final class PeekSourceWebView: WKWebView {
 				return .center
 			}
 		#endif
-		guard ProcessInfo.processInfo.systemUptime - clickTime < 2 else { return .center }
+		guard clickTime > 0,
+		      ProcessInfo.processInfo.systemUptime - clickTime < 2
+		else { return .center }
 		return clickSource ?? .center
 	}
 

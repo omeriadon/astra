@@ -1,85 +1,62 @@
 import SwiftUI
-import WebKit
 
 struct BrowserNavigationControls: View {
-	let controller: BrowserController?
-
-	private var backItems: [WKBackForwardListItem] {
-		controller?.backHistoryItems ?? []
-	}
-
-	private var forwardItems: [WKBackForwardListItem] {
-		controller?.forwardHistoryItems ?? []
-	}
+	let controller: BrowserController
 
 	private func navigationLabel(
 		_ title: String,
-		systemImage: String,
-		foregroundStyle: HierarchicalShapeStyle = .primary
+		systemImage: String
 	) -> some View {
 		Label(title, systemImage: systemImage)
 			.labelStyle(.iconOnly)
-			.foregroundStyle(foregroundStyle)
 			.frame(width: topBarItemWidth, height: topBarItemHeight)
 	}
 
 	var body: some View {
 		HStack(spacing: 6) {
 			Menu {
-				if backItems.isEmpty {
-					Button("No Back History", systemImage: "minus.circle") {}
-						.disabled(true)
-				} else {
-					ForEach(backItems.enumerated(), id: \.offset) { _, item in
+				if controller.canGoBack {
+					ForEach((0 ..< controller.historyIndex).reversed(), id: \.self) { index in
 						Button(
-							item.title ?? item.url.absoluteString,
+							controller.history[index].absoluteString,
 							systemImage: "clock.arrow.circlepath"
 						) {
-							controller?.go(to: item)
+							controller.go(toHistoryIndex: index)
 						}
 					}
 				}
 			} label: {
 				navigationLabel(
 					"Back",
-					systemImage: "chevron.backward",
-					foregroundStyle:
-					controller?.canGoBack == true
-						? .primary
-						: .tertiary
+					systemImage: "chevron.backward"
 				)
 			} primaryAction: {
-				controller?.goBack()
+				controller.goBack()
 			}
+			.disabled(!controller.canGoBack)
 			.clipShape(.rect(cornerRadius: 8))
 			.accessibilityIdentifier("browser-back")
 
 			Menu {
-				if forwardItems.isEmpty {
-					Button("No Forward History", systemImage: "minus.circle") {}
-						.disabled(true)
-				} else {
-					ForEach(forwardItems.enumerated(), id: \.offset) { _, item in
+				if controller.canGoForward {
+					ForEach((controller.historyIndex + 1) ..< controller.history.count, id: \.self) { index in
 						Button(
-							item.title ?? item.url.absoluteString,
+							controller.history[index].absoluteString,
 							systemImage: "clock.arrow.circlepath"
 						) {
-							controller?.go(to: item)
+							controller.go(toHistoryIndex: index)
 						}
 					}
 				}
 			} label: {
 				navigationLabel(
 					"Forward",
-					systemImage: "chevron.forward",
-					foregroundStyle:
-					controller?.canGoForward == true
-						? .primary
-						: .tertiary
+					systemImage: "chevron.forward"
 				)
 			} primaryAction: {
-				controller?.goForward()
+				controller.goForward()
 			}
+			.disabled(!controller.canGoForward)
 			.clipShape(.rect(cornerRadius: 8))
 			.accessibilityIdentifier("browser-forward")
 
@@ -88,7 +65,7 @@ struct BrowserNavigationControls: View {
 					"Force Reload",
 					systemImage: "arrow.trianglehead.2.clockwise.rotate.90"
 				) {
-					controller?.reloadFromOrigin()
+					controller.reloadFromOrigin()
 				}
 			} label: {
 				Label("Reload", systemImage: "arrow.clockwise")
@@ -99,15 +76,15 @@ struct BrowserNavigationControls: View {
 						height: topBarItemHeight
 					)
 			} primaryAction: {
-				if controller?.isLoading == true {
-					controller?.stopLoading()
+				if controller.isLoading {
+					controller.stopLoading()
 				} else {
-					controller?.reload()
+					controller.reload()
 				}
 			}
 			.overlay {
 				ZStack {
-					if controller?.isLoading == true {
+					if controller.isLoading {
 						Image(systemName: "xmark")
 							.transition(.blurReplace)
 					} else {
@@ -117,13 +94,13 @@ struct BrowserNavigationControls: View {
 				}
 				.animation(
 					.bouncy(duration: 0.3),
-					value: controller?.isLoading
+					value: controller.isLoading
 				)
 				.allowsHitTesting(false)
 			}
 			.clipShape(.rect(cornerRadius: 8))
 			.accessibilityLabel(
-				controller?.isLoading == true
+				controller.isLoading
 					? "Stop Loading"
 					: "Reload"
 			)
@@ -134,5 +111,7 @@ struct BrowserNavigationControls: View {
 		.buttonStyle(.bordered)
 		.menuIndicator(.hidden)
 		.menuStyle(.borderedButton)
+		.id(controller.history)
+		.id(controller.historyIndex)
 	}
 }
