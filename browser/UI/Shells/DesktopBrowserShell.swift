@@ -115,17 +115,6 @@ struct DesktopBrowserShell: View {
 			}
 			.padding(.leading, sidebarShown ? 1.5 : 20)
 			.padding(.top, sidebarShown ? 8 : 0)
-			.overlay(alignment: .bottom) {
-				if let controller = browser.selectedTab?.controller {
-					BrowserLoadingBar(
-						isLoading: controller.isLoading,
-						estimatedProgress: controller.estimatedProgress
-					)
-					.frame(height: 2)
-					.id(browser.selectedTabID)
-				}
-			}
-			.clipShape(topBarBackgroundShape)
 		}
 		.frame(width: nil, height: topHeight, alignment: .center)
 		.animation(.smooth(duration: 0.3), value: sidebarShown)
@@ -217,7 +206,6 @@ struct DesktopBrowserShell: View {
 							),
 							maxBlurRadius: 6
 						)
-						.frame(height: topHeight)
 						.frame(maxWidth: .infinity)
 						.clipShape(topBarBackgroundShape)
 					}
@@ -226,6 +214,23 @@ struct DesktopBrowserShell: View {
 					if let themeColor = browser.selectedTab?.controller.themeColor {
 						themeColor.opacity(0.6)
 							.clipShape(topBarBackgroundShape)
+					}
+				}
+				.overlay(alignment: .bottom) {
+					if let controller = browser.selectedTab?.controller {
+						VStack {
+							Spacer()
+
+							BrowserLoadingBar(
+								isLoading: controller.isLoading,
+								estimatedProgress: controller.estimatedProgress
+							)
+							.frame(height: 1.5)
+							.frame(maxWidth: .infinity)
+						}
+						.frame(height: topHeight)
+						.clipShape(topBarBackgroundShape)
+						.id(browser.selectedTabID)
 					}
 				}
 			}
