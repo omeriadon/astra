@@ -210,33 +210,24 @@ struct DesktopBrowserShell: View {
 						.id(browser.selectedTabID)
 					}
 				}
-				.overlay {
-					GeometryReader { proxy in
-						ForEach(browser.peekRequests) { request in
-							PeekOverlayView(
-								request: request,
-								availableSize: proxy.size,
-								onDismiss: {
-									browser.dismissPeekRequest(request.id)
-								},
-								onNewWindow: { url, point, depth in
-									browser.requestPeek(url: url, point: point, depth: depth)
-								}
-							)
-							.id(request.id)
-						}
-					}
+
+				VStack(spacing: 0) {
+					Color.clear
+						.frame(height: topHeight)
+						.allowsHitTesting(false)
+
+					PeekStackView(browser: browser)
 				}
-				.overlay(alignment: .topTrailing) {
-					if let toast = toastManager.toast {
-						BrowserToastView(toast: toast)
-							.padding(.top, topHeight + 12)
-							.padding(.trailing, 14)
-							.transition(.move(edge: .trailing))
-					}
-				}
-				.animation(.smooth(duration: 0.22), value: toastManager.toast)
 			}
+			.overlay(alignment: .topTrailing) {
+				if let toast = toastManager.toast {
+					BrowserToastView(toast: toast)
+						.padding(.top, topHeight + 12)
+						.padding(.trailing, 14)
+						.transition(.move(edge: .trailing))
+				}
+			}
+			.animation(.smooth(duration: 0.22), value: toastManager.toast)
 			.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? 13 : 16))
 			.overlay {
 				if isLocalhost {

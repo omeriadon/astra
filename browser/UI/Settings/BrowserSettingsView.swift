@@ -6,7 +6,7 @@ struct BrowserSettingsView: View {
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
 	@Default(.topBarBackgroundStyle) private var topBarBackgroundStyle
 	@Default(.peekLevel) private var peekLevel
-	@Default(.secondPeekUses105PercentZoom) private var secondPeekUses105PercentZoom
+	@Default(.zoomOutInPeeks) private var zoomOutInPeeks
 
 	var body: some View {
 		List {
@@ -49,9 +49,9 @@ struct BrowserSettingsView: View {
 				}
 				.accessibilityIdentifier("peek-level-picker")
 
-				if peekLevel == .two {
-					Toggle("Zoom second Peek to 105%", isOn: $secondPeekUses105PercentZoom)
-						.accessibilityIdentifier("second-peek-zoom-toggle")
+				if peekLevel != .none {
+					Toggle("Zoom out in Peeks", isOn: $zoomOutInPeeks)
+						.accessibilityIdentifier("zoom-out-in-peeks-toggle")
 				}
 			}
 

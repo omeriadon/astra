@@ -1,7 +1,8 @@
-import CoreGraphics
 import Defaults
 import Foundation
 import Observation
+import SwiftUI
+import WebKit
 
 @MainActor
 @Observable
@@ -11,7 +12,7 @@ final class Browser {
 	private(set) var recentlyUsedTabIDs: [UUID]
 	private(set) var bookmarks: [Bookmark]
 	private(set) var persistenceErrorDescription: String?
-	private(set) var peekRequests: [PeekRequest] = []
+	private(set) var peeks: [BrowserPeek] = []
 
 	@ObservationIgnored
 	private let persistence: BrowserPersistence?
@@ -85,6 +86,9 @@ final class Browser {
 
 	func selectTab(_ id: UUID) {
 		guard let tab = tabs.first(where: { $0.id == id }) else { return }
+		if selectedTabID != id {
+			peeks.removeAll()
+		}
 		selectedTabID = id
 		recentlyUsedTabIDs.removeAll { $0 == id }
 		recentlyUsedTabIDs.insert(id, at: 0)
@@ -134,13 +138,9 @@ final class Browser {
 		selectedTab?.controller.load(bookmark.url)
 	}
 
-	func dismissPeekRequest(_ id: UUID) {
-		peekRequests.removeAll { $0.id == id }
-	}
-
-	func requestPeek(url: URL, point: CGPoint, depth: Int) {
-		guard depth <= Defaults[.peekLevel].maximumDepth else { return }
-		peekRequests.append(PeekRequest(url: url, point: point, depth: depth))
+	func dismissPeek(_ id: UUID) {
+		guard let index = peeks.firstIndex(where: { $0.id == id }) else { return }
+		peeks.removeSubrange(index...)
 	}
 
 	func removeBookmark(_ id: UUID) {
@@ -211,15 +211,55 @@ final class Browser {
 
 	private func configure(_ tab: BrowserTab) {
 		attachPersistence(to: tab)
-		tab.controller.newWindowRequested = { [weak self] url, point in
-			guard let self else { return }
+		let controller = tab.controller
+		controller.newWindowRequested = { [weak self, weak controller] url, source in
+			guard let self, let controller else { return }
 			if Defaults[.peekLevel] == .none {
-				let newTab = addTab()
-				newTab.controller.load(url)
+				openNewTab(url)
 				return
 			}
-			requestPeek(url: url, point: point, depth: 1)
+			openPeek(
+				url: url,
+				source: source,
+				depth: 1,
+				parentZoom: controller.webView.pageZoom
+			)
 		}
+	}
+
+	private func openPeek(
+		url: URL,
+		source: UnitPoint,
+		depth: Int,
+		parentZoom: Double
+	) {
+		guard depth <= Defaults[.peekLevel].maximumDepth else {
+			openNewTab(url)
+			return
+		}
+
+		let peek = BrowserPeek(
+			url: url,
+			depth: depth,
+			source: source,
+			parentZoom: parentZoom,
+			zoomsOut: Defaults[.zoomOutInPeeks]
+		)
+		peek.controller.newWindowRequested = { [weak self, weak peek] url, source in
+			guard let self, let peek else { return }
+			openPeek(
+				url: url,
+				source: source,
+				depth: peek.depth + 1,
+				parentZoom: peek.controller.webView.pageZoom
+			)
+		}
+		peeks.append(peek)
+	}
+
+	private func openNewTab(_ url: URL) {
+		let tab = addTab()
+		tab.controller.load(url)
 	}
 
 	private func removeTabs(_ ids: Set<UUID>, selecting selectedID: UUID) {

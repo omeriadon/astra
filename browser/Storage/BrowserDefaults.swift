@@ -22,8 +22,8 @@ extension Defaults.Keys {
 		"peekLevel",
 		default: .none
 	)
-	static let secondPeekUses105PercentZoom = Key<Bool>(
-		"secondPeekUses105PercentZoom",
+	static let zoomOutInPeeks = Key<Bool>(
+		"zoomOutInPeeks",
 		default: true
 	)
 }

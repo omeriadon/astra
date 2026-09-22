@@ -39,7 +39,7 @@ final class BrowserController: NSObject {
 	@ObservationIgnored
 	var titleDidChange: (@MainActor (String?) -> Void)?
 	@ObservationIgnored
-	var newWindowRequested: (@MainActor (URL, CGPoint) -> Void)?
+	var newWindowRequested: (@MainActor (URL, UnitPoint) -> Void)?
 
 	@ObservationIgnored
 	private var observations: [NSKeyValueObservation] = []
@@ -154,7 +154,7 @@ final class BrowserController: NSObject {
 		webView.pageZoom = min(webView.pageZoom + 0.1, 5)
 		ToastManager.shared.show(
 			symbol: "plus.magnifyingglass",
-			message: "Zoom (Int(webView.pageZoom * 100))%"
+			message: "Zoom \(Int(webView.pageZoom * 100))%"
 		)
 	}
 
@@ -162,7 +162,7 @@ final class BrowserController: NSObject {
 		webView.pageZoom = max(webView.pageZoom - 0.1, 0.25)
 		ToastManager.shared.show(
 			symbol: "minus.magnifyingglass",
-			message: "Zoom (Int(webView.pageZoom * 100))%"
+			message: "Zoom \(Int(webView.pageZoom * 100))%"
 		)
 	}
 
@@ -378,20 +378,24 @@ extension BrowserController: WKUIDelegate {
 		      let url = navigationAction.request.url
 		else { return nil }
 
-		#if os(macOS)
-			let point: CGPoint
-			if let window = webView.window {
-				let windowPoint = window.convertPoint(fromScreen: NSEvent.mouseLocation)
-				point = webView.convert(windowPoint, from: nil)
-			} else {
-				point = CGPoint(x: webView.bounds.midX, y: webView.bounds.midY)
-			}
-		#else
-			let point = CGPoint(x: webView.bounds.midX, y: webView.bounds.midY)
-		#endif
-
-		newWindowRequested?(url, point)
+		newWindowRequested?(url, newWindowSource(in: webView))
 		return nil
+	}
+
+	private func newWindowSource(in webView: WKWebView) -> UnitPoint {
+		guard webView.bounds.width > 0, webView.bounds.height > 0 else { return .center }
+
+		#if os(macOS)
+			guard let window = webView.window else { return .center }
+			let windowPoint = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+			let point = webView.convert(windowPoint, from: nil)
+			return UnitPoint(
+				x: min(max(point.x / webView.bounds.width, 0), 1),
+				y: min(max(1 - point.y / webView.bounds.height, 0), 1)
+			)
+		#else
+			return .center
+		#endif
 	}
 }
 
