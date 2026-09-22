@@ -3,7 +3,6 @@ import WebKit
 
 struct BrowserWebView {
 	let controller: BrowserController
-	var cornerRadius: CGFloat = 0
 
 	/// UI currently covering the webpage.
 	var obscuredInsets = EdgeInsets()
@@ -18,27 +17,13 @@ struct BrowserWebView {
 #if os(iOS)
 
 	extension BrowserWebView: UIViewRepresentable {
-		func makeUIView(context _: Context) -> UIView {
+		func makeUIView(context _: Context) -> WKWebView {
 			let webView = controller.webView
 			configure(webView)
-			let container = UIView()
-			container.layer.cornerRadius = cornerRadius
-			container.layer.cornerCurve = .continuous
-			container.layer.masksToBounds = true
-			webView.removeFromSuperview()
-			webView.translatesAutoresizingMaskIntoConstraints = false
-			container.addSubview(webView)
-			NSLayoutConstraint.activate([
-				webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-				webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-				webView.topAnchor.constraint(equalTo: container.topAnchor),
-				webView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-			])
-			return container
+			return webView
 		}
 
-		func updateUIView(_ view: UIView, context _: Context) {
-			view.layer.cornerRadius = cornerRadius
+		func updateUIView(_: WKWebView, context _: Context) {
 			configure(controller.webView)
 		}
 
@@ -66,28 +51,13 @@ struct BrowserWebView {
 #elseif os(macOS)
 
 	extension BrowserWebView: NSViewRepresentable {
-		func makeNSView(context _: Context) -> NSView {
+		func makeNSView(context _: Context) -> WKWebView {
 			let webView = controller.webView
 			configure(webView)
-			let container = NSView()
-			container.wantsLayer = true
-			container.layer?.cornerRadius = cornerRadius
-			container.layer?.cornerCurve = .continuous
-			container.layer?.masksToBounds = true
-			webView.removeFromSuperview()
-			webView.translatesAutoresizingMaskIntoConstraints = false
-			container.addSubview(webView)
-			NSLayoutConstraint.activate([
-				webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-				webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-				webView.topAnchor.constraint(equalTo: container.topAnchor),
-				webView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-			])
-			return container
+			return webView
 		}
 
-		func updateNSView(_ view: NSView, context _: Context) {
-			view.layer?.cornerRadius = cornerRadius
+		func updateNSView(_: WKWebView, context _: Context) {
 			configure(controller.webView)
 		}
 

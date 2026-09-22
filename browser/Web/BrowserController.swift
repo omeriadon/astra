@@ -55,6 +55,8 @@ final class BrowserController: NSObject {
 	private var pendingHistoryIndex: Int?
 	@ObservationIgnored
 	private var usesRestoredHistory = false
+	@ObservationIgnored
+	private var pendingRequest: URLRequest?
 	#if os(macOS)
 		@ObservationIgnored
 		private var previewSnapshotRefreshTask: Task<Void, Never>?
@@ -76,6 +78,9 @@ final class BrowserController: NSObject {
 		webView.navigationDelegate = self
 		webView.uiDelegate = self
 		if let webView = webView as? PeekSourceWebView {
+			webView.onLayout = { [weak self] in
+				self?.loadPendingRequest()
+			}
 			webView.onZoomIn = { [weak self] in self?.zoomIn() }
 			webView.onZoomOut = { [weak self] in self?.zoomOut() }
 			webView.onResetZoom = { [weak self] in self?.resetZoom() }
@@ -142,7 +147,7 @@ final class BrowserController: NSObject {
 		#endif
 
 		if let url {
-			webView.load(URLRequest(url: url))
+			load(URLRequest(url: url))
 		}
 	}
 
@@ -154,7 +159,8 @@ final class BrowserController: NSObject {
 
 	func load(_ url: URL) {
 		pendingHistoryIndex = nil
-		webView.load(URLRequest(url: url))
+		self.url = url
+		load(URLRequest(url: url))
 	}
 
 	func goBack() {
@@ -163,7 +169,7 @@ final class BrowserController: NSObject {
 		if !usesRestoredHistory, webView.canGoBack {
 			webView.goBack()
 		} else {
-			webView.load(URLRequest(url: history[historyIndex - 1]))
+			load(URLRequest(url: history[historyIndex - 1]))
 		}
 	}
 
@@ -173,7 +179,7 @@ final class BrowserController: NSObject {
 		if !usesRestoredHistory, webView.canGoForward {
 			webView.goForward()
 		} else {
-			webView.load(URLRequest(url: history[historyIndex + 1]))
+			load(URLRequest(url: history[historyIndex + 1]))
 		}
 	}
 
@@ -256,6 +262,20 @@ final class BrowserController: NSObject {
 		canGoBack = historyIndex > 0
 		canGoForward = historyIndex + 1 < history.count
 		navigationDidChange?()
+	}
+
+	private func load(_ request: URLRequest) {
+		guard !webView.bounds.isEmpty else {
+			pendingRequest = request
+			return
+		}
+		pendingRequest = nil
+		webView.load(request)
+	}
+
+	private func loadPendingRequest() {
+		guard let pendingRequest else { return }
+		load(pendingRequest)
 	}
 
 	private func updateThemeColor(_ color: PlatformColor) {
@@ -481,6 +501,7 @@ extension BrowserController: WKUIDelegate {
 
 private final class PeekSourceWebView: WKWebView {
 	var onEscape: (() -> Void)?
+	var onLayout: (() -> Void)?
 	var onZoomIn: (() -> Void)?
 	var onZoomOut: (() -> Void)?
 	var onResetZoom: (() -> Void)?
@@ -523,6 +544,11 @@ private final class PeekSourceWebView: WKWebView {
 	}
 
 	#if os(macOS)
+		override func layout() {
+			super.layout()
+			onLayout?()
+		}
+
 		override func hitTest(_ point: NSPoint) -> NSView? {
 			let target = super.hitTest(point)
 			if target != nil,
@@ -535,6 +561,11 @@ private final class PeekSourceWebView: WKWebView {
 			return target
 		}
 	#elseif os(iOS)
+		override func layoutSubviews() {
+			super.layoutSubviews()
+			onLayout?()
+		}
+
 		override var keyCommands: [UIKeyCommand]? {
 			let escape = UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(dismissPeek))
 			escape.wantsPriorityOverSystemBehavior = true
