@@ -26,9 +26,13 @@ struct CompactBrowserShell: View {
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
 
 			HStack(spacing: 16) {
-				Capsule()
-					.fill(.gray.opacity(0.35))
-					.frame(width: 40, height: 40)
+				Button("Edit Theme", systemImage: "paintpalette") {
+					browser.openInternalPage(.themeEditor)
+				}
+				.labelStyle(.iconOnly)
+				.frame(width: 40, height: 40)
+				.buttonStyle(.bordered)
+				.accessibilityIdentifier("edit-browser-theme")
 
 				Capsule()
 					.fill(.gray.opacity(0.35))

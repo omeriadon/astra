@@ -4,10 +4,23 @@ import Observation
 // stop removing import webkit, it is used by `pageZoom`
 import WebKit
 
+enum BrowserInternalPage: Equatable {
+	case themeEditor
+
+	var title: String {
+		"Theme Editor"
+	}
+
+	var symbol: String {
+		"paintpalette"
+	}
+}
+
 @MainActor
 @Observable
 final class BrowserTab: Identifiable {
 	let id: UUID
+	let internalPage: BrowserInternalPage?
 	private(set) var pageTitle: String {
 		didSet { markModified() }
 	}
@@ -17,7 +30,7 @@ final class BrowserTab: Identifiable {
 	}
 
 	var title: String {
-		customTitle ?? pageTitle
+		internalPage?.title ?? customTitle ?? pageTitle
 	}
 
 	var hasCustomTitle: Bool {
@@ -30,7 +43,7 @@ final class BrowserTab: Identifiable {
 	}
 
 	var isHibernated: Bool {
-		controller == nil
+		internalPage == nil && controller == nil
 	}
 
 	var currentURL: URL? {
@@ -67,6 +80,7 @@ final class BrowserTab: Identifiable {
 
 	init(
 		id: UUID = UUID(),
+		internalPage: BrowserInternalPage? = nil,
 		pageTitle: String = "New Tab",
 		customTitle: String? = nil,
 		initialURL: URL? = nil,
@@ -80,6 +94,7 @@ final class BrowserTab: Identifiable {
 		existingController: BrowserController? = nil
 	) {
 		self.id = id
+		self.internalPage = internalPage
 		self.pageTitle = pageTitle
 		self.customTitle = customTitle
 		storedURL = initialURL
@@ -90,7 +105,7 @@ final class BrowserTab: Identifiable {
 		storedPeeks = openPeeks
 		self.modifiedAt = modifiedAt
 		peeks = isHibernated ? [] : openPeeks.map(BrowserPeek.init(openPeek:))
-		controller = if isHibernated {
+		controller = if isHibernated || internalPage != nil {
 			nil
 		} else {
 			existingController ?? BrowserController(
@@ -110,6 +125,7 @@ final class BrowserTab: Identifiable {
 	}
 
 	func hibernate() {
+		guard internalPage == nil else { return }
 		guard let controller else { return }
 		storedURL = controller.url
 		storedHistory = controller.history
@@ -124,6 +140,7 @@ final class BrowserTab: Identifiable {
 	}
 
 	func wake() {
+		guard internalPage == nil else { return }
 		guard controller == nil else { return }
 		let controller = BrowserController(
 			initialURL: storedURL,
@@ -158,10 +175,12 @@ final class BrowserTab: Identifiable {
 	}
 
 	func rename(to title: String) {
+		guard internalPage == nil else { return }
 		customTitle = title
 	}
 
 	func revertTitle() {
+		guard internalPage == nil else { return }
 		customTitle = nil
 	}
 

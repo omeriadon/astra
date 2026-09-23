@@ -74,13 +74,13 @@
           "product-name": "DockProgress",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
         }, {
-          "package": "Noise",
-          "product-name": "Noise",
-          "build-phase": { "build-phase": "frameworks" },
-        }, {
           "package": "MaterialView",
           "product-name": "MaterialView",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
+        }, {
+          "package": "Noise",
+          "product-name": "Noise",
+          "build-phase": { "build-phase": "frameworks" },
         },
       ],
       "build-settings": {

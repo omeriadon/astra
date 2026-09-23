@@ -46,7 +46,9 @@ struct BrowserTabRow: View {
 				Label {
 					Text("Select Tab")
 				} icon: {
-					if let favicon = FaviconStore.shared.image(
+					if let page = tab.internalPage {
+						Image(systemName: page.symbol)
+					} else if let favicon = FaviconStore.shared.image(
 						for: tab.currentURL,
 						in: tab.controller?.webView
 					) {
@@ -97,8 +99,10 @@ struct BrowserTabRow: View {
 					.accessibilityAction(.default) {
 						browser.selectTab(tab.id)
 					}
-					.accessibilityAction(named: "Rename") {
-						beginRenaming()
+					.accessibilityActions {
+						if tab.internalPage == nil {
+							Button("Rename", systemImage: "pencil") { beginRenaming() }
+						}
 					}
 					.accessibilityIdentifier("tab-title-\(tab.id.uuidString)")
 			}
@@ -120,12 +124,12 @@ struct BrowserTabRow: View {
 		.background {
 			ZStack {
 				if isSelected {
-					RoundedRectangle(cornerRadius: 13)
-						.glassEffect(.regular.tint(theme.tabColor).interactive(), in: RoundedRectangle(cornerRadius: 13))
+					RoundedRectangle(cornerRadius: attachedBrowserCornerRadius)
+						.glassEffect(.regular.tint(theme.tabColor).interactive(), in: RoundedRectangle(cornerRadius: attachedBrowserCornerRadius))
 						.glassEffectTransition(.materialize)
 				} else if isHovered {
-					RoundedRectangle(cornerRadius: 13)
-						.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 13))
+					RoundedRectangle(cornerRadius: attachedBrowserCornerRadius)
+						.glassEffect(.regular, in: RoundedRectangle(cornerRadius: attachedBrowserCornerRadius))
 						.glassEffectTransition(.materialize)
 				}
 			}
@@ -133,28 +137,30 @@ struct BrowserTabRow: View {
 		}
 		.onHover { isHovered = $0 }
 		.contextMenu {
-			Button("Revert Tab Name", systemImage: "arrow.uturn.backward", action: tab.revertTitle)
-				.disabled(!tab.hasCustomTitle)
+			if tab.internalPage == nil {
+				Button("Revert Tab Name", systemImage: "arrow.uturn.backward", action: tab.revertTitle)
+					.disabled(!tab.hasCustomTitle)
 
-			Button("Duplicate Tab", systemImage: "plus.square.on.square") {
-				browser.duplicateTab(tab.id)
+				Button("Duplicate Tab", systemImage: "plus.square.on.square") {
+					browser.duplicateTab(tab.id)
+				}
+
+				Button("Hibernate Tab", systemImage: "moon.zzz") {
+					browser.hibernateTab(tab.id)
+				}
+				.disabled(tab.isHibernated)
+				.accessibilityIdentifier("hibernate-tab-\(tab.id.uuidString)")
+
+				Button("Pin Tab", systemImage: "pin") {}
+					.disabled(true)
+
+				Divider()
+
+				Button("Copy URL", systemImage: "doc.on.doc", action: copyURL)
+					.disabled(tab.currentURL == nil)
+
+				Divider()
 			}
-
-			Button("Hibernate Tab", systemImage: "moon.zzz") {
-				browser.hibernateTab(tab.id)
-			}
-			.disabled(tab.isHibernated)
-			.accessibilityIdentifier("hibernate-tab-\(tab.id.uuidString)")
-
-			Button("Pin Tab", systemImage: "pin") {}
-				.disabled(true)
-
-			Divider()
-
-			Button("Copy URL", systemImage: "doc.on.doc", action: copyURL)
-				.disabled(tab.currentURL == nil)
-
-			Divider()
 
 			Button("Close Tabs Above", systemImage: "arrow.up.to.line") {
 				browser.closeTabsAbove(tab.id)
@@ -185,6 +191,7 @@ struct BrowserTabRow: View {
 	}
 
 	private func beginRenaming() {
+		guard tab.internalPage == nil else { return }
 		browser.selectTab(tab.id)
 		renameText = tab.title
 		isRenaming = true

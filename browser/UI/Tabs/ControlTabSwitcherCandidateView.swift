@@ -11,7 +11,7 @@
 		let action: () -> Void
 
 		private var host: String {
-			tab.currentURL?.host ?? "New Tab"
+			tab.internalPage == nil ? tab.currentURL?.host ?? "New Tab" : "Internal Page"
 		}
 
 		private var accessibilityTraits: AccessibilityTraits {
@@ -26,7 +26,11 @@
 			Button(action: action) {
 				VStack(spacing: 7) {
 					Group {
-						if let snapshot = tab.controller?.previewSnapshot {
+						if let page = tab.internalPage {
+							Image(systemName: page.symbol)
+								.font(.system(size: 32))
+								.frame(maxWidth: .infinity, maxHeight: .infinity)
+						} else if let snapshot = tab.controller?.previewSnapshot {
 							Image(nsImage: snapshot)
 								.resizable()
 								.aspectRatio(contentMode: .fill)

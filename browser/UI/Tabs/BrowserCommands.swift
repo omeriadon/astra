@@ -11,6 +11,12 @@
 
 		var body: some Commands {
 			CommandMenu("Navigation") {
+				Button("Open Location", systemImage: "link") {
+					browser?.addTab()
+				}
+				.keyboardShortcut("L", modifiers: .command)
+				.disabled(browser?.selectedTab?.internalPage == nil)
+
 				Button("Back", systemImage: "chevron.backward", action: goBack)
 					.keyboardShortcut("[", modifiers: .command)
 					.disabled(!(browser?.selectedTab?.activeController?.canGoBack ?? false))
@@ -56,7 +62,7 @@
 			CommandMenu("Tab") {
 				Button("Duplicate Tab", systemImage: "plus.square.on.square", action: duplicateSelectedTab)
 					.keyboardShortcut("D", modifiers: .command)
-					.disabled(browser == nil)
+					.disabled(browser?.selectedTab == nil || browser?.selectedTab?.internalPage != nil)
 
 				Button("Copy URL", systemImage: "doc.on.doc", action: copySelectedURL)
 					.keyboardShortcut("C", modifiers: .option)

@@ -1,13 +1,17 @@
+import Defaults
 import SwiftUI
 
 struct BrowserContentView: View {
 	let browser: Browser
 	var insets = BrowserViewportInsets()
+	@Default(.browserTheme) private var theme
+	@Environment(\.colorScheme) private var colorScheme
 
 	var body: some View {
 		GeometryReader { proxy in
 			content
 				.frame(width: proxy.size.width, height: proxy.size.height)
+				.background(theme.contentShade(for: colorScheme).gradient)
 				.allowsHitTesting(browser.selectedTab?.peeks.isEmpty ?? true)
 				.accessibilityHidden(!(browser.selectedTab?.peeks.isEmpty ?? true))
 		}
@@ -15,9 +19,14 @@ struct BrowserContentView: View {
 
 	@ViewBuilder
 	private var content: some View {
-		if let tab = browser.selectedTab,
-		   let controller = tab.controller,
-		   controller.url != nil
+		if let tab = browser.selectedTab, let page = tab.internalPage {
+			switch page {
+				case .themeEditor:
+					BrowserThemeEditorView()
+			}
+		} else if let tab = browser.selectedTab,
+		          let controller = tab.controller,
+		          controller.url != nil
 		{
 			BrowserWebView(
 				controller: controller,
@@ -41,7 +50,6 @@ struct BrowserContentView: View {
 		} else if browser.selectedTab != nil {
 			NewTabView(browser: browser)
 				.padding(.top, insets.obscured.top)
-				.background(.white.opacity(0.15).gradient)
 		} else {
 			ContentUnavailableView("Tab Unavailable", systemImage: "exclamationmark.triangle")
 		}

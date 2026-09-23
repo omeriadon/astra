@@ -34,7 +34,7 @@ struct BrowserNavigationControls: View {
 				controller.goBack()
 			}
 			.disabled(!controller.canGoBack)
-			.clipShape(.rect(cornerRadius: 8))
+			.clipShape(.rect(cornerRadius: attachedBrowserCornerRadius))
 			.accessibilityIdentifier("browser-back")
 
 			Menu {
@@ -57,7 +57,7 @@ struct BrowserNavigationControls: View {
 				controller.goForward()
 			}
 			.disabled(!controller.canGoForward)
-			.clipShape(.rect(cornerRadius: 8))
+			.clipShape(.rect(cornerRadius: attachedBrowserCornerRadius))
 			.accessibilityIdentifier("browser-forward")
 
 			Menu {
@@ -98,7 +98,7 @@ struct BrowserNavigationControls: View {
 				)
 				.allowsHitTesting(false)
 			}
-			.clipShape(.rect(cornerRadius: 8))
+			.clipShape(.rect(cornerRadius: attachedBrowserCornerRadius))
 			.accessibilityLabel(
 				controller.isLoading
 					? "Stop Loading"

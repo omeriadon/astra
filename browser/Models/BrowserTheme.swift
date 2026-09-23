@@ -67,7 +67,16 @@ struct BrowserTheme: Codable, Equatable {
 	}
 
 	var tabColor: Color {
-		nearestMeshColor(to: CGPoint(x: 1, y: 0))?.color ?? .clear
+		nearestMeshColor(to: .zero)?.color ?? .white.opacity(0.2)
+	}
+
+	func contentShade(for systemScheme: ColorScheme) -> Color {
+		let isDark = switch appearanceMode {
+			case .dark: true
+			case .light: false
+			case .auto: systemScheme == .dark
+		}
+		return (isDark ? Color.black : .white).opacity(0.2)
 	}
 
 	var progressColor: Color {

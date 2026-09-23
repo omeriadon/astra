@@ -4,6 +4,8 @@ import SwiftUI
 
 struct BrowserSettingsView: View {
 	@State private var sync = BrowserSync.shared
+	@Default(.browserTheme) private var theme
+	@Environment(\.colorScheme) private var colorScheme
 	@Default(.syncServerURL) private var syncServerURL
 	@Default(.tabSwitchingOrder) private var tabSwitchingOrder
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
@@ -124,6 +126,8 @@ struct BrowserSettingsView: View {
 			}
 		}
 		.navigationTitle("Settings")
+		.scrollContentBackground(.hidden)
+		.background(theme.contentShade(for: colorScheme).gradient)
 		.frame(minWidth: 360, minHeight: 180)
 	}
 }

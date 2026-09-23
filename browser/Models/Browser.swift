@@ -25,6 +25,14 @@ final class Browser {
 		tabs.first { $0.id == selectedTabID }
 	}
 
+	private var webTabs: [BrowserTab] {
+		tabs.filter { $0.internalPage == nil }
+	}
+
+	private var persistedSelectedTabID: UUID {
+		selectedTab?.internalPage == nil ? selectedTabID : webTabs.first?.id ?? selectedTabID
+	}
+
 	init() {
 		let loadedTabs: [BrowserTab]
 		let loadedSelectedTabID: UUID
@@ -104,6 +112,16 @@ final class Browser {
 		return tab
 	}
 
+	func openInternalPage(_ page: BrowserInternalPage) {
+		if let existing = tabs.first(where: { $0.internalPage == page }) {
+			selectTab(existing.id)
+			return
+		}
+		let tab = BrowserTab(internalPage: page)
+		tabs.append(tab)
+		selectTab(tab.id)
+	}
+
 	func selectTab(_ id: UUID) {
 		guard let tab = tabs.first(where: { $0.id == id }) else { return }
 		if tab.isHibernated {
@@ -173,6 +191,7 @@ final class Browser {
 	func duplicateTab(_ id: UUID) {
 		guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
 		let source = tabs[index]
+		guard source.internalPage == nil else { return }
 		let sourceSnapshot = source.openTab
 		let tab = BrowserTab(
 			pageTitle: source.pageTitle,
@@ -192,8 +211,11 @@ final class Browser {
 	func closeTab(_ id: UUID) {
 		guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
 		let wasSelected = selectedTabID == id
+		let wasInternal = tabs[index].internalPage != nil
 		tabs.remove(at: index)
-		closedTabIDs.insert(id)
+		if !wasInternal {
+			closedTabIDs.insert(id)
+		}
 		recentlyUsedTabIDs.removeAll { $0 == id }
 
 		if tabs.isEmpty {
@@ -202,7 +224,9 @@ final class Browser {
 		}
 
 		if wasSelected {
-			selectedTabID = tabs[min(index, tabs.count - 1)].id
+			selectedTabID = wasInternal
+				? recentlyUsedTabIDs.first(where: { recentID in tabs.contains { $0.id == recentID } }) ?? tabs[0].id
+				: tabs[min(index, tabs.count - 1)].id
 			recentlyUsedTabIDs.removeAll { $0 == selectedTabID }
 			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
 		}
@@ -326,8 +350,9 @@ final class Browser {
 	}
 
 	private func removeTabs(_ ids: Set<UUID>, selecting selectedID: UUID) {
+		let closedWebIDs = Set(tabs.filter { ids.contains($0.id) && $0.internalPage == nil }.map(\.id))
 		tabs.removeAll { ids.contains($0.id) }
-		closedTabIDs.formUnion(ids)
+		closedTabIDs.formUnion(closedWebIDs)
 		recentlyUsedTabIDs.removeAll { ids.contains($0) }
 		selectedTabID = selectedID
 		recentlyUsedTabIDs.removeAll { $0 == selectedID }
@@ -337,10 +362,10 @@ final class Browser {
 
 	func syncDocument(settings: [String: SyncedSetting]) -> BrowserSyncDocument {
 		BrowserSyncDocument(
-			tabs: tabs.map(\.openTab),
+			tabs: webTabs.map(\.openTab),
 			bookmarks: bookmarks,
 			browser: BrowserSnapshot(
-				selectedTabID: selectedTabID,
+				selectedTabID: persistedSelectedTabID,
 				closedTabIDs: closedTabIDs,
 				deletedBookmarkIDs: deletedBookmarkIDs
 			),
@@ -373,9 +398,9 @@ final class Browser {
 		if changedTabs.isEmpty {
 			let tab = BrowserTab()
 			configure(tab)
-			tabs = [tab]
+			tabs = [tab] + tabs.filter { $0.internalPage != nil }
 		} else {
-			tabs = changedTabs
+			tabs = changedTabs + tabs.filter { $0.internalPage != nil }
 		}
 		closedTabIDs = document.browser.closedTabIDs
 		deletedBookmarkIDs = document.browser.deletedBookmarkIDs
@@ -410,10 +435,10 @@ final class Browser {
 		guard let persistence else { return }
 		do {
 			try persistence.saveBookmarks(bookmarks)
-			try persistence.saveOpenTabs(tabs.map(\.openTab))
+			try persistence.saveOpenTabs(webTabs.map(\.openTab))
 			try persistence.saveBrowserSnapshot(
 				BrowserSnapshot(
-					selectedTabID: selectedTabID,
+					selectedTabID: persistedSelectedTabID,
 					closedTabIDs: closedTabIDs,
 					deletedBookmarkIDs: deletedBookmarkIDs
 				)
