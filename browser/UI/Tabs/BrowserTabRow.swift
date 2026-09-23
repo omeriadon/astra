@@ -116,12 +116,12 @@ struct BrowserTabRow: View {
 		}
 		.padding(.horizontal, 8)
 		.frame(height: 28)
-		.foregroundStyle(theme.tabTextColor)
+		.foregroundStyle(theme.foregroundColor)
 		.background {
 			ZStack {
 				if isSelected {
 					RoundedRectangle(cornerRadius: 13)
-						.glassEffect(.regular.tint(theme.tabColor.color).interactive(), in: RoundedRectangle(cornerRadius: 13))
+						.glassEffect(.regular.tint(theme.tabColor).interactive(), in: RoundedRectangle(cornerRadius: 13))
 						.glassEffectTransition(.materialize)
 				} else if isHovered {
 					RoundedRectangle(cornerRadius: 13)

@@ -62,6 +62,7 @@ struct DesktopBrowserShell: View {
 				}
 				.labelStyle(.iconOnly)
 				.buttonStyle(.bordered)
+				.foregroundStyle(theme.foregroundColor)
 				.clipShape(RoundedRectangle(cornerRadius: 8))
 				.accessibilityIdentifier("edit-browser-theme")
 				.popover(isPresented: $showsThemeEditor, arrowEdge: .top) {
@@ -144,7 +145,7 @@ struct DesktopBrowserShell: View {
 						.buttonStyle(.plain)
 						.frame(maxWidth: .infinity, alignment: .leading)
 						.padding(.top, 10)
-						.foregroundStyle(.secondary)
+						.foregroundStyle(theme.foregroundColor.opacity(0.65))
 						.accessibilityIdentifier("new-tab")
 
 						#if os(macOS)
@@ -172,6 +173,7 @@ struct DesktopBrowserShell: View {
 				.frame(height: topHeight)
 				.frame(maxWidth: .infinity)
 			}
+			.foregroundStyle(theme.foregroundColor)
 
 		} content: {
 			ZStack(alignment: .top) {

@@ -6,31 +6,59 @@ struct BrowserThemeBackground: View {
 
 	var body: some View {
 		ZStack {
-			Group {
-				if theme.usesGradient {
-					LinearGradient(
-						colors: [theme.firstColor.color, theme.secondColor.color],
-						startPoint: theme.gradientDirection.startPoint,
-						endPoint: theme.gradientDirection.endPoint
-					)
-				} else {
-					theme.firstColor.color
-				}
-			}
+			MeshGradientSurface(points: theme.meshColorPoints)
+				.opacity(theme.meshOpacity)
 
 			if theme.shaderNoiseEnabled {
-				Group {
-					if theme.shaderNoiseMonochrome {
-						Noise(style: .random)
-							.monochrome()
-					} else {
-						Noise(style: .random)
-					}
-				}
-				.blur(radius: theme.shaderNoiseBlur)
-				.opacity(min(theme.shaderNoiseAmount, theme.shaderNoiseMonochrome ? 0.25 : 0.5))
-				.accessibilityHidden(true)
+				StableRandomNoise(
+					isMonochrome: theme.shaderNoiseMonochrome,
+					opacity: theme.shaderNoiseAmount
+				)
 			}
 		}
+	}
+}
+
+private struct StableRandomNoise: View {
+	let isMonochrome: Bool
+	let opacity: Double
+
+	@State private var textureSize = CGSize.zero
+
+	var body: some View {
+		GeometryReader { geometry in
+			Group {
+				if isMonochrome {
+					Noise(style: .random)
+						.monochrome()
+				} else {
+					Noise(style: .random)
+				}
+			}
+			.frame(
+				width: max(textureSize.width, geometry.size.width),
+				height: max(textureSize.height, geometry.size.height),
+				alignment: .topLeading
+			)
+			.blur(radius: 10)
+			.opacity(opacity)
+			.accessibilityHidden(true)
+			.onAppear {
+				ensureTextureCovers(geometry.size)
+			}
+			.onChange(of: geometry.size) { _, size in
+				ensureTextureCovers(size)
+			}
+		}
+		.clipped()
+	}
+
+	private func ensureTextureCovers(_ size: CGSize) {
+		guard size.width > textureSize.width || size.height > textureSize.height else { return }
+
+		textureSize = CGSize(
+			width: max(textureSize.width, size.width * 2.5),
+			height: max(textureSize.height, size.height * 2.5)
+		)
 	}
 }

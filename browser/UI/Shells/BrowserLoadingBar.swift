@@ -13,7 +13,7 @@ struct BrowserLoadingBar: View {
 
 	var body: some View {
 		Rectangle()
-			.fill(theme.progressColor.color)
+			.fill(theme.progressColor)
 			.scaleEffect(x: displayedProgress, anchor: .leading)
 			.opacity(isVisible ? 1 : 0)
 			.accessibilityElement(children: .ignore)
