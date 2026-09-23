@@ -5,11 +5,10 @@ struct BrowserTheme: Codable, Equatable {
 	var firstColor = BrowserColor(red: 0, green: 0, blue: 1)
 	var secondColor = BrowserColor(red: 0.13, green: 0.37, blue: 0.92)
 	var gradientDirection = ThemeGradientDirection.topLeading
-	var noiseEnabled = false
-	var noiseAmount = 0.12
 	var shaderNoiseEnabled = false
-	var shaderNoiseAmount = 0.5
-	var shaderNoiseStyle = ThemeNoiseStyle.fineGrain
+	var shaderNoiseAmount = 0.25
+	var shaderNoiseMonochrome = true
+	var shaderNoiseBlur = 0.0
 	var tabColor = BrowserColor(red: 0.10, green: 0.24, blue: 0.75)
 	var progressColor = BrowserColor(red: 0, green: 0.78, blue: 0.18)
 
@@ -20,11 +19,10 @@ struct BrowserTheme: Codable, Equatable {
 		case firstColor
 		case secondColor
 		case gradientDirection
-		case noiseEnabled
-		case noiseAmount
 		case shaderNoiseEnabled
 		case shaderNoiseAmount
-		case shaderNoiseStyle
+		case shaderNoiseMonochrome
+		case shaderNoiseBlur
 		case tabColor
 		case progressColor
 	}
@@ -35,11 +33,14 @@ struct BrowserTheme: Codable, Equatable {
 		firstColor = try values.decodeIfPresent(BrowserColor.self, forKey: .firstColor) ?? BrowserColor(red: 0, green: 0, blue: 1)
 		secondColor = try values.decodeIfPresent(BrowserColor.self, forKey: .secondColor) ?? BrowserColor(red: 0.13, green: 0.37, blue: 0.92)
 		gradientDirection = try values.decodeIfPresent(ThemeGradientDirection.self, forKey: .gradientDirection) ?? .topLeading
-		noiseEnabled = try values.decodeIfPresent(Bool.self, forKey: .noiseEnabled) ?? false
-		noiseAmount = try values.decodeIfPresent(Double.self, forKey: .noiseAmount) ?? 0.12
 		shaderNoiseEnabled = try values.decodeIfPresent(Bool.self, forKey: .shaderNoiseEnabled) ?? false
-		shaderNoiseAmount = try values.decodeIfPresent(Double.self, forKey: .shaderNoiseAmount) ?? 0.5
-		shaderNoiseStyle = try values.decodeIfPresent(ThemeNoiseStyle.self, forKey: .shaderNoiseStyle) ?? .fineGrain
+		shaderNoiseMonochrome = try values.decodeIfPresent(Bool.self, forKey: .shaderNoiseMonochrome) ?? true
+		let maximumNoiseAmount = shaderNoiseMonochrome ? 0.25 : 0.5
+		shaderNoiseAmount = try min(
+			values.decodeIfPresent(Double.self, forKey: .shaderNoiseAmount) ?? 0.25,
+			maximumNoiseAmount
+		)
+		shaderNoiseBlur = try values.decodeIfPresent(Double.self, forKey: .shaderNoiseBlur) ?? 0
 		tabColor = try values.decodeIfPresent(BrowserColor.self, forKey: .tabColor) ?? BrowserColor(red: 0.10, green: 0.24, blue: 0.75)
 		progressColor = try values.decodeIfPresent(BrowserColor.self, forKey: .progressColor) ?? BrowserColor(red: 0, green: 0.78, blue: 0.18)
 	}
@@ -51,24 +52,6 @@ struct BrowserTheme: Codable, Equatable {
 
 	var tabTextColor: Color {
 		tabColor.luminance > 0.179 ? .black : .white
-	}
-}
-
-enum ThemeNoiseStyle: Int, Codable, CaseIterable, Identifiable {
-	case fineGrain
-	case soft
-	case fractal
-
-	var id: Self {
-		self
-	}
-
-	var title: String {
-		switch self {
-			case .fineGrain: "Fine Grain"
-			case .soft: "Soft"
-			case .fractal: "Fractal"
-		}
 	}
 }
 

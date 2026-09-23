@@ -554,7 +554,7 @@ extension BrowserController: WKNavigationDelegate {
 		let script = "window.scrollTo(\(restoredScrollPosition.x), \(restoredScrollPosition.y));"
 		Task { @MainActor in
 			try? await Task.sleep(for: .milliseconds(150))
-			try? await webView.evaluateJavaScript(script)
+			_ = try? await webView.evaluateJavaScript(script)
 		}
 	}
 }

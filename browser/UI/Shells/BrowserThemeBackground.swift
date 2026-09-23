@@ -17,20 +17,19 @@ struct BrowserThemeBackground: View {
 					theme.firstColor.color
 				}
 			}
-			.modifier(
-				RandomNoiseEffect(
-					isEnabled: theme.shaderNoiseEnabled,
-					intensity: theme.shaderNoiseAmount,
-					style: theme.shaderNoiseStyle
-				)
-			)
 
-			if theme.noiseEnabled {
-				Noise(style: .noisy)
-					.monochrome()
-					.blendMode(.overlay)
-					.opacity(theme.noiseAmount)
-					.accessibilityHidden(true)
+			if theme.shaderNoiseEnabled {
+				Group {
+					if theme.shaderNoiseMonochrome {
+						Noise(style: .random)
+							.monochrome()
+					} else {
+						Noise(style: .random)
+					}
+				}
+				.blur(radius: theme.shaderNoiseBlur)
+				.opacity(min(theme.shaderNoiseAmount, theme.shaderNoiseMonochrome ? 0.25 : 0.5))
+				.accessibilityHidden(true)
 			}
 		}
 	}

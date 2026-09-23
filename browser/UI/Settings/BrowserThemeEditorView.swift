@@ -42,32 +42,31 @@ struct BrowserThemeEditorView: View {
 				}
 
 				Section("Texture") {
-					Toggle("Pastel", isOn: $theme.noiseEnabled)
-						.accessibilityIdentifier("theme-pastel-toggle")
-					if theme.noiseEnabled {
-						LabeledContent("Pastel Amount") {
-							Slider(value: $theme.noiseAmount, in: 0 ... 1)
-								.accessibilityLabel("Pastel amount")
-								.accessibilityValue(Text(theme.noiseAmount, format: .percent))
-								.accessibilityIdentifier("theme-pastel-amount")
-						}
-					}
 					Toggle("Noise", isOn: $theme.shaderNoiseEnabled)
 						.accessibilityIdentifier("theme-noise-toggle")
 					if theme.shaderNoiseEnabled {
-						Picker("Style", selection: $theme.shaderNoiseStyle) {
-							ForEach(ThemeNoiseStyle.allCases) { style in
-								Text(style.title)
-									.tag(style)
+						Toggle("Monochrome", isOn: $theme.shaderNoiseMonochrome)
+							.accessibilityIdentifier("theme-noise-monochrome-toggle")
+							.onChange(of: theme.shaderNoiseMonochrome) { _, isMonochrome in
+								let maximumAmount = isMonochrome ? 0.25 : 0.5
+								theme.shaderNoiseAmount = min(theme.shaderNoiseAmount, maximumAmount)
 							}
+						LabeledContent("Noise Amount") {
+							Slider(
+								value: $theme.shaderNoiseAmount,
+								in: 0 ... (theme.shaderNoiseMonochrome ? 0.25 : 0.5)
+							)
+							.accessibilityLabel("Noise amount")
+							.accessibilityValue(Text(theme.shaderNoiseAmount, format: .percent))
+							.accessibilityIdentifier("theme-noise-amount")
 						}
-						.accessibilityIdentifier("theme-noise-style")
-						LabeledContent("Color Variation") {
-							Slider(value: $theme.shaderNoiseAmount, in: 0 ... 1)
-								.accessibilityLabel("Noise color variation")
-								.accessibilityValue(Text(theme.shaderNoiseAmount, format: .percent))
-								.accessibilityIdentifier("theme-noise-amount")
-						}
+						Stepper(
+							"Noise Blur: \(theme.shaderNoiseBlur.formatted())",
+							value: $theme.shaderNoiseBlur,
+							in: 0 ... 10,
+							step: 0.5
+						)
+						.accessibilityIdentifier("theme-noise-blur")
 					}
 				}
 

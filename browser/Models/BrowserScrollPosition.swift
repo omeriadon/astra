@@ -1,8 +1,8 @@
 import Foundation
 
-struct BrowserScrollPosition: Codable, Equatable {
+struct BrowserScrollPosition: Codable, Equatable, Sendable {
 	var x: Double
 	var y: Double
 
-	static let zero = Self(x: 0, y: 0)
+	nonisolated static let zero = Self(x: 0, y: 0)
 }

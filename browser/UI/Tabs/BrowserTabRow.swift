@@ -118,13 +118,18 @@ struct BrowserTabRow: View {
 		.frame(height: 28)
 		.foregroundStyle(theme.tabTextColor)
 		.background {
-			RoundedRectangle(cornerRadius: 13)
-				.fill(theme.tabColor.color)
-				.glassEffect(
-					isSelected ? .regular.tint(theme.tabColor.color).interactive() : isHovered ? .regular.tint(theme.tabColor.color) : .identity,
-					in: RoundedRectangle(cornerRadius: 13)
-				)
-				.animation(.smooth(duration: 0.1), value: isHovered)
+			ZStack {
+				if isSelected {
+					RoundedRectangle(cornerRadius: 13)
+						.glassEffect(.regular.tint(theme.tabColor.color).interactive(), in: RoundedRectangle(cornerRadius: 13))
+						.glassEffectTransition(.materialize)
+				} else if isHovered {
+					RoundedRectangle(cornerRadius: 13)
+						.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 13))
+						.glassEffectTransition(.materialize)
+				}
+			}
+			.animation(.smooth(duration: 0.02), value: isSelected)
 		}
 		.onHover { isHovered = $0 }
 		.contextMenu {

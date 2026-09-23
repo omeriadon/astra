@@ -29,7 +29,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		downloads[id] = download
 		download.delegate = self
 		observations[id] = download.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] _, _ in
-			Task { @MainActor in
+			Task { @MainActor [weak self] in
 				self?.updateDockProgress()
 			}
 		}
