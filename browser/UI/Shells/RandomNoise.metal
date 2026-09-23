@@ -32,8 +32,7 @@ half4 parameterizedNoise(
 	float intensity,
 	float style
 ) {
-	float2 point = position / 0.05;
-	point += float2(sin(time), cos(time)) * 0.5;
+	float2 point = position / 2.0;
 
 	float noise;
 	if (style < 0.5) {
