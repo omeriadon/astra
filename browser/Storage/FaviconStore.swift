@@ -91,9 +91,9 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		)
 	}
 
-	func image(for pageURL: URL?, in webView: WKWebView) -> Image? {
+	func image(for pageURL: URL?, in webView: WKWebView? = nil) -> Image? {
 		guard let key = Self.cacheKey(for: pageURL) else { return nil }
-		let liveFavicon = liveFavicons[ObjectIdentifier(webView)]
+		let liveFavicon = webView.flatMap { liveFavicons[ObjectIdentifier($0)] }
 		let data = if liveFavicon?.cacheKey == key {
 			liveFavicon?.data
 		} else {

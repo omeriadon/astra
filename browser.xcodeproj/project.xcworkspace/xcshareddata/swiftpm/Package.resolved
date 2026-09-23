@@ -1,5 +1,5 @@
 {
-  "originHash" : "526729d9065c9503964f79361bab84e2f89d9718f7cb1e1de9f1b4035308770b",
+  "originHash" : "cfc1ad75f8dcaac34d89f13a112bdb91b4dcb0a62143e8dcb7b604da63709a28",
   "pins" : [
     {
       "identity" : "defaults",
@@ -8,6 +8,24 @@
       "state" : {
         "revision" : "00a7465a0668a87fa159e779b9d80f1f9652357e",
         "version" : "9.0.9"
+      }
+    },
+    {
+      "identity" : "dockprogress",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sindresorhus/DockProgress",
+      "state" : {
+        "revision" : "43ca0137201a479fbd891b129155f4a84c1e1b13",
+        "version" : "5.1.0"
+      }
+    },
+    {
+      "identity" : "noise",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/heestand-xyz/Noise",
+      "state" : {
+        "revision" : "9fc3dd5b86995913f4cd58152f4d8d7da245ce7e",
+        "version" : "2.0.5"
       }
     },
     {

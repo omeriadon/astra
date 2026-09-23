@@ -12,7 +12,9 @@ struct DesktopBrowserShell: View {
 	let browser: Browser
 	@Environment(\.colorScheme) private var colorScheme
 	@Default(.topBarBackgroundStyle) private var topBarBackgroundStyle
+	@Default(.browserTheme) private var theme
 	@State private var sidebarShown = true
+	@State private var showsThemeEditor = false
 	@State private var toastManager = ToastManager.shared
 	#if os(macOS)
 		@Default(.tabSwitchingOrder) private var tabSwitchingOrder
@@ -27,7 +29,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	var isLocalhost: Bool {
-		browser.selectedTab?.activeController.url?.host.map { host in
+		browser.selectedTab?.activeController?.url?.host.map { host in
 			host == "localhost"
 				|| host.hasSuffix(".localhost")
 				|| host == "127.0.0.1"
@@ -54,6 +56,19 @@ struct DesktopBrowserShell: View {
 				.buttonStyle(.bordered)
 				.clipShape(RoundedRectangle(cornerRadius: 8))
 				.accessibilityIdentifier("sidebar-toggle")
+
+				Button("Edit Theme", systemImage: "paintpalette") {
+					showsThemeEditor = true
+				}
+				.labelStyle(.iconOnly)
+				.buttonStyle(.bordered)
+				.clipShape(RoundedRectangle(cornerRadius: 8))
+				.accessibilityIdentifier("edit-browser-theme")
+				.popover(isPresented: $showsThemeEditor, arrowEdge: .top) {
+					BrowserThemeEditorView()
+						.frame(width: 380, height: 620)
+						.presentationCompactAdaptation(.popover)
+				}
 
 				#if os(macOS)
 					Spacer()
@@ -93,7 +108,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	private var topBarColorScheme: ColorScheme {
-		guard let themeColorIsLight = browser.selectedTab?.activeController.themeColorIsLight else { return colorScheme }
+		guard let themeColorIsLight = browser.selectedTab?.activeController?.themeColorIsLight else { return colorScheme }
 		return themeColorIsLight ? .light : .dark
 	}
 
@@ -191,7 +206,7 @@ struct DesktopBrowserShell: View {
 					}
 				}
 				.overlay {
-					if let themeColor = browser.selectedTab?.activeController.themeColor {
+					if let themeColor = browser.selectedTab?.activeController?.themeColor {
 						themeColor.opacity(0.6)
 							.clipShape(topBarBackgroundShape)
 					}
@@ -248,7 +263,9 @@ struct DesktopBrowserShell: View {
 					.padding(sidebarShown ? 4 : 0)
 			}
 		}
-		.background(.blue)
+		.background {
+			BrowserThemeBackground(theme: theme)
+		}
 		.overlay(alignment: .top) {
 			topBar
 				.environment(\.colorScheme, topBarColorScheme)
@@ -272,7 +289,9 @@ struct DesktopBrowserShell: View {
 		}
 		#endif
 		.ignoresSafeArea()
-		.focusedValue(\.browser, browser)
+		#if os(macOS)
+			.focusedValue(\.browser, browser)
+		#endif
 	}
 }
 

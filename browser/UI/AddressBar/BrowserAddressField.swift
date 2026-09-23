@@ -12,7 +12,7 @@ struct BrowserAddressField: View {
 	}
 
 	private var isGoogleSearch: Bool {
-		BrowserAddress.isGoogleSearchURL(browser.selectedTab?.activeController.url)
+		BrowserAddress.isGoogleSearchURL(browser.selectedTab?.activeController?.url)
 	}
 
 	var body: some View {
@@ -24,7 +24,7 @@ struct BrowserAddressField: View {
 				isFocused = false
 				updateAddressFromURL()
 			}
-			.onChange(of: browser.selectedTab?.activeController.url) { _, url in
+			.onChange(of: browser.selectedTab?.activeController?.url) { _, url in
 				guard !isFocused else { return }
 				addressText = BrowserAddress.displayString(for: url, style: addressDisplayStyle, isEditing: false)
 			}
@@ -33,7 +33,7 @@ struct BrowserAddressField: View {
 			}
 			.onChange(of: isFocused) { _, focused in
 				addressText = BrowserAddress.displayString(
-					for: browser.selectedTab?.activeController.url,
+					for: browser.selectedTab?.activeController?.url,
 					style: addressDisplayStyle,
 					isEditing: focused
 				)
@@ -80,7 +80,7 @@ struct BrowserAddressField: View {
 	private var dimmedAddressText: AttributedString {
 		var text = AttributedString(addressText)
 		text.foregroundColor = Color.primary.opacity(0.2)
-		guard let url = browser.selectedTab?.activeController.url else {
+		guard let url = browser.selectedTab?.activeController?.url else {
 			text.foregroundColor = .primary
 			return text
 		}
@@ -93,14 +93,14 @@ struct BrowserAddressField: View {
 
 	private func updateForSelectedTab() {
 		updateAddressFromURL()
-		if browser.selectedTab?.activeController.url == nil {
+		if browser.selectedTab?.activeController?.url == nil {
 			isFocused = true
 		}
 	}
 
 	private func updateAddressFromURL() {
 		addressText = BrowserAddress.displayString(
-			for: browser.selectedTab?.activeController.url,
+			for: browser.selectedTab?.activeController?.url,
 			style: addressDisplayStyle,
 			isEditing: isFocused
 		)
@@ -108,7 +108,7 @@ struct BrowserAddressField: View {
 
 	private func submitAddress() {
 		guard let destination = BrowserAddress.destination(for: addressText) else { return }
-		browser.selectedTab?.activeController.load(destination)
+		browser.selectedTab?.activeController?.load(destination)
 		addressText = BrowserAddress.displayString(for: destination, style: addressDisplayStyle, isEditing: false)
 		isFocused = false
 	}

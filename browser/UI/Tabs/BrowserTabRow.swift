@@ -3,12 +3,14 @@
 #elseif os(iOS)
 	import UIKit
 #endif
+import Defaults
 import SwiftUI
 
 struct BrowserTabRow: View {
 	let tab: BrowserTab
 	let browser: Browser
 	let isSelected: Bool
+	@Default(.browserTheme) private var theme
 	@State private var isRenaming = false
 	@State private var isHovered = false
 	@State private var renameText = ""
@@ -45,12 +47,14 @@ struct BrowserTabRow: View {
 					Text("Select Tab")
 				} icon: {
 					if let favicon = FaviconStore.shared.image(
-						for: tab.controller.url,
-						in: tab.controller.webView
+						for: tab.currentURL,
+						in: tab.controller?.webView
 					) {
 						favicon
 							.resizable()
 							.scaledToFit()
+							.saturation(tab.isHibernated ? 0 : 1)
+							.scaleEffect(tab.isHibernated ? 0.8 : 1)
 					} else {
 						Image(systemName: "globe")
 					}
@@ -112,11 +116,12 @@ struct BrowserTabRow: View {
 		}
 		.padding(.horizontal, 8)
 		.frame(height: 28)
+		.foregroundStyle(theme.tabTextColor)
 		.background {
-			Rectangle()
-				.fill(.clear)
+			RoundedRectangle(cornerRadius: 13)
+				.fill(theme.tabColor.color)
 				.glassEffect(
-					isSelected ? .clear.interactive() : isHovered ? .regular : .identity,
+					isSelected ? .regular.tint(theme.tabColor.color).interactive() : isHovered ? .regular.tint(theme.tabColor.color) : .identity,
 					in: RoundedRectangle(cornerRadius: 13)
 				)
 				.animation(.smooth(duration: 0.1), value: isHovered)
@@ -130,13 +135,19 @@ struct BrowserTabRow: View {
 				browser.duplicateTab(tab.id)
 			}
 
+			Button("Hibernate Tab", systemImage: "moon.zzz") {
+				browser.hibernateTab(tab.id)
+			}
+			.disabled(tab.isHibernated)
+			.accessibilityIdentifier("hibernate-tab-\(tab.id.uuidString)")
+
 			Button("Pin Tab", systemImage: "pin") {}
 				.disabled(true)
 
 			Divider()
 
 			Button("Copy URL", systemImage: "doc.on.doc", action: copyURL)
-				.disabled(tab.controller.url == nil)
+				.disabled(tab.currentURL == nil)
 
 			Divider()
 
@@ -187,7 +198,7 @@ struct BrowserTabRow: View {
 	}
 
 	private func copyURL() {
-		guard let url = tab.controller.url else { return }
+		guard let url = tab.currentURL else { return }
 		#if os(macOS)
 			NSPasteboard.general.clearContents()
 			NSPasteboard.general.setString(url.absoluteString, forType: .string)

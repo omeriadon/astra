@@ -23,7 +23,8 @@ final class BrowserPeek: Identifiable {
 			url: controller.url,
 			history: controller.history,
 			historyIndex: controller.historyIndex,
-			pageZoom: controller.webView.pageZoom
+			pageZoom: controller.webView.pageZoom,
+			scrollPosition: controller.scrollPosition
 		)
 	}
 
@@ -37,7 +38,7 @@ final class BrowserPeek: Identifiable {
 		id = UUID()
 		self.depth = depth
 		self.source = source
-		controller = BrowserController(initialURL: url)
+		controller = BrowserController(initialURL: url, scrollPosition: .zero)
 		hasPresented = false
 		isPresented = false
 
@@ -58,7 +59,8 @@ final class BrowserPeek: Identifiable {
 		controller = BrowserController(
 			initialURL: openPeek.url,
 			history: openPeek.history,
-			historyIndex: openPeek.historyIndex
+			historyIndex: openPeek.historyIndex,
+			scrollPosition: openPeek.scrollPosition
 		)
 		controller.webView.pageZoom = openPeek.pageZoom
 		hasPresented = true

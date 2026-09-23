@@ -8,6 +8,9 @@ struct OpenTab: Codable, Identifiable, Equatable {
 	var history: [URL]
 	var historyIndex: Int
 	var pageZoom: Double
+	var scrollPosition: BrowserScrollPosition
+	var isHibernated: Bool
+	var modifiedAt: Date
 	var peeks: [OpenPeek]
 
 	init(
@@ -18,6 +21,9 @@ struct OpenTab: Codable, Identifiable, Equatable {
 		history: [URL] = [],
 		historyIndex: Int = 0,
 		pageZoom: Double = 1,
+		scrollPosition: BrowserScrollPosition = .zero,
+		isHibernated: Bool = false,
+		modifiedAt: Date = .now,
 		peeks: [OpenPeek] = []
 	) {
 		self.id = id
@@ -28,6 +34,9 @@ struct OpenTab: Codable, Identifiable, Equatable {
 		self.historyIndex = Self.clampedIndex(historyIndex, count: history.count)
 		self.peeks = peeks
 		self.pageZoom = pageZoom
+		self.scrollPosition = scrollPosition
+		self.isHibernated = isHibernated
+		self.modifiedAt = modifiedAt
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -40,6 +49,9 @@ struct OpenTab: Codable, Identifiable, Equatable {
 		case historyIndex
 		case peeks
 		case pageZoom
+		case scrollPosition
+		case isHibernated
+		case modifiedAt
 	}
 
 	init(from decoder: Decoder) throws {
@@ -62,6 +74,9 @@ struct OpenTab: Codable, Identifiable, Equatable {
 		)
 		peeks = try container.decodeIfPresent([OpenPeek].self, forKey: .peeks) ?? []
 		pageZoom = try container.decodeIfPresent(Double.self, forKey: .pageZoom) ?? 1
+		scrollPosition = try container.decodeIfPresent(BrowserScrollPosition.self, forKey: .scrollPosition) ?? .zero
+		isHibernated = try container.decodeIfPresent(Bool.self, forKey: .isHibernated) ?? false
+		modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? .distantPast
 	}
 
 	func encode(to encoder: Encoder) throws {
@@ -74,6 +89,9 @@ struct OpenTab: Codable, Identifiable, Equatable {
 		try container.encode(historyIndex, forKey: .historyIndex)
 		try container.encode(peeks, forKey: .peeks)
 		try container.encode(pageZoom, forKey: .pageZoom)
+		try container.encode(scrollPosition, forKey: .scrollPosition)
+		try container.encode(isHibernated, forKey: .isHibernated)
+		try container.encode(modifiedAt, forKey: .modifiedAt)
 	}
 
 	private static func clampedIndex(_ index: Int, count: Int) -> Int {

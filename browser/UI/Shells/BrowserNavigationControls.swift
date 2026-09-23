@@ -110,8 +110,10 @@ struct BrowserNavigationControls: View {
 		.buttonSizing(.fitted)
 		.buttonStyle(.bordered)
 		.menuIndicator(.hidden)
-		.menuStyle(.borderedButton)
-		.id(controller.history)
-		.id(controller.historyIndex)
+		#if os(macOS)
+			.menuStyle(.borderedButton)
+		#endif
+			.id(controller.history)
+			.id(controller.historyIndex)
 	}
 }

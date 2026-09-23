@@ -9,11 +9,11 @@ import WebKit
 final class BrowserTab: Identifiable {
 	let id: UUID
 	private(set) var pageTitle: String {
-		didSet { didChange?() }
+		didSet { markModified() }
 	}
 
 	private(set) var customTitle: String? {
-		didSet { didChange?() }
+		didSet { markModified() }
 	}
 
 	var title: String {
@@ -24,12 +24,27 @@ final class BrowserTab: Identifiable {
 		customTitle != nil
 	}
 
-	let controller: BrowserController
-	var activeController: BrowserController {
+	private(set) var controller: BrowserController?
+	var activeController: BrowserController? {
 		peeks.last?.controller ?? controller
 	}
 
+	var isHibernated: Bool {
+		controller == nil
+	}
+
+	var currentURL: URL? {
+		controller?.url ?? storedURL
+	}
+
 	private(set) var peeks: [BrowserPeek]
+	private var storedURL: URL?
+	private var storedHistory: [URL]
+	private var storedHistoryIndex: Int
+	private var storedPageZoom: Double
+	private var storedScrollPosition: BrowserScrollPosition
+	private var storedPeeks: [OpenPeek]
+	private(set) var modifiedAt: Date
 
 	@ObservationIgnored
 	var didChange: (@MainActor () -> Void)?
@@ -39,11 +54,14 @@ final class BrowserTab: Identifiable {
 			id: id,
 			pageTitle: pageTitle,
 			customTitle: customTitle,
-			url: controller.url,
-			history: controller.history,
-			historyIndex: controller.historyIndex,
-			pageZoom: controller.webView.pageZoom,
-			peeks: peeks.map(\.openPeek)
+			url: controller?.url ?? storedURL,
+			history: controller?.history ?? storedHistory,
+			historyIndex: controller?.historyIndex ?? storedHistoryIndex,
+			pageZoom: controller.map { Double($0.webView.pageZoom) } ?? storedPageZoom,
+			scrollPosition: controller?.scrollPosition ?? storedScrollPosition,
+			isHibernated: isHibernated,
+			modifiedAt: modifiedAt,
+			peeks: isHibernated ? storedPeeks : peeks.map(\.openPeek)
 		)
 	}
 
@@ -56,41 +74,83 @@ final class BrowserTab: Identifiable {
 		historyIndex: Int = 0,
 		openPeeks: [OpenPeek] = [],
 		pageZoom: Double = 1,
+		scrollPosition: BrowserScrollPosition = .zero,
+		isHibernated: Bool = false,
+		modifiedAt: Date = .now,
 		existingController: BrowserController? = nil
 	) {
 		self.id = id
 		self.pageTitle = pageTitle
 		self.customTitle = customTitle
-		controller = existingController ?? BrowserController(
-			initialURL: initialURL,
-			history: history,
-			historyIndex: historyIndex
-		)
+		storedURL = initialURL
+		storedHistory = history
+		storedHistoryIndex = historyIndex
+		storedPageZoom = pageZoom
+		storedScrollPosition = scrollPosition
+		storedPeeks = openPeeks
+		self.modifiedAt = modifiedAt
+		peeks = isHibernated ? [] : openPeeks.map(BrowserPeek.init(openPeek:))
+		controller = if isHibernated {
+			nil
+		} else {
+			existingController ?? BrowserController(
+				initialURL: initialURL,
+				history: history,
+				historyIndex: historyIndex,
+				scrollPosition: scrollPosition
+			)
+		}
 		if existingController == nil {
-			controller.webView.pageZoom = pageZoom
+			controller?.webView.pageZoom = pageZoom
 		}
-		peeks = openPeeks.map(BrowserPeek.init(openPeek:))
-		controller.navigationDidChange = { [weak self] in
-			self?.didChange?()
-		}
-		controller.titleDidChange = { [weak self] title in
-			self?.updatePageTitle(title)
-		}
+		observeController()
 		for peek in peeks {
 			observe(peek)
 		}
 	}
 
+	func hibernate() {
+		guard let controller else { return }
+		storedURL = controller.url
+		storedHistory = controller.history
+		storedHistoryIndex = controller.historyIndex
+		storedPageZoom = Double(controller.webView.pageZoom)
+		storedScrollPosition = controller.scrollPosition
+		storedPeeks = peeks.map(\.openPeek)
+		controller.stopLoading()
+		self.controller = nil
+		peeks.removeAll()
+		markModified()
+	}
+
+	func wake() {
+		guard controller == nil else { return }
+		let controller = BrowserController(
+			initialURL: storedURL,
+			history: storedHistory,
+			historyIndex: storedHistoryIndex,
+			scrollPosition: storedScrollPosition
+		)
+		controller.webView.pageZoom = storedPageZoom
+		self.controller = controller
+		peeks = storedPeeks.map(BrowserPeek.init(openPeek:))
+		observeController()
+		for peek in peeks {
+			observe(peek)
+		}
+		didChange?()
+	}
+
 	func addPeek(_ peek: BrowserPeek) {
 		observe(peek)
 		peeks.append(peek)
-		didChange?()
+		markModified()
 	}
 
 	func dismissPeek(_ id: UUID) {
 		guard let index = peeks.firstIndex(where: { $0.id == id }) else { return }
 		peeks.removeSubrange(index...)
-		didChange?()
+		markModified()
 	}
 
 	func requestPeekDismissal() {
@@ -118,7 +178,21 @@ final class BrowserTab: Identifiable {
 
 	private func observe(_ peek: BrowserPeek) {
 		peek.controller.navigationDidChange = { [weak self] in
-			self?.didChange?()
+			self?.markModified()
 		}
+	}
+
+	private func observeController() {
+		controller?.navigationDidChange = { [weak self] in
+			self?.markModified()
+		}
+		controller?.titleDidChange = { [weak self] title in
+			self?.updatePageTitle(title)
+		}
+	}
+
+	private func markModified() {
+		modifiedAt = .now
+		didChange?()
 	}
 }

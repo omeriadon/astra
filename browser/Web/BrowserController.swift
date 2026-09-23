@@ -9,6 +9,24 @@ import WebKit
 @MainActor
 @Observable
 final class BrowserController: NSObject {
+	private static let scrollPositionMessageName = "scrollPositionChanged"
+	private static let scrollPositionScript = """
+	(() => {
+		let pending;
+		const report = () => {
+			clearTimeout(pending);
+			pending = setTimeout(() => {
+				window.webkit.messageHandlers.scrollPositionChanged.postMessage({
+					x: window.scrollX,
+					y: window.scrollY
+				});
+			}, 150);
+		};
+		window.addEventListener('scroll', report, { passive: true });
+		window.addEventListener('pagehide', report);
+	})();
+	"""
+
 	@ObservationIgnored
 	let webView: WKWebView = {
 		let configuration = WKWebViewConfiguration()
@@ -38,6 +56,7 @@ final class BrowserController: NSObject {
 	var url: URL?
 	private(set) var isLoading = false
 	private(set) var estimatedProgress = 0.0
+	private(set) var scrollPosition: BrowserScrollPosition
 	private(set) var themeColor: Color?
 	private(set) var themeColorIsLight: Bool?
 	#if os(macOS)
@@ -67,6 +86,8 @@ final class BrowserController: NSObject {
 	private var currentNavigation: WKNavigation?
 	@ObservationIgnored
 	private var awaitsNavigationCommit = false
+	@ObservationIgnored
+	private var restoredScrollPosition: BrowserScrollPosition?
 	#if os(macOS)
 		@ObservationIgnored
 		private var previewSnapshotRefreshTask: Task<Void, Never>?
@@ -74,11 +95,32 @@ final class BrowserController: NSObject {
 		private var isRefreshingPreviewSnapshot = false
 	#endif
 
-	init(initialURL: URL? = nil, history: [URL] = [], historyIndex: Int = 0) {
+	init(
+		initialURL: URL? = nil,
+		history: [URL] = [],
+		historyIndex: Int = 0,
+		scrollPosition: BrowserScrollPosition = .zero
+	) {
 		let restoredHistory = BrowserHistory(entries: history, index: historyIndex, initialURL: initialURL)
 		historyManager = restoredHistory
 		url = restoredHistory.currentURL
+		self.scrollPosition = scrollPosition
+		restoredScrollPosition = scrollPosition == .zero ? nil : scrollPosition
 		super.init()
+		let scrollHandler = WeakScriptMessageHandler(delegate: self)
+		webView.configuration.userContentController.add(
+			scrollHandler,
+			contentWorld: .page,
+			name: Self.scrollPositionMessageName
+		)
+		webView.configuration.userContentController.addUserScript(
+			WKUserScript(
+				source: Self.scrollPositionScript,
+				injectionTime: .atDocumentEnd,
+				forMainFrameOnly: true,
+				in: .page
+			)
+		)
 		webView.navigationDelegate = self
 		webView.uiDelegate = self
 		if let webView = webView as? PeekSourceWebView {
@@ -158,6 +200,8 @@ final class BrowserController: NSObject {
 		(webView as? PeekSourceWebView)?.consumeRecentClick()
 		historyManager.beginVisit()
 		self.url = url
+		scrollPosition = .zero
+		restoredScrollPosition = nil
 		load(URLRequest(url: url))
 	}
 
@@ -174,6 +218,8 @@ final class BrowserController: NSObject {
 		webView.stopLoading()
 		(webView as? PeekSourceWebView)?.consumeRecentClick()
 		url = destination
+		scrollPosition = .zero
+		restoredScrollPosition = nil
 		navigationDidChange?()
 		load(URLRequest(url: destination))
 	}
@@ -405,6 +451,10 @@ extension BrowserController: WKNavigationDelegate {
 		decidePolicyFor navigationAction: WKNavigationAction,
 		decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
 	) {
+		if navigationAction.shouldPerformDownload {
+			decisionHandler(.download)
+			return
+		}
 		#if os(macOS)
 			let shiftPressed = navigationAction.modifierFlags.contains(.shift)
 		#else
@@ -430,6 +480,28 @@ extension BrowserController: WKNavigationDelegate {
 		let source = newWindowSource(in: webView)
 		decisionHandler(.cancel)
 		newWindowRequested(url, source)
+	}
+
+	func webView(
+		_: WKWebView,
+		decidePolicyFor navigationResponse: WKNavigationResponse,
+		decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+	) {
+		let disposition = (navigationResponse.response as? HTTPURLResponse)?
+			.value(forHTTPHeaderField: "Content-Disposition")
+		if !navigationResponse.canShowMIMEType || disposition?.lowercased().hasPrefix("attachment") == true {
+			decisionHandler(.download)
+		} else {
+			decisionHandler(.allow)
+		}
+	}
+
+	func webView(_: WKWebView, navigationAction _: WKNavigationAction, didBecome download: WKDownload) {
+		BrowserDownloadManager.shared.start(download)
+	}
+
+	func webView(_: WKWebView, navigationResponse _: WKNavigationResponse, didBecome download: WKDownload) {
+		BrowserDownloadManager.shared.start(download)
 	}
 
 	func webView(_: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -462,6 +534,7 @@ extension BrowserController: WKNavigationDelegate {
 	func webView(_: WKWebView, didFinish navigation: WKNavigation!) {
 		guard navigation === currentNavigation else { return }
 		updateHistory()
+		restoreScrollPositionIfNeeded(in: webView)
 		let generation = navigationGeneration
 		if let url {
 			Task { @MainActor in
@@ -474,6 +547,32 @@ extension BrowserController: WKNavigationDelegate {
 			await capturePageSnapshot(generation: generation)
 		}
 	}
+
+	private func restoreScrollPositionIfNeeded(in webView: WKWebView) {
+		guard let restoredScrollPosition else { return }
+		self.restoredScrollPosition = nil
+		let script = "window.scrollTo(\(restoredScrollPosition.x), \(restoredScrollPosition.y));"
+		Task { @MainActor in
+			try? await Task.sleep(for: .milliseconds(150))
+			try? await webView.evaluateJavaScript(script)
+		}
+	}
+}
+
+extension BrowserController: WKScriptMessageHandler {
+	func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
+		guard message.name == Self.scrollPositionMessageName,
+		      message.frameInfo.isMainFrame,
+		      let position = message.body as? [String: Double],
+		      let x = position["x"],
+		      let y = position["y"]
+		else { return }
+
+		let nextPosition = BrowserScrollPosition(x: x, y: y)
+		guard scrollPosition != nextPosition else { return }
+		scrollPosition = nextPosition
+		navigationDidChange?()
+	}
 }
 
 extension BrowserController: WKUIDelegate {
@@ -483,6 +582,12 @@ extension BrowserController: WKUIDelegate {
 		for navigationAction: WKNavigationAction,
 		windowFeatures _: WKWindowFeatures
 	) -> WKWebView? {
+		if navigationAction.shouldPerformDownload {
+			webView.startDownload(using: navigationAction.request) { download in
+				BrowserDownloadManager.shared.start(download)
+			}
+			return nil
+		}
 		guard navigationAction.targetFrame == nil,
 		      let url = navigationAction.request.url
 		else { return nil }
@@ -622,6 +727,18 @@ private final class PeekSourceWebView: WKWebView {
 			fatalError("init(coder:) has not been implemented")
 		}
 	#endif
+}
+
+private final class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
+	weak var delegate: (any WKScriptMessageHandler)?
+
+	init(delegate: any WKScriptMessageHandler) {
+		self.delegate = delegate
+	}
+
+	func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+		delegate?.userContentController(userContentController, didReceive: message)
+	}
 }
 
 #if os(iOS)

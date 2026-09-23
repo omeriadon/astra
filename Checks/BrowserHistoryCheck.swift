@@ -1,6 +1,6 @@
 import Foundation
 
-// Run: swiftc browser/Models/BrowserHistory.swift browser/Models/OpenTab.swift browser/Models/OpenPeek.swift Checks/BrowserHistoryCheck.swift -o /tmp/browser-history-check && /tmp/browser-history-check
+// Run: swiftc browser/Models/BrowserHistory.swift browser/Models/BrowserScrollPosition.swift browser/Models/OpenTab.swift browser/Models/OpenPeek.swift Checks/BrowserHistoryCheck.swift -o /tmp/browser-history-check && /tmp/browser-history-check
 @main
 struct BrowserHistoryCheck {
 	static func main() throws {
@@ -35,11 +35,18 @@ struct BrowserHistoryCheck {
 		// Persist two tabs together with different current positions.
 		let second = BrowserHistory(initialURL: other)
 		let snapshots = [
-			OpenTab(url: tab.currentURL, history: tab.entries, historyIndex: tab.index),
+			OpenTab(
+				url: tab.currentURL,
+				history: tab.entries,
+				historyIndex: tab.index,
+				scrollPosition: BrowserScrollPosition(x: 0, y: 420),
+				isHibernated: true
+			),
 			OpenTab(url: second.currentURL, history: second.entries, historyIndex: second.index),
 		]
 		let restored = try JSONDecoder().decode([OpenTab].self, from: JSONEncoder().encode(snapshots))
 		assert(restored == snapshots)
+		assert(restored[0].scrollPosition.y == 420 && restored[0].isHibernated)
 		var firstRestored = BrowserHistory(entries: restored[0].history, index: restored[0].historyIndex)
 		let secondRestored = BrowserHistory(entries: restored[1].history, index: restored[1].historyIndex)
 		assert(firstRestored.currentURL == canonical && firstRestored.canGoForward)

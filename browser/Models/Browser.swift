@@ -11,6 +11,8 @@ final class Browser {
 	private(set) var selectedTabID: UUID
 	private(set) var recentlyUsedTabIDs: [UUID]
 	private(set) var bookmarks: [Bookmark]
+	private(set) var closedTabIDs: Set<UUID>
+	private(set) var deletedBookmarkIDs: Set<UUID>
 	private(set) var persistenceErrorDescription: String?
 
 	@ObservationIgnored
@@ -27,6 +29,8 @@ final class Browser {
 		let loadedTabs: [BrowserTab]
 		let loadedSelectedTabID: UUID
 		let loadedBookmarks: [Bookmark]
+		let loadedClosedTabIDs: Set<UUID>
+		let loadedDeletedBookmarkIDs: Set<UUID>
 		let loadedPersistence: BrowserPersistence?
 		let loadedErrorDescription: String?
 
@@ -44,13 +48,18 @@ final class Browser {
 					history: $0.history,
 					historyIndex: $0.historyIndex,
 					openPeeks: $0.peeks,
-					pageZoom: $0.pageZoom
+					pageZoom: $0.pageZoom,
+					scrollPosition: $0.scrollPosition,
+					isHibernated: $0.isHibernated,
+					modifiedAt: $0.modifiedAt
 				)
 			}
 			let tabs = restoredTabs.isEmpty ? [BrowserTab()] : restoredTabs
 			loadedTabs = tabs
 			loadedSelectedTabID = tabs.first(where: { $0.id == snapshot?.selectedTabID })?.id ?? tabs[0].id
 			loadedBookmarks = bookmarks
+			loadedClosedTabIDs = snapshot?.closedTabIDs ?? []
+			loadedDeletedBookmarkIDs = snapshot?.deletedBookmarkIDs ?? []
 			loadedPersistence = store
 			loadedErrorDescription = nil
 		} catch {
@@ -58,6 +67,8 @@ final class Browser {
 			loadedTabs = [tab]
 			loadedSelectedTabID = tab.id
 			loadedBookmarks = []
+			loadedClosedTabIDs = []
+			loadedDeletedBookmarkIDs = []
 			loadedPersistence = nil
 			loadedErrorDescription = error.localizedDescription
 		}
@@ -66,12 +77,20 @@ final class Browser {
 		selectedTabID = loadedSelectedTabID
 		recentlyUsedTabIDs = [loadedSelectedTabID]
 		bookmarks = loadedBookmarks
+		closedTabIDs = loadedClosedTabIDs
+		deletedBookmarkIDs = loadedDeletedBookmarkIDs
 		persistence = loadedPersistence
 		persistenceErrorDescription = loadedErrorDescription
 		persistenceTask = nil
 
 		for tab in loadedTabs {
 			configure(tab)
+		}
+		if let selectedTab = loadedTabs.first(where: { $0.id == loadedSelectedTabID }),
+		   selectedTab.isHibernated
+		{
+			selectedTab.wake()
+			configure(selectedTab)
 		}
 	}
 
@@ -87,10 +106,14 @@ final class Browser {
 
 	func selectTab(_ id: UUID) {
 		guard let tab = tabs.first(where: { $0.id == id }) else { return }
+		if tab.isHibernated {
+			tab.wake()
+			configure(tab)
+		}
 		selectedTabID = id
 		recentlyUsedTabIDs.removeAll { $0 == id }
 		recentlyUsedTabIDs.insert(id, at: 0)
-		tab.controller.loadFaviconIfMissing()
+		tab.controller?.loadFaviconIfMissing()
 		schedulePersistence()
 	}
 
@@ -119,13 +142,13 @@ final class Browser {
 	}
 
 	var canBookmarkSelectedPage: Bool {
-		guard let url = selectedTab?.controller.url else { return false }
+		guard let url = selectedTab?.currentURL else { return false }
 		return !bookmarks.contains { $0.url == url }
 	}
 
 	func bookmarkSelectedPage() {
 		guard let tab = selectedTab,
-		      let url = tab.controller.url,
+		      let url = tab.currentURL,
 		      !bookmarks.contains(where: { $0.url == url })
 		else { return }
 		bookmarks.append(Bookmark(name: tab.title, url: url))
@@ -133,25 +156,33 @@ final class Browser {
 	}
 
 	func openBookmark(_ bookmark: Bookmark) {
-		selectedTab?.controller.load(bookmark.url)
+		guard let tab = selectedTab else { return }
+		if tab.isHibernated {
+			tab.wake()
+			configure(tab)
+		}
+		tab.controller?.load(bookmark.url)
 	}
 
 	func removeBookmark(_ id: UUID) {
 		bookmarks.removeAll { $0.id == id }
+		deletedBookmarkIDs.insert(id)
 		schedulePersistence()
 	}
 
 	func duplicateTab(_ id: UUID) {
 		guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
 		let source = tabs[index]
+		let sourceSnapshot = source.openTab
 		let tab = BrowserTab(
 			pageTitle: source.pageTitle,
 			customTitle: source.customTitle,
-			initialURL: source.controller.url,
-			history: source.controller.history,
-			historyIndex: source.controller.historyIndex,
-			openPeeks: source.peeks.map(\.openPeek),
-			pageZoom: source.controller.webView.pageZoom
+			initialURL: sourceSnapshot.url,
+			history: sourceSnapshot.history,
+			historyIndex: sourceSnapshot.historyIndex,
+			openPeeks: sourceSnapshot.peeks,
+			pageZoom: sourceSnapshot.pageZoom,
+			scrollPosition: sourceSnapshot.scrollPosition
 		)
 		configure(tab)
 		tabs.insert(tab, at: index + 1)
@@ -162,6 +193,7 @@ final class Browser {
 		guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
 		let wasSelected = selectedTabID == id
 		tabs.remove(at: index)
+		closedTabIDs.insert(id)
 		recentlyUsedTabIDs.removeAll { $0 == id }
 
 		if tabs.isEmpty {
@@ -174,6 +206,12 @@ final class Browser {
 			recentlyUsedTabIDs.removeAll { $0 == selectedTabID }
 			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
 		}
+		schedulePersistence()
+	}
+
+	func hibernateTab(_ id: UUID) {
+		guard let tab = tabs.first(where: { $0.id == id }), !tab.isHibernated else { return }
+		tab.hibernate()
 		schedulePersistence()
 	}
 
@@ -218,7 +256,7 @@ final class Browser {
 
 	private func configure(_ tab: BrowserTab) {
 		attachPersistence(to: tab)
-		let controller = tab.controller
+		guard let controller = tab.controller else { return }
 		controller.escapeRequested = { [weak tab] in
 			tab?.requestPeekDismissal()
 		}
@@ -284,15 +322,77 @@ final class Browser {
 
 	private func openNewTab(_ url: URL) {
 		let tab = addTab()
-		tab.controller.load(url)
+		tab.controller?.load(url)
 	}
 
 	private func removeTabs(_ ids: Set<UUID>, selecting selectedID: UUID) {
 		tabs.removeAll { ids.contains($0.id) }
+		closedTabIDs.formUnion(ids)
 		recentlyUsedTabIDs.removeAll { ids.contains($0) }
 		selectedTabID = selectedID
 		recentlyUsedTabIDs.removeAll { $0 == selectedID }
 		recentlyUsedTabIDs.insert(selectedID, at: 0)
+		schedulePersistence()
+	}
+
+	func syncDocument(settings: [String: SyncedSetting]) -> BrowserSyncDocument {
+		BrowserSyncDocument(
+			tabs: tabs.map(\.openTab),
+			bookmarks: bookmarks,
+			browser: BrowserSnapshot(
+				selectedTabID: selectedTabID,
+				closedTabIDs: closedTabIDs,
+				deletedBookmarkIDs: deletedBookmarkIDs
+			),
+			settings: settings
+		)
+	}
+
+	func applySyncDocument(_ document: BrowserSyncDocument) {
+		let currentTabs = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
+		let changedTabs = document.tabs.map { saved -> BrowserTab in
+			if let current = currentTabs[saved.id], current.openTab == saved {
+				return current
+			}
+			let tab = BrowserTab(
+				id: saved.id,
+				pageTitle: saved.pageTitle,
+				customTitle: saved.customTitle,
+				initialURL: saved.url,
+				history: saved.history,
+				historyIndex: saved.historyIndex,
+				openPeeks: saved.peeks,
+				pageZoom: saved.pageZoom,
+				scrollPosition: saved.scrollPosition,
+				isHibernated: saved.isHibernated,
+				modifiedAt: saved.modifiedAt
+			)
+			configure(tab)
+			return tab
+		}
+		if changedTabs.isEmpty {
+			let tab = BrowserTab()
+			configure(tab)
+			tabs = [tab]
+		} else {
+			tabs = changedTabs
+		}
+		closedTabIDs = document.browser.closedTabIDs
+		deletedBookmarkIDs = document.browser.deletedBookmarkIDs
+		bookmarks = document.bookmarks
+		if !tabs.contains(where: { $0.id == selectedTabID }) {
+			selectedTabID = tabs[0].id
+		}
+		if let selectedTab, selectedTab.isHibernated {
+			selectedTab.wake()
+			configure(selectedTab)
+		}
+		recentlyUsedTabIDs = recentlyUsedTabIDs.filter { id in
+			tabs.contains { $0.id == id }
+		}
+		if !recentlyUsedTabIDs.contains(selectedTabID) {
+			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
+		}
 		schedulePersistence()
 	}
 
@@ -311,8 +411,15 @@ final class Browser {
 		do {
 			try persistence.saveBookmarks(bookmarks)
 			try persistence.saveOpenTabs(tabs.map(\.openTab))
-			try persistence.saveBrowserSnapshot(BrowserSnapshot(selectedTabID: selectedTabID))
+			try persistence.saveBrowserSnapshot(
+				BrowserSnapshot(
+					selectedTabID: selectedTabID,
+					closedTabIDs: closedTabIDs,
+					deletedBookmarkIDs: deletedBookmarkIDs
+				)
+			)
 			persistenceErrorDescription = nil
+			BrowserSync.shared.scheduleSync()
 		} catch {
 			persistenceErrorDescription = error.localizedDescription
 		}
