@@ -35,7 +35,6 @@ struct NewTabView: View {
 		}
 		.listStyle(.plain)
 		.scrollContentBackground(.hidden)
-		.background(.black)
 	}
 }
 

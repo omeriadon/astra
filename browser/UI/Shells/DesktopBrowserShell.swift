@@ -54,6 +54,7 @@ struct DesktopBrowserShell: View {
 				.buttonSizing(.fitted)
 				.keyboardShortcut("S", modifiers: .command)
 				.buttonStyle(.bordered)
+				.foregroundStyle(theme.foregroundColor)
 				.clipShape(RoundedRectangle(cornerRadius: 8))
 				.accessibilityIdentifier("sidebar-toggle")
 

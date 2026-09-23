@@ -1,11 +1,52 @@
 import Noise
 import SwiftUI
+#if os(macOS)
+	import MaterialView
+#endif
 
 struct BrowserThemeBackground: View {
 	let theme: BrowserTheme
+	#if os(macOS)
+		private static let blurStyle = NSMaterialView.Effect.MaterialStyle(
+			backgroundColor: .clear,
+			saturationFactor: 1,
+			brightnessFactor: 0,
+			blurRadius: 10
+		)
+
+		private static let windowEffect = NSMaterialView.Effect(
+			active: blurStyle,
+			inactive: blurStyle,
+			emphasized: blurStyle
+		)
+
+		private struct WindowMaterial: NSViewRepresentable {
+			func makeNSView(context _: Context) -> NSMaterialView {
+				let view = NSMaterialView()
+				// Window configuration runs when the view attaches, before later SwiftUI updates.
+				view.isContentView = true
+				view.state = .active
+				view.scale = 1
+				view.reduceTransparencyOverride = false
+				view.increaseContrastOverride = false
+				view.effect = BrowserThemeBackground.windowEffect
+				return view
+			}
+
+			func updateNSView(_: NSMaterialView, context _: Context) {}
+		}
+	#endif
 
 	var body: some View {
 		ZStack {
+			#if os(macOS)
+				WindowMaterial()
+					.allowsHitTesting(false)
+					.accessibilityHidden(true)
+			#else
+				Color.gray
+			#endif
+
 			MeshGradientSurface(points: theme.meshColorPoints)
 				.opacity(theme.meshOpacity)
 
@@ -40,7 +81,6 @@ private struct StableRandomNoise: View {
 				height: max(textureSize.height, geometry.size.height),
 				alignment: .topLeading
 			)
-			.blur(radius: 10)
 			.opacity(opacity)
 			.accessibilityHidden(true)
 			.onAppear {

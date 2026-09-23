@@ -82,7 +82,7 @@ struct BrowserTheme: Codable, Equatable {
 				return Color.white
 			case .auto:
 				guard let topLeftColor = nearestMeshColor(to: .zero) else { return .black }
-				return topLeftColor.luminance > 0.6 ? .white : .black
+				return topLeftColor.luminance > 0.6 ? .black : .white
 		}
 	}
 

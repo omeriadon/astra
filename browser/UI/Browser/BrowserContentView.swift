@@ -41,7 +41,7 @@ struct BrowserContentView: View {
 		} else if browser.selectedTab != nil {
 			NewTabView(browser: browser)
 				.padding(.top, insets.obscured.top)
-				.background(.black)
+				.background(.white.opacity(0.15).gradient)
 		} else {
 			ContentUnavailableView("Tab Unavailable", systemImage: "exclamationmark.triangle")
 		}

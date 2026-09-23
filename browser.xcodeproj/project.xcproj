@@ -32,6 +32,12 @@
       "version": {
         "up-to-next-major-version": "2.0.5",
       },
+    }, {
+      "kind": "remote",
+      "repository": "https://github.com/OskarGroth/MaterialView.git",
+      "version": {
+        "up-to-next-major-version": "1.0.0",
+      },
     },
   ],
   "files": [
@@ -71,6 +77,10 @@
           "package": "Noise",
           "product-name": "Noise",
           "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "package": "MaterialView",
+          "product-name": "MaterialView",
+          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
         },
       ],
       "build-settings": {

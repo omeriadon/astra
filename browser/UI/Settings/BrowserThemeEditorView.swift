@@ -62,6 +62,13 @@ private struct MeshGradientEditorView: View {
 		)
 	}
 
+	private var translucency: Binding<Double> {
+		Binding(
+			get: { 1 - theme.meshOpacity },
+			set: { theme.meshOpacity = 1 - $0 }
+		)
+	}
+
 	var body: some View {
 		VStack(spacing: 12) {
 			#if os(macOS)
@@ -121,14 +128,16 @@ private struct MeshGradientEditorView: View {
 			}
 			.frame(maxWidth: .infinity)
 
-			HStack(spacing: 10) {
-				Image(systemName: "circle.dotted.and.circle")
-					.accessibilityHidden(true)
-				Slider(value: $theme.meshOpacity, in: 0 ... 1)
-					.accessibilityLabel("Translucency")
-					.accessibilityValue(Text(theme.meshOpacity, format: .percent))
-					.accessibilityIdentifier("theme-mesh-opacity")
-			}
+			#if os(macOS)
+				HStack(spacing: 10) {
+					Image(systemName: "circle.dotted.and.circle")
+						.accessibilityHidden(true)
+					Slider(value: translucency, in: 0 ... 1)
+						.accessibilityLabel("Translucency")
+						.accessibilityValue(Text(translucency.wrappedValue, format: .percent))
+						.accessibilityIdentifier("theme-window-translucency")
+				}
+			#endif
 
 			HStack(spacing: 10) {
 				Button {
