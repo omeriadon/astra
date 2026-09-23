@@ -6,39 +6,26 @@ struct BrowserThemeEditorView: View {
 	@Environment(\.dismiss) private var dismiss
 
 	var body: some View {
-		NavigationStack {
+		VStack(spacing: 0) {
 			MeshGradientEditorView(theme: $theme)
-				.toolbar {
-					ToolbarItem(placement: .confirmationAction) {
-						Button(role: .confirm) {
-							dismiss()
-						} label: {
-							Label("Done", systemImage: "checkmark")
-						}
-						.buttonStyle(.glassProminent)
-						.accessibilityIdentifier("theme-editor-done")
-					}
-				}
+
+			Button(role: .confirm) {
+				dismiss()
+			} label: {
+				Label("Done", systemImage: "checkmark")
+			}
+			.buttonStyle(.glassProminent)
+			.accessibilityIdentifier("theme-editor-done")
+			.frame(maxWidth: .infinity, alignment: .trailing)
+			.padding(.horizontal, 12)
+			.padding(.bottom, 12)
 		}
+		.containerShape(.rect(cornerRadius: 24))
 	}
 }
 
 private struct MeshGradientEditorView: View {
 	@Binding var theme: BrowserTheme
-	@State private var selectedPointID: UUID?
-
-	private var selectedColor: Binding<Color>? {
-		guard let selectedPointID else { return nil }
-		return Binding(
-			get: {
-				theme.meshColorPoints.first(where: { $0.id == selectedPointID })?.color.color ?? .clear
-			},
-			set: { color in
-				guard let index = theme.meshColorPoints.firstIndex(where: { $0.id == selectedPointID }) else { return }
-				theme.meshColorPoints[index].color.color = color
-			}
-		)
-	}
 
 	private var normalizedNoiseAmount: Binding<Double> {
 		Binding(
@@ -71,62 +58,47 @@ private struct MeshGradientEditorView: View {
 
 	var body: some View {
 		VStack(spacing: 12) {
-			#if os(macOS)
-				Picker("Theme Appearance", selection: $theme.appearanceMode) {
-					ForEach(ThemeAppearanceMode.allCases) { mode in
-						Image(systemName: mode.symbol)
-							.accessibilityLabel(mode.title)
-							.tag(mode)
-					}
-				}
-				.labelsHidden()
-				.pickerStyle(.segmented)
-				.accessibilityLabel("Theme appearance")
-				.accessibilityIdentifier("theme-appearance-picker")
-			#endif
-
-			MeshGradientCanvas(
-				theme: $theme,
-				selectedPointID: $selectedPointID
-			)
-			.aspectRatio(1, contentMode: .fit)
-			.clipShape(.rect(cornerRadius: 16))
-			.accessibilityIdentifier("theme-mesh-editor")
-
-			HStack(spacing: 18) {
-				Button {
-					guard let selectedPointID else { return }
-					theme.removeMeshColorPoint(id: selectedPointID)
-				} label: {
-					Image(systemName: "minus")
-				}
-				.buttonStyle(.plain)
-				.disabled(selectedPointID == nil || theme.meshColorPoints.isEmpty)
-				.accessibilityLabel("Remove color point")
-				.accessibilityIdentifier("theme-mesh-remove-point")
-
-				if let selectedColor {
-					ColorPicker("Selected color", selection: selectedColor, supportsOpacity: false)
+			MeshGradientCanvas(theme: $theme)
+				.aspectRatio(1, contentMode: .fit)
+				.clipShape(ContainerRelativeShape())
+				.overlay(alignment: .top) {
+					#if os(macOS)
+						Picker("Theme Appearance", selection: $theme.appearanceMode) {
+							ForEach(ThemeAppearanceMode.allCases) { mode in
+								Image(systemName: mode.symbol)
+									.accessibilityLabel(mode.title)
+									.tag(mode)
+							}
+						}
 						.labelsHidden()
-						.accessibilityLabel("Selected color")
-						.accessibilityIdentifier("theme-mesh-selected-color")
-				} else {
-					Image(systemName: "circle.fill")
-						.hidden()
-						.accessibilityHidden(true)
+						.pickerStyle(.segmented)
+						.frame(width: 110)
+						.padding(12)
+						.accessibilityLabel("Theme appearance")
+						.accessibilityIdentifier("theme-appearance-picker")
+					#endif
 				}
+				.overlay(alignment: .bottom) {
+					HStack(spacing: 24) {
+						Button("Remove color point", systemImage: "minus") {
+							theme.meshColorPoints.removeLast()
+						}
+						.labelStyle(.iconOnly)
+						.buttonStyle(.bordered)
+						.disabled(theme.meshColorPoints.isEmpty)
+						.accessibilityIdentifier("theme-mesh-remove-point")
 
-				Button {
-					selectedPointID = theme.addMeshColorPoint()
-				} label: {
-					Image(systemName: "plus")
+						Button("Add color point", systemImage: "plus") {
+							_ = theme.addMeshColorPoint()
+						}
+						.labelStyle(.iconOnly)
+						.buttonStyle(.bordered)
+						.disabled(theme.meshColorPoints.count >= 3)
+						.accessibilityIdentifier("theme-mesh-add-point")
+					}
+					.padding(12)
 				}
-				.buttonStyle(.plain)
-				.disabled(theme.meshColorPoints.count >= 3)
-				.accessibilityLabel("Add color point")
-				.accessibilityIdentifier("theme-mesh-add-point")
-			}
-			.frame(maxWidth: .infinity)
+				.accessibilityIdentifier("theme-mesh-editor")
 
 			#if os(macOS)
 				HStack(spacing: 10) {
@@ -165,38 +137,41 @@ private struct MeshGradientEditorView: View {
 				.accessibilityIdentifier("theme-noise-monochrome-toggle")
 			}
 		}
-		.padding()
-		.onAppear {
-			selectedPointID = theme.meshColorPoints.first?.id
-		}
-		.onChange(of: theme.meshColorPoints.map(\.id)) { _, pointIDs in
-			if let selectedPointID, pointIDs.contains(selectedPointID) {
-				return
-			}
-			selectedPointID = pointIDs.first
-		}
+		.padding(.horizontal, 12)
+		.padding(.top, 12)
+		.padding(.bottom)
 	}
 }
 
 private struct MeshGradientCanvas: View {
 	@Binding var theme: BrowserTheme
-	@Binding var selectedPointID: UUID?
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	@State private var colorPointID: UUID?
 	@State private var dragPointID: UUID?
 	@State private var dragOrigin = CGPoint.zero
-	@State private var dragStartedOnPoint = false
 
 	var body: some View {
 		GeometryReader { geometry in
 			ZStack(alignment: .topLeading) {
 				MeshGradientSurface(points: theme.meshColorPoints)
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
-					.opacity(theme.meshOpacity)
+					.contentShape(Rectangle())
+					.onTapGesture(coordinateSpace: .local) { location in
+						if theme.meshColorPoints.isEmpty {
+							_ = theme.addMeshColorPoint(at: normalized(location, in: geometry.size))
+							return
+						}
+						guard theme.meshColorPoints.count == 1,
+						      let point = theme.meshColorPoints.first else { return }
+						withAnimation(reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.45)) {
+							theme.moveMeshColorPoint(id: point.id, to: normalized(location, in: geometry.size))
+						}
+					}
 
 				ForEach(theme.meshColorPoints) { point in
 					let pointIndex = theme.meshColorPoints.firstIndex(where: { $0.id == point.id }) ?? 0
-					let isSelected = point.id == selectedPointID
 					Button {
-						selectedPointID = point.id
+						colorPointID = point.id
 					} label: {
 						Circle()
 							.fill(point.color.color.opacity(0.35))
@@ -204,7 +179,7 @@ private struct MeshGradientCanvas: View {
 								Circle()
 									.strokeBorder(.white.opacity(0.9), lineWidth: 2)
 							}
-							.frame(width: isSelected ? 30 : 22, height: isSelected ? 30 : 22)
+							.frame(width: 24, height: 24)
 							.glassEffect(
 								.clear.tint(point.color.color).interactive(),
 								in: Circle()
@@ -212,96 +187,311 @@ private struct MeshGradientCanvas: View {
 							.frame(width: 44, height: 44)
 					}
 					.buttonStyle(.plain)
+					.highPriorityGesture(
+						DragGesture(minimumDistance: 3, coordinateSpace: .named("theme-mesh-canvas"))
+							.onChanged { value in
+								if dragPointID != point.id {
+									dragPointID = point.id
+									dragOrigin = CGPoint(x: point.x, y: point.y)
+								}
+								theme.moveMeshColorPoint(
+									id: point.id,
+									to: CGPoint(
+										x: dragOrigin.x + value.translation.width / geometry.size.width,
+										y: dragOrigin.y + value.translation.height / geometry.size.height
+									)
+								)
+							}
+							.onEnded { _ in dragPointID = nil }
+					)
 					.position(
 						x: CGFloat(point.x) * geometry.size.width,
 						y: CGFloat(point.y) * geometry.size.height
 					)
 					.accessibilityLabel("Color point \(pointIndex + 1)")
-					.accessibilityValue(isSelected ? "Selected" : "Not selected")
+					.accessibilityHint("Drag to move. Click to change color.")
 					.accessibilityIdentifier("theme-color-point-\(point.id.uuidString)")
-					.accessibilityAction(named: "Move left") {
-						theme.moveMeshColorPoint(
-							id: point.id,
-							to: CGPoint(x: CGFloat(point.x - 0.02), y: CGFloat(point.y))
-						)
-					}
-					.accessibilityAction(named: "Move right") {
-						theme.moveMeshColorPoint(
-							id: point.id,
-							to: CGPoint(x: CGFloat(point.x + 0.02), y: CGFloat(point.y))
-						)
-					}
-					.accessibilityAction(named: "Move up") {
-						theme.moveMeshColorPoint(
-							id: point.id,
-							to: CGPoint(x: CGFloat(point.x), y: CGFloat(point.y - 0.02))
-						)
-					}
-					.accessibilityAction(named: "Move down") {
-						theme.moveMeshColorPoint(
-							id: point.id,
-							to: CGPoint(x: CGFloat(point.x), y: CGFloat(point.y + 0.02))
-						)
-					}
+					#if os(macOS)
+						.background {
+							FloatingThemeColorWheel(
+								isPresented: colorPresentation(for: point.id),
+								color: colorBinding(for: point.id)
+							)
+							.allowsHitTesting(false)
+						}
+					#else
+						.popover(isPresented: colorPresentation(for: point.id)) {
+							ThemePointColorWheel(color: colorBinding(for: point.id))
+								.padding(12)
+								.presentationCompactAdaptation(.popover)
+						}
+					#endif
+						.accessibilityAction(named: "Move left") {
+							theme.moveMeshColorPoint(
+								id: point.id,
+								to: CGPoint(x: CGFloat(point.x - 0.02), y: CGFloat(point.y))
+							)
+						}
+						.accessibilityAction(named: "Move right") {
+							theme.moveMeshColorPoint(
+								id: point.id,
+								to: CGPoint(x: CGFloat(point.x + 0.02), y: CGFloat(point.y))
+							)
+						}
+						.accessibilityAction(named: "Move up") {
+							theme.moveMeshColorPoint(
+								id: point.id,
+								to: CGPoint(x: CGFloat(point.x), y: CGFloat(point.y - 0.02))
+							)
+						}
+						.accessibilityAction(named: "Move down") {
+							theme.moveMeshColorPoint(
+								id: point.id,
+								to: CGPoint(x: CGFloat(point.x), y: CGFloat(point.y + 0.02))
+							)
+						}
 				}
 			}
-			.contentShape(Rectangle())
-			.gesture(
-				DragGesture(minimumDistance: 0)
-					.onChanged { value in
-						movePoint(during: value, in: geometry.size)
-					}
-					.onEnded { value in
-						if theme.meshColorPoints.isEmpty {
-							let position = normalized(value.location, in: geometry.size)
-							selectedPointID = theme.addMeshColorPoint(at: position)
-						}
-						dragPointID = nil
-						dragStartedOnPoint = false
-					}
-			)
+			.coordinateSpace(name: "theme-mesh-canvas")
 		}
-	}
-
-	private func movePoint(during value: DragGesture.Value, in size: CGSize) {
-		guard size.width > 0, size.height > 0 else { return }
-		if dragPointID == nil {
-			let start = value.startLocation
-			let hitPoint = theme.meshColorPoints.first { point in
-				let pointLocation = CGPoint(
-					x: CGFloat(point.x) * size.width,
-					y: CGFloat(point.y) * size.height
-				)
-				return hypot(pointLocation.x - start.x, pointLocation.y - start.y) <= 24
-			}
-			if let hitPoint {
-				dragPointID = hitPoint.id
-				selectedPointID = hitPoint.id
-				dragOrigin = CGPoint(x: hitPoint.x, y: hitPoint.y)
-				dragStartedOnPoint = true
-			} else if let selectedPointID,
-			          let selectedPoint = theme.meshColorPoints.first(where: { $0.id == selectedPointID })
-			{
-				dragPointID = selectedPoint.id
-				dragOrigin = CGPoint(x: selectedPoint.x, y: selectedPoint.y)
-				dragStartedOnPoint = false
-			}
-		}
-
-		guard let dragPointID else { return }
-		let position: CGPoint = if dragStartedOnPoint {
-			CGPoint(
-				x: dragOrigin.x + value.translation.width / size.width,
-				y: dragOrigin.y + value.translation.height / size.height
-			)
-		} else {
-			normalized(value.location, in: size)
-		}
-		theme.moveMeshColorPoint(id: dragPointID, to: position)
 	}
 
 	private func normalized(_ position: CGPoint, in size: CGSize) -> CGPoint {
 		CGPoint(x: position.x / size.width, y: position.y / size.height)
+	}
+
+	private func colorPresentation(for id: UUID) -> Binding<Bool> {
+		Binding(
+			get: { colorPointID == id },
+			set: {
+				if !$0 {
+					colorPointID = nil
+				}
+			}
+		)
+	}
+
+	private func colorBinding(for id: UUID) -> Binding<Color> {
+		Binding(
+			get: { theme.meshColorPoints.first(where: { $0.id == id })?.color.color ?? .clear },
+			set: { color in
+				guard let index = theme.meshColorPoints.firstIndex(where: { $0.id == id }) else { return }
+				theme.meshColorPoints[index].color.color = color
+			}
+		)
+	}
+}
+
+#if os(macOS)
+	private struct FloatingThemeColorWheel: NSViewRepresentable {
+		@Binding var isPresented: Bool
+		@Binding var color: Color
+
+		func makeNSView(context _: Context) -> ThemeWheelAnchorView {
+			ThemeWheelAnchorView()
+		}
+
+		func updateNSView(_ nsView: ThemeWheelAnchorView, context: Context) {
+			let coordinator = context.coordinator
+			nsView.onLayout = { [weak nsView, weak coordinator] in
+				guard let nsView else { return }
+				coordinator?.reposition(anchor: nsView)
+			}
+			coordinator.update(
+				anchor: nsView,
+				isPresented: isPresented,
+				color: $color,
+				onDismiss: { isPresented = false }
+			)
+		}
+
+		func makeCoordinator() -> Coordinator {
+			Coordinator()
+		}
+
+		static func dismantleNSView(_: ThemeWheelAnchorView, coordinator: Coordinator) {
+			coordinator.close()
+		}
+
+		final class Coordinator: NSObject {
+			private weak var parent: NSWindow?
+			private var panel: ThemeColorPanel?
+			private var mouseMonitor: Any?
+			private var onDismiss: (() -> Void)?
+			private let panelSize = NSSize(width: 184, height: 216)
+
+			func update(
+				anchor: NSView,
+				isPresented: Bool,
+				color: Binding<Color>,
+				onDismiss: @escaping () -> Void
+			) {
+				self.onDismiss = onDismiss
+				guard isPresented, let window = anchor.window else {
+					close()
+					return
+				}
+				if panel == nil {
+					let panel = ThemeColorPanel(
+						contentRect: NSRect(origin: .zero, size: panelSize),
+						styleMask: [.borderless, .nonactivatingPanel],
+						backing: .buffered,
+						defer: false
+					)
+					panel.isOpaque = false
+					panel.backgroundColor = .clear
+					panel.hasShadow = true
+					panel.contentView = NSHostingView(rootView: ThemePointColorWheel(color: color)
+						.padding(12)
+						.background(.regularMaterial, in: .rect(cornerRadius: 24)))
+					window.addChildWindow(panel, ordered: .above)
+					panel.orderFront(nil)
+					parent = window
+					self.panel = panel
+					mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self, weak panel] event in
+						if event.window !== panel {
+							self?.onDismiss?()
+						}
+						return event
+					}
+				}
+				reposition(anchor: anchor)
+			}
+
+			func reposition(anchor: NSView) {
+				guard let panel, let parent, anchor.window === parent else { return }
+				let anchorFrame = parent.convertToScreen(anchor.convert(anchor.bounds, to: nil))
+				let visibleFrame = parent.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? anchorFrame
+				let origin = NSPoint(
+					x: min(max(anchorFrame.midX - panelSize.width / 2, visibleFrame.minX), visibleFrame.maxX - panelSize.width),
+					y: min(max(anchorFrame.midY - panelSize.height / 2, visibleFrame.minY), visibleFrame.maxY - panelSize.height)
+				)
+				panel.setFrameOrigin(origin)
+			}
+
+			func close() {
+				if let mouseMonitor {
+					NSEvent.removeMonitor(mouseMonitor)
+					self.mouseMonitor = nil
+				}
+				if let panel {
+					parent?.removeChildWindow(panel)
+					panel.close()
+					self.panel = nil
+				}
+				parent = nil
+			}
+		}
+	}
+
+	private final class ThemeWheelAnchorView: NSView {
+		var onLayout: (() -> Void)?
+
+		override func viewDidMoveToWindow() {
+			super.viewDidMoveToWindow()
+			onLayout?()
+		}
+
+		override func layout() {
+			super.layout()
+			onLayout?()
+		}
+	}
+
+	private final class ThemeColorPanel: NSPanel {
+		override var canBecomeKey: Bool {
+			true
+		}
+
+		override var canBecomeMain: Bool {
+			false
+		}
+	}
+#endif
+
+private struct ThemePointColorWheel: View {
+	@Binding var color: Color
+
+	private var components: (hue: CGFloat, saturation: CGFloat, brightness: CGFloat) {
+		var hue: CGFloat = 0
+		var saturation: CGFloat = 0
+		var brightness: CGFloat = 0
+		var alpha: CGFloat = 0
+		#if os(macOS)
+			let platformColor = NSColor(color).usingColorSpace(.deviceRGB) ?? NSColor(color)
+			platformColor.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+		#else
+			_ = UIColor(color).getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+		#endif
+		return (hue, saturation, brightness)
+	}
+
+	var body: some View {
+		VStack(spacing: 10) {
+			GeometryReader { geometry in
+				let radius = geometry.size.width / 2
+				let angle = components.hue * 2 * .pi
+				ZStack {
+					Circle()
+						.fill(AngularGradient(
+							colors: [.red, .yellow, .green, .cyan, .blue, .purple, .red],
+							center: .center
+						))
+						.overlay {
+							Circle()
+								.fill(RadialGradient(
+									colors: [.white, .white.opacity(0)],
+									center: .center,
+									startRadius: 0,
+									endRadius: radius
+								))
+						}
+						.gesture(
+							DragGesture(minimumDistance: 0)
+								.onChanged { value in
+									let dx = value.location.x - radius
+									let dy = value.location.y - radius
+									let hue = (atan2(dy, dx) / (2 * .pi) + 1).truncatingRemainder(dividingBy: 1)
+									let saturation = min(hypot(dx, dy) / radius, 1)
+									color = Color(
+										hue: Double(hue),
+										saturation: Double(saturation),
+										brightness: Double(components.brightness)
+									)
+								}
+						)
+
+					Circle()
+						.fill(color)
+						.frame(width: 16, height: 16)
+						.overlay { Circle().strokeBorder(.white, lineWidth: 2) }
+						.shadow(radius: 2)
+						.position(
+							x: radius + cos(angle) * components.saturation * radius,
+							y: radius + sin(angle) * components.saturation * radius
+						)
+						.allowsHitTesting(false)
+				}
+			}
+			.frame(width: 160, height: 160)
+			.accessibilityLabel("Color wheel")
+			.accessibilityHint("Drag to change hue and saturation")
+			.accessibilityIdentifier("theme-point-color-wheel")
+
+			Slider(value: Binding(
+				get: { Double(components.brightness) },
+				set: {
+					color = Color(
+						hue: Double(components.hue),
+						saturation: Double(components.saturation),
+						brightness: $0
+					)
+				}
+			), in: 0 ... 1)
+				.accessibilityLabel("Color brightness")
+				.accessibilityIdentifier("theme-point-color-brightness")
+		}
+		.frame(width: 160)
 	}
 }
 

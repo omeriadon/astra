@@ -11,7 +11,7 @@ struct BrowserThemeBackground: View {
 			backgroundColor: .clear,
 			saturationFactor: 1,
 			brightnessFactor: 0,
-			blurRadius: 10
+			blurRadius: 20
 		)
 
 		private static let windowEffect = NSMaterialView.Effect(

@@ -116,53 +116,27 @@ struct BrowserTheme: Codable, Equatable {
 					y: clamped(nextPosition.y)
 				)
 			case 1:
-				if abs(meshColorPoints[0].x - 0.5) < 0.12,
-				   abs(meshColorPoints[0].y - 0.5) < 0.12
-				{
-					meshColorPoints[0].x = 0.5
-					meshColorPoints[0].y = 0.3
-				}
 				newPoint = ThemeColorPoint(
 					color: BrowserColor(red: 0.1, green: 0.75, blue: 0.2),
-					x: 1 - meshColorPoints[0].x,
-					y: 1 - meshColorPoints[0].y
+					x: 0.7,
+					y: 0.7
 				)
 			case 2:
-				let mirroredMidpoint = CGPoint(
-					x: CGFloat(1 - meshColorPoints[0].x),
-					y: CGFloat(1 - meshColorPoints[0].y)
-				)
-				let directionX = meshColorPoints[0].x - 0.5
-				let directionY = meshColorPoints[0].y - 0.5
-				let directionLength = max(hypot(directionX, directionY), 0.001)
-				let offset = CGPoint(
-					x: CGFloat(-directionY / directionLength * 0.2),
-					y: CGFloat(directionX / directionLength * 0.2)
-				)
-				meshColorPoints[1].x = clamped(mirroredMidpoint.x - offset.x)
-				meshColorPoints[1].y = clamped(mirroredMidpoint.y - offset.y)
 				newPoint = ThemeColorPoint(
 					color: BrowserColor(red: 0.92, green: 0.12, blue: 0.1),
-					x: clamped(mirroredMidpoint.x + offset.x),
-					y: clamped(mirroredMidpoint.y + offset.y)
+					x: 0.3,
+					y: 0.7
 				)
 			default:
 				return nil
 		}
 
 		meshColorPoints.append(newPoint)
-		if meshColorPoints.count == 3 {
-			updateMirroredMidpoint()
-		}
 		return newPoint.id
 	}
 
 	mutating func removeMeshColorPoint(id: UUID) {
 		meshColorPoints.removeAll { $0.id == id }
-		if meshColorPoints.count == 2 {
-			meshColorPoints[1].x = 1 - meshColorPoints[0].x
-			meshColorPoints[1].y = 1 - meshColorPoints[0].y
-		}
 	}
 
 	mutating func moveMeshColorPoint(id: UUID, to position: CGPoint) {
@@ -170,37 +144,8 @@ struct BrowserTheme: Codable, Equatable {
 		let x = clamped(position.x)
 		let y = clamped(position.y)
 
-		switch meshColorPoints.count {
-			case 1:
-				meshColorPoints[index].x = x
-				meshColorPoints[index].y = y
-			case 2:
-				meshColorPoints[index].x = x
-				meshColorPoints[index].y = y
-				let otherIndex = index == 0 ? 1 : 0
-				meshColorPoints[otherIndex].x = 1 - x
-				meshColorPoints[otherIndex].y = 1 - y
-			case 3 where index == 0:
-				let offsetX = meshColorPoints[0].x - x
-				let offsetY = meshColorPoints[0].y - y
-				for otherIndex in 1 ... 2 {
-					meshColorPoints[otherIndex].x = clamped(meshColorPoints[otherIndex].x + offsetX)
-					meshColorPoints[otherIndex].y = clamped(meshColorPoints[otherIndex].y + offsetY)
-				}
-				updateMirroredMidpoint()
-			case 3:
-				meshColorPoints[index].x = x
-				meshColorPoints[index].y = y
-				updateMirroredMidpoint()
-			default:
-				break
-		}
-	}
-
-	private mutating func updateMirroredMidpoint() {
-		guard meshColorPoints.count == 3 else { return }
-		meshColorPoints[0].x = 1 - (meshColorPoints[1].x + meshColorPoints[2].x) / 2
-		meshColorPoints[0].y = 1 - (meshColorPoints[1].y + meshColorPoints[2].y) / 2
+		meshColorPoints[index].x = x
+		meshColorPoints[index].y = y
 	}
 
 	private func clamped(_ value: CGFloat) -> Double {

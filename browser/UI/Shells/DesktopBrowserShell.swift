@@ -68,7 +68,8 @@ struct DesktopBrowserShell: View {
 				.accessibilityIdentifier("edit-browser-theme")
 				.popover(isPresented: $showsThemeEditor, arrowEdge: .top) {
 					BrowserThemeEditorView()
-						.frame(width: 380, height: 620)
+						.frame(width: 380)
+						.fixedSize(horizontal: false, vertical: true)
 						.presentationCompactAdaptation(.popover)
 				}
 
