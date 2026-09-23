@@ -4,131 +4,201 @@ import SwiftUI
 
 struct CircularThemeColorPicker: View {
 	@Binding var color: BrowserColor
-	let pointID: UUID
-	let namespace: Namespace.ID
+	let dismissalSignal: Int
+	let centerShift: CGSize
 	let onClose: () -> Void
 
 	@State private var hue: Double
 	@State private var fieldImage: CGImage?
-	@State private var arcProgress = 0.0
+	@State private var expansion: CGFloat = 0
+	@State private var isDismissing = false
+	@State private var showsOuterGlass = false
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@FocusState private var isFocused: Bool
 
-	private let size: CGFloat = 220
-	private let fieldSize: CGFloat = 144
-	private let arcRadius: CGFloat = 100
+	static let diameter: CGFloat = 196
+	private let fieldSize: CGFloat = 120
+	private let arcRadius: CGFloat = 85
 	private let arcStart = 145.0
 	private let arcLength = 250.0
 
-	init(color: Binding<BrowserColor>, pointID: UUID, namespace: Namespace.ID, onClose: @escaping () -> Void) {
+	init(color: Binding<BrowserColor>, dismissalSignal: Int, centerShift: CGSize, onClose: @escaping () -> Void) {
 		_color = color
-		self.pointID = pointID
-		self.namespace = namespace
+		self.dismissalSignal = dismissalSignal
+		self.centerShift = centerShift
 		self.onClose = onClose
-		let initialHue = Self.hsv(color.wrappedValue).hue
-		_hue = State(initialValue: initialHue)
+		_hue = State(initialValue: Self.hsv(color.wrappedValue).hue)
 	}
 
 	var body: some View {
-		ZStack {
-			Group {
-				if let fieldImage {
-					Image(decorative: fieldImage, scale: 1, orientation: .up)
-						.resizable()
-						.interpolation(.high)
-				} else {
-					Circle().fill(color.color)
-				}
-			}
-			.frame(width: fieldSize, height: fieldSize)
-			.clipShape(Circle())
-			.matchedGeometryEffect(id: pointID, in: namespace)
-			.gesture(
-				DragGesture(minimumDistance: 0)
-					.onChanged { updateSaturationValue(at: $0.location) }
-			)
-			.accessibilityLabel("Saturation and brightness")
-			.accessibilityHint("Drag within the circle to choose a color")
-			.accessibilityIdentifier("theme-point-color-field")
-			.accessibilityValue("Saturation \(Int(Self.hsv(color).saturation * 100)) percent, brightness \(Int(Self.hsv(color).value * 100)) percent")
-			.accessibilityAction(named: "Increase saturation") { adjust(saturation: 0.05, value: 0) }
-			.accessibilityAction(named: "Decrease saturation") { adjust(saturation: -0.05, value: 0) }
-			.accessibilityAction(named: "Increase brightness") { adjust(saturation: 0, value: 0.05) }
-			.accessibilityAction(named: "Decrease brightness") { adjust(saturation: 0, value: -0.05) }
+		GlassEffectContainer(spacing: 4) {
+			ZStack {
+				ZStack {
+					Circle()
+						.fill(color.color.opacity(0.35))
+						.glassEffect(.clear.tint(color.color).interactive(), in: Circle())
 
-			selectionTick
-				.offset(selectionOffset)
+					if let fieldImage {
+						Image(decorative: fieldImage, scale: 1, orientation: .up)
+							.resizable()
+							.interpolation(.high)
+							.opacity(expansion)
+					}
+
+					Circle()
+						.strokeBorder(.white.opacity(1 - expansion), lineWidth: 2)
+						.allowsHitTesting(false)
+				}
+				.frame(width: fieldSize, height: fieldSize)
+				.clipShape(Circle())
+				.scaleEffect(openingScale)
 				.gesture(
 					DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-color-picker"))
 						.onChanged { gesture in
-							let inset = (size - fieldSize) / 2
+							let inset = (Self.diameter - fieldSize) / 2
 							updateSaturationValue(at: CGPoint(
 								x: gesture.location.x - inset,
 								y: gesture.location.y - inset
 							))
 						}
 				)
-				.accessibilityHidden(true)
+				.accessibilityLabel("Saturation and brightness")
+				.accessibilityHint("Drag within the circle to choose a color")
+				.accessibilityIdentifier("theme-point-color-field")
+				.accessibilityValue("Saturation \(Int(Self.hsv(color).saturation * 100)) percent, brightness \(Int(Self.hsv(color).value * 100)) percent")
+				.accessibilityAction(named: "Increase saturation") { adjust(saturation: 0.05, value: 0) }
+				.accessibilityAction(named: "Decrease saturation") { adjust(saturation: -0.05, value: 0) }
+				.accessibilityAction(named: "Increase brightness") { adjust(saturation: 0, value: 0.05) }
+				.accessibilityAction(named: "Decrease brightness") { adjust(saturation: 0, value: -0.05) }
 
-			Circle()
-				.trim(from: 0, to: arcLength / 360)
-				.stroke(hueGradient, style: StrokeStyle(lineWidth: 20, lineCap: .round))
-				.rotationEffect(.degrees(arcStart))
-				.frame(width: arcRadius * 2, height: arcRadius * 2)
-				.opacity(arcProgress)
-				.scaleEffect(CGFloat(0.72 + 0.28 * arcProgress))
-				.blur(radius: CGFloat((1 - arcProgress) * 10))
-				.gesture(
-					DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-color-picker"))
-						.onChanged { updateHue(at: $0.location) }
-				)
-				.accessibilityLabel("Hue")
-				.accessibilityValue("\(Int(hue * 360)) degrees")
-				.accessibilityIdentifier("theme-point-hue-arc")
-				.accessibilityAdjustableAction { direction in
-					switch direction {
-						case .increment: setHue(hue + 0.02)
-						case .decrement: setHue(hue - 0.02)
-						@unknown default: break
+				selectionTick(size: 42)
+					.offset(selectionOffset)
+					.opacity(expansion)
+					.gesture(
+						DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-color-picker"))
+							.onChanged { gesture in
+								let inset = (Self.diameter - fieldSize) / 2
+								updateSaturationValue(at: CGPoint(
+									x: gesture.location.x - inset,
+									y: gesture.location.y - inset
+								))
+							}
+					)
+					.accessibilityHidden(true)
+
+				if showsOuterGlass {
+					hueArc
+						.scaleEffect(openingScale)
+						.opacity(expansion)
+						.blur(radius: (1 - expansion) * 9)
+						.gesture(
+							DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-color-picker"))
+								.onChanged { updateHue(at: $0.location) }
+						)
+						.accessibilityLabel("Hue")
+						.accessibilityValue("\(Int(hue * 360)) degrees")
+						.accessibilityIdentifier("theme-point-hue-arc")
+						.accessibilityAdjustableAction { direction in
+							switch direction {
+								case .increment: setHue(hue + 0.02)
+								case .decrement: setHue(hue - 0.02)
+								@unknown default: break
+							}
+						}
+
+					selectionTick(size: 38)
+						.glassEffectTransition(.materialize)
+						.offset(hueOffset)
+						.opacity(expansion)
+						.scaleEffect(openingScale)
+						.blur(radius: (1 - expansion) * 9)
+						.gesture(
+							DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-color-picker"))
+								.onChanged { updateHue(at: $0.location) }
+						)
+						.accessibilityHidden(true)
+
+					Button {
+						dismiss()
+					} label: {
+						Label("Close color picker", systemImage: "xmark")
+							.labelStyle(.iconOnly)
+							.frame(width: 40, height: 40)
 					}
+					.buttonStyle(.glass)
+					.buttonBorderShape(.circle)
+					.glassEffectTransition(.materialize)
+					.offset(y: arcRadius)
+					.opacity(expansion)
+					.scaleEffect(openingScale)
+					.blur(radius: (1 - expansion) * 9)
+					.accessibilityIdentifier("theme-point-color-close")
 				}
 
-			selectionTick
-				.offset(hueOffset)
-				.opacity(arcProgress)
-				.scaleEffect(CGFloat(0.72 + 0.28 * arcProgress))
-				.blur(radius: CGFloat((1 - arcProgress) * 10))
-				.gesture(
-					DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-color-picker"))
-						.onChanged { updateHue(at: $0.location) }
-				)
-				.accessibilityHidden(true)
+				Color.clear
+					.frame(width: 1, height: 1)
+					.focusable()
+					.focused($isFocused)
+					.onKeyPress(.escape) {
+						dismiss()
+						return .handled
+					}
+					.accessibilityHidden(true)
+			}
 		}
-		.frame(width: size, height: size)
+		.frame(width: Self.diameter, height: Self.diameter)
+		.offset(
+			x: centerShift.width * expansion,
+			y: centerShift.height * expansion
+		)
 		.coordinateSpace(name: "theme-color-picker")
-		.focusable()
-		.focused($isFocused)
-		.onKeyPress(.escape) {
-			onClose()
-			return .handled
-		}
 		.onAppear {
 			isFocused = true
 			fieldImage = Self.renderField(hue: hue)
-			withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.72).delay(0.06)) {
-				arcProgress = 1
+			withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.66)) {
+				expansion = 1
+				showsOuterGlass = true
 			}
 		}
 		.onChange(of: hue) { _, newHue in
 			fieldImage = Self.renderField(hue: newHue)
 		}
+		.onChange(of: dismissalSignal) { _, _ in
+			dismiss()
+		}
+		#if os(macOS)
+		.onExitCommand(perform: dismiss)
+		#endif
 	}
 
-	private var selectionTick: some View {
+	private var openingScale: CGFloat {
+		(44 + (fieldSize - 44) * expansion) / fieldSize
+	}
+
+	private var arcShape: ThemeHueArc {
+		ThemeHueArc(start: arcStart, length: arcLength, lineWidth: 26)
+	}
+
+	private var hueArc: some View {
+		arcShape
+			.fill(.clear)
+			.glassEffect(.regular.interactive(), in: arcShape)
+			.overlay {
+				arcShape
+					.fill(hueGradient)
+					.opacity(0.78)
+					.allowsHitTesting(false)
+			}
+			.frame(width: Self.diameter, height: Self.diameter)
+			.contentShape(arcShape)
+			.glassEffectTransition(.materialize)
+	}
+
+	private func selectionTick(size: CGFloat) -> some View {
 		Circle()
 			.fill(.clear)
-			.frame(width: 22, height: 22)
-			.glassEffect(.regular.tint(color.color).interactive(), in: Circle())
+			.frame(width: size, height: size)
+			.glassEffect(.regular.interactive(), in: Circle())
 			.overlay { Circle().strokeBorder(.white, lineWidth: 2) }
 			.shadow(color: .black.opacity(0.55), radius: 2)
 	}
@@ -138,7 +208,12 @@ struct CircularThemeColorPicker: View {
 		let stops = colors.enumerated().map { index, color in
 			Gradient.Stop(color: color, location: Double(index) / 6 * arcLength / 360)
 		}
-		return AngularGradient(stops: stops, center: .center)
+		return AngularGradient(
+			stops: stops,
+			center: .center,
+			startAngle: .degrees(arcStart),
+			endAngle: .degrees(arcStart + 360)
+		)
 	}
 
 	private var selectionOffset: CGSize {
@@ -150,6 +225,17 @@ struct CircularThemeColorPicker: View {
 	private var hueOffset: CGSize {
 		let angle = (arcStart + hue * arcLength) * .pi / 180
 		return CGSize(width: cos(angle) * arcRadius, height: sin(angle) * arcRadius)
+	}
+
+	private func dismiss() {
+		guard !isDismissing else { return }
+		isDismissing = true
+		withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.8), completionCriteria: .logicallyComplete) {
+			expansion = 0
+			showsOuterGlass = false
+		} completion: {
+			onClose()
+		}
 	}
 
 	private func updateSaturationValue(at location: CGPoint) {
@@ -167,7 +253,7 @@ struct CircularThemeColorPicker: View {
 	}
 
 	private func updateHue(at location: CGPoint) {
-		let center = size / 2
+		let center = Self.diameter / 2
 		let angle = atan2(location.y - center, location.x - center) * 180 / .pi
 		let progress = (Double(angle) - arcStart + 360).truncatingRemainder(dividingBy: 360) / arcLength
 		setHue(progress)
@@ -273,5 +359,30 @@ struct CircularThemeColorPicker: View {
 			case 4: return SIMD3(x, 0, 1)
 			default: return SIMD3(1, 0, x)
 		}
+	}
+}
+
+private struct ThemeHueArc: Shape {
+	let start: Double
+	let length: Double
+	let lineWidth: CGFloat
+
+	func path(in rect: CGRect) -> Path {
+		let center = CGPoint(x: rect.midX, y: rect.midY)
+		let radius = min(rect.width, rect.height) / 2 - lineWidth / 2
+		var path = Path()
+		for step in 0 ... 100 {
+			let angle = (start + Double(step) / 100 * length) * .pi / 180
+			let point = CGPoint(
+				x: center.x + cos(angle) * radius,
+				y: center.y + sin(angle) * radius
+			)
+			if step == 0 {
+				path.move(to: point)
+			} else {
+				path.addLine(to: point)
+			}
+		}
+		return path.strokedPath(StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
 	}
 }

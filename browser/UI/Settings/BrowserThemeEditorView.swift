@@ -55,18 +55,18 @@ private struct MeshGradientEditorView: View {
 				.overlay(alignment: .top) {
 					HStack(spacing: 8) {
 						ForEach(ThemeAppearanceMode.allCases) { mode in
-							Button(mode.title, systemImage: mode.symbol) {
+							Button {
 								withAnimation(.smooth(duration: 0.1)) {
 									theme.appearanceMode = mode
 								}
+							} label: {
+								Label(mode.title, systemImage: mode.symbol)
+									.labelStyle(.iconOnly)
+									.frame(width: 44, height: 44)
 							}
-							.labelStyle(.iconOnly)
-							.buttonStyle(.plain)
-							.frame(width: 38, height: 38)
-							.glassEffect(
-								.regular.tint(theme.appearanceMode == mode ? .white.opacity(0.3) : .clear).interactive(),
-								in: Circle()
-							)
+							.buttonStyle(.glass)
+							.buttonBorderShape(.circle)
+							.tint(theme.appearanceMode == mode ? .white.opacity(0.3) : .clear)
 							.accessibilityAddTraits(theme.appearanceMode == mode ? .isSelected : [])
 							.accessibilityIdentifier("theme-appearance-\(mode.rawValue)")
 						}
@@ -76,30 +76,27 @@ private struct MeshGradientEditorView: View {
 					.allowsHitTesting(editingPointID == nil)
 				}
 				.overlay(alignment: .bottom) {
-					HStack(spacing: 24) {
-						Button("Remove color point", systemImage: "minus") {
-							theme.meshColorPoints.removeLast()
+					GlassEffectContainer(spacing: 4) {
+						if theme.meshColorPoints.count < 3, editingPointID == nil {
+							Button {
+								withAnimation(.smooth(duration: 0.2)) {
+									_ = theme.addMeshColorPoint()
+								}
+							} label: {
+								Label("Add color point", systemImage: "plus")
+									.labelStyle(.iconOnly)
+									.frame(width: 44, height: 44)
+							}
+							.buttonStyle(.glass)
+							.buttonBorderShape(.circle)
+							.glassEffectTransition(.materialize)
+							.transition(.opacity.combined(with: .scale(scale: 0.5)))
+							.accessibilityIdentifier("theme-mesh-add-point")
 						}
-						.labelStyle(.iconOnly)
-						.buttonStyle(.plain)
-						.frame(width: 38, height: 38)
-						.glassEffect(.regular.interactive(), in: Circle())
-						.disabled(theme.meshColorPoints.isEmpty)
-						.accessibilityIdentifier("theme-mesh-remove-point")
-
-						Button("Add color point", systemImage: "plus") {
-							_ = theme.addMeshColorPoint()
-						}
-						.labelStyle(.iconOnly)
-						.buttonStyle(.plain)
-						.frame(width: 38, height: 38)
-						.glassEffect(.regular.interactive(), in: Circle())
-						.disabled(theme.meshColorPoints.count >= 3)
-						.accessibilityIdentifier("theme-mesh-add-point")
 					}
 					.padding(12)
-					.opacity(editingPointID == nil ? 1 : 0)
-					.allowsHitTesting(editingPointID == nil)
+					.animation(.smooth(duration: 0.2), value: theme.meshColorPoints.count)
+					.animation(.smooth(duration: 0.2), value: editingPointID)
 				}
 				.accessibilityIdentifier("theme-mesh-editor")
 
@@ -113,18 +110,34 @@ private struct MeshGradientEditorView: View {
 			#endif
 
 			HStack(spacing: 10) {
-				Button("Noise", systemImage: "circle.bottomhalf.filled.pattern.checkered") {
+				Button {
 					theme.shaderNoiseEnabled.toggle()
+				} label: {
+					Label("Noise", systemImage: "circle.bottomhalf.filled.pattern.checkered")
+						.labelStyle(.iconOnly)
+						.frame(width: 46, height: 46)
 				}
-				.labelStyle(.iconOnly)
-				.buttonStyle(.plain)
-				.frame(width: 46, height: 46)
-				.glassEffect(
-					.regular.tint(theme.shaderNoiseEnabled ? theme.tabColor.opacity(0.45) : .clear).interactive(),
-					in: Circle()
-				)
+				.buttonStyle(.glass)
+				.buttonBorderShape(.circle)
+				.tint(theme.shaderNoiseEnabled ? theme.tabColor.opacity(0.45) : .clear)
 				.accessibilityValue(theme.shaderNoiseEnabled ? "On" : "Off")
 				.accessibilityIdentifier("theme-noise-toggle")
+
+				Button {
+					monochromeNoise.wrappedValue.toggle()
+				} label: {
+					Label(
+						"Monochrome noise",
+						systemImage: theme.shaderNoiseMonochrome ? "lightspectrum.horizontal" : "cloud.rain.crop"
+					)
+					.labelStyle(.iconOnly)
+					.frame(width: 46, height: 46)
+				}
+				.buttonStyle(.glass)
+				.buttonBorderShape(.circle)
+				.tint(theme.shaderNoiseEnabled && theme.shaderNoiseMonochrome ? theme.tabColor.opacity(0.8) : .clear)
+				.accessibilityValue(theme.shaderNoiseMonochrome ? "On" : "Off")
+				.accessibilityIdentifier("theme-noise-monochrome-toggle")
 
 				ThemeControlSlider(
 					value: normalizedNoiseAmount,
@@ -132,21 +145,6 @@ private struct MeshGradientEditorView: View {
 					symbol: "circle.bottomhalf.filled.pattern.checkered",
 					identifier: "theme-noise-amount"
 				)
-				.disabled(!theme.shaderNoiseEnabled)
-
-				Button("Monochrome noise", systemImage: theme.shaderNoiseMonochrome ? "lightspectrum.horizontal" : "cloud.rain.crop") {
-					monochromeNoise.wrappedValue.toggle()
-				}
-				.labelStyle(.iconOnly)
-				.buttonStyle(.plain)
-				.frame(width: 46, height: 46)
-				.glassEffect(
-					.regular.tint(theme.shaderNoiseEnabled && theme.shaderNoiseMonochrome ? theme.tabColor.opacity(0.8) : .clear).interactive(),
-					in: RoundedRectangle(cornerRadius: 12)
-				)
-				.disabled(!theme.shaderNoiseEnabled)
-				.accessibilityValue(theme.shaderNoiseMonochrome ? "On" : "Off")
-				.accessibilityIdentifier("theme-noise-monochrome-toggle")
 			}
 		}
 		.padding(.horizontal, 12)
@@ -171,34 +169,30 @@ private struct ThemeControlSlider: View {
 
 	var body: some View {
 		GeometryReader { geometry in
-			let travel = max(geometry.size.width - thumbSize, 1)
+			let trackWidth = max(geometry.size.width - thumbSize, 1)
 			ZStack(alignment: .leading) {
 				Capsule()
 					.fill(.white.opacity(0.18))
-					.frame(height: 20)
+					.frame(width: trackWidth, height: 20)
 					.overlay(alignment: .leading) {
 						Capsule()
 							.fill(.white.opacity(0.24))
-							.frame(width: thumbSize / 2 + CGFloat(value) * travel, height: 20)
+							.frame(width: max(CGFloat(value) * trackWidth, 1), height: 20)
 					}
+					.offset(x: thumbSize / 2)
 
-				Circle()
-					.fill(.clear)
+				Image(systemName: symbol)
+					.font(.system(size: 17, weight: .medium))
 					.frame(width: thumbSize, height: thumbSize)
 					.glassEffect(.regular.interactive(), in: Circle())
-					.overlay {
-						Image(systemName: symbol)
-							.font(.system(size: 17, weight: .medium))
-							.accessibilityHidden(true)
-					}
-					.offset(x: CGFloat(value) * travel)
+					.offset(x: CGFloat(value) * trackWidth)
 			}
 			.frame(height: thumbSize)
 			.contentShape(Rectangle())
 			.gesture(
 				DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-control-slider"))
 					.onChanged { gesture in
-						value = min(max(Double((gesture.location.x - thumbSize / 2) / travel), 0), 1)
+						value = min(max(Double((gesture.location.x - thumbSize / 2) / trackWidth), 0), 1)
 					}
 			)
 			.coordinateSpace(name: "theme-control-slider")
@@ -222,7 +216,7 @@ private struct MeshGradientCanvas: View {
 	@Binding var theme: BrowserTheme
 	@Binding var editingPointID: UUID?
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
-	@Namespace private var colorPickerNamespace
+	@State private var pickerDismissalSignal = 0
 	@State private var dragPointID: UUID?
 	@State private var dragOrigin = CGPoint.zero
 
@@ -240,6 +234,8 @@ private struct MeshGradientCanvas: View {
 								}
 							}
 						}
+						.padding([.top, .leading], 10)
+						.padding([.bottom, .trailing], 8)
 						.allowsHitTesting(false)
 						.accessibilityHidden(true)
 					}
@@ -247,9 +243,7 @@ private struct MeshGradientCanvas: View {
 					.contentShape(Rectangle())
 					.onTapGesture(coordinateSpace: .local) { location in
 						if editingPointID != nil {
-							withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.66)) {
-								editingPointID = nil
-							}
+							pickerDismissalSignal += 1
 							return
 						}
 						if theme.meshColorPoints.isEmpty {
@@ -265,35 +259,38 @@ private struct MeshGradientCanvas: View {
 
 				ForEach(theme.meshColorPoints) { point in
 					let pointIndex = theme.meshColorPoints.firstIndex(where: { $0.id == point.id }) ?? 0
+					let pointPosition = CGPoint(
+						x: CGFloat(point.x) * geometry.size.width,
+						y: CGFloat(point.y) * geometry.size.height
+					)
 					if editingPointID == point.id {
+						let target = pickerCenter(for: point, in: geometry.size)
 						CircularThemeColorPicker(
 							color: colorBinding(for: point.id),
-							pointID: point.id,
-							namespace: colorPickerNamespace
+							dismissalSignal: pickerDismissalSignal,
+							centerShift: CGSize(
+								width: target.x - pointPosition.x,
+								height: target.y - pointPosition.y
+							)
 						) {
-							withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.66)) {
+							if editingPointID == point.id {
 								editingPointID = nil
 							}
 						}
-						.position(pickerCenter(for: point, in: geometry.size))
+						.position(pointPosition)
 						.zIndex(1)
 					} else {
 						Button {
-							withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.66)) {
-								editingPointID = point.id
-							}
+							editingPointID = point.id
 						} label: {
-							Circle()
-								.fill(point.color.color.opacity(0.35))
-								.overlay {
-									Circle().strokeBorder(.white.opacity(0.9), lineWidth: 2)
-								}
-								.frame(width: 24, height: 24)
-								.matchedGeometryEffect(id: point.id, in: colorPickerNamespace)
-								.glassEffect(.clear.tint(point.color.color).interactive(), in: Circle())
-								.frame(width: 44, height: 44)
+							Image(systemName: "circle.fill")
+								.font(.system(size: 22))
+								.foregroundStyle(point.color.color)
+								.frame(width: 25, height: 25)
 						}
-						.buttonStyle(.plain)
+						.buttonStyle(.glass(.clear))
+						.buttonBorderShape(.circle)
+						.tint(point.color.color.opacity(0.4))
 						.highPriorityGesture(
 							DragGesture(minimumDistance: 3, coordinateSpace: .named("theme-mesh-canvas"))
 								.onChanged { value in
@@ -311,10 +308,7 @@ private struct MeshGradientCanvas: View {
 								}
 								.onEnded { _ in dragPointID = nil }
 						)
-						.position(
-							x: CGFloat(point.x) * geometry.size.width,
-							y: CGFloat(point.y) * geometry.size.height
-						)
+						.position(pointPosition)
 						.accessibilityLabel("Color point \(pointIndex + 1)")
 						.accessibilityHint("Drag to move. Click to change color.")
 						.accessibilityIdentifier("theme-color-point-\(point.id.uuidString)")
@@ -342,7 +336,7 @@ private struct MeshGradientCanvas: View {
 	}
 
 	private func pickerCenter(for point: ThemeColorPoint, in size: CGSize) -> CGPoint {
-		let margin = min(CGFloat(110), size.width / 2, size.height / 2)
+		let margin = min(CircularThemeColorPicker.diameter / 2, size.width / 2, size.height / 2)
 		return CGPoint(
 			x: min(max(CGFloat(point.x) * size.width, margin), size.width - margin),
 			y: min(max(CGFloat(point.y) * size.height, margin), size.height - margin)
