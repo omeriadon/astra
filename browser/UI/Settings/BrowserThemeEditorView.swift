@@ -62,9 +62,9 @@ private struct MeshGradientEditorView: View {
 							} label: {
 								Label(mode.title, systemImage: mode.symbol)
 									.labelStyle(.iconOnly)
-									.frame(width: 44, height: 44)
+									.frame(width: 25, height: 25)
 							}
-							.buttonStyle(.glass)
+							.buttonStyle(.glass(.clear))
 							.buttonBorderShape(.circle)
 							.tint(theme.appearanceMode == mode ? .white.opacity(0.3) : .clear)
 							.accessibilityAddTraits(theme.appearanceMode == mode ? .isSelected : [])
@@ -235,7 +235,7 @@ private struct MeshGradientCanvas: View {
 							}
 						}
 						.padding([.top, .leading], 10)
-						.padding([.bottom, .trailing], 8)
+						.padding([.bottom, .trailing], 6)
 						.allowsHitTesting(false)
 						.accessibilityHidden(true)
 					}
