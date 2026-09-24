@@ -22,6 +22,8 @@ struct DesktopBrowserShell: View {
 		@State private var controlTabSwitcher: ControlTabSwitcher
 	#endif
 
+	@State private var quitExpiry: Date = .distantPast
+
 	init(browser: Browser) {
 		self.browser = browser
 		#if os(macOS)
@@ -133,7 +135,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	var body: some View {
-		BrowserSplitView(sidebarShown: $sidebarShown, isAboutToQuit: $browser.isAboutToQuit) {
+		BrowserSplitView(sidebarShown: $sidebarShown) {
 			ZStack(alignment: .top) {
 				ScrollView {
 					LazyVStack(spacing: 2) {
@@ -305,6 +307,52 @@ struct DesktopBrowserShell: View {
 		.onDisappear {
 			controlTabSwitcher.stop()
 		}
+		.blur(radius: browser.isAboutToQuit ? 5 : 0)
+		.overlay(alignment: .center) {
+			TimelineView(.animation) { timeline in
+				let showQuitMessage = timeline.date < quitExpiry
+
+				GlassEffectContainer {
+					if showQuitMessage {
+						ZStack {
+							Rectangle()
+								.fill(Color.black.gradient)
+								.opacity(0.2)
+
+							Label {
+								Text("Press \(Image(systemName: "command"))Q again to quit")
+							} icon: {
+								Image(systemName: "rectangle.portrait.and.arrow.right")
+							}
+							.monospaced()
+							.font(.title2)
+							.padding(.horizontal, 20)
+							.padding(.vertical, 16)
+							.glassEffect(
+								.regular,
+								in: RoundedRectangle(cornerRadius: 20)
+							)
+							.glassEffectTransition(.materialize)
+						}
+					}
+				}
+				.animation(.snappy(duration: 0.2), value: showQuitMessage)
+			}
+		}
+		.onChange(of: browser.isAboutToQuit) { _, newValue in
+			if newValue {
+				quitExpiry = .now.addingTimeInterval(1)
+			}
+		}
+		.task(id: quitExpiry) {
+			guard quitExpiry > .now else { return }
+
+			try? await Task.sleep(until: .now + .seconds(quitExpiry.timeIntervalSinceNow))
+
+			guard Date.now >= quitExpiry else { return }
+			browser.isAboutToQuit = false
+		}
+		.animation(.snappy(duration: 0.2), value: Date.now < quitExpiry)
 		#endif
 		.ignoresSafeArea()
 		#if os(macOS)
