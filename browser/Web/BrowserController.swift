@@ -28,13 +28,27 @@ final class BrowserController: NSObject {
 	"""
 
 	@ObservationIgnored
-	let webView: WKWebView = {
-		let configuration = WKWebViewConfiguration()
-		FaviconStore.shared.configureFaviconObservation(
-			in: configuration.userContentController
-		)
-		return PeekSourceWebView(frame: .zero, configuration: configuration)
-	}()
+	private var createdWebView: WKWebView?
+
+	var webViewIfLoaded: WKWebView? {
+		createdWebView
+	}
+
+	var webView: WKWebView {
+		if let createdWebView {
+			return createdWebView
+		}
+		return makeWebView()
+	}
+
+	private(set) var isWebViewReady = false
+	var pageZoom = 1.0 {
+		didSet {
+			if let createdWebView, Double(createdWebView.pageZoom) != pageZoom {
+				createdWebView.pageZoom = CGFloat(pageZoom)
+			}
+		}
+	}
 
 	private var historyManager: BrowserHistory
 	var history: [URL] {
@@ -71,7 +85,7 @@ final class BrowserController: NSObject {
 	var newWindowRequested: (@MainActor (URL, UnitPoint) -> Void)?
 	@ObservationIgnored
 	var escapeRequested: (@MainActor () -> Void)? {
-		didSet { (webView as? PeekSourceWebView)?.onEscape = escapeRequested }
+		didSet { (createdWebView as? PeekSourceWebView)?.onEscape = escapeRequested }
 	}
 
 	@ObservationIgnored
@@ -107,6 +121,25 @@ final class BrowserController: NSObject {
 		self.scrollPosition = scrollPosition
 		restoredScrollPosition = scrollPosition == .zero ? nil : scrollPosition
 		super.init()
+		updateThemeColor(url == nil ? .black : .white)
+		#if os(macOS)
+			startPreviewSnapshotRefresh()
+		#endif
+
+		if let url {
+			load(URLRequest(url: url))
+		}
+	}
+
+	func prepareWebView() {
+		_ = webView
+	}
+
+	private func makeWebView() -> WKWebView {
+		let configuration = WKWebViewConfiguration()
+		FaviconStore.shared.configureFaviconObservation(in: configuration.userContentController)
+		let webView = PeekSourceWebView(frame: .zero, configuration: configuration)
+		createdWebView = webView
 		let scrollHandler = WeakScriptMessageHandler(delegate: self)
 		webView.configuration.userContentController.add(
 			scrollHandler,
@@ -123,14 +156,14 @@ final class BrowserController: NSObject {
 		)
 		webView.navigationDelegate = self
 		webView.uiDelegate = self
-		if let webView = webView as? PeekSourceWebView {
-			webView.onLayout = { [weak self] in
-				self?.loadPendingRequest()
-			}
-			webView.onZoomIn = { [weak self] in self?.zoomIn() }
-			webView.onZoomOut = { [weak self] in self?.zoomOut() }
-			webView.onResetZoom = { [weak self] in self?.resetZoom() }
+		webView.onEscape = escapeRequested
+		webView.onLayout = { [weak self] in
+			self?.loadPendingRequest()
 		}
+		webView.onZoomIn = { [weak self] in self?.zoomIn() }
+		webView.onZoomOut = { [weak self] in self?.zoomOut() }
+		webView.onResetZoom = { [weak self] in self?.resetZoom() }
+		webView.pageZoom = CGFloat(pageZoom)
 		updateThemeColor(url == nil ? .black : webView.underPageBackgroundColor ?? .white)
 
 		observations = [
@@ -174,19 +207,15 @@ final class BrowserController: NSObject {
 					self?.titleDidChange?(change.newValue ?? webView.title)
 				}
 			},
-			webView.observe(\.pageZoom, options: [.new]) { [weak self] _, _ in
+			webView.observe(\.pageZoom, options: [.new]) { [weak self] webView, _ in
 				MainActor.assumeIsolated {
+					self?.pageZoom = Double(webView.pageZoom)
 					self?.navigationDidChange?()
 				}
 			},
 		]
-		#if os(macOS)
-			startPreviewSnapshotRefresh()
-		#endif
-
-		if let url {
-			load(URLRequest(url: url))
-		}
+		isWebViewReady = true
+		return webView
 	}
 
 	deinit {
@@ -196,8 +225,8 @@ final class BrowserController: NSObject {
 	}
 
 	func load(_ url: URL) {
-		webView.stopLoading()
-		(webView as? PeekSourceWebView)?.consumeRecentClick()
+		createdWebView?.stopLoading()
+		(createdWebView as? PeekSourceWebView)?.consumeRecentClick()
 		historyManager.beginVisit()
 		self.url = url
 		scrollPosition = .zero
@@ -215,8 +244,8 @@ final class BrowserController: NSObject {
 
 	func go(toHistoryIndex index: Int) {
 		guard let destination = historyManager.select(index) else { return }
-		webView.stopLoading()
-		(webView as? PeekSourceWebView)?.consumeRecentClick()
+		createdWebView?.stopLoading()
+		(createdWebView as? PeekSourceWebView)?.consumeRecentClick()
 		url = destination
 		scrollPosition = .zero
 		restoredScrollPosition = nil
@@ -225,40 +254,49 @@ final class BrowserController: NSObject {
 	}
 
 	func reload() {
-		webView.reload()
+		if let createdWebView {
+			createdWebView.reload()
+		} else if let url {
+			load(URLRequest(url: url))
+		}
 	}
 
 	func stopLoading() {
-		webView.stopLoading()
+		createdWebView?.stopLoading()
+		pendingRequest = nil
 	}
 
 	func resetZoom() {
-		webView.pageZoom = 1
+		pageZoom = 1
 		ToastManager.shared.show(symbol: "1.magnifyingglass", message: "Zoom 100%")
 	}
 
 	func reloadFromOrigin() {
-		webView.reloadFromOrigin()
+		if let createdWebView {
+			createdWebView.reloadFromOrigin()
+		} else if let url {
+			load(URLRequest(url: url))
+		}
 	}
 
 	func zoomIn() {
-		webView.pageZoom = min(webView.pageZoom + 0.1, 5)
+		pageZoom = min(pageZoom + 0.1, 5)
 		ToastManager.shared.show(
 			symbol: "plus.magnifyingglass",
-			message: "Zoom \(Int(webView.pageZoom * 100))%"
+			message: "Zoom \(Int(pageZoom * 100))%"
 		)
 	}
 
 	func zoomOut() {
-		webView.pageZoom = max(webView.pageZoom - 0.1, 0.25)
+		pageZoom = max(pageZoom - 0.1, 0.25)
 		ToastManager.shared.show(
 			symbol: "minus.magnifyingglass",
-			message: "Zoom \(Int(webView.pageZoom * 100))%"
+			message: "Zoom \(Int(pageZoom * 100))%"
 		)
 	}
 
 	func loadFaviconIfMissing() {
-		guard let url else { return }
+		guard let url, let webView = createdWebView else { return }
 		Task { @MainActor in
 			await FaviconStore.shared.loadFavicon(
 				for: url,
@@ -276,7 +314,7 @@ final class BrowserController: NSObject {
 	#endif
 
 	private func updateHistory() {
-		guard let currentURL = webView.url else { return }
+		guard let currentURL = createdWebView?.url else { return }
 		url = currentURL
 		historyManager.record(currentURL)
 		navigationDidChange?()
@@ -284,7 +322,7 @@ final class BrowserController: NSObject {
 
 	private func load(_ request: URLRequest) {
 		awaitsNavigationCommit = true
-		guard !webView.bounds.isEmpty else {
+		guard let webView = createdWebView, !webView.bounds.isEmpty else {
 			pendingRequest = request
 			return
 		}
@@ -321,7 +359,7 @@ final class BrowserController: NSObject {
 	}
 
 	private func takeSnapshot() async -> SnapshotImage? {
-		guard url != nil, !webView.bounds.isEmpty else { return nil }
+		guard url != nil, let webView = createdWebView, !webView.bounds.isEmpty else { return nil }
 		#if os(macOS)
 			guard !isRefreshingPreviewSnapshot else { return nil }
 			isRefreshingPreviewSnapshot = true

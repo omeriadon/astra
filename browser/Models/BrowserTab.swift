@@ -70,7 +70,7 @@ final class BrowserTab: Identifiable {
 			url: controller?.url ?? storedURL,
 			history: controller?.history ?? storedHistory,
 			historyIndex: controller?.historyIndex ?? storedHistoryIndex,
-			pageZoom: controller.map { Double($0.webView.pageZoom) } ?? storedPageZoom,
+			pageZoom: controller?.pageZoom ?? storedPageZoom,
 			scrollPosition: controller?.scrollPosition ?? storedScrollPosition,
 			isHibernated: isHibernated,
 			modifiedAt: modifiedAt,
@@ -116,7 +116,7 @@ final class BrowserTab: Identifiable {
 			)
 		}
 		if existingController == nil {
-			controller?.webView.pageZoom = pageZoom
+			controller?.pageZoom = pageZoom
 		}
 		observeController()
 		for peek in peeks {
@@ -130,7 +130,7 @@ final class BrowserTab: Identifiable {
 		storedURL = controller.url
 		storedHistory = controller.history
 		storedHistoryIndex = controller.historyIndex
-		storedPageZoom = Double(controller.webView.pageZoom)
+		storedPageZoom = controller.pageZoom
 		storedScrollPosition = controller.scrollPosition
 		storedPeeks = peeks.map(\.openPeek)
 		controller.stopLoading()
@@ -148,7 +148,7 @@ final class BrowserTab: Identifiable {
 			historyIndex: storedHistoryIndex,
 			scrollPosition: storedScrollPosition
 		)
-		controller.webView.pageZoom = storedPageZoom
+		controller.pageZoom = storedPageZoom
 		self.controller = controller
 		peeks = storedPeeks.map(BrowserPeek.init(openPeek:))
 		observeController()
