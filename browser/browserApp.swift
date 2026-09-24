@@ -19,7 +19,7 @@ struct browserApp: App {
 			let now = Date()
 
 			if let lastQuitAttempt,
-			   now.timeIntervalSince(lastQuitAttempt) < 1.0
+			   now.timeIntervalSince(lastQuitAttempt) < 0.5
 			{
 				NSApplication.shared.terminate(nil)
 				self.lastQuitAttempt = nil
@@ -62,6 +62,7 @@ struct browserApp: App {
 				CommandGroup(replacing: .appTermination) {
 					Button("Quit browser") {
 						requestQuit()
+						browser.isAboutToQuit = true
 					}
 					.keyboardShortcut("q", modifiers: .command)
 				}
