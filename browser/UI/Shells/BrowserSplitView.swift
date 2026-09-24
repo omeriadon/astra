@@ -9,7 +9,7 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View {
 
 	init(
 		sidebarShown: Binding<Bool>,
-		sidebarWidth: CGFloat = BrowserChromeMetrics.sidebarWidth,
+		sidebarWidth: CGFloat = BrowserChromeMetrics.expandedSidebarWidth,
 		@ViewBuilder sidebar: () -> Sidebar,
 		@ViewBuilder content: () -> Content
 	) {

@@ -21,7 +21,7 @@ struct CompactBrowserShell: View {
 					}
 				}
 				.animation(.easeOut(duration: 0.1), value: toastManager.toast != nil)
-				.clipShape(RoundedRectangle(cornerRadius: BrowserChromeMetrics.compactCornerRadius))
+				.clipShape(RoundedRectangle(cornerRadius: BrowserChromeMetrics.compactTabWindowCornerRadius))
 				.padding(10)
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
 

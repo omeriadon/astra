@@ -41,9 +41,9 @@ struct DesktopBrowserShell: View {
 
 			BrowserAddressField(browser: browser)
 		}
-		.padding(.leading, sidebarShown ? 10 : BrowserChromeMetrics.sidebarControlsWidth)
+		.padding(.leading, sidebarShown ? 10 : BrowserChromeMetrics.persistentControlsAreaWidth)
 		.padding(.trailing, 10)
-		.frame(height: BrowserChromeMetrics.topBarHeight)
+		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 		.frame(maxWidth: .infinity, alignment: .leading)
 		.environment(\.colorScheme, topBarColorScheme)
 	}
@@ -59,8 +59,8 @@ struct DesktopBrowserShell: View {
 				Label("Toggle Sidebar", systemImage: "sidebar.leading")
 					.labelStyle(.iconOnly)
 					.frame(
-						width: BrowserChromeMetrics.buttonLabelWidth,
-						height: BrowserChromeMetrics.buttonLabelHeight
+						width: BrowserChromeMetrics.topBarButtonLabelWidth,
+						height: BrowserChromeMetrics.topBarButtonLabelHeight
 					)
 			}
 			.controlSize(.regular)
@@ -69,7 +69,7 @@ struct DesktopBrowserShell: View {
 			.keyboardShortcut("S", modifiers: .command)
 			.buttonStyle(.bordered)
 			.foregroundStyle(theme.foregroundColor)
-			.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.buttonCornerRadius))
+			.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
 			.accessibilityIdentifier("sidebar-toggle")
 
 			Button {
@@ -79,20 +79,20 @@ struct DesktopBrowserShell: View {
 				Label("Edit Theme", systemImage: "paintpalette")
 					.labelStyle(.iconOnly)
 					.frame(
-						width: BrowserChromeMetrics.buttonLabelWidth,
-						height: BrowserChromeMetrics.buttonLabelHeight
+						width: BrowserChromeMetrics.topBarButtonLabelWidth,
+						height: BrowserChromeMetrics.topBarButtonLabelHeight
 					)
 			}
 			.controlSize(.regular)
 			.buttonSizing(.fitted)
 			.buttonStyle(.bordered)
 			.foregroundStyle(theme.foregroundColor)
-			.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.buttonCornerRadius))
+			.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
 			.accessibilityIdentifier("edit-browser-theme")
 		}
 		.frame(
-			width: BrowserChromeMetrics.sidebarControlsWidth,
-			height: BrowserChromeMetrics.topBarHeight,
+			width: BrowserChromeMetrics.persistentControlsAreaWidth,
+			height: BrowserChromeMetrics.topBarRegionHeight,
 			alignment: .leading
 		)
 		.environment(
@@ -112,8 +112,8 @@ struct DesktopBrowserShell: View {
 
 	private var contentCornerRadius: CGFloat {
 		sidebarShown
-			? BrowserChromeMetrics.attachedCornerRadius
-			: BrowserChromeMetrics.detachedCornerRadius
+			? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar
+			: BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar
 	}
 
 	var body: some View {
@@ -142,7 +142,7 @@ struct DesktopBrowserShell: View {
 						.foregroundStyle(theme.foregroundColor.opacity(0.65))
 						.accessibilityIdentifier("new-tab")
 					}
-					.padding(.horizontal, BrowserChromeMetrics.contentInset)
+					.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
 					.padding(.top, 35)
 				}
 
@@ -156,7 +156,7 @@ struct DesktopBrowserShell: View {
 					),
 					maxBlurRadius: 2
 				)
-				.frame(height: BrowserChromeMetrics.topBarHeight)
+				.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 				.frame(maxWidth: .infinity)
 			}
 			.foregroundStyle(theme.foregroundColor)
@@ -166,9 +166,9 @@ struct DesktopBrowserShell: View {
 				BrowserContentView(
 					browser: browser,
 					insets: BrowserViewportInsets(
-						obscured: EdgeInsets(top: browser.selectedTab?.internalPage == nil ? BrowserChromeMetrics.topBarHeight : 0, leading: 0, bottom: 0, trailing: 0),
-						minimum: EdgeInsets(top: browser.selectedTab?.internalPage == nil ? BrowserChromeMetrics.topBarHeight : 0, leading: 0, bottom: 0, trailing: 0),
-						maximum: EdgeInsets(top: browser.selectedTab?.internalPage == nil ? BrowserChromeMetrics.topBarHeight : 0, leading: 0, bottom: 0, trailing: 0)
+						obscured: EdgeInsets(top: browser.selectedTab?.internalPage == nil ? BrowserChromeMetrics.topBarRegionHeight : 0, leading: 0, bottom: 0, trailing: 0),
+						minimum: EdgeInsets(top: browser.selectedTab?.internalPage == nil ? BrowserChromeMetrics.topBarRegionHeight : 0, leading: 0, bottom: 0, trailing: 0),
+						maximum: EdgeInsets(top: browser.selectedTab?.internalPage == nil ? BrowserChromeMetrics.topBarRegionHeight : 0, leading: 0, bottom: 0, trailing: 0)
 					)
 				)
 
@@ -184,17 +184,24 @@ struct DesktopBrowserShell: View {
 							),
 							maxBlurRadius: browser.selectedTab?.activeController?.hasTopEdgeContent == true ? 8 : 4
 						)
-						.frame(height: BrowserChromeMetrics.topBarHeight)
+						.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 						.frame(maxWidth: .infinity)
 					}
 				}
-//				.overlay {
-//					if browser.selectedTab?.internalPage == nil,
-//					   let themeColor = browser.selectedTab?.activeController?.themeColor
-//					{
-//						themeColor.opacity(0.6)
-//					}
-//				}
+				.overlay {
+					if browser.selectedTab?.internalPage == nil,
+					   let themeColor = browser.selectedTab?.activeController?.themeColor
+					{
+						themeColor.opacity(0.6)
+							.mask {
+								if browser.selectedTab?.activeController?.hasTopEdgeContent == true {
+									Color.white
+								} else {
+									LinearGradient(colors: [.clear, .white], startPoint: .bottom, endPoint: .top)
+								}
+							}
+					}
+				}
 				.overlay(alignment: .bottom) {
 					if browser.selectedTab?.internalPage == nil,
 					   let controller = browser.selectedTab?.activeController
@@ -209,7 +216,7 @@ struct DesktopBrowserShell: View {
 							.frame(height: 1.5)
 							.frame(maxWidth: .infinity)
 						}
-						.frame(height: BrowserChromeMetrics.topBarHeight)
+						.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 						.clipShape(topBarBackgroundShape)
 						.id(browser.selectedTabID)
 					}
@@ -217,7 +224,7 @@ struct DesktopBrowserShell: View {
 
 				VStack(spacing: 0) {
 					Color.clear
-						.frame(height: browser.selectedTab?.internalPage == nil ? BrowserChromeMetrics.topBarHeight : 0)
+						.frame(height: browser.selectedTab?.internalPage == nil ? BrowserChromeMetrics.topBarRegionHeight : 0)
 						.allowsHitTesting(false)
 
 					if let tab = browser.selectedTab {
@@ -229,7 +236,7 @@ struct DesktopBrowserShell: View {
 			.overlay(alignment: .topTrailing) {
 				if let toast = toastManager.toast {
 					BrowserToastView(toast: toast)
-						.padding(.top, BrowserChromeMetrics.topBarHeight + 12)
+						.padding(.top, BrowserChromeMetrics.topBarRegionHeight + 12)
 						.padding(.trailing, 14)
 						.transition(.move(edge: .trailing))
 				}
@@ -246,7 +253,7 @@ struct DesktopBrowserShell: View {
 			}
 			.animation(.smooth(duration: 0.3)) { view in
 				view
-					.padding(sidebarShown ? BrowserChromeMetrics.contentInset : 0)
+					.padding(sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 			}
 		}
 		.background {
@@ -255,7 +262,7 @@ struct DesktopBrowserShell: View {
 		#if os(macOS)
 		.overlay(alignment: .top) {
 			Color.clear
-				.frame(height: BrowserChromeMetrics.dragStripHeight)
+				.frame(height: BrowserChromeMetrics.windowDragStripHeight)
 				.frame(maxWidth: .infinity)
 				.contentShape(Rectangle())
 				.gesture(WindowDragGesture())
@@ -268,7 +275,7 @@ struct DesktopBrowserShell: View {
 					.padding(
 						.leading,
 						sidebarShown
-							? BrowserChromeMetrics.sidebarWidth + BrowserChromeMetrics.contentInset
+							? BrowserChromeMetrics.expandedSidebarWidth + BrowserChromeMetrics.shellEdgePadding
 							: 0
 					)
 			}

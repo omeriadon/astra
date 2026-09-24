@@ -10,8 +10,8 @@ struct BrowserNavigationControls: View {
 		Label(title, systemImage: systemImage)
 			.labelStyle(.iconOnly)
 			.frame(
-				width: BrowserChromeMetrics.buttonLabelWidth,
-				height: BrowserChromeMetrics.buttonLabelHeight
+				width: BrowserChromeMetrics.topBarButtonLabelWidth,
+				height: BrowserChromeMetrics.topBarButtonLabelHeight
 			)
 	}
 
@@ -73,8 +73,8 @@ struct BrowserNavigationControls: View {
 					.hidden()
 					.labelStyle(.iconOnly)
 					.frame(
-						width: BrowserChromeMetrics.buttonLabelWidth,
-						height: BrowserChromeMetrics.buttonLabelHeight
+						width: BrowserChromeMetrics.topBarButtonLabelWidth,
+						height: BrowserChromeMetrics.topBarButtonLabelHeight
 					)
 			} primaryAction: {
 				if controller.isLoading {
@@ -107,7 +107,7 @@ struct BrowserNavigationControls: View {
 			.accessibilityIdentifier("browser-reload")
 		}
 		.menuIndicator(.hidden)
-		.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.buttonCornerRadius))
+		.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
 		.id(controller.history)
 		.id(controller.historyIndex)
 	}

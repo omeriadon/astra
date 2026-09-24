@@ -1,15 +1,22 @@
 import SwiftUI
 
 enum BrowserChromeMetrics {
-	static let topBarHeight: CGFloat = 33
-	static let sidebarWidth: CGFloat = 224
-	static let sidebarControlsWidth: CGFloat = 160
-	static let contentInset: CGFloat = 7
-	static let attachedCornerRadius: CGFloat = 13
-	static let detachedCornerRadius: CGFloat = 16
-	static let compactCornerRadius: CGFloat = 28
-	static let buttonLabelWidth: CGFloat = 8
-	static let buttonLabelHeight: CGFloat = 14
-	static let buttonCornerRadius: CGFloat = 8
-	static let dragStripHeight: CGFloat = 3
+	static let topBarRegionHeight: CGFloat = 33
+	static let expandedSidebarWidth: CGFloat = 224
+
+	// macos 27 window radius is 20
+
+	// Includes the space reserved for macOS window controls.
+	static let persistentControlsAreaWidth: CGFloat = 160
+	static let shellEdgePadding: CGFloat = 4
+	static let tabWindowCornerRadiusWithSidebar: CGFloat = 12.5
+	static let tabWindowCornerRadiusWithoutSidebar: CGFloat = 16
+
+	static let compactTabWindowCornerRadius: CGFloat = 28
+
+	// Sizes the icon label inside each bordered top-bar button.
+	static let topBarButtonLabelWidth: CGFloat = 8
+	static let topBarButtonLabelHeight: CGFloat = 11
+	static let topBarButtonCornerRadius: CGFloat = 12
+	static let windowDragStripHeight: CGFloat = 3
 }
