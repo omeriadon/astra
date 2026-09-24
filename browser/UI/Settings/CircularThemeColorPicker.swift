@@ -7,6 +7,7 @@ struct CircularThemeColorPicker: View {
 	let dismissalSignal: Int
 	let centerShift: CGSize
 	let onClose: () -> Void
+	let onDelete: () -> Void
 
 	@State private var hue: Double
 	@State private var fieldImage: CGImage?
@@ -22,129 +23,56 @@ struct CircularThemeColorPicker: View {
 	private let arcStart = 145.0
 	private let arcLength = 250.0
 
-	init(color: Binding<BrowserColor>, dismissalSignal: Int, centerShift: CGSize, onClose: @escaping () -> Void) {
+	init(
+		color: Binding<BrowserColor>,
+		dismissalSignal: Int,
+		centerShift: CGSize,
+		onClose: @escaping () -> Void,
+		onDelete: @escaping () -> Void
+	) {
 		_color = color
 		self.dismissalSignal = dismissalSignal
 		self.centerShift = centerShift
 		self.onClose = onClose
+		self.onDelete = onDelete
 		_hue = State(initialValue: Self.hsv(color.wrappedValue).hue)
 	}
 
 	var body: some View {
-		GlassEffectContainer(spacing: 4) {
-			ZStack {
-				ZStack {
-					Circle()
-						.fill(color.color.opacity(0.35))
-						.glassEffect(.clear.tint(color.color).interactive(), in: Circle())
-
-					if let fieldImage {
-						Image(decorative: fieldImage, scale: 1, orientation: .up)
-							.resizable()
-							.interpolation(.high)
-							.opacity(expansion)
-					}
-
-					Circle()
-						.strokeBorder(.white.opacity(1 - expansion), lineWidth: 2)
-						.allowsHitTesting(false)
-				}
-				.frame(width: fieldSize, height: fieldSize)
-				.clipShape(Circle())
-				.scaleEffect(openingScale)
-				.gesture(
-					DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-color-picker"))
-						.onChanged { gesture in
-							let inset = (Self.diameter - fieldSize) / 2
-							updateSaturationValue(at: CGPoint(
-								x: gesture.location.x - inset,
-								y: gesture.location.y - inset
-							))
-						}
-				)
-				.accessibilityLabel("Saturation and brightness")
-				.accessibilityHint("Drag within the circle to choose a color")
-				.accessibilityIdentifier("theme-point-color-field")
-				.accessibilityValue("Saturation \(Int(Self.hsv(color).saturation * 100)) percent, brightness \(Int(Self.hsv(color).value * 100)) percent")
-				.accessibilityAction(named: "Increase saturation") { adjust(saturation: 0.05, value: 0) }
-				.accessibilityAction(named: "Decrease saturation") { adjust(saturation: -0.05, value: 0) }
-				.accessibilityAction(named: "Increase brightness") { adjust(saturation: 0, value: 0.05) }
-				.accessibilityAction(named: "Decrease brightness") { adjust(saturation: 0, value: -0.05) }
-
-				selectionTick(size: 42)
-					.offset(selectionOffset)
-					.opacity(expansion)
-					.gesture(
-						DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-color-picker"))
-							.onChanged { gesture in
-								let inset = (Self.diameter - fieldSize) / 2
-								updateSaturationValue(at: CGPoint(
-									x: gesture.location.x - inset,
-									y: gesture.location.y - inset
-								))
-							}
-					)
-					.accessibilityHidden(true)
-
-				if showsOuterGlass {
-					hueArc
-						.scaleEffect(openingScale)
-						.opacity(expansion)
-						.blur(radius: (1 - expansion) * 9)
-						.gesture(
-							DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-color-picker"))
-								.onChanged { updateHue(at: $0.location) }
-						)
-						.accessibilityLabel("Hue")
-						.accessibilityValue("\(Int(hue * 360)) degrees")
-						.accessibilityIdentifier("theme-point-hue-arc")
-						.accessibilityAdjustableAction { direction in
-							switch direction {
-								case .increment: setHue(hue + 0.02)
-								case .decrement: setHue(hue - 0.02)
-								@unknown default: break
-							}
-						}
-
-					selectionTick(size: 38)
-						.glassEffectTransition(.materialize)
-						.offset(hueOffset)
-						.opacity(expansion)
-						.scaleEffect(openingScale)
-						.blur(radius: (1 - expansion) * 9)
-						.gesture(
-							DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-color-picker"))
-								.onChanged { updateHue(at: $0.location) }
-						)
-						.accessibilityHidden(true)
-
-					Button {
-						dismiss()
-					} label: {
-						Label("Close color picker", systemImage: "xmark")
-							.labelStyle(.iconOnly)
-							.frame(width: 40, height: 40)
-					}
-					.buttonStyle(.glass)
-					.buttonBorderShape(.circle)
-					.glassEffectTransition(.materialize)
-					.offset(y: arcRadius)
-					.opacity(expansion)
-					.scaleEffect(openingScale)
-					.blur(radius: (1 - expansion) * 9)
-					.accessibilityIdentifier("theme-point-color-close")
-				}
-
-				Color.clear
-					.frame(width: 1, height: 1)
-					.focusable()
-					.focused($isFocused)
-					.onKeyPress(.escape) {
-						dismiss()
-						return .handled
-					}
-					.accessibilityHidden(true)
+		ZStack {
+			GlassEffectContainer(spacing: 0) {
+				colorField
 			}
+
+			GlassEffectContainer(spacing: 4) {
+				if showsOuterGlass {
+					ZStack {
+						hueLayer
+						deleteButton
+					}
+					.frame(width: Self.diameter, height: Self.diameter)
+				}
+			}
+
+			GlassEffectContainer(spacing: 4) {
+				ZStack {
+					innerTick
+					if showsOuterGlass {
+						outerTick
+					}
+				}
+				.frame(width: Self.diameter, height: Self.diameter)
+			}
+
+			Color.clear
+				.frame(width: 1, height: 1)
+				.focusable()
+				.focused($isFocused)
+				.onKeyPress(.escape) {
+					dismiss()
+					return .handled
+				}
+				.accessibilityHidden(true)
 		}
 		.frame(width: Self.diameter, height: Self.diameter)
 		.offset(
@@ -171,8 +99,114 @@ struct CircularThemeColorPicker: View {
 		#endif
 	}
 
+	private var colorField: some View {
+		ZStack {
+			Circle()
+				.fill(color.color.opacity(0.35))
+				.glassEffect(.clear.tint(color.color).interactive(), in: Circle())
+				.glassEffectTransition(.materialize)
+
+			if let fieldImage {
+				Image(decorative: fieldImage, scale: 1, orientation: .up)
+					.resizable()
+					.interpolation(.high)
+					.opacity(expansion)
+			}
+		}
+		.frame(width: fieldSize, height: fieldSize)
+		.clipShape(Circle())
+		.scaleEffect(openingScale)
+		.gesture(
+			DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-color-picker"))
+				.onChanged { gesture in
+					let inset = (Self.diameter - fieldSize) / 2
+					updateSaturationValue(at: CGPoint(
+						x: gesture.location.x - inset,
+						y: gesture.location.y - inset
+					))
+				}
+		)
+		.accessibilityLabel("Saturation and brightness")
+		.accessibilityHint("Drag within the circle to choose a color")
+		.accessibilityIdentifier("theme-point-color-field")
+		.accessibilityValue("Saturation \(Int(Self.hsv(color).saturation * 100)) percent, brightness \(Int(Self.hsv(color).value * 100)) percent")
+		.accessibilityAction(named: "Increase saturation") { adjust(saturation: 0.05, value: 0) }
+		.accessibilityAction(named: "Decrease saturation") { adjust(saturation: -0.05, value: 0) }
+		.accessibilityAction(named: "Increase brightness") { adjust(saturation: 0, value: 0.05) }
+		.accessibilityAction(named: "Decrease brightness") { adjust(saturation: 0, value: -0.05) }
+	}
+
+	private var hueLayer: some View {
+		hueArc
+			.scaleEffect(openingScale)
+			.opacity(expansion)
+			.blur(radius: (1 - expansion) * 9)
+			.gesture(
+				DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-color-picker"))
+					.onChanged { updateHue(at: $0.location) }
+			)
+			.accessibilityLabel("Hue")
+			.accessibilityValue("\(Int(hue * 360)) degrees")
+			.accessibilityIdentifier("theme-point-hue-arc")
+			.accessibilityAdjustableAction { direction in
+				switch direction {
+					case .increment: setHue(hue + 0.02)
+					case .decrement: setHue(hue - 0.02)
+					@unknown default: break
+				}
+			}
+	}
+
+	private var deleteButton: some View {
+		Button {
+			deleteColor()
+		} label: {
+			Label("Delete color point", systemImage: "trash")
+				.labelStyle(.iconOnly)
+				.frame(width: 30, height: 30)
+		}
+		.buttonStyle(.glass)
+		.buttonBorderShape(.circle)
+		.glassEffectTransition(.materialize)
+		.offset(y: arcRadius)
+		.opacity(expansion)
+		.scaleEffect(openingScale)
+		.blur(radius: (1 - expansion) * 9)
+		.accessibilityIdentifier("theme-point-color-delete")
+	}
+
+	private var innerTick: some View {
+		selectionTick(size: 42)
+			.offset(selectionOffset)
+			.opacity(expansion)
+			.gesture(
+				DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-color-picker"))
+					.onChanged { gesture in
+						let inset = (Self.diameter - fieldSize) / 2
+						updateSaturationValue(at: CGPoint(
+							x: gesture.location.x - inset,
+							y: gesture.location.y - inset
+						))
+					}
+			)
+			.accessibilityHidden(true)
+	}
+
+	private var outerTick: some View {
+		selectionTick(size: 38)
+			.offset(hueOffset)
+			.opacity(expansion)
+			.scaleEffect(openingScale)
+			.blur(radius: (1 - expansion) * 9)
+			.gesture(
+				DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-color-picker"))
+					.onChanged { updateHue(at: $0.location) }
+			)
+			.accessibilityHidden(true)
+	}
+
 	private var openingScale: CGFloat {
-		(44 + (fieldSize - 44) * expansion) / fieldSize
+		(34 + (fieldSize - 34) * expansion) / fieldSize
 	}
 
 	private var arcShape: ThemeHueArc {
@@ -183,6 +217,7 @@ struct CircularThemeColorPicker: View {
 		arcShape
 			.fill(.clear)
 			.glassEffect(.regular.interactive(), in: arcShape)
+			.glassEffectTransition(.materialize)
 			.overlay {
 				arcShape
 					.fill(hueGradient)
@@ -191,16 +226,14 @@ struct CircularThemeColorPicker: View {
 			}
 			.frame(width: Self.diameter, height: Self.diameter)
 			.contentShape(arcShape)
-			.glassEffectTransition(.materialize)
 	}
 
 	private func selectionTick(size: CGFloat) -> some View {
 		Circle()
 			.fill(.clear)
 			.frame(width: size, height: size)
-			.glassEffect(.regular.interactive(), in: Circle())
-			.overlay { Circle().strokeBorder(.white, lineWidth: 2) }
-			.shadow(color: .black.opacity(0.55), radius: 2)
+			.glassEffect(.clear.interactive(), in: Circle())
+			.glassEffectTransition(.materialize)
 	}
 
 	private var hueGradient: AngularGradient {
@@ -228,13 +261,21 @@ struct CircularThemeColorPicker: View {
 	}
 
 	private func dismiss() {
+		collapse(then: onClose)
+	}
+
+	private func deleteColor() {
+		collapse(then: onDelete)
+	}
+
+	private func collapse(then completion: @escaping () -> Void) {
 		guard !isDismissing else { return }
 		isDismissing = true
 		withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.8), completionCriteria: .logicallyComplete) {
 			expansion = 0
 			showsOuterGlass = false
 		} completion: {
-			onClose()
+			completion()
 		}
 	}
 

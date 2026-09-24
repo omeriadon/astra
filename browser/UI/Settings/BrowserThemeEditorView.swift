@@ -21,9 +21,12 @@ private struct MeshGradientEditorView: View {
 	private var normalizedNoiseAmount: Binding<Double> {
 		Binding(
 			get: {
-				theme.shaderNoiseAmount / theme.shaderNoiseMaximumOpacity
+				theme.shaderNoiseEnabled
+					? theme.shaderNoiseAmount / theme.shaderNoiseMaximumOpacity
+					: 0
 			},
 			set: { position in
+				theme.shaderNoiseEnabled = position > 0
 				theme.shaderNoiseAmount = position * theme.shaderNoiseMaximumOpacity
 			}
 		)
@@ -33,7 +36,7 @@ private struct MeshGradientEditorView: View {
 		Binding(
 			get: { theme.shaderNoiseMonochrome },
 			set: { isMonochrome in
-				let sliderPosition = theme.shaderNoiseAmount / theme.shaderNoiseMaximumOpacity
+				let sliderPosition = normalizedNoiseAmount.wrappedValue
 				theme.shaderNoiseMonochrome = isMonochrome
 				theme.shaderNoiseAmount = sliderPosition * theme.shaderNoiseMaximumOpacity
 			}
@@ -85,7 +88,7 @@ private struct MeshGradientEditorView: View {
 							} label: {
 								Label("Add color point", systemImage: "plus")
 									.labelStyle(.iconOnly)
-									.frame(width: 44, height: 44)
+									.frame(width: 25, height: 25)
 							}
 							.buttonStyle(.glass)
 							.buttonBorderShape(.circle)
@@ -107,22 +110,19 @@ private struct MeshGradientEditorView: View {
 					symbol: "circle.dotted.and.circle",
 					identifier: "theme-window-translucency"
 				)
+				.padding(.horizontal, -23)
 			#endif
 
-			HStack(spacing: 10) {
-				Button {
-					theme.shaderNoiseEnabled.toggle()
-				} label: {
-					Label("Noise", systemImage: "circle.bottomhalf.filled.pattern.checkered")
-						.labelStyle(.iconOnly)
-						.frame(width: 46, height: 46)
-				}
-				.buttonStyle(.glass)
-				.buttonBorderShape(.circle)
-				.tint(theme.shaderNoiseEnabled ? theme.tabColor.opacity(0.45) : .clear)
-				.accessibilityValue(theme.shaderNoiseEnabled ? "On" : "Off")
-				.accessibilityIdentifier("theme-noise-toggle")
+			ThemeControlSlider(
+				value: normalizedNoiseAmount,
+				label: "Noise amount",
+				symbol: "app.background.dotted",
+				identifier: "theme-noise-amount"
+			)
+			.padding(.horizontal, -23)
 
+			HStack {
+				Spacer()
 				Button {
 					monochromeNoise.wrappedValue.toggle()
 				} label: {
@@ -130,21 +130,15 @@ private struct MeshGradientEditorView: View {
 						"Monochrome noise",
 						systemImage: theme.shaderNoiseMonochrome ? "lightspectrum.horizontal" : "cloud.rain.crop"
 					)
+					.font(.system(size: 25, weight: .medium))
 					.labelStyle(.iconOnly)
-					.frame(width: 46, height: 46)
+					.frame(width: 48, height: 48)
 				}
 				.buttonStyle(.glass)
 				.buttonBorderShape(.circle)
-				.tint(theme.shaderNoiseEnabled && theme.shaderNoiseMonochrome ? theme.tabColor.opacity(0.8) : .clear)
+				.tint(theme.shaderNoiseMonochrome ? theme.tabColor.opacity(0.8) : .clear)
 				.accessibilityValue(theme.shaderNoiseMonochrome ? "On" : "Off")
 				.accessibilityIdentifier("theme-noise-monochrome-toggle")
-
-				ThemeControlSlider(
-					value: normalizedNoiseAmount,
-					label: "Noise amount",
-					symbol: "circle.bottomhalf.filled.pattern.checkered",
-					identifier: "theme-noise-amount"
-				)
 			}
 		}
 		.padding(.horizontal, 12)
@@ -170,6 +164,10 @@ private struct ThemeControlSlider: View {
 	var body: some View {
 		GeometryReader { geometry in
 			let trackWidth = max(geometry.size.width - thumbSize, 1)
+			let drag = DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-control-slider"))
+				.onChanged { gesture in
+					value = min(max(Double((gesture.location.x - thumbSize / 2) / trackWidth), 0), 1)
+				}
 			ZStack(alignment: .leading) {
 				Capsule()
 					.fill(.white.opacity(0.18))
@@ -186,15 +184,12 @@ private struct ThemeControlSlider: View {
 					.frame(width: thumbSize, height: thumbSize)
 					.glassEffect(.regular.interactive(), in: Circle())
 					.offset(x: CGFloat(value) * trackWidth)
+					.contentShape(Circle())
+					.highPriorityGesture(drag)
 			}
 			.frame(height: thumbSize)
 			.contentShape(Rectangle())
-			.gesture(
-				DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-control-slider"))
-					.onChanged { gesture in
-						value = min(max(Double((gesture.location.x - thumbSize / 2) / trackWidth), 0), 1)
-					}
-			)
+			.gesture(drag)
 			.coordinateSpace(name: "theme-control-slider")
 		}
 		.frame(height: thumbSize)
@@ -271,17 +266,30 @@ private struct MeshGradientCanvas: View {
 							centerShift: CGSize(
 								width: target.x - pointPosition.x,
 								height: target.y - pointPosition.y
-							)
-						) {
-							if editingPointID == point.id {
-								editingPointID = nil
+							),
+							onClose: {
+								if editingPointID == point.id {
+									withAnimation(reduceMotion ? nil : .smooth(duration: 0.15)) {
+										editingPointID = nil
+									}
+								}
+							},
+							onDelete: {
+								withAnimation(.smooth(duration: 0.2)) {
+									theme.removeMeshColorPoint(id: point.id)
+									if editingPointID == point.id {
+										editingPointID = nil
+									}
+								}
 							}
-						}
+						)
 						.position(pointPosition)
 						.zIndex(1)
 					} else {
 						Button {
-							editingPointID = point.id
+							withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.66)) {
+								editingPointID = point.id
+							}
 						} label: {
 							Image(systemName: "circle.fill")
 								.font(.system(size: 22))
@@ -291,6 +299,7 @@ private struct MeshGradientCanvas: View {
 						.buttonStyle(.glass(.clear))
 						.buttonBorderShape(.circle)
 						.tint(point.color.color.opacity(0.4))
+						.glassEffectTransition(.materialize)
 						.highPriorityGesture(
 							DragGesture(minimumDistance: 3, coordinateSpace: .named("theme-mesh-canvas"))
 								.onChanged { value in
