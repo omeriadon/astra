@@ -15,7 +15,6 @@ struct CircularThemeColorPicker: View {
 	@State private var isDismissing = false
 	@State private var showsOuterGlass = false
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
-	@FocusState private var isFocused: Bool
 
 	static let diameter: CGFloat = 196
 	private let fieldSize: CGFloat = 120
@@ -40,9 +39,7 @@ struct CircularThemeColorPicker: View {
 
 	var body: some View {
 		ZStack {
-			GlassEffectContainer(spacing: 0) {
-				colorField
-			}
+			colorField
 
 			GlassEffectContainer(spacing: 4) {
 				if showsOuterGlass {
@@ -63,16 +60,6 @@ struct CircularThemeColorPicker: View {
 				}
 				.frame(width: Self.diameter, height: Self.diameter)
 			}
-
-			Color.clear
-				.frame(width: 1, height: 1)
-				.focusable()
-				.focused($isFocused)
-				.onKeyPress(.escape) {
-					dismiss()
-					return .handled
-				}
-				.accessibilityHidden(true)
 		}
 		.frame(width: Self.diameter, height: Self.diameter)
 		.offset(
@@ -81,7 +68,6 @@ struct CircularThemeColorPicker: View {
 		)
 		.coordinateSpace(name: "theme-color-picker")
 		.onAppear {
-			isFocused = true
 			fieldImage = Self.renderField(hue: hue)
 			withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.66)) {
 				expansion = 1
@@ -101,10 +87,12 @@ struct CircularThemeColorPicker: View {
 
 	private var colorField: some View {
 		ZStack {
-			Circle()
-				.fill(color.color.opacity(0.35))
-				.glassEffect(.clear.tint(color.color).interactive(), in: Circle())
-				.glassEffectTransition(.materialize)
+			GlassEffectContainer(spacing: 0) {
+				Circle()
+					.fill(color.color.opacity(0.35))
+					.glassEffect(.clear.tint(color.color).interactive(), in: Circle())
+					.glassEffectTransition(.materialize)
+			}
 
 			if let fieldImage {
 				Image(decorative: fieldImage, scale: 1, orientation: .up)
@@ -296,14 +284,28 @@ struct CircularThemeColorPicker: View {
 	private func updateHue(at location: CGPoint) {
 		let center = Self.diameter / 2
 		let angle = atan2(location.y - center, location.x - center) * 180 / .pi
-		let progress = (Double(angle) - arcStart + 360).truncatingRemainder(dividingBy: 360) / arcLength
-		setHue(progress)
+		let arcPosition = (Double(angle) - arcStart + 360).truncatingRemainder(dividingBy: 360)
+		if arcPosition <= arcLength {
+			setHue(arcPosition / arcLength)
+		} else {
+			let gapPosition = arcPosition - arcLength
+			setHue(gapPosition < (360 - arcLength) / 2 ? 1 : 0)
+		}
 	}
 
 	private func setHue(_ newHue: Double) {
-		hue = min(max(newHue, 0), 1)
 		let current = Self.hsv(color)
-		color.color = Color(hue: hue, saturation: current.saturation, brightness: current.value)
+		let nextHue = min(max(newHue, 0), 1)
+		if abs(nextHue - hue) > 0.5 {
+			withTransaction(Transaction(animation: nil)) {
+				hue = nextHue
+			}
+		} else {
+			withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) {
+				hue = nextHue
+			}
+		}
+		color.color = Color(hue: nextHue, saturation: current.saturation, brightness: current.value)
 	}
 
 	private func adjust(saturation: Double, value: Double) {
