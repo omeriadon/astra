@@ -34,7 +34,6 @@ struct BrowserNavigationControls: View {
 				controller.goBack()
 			}
 			.disabled(!controller.canGoBack)
-			.clipShape(.rect(cornerRadius: attachedBrowserCornerRadius))
 			.accessibilityIdentifier("browser-back")
 
 			Menu {
@@ -57,7 +56,6 @@ struct BrowserNavigationControls: View {
 				controller.goForward()
 			}
 			.disabled(!controller.canGoForward)
-			.clipShape(.rect(cornerRadius: attachedBrowserCornerRadius))
 			.accessibilityIdentifier("browser-forward")
 
 			Menu {
@@ -98,7 +96,6 @@ struct BrowserNavigationControls: View {
 				)
 				.allowsHitTesting(false)
 			}
-			.clipShape(.rect(cornerRadius: attachedBrowserCornerRadius))
 			.accessibilityLabel(
 				controller.isLoading
 					? "Stop Loading"
@@ -106,14 +103,9 @@ struct BrowserNavigationControls: View {
 			)
 			.accessibilityIdentifier("browser-reload")
 		}
-		.controlSize(.regular)
-		.buttonSizing(.fitted)
-		.buttonStyle(.bordered)
 		.menuIndicator(.hidden)
-		#if os(macOS)
-			.menuStyle(.borderedButton)
-		#endif
-			.id(controller.history)
-			.id(controller.historyIndex)
+		.buttonBorderShape(.roundedRectangle(radius: 6))
+		.id(controller.history)
+		.id(controller.historyIndex)
 	}
 }

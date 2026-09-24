@@ -214,21 +214,20 @@ struct DesktopBrowserShell: View {
 									endOpacity: 1.0,
 									isSmooth: false
 								),
-								maxBlurRadius: 6
+								maxBlurRadius: 4
 							)
+							.frame(height: topHeight)
 							.frame(maxWidth: .infinity)
-							.clipShape(topBarBackgroundShape)
 						}
 					}
 				}
-				.overlay {
-					if browser.selectedTab?.internalPage == nil,
-					   let themeColor = browser.selectedTab?.activeController?.themeColor
-					{
-						themeColor.opacity(0.6)
-							.clipShape(topBarBackgroundShape)
-					}
-				}
+//				.overlay {
+//					if browser.selectedTab?.internalPage == nil,
+//					   let themeColor = browser.selectedTab?.activeController?.themeColor
+//					{
+//						themeColor.opacity(0.6)
+//					}
+//				}
 				.overlay(alignment: .bottom) {
 					if browser.selectedTab?.internalPage == nil,
 					   let controller = browser.selectedTab?.activeController
