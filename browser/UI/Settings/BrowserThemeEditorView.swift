@@ -194,6 +194,7 @@ private struct ThemeControlSlider: View {
 	let identifier: String
 	let tickCount: Int
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	@State private var isDragging = false
 
 	private let thumbSize: CGFloat = 46
 
@@ -203,7 +204,11 @@ private struct ThemeControlSlider: View {
 			let tickInset: CGFloat = 11
 			let drag = DragGesture(minimumDistance: 1, coordinateSpace: .named("theme-control-slider"))
 				.onChanged { gesture in
+					isDragging = true
 					value = min(max(Double((gesture.location.x - thumbSize / 2) / trackWidth), 0), 1)
+				}
+				.onEnded { _ in
+					isDragging = false
 				}
 			ZStack(alignment: .leading) {
 				Capsule()
@@ -228,9 +233,7 @@ private struct ThemeControlSlider: View {
 					.offset(x: thumbSize / 2)
 					.contentShape(Rectangle())
 					.onTapGesture(coordinateSpace: .named("theme-control-slider")) { location in
-						withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) {
-							value = min(max(Double((location.x - thumbSize / 2) / trackWidth), 0), 1)
-						}
+						value = min(max(Double((location.x - thumbSize / 2) / trackWidth), 0), 1)
 					}
 
 				Image(systemName: symbol)
@@ -247,6 +250,7 @@ private struct ThemeControlSlider: View {
 			.frame(width: geometry.size.width, height: thumbSize)
 			.contentShape(Rectangle())
 			.gesture(drag)
+			.animation(reduceMotion || isDragging ? nil : .smooth(duration: 0.2), value: value)
 			.coordinateSpace(name: "theme-control-slider")
 		}
 		.frame(height: thumbSize)

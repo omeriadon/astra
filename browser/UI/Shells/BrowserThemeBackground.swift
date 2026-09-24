@@ -6,6 +6,7 @@ import SwiftUI
 
 struct BrowserThemeBackground: View {
 	let theme: BrowserTheme
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	#if os(macOS)
 		private static let blurStyle = NSMaterialView.Effect.MaterialStyle(
 			backgroundColor: .clear,
@@ -49,13 +50,16 @@ struct BrowserThemeBackground: View {
 
 			MeshGradientSurface(points: theme.meshColorPoints)
 				.opacity(theme.meshOpacity)
+				.animation(reduceMotion ? nil : .smooth(duration: 0.2), value: theme.meshOpacity)
 
-			if theme.shaderNoiseEnabled {
-				StableRandomNoise(
-					isMonochrome: theme.shaderNoiseMonochrome,
-					opacity: theme.shaderNoiseAmount
-				)
-			}
+			StableRandomNoise(
+				isMonochrome: theme.shaderNoiseMonochrome,
+				opacity: theme.shaderNoiseEnabled ? theme.shaderNoiseAmount : 0
+			)
+			.animation(
+				reduceMotion ? nil : .smooth(duration: 0.2),
+				value: theme.shaderNoiseEnabled ? theme.shaderNoiseAmount : 0
+			)
 		}
 	}
 }
