@@ -114,23 +114,25 @@ struct BrowserTabRow: View {
 					.opacity(isHovered ? 1 : 0)
 					.allowsHitTesting(isHovered)
 					.accessibilityHidden(!isHovered)
-					.animation(.smooth(duration: 0.1), value: isHovered)
 			}
 		}
 		.padding(.horizontal, 8)
 		.frame(height: 28)
 		.foregroundStyle(theme.foregroundColor)
 		.background {
-			ZStack {
-				if isSelected {
-					RoundedRectangle(cornerRadius: attachedBrowserCornerRadius)
-						.fill(theme.tabColor.opacity(0.3))
-				} else if isHovered {
-					RoundedRectangle(cornerRadius: attachedBrowserCornerRadius)
-						.fill(theme.foregroundColor.opacity(0.08))
-				}
+			if isSelected {
+				Color.clear
+					.glassEffect(
+						.clear.tint(theme.tabColor),
+						in: RoundedRectangle(cornerRadius: attachedBrowserCornerRadius)
+					)
+			} else if isHovered {
+				Color.clear
+					.glassEffect(
+						.regular.tint(.white.opacity(0.2)),
+						in: RoundedRectangle(cornerRadius: attachedBrowserCornerRadius)
+					)
 			}
-			.animation(.smooth(duration: 0.02), value: isSelected)
 		}
 		.onHover { isHovered = $0 }
 		.contextMenu {

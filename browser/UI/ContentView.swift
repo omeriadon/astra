@@ -8,11 +8,9 @@
 import SwiftUI
 
 struct ContentView: View {
-	var body: some View {
-		BrowserRootView()
-	}
-}
+	@Binding var browser: Browser
 
-#Preview {
-	ContentView()
+	var body: some View {
+		BrowserRootView(browser: $browser)
+	}
 }

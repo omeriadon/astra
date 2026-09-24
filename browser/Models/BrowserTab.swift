@@ -6,13 +6,24 @@ import WebKit
 
 enum BrowserInternalPage: Equatable {
 	case themeEditor
+	case settings
 
 	var title: String {
-		"Theme Editor"
+		switch self {
+			case .themeEditor:
+				"Theme"
+			case .settings:
+				"Settings"
+		}
 	}
 
 	var symbol: String {
-		"paintpalette"
+		switch self {
+			case .themeEditor:
+				"paintpalette"
+			case .settings:
+				"gearshape"
+		}
 	}
 }
 

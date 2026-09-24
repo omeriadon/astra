@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct BrowserRootView: View {
-	@State private var browser = Browser()
+	@Binding var browser: Browser
 	@State private var sync = BrowserSync.shared
 	@Environment(\.scenePhase) private var scenePhase
 
@@ -28,7 +28,7 @@ struct BrowserRootView: View {
 	}
 
 	@ViewBuilder
-	private var shell: some View {
+	var shell: some View {
 		#if os(macOS)
 			DesktopBrowserShell(browser: browser)
 		#elseif os(iOS)
@@ -41,8 +41,4 @@ struct BrowserRootView: View {
 			DesktopBrowserShell(browser: browser)
 		#endif
 	}
-}
-
-#Preview {
-	BrowserRootView()
 }

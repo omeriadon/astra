@@ -23,6 +23,8 @@ struct BrowserContentView: View {
 			switch page {
 				case .themeEditor:
 					BrowserThemeEditorView()
+				case .settings:
+					BrowserSettingsView()
 			}
 		} else if let tab = browser.selectedTab,
 		          let controller = tab.controller,

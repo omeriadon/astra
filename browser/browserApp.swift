@@ -9,32 +9,28 @@ import SwiftUI
 
 @main
 struct browserApp: App {
+	@State private var browser = Browser()
+
 	var body: some Scene {
 		WindowGroup {
-			ContentView()
+			ContentView(browser: $browser)
 		}
 		#if os(macOS)
 		.windowStyle(.hiddenTitleBar)
 		.windowBackgroundDragBehavior(.disabled)
 		#endif
 		.commandsRemoved()
-		#if os(macOS)
-			.commands {
-				BrowserCommands()
+		.commands {
+			BrowserCommands()
 
-				CommandGroup(replacing: .appSettings) {
-					SettingsLink {
-						Label("Settings…", systemImage: "gear")
-					}
+			CommandGroup(replacing: .appSettings) {
+				Button {
+					browser.openInternalPage(.settings)
+				} label: {
+					Label("Settings...", systemImage: "gear")
 				}
+				.keyboardShortcut(",", modifiers: .command)
 			}
-		#endif // os(macOS)
-
-		#if os(macOS)
-
-			Settings {
-				BrowserSettingsView()
-			}
-		#endif // os(macOS)
+		}
 	}
 }

@@ -7,7 +7,7 @@ let topBarItemWidth: CGFloat = 8
 let topBarItemHeight: CGFloat = 14
 
 let topHeight: CGFloat = 33
-let attachedBrowserCornerRadius: CGFloat = 9
+let attachedBrowserCornerRadius: CGFloat = 13
 let detachedBrowserCornerRadius: CGFloat = 16
 
 struct DesktopBrowserShell: View {
@@ -71,9 +71,9 @@ struct DesktopBrowserShell: View {
 	}
 
 	private var sidebarControls: some View {
-		HStack(spacing: 0) {
+		HStack(spacing: 5) {
 			Spacer()
-				.frame(width: 85)
+				.frame(width: 80)
 
 			Button {
 				sidebarShown.toggle()
@@ -83,20 +83,27 @@ struct DesktopBrowserShell: View {
 					.frame(width: topBarItemWidth, height: topBarItemHeight)
 			}
 			.controlSize(.regular)
+			.labelStyle(.iconOnly)
 			.buttonSizing(.fitted)
 			.keyboardShortcut("S", modifiers: .command)
 			.buttonStyle(.bordered)
 			.foregroundStyle(theme.foregroundColor)
-			.clipShape(RoundedRectangle(cornerRadius: attachedBrowserCornerRadius))
+			.clipShape(RoundedRectangle(cornerRadius: 9))
 			.accessibilityIdentifier("sidebar-toggle")
 
-			Button("Edit Theme", systemImage: "paintpalette") {
+			Button {
 				browser.openInternalPage(.themeEditor)
+
+			} label: {
+				Label("Edit Theme", systemImage: "paintpalette")
+					.labelStyle(.iconOnly)
+					.frame(width: topBarItemWidth, height: topBarItemHeight)
 			}
-			.labelStyle(.iconOnly)
+			.controlSize(.regular)
+			.buttonSizing(.fitted)
 			.buttonStyle(.bordered)
 			.foregroundStyle(theme.foregroundColor)
-			.clipShape(RoundedRectangle(cornerRadius: attachedBrowserCornerRadius))
+			.clipShape(RoundedRectangle(cornerRadius: 9))
 			.accessibilityIdentifier("edit-browser-theme")
 
 			#if os(macOS)
