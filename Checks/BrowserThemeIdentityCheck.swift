@@ -10,7 +10,7 @@ struct BrowserThemeIdentityCheck {
 			let second = try JSONDecoder().decode(BrowserTheme.self, from: legacyTheme)
 			let firstIDs = first.meshColorPoints.map(\.id)
 			let secondIDs = second.meshColorPoints.map(\.id)
-			guard firstIDs == secondIDs else {
+			guard firstIDs.count == (usesGradient ? 2 : 1), firstIDs == secondIDs else {
 				print("FAIL: migrated color point identities change on every decode")
 				exit(1)
 			}
@@ -21,6 +21,14 @@ struct BrowserThemeIdentityCheck {
 				print("FAIL: saved color point identities changed")
 				exit(1)
 			}
+		}
+
+		var emptyTheme = BrowserTheme()
+		emptyTheme.meshColorPoints.removeAll()
+		let restoredEmpty = try JSONDecoder().decode(BrowserTheme.self, from: JSONEncoder().encode(emptyTheme))
+		guard restoredEmpty.meshColorPoints.isEmpty else {
+			print("FAIL: empty theme gained color points during decoding")
+			exit(1)
 		}
 		print("PASS: migrated and saved color point identities remain stable")
 	}

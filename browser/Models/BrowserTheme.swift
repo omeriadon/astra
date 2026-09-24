@@ -42,7 +42,7 @@ struct BrowserTheme: Codable, Equatable {
 		gradientDirection = try values.decodeIfPresent(ThemeGradientDirection.self, forKey: .gradientDirection) ?? .topLeading
 		meshOpacity = try values.decodeIfPresent(Double.self, forKey: .meshOpacity) ?? 1
 		if let savedPoints = try values.decodeIfPresent([ThemeColorPoint].self, forKey: .meshColorPoints) {
-			meshColorPoints = Array(savedPoints.prefix(3))
+			meshColorPoints = Array(savedPoints.prefix(4))
 		} else if usesGradient {
 			meshColorPoints = [
 				ThemeColorPoint(id: ThemeColorPoint.migratedFirstID, color: firstColor, x: 0.28, y: 0.32),
@@ -112,7 +112,7 @@ struct BrowserTheme: Codable, Equatable {
 	}
 
 	mutating func addMeshColorPoint(at position: CGPoint? = nil) -> UUID? {
-		guard meshColorPoints.count < 3 else { return nil }
+		guard meshColorPoints.count < 4 else { return nil }
 
 		let nextPosition = position ?? CGPoint(x: 0.5, y: 0.5)
 		let newPoint: ThemeColorPoint
@@ -135,6 +135,12 @@ struct BrowserTheme: Codable, Equatable {
 					color: BrowserColor(red: 0.92, green: 0.12, blue: 0.1),
 					x: 0.3,
 					y: 0.7
+				)
+			case 3:
+				newPoint = ThemeColorPoint(
+					color: BrowserColor(red: 1, green: 1, blue: 1),
+					x: 0.7,
+					y: 0.3
 				)
 			default:
 				return nil

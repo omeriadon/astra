@@ -103,7 +103,7 @@ private struct MeshGradientEditorView: View {
 			}
 			.overlay(alignment: .bottom) {
 				GlassEffectContainer(spacing: 4) {
-					if theme.meshColorPoints.count < 3, editingPointID == nil {
+					if theme.meshColorPoints.count < 4, editingPointID == nil {
 						Button {
 							withAnimation(.smooth(duration: 0.2)) {
 								_ = theme.addMeshColorPoint()
@@ -432,21 +432,18 @@ private struct MeshGradientCanvas: View {
 
 struct MeshGradientSurface: View {
 	let points: [ThemeColorPoint]
-
-	private let meshLocations: [SIMD2<Float>] = [
-		.init(0, 0), .init(0.5, 0), .init(1, 0),
-		.init(0, 0.5), .init(0.5, 0.5), .init(1, 0.5),
-		.init(0, 1), .init(0.5, 1), .init(1, 1),
-	]
+	private static let meshLocations: [SIMD2<Float>] = (0 ..< 100).map { index in
+		SIMD2<Float>(Float(index % 10) / 9, Float(index / 10) / 9)
+	}
 
 	var body: some View {
 		if points.isEmpty {
 			Color.clear
 		} else {
 			MeshGradient(
-				width: 3,
-				height: 3,
-				points: meshLocations,
+				width: 10,
+				height: 10,
+				points: Self.meshLocations,
 				colors: meshColors,
 				background: .clear,
 				smoothsColors: true
@@ -455,7 +452,7 @@ struct MeshGradientSurface: View {
 	}
 
 	private var meshColors: [Color] {
-		meshLocations.map { location in
+		Self.meshLocations.map { location in
 			let weightedColors = points.map { point -> (Double, BrowserColor) in
 				let deltaX = Double(location.x) - point.x
 				let deltaY = Double(location.y) - point.y

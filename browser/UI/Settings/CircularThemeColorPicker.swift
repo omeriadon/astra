@@ -162,8 +162,9 @@ struct CircularThemeColorPicker: View {
 			deleteColor()
 		} label: {
 			Label("Delete color point", systemImage: "trash")
+				.font(.caption)
 				.labelStyle(.iconOnly)
-				.frame(width: 30, height: 30)
+				.frame(width: 22, height: 22)
 		}
 		.buttonStyle(.glass)
 		.buttonBorderShape(.circle)
@@ -209,7 +210,7 @@ struct CircularThemeColorPicker: View {
 			.overlay {
 				arcShape
 					.fill(hueGradient)
-					.opacity(0.78)
+					.saturation(1.2)
 					.allowsHitTesting(false)
 			}
 			.frame(width: Self.diameter, height: Self.diameter)
