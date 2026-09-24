@@ -116,10 +116,10 @@ private struct MeshGradientEditorView: View {
 						.buttonStyle(.glass(.clear.interactive()))
 						.buttonBorderShape(.circle)
 						.glassEffectTransition(.materialize)
-						.transition(.opacity.combined(with: .scale(scale: 0.5)))
 						.accessibilityIdentifier("theme-mesh-add-point")
 					}
 				}
+				.frame(width: 44, height: 44)
 				.padding(12)
 				.animation(.smooth(duration: 0.2), value: theme.meshColorPoints.count)
 				.animation(.smooth(duration: 0.2), value: editingPointID)
@@ -201,11 +201,9 @@ private struct ThemeControlSlider: View {
 		GeometryReader { geometry in
 			let trackWidth = max(geometry.size.width - thumbSize, 1)
 			let tickInset: CGFloat = 11
-			let drag = DragGesture(minimumDistance: 0, coordinateSpace: .named("theme-control-slider"))
+			let drag = DragGesture(minimumDistance: 1, coordinateSpace: .named("theme-control-slider"))
 				.onChanged { gesture in
-					withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) {
-						value = min(max(Double((gesture.location.x - thumbSize / 2) / trackWidth), 0), 1)
-					}
+					value = min(max(Double((gesture.location.x - thumbSize / 2) / trackWidth), 0), 1)
 				}
 			ZStack(alignment: .leading) {
 				Capsule()
@@ -228,22 +226,29 @@ private struct ThemeControlSlider: View {
 						}
 					}
 					.offset(x: thumbSize / 2)
+					.contentShape(Rectangle())
+					.onTapGesture(coordinateSpace: .named("theme-control-slider")) { location in
+						withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) {
+							value = min(max(Double((location.x - thumbSize / 2) / trackWidth), 0), 1)
+						}
+					}
 
 				Image(systemName: symbol)
 					.font(.system(size: 17, weight: .medium))
 					.frame(width: thumbSize, height: thumbSize)
 					.glassEffect(.regular.tint(.white.opacity(0.18)).interactive(), in: Circle())
-					.offset(x: CGFloat(value) * trackWidth)
 					.contentShape(Circle())
-					.highPriorityGesture(drag)
+					.position(
+						x: thumbSize / 2 + CGFloat(value) * trackWidth,
+						y: thumbSize / 2
+					)
 					.zIndex(1)
 			}
-			.frame(height: thumbSize)
+			.frame(width: geometry.size.width, height: thumbSize)
 			.contentShape(Rectangle())
 			.gesture(drag)
 			.coordinateSpace(name: "theme-control-slider")
 		}
-		.animation(.spring(duration: 0.2, bounce: 0.4), value: value)
 		.frame(height: thumbSize)
 		.accessibilityElement()
 		.accessibilityLabel(label)
@@ -273,18 +278,20 @@ private struct MeshGradientCanvas: View {
 				MeshGradientSurface(points: theme.meshColorPoints)
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
 					.overlay {
-						Canvas { context, size in
-							for x in stride(from: CGFloat(11), to: size.width, by: 22) {
-								for y in stride(from: CGFloat(11), to: size.height, by: 22) {
-									let dot = Path(ellipseIn: CGRect(x: x - 1, y: y - 1, width: 2, height: 2))
-									context.fill(dot, with: .color(.white.opacity(0.2)))
+						ZStack {
+							Canvas { context, size in
+								for x in stride(from: CGFloat(11), to: size.width, by: 22) {
+									for y in stride(from: CGFloat(11), to: size.height, by: 22) {
+										let dot = Path(ellipseIn: CGRect(x: x - 1, y: y - 1, width: 2, height: 2))
+										context.fill(dot, with: .color(.white.opacity(0.2)))
+									}
 								}
 							}
+							.allowsHitTesting(false)
+							.accessibilityHidden(true)
 						}
-						.padding([.top, .leading], 10)
-						.padding([.bottom, .trailing], 6)
-						.allowsHitTesting(false)
-						.accessibilityHidden(true)
+						.padding([.top, .leading], 3)
+						.padding([.bottom, .trailing], 2)
 					}
 					.clipShape(ContainerRelativeShape())
 					.contentShape(Rectangle())
