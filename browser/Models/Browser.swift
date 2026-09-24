@@ -212,6 +212,7 @@ final class Browser {
 		guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
 		let wasSelected = selectedTabID == id
 		let wasInternal = tabs[index].internalPage != nil
+		releaseAfterTabUpdate([tabs[index]])
 		tabs.remove(at: index)
 		if !wasInternal {
 			closedTabIDs.insert(id)
@@ -242,7 +243,7 @@ final class Browser {
 	func promotePeek(in source: BrowserTab, id: UUID) {
 		guard let peek = source.peeks.last, peek.id == id else { return }
 		let tab = BrowserTab(
-			pageTitle: peek.controller.webView.title ?? "New Tab",
+			pageTitle: peek.controller.webViewIfLoaded?.title ?? "New Tab",
 			existingController: peek.controller
 		)
 		source.dismissPeek(id)
@@ -295,7 +296,7 @@ final class Browser {
 				url: url,
 				source: source,
 				depth: 1,
-				parentZoom: controller.webView.pageZoom
+				parentZoom: controller.pageZoom
 			)
 		}
 		for peek in tab.peeks {
@@ -339,7 +340,7 @@ final class Browser {
 				url: url,
 				source: source,
 				depth: peek.depth + 1,
-				parentZoom: peek.controller.webView.pageZoom
+				parentZoom: peek.controller.pageZoom
 			)
 		}
 	}
@@ -350,7 +351,9 @@ final class Browser {
 	}
 
 	private func removeTabs(_ ids: Set<UUID>, selecting selectedID: UUID) {
-		let closedWebIDs = Set(tabs.filter { ids.contains($0.id) && $0.internalPage == nil }.map(\.id))
+		let removedTabs = tabs.filter { ids.contains($0.id) }
+		let closedWebIDs = Set(removedTabs.filter { $0.internalPage == nil }.map(\.id))
+		releaseAfterTabUpdate(removedTabs)
 		tabs.removeAll { ids.contains($0.id) }
 		closedTabIDs.formUnion(closedWebIDs)
 		recentlyUsedTabIDs.removeAll { ids.contains($0) }
@@ -358,6 +361,14 @@ final class Browser {
 		recentlyUsedTabIDs.removeAll { $0 == selectedID }
 		recentlyUsedTabIDs.insert(selectedID, at: 0)
 		schedulePersistence()
+	}
+
+	private func releaseAfterTabUpdate(_ removedTabs: [BrowserTab]) {
+		// ponytail: Give the tab UI time to update before WebKit teardown; use explicit lifecycle control if teardown still stalls.
+		Task { @MainActor in
+			try? await Task.sleep(for: .milliseconds(100))
+			withExtendedLifetime(removedTabs) {}
+		}
 	}
 
 	func syncDocument(settings: [String: SyncedSetting]) -> BrowserSyncDocument {

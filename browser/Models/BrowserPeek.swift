@@ -23,7 +23,7 @@ final class BrowserPeek: Identifiable {
 			url: controller.url,
 			history: controller.history,
 			historyIndex: controller.historyIndex,
-			pageZoom: controller.webView.pageZoom,
+			pageZoom: controller.pageZoom,
 			scrollPosition: controller.scrollPosition
 		)
 	}
@@ -43,9 +43,9 @@ final class BrowserPeek: Identifiable {
 		isPresented = false
 
 		if zoomsOut {
-			controller.webView.pageZoom = parentZoom * (depth == 1 ? 0.95 : 0.85)
+			controller.pageZoom = parentZoom * (depth == 1 ? 0.95 : 0.85)
 		} else {
-			controller.webView.pageZoom = parentZoom
+			controller.pageZoom = parentZoom
 		}
 	}
 
@@ -62,7 +62,7 @@ final class BrowserPeek: Identifiable {
 			historyIndex: openPeek.historyIndex,
 			scrollPosition: openPeek.scrollPosition
 		)
-		controller.webView.pageZoom = openPeek.pageZoom
+		controller.pageZoom = openPeek.pageZoom
 		hasPresented = true
 		isPresented = true
 	}

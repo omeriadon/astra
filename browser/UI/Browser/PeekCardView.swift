@@ -54,9 +54,11 @@ struct PeekCardView: View {
 
 	var body: some View {
 		ZStack {
-			BrowserWebView(controller: peek.controller)
-				.clipShape(.rect(cornerRadius: cornerRadius))
-				.opacity(showsWebContent ? 1 : 0)
+			if peek.controller.isWebViewReady {
+				BrowserWebView(controller: peek.controller)
+					.clipShape(.rect(cornerRadius: cornerRadius))
+					.opacity(showsWebContent ? 1 : 0)
+			}
 
 			if showsPlaceholder {
 				RoundedRectangle(cornerRadius: cornerRadius)
@@ -85,6 +87,9 @@ struct PeekCardView: View {
 		.accessibilityHidden(!isTopmost)
 		.task {
 			guard !peek.hasPresented else {
+				await Task.yield()
+				guard !Task.isCancelled else { return }
+				peek.controller.prepareWebView()
 				showsWebContent = true
 				showsPlaceholder = false
 				return
@@ -94,6 +99,7 @@ struct PeekCardView: View {
 			withAnimation(presentationAnimation, completionCriteria: .logicallyComplete) {
 				peek.isPresented = true
 			} completion: {
+				peek.controller.prepareWebView()
 				withAnimation(nil) {
 					showsWebContent = true
 				}

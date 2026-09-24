@@ -50,7 +50,7 @@ struct BrowserTabRow: View {
 						Image(systemName: page.symbol)
 					} else if let favicon = FaviconStore.shared.image(
 						for: tab.currentURL,
-						in: tab.controller?.webView
+						in: tab.controller?.webViewIfLoaded
 					) {
 						favicon
 							.resizable()

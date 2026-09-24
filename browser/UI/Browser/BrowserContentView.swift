@@ -28,13 +28,22 @@ struct BrowserContentView: View {
 		          let controller = tab.controller,
 		          controller.url != nil
 		{
-			BrowserWebView(
-				controller: controller,
-				obscuredInsets: insets.obscured,
-				minimumViewportInsets: insets.minimum,
-				maximumViewportInsets: insets.maximum
-			)
-			.id(tab.id)
+			if controller.isWebViewReady {
+				BrowserWebView(
+					controller: controller,
+					obscuredInsets: insets.obscured,
+					minimumViewportInsets: insets.minimum,
+					maximumViewportInsets: insets.maximum
+				)
+				.id(tab.id)
+			} else {
+				Color.clear
+					.task {
+						await Task.yield()
+						guard !Task.isCancelled else { return }
+						controller.prepareWebView()
+					}
+			}
 		} else if let tab = browser.selectedTab, tab.isHibernated {
 			ContentUnavailableView {
 				Label("Tab Hibernated", systemImage: "moon.zzz")
