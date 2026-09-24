@@ -124,13 +124,13 @@ struct BrowserTabRow: View {
 				Color.clear
 					.glassEffect(
 						.clear.tint(theme.tabColor),
-						in: RoundedRectangle(cornerRadius: attachedBrowserCornerRadius)
+						in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.attachedCornerRadius)
 					)
 			} else if isHovered {
 				Color.clear
 					.glassEffect(
 						.regular.tint(.white.opacity(0.2)),
-						in: RoundedRectangle(cornerRadius: attachedBrowserCornerRadius)
+						in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.attachedCornerRadius)
 					)
 			}
 		}

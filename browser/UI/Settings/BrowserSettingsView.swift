@@ -9,7 +9,6 @@ struct BrowserSettingsView: View {
 	@Default(.syncServerURL) private var syncServerURL
 	@Default(.tabSwitchingOrder) private var tabSwitchingOrder
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
-	@Default(.topBarBackgroundStyle) private var topBarBackgroundStyle
 	@Default(.peekLevel) private var peekLevel
 	@Default(.zoomOutInPeeks) private var zoomOutInPeeks
 	@Default(.renameDownloadsWithAppleIntelligence) private var renameDownloadsWithAppleIntelligence
@@ -84,16 +83,6 @@ struct BrowserSettingsView: View {
 					}
 				}
 				.accessibilityIdentifier("address-display-style-picker")
-			}
-
-			Section("Top Bar") {
-				Picker("Background", selection: $topBarBackgroundStyle) {
-					ForEach(TopBarBackgroundStyle.allCases) { style in
-						Text(style.title)
-							.tag(style)
-					}
-				}
-				.accessibilityIdentifier("top-bar-background-style-picker")
 			}
 
 			Section("Peek") {

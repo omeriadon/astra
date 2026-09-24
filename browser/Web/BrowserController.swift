@@ -10,6 +10,7 @@ import WebKit
 @Observable
 final class BrowserController: NSObject {
 	private static let scrollPositionMessageName = "scrollPositionChanged"
+	private static let topEdgeMessageName = "topEdgeChanged"
 	private static let scrollPositionScript = """
 	(() => {
 		let pending;
@@ -24,6 +25,50 @@ final class BrowserController: NSObject {
 		};
 		window.addEventListener('scroll', report, { passive: true });
 		window.addEventListener('pagehide', report);
+	})();
+	"""
+	private static let topEdgeScript = """
+	(() => {
+		let scheduled = false;
+		let previous;
+		const check = () => {
+			scheduled = false;
+			const counts = new Map();
+			const samples = 20;
+			for (let index = 0; index < samples; index++) {
+				const x = innerWidth * (index + 0.5) / samples;
+				for (const element of document.elementsFromPoint(x, 2)) {
+					if (element === document.body || element === document.documentElement) continue;
+					const rect = element.getBoundingClientRect();
+					const style = getComputedStyle(element);
+					const isPageChrome = element.matches(
+						'header, nav, [role="navigation"], [class*="header" i], [id*="header" i], ' +
+						'[class*="nav" i], [id*="nav" i], [class*="toolbar" i], [id*="toolbar" i]'
+					);
+					if (!isPageChrome && style.position !== 'fixed' && style.position !== 'sticky') continue;
+					if (rect.top > 3 || rect.bottom < 20 || rect.height > 160 ||
+						rect.width < innerWidth * 0.5 || style.visibility === 'hidden' ||
+						Number(style.opacity) < 0.05) continue;
+					counts.set(element, (counts.get(element) || 0) + 1);
+				}
+			}
+			const occupied = [...counts.values()].some(count => count >= samples * 0.7);
+			if (occupied !== previous) {
+				previous = occupied;
+				window.webkit.messageHandlers.topEdgeChanged.postMessage(occupied);
+			}
+		};
+		const schedule = () => {
+			if (scheduled) return;
+			scheduled = true;
+			requestAnimationFrame(check);
+		};
+		addEventListener('scroll', schedule, { passive: true });
+		addEventListener('resize', schedule);
+		new MutationObserver(schedule).observe(document.documentElement, {
+			subtree: true, childList: true, attributes: true
+		});
+		schedule();
 	})();
 	"""
 
@@ -71,6 +116,7 @@ final class BrowserController: NSObject {
 	private(set) var isLoading = false
 	private(set) var estimatedProgress = 0.0
 	private(set) var scrollPosition: BrowserScrollPosition
+	private(set) var hasTopEdgeContent = false
 	private(set) var themeColor: Color?
 	private(set) var themeColorIsLight: Bool?
 	#if os(macOS)
@@ -146,9 +192,22 @@ final class BrowserController: NSObject {
 			contentWorld: .page,
 			name: Self.scrollPositionMessageName
 		)
+		webView.configuration.userContentController.add(
+			scrollHandler,
+			contentWorld: .page,
+			name: Self.topEdgeMessageName
+		)
 		webView.configuration.userContentController.addUserScript(
 			WKUserScript(
 				source: Self.scrollPositionScript,
+				injectionTime: .atDocumentEnd,
+				forMainFrameOnly: true,
+				in: .page
+			)
+		)
+		webView.configuration.userContentController.addUserScript(
+			WKUserScript(
+				source: Self.topEdgeScript,
 				injectionTime: .atDocumentEnd,
 				forMainFrameOnly: true,
 				in: .page
@@ -561,6 +620,7 @@ extension BrowserController: WKNavigationDelegate {
 		awaitsNavigationCommit = true
 		navigationGeneration += 1
 		hasDeclaredThemeColor = false
+		hasTopEdgeContent = false
 	}
 
 	func webView(_: WKWebView, didCommit navigation: WKNavigation!) {
@@ -599,8 +659,16 @@ extension BrowserController: WKNavigationDelegate {
 
 extension BrowserController: WKScriptMessageHandler {
 	func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
+		guard message.frameInfo.isMainFrame else { return }
+
+		if message.name == Self.topEdgeMessageName {
+			if let occupied = message.body as? Bool {
+				hasTopEdgeContent = occupied
+			}
+			return
+		}
+
 		guard message.name == Self.scrollPositionMessageName,
-		      message.frameInfo.isMainFrame,
 		      let position = message.body as? [String: Double],
 		      let x = position["x"],
 		      let y = position["y"]
