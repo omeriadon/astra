@@ -56,7 +56,6 @@ struct BrowserTabRow: View {
 							.resizable()
 							.scaledToFit()
 							.saturation(tab.isHibernated ? 0 : 1)
-							.scaleEffect(tab.isHibernated ? 0.8 : 1)
 					} else {
 						Image(systemName: "globe")
 					}
