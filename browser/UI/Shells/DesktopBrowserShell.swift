@@ -11,7 +11,7 @@ let attachedBrowserCornerRadius: CGFloat = 13
 let detachedBrowserCornerRadius: CGFloat = 16
 
 struct DesktopBrowserShell: View {
-	let browser: Browser
+	@Bindable var browser: Browser
 	@Environment(\.colorScheme) private var colorScheme
 	@Default(.topBarBackgroundStyle) private var topBarBackgroundStyle
 	@Default(.browserTheme) private var theme
@@ -133,7 +133,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	var body: some View {
-		BrowserSplitView(sidebarShown: $sidebarShown) {
+		BrowserSplitView(sidebarShown: $sidebarShown, isAboutToQuit: $browser.isAboutToQuit) {
 			ZStack(alignment: .top) {
 				ScrollView {
 					LazyVStack(spacing: 2) {

@@ -15,6 +15,8 @@ final class Browser {
 	private(set) var deletedBookmarkIDs: Set<UUID>
 	private(set) var persistenceErrorDescription: String?
 
+	var isAboutToQuit: Bool = false
+
 	@ObservationIgnored
 	private let persistence: BrowserPersistence?
 

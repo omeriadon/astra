@@ -11,6 +11,24 @@ import SwiftUI
 struct browserApp: App {
 	@State private var browser = Browser()
 
+	#if os(macOS)
+		@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+		@State private var lastQuitAttempt: Date?
+
+		private func requestQuit() {
+			let now = Date()
+
+			if let lastQuitAttempt,
+			   now.timeIntervalSince(lastQuitAttempt) < 1.0
+			{
+				NSApplication.shared.terminate(nil)
+				self.lastQuitAttempt = nil
+			} else {
+				lastQuitAttempt = now
+			}
+		}
+	#endif
+
 	var body: some Scene {
 		WindowGroup {
 			ContentView(browser: $browser)
@@ -19,11 +37,11 @@ struct browserApp: App {
 		.windowStyle(.hiddenTitleBar)
 		.windowBackgroundDragBehavior(.disabled)
 		#endif
-		.commandsRemoved()
+
 		.commands {
 			BrowserCommands()
 
-			CommandGroup(replacing: .appSettings) {
+			CommandGroup(after: .appSettings) {
 				Button {
 					browser.openInternalPage(.settings)
 				} label: {
@@ -31,6 +49,23 @@ struct browserApp: App {
 				}
 				.keyboardShortcut(",", modifiers: .command)
 			}
+
+			CommandGroup(replacing: .appInfo) {
+				Button {
+					browser.openInternalPage(.settings) // info
+				} label: {
+					Label("About Browser", systemImage: "info.circle")
+				}
+			}
+
+			#if os(macOS)
+				CommandGroup(replacing: .appTermination) {
+					Button("Quit browser") {
+						requestQuit()
+					}
+					.keyboardShortcut("q", modifiers: .command)
+				}
+			#endif
 		}
 	}
 }
