@@ -39,7 +39,7 @@ struct BrowserAddressField: View {
 				)
 			}
 			.onAppear {
-				updateForSelectedTab()
+				updateAddressFromURL()
 			}
 	}
 

@@ -15,7 +15,7 @@ enum BrowserChromeMetrics {
 	static let compactTabWindowCornerRadius: CGFloat = 28
 
 	// Sizes the icon label inside each bordered top-bar button.
-	static let topBarButtonLabelWidth: CGFloat = 8
+	static let topBarButtonLabelWidth: CGFloat = 0
 	static let topBarButtonLabelHeight: CGFloat = 11
 	static let topBarButtonCornerRadius: CGFloat = 12
 	static let windowDragStripHeight: CGFloat = 3

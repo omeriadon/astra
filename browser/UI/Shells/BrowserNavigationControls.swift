@@ -9,6 +9,7 @@ struct BrowserNavigationControls: View {
 	) -> some View {
 		Label(title, systemImage: systemImage)
 			.labelStyle(.iconOnly)
+			.font(.body.scaled(by: 0.9))
 			.frame(
 				width: BrowserChromeMetrics.topBarButtonLabelWidth,
 				height: BrowserChromeMetrics.topBarButtonLabelHeight
@@ -76,6 +77,8 @@ struct BrowserNavigationControls: View {
 						width: BrowserChromeMetrics.topBarButtonLabelWidth,
 						height: BrowserChromeMetrics.topBarButtonLabelHeight
 					)
+					.font(.body.scaled(by: 0.9))
+
 			} primaryAction: {
 				if controller.isLoading {
 					controller.stopLoading()

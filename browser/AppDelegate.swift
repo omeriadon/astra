@@ -8,17 +8,33 @@
 import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+	private var didClearStartupFocus = false
+
 	func applicationDidFinishLaunching(_: Notification) {
 		// Disable for any windows already open
 		disableTabbing()
+		if let window = NSApplication.shared.keyWindow {
+			clearStartupFocus(in: window)
+		}
 
 		// Observe future windows opening
 		NotificationCenter.default.addObserver(
-			forName: NSWindow.didBecomeMainNotification,
+			forName: NSWindow.didBecomeKeyNotification,
 			object: nil,
 			queue: .main
-		) { _ in
-			self.disableTabbing()
+		) { [weak self] notification in
+			self?.disableTabbing()
+			if let window = notification.object as? NSWindow {
+				self?.clearStartupFocus(in: window)
+			}
+		}
+	}
+
+	private func clearStartupFocus(in window: NSWindow) {
+		guard !didClearStartupFocus else { return }
+		didClearStartupFocus = true
+		DispatchQueue.main.async {
+			window.makeFirstResponder(nil)
 		}
 	}
 

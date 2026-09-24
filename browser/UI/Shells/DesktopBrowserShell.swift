@@ -62,6 +62,7 @@ struct DesktopBrowserShell: View {
 						width: BrowserChromeMetrics.topBarButtonLabelWidth,
 						height: BrowserChromeMetrics.topBarButtonLabelHeight
 					)
+					.font(.body.scaled(by: 0.9))
 			}
 			.controlSize(.regular)
 			.labelStyle(.iconOnly)
@@ -82,6 +83,7 @@ struct DesktopBrowserShell: View {
 						width: BrowserChromeMetrics.topBarButtonLabelWidth,
 						height: BrowserChromeMetrics.topBarButtonLabelHeight
 					)
+					.font(.body.scaled(by: 0.9))
 			}
 			.controlSize(.regular)
 			.buttonSizing(.fitted)
@@ -180,7 +182,7 @@ struct DesktopBrowserShell: View {
 								endPoint: .bottom,
 								startOpacity: 1.0,
 								endOpacity: browser.selectedTab?.activeController?.hasTopEdgeContent == true ? 1.0 : 0.0,
-								isSmooth: false
+								isSmooth: browser.selectedTab?.activeController?.hasTopEdgeContent == true
 							),
 							maxBlurRadius: browser.selectedTab?.activeController?.hasTopEdgeContent == true ? 8 : 4
 						)
@@ -188,7 +190,7 @@ struct DesktopBrowserShell: View {
 						.frame(maxWidth: .infinity)
 					}
 				}
-				.overlay {
+				.background {
 					if browser.selectedTab?.internalPage == nil,
 					   let themeColor = browser.selectedTab?.activeController?.themeColor
 					{
