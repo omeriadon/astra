@@ -80,7 +80,7 @@ struct BrowserTheme: Codable, Equatable {
 	}
 
 	var progressColor: Color {
-		(meshColorPoints.dropFirst().first ?? meshColorPoints.first)?.color.color ?? .clear
+		meshColorPoints.max { $0.color.chroma < $1.color.chroma }?.color.color ?? .clear
 	}
 
 	var foregroundColor: Color {
@@ -249,6 +249,10 @@ struct BrowserColor: Codable, Equatable {
 			component <= 0.04045 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
 		}
 		return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+	}
+
+	var chroma: Double {
+		max(red, max(green, blue)) - min(red, min(green, blue))
 	}
 }
 
