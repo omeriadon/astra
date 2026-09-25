@@ -7,6 +7,9 @@ import WebKit
 enum BrowserInternalPage: Equatable {
 	case themeEditor
 	case settings
+	#if DEBUG
+		case debug
+	#endif
 
 	var title: String {
 		switch self {
@@ -14,6 +17,10 @@ enum BrowserInternalPage: Equatable {
 				"Theme"
 			case .settings:
 				"Settings"
+			#if DEBUG
+				case .debug:
+					"Debug Stuff"
+			#endif
 		}
 	}
 
@@ -23,6 +30,10 @@ enum BrowserInternalPage: Equatable {
 				"paintpalette"
 			case .settings:
 				"gearshape"
+			#if DEBUG
+				case .debug:
+					"ladybug"
+			#endif
 		}
 	}
 }

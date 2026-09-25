@@ -116,6 +116,7 @@ final class BrowserController: NSObject {
 	var url: URL?
 	private(set) var isLoading = false
 	private(set) var estimatedProgress = 0.0
+	private(set) var navigationFailure: BrowserNavigationFailure?
 	private(set) var scrollPosition: BrowserScrollPosition
 	private(set) var hasTopEdgeContent = false
 	private(set) var themeColor: Color?
@@ -184,6 +185,13 @@ final class BrowserController: NSObject {
 
 	private func makeWebView() -> WKWebView {
 		let configuration = WKWebViewConfiguration()
+		#if os(macOS)
+			if let safariURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Safari"),
+			   let safariVersion = Bundle(url: safariURL)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+			{
+				configuration.applicationNameForUserAgent = "Version/\(safariVersion) Safari/605.1.15"
+			}
+		#endif
 		FaviconStore.shared.configureFaviconObservation(in: configuration.userContentController)
 		let webView = PeekSourceWebView(frame: .zero, configuration: configuration)
 		createdWebView = webView
@@ -244,7 +252,7 @@ final class BrowserController: NSObject {
 					guard let url = change.newValue ?? webView.url else { return }
 					self.url = url
 					if !webView.isLoading {
-						if (webView as? PeekSourceWebView)?.consumeRecentClick() == true {
+						if webView.consumeRecentClick() == true {
 							self.historyManager.beginVisit()
 						}
 						self.updateHistory()
@@ -315,6 +323,10 @@ final class BrowserController: NSObject {
 	}
 
 	func reload() {
+		if let navigationFailure {
+			load(URLRequest(url: navigationFailure.url))
+			return
+		}
 		if let createdWebView {
 			createdWebView.reload()
 		} else if let url {
@@ -333,6 +345,10 @@ final class BrowserController: NSObject {
 	}
 
 	func reloadFromOrigin() {
+		if navigationFailure != nil {
+			reload()
+			return
+		}
 		if let createdWebView {
 			createdWebView.reloadFromOrigin()
 		} else if let url {
@@ -520,21 +536,32 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webView(_: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-		guard navigation === currentNavigation else { return }
-		guard (error as NSError).code != NSURLErrorCancelled else { return }
-		awaitsNavigationCommit = false
-		historyManager.cancelVisit()
+		handleNavigationFailure(navigation, error: error)
 	}
 
 	func webView(_: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+		handleNavigationFailure(navigation, error: error)
+	}
+
+	private func handleNavigationFailure(_ navigation: WKNavigation!, error: Error) {
 		guard navigation === currentNavigation else { return }
-		guard (error as NSError).code != NSURLErrorCancelled else { return }
+		let error = error as NSError
+		guard error.domain != NSURLErrorDomain || error.code != NSURLErrorCancelled else { return }
 		awaitsNavigationCommit = false
 		historyManager.cancelVisit()
+		if let failedURL = error.userInfo[NSURLErrorFailingURLErrorKey] as? URL ?? url {
+			navigationFailure = BrowserNavigationFailure(error: error, url: failedURL)
+		}
+	}
+
+	func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+		guard let url = webView.url ?? url else { return }
+		navigationFailure = BrowserNavigationFailure(kind: .webContentTerminated, url: url)
 	}
 
 	func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
 		currentNavigation = navigation
+		navigationFailure = nil
 		awaitsNavigationCommit = true
 		navigationGeneration += 1
 		hasDeclaredThemeColor = false
@@ -544,6 +571,7 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webView(_: WKWebView, didCommit navigation: WKNavigation!) {
 		guard navigation === currentNavigation else { return }
+		navigationFailure = nil
 		awaitsNavigationCommit = false
 		updateHistory()
 	}

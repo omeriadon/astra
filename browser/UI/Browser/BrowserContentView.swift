@@ -25,19 +25,34 @@ struct BrowserContentView: View {
 					BrowserThemeEditorView()
 				case .settings:
 					BrowserSettingsView()
+				#if DEBUG
+					case .debug:
+						BrowserDebugView()
+				#endif
 			}
 		} else if let tab = browser.selectedTab,
 		          let controller = tab.controller,
 		          controller.url != nil
 		{
 			if controller.isWebViewReady {
-				BrowserWebView(
-					controller: controller,
-					obscuredInsets: insets.obscured,
-					minimumViewportInsets: insets.minimum,
-					maximumViewportInsets: insets.maximum
-				)
-				.id(tab.id)
+				ZStack {
+					BrowserWebView(
+						controller: controller,
+						obscuredInsets: insets.obscured,
+						minimumViewportInsets: insets.minimum,
+						maximumViewportInsets: insets.maximum
+					)
+					.id(tab.id)
+					.opacity(controller.navigationFailure == nil ? 1 : 0)
+					.allowsHitTesting(controller.navigationFailure == nil)
+					.accessibilityHidden(controller.navigationFailure != nil)
+
+					if let failure = controller.navigationFailure {
+						BrowserNavigationErrorView(kind: failure.kind) {
+							controller.reload()
+						}
+					}
+				}
 			} else {
 				Color.clear
 					.task {
