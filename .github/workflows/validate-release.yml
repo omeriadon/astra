@@ -99,6 +99,13 @@ jobs:
 
           codesign \
             --force \
+            --deep \
+            --sign - \
+            --preserve-metadata=identifier,entitlements,flags,runtime \
+            "$APP"
+
+          codesign \
+            --force \
             --sign - \
             --entitlements astra/Special/astra.entitlements \
             "$APP"
