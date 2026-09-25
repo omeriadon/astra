@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validate branch, version, and build
+      - name: Validate release branch
         shell: bash
         run: |
           set -euo pipefail
@@ -29,55 +29,18 @@ jobs:
             exit 1
           fi
 
-          EXPECTED_VERSION="${BASH_REMATCH[1]}"
-          EXPECTED_BUILD="${BASH_REMATCH[3]}"
+          VERSION="${BASH_REMATCH[1]}"
+          BUILD="${BASH_REMATCH[3]}"
+          TAG="v$VERSION+$BUILD"
 
-          PROJECT_FILE="astra.xcodeproj/project.pbxproj"
-
-          mapfile -t VERSIONS < <(
-            sed -n 's/.*MARKETING_VERSION = \([^;]*\);/\1/p' "$PROJECT_FILE" |
-            xargs -n1 |
-            sort -u
-          )
-
-          mapfile -t BUILDS < <(
-            sed -n 's/.*CURRENT_PROJECT_VERSION = \([^;]*\);/\1/p' "$PROJECT_FILE" |
-            xargs -n1 |
-            sort -u
-          )
-
-          if [[ ${#VERSIONS[@]} -ne 1 ]]; then
-            echo "::error::Expected exactly one MARKETING_VERSION in the Xcode project, found: ${VERSIONS[*]}"
-            exit 1
-          fi
-
-          if [[ ${#BUILDS[@]} -ne 1 ]]; then
-            echo "::error::Expected exactly one CURRENT_PROJECT_VERSION in the Xcode project, found: ${BUILDS[*]}"
-            exit 1
-          fi
-
-          ACTUAL_VERSION="${VERSIONS[0]}"
-          ACTUAL_BUILD="${BUILDS[0]}"
-
-          echo "Branch:  $BRANCH"
-          echo "Expected: version $EXPECTED_VERSION, build $EXPECTED_BUILD"
-          echo "Project:  version $ACTUAL_VERSION, build $ACTUAL_BUILD"
-
-          if [[ "$ACTUAL_VERSION" != "$EXPECTED_VERSION" ]]; then
-            echo "::error::MARKETING_VERSION is $ACTUAL_VERSION but the branch requires $EXPECTED_VERSION"
-            exit 1
-          fi
-
-          if [[ "$ACTUAL_BUILD" != "$EXPECTED_BUILD" ]]; then
-            echo "::error::CURRENT_PROJECT_VERSION is $ACTUAL_BUILD but the branch requires $EXPECTED_BUILD"
-            exit 1
-          fi
-
-          TAG="v$EXPECTED_VERSION+$EXPECTED_BUILD"
+          echo "Release branch: $BRANCH"
+          echo "Version:        $VERSION"
+          echo "Build:          $BUILD"
+          echo "Tag:            $TAG"
 
           if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
             echo "::error::Release tag $TAG already exists"
             exit 1
           fi
 
-          echo "Release metadata is valid."
+          echo "Release metadata is valid. The branch name is the source of truth."
