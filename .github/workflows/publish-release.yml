@@ -1,0 +1,215 @@
+name: Publish Release
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish Release
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: macos-latest
+
+    env:
+      SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+
+    steps:
+      - name: Parse release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+
+          if [[ ! "$BRANCH" =~ ^release/([0-9]+\.[0-9]+(\.[0-9]+)?)\+([0-9]+)$ ]]; then
+            echo "::error::Release branches must be named release/<version>+<build>, for example release/0.1.1+2"
+            exit 1
+          fi
+
+          VERSION="${BASH_REMATCH[1]}"
+          BUILD="${BASH_REMATCH[3]}"
+          TAG="v$VERSION+$BUILD"
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          if [[ "$VERSION" == "0.0" && "$BUILD" == "0" ]]; then
+            echo "bootstrap=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "bootstrap=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out merged code
+        if: steps.meta.outputs.bootstrap != 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: Verify Sparkle signing secret
+        if: steps.meta.outputs.bootstrap != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${SPARKLE_PRIVATE_KEY:-}" ]]; then
+            echo "::error::SPARKLE_PRIVATE_KEY repository secret is missing"
+            exit 1
+          fi
+
+      - name: Build release archive
+        if: steps.meta.outputs.bootstrap != 'true'
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          BUILD: ${{ steps.meta.outputs.build }}
+        run: |
+          set -euo pipefail
+
+          ARCHIVE="$RUNNER_TEMP/astra.xcarchive"
+          PACKAGES="$RUNNER_TEMP/SourcePackages"
+
+          xcodebuild archive \
+            -project astra.xcodeproj \
+            -scheme astra \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -archivePath "$ARCHIVE" \
+            -clonedSourcePackagesDirPath "$PACKAGES" \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+          APP="$(find "$ARCHIVE/Products/Applications" -maxdepth 1 -name '*.app' -print -quit)"
+
+          if [[ -z "$APP" || ! -d "$APP" ]]; then
+            echo "::error::No .app was produced by the archive"
+            exit 1
+          fi
+
+          ACTUAL_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+          ACTUAL_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
+
+          if [[ "$ACTUAL_VERSION" != "$VERSION" ]]; then
+            echo "::error::Built app version is $ACTUAL_VERSION, expected $VERSION"
+            exit 1
+          fi
+
+          if [[ "$ACTUAL_BUILD" != "$BUILD" ]]; then
+            echo "::error::Built app build is $ACTUAL_BUILD, expected $BUILD"
+            exit 1
+          fi
+
+          echo "APP_PATH=$APP" >> "$GITHUB_ENV"
+          echo "PACKAGES_PATH=$PACKAGES" >> "$GITHUB_ENV"
+
+      - name: Package ZIP and DMG
+        if: steps.meta.outputs.bootstrap != 'true'
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          BUILD: ${{ steps.meta.outputs.build }}
+        run: |
+          set -euo pipefail
+
+          APPCAST_DIR="$RUNNER_TEMP/appcast-input"
+          DMG_ROOT="$RUNNER_TEMP/dmg-root"
+          ZIP_PATH="$APPCAST_DIR/Astra-$VERSION-$BUILD.zip"
+          DMG_PATH="$RUNNER_TEMP/Astra-$VERSION-$BUILD.dmg"
+
+          mkdir -p "$APPCAST_DIR" "$DMG_ROOT"
+
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
+
+          cp -R "$APP_PATH" "$DMG_ROOT/"
+          ln -s /Applications "$DMG_ROOT/Applications"
+
+          hdiutil create \
+            -volname "Astra" \
+            -srcfolder "$DMG_ROOT" \
+            -ov \
+            -format UDZO \
+            "$DMG_PATH"
+
+          echo "APPCAST_DIR=$APPCAST_DIR" >> "$GITHUB_ENV"
+          echo "ZIP_PATH=$ZIP_PATH" >> "$GITHUB_ENV"
+          echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_ENV"
+
+      - name: Generate signed Sparkle appcast
+        if: steps.meta.outputs.bootstrap != 'true'
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          BUILD: ${{ steps.meta.outputs.build }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          GENERATE_APPCAST="$(find "$PACKAGES_PATH" -type f -path '*/Sparkle/bin/generate_appcast' -print -quit)"
+
+          if [[ -z "$GENERATE_APPCAST" || ! -x "$GENERATE_APPCAST" ]]; then
+            echo "::error::Sparkle generate_appcast tool was not found"
+            exit 1
+          fi
+
+          printf '%s\n' "$SPARKLE_PRIVATE_KEY" | "$GENERATE_APPCAST" \
+            --ed-key-file - \
+            --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/" \
+            "$APPCAST_DIR"
+
+          APPCAST_PATH="$APPCAST_DIR/appcast.xml"
+
+          if [[ ! -f "$APPCAST_PATH" ]]; then
+            echo "::error::Sparkle did not generate appcast.xml"
+            exit 1
+          fi
+
+          if ! grep -q 'sparkle:edSignature=' "$APPCAST_PATH"; then
+            echo "::error::Generated appcast is missing an EdDSA signature"
+            exit 1
+          fi
+
+          if ! grep -q "<sparkle:version>$BUILD</sparkle:version>" "$APPCAST_PATH"; then
+            echo "::error::Generated appcast does not contain build $BUILD"
+            exit 1
+          fi
+
+          if ! grep -q "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>" "$APPCAST_PATH"; then
+            echo "::error::Generated appcast does not contain version $VERSION"
+            exit 1
+          fi
+
+          echo "APPCAST_PATH=$APPCAST_PATH" >> "$GITHUB_ENV"
+
+      - name: Publish GitHub release
+        if: steps.meta.outputs.bootstrap != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          BUILD: ${{ steps.meta.outputs.build }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists"
+            exit 1
+          fi
+
+          gh release create "$TAG" \
+            "$ZIP_PATH" \
+            "$DMG_PATH" \
+            "$APPCAST_PATH" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$MERGE_SHA" \
+            --title "Astra $VERSION (Build $BUILD)" \
+            --generate-notes
