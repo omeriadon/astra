@@ -41,20 +41,20 @@
     },
   ],
   "files": [
-    { "kind": "folder", "path": "browser", "target-membership": [ "browser" ] },
+    { "kind": "folder", "path": "astra", "target-membership": [ "astra" ] },
     {
       "kind": "group",
       "name": "Products",
       "children": [
-        { "path": "<PRODUCTS>/browser.app", "id": "2A3CB8C8305FC07600584097", "type": "wrapper.application", "index": false },
+        { "path": "<PRODUCTS>/astra.app", "id": "2A3CB8C8305FC07600584097", "type": "wrapper.application", "index": false },
       ],
     },
   ],
   "targets": [
     {
-      "name": "browser",
+      "name": "astra",
       "id": "2A3CB8C7305FC07600584097",
-      "product": "Products/browser.app",
+      "product": "Products/astra.app",
       "product-type": "application",
       "build-phases": [
         "compile-sources",
@@ -84,9 +84,9 @@
         },
       ],
       "build-settings": {
-        "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
+        "ASSETCATALOG_COMPILER_APPICON_NAME": "astra",
         "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor",
-        "CODE_SIGN_ENTITLEMENTS": "browser/browser.entitlements",
+        "CODE_SIGN_ENTITLEMENTS": "astra/Special/astra.entitlements",
         "CODE_SIGN_STYLE": "Automatic",
         "CURRENT_PROJECT_VERSION": "1",
         "DEVELOPMENT_TEAM": "P6PV2R9443",
@@ -106,6 +106,8 @@
         "ENABLE_RESOURCE_ACCESS_USB": "NO",
         "ENABLE_USER_SELECTED_FILES": "readonly",
         "GENERATE_INFOPLIST_FILE": "YES",
+        "INFOPLIST_KEY_CFBundleDisplayName": "astra",
+        "INFOPLIST_KEY_LSApplicationCategoryType": "public.app-category.utilities",
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]": "YES",
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]": "YES",
         "INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]": "YES",
@@ -121,7 +123,7 @@
         "LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]": "@executable_path/../Frameworks",
         "MACOSX_DEPLOYMENT_TARGET": "27.0",
         "MARKETING_VERSION": "1.0",
-        "PRODUCT_BUNDLE_IDENTIFIER": "com.omeriadon.browser",
+        "PRODUCT_BUNDLE_IDENTIFIER": "com.omeriadon.astra",
         "PRODUCT_NAME": "$(TARGET_NAME)",
         "REGISTER_APP_GROUPS": "YES",
         "SDKROOT": "auto",

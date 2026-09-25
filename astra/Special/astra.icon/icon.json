@@ -5,17 +5,7 @@
   "groups" : [
     {
       "layers" : [
-        {
-          "image-name" : "passionfruit 2.svg",
-          "name" : "passionfruit 2",
-          "position" : {
-            "scale" : 1,
-            "translation-in-points" : [
-              -0.2420051996782604,
-              0.03790089982521749
-            ]
-          }
-        }
+
       ],
       "shadow" : {
         "kind" : "neutral",
