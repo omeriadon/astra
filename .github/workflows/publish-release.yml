@@ -60,6 +60,11 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_27.2_beta.app/Contents/Developer
           xcodebuild -version
 
+      - name: Install Metal Toolchain
+        if: steps.meta.outputs.bootstrap != 'true'
+        shell: bash
+        run: xcodebuild -downloadComponent MetalToolchain
+
       - name: Verify Sparkle signing secret
         if: steps.meta.outputs.bootstrap != 'true'
         shell: bash
