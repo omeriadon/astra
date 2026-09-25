@@ -5,6 +5,7 @@
 //  Created by Adon Omeri on 20/9/2026.
 //
 
+import Sparkle
 import SwiftUI
 
 @main
@@ -26,6 +27,16 @@ struct browserApp: App {
 			} else {
 				lastQuitAttempt = now
 			}
+		}
+
+		private let updaterController: SPUStandardUpdaterController
+
+		init() {
+			updaterController = SPUStandardUpdaterController(
+				startingUpdater: true,
+				updaterDelegate: nil,
+				userDriverDelegate: nil
+			)
 		}
 	#endif
 
