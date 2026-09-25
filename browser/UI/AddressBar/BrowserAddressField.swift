@@ -8,7 +8,7 @@ struct BrowserAddressField: View {
 	@FocusState private var isFocused: Bool
 
 	private var isDimmed: Bool {
-		addressDisplayStyle == .dimmed && !isFocused
+		addressDisplayStyle == .dimmed && !isFocused && !addressText.isEmpty
 	}
 
 	private var isGoogleSearch: Bool {
@@ -19,6 +19,9 @@ struct BrowserAddressField: View {
 		addressInput
 			.onChange(of: browser.selectedTabID) { _, _ in
 				updateForSelectedTab()
+			}
+			.onChange(of: browser.addressFocusRequest) { _, _ in
+				isFocused = true
 			}
 			.onChange(of: browser.selectedTab?.peeks.last?.id) { _, _ in
 				isFocused = false
@@ -39,12 +42,12 @@ struct BrowserAddressField: View {
 				)
 			}
 			.onAppear {
-				updateAddressFromURL()
+				updateForSelectedTab()
 			}
 	}
 
 	private var addressInput: some View {
-		TextField("", text: $addressText)
+		TextField("Search or type a URL", text: $addressText)
 			.textFieldStyle(.plain)
 			.fontDesign(.monospaced)
 			.lineLimit(1)

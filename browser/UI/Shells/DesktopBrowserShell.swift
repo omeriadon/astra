@@ -48,7 +48,7 @@ struct DesktopBrowserShell: View {
 		.environment(\.colorScheme, topBarColorScheme)
 	}
 
-	private var sidebarControls: some View {
+	private var navigationBarControls: some View {
 		HStack(spacing: 5) {
 			Spacer()
 				.frame(width: 80)
@@ -301,10 +301,7 @@ struct DesktopBrowserShell: View {
 			}
 		}
 		.overlay(alignment: .topLeading) {
-			sidebarControls
-				.opacity(browser.selectedTab?.internalPage == nil ? 1 : 0)
-				.allowsHitTesting(browser.selectedTab?.internalPage == nil)
-				.accessibilityHidden(browser.selectedTab?.internalPage != nil)
+			navigationBarControls
 		}
 		#if os(macOS)
 		.overlay {

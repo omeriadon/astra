@@ -16,6 +16,7 @@ final class Browser {
 	private(set) var persistenceErrorDescription: String?
 
 	var isAboutToQuit: Bool = false
+	var addressFocusRequest = 0
 
 	@ObservationIgnored
 	private let persistence: BrowserPersistence?

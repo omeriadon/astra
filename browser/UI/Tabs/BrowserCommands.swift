@@ -11,11 +11,9 @@
 
 		var body: some Commands {
 			CommandMenu("Navigation") {
-				Button("Open Location", systemImage: "link") {
-					browser?.addTab()
-				}
-				.keyboardShortcut("L", modifiers: .command)
-				.disabled(browser?.selectedTab?.internalPage == nil)
+				Button("Open Location", systemImage: "link", action: openLocation)
+					.keyboardShortcut("L", modifiers: .command)
+					.disabled(browser == nil)
 
 				Button("Back", systemImage: "chevron.backward", action: goBack)
 					.keyboardShortcut("[", modifiers: .command)
@@ -67,6 +65,15 @@
 				Button("Copy URL", systemImage: "doc.on.doc", action: copySelectedURL)
 					.keyboardShortcut("C", modifiers: .option)
 					.disabled(browser?.selectedTab?.activeController?.url == nil)
+			}
+		}
+
+		private func openLocation() {
+			guard let browser else { return }
+			if browser.selectedTab?.internalPage != nil {
+				browser.addTab()
+			} else {
+				browser.addressFocusRequest += 1
 			}
 		}
 

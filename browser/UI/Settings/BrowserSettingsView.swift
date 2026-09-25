@@ -41,7 +41,7 @@ struct BrowserSettingsView: View {
 						.accessibilityIdentifier("settings-search")
 				}
 				.padding(8)
-				.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
+				.glassEffect(.regular, in: Capsule())
 				.padding(.horizontal, 12)
 				.padding(.top, 12)
 				.padding(.bottom, 20)
