@@ -135,13 +135,16 @@ struct DesktopBrowserShell: View {
 
 						Spacer(minLength: 0)
 
-						Button("New Tab", systemImage: "plus") {
+						Button {
 							browser.addTab()
+						} label: {
+							Label("New Tab", systemImage: "plus")
+								.frame(maxWidth: .infinity, alignment: .leading)
+								.contentShape(Rectangle())
 						}
 						.keyboardShortcut("T", modifiers: .command)
-						.padding(.leading, 8.5)
 						.buttonStyle(.plain)
-						.frame(maxWidth: .infinity, alignment: .leading)
+						.padding(.horizontal, 8)
 						.foregroundStyle(theme.foregroundColor.opacity(0.65))
 						.onHover {
 							newTabHovered = $0
@@ -299,6 +302,9 @@ struct DesktopBrowserShell: View {
 		}
 		.overlay(alignment: .topLeading) {
 			sidebarControls
+				.opacity(browser.selectedTab?.internalPage == nil ? 1 : 0)
+				.allowsHitTesting(browser.selectedTab?.internalPage == nil)
+				.accessibilityHidden(browser.selectedTab?.internalPage != nil)
 		}
 		#if os(macOS)
 		.overlay {

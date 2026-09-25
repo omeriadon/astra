@@ -55,13 +55,6 @@ struct browserApp: App {
 					Label("Settings...", systemImage: "gear")
 				}
 				.keyboardShortcut(",", modifiers: .command)
-
-				#if DEBUG
-					Button("Debug Stuff...", systemImage: "ladybug") {
-						browser.openInternalPage(.debug)
-					}
-					.accessibilityIdentifier("open-debug-stuff")
-				#endif
 			}
 
 			CommandGroup(replacing: .appInfo) {

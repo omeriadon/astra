@@ -8,7 +8,7 @@ enum BrowserInternalPage: Equatable {
 	case themeEditor
 	case settings
 	#if DEBUG
-		case debug
+		case failedWebsiteState(BrowserNavigationFailure.Kind)
 	#endif
 
 	var title: String {
@@ -18,8 +18,8 @@ enum BrowserInternalPage: Equatable {
 			case .settings:
 				"Settings"
 			#if DEBUG
-				case .debug:
-					"Debug Stuff"
+				case let .failedWebsiteState(kind):
+					String(localized: kind.title)
 			#endif
 		}
 	}
@@ -31,8 +31,8 @@ enum BrowserInternalPage: Equatable {
 			case .settings:
 				"gearshape"
 			#if DEBUG
-				case .debug:
-					"ladybug"
+				case let .failedWebsiteState(kind):
+					kind.systemImage
 			#endif
 		}
 	}

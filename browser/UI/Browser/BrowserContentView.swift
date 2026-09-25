@@ -4,6 +4,11 @@ import SwiftUI
 struct BrowserContentView: View {
 	let browser: Browser
 	var insets = BrowserViewportInsets()
+	@State private var settingsSearchText = ""
+	@State private var settingsPage: BrowserSettingsView.Page = .ui
+	#if DEBUG
+		@State private var failedStateRefreshID = 0
+	#endif
 	@Default(.browserTheme) private var theme
 	@Environment(\.colorScheme) private var colorScheme
 
@@ -24,10 +29,17 @@ struct BrowserContentView: View {
 				case .themeEditor:
 					BrowserThemeEditorView()
 				case .settings:
-					BrowserSettingsView()
+					BrowserSettingsView(
+						browser: browser,
+						searchText: $settingsSearchText,
+						selectedPage: $settingsPage
+					)
 				#if DEBUG
-					case .debug:
-						BrowserDebugView()
+					case let .failedWebsiteState(kind):
+						BrowserNavigationErrorView(kind: kind) {
+							failedStateRefreshID += 1
+						}
+						.id(failedStateRefreshID)
 				#endif
 			}
 		} else if let tab = browser.selectedTab,

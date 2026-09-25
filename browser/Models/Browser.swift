@@ -124,6 +124,14 @@ final class Browser {
 		selectTab(tab.id)
 	}
 
+	#if DEBUG
+		func openFailedWebsiteState(_ kind: BrowserNavigationFailure.Kind) {
+			let tab = BrowserTab(internalPage: .failedWebsiteState(kind))
+			tabs.append(tab)
+			selectTab(tab.id)
+		}
+	#endif
+
 	func selectTab(_ id: UUID) {
 		guard let tab = tabs.first(where: { $0.id == id }) else { return }
 		if tab.isHibernated {
