@@ -76,7 +76,7 @@ struct BrowserTheme: Codable, Equatable {
 			case .light: false
 			case .auto: systemScheme == .dark
 		}
-		return (isDark ? Color.black : .white).opacity(0.2)
+		return (isDark ? Color.black : .white).opacity(0.3)
 	}
 
 	var progressColor: Color {
