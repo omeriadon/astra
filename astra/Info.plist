@@ -4,5 +4,7 @@
 <dict>
 	<key>SUFeedURL</key>
 	<string>https://raw.githubusercontent.com/omeriadon/astra/updates/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>xJ3AwvPdTHBWLaYvWtJedgtrEh2tmU8atZcbU4x5A68=</string>
 </dict>
 </plist>
