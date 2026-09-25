@@ -119,6 +119,21 @@ jobs:
             exit 1
           fi
 
+          codesign \
+            --force \
+            --deep \
+            --sign - \
+            --preserve-metadata=identifier,entitlements,flags,runtime \
+            "$APP"
+
+          codesign \
+            --force \
+            --sign - \
+            --entitlements astra/Special/astra.entitlements \
+            "$APP"
+
+          codesign --deep --strict --verify "$APP"
+
           echo "APP_PATH=$APP" >> "$GITHUB_ENV"
           echo "PACKAGES_PATH=$PACKAGES" >> "$GITHUB_ENV"
 
