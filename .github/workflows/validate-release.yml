@@ -23,6 +23,10 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_27.2_beta.app/Contents/Developer
           xcodebuild -version
 
+      - name: Install Metal Toolchain
+        shell: bash
+        run: xcodebuild -downloadComponent MetalToolchain
+
       - name: Parse and validate release metadata
         shell: bash
         run: |
