@@ -97,4 +97,12 @@ jobs:
             exit 1
           fi
 
-          echo "Validated Astra $ACTUAL_VERSION (build $ACTUAL_BUILD)."
+          codesign \
+            --force \
+            --sign - \
+            --entitlements astra/Special/astra.entitlements \
+            "$APP"
+
+          codesign --deep --strict --verify "$APP"
+
+          echo "Validated Astra $ACTUAL_VERSION (build $ACTUAL_BUILD) with an ad-hoc code signature."
