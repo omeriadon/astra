@@ -146,24 +146,23 @@ final class Browser {
 		schedulePersistence()
 	}
 
-	func switchCandidates(forward: Bool, order: TabSwitchingOrder) -> [UUID] {
+	func switchCandidates(forward: Bool) -> [UUID] {
 		guard tabs.count > 1, let selectedIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) else { return [] }
-		let ids: [UUID]
-		if order == .visibleTabList {
-			ids = tabs.map(\.id)
-		} else {
-			let validRecentIDs = recentlyUsedTabIDs.filter { id in
-				tabs.contains { $0.id == id } && id != selectedTabID
-			}
-			ids = [selectedTabID] + validRecentIDs + tabs.map(\.id).filter {
-				$0 != selectedTabID && !validRecentIDs.contains($0)
-			}
-		}
-		let origin = ids.firstIndex(of: selectedTabID) ?? selectedIndex
+		let ids = tabs.map(\.id)
 		return (1 ... ids.count).map { offset in
 			let direction = forward ? offset : ids.count - offset
-			return ids[(origin + direction) % ids.count]
+			return ids[(selectedIndex + direction) % ids.count]
 		}
+	}
+
+	func reorderTabs(_ ids: [UUID], before targetID: UUID?) {
+		let movedIDs = Set(ids)
+		let movedTabs = tabs.filter { movedIDs.contains($0.id) }
+		guard !movedTabs.isEmpty else { return }
+		tabs.removeAll { movedIDs.contains($0.id) }
+		let destination = targetID.flatMap { id in tabs.firstIndex(where: { $0.id == id }) } ?? tabs.endIndex
+		tabs.insert(contentsOf: movedTabs, at: destination)
+		schedulePersistence()
 	}
 
 	func commitTabSwitch(to id: UUID) {

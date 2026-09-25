@@ -37,6 +37,7 @@ struct BrowserSettingsView: View {
 				.padding(.horizontal, 12)
 				.padding(.top, 12)
 				.padding(.bottom, 20)
+//				.padding(.top, browser.si)
 
 				if matches("General", section: "UI") {
 					Text("UI")

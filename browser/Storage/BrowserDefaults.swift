@@ -1,7 +1,6 @@
 import Defaults
 
 extension AddressDisplayStyle: Defaults.Serializable {}
-extension TabSwitchingOrder: Defaults.Serializable {}
 extension PeekLevel: Defaults.Serializable {}
 extension BrowserTheme: Defaults.Serializable {}
 
@@ -13,7 +12,6 @@ extension Defaults.Keys {
 
 	static let syncedSettingNames: Set<String> = [
 		"addressDisplayStyle",
-		"tabSwitchingOrder",
 		"peekLevel",
 		"zoomOutInPeeks",
 		"renameDownloadsWithAppleIntelligence",
@@ -33,10 +31,6 @@ extension Defaults.Keys {
 	static let addressDisplayStyle = Key<AddressDisplayStyle>(
 		"addressDisplayStyle",
 		default: .simple
-	)
-	static let tabSwitchingOrder = Key<TabSwitchingOrder>(
-		"tabSwitchingOrder",
-		default: .visibleTabList
 	)
 	static let peekLevel = Key<PeekLevel>(
 		"peekLevel",

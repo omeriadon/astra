@@ -18,8 +18,6 @@
 		@ObservationIgnored
 		private var previewTask: Task<Void, Never>?
 		@ObservationIgnored
-		private var switchingOrder: TabSwitchingOrder = .visibleTabList
-		@ObservationIgnored
 		private var sessionForward = true
 		@ObservationIgnored
 		private var isCancelledUntilControlRelease = false
@@ -28,8 +26,7 @@
 			self.browser = browser
 		}
 
-		func start(order: TabSwitchingOrder) {
-			switchingOrder = order
+		func start() {
 			guard eventMonitor == nil else { return }
 			eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
 				let isKeyDown = event.type == .keyDown
@@ -112,10 +109,7 @@
 				guard isControlPressed, isTab else { return false }
 				if candidateIDs.isEmpty {
 					sessionForward = !isShiftPressed
-					let order = browser.switchCandidates(
-						forward: sessionForward,
-						order: switchingOrder
-					)
+					let order = browser.switchCandidates(forward: sessionForward)
 					guard !order.isEmpty else { return true }
 					candidateIDs = order
 					highlightedTabID = order[0]

@@ -10,7 +10,6 @@ struct DesktopBrowserShell: View {
 	@State private var sidebarShown = true
 	@State private var toastManager = ToastManager.shared
 	#if os(macOS)
-		@Default(.tabSwitchingOrder) private var tabSwitchingOrder
 		@State private var controlTabSwitcher: ControlTabSwitcher
 	#endif
 
@@ -132,6 +131,7 @@ struct DesktopBrowserShell: View {
 								isSelected: browser.selectedTabID == tab.id
 							)
 						}
+						.reorderable()
 
 						Spacer(minLength: 0)
 
@@ -161,6 +161,14 @@ struct DesktopBrowserShell: View {
 						}
 //						.padding(.top, 10)
 						.accessibilityIdentifier("new-tab")
+					}
+					.reorderContainer(for: BrowserTab.self) { difference in
+						switch difference.destination.position {
+							case let .before(id):
+								browser.reorderTabs(difference.sources, before: id)
+							case .end:
+								browser.reorderTabs(difference.sources, before: nil)
+						}
 					}
 					.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
 					.padding(.top, 35)
@@ -309,10 +317,7 @@ struct DesktopBrowserShell: View {
 				.animation(.easeInOut(duration: 0.05), value: controlTabSwitcher.isPreviewVisible)
 		}
 		.onAppear {
-			controlTabSwitcher.start(order: tabSwitchingOrder)
-		}
-		.onChange(of: tabSwitchingOrder) { _, value in
-			controlTabSwitcher.start(order: value)
+			controlTabSwitcher.start()
 		}
 		.onChange(of: browser.tabs.map(\.id)) { _, _ in
 			controlTabSwitcher.tabsDidChange()

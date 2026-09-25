@@ -4,7 +4,6 @@ import SwiftUI
 let addressDisplayStyleSpacing: CGFloat = 8
 
 struct BrowserGeneralSettingsView: View {
-	@Default(.tabSwitchingOrder) private var tabSwitchingOrder
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
 	@Default(.peekLevel) private var peekLevel
 	@Default(.zoomOutInPeeks) private var zoomOutInPeeks
@@ -12,16 +11,6 @@ struct BrowserGeneralSettingsView: View {
 
 	var body: some View {
 		List {
-			Section("Tab Switching") {
-				Picker("Control-Tab order", selection: $tabSwitchingOrder) {
-					ForEach(TabSwitchingOrder.allCases) { order in
-						Text(order.title)
-							.tag(order)
-					}
-				}
-				.accessibilityIdentifier("tab-switching-order-picker")
-			}
-
 			Section("Address Bar") {
 				VStack(spacing: addressDisplayStyleSpacing) {
 					ForEach(AddressDisplayStyle.allCases) { style in
@@ -92,7 +81,7 @@ struct BrowserGeneralSettingsView: View {
 				}
 				.lineLimit(1)
 				.padding(.vertical, 4)
-				.padding(.leading, 6)
+				.padding(.horizontal, 6)
 				.fixedSize(horizontal: true, vertical: false)
 				.frame(maxWidth: .infinity, alignment: .leading)
 				.clipped()
@@ -130,7 +119,7 @@ struct BrowserGeneralSettingsView: View {
 				}
 				.lineLimit(1)
 				.padding(.vertical, 4)
-				.padding(style == .simple ? .horizontal : .leading, 6)
+				.padding(.horizontal, 6)
 				.frame(maxWidth: .infinity, alignment: .leading)
 				.background {
 					RoundedRectangle(cornerRadius: 9)
