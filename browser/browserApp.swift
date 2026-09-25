@@ -32,6 +32,13 @@ struct browserApp: App {
 	var body: some Scene {
 		WindowGroup {
 			ContentView(browser: $browser)
+				.onOpenURL { url in
+					guard url.scheme == "http" || url.scheme == "https" else {
+						return
+					}
+
+					browser.addTab()
+				}
 		}
 		#if os(macOS)
 		.windowStyle(.hiddenTitleBar)

@@ -118,6 +118,8 @@ struct DesktopBrowserShell: View {
 			: BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar
 	}
 
+	@State private var newTabHovered = false
+
 	var body: some View {
 		BrowserSplitView(sidebarShown: $sidebarShown) {
 			ZStack(alignment: .top) {
@@ -140,8 +142,21 @@ struct DesktopBrowserShell: View {
 						.padding(.leading, 8.5)
 						.buttonStyle(.plain)
 						.frame(maxWidth: .infinity, alignment: .leading)
-						.padding(.top, 10)
 						.foregroundStyle(theme.foregroundColor.opacity(0.65))
+						.onHover {
+							newTabHovered = $0
+						}
+						.frame(height: 28)
+						.background {
+							if newTabHovered {
+								Color.clear
+									.glassEffect(
+										.regular,
+										in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+									)
+							}
+						}
+//						.padding(.top, 10)
 						.accessibilityIdentifier("new-tab")
 					}
 					.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
