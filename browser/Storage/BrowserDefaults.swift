@@ -5,6 +5,11 @@ extension PeekLevel: Defaults.Serializable {}
 extension BrowserTheme: Defaults.Serializable {}
 
 extension Defaults.Keys {
+	static let sidebarShown = Key<Bool>(
+		"sidebarShown",
+		default: true
+	)
+
 	static let syncServerURL = Key<String>(
 		"syncServerURL",
 		default: ""

@@ -37,7 +37,7 @@ struct BrowserSettingsView: View {
 				.padding(.horizontal, 12)
 				.padding(.top, 12)
 				.padding(.bottom, 20)
-//				.padding(.top, browser.si)
+				.padding(.top, !browser.sidebarShown ? 25 : 0)
 
 				if matches("General", section: "UI") {
 					Text("UI")

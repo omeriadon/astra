@@ -17,6 +17,17 @@ final class Browser {
 
 	var isAboutToQuit: Bool = false
 	var addressFocusRequest = 0
+	var sidebarShown: Bool {
+		get {
+			access(keyPath: \.sidebarShown)
+			return Defaults[.sidebarShown]
+		}
+		set {
+			withMutation(keyPath: \.sidebarShown) {
+				Defaults[.sidebarShown] = newValue
+			}
+		}
+	}
 
 	@ObservationIgnored
 	private let persistence: BrowserPersistence?
@@ -50,19 +61,22 @@ final class Browser {
 			let savedTabs = try store.loadOpenTabs()
 			let snapshot = try store.loadBrowserSnapshot()
 			let bookmarks = try store.loadBookmarks()
-			let restoredTabs = savedTabs.map {
-				BrowserTab(
-					id: $0.id,
-					pageTitle: $0.pageTitle,
-					customTitle: $0.customTitle,
-					initialURL: $0.url,
-					history: $0.history,
-					historyIndex: $0.historyIndex,
-					openPeeks: $0.peeks,
-					pageZoom: $0.pageZoom,
-					scrollPosition: $0.scrollPosition,
-					isHibernated: $0.isHibernated,
-					modifiedAt: $0.modifiedAt
+			let restoredTabs = savedTabs.compactMap { saved -> BrowserTab? in
+				let internalPage = saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:))
+				guard saved.internalPage == nil || internalPage != nil else { return nil }
+				return BrowserTab(
+					id: saved.id,
+					internalPage: internalPage,
+					pageTitle: saved.pageTitle,
+					customTitle: saved.customTitle,
+					initialURL: saved.url,
+					history: saved.history,
+					historyIndex: saved.historyIndex,
+					openPeeks: saved.peeks,
+					pageZoom: saved.pageZoom,
+					scrollPosition: saved.scrollPosition,
+					isHibernated: saved.isHibernated,
+					modifiedAt: saved.modifiedAt
 				)
 			}
 			let tabs = restoredTabs.isEmpty ? [BrowserTab()] : restoredTabs
@@ -396,12 +410,15 @@ final class Browser {
 
 	func applySyncDocument(_ document: BrowserSyncDocument) {
 		let currentTabs = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
-		let changedTabs = document.tabs.map { saved -> BrowserTab in
+		let changedTabs = document.tabs.compactMap { saved -> BrowserTab? in
+			let internalPage = saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:))
+			guard saved.internalPage == nil || internalPage != nil else { return nil }
 			if let current = currentTabs[saved.id], current.openTab == saved {
 				return current
 			}
 			let tab = BrowserTab(
 				id: saved.id,
+				internalPage: internalPage,
 				pageTitle: saved.pageTitle,
 				customTitle: saved.customTitle,
 				initialURL: saved.url,
@@ -456,10 +473,10 @@ final class Browser {
 		guard let persistence else { return }
 		do {
 			try persistence.saveBookmarks(bookmarks)
-			try persistence.saveOpenTabs(webTabs.map(\.openTab))
+			try persistence.saveOpenTabs(tabs.map(\.openTab))
 			try persistence.saveBrowserSnapshot(
 				BrowserSnapshot(
-					selectedTabID: persistedSelectedTabID,
+					selectedTabID: selectedTabID,
 					closedTabIDs: closedTabIDs,
 					deletedBookmarkIDs: deletedBookmarkIDs
 				)

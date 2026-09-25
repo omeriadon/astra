@@ -47,7 +47,7 @@ struct BrowserNavigationFailure {
 		}
 	}
 
-	enum Kind: Hashable, CaseIterable {
+	enum Kind: String, Hashable, CaseIterable {
 		case offline
 		case connectionLost
 		case websiteNotFound

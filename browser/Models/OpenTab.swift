@@ -2,6 +2,7 @@ import Foundation
 
 struct OpenTab: Codable, Identifiable, Equatable {
 	var id: UUID
+	var internalPage: String?
 	var pageTitle: String
 	var customTitle: String?
 	var url: URL?
@@ -15,6 +16,7 @@ struct OpenTab: Codable, Identifiable, Equatable {
 
 	init(
 		id: UUID = UUID(),
+		internalPage: String? = nil,
 		pageTitle: String = "New Tab",
 		customTitle: String? = nil,
 		url: URL? = nil,
@@ -27,6 +29,7 @@ struct OpenTab: Codable, Identifiable, Equatable {
 		peeks: [OpenPeek] = []
 	) {
 		self.id = id
+		self.internalPage = internalPage
 		self.pageTitle = pageTitle
 		self.customTitle = customTitle
 		self.url = url
@@ -41,6 +44,7 @@ struct OpenTab: Codable, Identifiable, Equatable {
 
 	private enum CodingKeys: String, CodingKey {
 		case id
+		case internalPage
 		case title
 		case pageTitle
 		case customTitle
@@ -57,6 +61,7 @@ struct OpenTab: Codable, Identifiable, Equatable {
 	init(from decoder: Decoder) throws {
 		let container = try decoder.container(keyedBy: CodingKeys.self)
 		id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+		internalPage = try container.decodeIfPresent(String.self, forKey: .internalPage)
 		let legacyTitle = try container.decodeIfPresent(String.self, forKey: .title)
 		pageTitle = try container.decodeIfPresent(String.self, forKey: .pageTitle) ?? "New Tab"
 		if container.contains(.customTitle) {
@@ -82,6 +87,7 @@ struct OpenTab: Codable, Identifiable, Equatable {
 	func encode(to encoder: Encoder) throws {
 		var container = encoder.container(keyedBy: CodingKeys.self)
 		try container.encode(id, forKey: .id)
+		try container.encodeIfPresent(internalPage, forKey: .internalPage)
 		try container.encode(pageTitle, forKey: .pageTitle)
 		try container.encodeIfPresent(customTitle, forKey: .customTitle)
 		try container.encodeIfPresent(url, forKey: .url)

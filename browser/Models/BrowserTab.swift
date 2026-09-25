@@ -11,6 +11,35 @@ enum BrowserInternalPage: Equatable {
 		case failedWebsiteState(BrowserNavigationFailure.Kind)
 	#endif
 
+	var persistenceID: String {
+		switch self {
+			case .themeEditor: "themeEditor"
+			case .settings: "settings"
+			#if DEBUG
+				case let .failedWebsiteState(kind): "failedWebsiteState:\(kind.rawValue)"
+			#endif
+		}
+	}
+
+	init?(persistenceID: String) {
+		switch persistenceID {
+			case "themeEditor": self = .themeEditor
+			case "settings": self = .settings
+			default:
+				#if DEBUG
+					if persistenceID.hasPrefix("failedWebsiteState:"),
+					   let kind = BrowserNavigationFailure.Kind(
+					   	rawValue: String(persistenceID.dropFirst("failedWebsiteState:".count))
+					   )
+					{
+						self = .failedWebsiteState(kind)
+						return
+					}
+				#endif
+				return nil
+		}
+	}
+
 	var title: String {
 		switch self {
 			case .themeEditor:
@@ -87,6 +116,7 @@ final class BrowserTab: Identifiable {
 	var openTab: OpenTab {
 		OpenTab(
 			id: id,
+			internalPage: internalPage?.persistenceID,
 			pageTitle: pageTitle,
 			customTitle: customTitle,
 			url: controller?.url ?? storedURL,

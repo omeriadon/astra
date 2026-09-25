@@ -7,7 +7,7 @@ struct DesktopBrowserShell: View {
 	@Bindable var browser: Browser
 	@Environment(\.colorScheme) private var colorScheme
 	@Default(.browserTheme) private var theme
-	@State private var sidebarShown = true
+	@Default(.sidebarShown) private var sidebarShown
 	@State private var toastManager = ToastManager.shared
 	#if os(macOS)
 		@State private var controlTabSwitcher: ControlTabSwitcher
@@ -53,7 +53,7 @@ struct DesktopBrowserShell: View {
 				.frame(width: 80)
 
 			Button {
-				sidebarShown.toggle()
+				browser.sidebarShown.toggle()
 			} label: {
 				Label("Toggle Sidebar", systemImage: "sidebar.leading")
 					.labelStyle(.iconOnly)
@@ -120,7 +120,7 @@ struct DesktopBrowserShell: View {
 	@State private var newTabHovered = false
 
 	var body: some View {
-		BrowserSplitView(sidebarShown: $sidebarShown) {
+		BrowserSplitView(sidebarShown: $browser.sidebarShown) {
 			ZStack(alignment: .top) {
 				ScrollView {
 					LazyVStack(spacing: 2) {
