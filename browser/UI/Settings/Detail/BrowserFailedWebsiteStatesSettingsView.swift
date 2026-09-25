@@ -22,6 +22,7 @@
 				}
 			}
 			.scrollContentBackground(.hidden)
+			.listStyle(.sidebar)
 		}
 	}
 #endif

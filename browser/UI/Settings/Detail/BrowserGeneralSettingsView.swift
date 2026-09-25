@@ -60,5 +60,6 @@ struct BrowserGeneralSettingsView: View {
 			}
 		}
 		.scrollContentBackground(.hidden)
+		.listStyle(.sidebar)
 	}
 }

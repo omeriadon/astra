@@ -16,16 +16,6 @@ struct BrowserSettingsView: View {
 		#endif
 	}
 
-	private var selectedPageTitle: LocalizedStringKey {
-		switch selectedPage {
-			case .ui: "UI"
-			case .account: "Account & Sync"
-			#if DEBUG
-				case .failedWebsiteStates: "Failed Website States"
-			#endif
-		}
-	}
-
 	private func matches(_ title: String, section: String) -> Bool {
 		searchText.isEmpty
 			|| title.localizedCaseInsensitiveContains(searchText)
@@ -122,17 +112,10 @@ struct BrowserSettingsView: View {
 					#endif
 				}
 			}
+			.padding(.horizontal)
 			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 			.safeAreaBar(edge: .top) {
-				Text(selectedPageTitle)
-					.monospaced()
-					.font(.largeTitle.bold())
-					.contentTransition(.interpolate)
-					.animation(.smooth, value: selectedPage)
-					.frame(maxWidth: .infinity, alignment: .leading)
-					.padding(.horizontal, 24)
-					.padding(.top, 12)
-					.padding(.bottom, 12)
+				BrowserSettingsTitleView(page: selectedPage)
 			}
 		}
 		.frame(minWidth: 650, minHeight: 400)

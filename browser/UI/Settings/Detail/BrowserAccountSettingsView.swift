@@ -59,5 +59,6 @@ struct BrowserAccountSettingsView: View {
 			}
 		}
 		.scrollContentBackground(.hidden)
+		.listStyle(.sidebar)
 	}
 }
