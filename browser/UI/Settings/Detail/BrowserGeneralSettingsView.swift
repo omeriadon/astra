@@ -1,6 +1,8 @@
 import Defaults
 import SwiftUI
 
+let addressDisplayStyleSpacing = 8
+
 struct BrowserGeneralSettingsView: View {
 	@Default(.tabSwitchingOrder) private var tabSwitchingOrder
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
@@ -21,11 +23,34 @@ struct BrowserGeneralSettingsView: View {
 			}
 
 			Section("Address Bar") {
-				Picker("Display", selection: $addressDisplayStyle) {
+				HStack(spacing: addressDisplayStyleSpacing) {
 					ForEach(AddressDisplayStyle.allCases) { style in
-						Text(style.title)
-							.tag(style)
+						VStack {
+							Spacer()
+
+							Text(style.title)
+						}
+						.frame(height: 130)
+						.background {
+							Color.primary.opacity(addressDisplayStyle == style ? 0.3 : 0.1)
+								.clipShape(RoundedRectangle(cornerRadius: 15))
+						}
+						.strokeBorder(.white.opacity(addressDisplayStyle == style ? 0.6 : 0.3), lineWidth: 1)
+						.animation(.smooth, value: addressDisplayStyle == style)
+						.onTapGesture {
+							addressDisplayStyle = style
+						}
+						.containerRelativeFrame(
+							.horizontal,
+							count: 3,
+							span: 1,
+							spacing: addressDisplayStyleSpacing
+						)
 					}
+				}
+				.background {
+					Color.primary.opacity(0.1)
+						.clipShape(RoundedRectangle(cornerRadius: 15))
 				}
 				.accessibilityIdentifier("address-display-style-picker")
 			}
