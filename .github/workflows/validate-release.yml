@@ -9,7 +9,7 @@ on:
 jobs:
   validate-release:
     name: Validate Release
-    runs-on: ubuntu-latest
+    runs-on: xcode-27
 
     steps:
       - name: Check out pull request
@@ -17,7 +17,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validate release branch
+      - name: Select Xcode 27.2 beta
+        shell: bash
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.2_beta.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Parse and validate release metadata
         shell: bash
         run: |
           set -euo pipefail
@@ -33,6 +39,10 @@ jobs:
           BUILD="${BASH_REMATCH[3]}"
           TAG="v$VERSION+$BUILD"
 
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "BUILD=$BUILD" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+
           echo "Release branch: $BRANCH"
           echo "Version:        $VERSION"
           echo "Build:          $BUILD"
@@ -43,4 +53,44 @@ jobs:
             exit 1
           fi
 
-          echo "Release metadata is valid. The branch name is the source of truth."
+      - name: Build release exactly as it will ship
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ARCHIVE="$RUNNER_TEMP/astra-validation.xcarchive"
+          PACKAGES="$RUNNER_TEMP/SourcePackages"
+
+          xcodebuild archive \
+            -project astra.xcodeproj \
+            -scheme astra \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -archivePath "$ARCHIVE" \
+            -clonedSourcePackagesDirPath "$PACKAGES" \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+          APP="$(find "$ARCHIVE/Products/Applications" -maxdepth 1 -name '*.app' -print -quit)"
+
+          if [[ -z "$APP" || ! -d "$APP" ]]; then
+            echo "::error::No .app was produced by the archive"
+            exit 1
+          fi
+
+          ACTUAL_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+          ACTUAL_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
+
+          if [[ "$ACTUAL_VERSION" != "$VERSION" ]]; then
+            echo "::error::Built app version is $ACTUAL_VERSION, expected $VERSION"
+            exit 1
+          fi
+
+          if [[ "$ACTUAL_BUILD" != "$BUILD" ]]; then
+            echo "::error::Built app build is $ACTUAL_BUILD, expected $BUILD"
+            exit 1
+          fi
+
+          echo "Validated Astra $ACTUAL_VERSION (build $ACTUAL_BUILD)."
