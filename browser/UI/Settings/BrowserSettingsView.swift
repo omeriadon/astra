@@ -119,5 +119,6 @@ struct BrowserSettingsView: View {
 			}
 		}
 		.frame(minWidth: 650, minHeight: 400)
+		.monospaced()
 	}
 }
