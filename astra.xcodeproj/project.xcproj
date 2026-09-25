@@ -47,8 +47,21 @@
     },
   ],
   "files": [
-    { "kind": "folder", "path": "astra", "target-membership": [ "astra" ] },
     {
+      "kind": "folder",
+      "path": "astra",
+      "target-membership": [
+        "astra",
+      ],
+      "membership-exceptions": [
+        {
+          "target": "astra",
+          "exclusions": [
+            "Info.plist",
+          ],
+        },
+      ],
+    }, {
       "kind": "group",
       "name": "Products",
       "children": [
@@ -116,6 +129,7 @@
         "ENABLE_RESOURCE_ACCESS_USB": "NO",
         "ENABLE_USER_SELECTED_FILES": "readonly",
         "GENERATE_INFOPLIST_FILE": "YES",
+        "INFOPLIST_FILE": "astra/Info.plist",
         "INFOPLIST_KEY_CFBundleDisplayName": "astra",
         "INFOPLIST_KEY_LSApplicationCategoryType": "public.app-category.utilities",
         "INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]": "YES",

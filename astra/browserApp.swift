@@ -74,6 +74,10 @@ struct browserApp: App {
 				} label: {
 					Label("About astra", systemImage: "info.circle")
 				}
+
+				CheckForUpdatesView(
+					updater: updaterController.updater
+				)
 			}
 
 			#if os(macOS)
