@@ -61,7 +61,7 @@ struct browserApp: App {
 				Button {
 					browser.openInternalPage(.settings) // info
 				} label: {
-					Label("About Browser", systemImage: "info.circle")
+					Label("About astra", systemImage: "info.circle")
 				}
 			}
 

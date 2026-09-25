@@ -15,8 +15,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "2A3CB8C7305FC07600584097"
-               BuildableName = "browser.app"
-               BlueprintName = "browser"
+               BuildableName = "astra.app"
+               BlueprintName = "astra"
                ReferencedContainer = "container:browser.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -45,8 +45,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "2A3CB8C7305FC07600584097"
-            BuildableName = "browser.app"
-            BlueprintName = "browser"
+            BuildableName = "astra.app"
+            BlueprintName = "astra"
             ReferencedContainer = "container:browser.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -62,8 +62,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "2A3CB8C7305FC07600584097"
-            BuildableName = "browser.app"
-            BlueprintName = "browser"
+            BuildableName = "astra.app"
+            BlueprintName = "astra"
             ReferencedContainer = "container:browser.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
