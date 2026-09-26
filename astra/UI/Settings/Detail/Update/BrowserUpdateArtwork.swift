@@ -101,7 +101,81 @@ private struct GlassStarContent: View {
 	}
 #endif
 
+private struct AboutArtworkStar: View {
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	@State private var pulsing = false
+
+	let index: Int
+
+	private var mode: Int {
+		index % 3
+	}
+
+	var body: some View {
+		Image(systemName: "sparkle")
+			.resizable()
+			.scaledToFit()
+			.frame(width: CGFloat(5 + index % 4), height: CGFloat(5 + index % 4))
+			.foregroundStyle(.white)
+			.scaleEffect(
+				mode == 0 && !reduceMotion
+					? (pulsing ? 1.03 + Double(index) * 0.003 : 0.97 - Double(index) * 0.003)
+					: 1
+			)
+			.rotationEffect(.degrees(
+				mode == 1 && !reduceMotion
+					? (pulsing ? 2 + Double(index) * 0.1 : -2 - Double(index) * 0.1)
+					: 0
+			))
+			.opacity(
+				mode == 2 || reduceMotion
+					? (pulsing ? 0.5 + Double(index) * 0.01 : 1)
+					: 0.8
+			)
+			.animation(
+				.easeInOut(duration: 0.5 + Double(index) * 0.05)
+					.repeatForever(autoreverses: true),
+				value: pulsing
+			)
+			.onAppear { pulsing = true }
+			.accessibilityHidden(true)
+	}
+}
+
 struct BrowserUpdateArtwork: View {
+	private static let aboutStarPositions: [CGPoint] = [
+		CGPoint(x: 0.04811, y: 0.23125),
+		CGPoint(x: 0.29108, y: 0.29160),
+		CGPoint(x: 0.63807, y: 0.30881),
+		CGPoint(x: 0.92434, y: 0.34032),
+		CGPoint(x: 0.17264, y: 0.45175),
+		CGPoint(x: 0.12788, y: 0.49734),
+		CGPoint(x: 0.81504, y: 0.51504),
+		CGPoint(x: 0.11306, y: 0.52566),
+		CGPoint(x: 0.55054, y: 0.56143),
+		CGPoint(x: 0.88465, y: 0.57126),
+		CGPoint(x: 0.29132, y: 0.60582),
+		CGPoint(x: 0.06516, y: 0.64614),
+		CGPoint(x: 0.07939, y: 0.66038),
+		CGPoint(x: 0.09379, y: 0.66314),
+		CGPoint(x: 0.06864, y: 0.66976),
+		CGPoint(x: 0.76171, y: 0.71165),
+		CGPoint(x: 0.45004, y: 0.79148),
+		CGPoint(x: 0.81778, y: 0.80506),
+		CGPoint(x: 0.91097, y: 0.81499),
+		CGPoint(x: 0.11148, y: 0.86830),
+		CGPoint(x: 0.50869, y: 0.88530),
+		CGPoint(x: 0.11321, y: 0.88710),
+		CGPoint(x: 0.24414, y: 0.90008),
+		CGPoint(x: 0.12530, y: 0.90051),
+		CGPoint(x: 0.76720, y: 0.90439),
+		CGPoint(x: 0.68711, y: 0.91164),
+		CGPoint(x: 0.50378, y: 0.91325),
+		CGPoint(x: 0.77971, y: 0.91724),
+		CGPoint(x: 0.12641, y: 0.92202),
+		CGPoint(x: 0.36032, y: 0.93989),
+	]
+
 	@State private var pulsing1 = false
 	@State private var pulsing2 = false
 	@State private var pulsing3 = false
@@ -153,6 +227,15 @@ struct BrowserUpdateArtwork: View {
 
 					if isAboutView {
 						Spacer()
+					}
+				}
+
+				if isAboutView {
+					ForEach(Self.aboutStarPositions.indices, id: \.self) { index in
+						let point = Self.aboutStarPositions[index]
+
+						AboutArtworkStar(index: index)
+							.position(x: width * point.x, y: height * point.y)
 					}
 				}
 
