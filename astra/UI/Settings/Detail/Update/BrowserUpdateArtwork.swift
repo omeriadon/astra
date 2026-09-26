@@ -143,9 +143,13 @@ struct BrowserUpdateArtwork: View {
 						.frame(height: isAboutView ? geo.size.height * 0.7 : geo.size.height)
 						.frame(maxWidth: .infinity)
 						.glassEffect(.clear.tint(
-							Color(red: 0.64, green: 0.69, blue: 0.9)
+							Color(
+								red: 253.2 / 255,
+								green: 253.25 / 255,
+								blue: 254.35 / 255
+							)
 
-						).interactive(), in: PurpleHeaderShape())
+						), in: PurpleHeaderShape())
 
 					if isAboutView {
 						Spacer()

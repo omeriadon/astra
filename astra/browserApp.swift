@@ -8,6 +8,14 @@
 import Sparkle
 import SwiftUI
 
+extension Color {
+	static let customPurple = Color(
+		red: 112.0 / 255,
+		green: 124.0 / 255,
+		blue: 255.0 / 255
+	)
+}
+
 @main
 struct browserApp: App {
 	@State private var browser = Browser()
