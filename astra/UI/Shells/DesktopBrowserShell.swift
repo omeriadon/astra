@@ -9,6 +9,7 @@ struct DesktopBrowserShell: View {
 	@Default(.browserTheme) private var theme
 	@Default(.sidebarShown) private var sidebarShown
 	@State private var toastManager = ToastManager.shared
+	@State private var isFullScreen = false
 	#if os(macOS)
 		@State private var controlTabSwitcher: ControlTabSwitcher
 	#endif
@@ -40,7 +41,7 @@ struct DesktopBrowserShell: View {
 
 			BrowserAddressField(browser: browser)
 		}
-		.padding(.leading, sidebarShown ? 10 : BrowserChromeMetrics.persistentControlsAreaWidth)
+		.padding(.leading, isFullScreen ? 0 : (sidebarShown ? 10 : BrowserChromeMetrics.persistentControlsAreaWidth))
 		.padding(.trailing, 10)
 		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 		.frame(maxWidth: .infinity, alignment: .leading)
@@ -318,6 +319,13 @@ struct DesktopBrowserShell: View {
 		}
 		.onAppear {
 			controlTabSwitcher.start()
+			isFullScreen = NSApp.keyWindow?.styleMask.contains(.fullScreen) == true
+		}
+		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+			isFullScreen = true
+		}
+		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+			isFullScreen = false
 		}
 		.onChange(of: browser.tabs.map(\.id)) { _, _ in
 			controlTabSwitcher.tabsDidChange()

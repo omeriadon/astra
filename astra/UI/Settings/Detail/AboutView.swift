@@ -53,8 +53,11 @@ struct AboutView: View {
 		}
 		.contentShape(Rectangle())
 		.onContinuousHover { phase in
-			if case let .active(location) = phase {
-				pointerLocation = location
+			switch phase {
+				case let .active(location):
+					pointerLocation = location
+				case .ended:
+					pointerLocation = nil
 			}
 		}
 	}

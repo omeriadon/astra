@@ -14,7 +14,7 @@ private struct GlassStarContent: View {
 		VStack {}
 			.frame(maxWidth: .infinity, maxHeight: .infinity)
 			.glassEffect(
-				interactive ? .clear.tint(tintColor).interactive() : .clear.tint(tintColor),
+				interactive ? .regular.tint(tintColor).interactive() : .regular.tint(tintColor),
 				in: Rectangle()
 			)
 			.mask {
@@ -138,9 +138,55 @@ private struct AboutArtworkStar: View {
 	}
 }
 
+private struct AboutArtworkDustStar: View {
+	@State private var pulsing = false
+
+	let index: Int
+
+	var body: some View {
+		Circle()
+			.fill(.white)
+			.frame(width: CGFloat(1 + index % 3), height: CGFloat(1 + index % 3))
+			.opacity(pulsing ? 0.08 + Double(index) * 0.018 : 0.9)
+			.animation(
+				.easeInOut(duration: 0.525 + Double(index) * 0.06)
+					.repeatForever(autoreverses: true),
+				value: pulsing
+			)
+			.onAppear { pulsing = true }
+			.allowsHitTesting(false)
+			.accessibilityHidden(true)
+	}
+}
+
 struct BrowserUpdateArtwork: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var localPointerLocation: CGPoint?
+
+	private static let aboutDustStarPositions: [CGPoint] = [
+		CGPoint(x: 0.09243, y: 0.27065),
+		CGPoint(x: 0.86013, y: 0.37223),
+		CGPoint(x: 0.09264, y: 0.41009),
+		CGPoint(x: 0.62906, y: 0.41361),
+		CGPoint(x: 0.92715, y: 0.41974),
+		CGPoint(x: 0.25218, y: 0.42439),
+		CGPoint(x: 0.94885, y: 0.46265),
+		CGPoint(x: 0.75905, y: 0.46627),
+		CGPoint(x: 0.75496, y: 0.47700),
+		CGPoint(x: 0.94892, y: 0.47993),
+		CGPoint(x: 0.93370, y: 0.48147),
+		CGPoint(x: 0.92712, y: 0.52010),
+		CGPoint(x: 0.68075, y: 0.56448),
+		CGPoint(x: 0.17015, y: 0.63459),
+		CGPoint(x: 0.71931, y: 0.77701),
+		CGPoint(x: 0.73210, y: 0.78345),
+		CGPoint(x: 0.12671, y: 0.81129),
+		CGPoint(x: 0.65229, y: 0.82014),
+		CGPoint(x: 0.59907, y: 0.86876),
+		CGPoint(x: 0.63354, y: 0.88457),
+		CGPoint(x: 0.74439, y: 0.89136),
+		CGPoint(x: 0.32892, y: 0.89773),
+	]
 
 	private static let aboutStarPositions: [CGPoint] = [
 		CGPoint(x: 0.04811, y: 0.23125),
@@ -198,7 +244,9 @@ struct BrowserUpdateArtwork: View {
 			return .zero
 		}
 
-		let maximumOffset = 2 + 50 / starSize
+		let maximumOffset = starSize < 5
+			? 12 + (5 - starSize) * 4
+			: 2 + 50 / starSize
 		let horizontal = min(max(pointerLocation.x / bounds.width * 2 - 1, -1), 1)
 		let vertical = min(max(pointerLocation.y / bounds.height * 2 - 1, -1), 1)
 
@@ -252,11 +300,22 @@ struct BrowserUpdateArtwork: View {
 				}
 
 				if isAboutView {
+					ForEach(Self.aboutDustStarPositions.indices, id: \.self) { index in
+						let point = Self.aboutDustStarPositions[index]
+
+						AboutArtworkDustStar(index: index)
+							.position(x: width * point.x, y: height * point.y)
+							.offset(parallaxOffset(for: CGFloat(1 + index % 3), in: geo.size))
+					}
+
 					ForEach(Self.aboutStarPositions.indices, id: \.self) { index in
 						let point = Self.aboutStarPositions[index]
 
 						AboutArtworkStar(index: index)
-							.position(x: width * point.x, y: height * point.y)
+							.position(
+								x: width * (point.x - 0.04811) / 0.87623,
+								y: height * point.y / 0.93989
+							)
 							.offset(parallaxOffset(for: CGFloat(5 + index % 4), in: geo.size))
 					}
 				}
@@ -393,21 +452,20 @@ struct BrowserUpdateArtwork: View {
 					}
 				}
 			}
-			.frame(width: width, height: height)
 			.animation(
 				.smooth(duration: 1),
 				value: isAboutView ? aboutPointerLocation : localPointerLocation
 			)
-			.contentShape(Rectangle())
-			.onContinuousHover { phase in
-				guard !isAboutView else { return }
+		}
+		.contentShape(Rectangle())
+		.onContinuousHover { phase in
+			guard !isAboutView else { return }
 
-				switch phase {
-					case let .active(location):
-						localPointerLocation = location
-					case .ended:
-						localPointerLocation = nil
-				}
+			switch phase {
+				case let .active(location):
+					localPointerLocation = location
+				case .ended:
+					localPointerLocation = nil
 			}
 		}
 	}
