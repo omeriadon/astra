@@ -11,6 +11,8 @@ struct BrowserSettingsView: View {
 	enum Page {
 		case ui
 		case account
+		case about
+
 		#if DEBUG
 			case failedWebsiteStates
 		#endif
@@ -76,14 +78,17 @@ struct BrowserSettingsView: View {
 
 				Spacer(minLength: 20)
 
+				BrowserSettingsSidebarRow(
+					title: "About astra",
+					symbol: "sparkle",
+					isSelected: selectedPage == .about,
+					identifier: "settings-about-astra"
+				) {
+					selectedPage = .about
+				}
+
 				#if DEBUG
 					if matches("Failed Website States", section: "Debug") {
-						Text("Debug")
-							.font(.caption)
-							.foregroundStyle(.secondary)
-							.padding(.leading, 20)
-							.padding(.bottom, 6)
-
 						BrowserSettingsSidebarRow(
 							title: "Failed Website States",
 							symbol: "ladybug",
@@ -107,6 +112,8 @@ struct BrowserSettingsView: View {
 						BrowserGeneralSettingsView()
 					case .account:
 						BrowserAccountSettingsView()
+					case .about:
+						AboutView()
 					#if DEBUG
 						case .failedWebsiteStates:
 							BrowserFailedWebsiteStatesSettingsView(browser: browser)

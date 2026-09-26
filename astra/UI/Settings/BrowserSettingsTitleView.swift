@@ -14,6 +14,7 @@ struct BrowserSettingsTitleView: View {
 		switch displayedPage {
 			case .ui: "UI"
 			case .account: "Account & Sync"
+			case .about: "About astra"
 			#if DEBUG
 				case .failedWebsiteStates: "Failed Website States"
 			#endif
