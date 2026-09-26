@@ -32,6 +32,7 @@ struct CheckForUpdatesView: View {
 		Button("Check for Updates…", systemImage: "arrow.triangle.2.circlepath") {
 			updater.checkForUpdates()
 		}
+		.buttonStyle(.glass)
 		.disabled(!viewModel.canCheckForUpdates)
 		.accessibilityIdentifier("check-for-updates")
 	}

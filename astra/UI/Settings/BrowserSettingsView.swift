@@ -26,7 +26,7 @@ struct BrowserSettingsView: View {
 
 	var body: some View {
 		HStack(spacing: 0) {
-			VStack(alignment: .leading, spacing: 0) {
+			VStack(alignment: .leading, spacing: 8) {
 				HStack(spacing: 8) {
 					Image(systemName: "magnifyingglass")
 						.accessibilityHidden(true)
@@ -120,10 +120,12 @@ struct BrowserSettingsView: View {
 					#endif
 				}
 			}
-			.padding(.horizontal)
+			.padding(.horizontal, selectedPage != .about ? 16 : 0)
 			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 			.safeAreaBar(edge: .top) {
-				BrowserSettingsTitleView(page: selectedPage)
+				if selectedPage != .about {
+					BrowserSettingsTitleView(page: selectedPage)
+				}
 			}
 		}
 		.frame(minWidth: 650, minHeight: 400)

@@ -21,30 +21,34 @@ struct AboutView: View {
 	@Bindable private var updates = UpdateManager.shared
 
 	var body: some View {
-		HStack {
-			Spacer()
-			VStack(spacing: 30) {
+		ZStack {
+			BrowserUpdateArtwork(isAboutView: true)
+
+			HStack {
 				Spacer()
+				VStack(spacing: 30) {
+					Spacer()
 
-				Image("astra")
-					.resizable()
-					.aspectRatio(contentMode: .fit)
-					.frame(width: 200)
+					Image("astra")
+						.resizable()
+						.aspectRatio(contentMode: .fit)
+						.frame(width: 200)
 
-				Text("astra")
-					.font(.largeTitle)
+					Text("astra")
+						.font(.largeTitle)
 
-				if let version = Bundle.main.releaseVersionNumber,
-				   let build = Bundle.main.buildNumber
-				{
-					Text("\(version) \(Text("(\(build))").foregroundStyle(.secondary))")
+					if let version = Bundle.main.releaseVersionNumber,
+					   let build = Bundle.main.buildNumber
+					{
+						Text("\(version) \(Text("(\(build))").foregroundStyle(.secondary))")
+					}
+
+					CheckForUpdatesView(updater: updates.updater)
+
+					Spacer()
 				}
-
-				CheckForUpdatesView(updater: updates.updater)
-
 				Spacer()
 			}
-			Spacer()
 		}
 	}
 }
