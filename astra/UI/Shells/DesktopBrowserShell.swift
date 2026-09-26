@@ -41,7 +41,12 @@ struct DesktopBrowserShell: View {
 
 			BrowserAddressField(browser: browser)
 		}
-		.padding(.leading, isFullScreen ? 0 : (sidebarShown ? 10 : BrowserChromeMetrics.persistentControlsAreaWidth))
+		.padding(
+			.leading,
+			sidebarShown
+				? (isFullScreen ? 0 : 10)
+				: (isFullScreen ? 80 : BrowserChromeMetrics.persistentControlsAreaWidth)
+		)
 		.padding(.trailing, 10)
 		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 		.frame(maxWidth: .infinity, alignment: .leading)
@@ -51,7 +56,7 @@ struct DesktopBrowserShell: View {
 	private var navigationBarControls: some View {
 		HStack(spacing: 5) {
 			Spacer()
-				.frame(width: 80)
+				.frame(width: isFullScreen ? 0 : 80)
 
 			Button {
 				browser.sidebarShown.toggle()
