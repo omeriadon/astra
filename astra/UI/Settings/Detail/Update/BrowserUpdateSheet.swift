@@ -143,7 +143,6 @@ struct BrowserUpdateSheet: View {
 									width: 100,
 									height: 100
 								)
-
 								.rotationEffect(.degrees(pulsing3 ? -5 : 5))
 								.position(
 									x: width * 0.3,
@@ -154,7 +153,6 @@ struct BrowserUpdateSheet: View {
 								// purple arc
 
 								VStack {}
-
 									.frame(maxWidth: .infinity, maxHeight: .infinity)
 									.glassEffect(.clear.tint(
 										Color(red: 0.64, green: 0.69, blue: 0.9)
@@ -170,7 +168,6 @@ struct BrowserUpdateSheet: View {
 									width: 180,
 									height: 180
 								)
-
 								.position(
 									x: width * 0.8,
 
@@ -186,19 +183,16 @@ struct BrowserUpdateSheet: View {
 									width: 20,
 									height: 20
 								)
-
 								.rotationEffect(.degrees(pulsing1 ? -5 : 5))
 								.position(
 									x: width * 0.1,
 
 									y: height * 0.5
 								)
-
 								.opacity(pulsing1 ? 0.7 : 1.0)
 								.onAppear {
 									withAnimation(
 										.easeInOut(duration: 1.5)
-
 											.repeatForever(autoreverses: true)
 
 									) {
@@ -213,19 +207,16 @@ struct BrowserUpdateSheet: View {
 									width: 10,
 									height: 10
 								)
-
 								.scaleEffect(pulsing2 ? 1.1 : 1.0)
 								.position(
 									x: width * 0.5,
 
 									y: height * 0.9
 								)
-
 								.opacity(pulsing2 ? 0.5 : 1.0)
 								.onAppear {
 									withAnimation(
 										.easeInOut(duration: 1.6)
-
 											.repeatForever(autoreverses: true)
 
 									) {
@@ -240,7 +231,6 @@ struct BrowserUpdateSheet: View {
 									width: 15,
 									height: 15
 								)
-
 								.scaleEffect(pulsing3 ? 1.1 : 1.0)
 								.rotationEffect(.degrees(pulsing3 ? -5 : 5))
 								.position(
@@ -248,12 +238,10 @@ struct BrowserUpdateSheet: View {
 
 									y: height * 0.8
 								)
-
 								.opacity(pulsing3 ? 0.5 : 1.0)
 								.onAppear {
 									withAnimation(
 										.easeInOut(duration: 1.2)
-
 											.repeatForever(autoreverses: true)
 
 									) {
@@ -268,19 +256,16 @@ struct BrowserUpdateSheet: View {
 									width: 30,
 									height: 30
 								)
-
 								.scaleEffect(pulsing4 ? 1.2 : 1.0)
 								.position(
 									x: width * 0.6,
 
 									y: height * 0.7
 								)
-
 								.opacity(pulsing4 ? 0.3 : 1.0)
 								.onAppear {
 									withAnimation(
 										.easeInOut(duration: 1.4)
-
 											.repeatForever(autoreverses: true)
 
 									) {
@@ -295,18 +280,15 @@ struct BrowserUpdateSheet: View {
 									width: 20,
 									height: 20
 								)
-
 								.position(
 									x: width * 0.25,
 
 									y: height * 0.8
 								)
-
 								.opacity(pulsing5 ? 0.7 : 1.0)
 								.onAppear {
 									withAnimation(
 										.easeInOut(duration: 1.9)
-
 											.repeatForever(autoreverses: true)
 
 									) {
@@ -317,7 +299,6 @@ struct BrowserUpdateSheet: View {
 						}
 
 						Text("Update Available")
-
 							.padding()
 							.bold()
 							.font(.title)
@@ -345,7 +326,6 @@ struct BrowserUpdateSheet: View {
 											Text(
 												"\(version) \(Text("(\(build))").foregroundStyle(.tertiary))"
 											)
-
 											.foregroundStyle(.secondary)
 
 											Image(systemName: "arrow.right")
@@ -353,10 +333,8 @@ struct BrowserUpdateSheet: View {
 											Text(
 												"\(update.version) \(Text("(\(update.build))").foregroundStyle(.secondary))"
 											)
-
 											.bold()
 										}
-
 										.font(.title)
 
 									} else {
@@ -366,7 +344,6 @@ struct BrowserUpdateSheet: View {
 									}
 								}
 							}
-
 							.padding(.top, 60)
 
 							if case .downloading = updates.status {
@@ -392,7 +369,6 @@ struct BrowserUpdateSheet: View {
 									Button("Skip This Version", systemImage: "forward.end") {
 										updates.choose(.skip)
 									}
-
 									.buttonStyle(.glass)
 									.accessibilityIdentifier("skip-update")
 
@@ -401,7 +377,6 @@ struct BrowserUpdateSheet: View {
 									Button(role: .cancel) {
 										updates.dismiss()
 									}
-
 									.keyboardShortcut(.escape)
 									.buttonStyle(.glass)
 									.accessibilityIdentifier("update-later")
@@ -424,7 +399,6 @@ struct BrowserUpdateSheet: View {
 													systemImage: "arrow.up.right.square"
 												)
 											}
-
 											.buttonStyle(.glassProminent)
 											.accessibilityIdentifier("view-update")
 
@@ -439,7 +413,6 @@ struct BrowserUpdateSheet: View {
 													systemImage: "arrow.down.circle"
 												)
 											}
-
 											.keyboardShortcut(.return)
 											.buttonStyle(.glassProminent)
 											.accessibilityIdentifier("install-update")
@@ -450,7 +423,6 @@ struct BrowserUpdateSheet: View {
 									Button(role: .cancel) {
 										updates.dismiss()
 									}
-
 									.keyboardShortcut(.escape)
 									.accessibilityIdentifier("update-later")
 
@@ -464,7 +436,6 @@ struct BrowserUpdateSheet: View {
 											systemImage: "arrow.clockwise"
 										)
 									}
-
 									.buttonStyle(.glassProminent)
 									.accessibilityIdentifier("install-and-relaunch")
 
@@ -475,13 +446,11 @@ struct BrowserUpdateSheet: View {
 									Button(role: .cancel) {
 										updates.dismiss()
 									}
-
 									.keyboardShortcut(.escape)
 									.buttonStyle(.glass)
 									.accessibilityIdentifier("dismiss-update-status")
 								}
 							}
-
 							.padding()
 						}
 					}
@@ -492,7 +461,6 @@ struct BrowserUpdateSheet: View {
 					}
 			}
 		}
-
 		.scrollContentBackground(.hidden)
 		.listStyle(.sidebar)
 		.ignoresSafeArea()
@@ -507,7 +475,6 @@ struct BrowserUpdateSheet: View {
 	@Previewable @State var updates = UpdateManager()
 
 	BrowserUpdateSheet(updates: updates)
-
 		.task {
 			let statuses: [UpdateManager.Status] = [
 				.available,
