@@ -127,11 +127,7 @@ private struct AboutArtworkStar: View {
 					? (pulsing ? 2 + Double(index) * 0.1 : -2 - Double(index) * 0.1)
 					: 0
 			))
-			.opacity(
-				mode == 2 || reduceMotion
-					? (pulsing ? 0.5 + Double(index) * 0.01 : 1)
-					: 0.8
-			)
+			.opacity(pulsing ? 0.15 + Double(index) * 0.01 : 1)
 			.animation(
 				.easeInOut(duration: 0.5 + Double(index) * 0.05)
 					.repeatForever(autoreverses: true),
@@ -143,6 +139,9 @@ private struct AboutArtworkStar: View {
 }
 
 struct BrowserUpdateArtwork: View {
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	@State private var localPointerLocation: CGPoint?
+
 	private static let aboutStarPositions: [CGPoint] = [
 		CGPoint(x: 0.04811, y: 0.23125),
 		CGPoint(x: 0.29108, y: 0.29160),
@@ -183,9 +182,30 @@ struct BrowserUpdateArtwork: View {
 	@State private var pulsing5 = false
 
 	let isAboutView: Bool
+	let aboutPointerLocation: CGPoint?
 
-	init(isAboutView: Bool = false) {
+	init(isAboutView: Bool = false, pointerLocation: CGPoint? = nil) {
 		self.isAboutView = isAboutView
+		aboutPointerLocation = pointerLocation
+	}
+
+	private func parallaxOffset(for starSize: CGFloat, in bounds: CGSize) -> CGSize {
+		guard !reduceMotion,
+		      let pointerLocation = isAboutView ? aboutPointerLocation : localPointerLocation,
+		      bounds.width > 0,
+		      bounds.height > 0
+		else {
+			return .zero
+		}
+
+		let maximumOffset = 2 + 50 / starSize
+		let horizontal = min(max(pointerLocation.x / bounds.width * 2 - 1, -1), 1)
+		let vertical = min(max(pointerLocation.y / bounds.height * 2 - 1, -1), 1)
+
+		return CGSize(
+			width: horizontal * maximumOffset,
+			height: vertical * maximumOffset
+		)
 	}
 
 	var body: some View {
@@ -209,6 +229,7 @@ struct BrowserUpdateArtwork: View {
 					x: width * (isAboutView ? 0.2 : 0.3),
 					y: height * (isAboutView ? 0.17 : 0.3)
 				)
+				.offset(parallaxOffset(for: 100, in: geo.size))
 
 				// purple arc
 
@@ -236,6 +257,7 @@ struct BrowserUpdateArtwork: View {
 
 						AboutArtworkStar(index: index)
 							.position(x: width * point.x, y: height * point.y)
+							.offset(parallaxOffset(for: CGFloat(5 + index % 4), in: geo.size))
 					}
 				}
 
@@ -252,6 +274,7 @@ struct BrowserUpdateArtwork: View {
 					x: width * 0.8,
 					y: height * (isAboutView ? 0.15 : 0.33)
 				)
+				.offset(parallaxOffset(for: 180, in: geo.size))
 
 				// small
 
@@ -267,6 +290,7 @@ struct BrowserUpdateArtwork: View {
 					x: width * 0.1,
 					y: height * 0.5
 				)
+				.offset(parallaxOffset(for: 20, in: geo.size))
 				.opacity(pulsing1 ? 0.7 : 1.0)
 				.onAppear {
 					withAnimation(
@@ -289,6 +313,7 @@ struct BrowserUpdateArtwork: View {
 					x: width * 0.5,
 					y: height * 0.9
 				)
+				.offset(parallaxOffset(for: 10, in: geo.size))
 				.opacity(pulsing2 ? 0.5 : 1.0)
 				.onAppear {
 					withAnimation(
@@ -312,6 +337,7 @@ struct BrowserUpdateArtwork: View {
 					x: width * 0.9,
 					y: height * 0.8
 				)
+				.offset(parallaxOffset(for: 15, in: geo.size))
 				.opacity(pulsing3 ? 0.5 : 1.0)
 				.onAppear {
 					withAnimation(
@@ -334,6 +360,7 @@ struct BrowserUpdateArtwork: View {
 					x: width * (isAboutView ? 0.8 : 0.6),
 					y: height * 0.7
 				)
+				.offset(parallaxOffset(for: 30, in: geo.size))
 				.opacity(pulsing4 ? 0.3 : 1.0)
 				.onAppear {
 					withAnimation(
@@ -355,6 +382,7 @@ struct BrowserUpdateArtwork: View {
 					x: width * 0.25,
 					y: height * 0.8
 				)
+				.offset(parallaxOffset(for: 20, in: geo.size))
 				.opacity(pulsing5 ? 0.7 : 1.0)
 				.onAppear {
 					withAnimation(
@@ -363,6 +391,22 @@ struct BrowserUpdateArtwork: View {
 					) {
 						pulsing5 = true
 					}
+				}
+			}
+			.frame(width: width, height: height)
+			.animation(
+				.smooth(duration: 1),
+				value: isAboutView ? aboutPointerLocation : localPointerLocation
+			)
+			.contentShape(Rectangle())
+			.onContinuousHover { phase in
+				guard !isAboutView else { return }
+
+				switch phase {
+					case let .active(location):
+						localPointerLocation = location
+					case .ended:
+						localPointerLocation = nil
 				}
 			}
 		}

@@ -19,10 +19,11 @@ extension Bundle {
 
 struct AboutView: View {
 	@Bindable private var updates = UpdateManager.shared
+	@State private var pointerLocation: CGPoint?
 
 	var body: some View {
 		ZStack {
-			BrowserUpdateArtwork(isAboutView: true)
+			BrowserUpdateArtwork(isAboutView: true, pointerLocation: pointerLocation)
 
 			HStack {
 				Spacer()
@@ -48,6 +49,12 @@ struct AboutView: View {
 					Spacer()
 				}
 				Spacer()
+			}
+		}
+		.contentShape(Rectangle())
+		.onContinuousHover { phase in
+			if case let .active(location) = phase {
+				pointerLocation = location
 			}
 		}
 	}
