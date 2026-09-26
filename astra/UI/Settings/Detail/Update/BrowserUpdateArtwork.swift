@@ -133,7 +133,7 @@ struct BrowserUpdateArtwork: View {
 				.rotationEffect(.degrees(pulsing3 ? -5 : 5))
 				.position(
 					x: width * (isAboutView ? 0.2 : 0.3),
-					y: height * (isAboutView ? 0.2 : 0.3)
+					y: height * (isAboutView ? 0.17 : 0.3)
 				)
 
 				// purple arc
