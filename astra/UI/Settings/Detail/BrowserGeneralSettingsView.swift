@@ -57,8 +57,6 @@ struct BrowserGeneralSettingsView: View {
 			}
 
 			Section("Updates") {
-				CheckForUpdatesView(updater: updates.updater)
-
 				Toggle("Automatically check for updates", isOn: $updates.automaticChecks)
 					.accessibilityIdentifier("automatically-check-for-updates")
 

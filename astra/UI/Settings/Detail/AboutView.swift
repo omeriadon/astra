@@ -18,9 +18,12 @@ extension Bundle {
 }
 
 struct AboutView: View {
+	@Bindable private var updates = UpdateManager.shared
+
 	var body: some View {
 		HStack {
-			VStack {
+			Spacer()
+			VStack(spacing: 30) {
 				Spacer()
 
 				Image("astra")
@@ -29,6 +32,7 @@ struct AboutView: View {
 					.frame(width: 200)
 
 				Text("astra")
+					.font(.largeTitle)
 
 				if let version = Bundle.main.releaseVersionNumber,
 				   let build = Bundle.main.buildNumber
@@ -36,8 +40,11 @@ struct AboutView: View {
 					Text("\(version) \(Text("(\(build))").foregroundStyle(.secondary))")
 				}
 
+				CheckForUpdatesView(updater: updates.updater)
+
 				Spacer()
 			}
+			Spacer()
 		}
 	}
 }
