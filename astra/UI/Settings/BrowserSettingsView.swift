@@ -6,27 +6,122 @@ struct BrowserSettingsView: View {
 	@Binding var searchText: String
 	@Binding var selectedPage: Page
 	@Default(.browserTheme) private var theme
-	@Environment(\.colorScheme) private var colorScheme
 
-	enum Page {
+	enum Page: CaseIterable {
 		case ui
 		case account
+		case privacyAndSecurity
 		case about
-
 		#if DEBUG
 			case failedWebsiteStates
 		#endif
+
+		enum Section: String, CaseIterable {
+			case ui = "UI"
+			case account = "Account"
+			case advanced = "Advanced"
+		}
+
+		struct Definition {
+			let title: String
+			let symbol: String
+			let section: Section?
+			let identifier: String
+			let terms: [String]
+		}
+
+		var definition: Definition {
+			switch self {
+				case .ui:
+					Definition(
+						title: "General",
+						symbol: "slider.horizontal.3",
+						section: .ui,
+						identifier: "settings-ui",
+						terms: [
+							"Address Bar", "Peek", "Levels",
+							"Zoom out in Peeks", "Downloads", "Rename downloads with Apple Intelligence",
+							"Updates", "Automatically check for updates", "Automatically install updates",
+						] + AddressDisplayStyle.allCases.map(\.title) + PeekLevel.allCases.map(\.title)
+					)
+				case .account:
+					Definition(
+						title: "Account & Sync",
+						symbol: "person.crop.circle",
+						section: .account,
+						identifier: "settings-account",
+						terms: [
+							"Sync Server URL", "Signed in with Apple", "Sign in with Apple",
+							"Sign Out", "Sync Now", "Syncing", "Last Sync",
+						]
+					)
+				case .privacyAndSecurity:
+					Definition(
+						title: "Privacy and Security",
+						symbol: "hand.raised.fill",
+						section: .advanced,
+						identifier: "settings-privacy-and-security",
+						terms: ["Website Data", "Clear All Favicons"]
+					)
+				case .about:
+					Definition(
+						title: "About astra",
+						symbol: "sparkle",
+						section: nil,
+						identifier: "settings-about-astra",
+						terms: ["Version", "Build", "Check for Updates"]
+					)
+				#if DEBUG
+					case .failedWebsiteStates:
+						Definition(
+							title: "Failed Website States",
+							symbol: "ladybug",
+							section: nil,
+							identifier: "settings-failed-website-states",
+							terms: ["Error Pages"] + BrowserNavigationFailure.Kind.allCases.map { String(localized: $0.title) }
+						)
+				#endif
+			}
+		}
+
+		func matches(_ query: String) -> Bool {
+			let words = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+				.split(whereSeparator: \.isWhitespace)
+			guard !words.isEmpty else { return true }
+			let metadata = definition
+			let text = ([metadata.title, metadata.section?.rawValue ?? ""] + metadata.terms)
+				.joined(separator: " ")
+				.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+			return words.allSatisfy { text.contains($0) }
+		}
 	}
 
-	private func matches(_ title: String, section: String) -> Bool {
-		searchText.isEmpty
-			|| title.localizedCaseInsensitiveContains(searchText)
-			|| section.localizedCaseInsensitiveContains(searchText)
+	private var matchingPages: [Page] {
+		Page.allCases.filter { $0.matches(searchText) }
 	}
 
 	var body: some View {
 		HStack(spacing: 0) {
-			VStack(alignment: .leading, spacing: 8) {
+			List {
+				if matchingPages.isEmpty {
+					Text("No settings found")
+						.foregroundStyle(.secondary)
+				}
+
+				ForEach(Page.Section.allCases, id: \.self) { section in
+					let pages = matchingPages.filter { $0.definition.section == section }
+					if !pages.isEmpty {
+						Section(section.rawValue) {
+							ForEach(pages, id: \.self) { page in
+								row(for: page)
+							}
+						}
+					}
+				}
+			}
+			.listStyle(.sidebar)
+			.scrollContentBackground(.hidden)
+			.safeAreaBar(edge: .top) {
 				HStack(spacing: 8) {
 					Image(systemName: "magnifyingglass")
 						.accessibilityHidden(true)
@@ -34,72 +129,20 @@ struct BrowserSettingsView: View {
 						.textFieldStyle(.plain)
 						.accessibilityIdentifier("settings-search")
 				}
-				.padding(8)
-				.glassEffect(.regular, in: Capsule())
+				.padding(.horizontal, 8)
+				.padding(.vertical, 6)
+				.glassEffect(.regular, in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
 				.padding(.horizontal, 12)
-				.padding(.top, 12)
-				.padding(.bottom, 20)
-				.padding(.top, !browser.sidebarShown ? 25 : 0)
-
-				if matches("General", section: "UI") {
-					Text("UI")
-						.font(.caption)
-						.foregroundStyle(.secondary)
-						.padding(.leading, 20)
-						.padding(.bottom, 6)
-
-					BrowserSettingsSidebarRow(
-						title: "General",
-						symbol: "slider.horizontal.3",
-						isSelected: selectedPage == .ui,
-						identifier: "settings-ui"
-					) {
-						selectedPage = .ui
+				.padding(.top, !browser.sidebarShown ? 37 : 12)
+				.padding(.bottom, 12)
+			}
+			.safeAreaBar(edge: .bottom) {
+				VStack(spacing: 8) {
+					ForEach(matchingPages.filter { $0.definition.section == nil }, id: \.self) { page in
+						row(for: page)
 					}
 				}
-
-				if matches("Account & Sync", section: "Account") {
-					Text("Account")
-						.font(.caption)
-						.foregroundStyle(.secondary)
-						.padding(.leading, 20)
-						.padding(.top, 18)
-						.padding(.bottom, 6)
-
-					BrowserSettingsSidebarRow(
-						title: "Account & Sync",
-						symbol: "person.crop.circle",
-						isSelected: selectedPage == .account,
-						identifier: "settings-account"
-					) {
-						selectedPage = .account
-					}
-				}
-
-				Spacer(minLength: 20)
-
-				BrowserSettingsSidebarRow(
-					title: "About astra",
-					symbol: "sparkle",
-					isSelected: selectedPage == .about,
-					identifier: "settings-about-astra"
-				) {
-					selectedPage = .about
-				}
-
-				#if DEBUG
-					if matches("Failed Website States", section: "Debug") {
-						BrowserSettingsSidebarRow(
-							title: "Failed Website States",
-							symbol: "ladybug",
-							isSelected: selectedPage == .failedWebsiteStates,
-							identifier: "settings-failed-website-states"
-						) {
-							selectedPage = .failedWebsiteStates
-						}
-						.padding(.bottom, 16)
-					}
-				#endif
+				.padding(.bottom, 16)
 			}
 			.frame(width: 230)
 			.foregroundStyle(theme.foregroundColor)
@@ -112,6 +155,8 @@ struct BrowserSettingsView: View {
 						BrowserGeneralSettingsView()
 					case .account:
 						BrowserAccountSettingsView()
+					case .privacyAndSecurity:
+						BrowserPrivacyAndSecuritySettingsView()
 					case .about:
 						AboutView()
 					#if DEBUG
@@ -130,5 +175,19 @@ struct BrowserSettingsView: View {
 		}
 		.frame(minWidth: 650, minHeight: 400)
 		.monospaced()
+	}
+
+	private func row(for page: Page) -> some View {
+		let metadata = page.definition
+		return BrowserSettingsSidebarRow(
+			title: metadata.title,
+			symbol: metadata.symbol,
+			isSelected: selectedPage == page,
+			identifier: metadata.identifier
+		) {
+			selectedPage = page
+		}
+		.listRowInsets(EdgeInsets())
+		.listRowBackground(Color.clear)
 	}
 }

@@ -42,18 +42,12 @@ struct BrowserGeneralSettingsView: View {
 				}
 			}
 
-			Section("Website Data") {
-				Button(role: .destructive, action: FaviconStore.shared.clear) {
-					Label("Clear All Favicons", systemImage: "trash")
-				}
-				.disabled(FaviconStore.shared.isEmpty)
-				.accessibilityIdentifier("clear-all-favicons")
-			}
-
 			Section("Downloads") {
 				Toggle("Rename downloads with Apple Intelligence", isOn: $renameDownloadsWithAppleIntelligence)
 					.accessibilityLabel("Rename downloads with Apple Intelligence")
 					.accessibilityIdentifier("rename-downloads-with-apple-intelligence")
+
+				ZStack {}
 			}
 
 			Section("Updates") {

@@ -4,19 +4,8 @@ struct BrowserSettingsTitleView: View {
 	let page: BrowserSettingsView.Page
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-	private var title: LocalizedStringKey {
-		switch page {
-			case .ui: "UI"
-			case .account: "Account & Sync"
-			case .about: "About astra"
-			#if DEBUG
-				case .failedWebsiteStates: "Failed Website States"
-			#endif
-		}
-	}
-
 	var body: some View {
-		Text(title)
+		Text(LocalizedStringKey(page.definition.title))
 			.monospaced()
 			.font(.largeTitle.bold())
 			.lineLimit(1)

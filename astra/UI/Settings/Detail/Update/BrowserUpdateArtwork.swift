@@ -4,6 +4,7 @@
 	import AppKit
 #endif
 
+import Haze
 import SwiftUI
 
 private struct GlassStarContent: View {
@@ -283,16 +284,24 @@ struct BrowserUpdateArtwork: View {
 
 				VStack {
 					VStack {}
-						.frame(height: isAboutView ? geo.size.height * 0.7 : geo.size.height)
-						.frame(maxWidth: .infinity)
-						.glassEffect(.clear.tint(
-							Color(
-								red: 253.2 / 255,
-								green: 253.25 / 255,
-								blue: 254.35 / 255
-							)
-
-						), in: PurpleHeaderShape())
+					HazeEffect(
+						maskProvider: LinearGradientMaskProvider(
+							startPoint: .top,
+							endPoint: .bottom,
+							startOpacity: 1.0,
+							endOpacity: 1.0,
+							isSmooth: false
+						),
+						maxBlurRadius: 2
+					)
+					.background(
+						Color(red: 102.52 / 255, green: 113.59 / 255, blue: 230.56 / 255)
+							.gradient
+							.opacity(0.8)
+					)
+					.clipShape(PurpleHeaderShape())
+					.frame(height: isAboutView ? geo.size.height * 0.7 : geo.size.height)
+					.frame(maxWidth: .infinity)
 
 					if isAboutView {
 						Spacer()
