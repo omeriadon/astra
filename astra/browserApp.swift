@@ -11,6 +11,7 @@ import SwiftUI
 @main
 struct browserApp: App {
 	@State private var browser = Browser()
+	@State private var updates = UpdateManager.shared
 
 	#if os(macOS)
 		@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -29,20 +30,17 @@ struct browserApp: App {
 			}
 		}
 
-		private let updaterController: SPUStandardUpdaterController
-
-		init() {
-			updaterController = SPUStandardUpdaterController(
-				startingUpdater: true,
-				updaterDelegate: nil,
-				userDriverDelegate: nil
-			)
-		}
 	#endif
 
 	var body: some Scene {
 		WindowGroup {
 			ContentView(browser: $browser)
+				.task {
+					updates.start()
+				}
+				.sheet(isPresented: $updates.isPresented) {
+					BrowserUpdateSheet(updates: updates)
+				}
 				.onOpenURL { url in
 					guard url.scheme == "http" || url.scheme == "https" else {
 						return
@@ -76,7 +74,7 @@ struct browserApp: App {
 				}
 
 				CheckForUpdatesView(
-					updater: updaterController.updater
+					updater: updates.updater
 				)
 			}
 

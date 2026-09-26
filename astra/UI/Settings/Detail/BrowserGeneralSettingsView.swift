@@ -1,9 +1,11 @@
 import Defaults
+import Sparkle
 import SwiftUI
 
 let addressDisplayStyleSpacing: CGFloat = 8
 
 struct BrowserGeneralSettingsView: View {
+	@Bindable private var updates = UpdateManager.shared
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
 	@Default(.peekLevel) private var peekLevel
 	@Default(.zoomOutInPeeks) private var zoomOutInPeeks
@@ -52,6 +54,17 @@ struct BrowserGeneralSettingsView: View {
 				Toggle("Rename downloads with Apple Intelligence", isOn: $renameDownloadsWithAppleIntelligence)
 					.accessibilityLabel("Rename downloads with Apple Intelligence")
 					.accessibilityIdentifier("rename-downloads-with-apple-intelligence")
+			}
+
+			Section("Updates") {
+				CheckForUpdatesView(updater: updates.updater)
+
+				Toggle("Automatically check for updates", isOn: $updates.automaticChecks)
+					.accessibilityIdentifier("automatically-check-for-updates")
+
+				Toggle("Automatically install updates", isOn: $updates.automaticInstalls)
+					.disabled(!updates.automaticChecks || !updates.updater.allowsAutomaticUpdates)
+					.accessibilityIdentifier("automatically-install-updates")
 			}
 		}
 		.scrollContentBackground(.hidden)
