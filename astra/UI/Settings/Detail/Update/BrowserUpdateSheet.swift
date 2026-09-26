@@ -8,8 +8,6 @@ import Sparkle
 import SwiftUI
 
 private struct GlassStarContent: View {
-	let cornerRadius: CGFloat
-	let innerRadius: CGFloat
 	let tintColor: Color
 	let interactive: Bool
 
@@ -18,26 +16,25 @@ private struct GlassStarContent: View {
 			.frame(maxWidth: .infinity, maxHeight: .infinity)
 			.glassEffect(
 				interactive ? .regular.tint(tintColor).interactive() : .regular.tint(tintColor),
-				in: RoundedStar(
-					cornerRadius: cornerRadius,
-					innerRadius: innerRadius
-				)
+				in: Rectangle()
 			)
+			.mask {
+				Image(systemName: "sparkle")
+					.resizable()
+					.scaledToFit()
+			}
+			.accessibilityHidden(true)
 	}
 }
 
 #if os(iOS)
 	private struct GlassStar: UIViewRepresentable {
-		let cornerRadius: CGFloat
-		let innerRadius: CGFloat
 		let tintColor: Color
 		var interactive = true
 
 		func makeUIView(context _: Context) -> GlassStarHostingView {
 			GlassStarHostingView(
 				rootView: GlassStarContent(
-					cornerRadius: cornerRadius,
-					innerRadius: innerRadius,
 					tintColor: tintColor,
 					interactive: interactive
 				)
@@ -46,8 +43,6 @@ private struct GlassStarContent: View {
 
 		func updateUIView(_ uiView: GlassStarHostingView, context _: Context) {
 			uiView.rootView = GlassStarContent(
-				cornerRadius: cornerRadius,
-				innerRadius: innerRadius,
 				tintColor: tintColor,
 				interactive: interactive
 			)
@@ -86,16 +81,12 @@ private struct GlassStarContent: View {
 	}
 #elseif os(macOS)
 	private struct GlassStar: NSViewRepresentable {
-		let cornerRadius: CGFloat
-		let innerRadius: CGFloat
 		let tintColor: Color
 		var interactive = true
 
 		func makeNSView(context _: Context) -> NSHostingView<GlassStarContent> {
 			NSHostingView(
 				rootView: GlassStarContent(
-					cornerRadius: cornerRadius,
-					innerRadius: innerRadius,
 					tintColor: tintColor,
 					interactive: interactive
 				)
@@ -104,8 +95,6 @@ private struct GlassStarContent: View {
 
 		func updateNSView(_ nsView: NSHostingView<GlassStarContent>, context _: Context) {
 			nsView.rootView = GlassStarContent(
-				cornerRadius: cornerRadius,
-				innerRadius: innerRadius,
 				tintColor: tintColor,
 				interactive: interactive
 			)
@@ -148,8 +137,6 @@ struct BrowserUpdateSheet: View {
 								// small background
 
 								GlassStar(
-									cornerRadius: 10,
-									innerRadius: 0.32,
 									tintColor: .white.opacity(0.5)
 								)
 								.frame(
@@ -177,8 +164,6 @@ struct BrowserUpdateSheet: View {
 								// MARK: Large main star
 
 								GlassStar(
-									cornerRadius: 10,
-									innerRadius: 0.32,
 									tintColor: .white
 								)
 								.frame(
@@ -195,8 +180,6 @@ struct BrowserUpdateSheet: View {
 								// small
 
 								GlassStar(
-									cornerRadius: 10,
-									innerRadius: 0.32,
 									tintColor: .white
 								)
 								.frame(
@@ -224,8 +207,6 @@ struct BrowserUpdateSheet: View {
 								}
 
 								GlassStar(
-									cornerRadius: 10,
-									innerRadius: 0.32,
 									tintColor: .white
 								)
 								.frame(
@@ -253,8 +234,6 @@ struct BrowserUpdateSheet: View {
 								}
 
 								GlassStar(
-									cornerRadius: 10,
-									innerRadius: 0.32,
 									tintColor: .white
 								)
 								.frame(
@@ -283,8 +262,6 @@ struct BrowserUpdateSheet: View {
 								}
 
 								GlassStar(
-									cornerRadius: 10,
-									innerRadius: 0.32,
 									tintColor: .white
 								)
 								.frame(
@@ -312,8 +289,6 @@ struct BrowserUpdateSheet: View {
 								}
 
 								GlassStar(
-									cornerRadius: 10,
-									innerRadius: 0.32,
 									tintColor: .white
 								)
 								.frame(
