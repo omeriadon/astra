@@ -2,16 +2,10 @@ import SwiftUI
 
 struct BrowserSettingsTitleView: View {
 	let page: BrowserSettingsView.Page
-	@State private var displayedPage: BrowserSettingsView.Page
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-	init(page: BrowserSettingsView.Page) {
-		self.page = page
-		_displayedPage = State(initialValue: page)
-	}
-
 	private var title: LocalizedStringKey {
-		switch displayedPage {
+		switch page {
 			case .ui: "UI"
 			case .account: "Account & Sync"
 			case .about: "About astra"
