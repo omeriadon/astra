@@ -136,6 +136,8 @@ struct DesktopBrowserShell: View {
 		let symbol: String
 	}
 
+	@State private var downloadsHover = false
+
 	private var downloadsBottomBar: some View {
 		HStack {
 			Button {
@@ -146,17 +148,27 @@ struct DesktopBrowserShell: View {
 				HStack(spacing: 9) {
 					ZStack {
 						Image(systemName: downloads.buttonSymbol)
-							.frame(width: 20, height: 20)
 						if let progress = downloads.activeProgress {
 							Circle()
 								.trim(from: 0, to: progress)
 								.stroke(theme.progressColor, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
 								.rotationEffect(.degrees(-90))
-								.frame(width: 29, height: 29)
 						}
 					}
 				}
-				.frame(maxWidth: .infinity, alignment: .leading)
+				.frame(width: 25, height: 25)
+				.background {
+					if downloadsHover {
+						RoundedRectangle(cornerRadius: 8)
+							.fill(Color.primary.gradient)
+							.opacity(0.3)
+					}
+					if showsDownloads {
+						RoundedRectangle(cornerRadius: 8)
+							.fill(Color.primary.gradient)
+							.opacity(0.4)
+					}
+				}
 				.contentShape(Rectangle())
 			}
 			.buttonStyle(.plain)
@@ -164,10 +176,13 @@ struct DesktopBrowserShell: View {
 			.accessibilityLabel(showsDownloads ? "Show Tabs" : "Show Downloads")
 			.accessibilityValue(downloads.activeProgress.map { "\(Int($0 * 100)) percent" } ?? "No active downloads")
 			.accessibilityIdentifier("downloads-button")
+			.onHover {
+				downloadsHover = $0
+			}
+
+			Spacer()
 		}
-		.padding(.horizontal, 12)
-		.padding(.vertical, 9)
-		.frame(height: 48)
+		.padding([.leading, .bottom], 8)
 	}
 
 	var body: some View {
@@ -226,19 +241,6 @@ struct DesktopBrowserShell: View {
 							.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
 							.padding(.top, 35)
 						}
-
-						HazeEffect(
-							maskProvider: LinearGradientMaskProvider(
-								startPoint: .top,
-								endPoint: .bottom,
-								startOpacity: 1,
-								endOpacity: 0,
-								isSmooth: true
-							),
-							maxBlurRadius: 2
-						)
-						.frame(height: BrowserChromeMetrics.topBarRegionHeight)
-						.frame(maxWidth: .infinity)
 					}
 					.foregroundStyle(theme.foregroundColor)
 					.offset(x: showsDownloads ? BrowserChromeMetrics.expandedSidebarWidth : 0)
@@ -248,7 +250,6 @@ struct DesktopBrowserShell: View {
 						.offset(x: showsDownloads ? 0 : -BrowserChromeMetrics.expandedSidebarWidth)
 				}
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
-				.clipped()
 				.safeAreaBar(edge: .bottom) {
 					downloadsBottomBar
 						.foregroundStyle(theme.foregroundColor)

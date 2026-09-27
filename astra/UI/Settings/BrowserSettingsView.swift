@@ -142,7 +142,7 @@ struct BrowserSettingsView: View {
 						row(for: page)
 					}
 				}
-				.padding(.bottom, 16)
+				.padding(.bottom, 6)
 			}
 			.frame(width: 230)
 			.foregroundStyle(theme.foregroundColor)
