@@ -176,8 +176,10 @@ struct DesktopBrowserShell: View {
 			.accessibilityLabel(showsDownloads ? "Show Tabs" : "Show Downloads")
 			.accessibilityValue(downloads.activeProgress.map { "\(Int($0 * 100)) percent" } ?? "No active downloads")
 			.accessibilityIdentifier("downloads-button")
-			.onHover {
-				downloadsHover = $0
+			.onHover { i in
+				withAnimation(.smooth(duration: 0.1)) {
+					downloadsHover = i
+				}
 			}
 
 			Spacer()
@@ -200,8 +202,6 @@ struct DesktopBrowserShell: View {
 									)
 								}
 								.reorderable()
-
-								Spacer(minLength: 0)
 
 								Button {
 									browser.addTab()
