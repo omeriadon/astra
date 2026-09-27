@@ -22,6 +22,9 @@ struct DesktopBrowserShell: View {
 	@State private var transitionToTheme: BrowserTheme?
 	@State private var themeBlend = 0.0
 	@State private var themeTransitionGeneration = 0
+	@State private var swipeTargetID: UUID?
+	@State private var swipeProgress = 0.0
+	@State private var swipeDirection: CGFloat = 1
 	#if os(macOS)
 		@State private var controlTabSwitcher: ControlTabSwitcher
 		@State private var windowRegistry = BrowserWindowRegistry.shared
@@ -86,7 +89,15 @@ struct DesktopBrowserShell: View {
 			}
 		}
 		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
-		.background(theme.tabColor)
+		.background {
+			if let transitionFromTheme {
+				transitionFromTheme.tabColor
+					.opacity(1 - themeBlend)
+					.overlay((transitionToTheme ?? theme).tabColor.opacity(themeBlend))
+			} else {
+				theme.tabColor
+			}
+		}
 	}
 
 	private var navigationBarControls: some View {
@@ -134,10 +145,6 @@ struct DesktopBrowserShell: View {
 		sidebarShown
 			? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar
 			: BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar
-	}
-
-	private var spacePush: AnyTransition {
-		.push(from: browser.spaceSwitchDirection > 0 ? .trailing : .leading)
 	}
 
 	@State private var newTabHovered = false
@@ -245,7 +252,7 @@ struct DesktopBrowserShell: View {
 		.accessibilityIdentifier("new-tab")
 	}
 
-	private var tabSidebar: some View {
+	private func tabSidebar(for space: BrowserSpace) -> some View {
 		ScrollView {
 			LazyVStack(spacing: 2) {
 				if !browser.favouriteTabs.isEmpty {
@@ -271,10 +278,10 @@ struct DesktopBrowserShell: View {
 					}
 				#endif
 
-				if !browser.pinnedTabs.isEmpty {
+				if !space.pinnedTabIDs.isEmpty {
 					VStack(spacing: 2) {
-						ForEach(browser.pinnedTabs) { tab in
-							BrowserTabRow(tab: tab, browser: browser, isSelected: browser.selectedTabID == tab.id)
+						ForEach(space.pinnedTabIDs.compactMap { id in browser.tabs.first { $0.id == id } }) { tab in
+							BrowserTabRow(tab: tab, browser: browser, isSelected: space.id == browser.workspace.selectedSpaceID && browser.selectedTabID == tab.id)
 						}
 					}
 					#if os(macOS)
@@ -286,7 +293,7 @@ struct DesktopBrowserShell: View {
 						.padding(.vertical, 8)
 				}
 				#if os(macOS)
-					if browser.pinnedTabs.isEmpty, tabDrag.activeTabID != nil {
+					if space.pinnedTabIDs.isEmpty, tabDrag.activeTabID != nil {
 						Color.clear
 							.frame(height: 28)
 							.background {
@@ -295,8 +302,8 @@ struct DesktopBrowserShell: View {
 					}
 				#endif
 				VStack(spacing: 2) {
-					ForEach(browser.normalTabs) { tab in
-						BrowserTabRow(tab: tab, browser: browser, isSelected: browser.selectedTabID == tab.id)
+					ForEach(space.tabIDs.filter { !space.pinnedTabIDs.contains($0) }.compactMap { id in browser.tabs.first { $0.id == id } }) { tab in
+						BrowserTabRow(tab: tab, browser: browser, isSelected: space.id == browser.workspace.selectedSpaceID && browser.selectedTabID == tab.id)
 					}
 					newTabButton
 				}
@@ -314,36 +321,48 @@ struct DesktopBrowserShell: View {
 
 	private func previewSpaceTheme(_ targetID: UUID?, progress: Double) {
 		guard let targetID,
-		      let target = browser.workspace.spaces.first(where: { $0.id == targetID })
+		      let targetIndex = browser.workspace.spaces.firstIndex(where: { $0.id == targetID }),
+		      let currentIndex = browser.workspace.spaces.firstIndex(where: { $0.id == browser.workspace.selectedSpaceID })
 		else {
-			if transitionToTheme != nil, transitionToTheme != theme {
-				withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) {
+			withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) {
+				swipeTargetID = nil
+				swipeProgress = 0
+				if transitionToTheme != nil, transitionToTheme != theme {
 					themeBlend = 0
 				}
 			}
 			return
 		}
+		let target = browser.workspace.spaces[targetIndex]
+		swipeDirection = targetIndex > currentIndex ? 1 : -1
+		swipeTargetID = targetID
+		swipeProgress = reduceMotion ? 0 : progress
 		if transitionToTheme != target.theme {
 			transitionFromTheme = theme
 			transitionToTheme = target.theme
 			themeBlend = 0
 		}
-		withAnimation(reduceMotion ? nil : .smooth(duration: 0.12)) {
-			themeBlend = progress
-		}
+		themeBlend = progress
 	}
 
 	private func completeSpaceThemeTransition(from oldID: UUID, to newID: UUID) {
-		let oldTheme = browser.workspace.spaces.first(where: { $0.id == oldID })?.theme ?? theme
-		let continuesPreview = transitionFromTheme != nil && transitionToTheme == theme
-		transitionFromTheme = continuesPreview ? transitionFromTheme : oldTheme
-		transitionToTheme = theme
-		if !continuesPreview {
+		if swipeTargetID == newID, swipeProgress >= 0.99 {
+			swipeTargetID = nil
+			swipeProgress = 0
+			transitionFromTheme = nil
+			transitionToTheme = nil
 			themeBlend = 0
+			return
 		}
+		swipeTargetID = nil
+		swipeProgress = 0
+		let oldTheme = browser.workspace.spaces.first(where: { $0.id == oldID })?.theme ?? theme
+		transitionFromTheme = oldTheme
+		transitionToTheme = theme
+		themeBlend = 0
 		themeTransitionGeneration += 1
 		let generation = themeTransitionGeneration
-		withAnimation(reduceMotion ? nil : .smooth(duration: 0.3), completionCriteria: .logicallyComplete) {
+		withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24), completionCriteria: .logicallyComplete) {
 			themeBlend = 1
 		} completion: {
 			guard generation == themeTransitionGeneration,
@@ -361,17 +380,24 @@ struct DesktopBrowserShell: View {
 				navigationBarControls
 					.frame(maxWidth: .infinity, alignment: .leading)
 				ZStack(alignment: .top) {
-					tabSidebar
-						.id(browser.workspace.selectedSpaceID)
-						.transition(spacePush)
+					tabSidebar(for: browser.selectedSpace)
 						.foregroundStyle(theme.foregroundColor)
-						.offset(x: showsDownloads ? BrowserChromeMetrics.expandedSidebarWidth : 0)
+						.offset(x: showsDownloads ? BrowserChromeMetrics.expandedSidebarWidth : -swipeDirection * BrowserChromeMetrics.expandedSidebarWidth * swipeProgress)
+
+					if let swipeTargetID,
+					   let target = browser.workspace.spaces.first(where: { $0.id == swipeTargetID }),
+					   !showsDownloads
+					{
+						tabSidebar(for: target)
+							.foregroundStyle(target.theme.foregroundColor)
+							.allowsHitTesting(false)
+							.offset(x: swipeDirection * BrowserChromeMetrics.expandedSidebarWidth * (1 - swipeProgress))
+					}
 
 					DownloadsSidebarView(manager: downloads, theme: theme)
 						.foregroundStyle(theme.foregroundColor)
 						.offset(x: showsDownloads ? 0 : -BrowserChromeMetrics.expandedSidebarWidth)
 				}
-				.animation(reduceMotion ? nil : .smooth(duration: 0.32), value: browser.workspace.selectedSpaceID)
 				.clipped()
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
 				.overlay(alignment: .bottom) {
@@ -408,7 +434,6 @@ struct DesktopBrowserShell: View {
 							.id(tab.id)
 					}
 				}
-				.animation(reduceMotion ? nil : .smooth(duration: 0.32), value: browser.workspace.selectedSpaceID)
 				.overlay(alignment: .topTrailing) {
 					if let toast = toastManager.toast {
 						BrowserToastView(toast: toast)
@@ -438,8 +463,7 @@ struct DesktopBrowserShell: View {
 			BrowserThemeBackground(
 				theme: transitionToTheme ?? theme,
 				transitionFromTheme: transitionFromTheme,
-				transitionProgress: themeBlend,
-				transitionDirection: CGFloat(browser.spaceSwitchDirection)
+				transitionProgress: themeBlend
 			)
 		}
 		.overlay(alignment: .topLeading) {

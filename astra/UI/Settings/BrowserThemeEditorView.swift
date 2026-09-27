@@ -20,6 +20,8 @@ struct BrowserThemeEditorView: View {
 		)
 	}
 
+	@State private var hover = ""
+
 	var body: some View {
 		VStack(spacing: 24) {
 			Spacer(minLength: 0)
@@ -29,14 +31,18 @@ struct BrowserThemeEditorView: View {
 				} label: {
 					Label("Space Symbol", systemImage: browser.selectedSpace.symbol)
 						.labelStyle(.iconOnly)
-						.frame(width: 42, height: 42)
+						.font(.title)
+						.frame(width: 45, height: 38)
 				}
-				.buttonStyle(.glass)
+				.frame(width: 45, height: 38)
+				.buttonStyle(.glass(.clear))
+				.buttonBorderShape(.circle)
+				.frame(width: 45, height: 38)
 				.accessibilityLabel("Choose Space Symbol")
 				.accessibilityIdentifier("space-symbol-picker")
 				.popover(isPresented: $showsSymbolPicker) {
 					ScrollView {
-						LazyVGrid(columns: Array(repeating: GridItem(.fixed(42)), count: 5), spacing: 8) {
+						LazyVGrid(columns: Array(repeating: GridItem(.fixed(40)), count: 5), spacing: 8) {
 							ForEach(BrowserSpace.symbols, id: \.self) { symbol in
 								Button {
 									browser.setSelectedSpaceSymbol(symbol)
@@ -44,20 +50,47 @@ struct BrowserThemeEditorView: View {
 								} label: {
 									Label(symbol, systemImage: symbol)
 										.labelStyle(.iconOnly)
-										.frame(width: 42, height: 42)
+										.contentShape(.rect)
 								}
-								.buttonStyle(.glass)
+								.buttonStyle(.plain)
+								.frame(width: 40, height: 40)
+								.background(
+									browser.selectedSpace.symbol == symbol
+										? .white.opacity(0.3)
+										: .clear,
+									in: RoundedRectangle(cornerRadius: 15)
+								)
+								.background(
+									hover == symbol
+										? .white.opacity(0.3)
+										: .clear,
+									in: RoundedRectangle(cornerRadius: 15)
+								)
+								.onHover {
+									hover = symbol
+
+									if $0 {
+										NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+									} else {
+										hover = ""
+									}
+								}
+								.glassEffect(.clear.interactive(), in: RoundedRectangle(cornerRadius: 15))
 								.accessibilityLabel(symbol.replacingOccurrences(of: ".", with: " "))
 								.accessibilityAddTraits(browser.selectedSpace.symbol == symbol ? .isSelected : [])
 							}
 						}
-						.padding(12)
+						.padding(15)
 					}
-					.frame(width: 266, height: 300)
+					.presentationSizing(.fitted)
 				}
 
 				TextField("Space Name", text: spaceName)
-					.textFieldStyle(.roundedBorder)
+					.font(.title2)
+					.textFieldStyle(.plain)
+					.padding(.horizontal, 14)
+					.frame(height: 45)
+					.glassEffect(.clear.interactive(), in: Capsule())
 					.accessibilityIdentifier("space-name")
 			}
 			.frame(maxWidth: 380)
@@ -250,15 +283,14 @@ private struct ThemeControlSlider: View {
 	@State private var isDragging = false
 
 	private let thumbSize: CGFloat = 46
+	private let tickInset: CGFloat = 11
 
 	var body: some View {
 		GeometryReader { geometry in
 			let trackWidth = max(geometry.size.width - thumbSize, 1)
-			let tickInset: CGFloat = 11
 			let drag = DragGesture(minimumDistance: 1, coordinateSpace: .named("theme-control-slider"))
 				.onChanged { gesture in
-					isDragging = true
-					value = min(max(Double((gesture.location.x - thumbSize / 2) / trackWidth), 0), 1)
+					updateDrag(at: gesture.location.x, trackWidth: trackWidth)
 				}
 				.onEnded { _ in
 					isDragging = false
@@ -319,6 +351,22 @@ private struct ThemeControlSlider: View {
 		}
 		.accessibilityIdentifier(identifier)
 	}
+
+	private func updateDrag(at location: CGFloat, trackWidth: CGFloat) {
+		isDragging = true
+		let previousPosition = CGFloat(value) * trackWidth
+		let currentPosition = min(max(location - thumbSize / 2, 0), trackWidth)
+		value = Double(currentPosition / trackWidth)
+		for index in 0 ..< tickCount {
+			let tickPosition = tickInset + CGFloat(index) * (trackWidth - 2 * tickInset) / CGFloat(tickCount - 1)
+			if previousPosition < tickPosition && currentPosition >= tickPosition
+				|| previousPosition > tickPosition && currentPosition <= tickPosition
+			{
+				performThemeAlignmentHaptic()
+				break
+			}
+		}
+	}
 }
 
 private struct MeshGradientCanvas: View {
@@ -328,6 +376,7 @@ private struct MeshGradientCanvas: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var dragPointID: UUID?
 	@State private var dragOrigin = CGPoint.zero
+	@State private var dragGridCell = SIMD2<Int>(repeating: 0)
 
 	var body: some View {
 		GeometryReader { geometry in
@@ -423,17 +472,7 @@ private struct MeshGradientCanvas: View {
 						.highPriorityGesture(
 							DragGesture(minimumDistance: 3, coordinateSpace: .named("theme-mesh-canvas"))
 								.onChanged { value in
-									if dragPointID != point.id {
-										dragPointID = point.id
-										dragOrigin = CGPoint(x: point.x, y: point.y)
-									}
-									theme.moveMeshColorPoint(
-										id: point.id,
-										to: CGPoint(
-											x: dragOrigin.x + value.translation.width / geometry.size.width,
-											y: dragOrigin.y + value.translation.height / geometry.size.height
-										)
-									)
+									move(point: point, by: value.translation, in: geometry.size)
 								}
 								.onEnded { _ in dragPointID = nil }
 						)
@@ -460,6 +499,24 @@ private struct MeshGradientCanvas: View {
 		}
 	}
 
+	private func move(point: ThemeColorPoint, by translation: CGSize, in size: CGSize) {
+		if dragPointID != point.id {
+			dragPointID = point.id
+			dragOrigin = CGPoint(x: point.x, y: point.y)
+			dragGridCell = SIMD2(Int(point.x * 17), Int(point.y * 17))
+		}
+		let position = CGPoint(
+			x: min(max(dragOrigin.x + translation.width / size.width, 0), 1),
+			y: min(max(dragOrigin.y + translation.height / size.height, 0), 1)
+		)
+		let gridCell = SIMD2(Int(position.x * 17), Int(position.y * 17))
+		if gridCell != dragGridCell {
+			performThemeAlignmentHaptic()
+			dragGridCell = gridCell
+		}
+		theme.moveMeshColorPoint(id: point.id, to: position)
+	}
+
 	private func normalized(_ position: CGPoint, in size: CGSize) -> CGPoint {
 		CGPoint(x: position.x / size.width, y: position.y / size.height)
 	}
@@ -481,6 +538,14 @@ private struct MeshGradientCanvas: View {
 			}
 		)
 	}
+}
+
+private func performThemeAlignmentHaptic() {
+	#if os(macOS)
+		NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+	#elseif os(iOS)
+		UISelectionFeedbackGenerator().selectionChanged()
+	#endif
 }
 
 struct MeshGradientSurface: View {

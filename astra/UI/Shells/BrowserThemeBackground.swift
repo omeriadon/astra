@@ -8,7 +8,6 @@ struct BrowserThemeBackground: View {
 	let theme: BrowserTheme
 	var transitionFromTheme: BrowserTheme?
 	var transitionProgress = 1.0
-	var transitionDirection: CGFloat = 1
 	#if os(macOS)
 		private static let blurStyle = NSMaterialView.Effect.MaterialStyle(
 			backgroundColor: .clear,
@@ -50,20 +49,14 @@ struct BrowserThemeBackground: View {
 				Color.gray
 			#endif
 
-			GeometryReader { geometry in
-				ZStack {
-					if let transitionFromTheme {
-						let distance = geometry.size.width * transitionDirection
-						ThemeSurface(theme: transitionFromTheme)
-							.offset(x: -distance * transitionProgress)
-						ThemeSurface(theme: theme)
-							.offset(x: distance * (1 - transitionProgress))
-					} else {
-						ThemeSurface(theme: theme)
-					}
-				}
+			if let transitionFromTheme {
+				ThemeSurface(theme: transitionFromTheme)
+					.opacity(1 - transitionProgress)
+				ThemeSurface(theme: theme)
+					.opacity(transitionProgress)
+			} else {
+				ThemeSurface(theme: theme)
 			}
-			.clipped()
 		}
 	}
 }

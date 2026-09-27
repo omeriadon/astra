@@ -2,13 +2,13 @@ import SwiftUI
 
 struct BrowserTheme: Codable, Equatable {
 	var usesGradient = false
-	var firstColor = BrowserColor(red: 0, green: 0, blue: 1)
-	var secondColor = BrowserColor(red: 0.13, green: 0.37, blue: 0.92)
+	var firstColor = BrowserColor(red: 0.25, green: 0.29, blue: 0.34)
+	var secondColor = BrowserColor(red: 0.25, green: 0.29, blue: 0.34)
 	var gradientDirection = ThemeGradientDirection.topLeading
 	var meshColorPoints = [
 		ThemeColorPoint(
 			id: ThemeColorPoint.migratedFirstID,
-			color: BrowserColor(red: 0, green: 0, blue: 1),
+			color: BrowserColor(red: 0.25, green: 0.29, blue: 0.34),
 			x: 0.5,
 			y: 0.5
 		),
