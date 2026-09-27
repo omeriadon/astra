@@ -160,6 +160,7 @@ struct DesktopBrowserShell: View {
 				.contentShape(Rectangle())
 			}
 			.buttonStyle(.plain)
+			.keyboardShortcut("J", modifiers: .command)
 			.accessibilityLabel(showsDownloads ? "Show Tabs" : "Show Downloads")
 			.accessibilityValue(downloads.activeProgress.map { "\(Int($0 * 100)) percent" } ?? "No active downloads")
 			.accessibilityIdentifier("downloads-button")
