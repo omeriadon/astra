@@ -18,7 +18,6 @@ extension Color {
 
 @main
 struct browserApp: App {
-	@State private var browser = Browser()
 	@State private var updates = UpdateManager.shared
 
 	#if os(macOS)
@@ -42,20 +41,13 @@ struct browserApp: App {
 
 	var body: some Scene {
 		WindowGroup {
-			ContentView(browser: $browser)
+			ContentView()
 				.task {
 					updates.start()
 					BrowserDownloadManager.shared.resumeAvailableDownloads()
 				}
 				.sheet(isPresented: $updates.isPresented) {
 					BrowserUpdateSheet(updates: updates)
-				}
-				.onOpenURL { url in
-					guard url.scheme == "http" || url.scheme == "https" else {
-						return
-					}
-
-					browser.addTab()
 				}
 		}
 		#if os(macOS)
@@ -66,36 +58,23 @@ struct browserApp: App {
 		.commands {
 			BrowserCommands()
 
-			CommandGroup(after: .appSettings) {
-				Button {
-					browser.openInternalPage(.settings)
-				} label: {
-					Label("Settings...", systemImage: "gear")
-				}
-				.keyboardShortcut(",", modifiers: .command)
-			}
-
-			CommandGroup(replacing: .appInfo) {
-				Button {
-					browser.openInternalPage(.settings) // info
-				} label: {
-					Label("About astra", systemImage: "info.circle")
-				}
-
-				CheckForUpdatesView(
-					updater: updates.updater
-				)
-			}
-
 			#if os(macOS)
 				CommandGroup(replacing: .appTermination) {
 					Button("Quit browser") {
 						requestQuit()
-						browser.isAboutToQuit = true
+						BrowserWindowRegistry.shared.activeBrowser?.isAboutToQuit = true
 					}
 					.keyboardShortcut("q", modifiers: .command)
 				}
 			#endif
 		}
+
+		#if os(macOS)
+			WindowGroup(id: "detached-tab", for: UUID.self) { windowID in
+				ContentView(detachedWindowID: windowID.wrappedValue)
+			}
+			.windowStyle(.hiddenTitleBar)
+			.windowBackgroundDragBehavior(.disabled)
+		#endif
 	}
 }

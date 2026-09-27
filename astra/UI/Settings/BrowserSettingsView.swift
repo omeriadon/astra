@@ -5,7 +5,9 @@ struct BrowserSettingsView: View {
 	let browser: Browser
 	@Binding var searchText: String
 	@Binding var selectedPage: Page
-	@Default(.browserTheme) private var theme
+	private var theme: BrowserTheme {
+		browser.theme
+	}
 
 	enum Page: CaseIterable {
 		case ui
@@ -182,6 +184,7 @@ struct BrowserSettingsView: View {
 		return BrowserSettingsSidebarRow(
 			title: metadata.title,
 			symbol: metadata.symbol,
+			theme: theme,
 			isSelected: selectedPage == page,
 			identifier: metadata.identifier
 		) {

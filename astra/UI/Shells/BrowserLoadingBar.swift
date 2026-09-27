@@ -1,10 +1,9 @@
-import Defaults
 import SwiftUI
 
 struct BrowserLoadingBar: View {
 	let isLoading: Bool
 	let estimatedProgress: Double
-	@Default(.browserTheme) private var theme
+	let theme: BrowserTheme
 
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var displayedProgress = 0.0

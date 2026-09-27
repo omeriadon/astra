@@ -1,10 +1,9 @@
-import Defaults
 import QuickLook
 import SwiftUI
 
 struct DownloadsSidebarView: View {
 	let manager: BrowserDownloadManager
-	@Default(.browserTheme) private var theme
+	let theme: BrowserTheme
 	@State private var previewURL: URL?
 
 	var body: some View {

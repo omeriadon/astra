@@ -59,7 +59,7 @@
 		}
 
 		func tabsDidChange() {
-			let validTabIDs = Set(browser.tabs.map(\.id))
+			let validTabIDs = Set(browser.visibleTabs.map(\.id))
 			candidateIDs.removeAll { !validTabIDs.contains($0) }
 			guard !candidateIDs.isEmpty else {
 				endSession()

@@ -10,14 +10,13 @@ struct BrowserContentView: View {
 	#if DEBUG
 		@State private var failedStateRefreshID = 0
 	#endif
-	@Default(.browserTheme) private var theme
 	@Environment(\.colorScheme) private var colorScheme
 
 	var body: some View {
 		GeometryReader { proxy in
 			content
 				.frame(width: proxy.size.width, height: proxy.size.height)
-				.background(theme.contentShade(for: colorScheme))
+				.background(browser.theme.contentShade(for: colorScheme))
 				.allowsHitTesting(browser.selectedTab?.peeks.isEmpty ?? true)
 				.accessibilityHidden(!(browser.selectedTab?.peeks.isEmpty ?? true))
 		}
@@ -28,7 +27,7 @@ struct BrowserContentView: View {
 		if let tab = browser.selectedTab, let page = tab.internalPage {
 			switch page {
 				case .themeEditor:
-					BrowserThemeEditorView()
+					BrowserThemeEditorView(browser: browser)
 				case .settings:
 					BrowserSettingsView(
 						browser: browser,

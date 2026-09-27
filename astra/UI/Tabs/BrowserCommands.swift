@@ -10,6 +10,22 @@
 		@FocusedValue(\.browser) private var browser
 
 		var body: some Commands {
+			CommandGroup(after: .appSettings) {
+				Button("Settings...", systemImage: "gear") {
+					browser?.openInternalPage(.settings)
+				}
+				.keyboardShortcut(",", modifiers: .command)
+				.disabled(browser == nil)
+			}
+
+			CommandGroup(replacing: .appInfo) {
+				Button("About astra", systemImage: "info.circle") {
+					browser?.openInternalPage(.settings)
+				}
+				.disabled(browser == nil)
+				CheckForUpdatesView(updater: UpdateManager.shared.updater)
+			}
+
 			CommandMenu("Navigation") {
 				Button("Open Location", systemImage: "link", action: openLocation)
 					.keyboardShortcut("L", modifiers: .command)

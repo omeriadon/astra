@@ -46,6 +46,14 @@ final class BrowserPersistence {
 		try write(tabs, named: "open-tabs.json")
 	}
 
+	func loadWorkspace() throws -> BrowserWorkspace? {
+		try read(BrowserWorkspace.self, named: "workspace.json")
+	}
+
+	func saveWorkspace(_ workspace: BrowserWorkspace) throws {
+		try write(workspace, named: "workspace.json")
+	}
+
 	func loadBrowserSnapshot() throws -> BrowserSnapshot? {
 		try read(BrowserSnapshot.self, named: "browser-snapshot.json")
 	}

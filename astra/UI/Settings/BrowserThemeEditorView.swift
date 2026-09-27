@@ -1,16 +1,69 @@
-import Defaults
 import SwiftUI
 
 struct BrowserThemeEditorView: View {
-	@Default(.browserTheme) private var theme
+	let browser: Browser
 	@State private var editingPointID: UUID?
 	@State private var pickerDismissalSignal = 0
+	@State private var showsSymbolPicker = false
+
+	private var theme: Binding<BrowserTheme> {
+		Binding(
+			get: { browser.theme },
+			set: { browser.setSelectedSpaceTheme($0) }
+		)
+	}
+
+	private var spaceName: Binding<String> {
+		Binding(
+			get: { browser.selectedSpace.name },
+			set: { browser.renameSelectedSpace($0) }
+		)
+	}
 
 	var body: some View {
-		VStack(spacing: 0) {
+		VStack(spacing: 24) {
 			Spacer(minLength: 0)
+			HStack(spacing: 12) {
+				Button {
+					showsSymbolPicker.toggle()
+				} label: {
+					Label("Space Symbol", systemImage: browser.selectedSpace.symbol)
+						.labelStyle(.iconOnly)
+						.frame(width: 42, height: 42)
+				}
+				.buttonStyle(.glass)
+				.accessibilityLabel("Choose Space Symbol")
+				.accessibilityIdentifier("space-symbol-picker")
+				.popover(isPresented: $showsSymbolPicker) {
+					ScrollView {
+						LazyVGrid(columns: Array(repeating: GridItem(.fixed(42)), count: 5), spacing: 8) {
+							ForEach(BrowserSpace.symbols, id: \.self) { symbol in
+								Button {
+									browser.setSelectedSpaceSymbol(symbol)
+									showsSymbolPicker = false
+								} label: {
+									Label(symbol, systemImage: symbol)
+										.labelStyle(.iconOnly)
+										.frame(width: 42, height: 42)
+								}
+								.buttonStyle(.glass)
+								.accessibilityLabel(symbol.replacingOccurrences(of: ".", with: " "))
+								.accessibilityAddTraits(browser.selectedSpace.symbol == symbol ? .isSelected : [])
+							}
+						}
+						.padding(12)
+					}
+					.frame(width: 266, height: 300)
+				}
+
+				TextField("Space Name", text: spaceName)
+					.textFieldStyle(.roundedBorder)
+					.accessibilityIdentifier("space-name")
+			}
+			.frame(maxWidth: 380)
+
 			MeshGradientEditorView(
-				theme: $theme,
+				theme: theme,
 				editingPointID: $editingPointID,
 				pickerDismissalSignal: $pickerDismissalSignal
 			)

@@ -6,7 +6,10 @@ import WebKit
 struct DesktopBrowserShell: View {
 	@Bindable var browser: Browser
 	@Environment(\.colorScheme) private var colorScheme
-	@Default(.browserTheme) private var theme
+	private var theme: BrowserTheme {
+		browser.theme
+	}
+
 	@Default(.sidebarShown) private var sidebarShown
 	@State private var toastManager = ToastManager.shared
 	@State private var downloads = BrowserDownloadManager.shared
@@ -15,8 +18,15 @@ struct DesktopBrowserShell: View {
 	@State private var flightProgress = 0.0
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var isFullScreen = false
+	@State private var transitionFromTheme: BrowserTheme?
+	@State private var transitionToTheme: BrowserTheme?
+	@State private var themeBlend = 0.0
+	@State private var themeTransitionGeneration = 0
 	#if os(macOS)
 		@State private var controlTabSwitcher: ControlTabSwitcher
+		@State private var windowRegistry = BrowserWindowRegistry.shared
+		@State private var tabDrag = BrowserTabDragCoordinator.shared
+		@State private var hostWindow: NSWindow?
 	#endif
 
 	@State private var quitExpiry: Date = .distantPast
@@ -137,6 +147,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	@State private var downloadsHover = false
+	@State private var addSpaceHover = false
 
 	private var downloadsBottomBar: some View {
 		HStack {
@@ -182,70 +193,164 @@ struct DesktopBrowserShell: View {
 				}
 			}
 
-			Spacer()
+			BrowserSpacesBar(browser: browser, onSwipeProgress: previewSpaceTheme)
+				.frame(maxWidth: .infinity)
+
+			Button {
+				browser.createSpace()
+			} label: {
+				Image(systemName: "plus")
+					.frame(width: 25, height: 25)
+					.background {
+						if addSpaceHover {
+							RoundedRectangle(cornerRadius: 8)
+								.fill(Color.primary.gradient)
+								.opacity(0.3)
+						}
+					}
+					.contentShape(Rectangle())
+			}
+			.buttonStyle(.plain)
+			.accessibilityLabel("Add Space")
+			.accessibilityIdentifier("add-space")
+			.onHover { addSpaceHover = $0 }
 		}
-		.padding([.leading, .bottom], 8)
+		.padding([.horizontal, .bottom], 8)
+	}
+
+	private var newTabButton: some View {
+		Button {
+			browser.addTab()
+		} label: {
+			Label("New Tab", systemImage: "plus")
+				.frame(maxWidth: .infinity, alignment: .leading)
+				.contentShape(Rectangle())
+		}
+		.keyboardShortcut("T", modifiers: .command)
+		.buttonStyle(.plain)
+		.padding(.horizontal, 8)
+		.foregroundStyle(theme.foregroundColor.opacity(0.65))
+		.onHover { newTabHovered = $0 }
+		.frame(height: 28)
+		.background {
+			if newTabHovered {
+				Color.clear.glassEffect(
+					.regular,
+					in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+				)
+			}
+		}
+		.accessibilityIdentifier("new-tab")
+	}
+
+	private var tabSidebar: some View {
+		ScrollView {
+			LazyVStack(spacing: 2) {
+				LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
+					ForEach(browser.favouriteTabs) { tab in
+						BrowserFavouriteTile(tab: tab, browser: browser)
+					}
+				}
+				.frame(minHeight: browser.favouriteTabs.isEmpty ? 34 : 42)
+				.padding(.bottom, 12)
+				#if os(macOS)
+					.background {
+						BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
+					}
+				#endif
+
+				VStack(spacing: 2) {
+					ForEach(browser.pinnedTabs) { tab in
+						BrowserTabRow(tab: tab, browser: browser, isSelected: browser.selectedTabID == tab.id)
+					}
+				}
+				.frame(minHeight: 28)
+				#if os(macOS)
+					.background {
+						BrowserDropZone(browser: browser, area: .pinned, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
+					}
+				#endif
+				if !browser.pinnedTabs.isEmpty {
+					Divider()
+						.padding(.vertical, 8)
+				}
+				VStack(spacing: 2) {
+					ForEach(browser.normalTabs) { tab in
+						BrowserTabRow(tab: tab, browser: browser, isSelected: browser.selectedTabID == tab.id)
+					}
+					newTabButton
+				}
+				#if os(macOS)
+				.background {
+					BrowserDropZone(browser: browser, area: .normal, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
+				}
+				#endif
+			}
+			.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
+			.padding(.top, 35)
+		}
+	}
+
+	private var animatedThemeBackground: some View {
+		ZStack {
+			if let transitionFromTheme, let transitionToTheme {
+				BrowserThemeBackground(theme: transitionFromTheme)
+				BrowserThemeBackground(theme: transitionToTheme)
+					.opacity(themeBlend)
+			} else {
+				BrowserThemeBackground(theme: theme)
+			}
+		}
+	}
+
+	private func previewSpaceTheme(_ targetID: UUID?, progress: Double) {
+		guard let targetID,
+		      let target = browser.workspace.spaces.first(where: { $0.id == targetID })
+		else {
+			if transitionToTheme != nil, transitionToTheme != theme {
+				withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) {
+					themeBlend = 0
+				}
+			}
+			return
+		}
+		if transitionToTheme != target.theme {
+			transitionFromTheme = theme
+			transitionToTheme = target.theme
+			themeBlend = 0
+		}
+		withAnimation(reduceMotion ? nil : .smooth(duration: 0.12)) {
+			themeBlend = progress
+		}
+	}
+
+	private func completeSpaceThemeTransition(from oldID: UUID, to newID: UUID) {
+		let oldTheme = browser.workspace.spaces.first(where: { $0.id == oldID })?.theme ?? theme
+		transitionFromTheme = transitionFromTheme ?? oldTheme
+		transitionToTheme = theme
+		themeTransitionGeneration += 1
+		let generation = themeTransitionGeneration
+		withAnimation(reduceMotion ? nil : .smooth(duration: 0.3), completionCriteria: .logicallyComplete) {
+			themeBlend = 1
+		} completion: {
+			guard generation == themeTransitionGeneration,
+			      browser.workspace.selectedSpaceID == newID
+			else { return }
+			transitionFromTheme = nil
+			transitionToTheme = nil
+			themeBlend = 0
+		}
 	}
 
 	var body: some View {
 		BrowserSplitView(sidebarShown: $browser.sidebarShown) {
 			VStack(spacing: 0) {
 				ZStack(alignment: .top) {
-					ZStack(alignment: .top) {
-						ScrollView {
-							LazyVStack(spacing: 2) {
-								ForEach(browser.tabs) { tab in
-									BrowserTabRow(
-										tab: tab,
-										browser: browser,
-										isSelected: browser.selectedTabID == tab.id
-									)
-								}
-								.reorderable()
+					tabSidebar
+						.foregroundStyle(theme.foregroundColor)
+						.offset(x: showsDownloads ? BrowserChromeMetrics.expandedSidebarWidth : 0)
 
-								Button {
-									browser.addTab()
-								} label: {
-									Label("New Tab", systemImage: "plus")
-										.frame(maxWidth: .infinity, alignment: .leading)
-										.contentShape(Rectangle())
-								}
-								.keyboardShortcut("T", modifiers: .command)
-								.buttonStyle(.plain)
-								.padding(.horizontal, 8)
-								.foregroundStyle(theme.foregroundColor.opacity(0.65))
-								.onHover {
-									newTabHovered = $0
-								}
-								.frame(height: 28)
-								.background {
-									if newTabHovered {
-										Color.clear
-											.glassEffect(
-												.regular,
-												in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
-											)
-									}
-								}
-								//						.padding(.top, 10)
-								.accessibilityIdentifier("new-tab")
-							}
-							.reorderContainer(for: BrowserTab.self) { difference in
-								switch difference.destination.position {
-									case let .before(id):
-										browser.reorderTabs(difference.sources, before: id)
-									case .end:
-										browser.reorderTabs(difference.sources, before: nil)
-								}
-							}
-							.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
-							.padding(.top, 35)
-						}
-					}
-					.foregroundStyle(theme.foregroundColor)
-					.offset(x: showsDownloads ? BrowserChromeMetrics.expandedSidebarWidth : 0)
-
-					DownloadsSidebarView(manager: downloads)
+					DownloadsSidebarView(manager: downloads, theme: theme)
 						.foregroundStyle(theme.foregroundColor)
 						.offset(x: showsDownloads ? 0 : -BrowserChromeMetrics.expandedSidebarWidth)
 				}
@@ -266,6 +371,9 @@ struct DesktopBrowserShell: View {
 						maximum: EdgeInsets(top: browser.selectedTab?.internalPage == nil ? BrowserChromeMetrics.topBarRegionHeight : 0, leading: 0, bottom: 0, trailing: 0)
 					)
 				)
+				#if os(macOS)
+				.blur(radius: windowRegistry.hasActiveDuplicate(of: browser) ? 10 : 0)
+				#endif
 
 				Group {
 					if browser.selectedTab?.internalPage == nil {
@@ -306,7 +414,8 @@ struct DesktopBrowserShell: View {
 
 							BrowserLoadingBar(
 								isLoading: controller.isLoading,
-								estimatedProgress: controller.estimatedProgress
+								estimatedProgress: controller.estimatedProgress,
+								theme: theme
 							)
 							.frame(height: 1.5)
 							.frame(maxWidth: .infinity)
@@ -351,10 +460,33 @@ struct DesktopBrowserShell: View {
 					.padding(sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 			}
 		}
-		.background {
-			BrowserThemeBackground(theme: theme)
+		.background { animatedThemeBackground }
+		.onChange(of: browser.workspace.selectedSpaceID) { oldID, newID in
+			completeSpaceThemeTransition(from: oldID, to: newID)
 		}
 		#if os(macOS)
+		.background {
+			BrowserDropZone(
+				browser: browser,
+				area: .normal,
+				spaceID: browser.workspace.selectedSpaceID,
+				beforeTabID: nil,
+				isWindowFallback: true
+			)
+		}
+		.background {
+			WindowFocusReader { window in
+				hostWindow = window
+				if window?.isKeyWindow == true {
+					windowRegistry.activate(browser)
+				}
+			}
+		}
+		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
+			if let window = notification.object as? NSWindow, window === hostWindow {
+				windowRegistry.activate(browser)
+			}
+		}
 		.overlay(alignment: .top) {
 			Color.clear
 				.frame(height: BrowserChromeMetrics.windowDragStripHeight)
@@ -401,6 +533,25 @@ struct DesktopBrowserShell: View {
 			}
 			.allowsHitTesting(false)
 		}
+		#if os(macOS)
+		.overlay {
+			GeometryReader { geometry in
+				if let tabID = tabDrag.activeTabID,
+				   let tab = browser.tabs.first(where: { $0.id == tabID }),
+				   let hostWindow
+				{
+					let point = hostWindow.convertPoint(fromScreen: tabDrag.screenPoint)
+					Label(tab.title, systemImage: tab.internalPage?.symbol ?? "globe")
+						.padding(.horizontal, 12)
+						.padding(.vertical, 8)
+						.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+						.position(x: point.x, y: geometry.size.height - point.y)
+						.accessibilityHidden(true)
+				}
+			}
+			.allowsHitTesting(false)
+		}
+		#endif
 		.onChange(of: downloads.latestStart?.id) { _, _ in
 			guard let start = downloads.latestStart,
 			      let item = downloads.items.first(where: { $0.id == start.id })
@@ -433,7 +584,7 @@ struct DesktopBrowserShell: View {
 		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
 			isFullScreen = false
 		}
-		.onChange(of: browser.tabs.map(\.id)) { _, _ in
+		.onChange(of: browser.visibleTabs.map(\.id)) { _, _ in
 			controlTabSwitcher.tabsDidChange()
 		}
 		.onDisappear {

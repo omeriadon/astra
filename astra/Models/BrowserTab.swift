@@ -176,6 +176,23 @@ final class BrowserTab: Identifiable {
 		}
 	}
 
+	convenience init(openTab saved: OpenTab) {
+		self.init(
+			id: saved.id,
+			internalPage: saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:)),
+			pageTitle: saved.pageTitle,
+			customTitle: saved.customTitle,
+			initialURL: saved.url,
+			history: saved.history,
+			historyIndex: saved.historyIndex,
+			openPeeks: saved.peeks,
+			pageZoom: saved.pageZoom,
+			scrollPosition: saved.scrollPosition,
+			isHibernated: saved.isHibernated,
+			modifiedAt: saved.modifiedAt
+		)
+	}
+
 	func hibernate() {
 		guard internalPage == nil else { return }
 		guard let controller else { return }

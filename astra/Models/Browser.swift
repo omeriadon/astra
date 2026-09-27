@@ -7,8 +7,10 @@ import WebKit
 @MainActor
 @Observable
 final class Browser {
+	let windowID = UUID()
 	private(set) var tabs: [BrowserTab]
 	private(set) var selectedTabID: UUID
+	private(set) var workspace: BrowserWorkspace
 	private(set) var recentlyUsedTabIDs: [UUID]
 	private(set) var bookmarks: [Bookmark]
 	private(set) var closedTabIDs: Set<UUID>
@@ -39,6 +41,124 @@ final class Browser {
 		tabs.first { $0.id == selectedTabID }
 	}
 
+	var selectedSpace: BrowserSpace {
+		workspace.spaces.first { $0.id == workspace.selectedSpaceID } ?? workspace.spaces[0]
+	}
+
+	var theme: BrowserTheme {
+		selectedSpace.theme
+	}
+
+	var favouriteTabs: [BrowserTab] {
+		workspace.favouriteTabIDs.compactMap { id in tabs.first { $0.id == id } }
+	}
+
+	var pinnedTabs: [BrowserTab] {
+		selectedSpace.pinnedTabIDs.compactMap { id in tabs.first { $0.id == id } }
+	}
+
+	var normalTabs: [BrowserTab] {
+		selectedSpace.tabIDs
+			.filter { !selectedSpace.pinnedTabIDs.contains($0) }
+			.compactMap { id in tabs.first { $0.id == id } }
+	}
+
+	var visibleTabs: [BrowserTab] {
+		favouriteTabs + pinnedTabs + normalTabs
+	}
+
+	func createSpace() {
+		let space = BrowserSpace()
+		workspace.spaces.append(space)
+		workspace.selectedSpaceID = space.id
+		openInternalPage(.themeEditor)
+		schedulePersistence()
+	}
+
+	func selectSpace(_ id: UUID) {
+		guard workspace.spaces.contains(where: { $0.id == id }) else { return }
+		workspace.selectedSpaceID = id
+		let space = selectedSpace
+		if let tabID = space.selectedTabID,
+		   space.tabIDs.contains(tabID) || workspace.favouriteTabIDs.contains(tabID)
+		{
+			selectTab(tabID)
+		} else if let tabID = space.tabIDs.first ?? workspace.favouriteTabIDs.first {
+			selectTab(tabID)
+		} else {
+			addTab()
+		}
+		schedulePersistence()
+	}
+
+	func renameSelectedSpace(_ name: String) {
+		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) else { return }
+		workspace.spaces[index].name = name
+		workspace.spaces[index].modifiedAt = .now
+		schedulePersistence()
+	}
+
+	func setSelectedSpaceSymbol(_ symbol: String) {
+		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) else { return }
+		workspace.spaces[index].symbol = symbol
+		workspace.spaces[index].modifiedAt = .now
+		schedulePersistence()
+	}
+
+	func setSelectedSpaceTheme(_ theme: BrowserTheme) {
+		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) else { return }
+		workspace.spaces[index].theme = theme
+		workspace.spaces[index].modifiedAt = .now
+		schedulePersistence()
+	}
+
+	enum TabArea {
+		case favourite
+		case pinned
+		case normal
+	}
+
+	func moveTab(_ id: UUID, to area: TabArea, in spaceID: UUID? = nil, before targetID: UUID? = nil) {
+		guard tabs.contains(where: { $0.id == id }) else { return }
+		let wasFavourite = workspace.favouriteTabIDs.contains(id)
+		workspace.favouriteTabIDs.removeAll { $0 == id }
+		for index in workspace.spaces.indices {
+			if workspace.spaces[index].tabIDs.contains(id) {
+				workspace.spaces[index].modifiedAt = .now
+			}
+			workspace.spaces[index].tabIDs.removeAll { $0 == id }
+			workspace.spaces[index].pinnedTabIDs.removeAll { $0 == id }
+		}
+		if area == .favourite {
+			let index = targetID.flatMap { workspace.favouriteTabIDs.firstIndex(of: $0) } ?? workspace.favouriteTabIDs.endIndex
+			workspace.favouriteTabIDs.insert(id, at: index)
+			workspace.favouritesModifiedAt = .now
+		} else if let index = workspace.spaces.firstIndex(where: { $0.id == (spaceID ?? workspace.selectedSpaceID) }) {
+			let insertion = targetID.flatMap { workspace.spaces[index].tabIDs.firstIndex(of: $0) } ?? workspace.spaces[index].tabIDs.endIndex
+			workspace.spaces[index].tabIDs.insert(id, at: insertion)
+			if area == .pinned {
+				let pinnedInsertion = targetID.flatMap { workspace.spaces[index].pinnedTabIDs.firstIndex(of: $0) }
+					?? workspace.spaces[index].pinnedTabIDs.endIndex
+				workspace.spaces[index].pinnedTabIDs.insert(id, at: pinnedInsertion)
+			}
+			workspace.spaces[index].modifiedAt = .now
+			if wasFavourite {
+				workspace.favouritesModifiedAt = .now
+			}
+		} else {
+			return
+		}
+		if selectedTabID == id,
+		   area != .favourite,
+		   let spaceID,
+		   workspace.selectedSpaceID != spaceID
+		{
+			workspace.selectedSpaceID = spaceID
+			selectTab(id)
+		}
+		schedulePersistence()
+	}
+
 	private var webTabs: [BrowserTab] {
 		tabs.filter { $0.internalPage == nil }
 	}
@@ -48,8 +168,10 @@ final class Browser {
 	}
 
 	init() {
+		BrowserWindowRegistry.shared.activeBrowser?.flushPersistence()
 		let loadedTabs: [BrowserTab]
 		let loadedSelectedTabID: UUID
+		let loadedWorkspace: BrowserWorkspace
 		let loadedBookmarks: [Bookmark]
 		let loadedClosedTabIDs: Set<UUID>
 		let loadedDeletedBookmarkIDs: Set<UUID>
@@ -60,6 +182,7 @@ final class Browser {
 			let store = try BrowserPersistence()
 			let savedTabs = try store.loadOpenTabs()
 			let snapshot = try store.loadBrowserSnapshot()
+			let savedWorkspace = try? store.loadWorkspace()
 			let bookmarks = try store.loadBookmarks()
 			let restoredTabs = savedTabs.compactMap { saved -> BrowserTab? in
 				let internalPage = saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:))
@@ -82,6 +205,11 @@ final class Browser {
 			let tabs = restoredTabs.isEmpty ? [BrowserTab()] : restoredTabs
 			loadedTabs = tabs
 			loadedSelectedTabID = tabs.first(where: { $0.id == snapshot?.selectedTabID })?.id ?? tabs[0].id
+			loadedWorkspace = savedWorkspace ?? BrowserWorkspace.migrated(
+				tabs: savedTabs,
+				selectedTabID: loadedSelectedTabID,
+				theme: Defaults[.browserTheme]
+			)
 			loadedBookmarks = bookmarks
 			loadedClosedTabIDs = snapshot?.closedTabIDs ?? []
 			loadedDeletedBookmarkIDs = snapshot?.deletedBookmarkIDs ?? []
@@ -91,6 +219,11 @@ final class Browser {
 			let tab = BrowserTab()
 			loadedTabs = [tab]
 			loadedSelectedTabID = tab.id
+			loadedWorkspace = BrowserWorkspace.migrated(
+				tabs: [tab.openTab],
+				selectedTabID: tab.id,
+				theme: Defaults[.browserTheme]
+			)
 			loadedBookmarks = []
 			loadedClosedTabIDs = []
 			loadedDeletedBookmarkIDs = []
@@ -100,6 +233,7 @@ final class Browser {
 
 		tabs = loadedTabs
 		selectedTabID = loadedSelectedTabID
+		workspace = loadedWorkspace
 		recentlyUsedTabIDs = [loadedSelectedTabID]
 		bookmarks = loadedBookmarks
 		closedTabIDs = loadedClosedTabIDs
@@ -107,6 +241,7 @@ final class Browser {
 		persistence = loadedPersistence
 		persistenceErrorDescription = loadedErrorDescription
 		persistenceTask = nil
+		reconcileWorkspace()
 
 		for tab in loadedTabs {
 			configure(tab)
@@ -116,6 +251,10 @@ final class Browser {
 		{
 			selectedTab.wake()
 			configure(selectedTab)
+		}
+		BrowserWindowRegistry.shared.register(self)
+		if loadedPersistence != nil {
+			persist()
 		}
 	}
 
@@ -130,7 +269,7 @@ final class Browser {
 	}
 
 	func openInternalPage(_ page: BrowserInternalPage) {
-		if let existing = tabs.first(where: { $0.internalPage == page }) {
+		if let existing = visibleTabs.first(where: { $0.internalPage == page }) {
 			selectTab(existing.id)
 			return
 		}
@@ -149,11 +288,19 @@ final class Browser {
 
 	func selectTab(_ id: UUID) {
 		guard let tab = tabs.first(where: { $0.id == id }) else { return }
+		if !workspace.favouriteTabIDs.contains(id),
+		   let owner = workspace.spaces.first(where: { $0.tabIDs.contains(id) })
+		{
+			workspace.selectedSpaceID = owner.id
+		}
 		if tab.isHibernated {
 			tab.wake()
 			configure(tab)
 		}
 		selectedTabID = id
+		if let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
+			workspace.spaces[index].selectedTabID = id
+		}
 		recentlyUsedTabIDs.removeAll { $0 == id }
 		recentlyUsedTabIDs.insert(id, at: 0)
 		tab.controller?.loadFaviconIfMissing()
@@ -161,22 +308,12 @@ final class Browser {
 	}
 
 	func switchCandidates(forward: Bool) -> [UUID] {
-		guard tabs.count > 1, let selectedIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) else { return [] }
-		let ids = tabs.map(\.id)
+		let ids = visibleTabs.map(\.id)
+		guard ids.count > 1, let selectedIndex = ids.firstIndex(of: selectedTabID) else { return [] }
 		return (1 ... ids.count).map { offset in
 			let direction = forward ? offset : ids.count - offset
 			return ids[(selectedIndex + direction) % ids.count]
 		}
-	}
-
-	func reorderTabs(_ ids: [UUID], before targetID: UUID?) {
-		let movedIDs = Set(ids)
-		let movedTabs = tabs.filter { movedIDs.contains($0.id) }
-		guard !movedTabs.isEmpty else { return }
-		tabs.removeAll { movedIDs.contains($0.id) }
-		let destination = targetID.flatMap { id in tabs.firstIndex(where: { $0.id == id }) } ?? tabs.endIndex
-		tabs.insert(contentsOf: movedTabs, at: destination)
-		schedulePersistence()
 	}
 
 	func commitTabSwitch(to id: UUID) {
@@ -234,6 +371,18 @@ final class Browser {
 
 	func closeTab(_ id: UUID) {
 		guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+		let nextVisibleID = visibleTabs.first(where: { $0.id != id })?.id
+		if workspace.favouriteTabIDs.contains(id) || workspace.spaces.contains(where: { $0.pinnedTabIDs.contains(id) }) {
+			hibernateTab(id)
+			if selectedTabID == id {
+				if let next = visibleTabs.first(where: { $0.id != id }) {
+					selectTab(next.id)
+				} else {
+					addTab()
+				}
+			}
+			return
+		}
 		let wasSelected = selectedTabID == id
 		let wasInternal = tabs[index].internalPage != nil
 		releaseAfterTabUpdate([tabs[index]])
@@ -247,11 +396,15 @@ final class Browser {
 			addTab()
 			return
 		}
+		if wasSelected, nextVisibleID == nil {
+			addTab()
+			return
+		}
 
 		if wasSelected {
 			selectedTabID = wasInternal
 				? recentlyUsedTabIDs.first(where: { recentID in tabs.contains { $0.id == recentID } }) ?? tabs[0].id
-				: tabs[min(index, tabs.count - 1)].id
+				: nextVisibleID ?? tabs[min(index, tabs.count - 1)].id
 			recentlyUsedTabIDs.removeAll { $0 == selectedTabID }
 			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
 		}
@@ -277,18 +430,20 @@ final class Browser {
 	}
 
 	func closeTabsAbove(_ id: UUID) {
-		guard let index = tabs.firstIndex(where: { $0.id == id }), index > 0 else { return }
-		removeTabs(Set(tabs[..<index].map(\.id)), selecting: id)
+		let normalIDs = normalTabs.map(\.id)
+		guard let index = normalIDs.firstIndex(of: id), index > 0 else { return }
+		removeTabs(Set(normalIDs[..<index]), selecting: id)
 	}
 
 	func closeTabsBelow(_ id: UUID) {
-		guard let index = tabs.firstIndex(where: { $0.id == id }), index < tabs.count - 1 else { return }
-		removeTabs(Set(tabs[(index + 1)...].map(\.id)), selecting: id)
+		let normalIDs = normalTabs.map(\.id)
+		guard let index = normalIDs.firstIndex(of: id), index < normalIDs.count - 1 else { return }
+		removeTabs(Set(normalIDs[(index + 1)...]), selecting: id)
 	}
 
 	func closeOtherTabs(_ id: UUID) {
-		guard tabs.contains(where: { $0.id == id }), tabs.count > 1 else { return }
-		removeTabs(Set(tabs.lazy.map(\.id).filter { $0 != id }), selecting: id)
+		guard tabs.contains(where: { $0.id == id }) else { return }
+		removeTabs(Set(normalTabs.map(\.id).filter { $0 != id }), selecting: id)
 	}
 
 	func flushPersistence() {
@@ -375,6 +530,9 @@ final class Browser {
 	}
 
 	private func removeTabs(_ ids: Set<UUID>, selecting selectedID: UUID) {
+		let protectedIDs = Set(workspace.favouriteTabIDs + workspace.spaces.flatMap(\.pinnedTabIDs))
+		let ids = ids.subtracting(protectedIDs)
+		guard !ids.isEmpty else { return }
 		let removedTabs = tabs.filter { ids.contains($0.id) }
 		let closedWebIDs = Set(removedTabs.filter { $0.internalPage == nil }.map(\.id))
 		releaseAfterTabUpdate(removedTabs)
@@ -396,8 +554,22 @@ final class Browser {
 	}
 
 	func syncDocument(settings: [String: SyncedSetting]) -> BrowserSyncDocument {
-		BrowserSyncDocument(
+		reconcileWorkspace()
+		var syncedWorkspace = workspace
+		let webTabIDs = Set(webTabs.map(\.id))
+		syncedWorkspace.favouriteTabIDs.removeAll { !webTabIDs.contains($0) }
+		for index in syncedWorkspace.spaces.indices {
+			syncedWorkspace.spaces[index].tabIDs.removeAll { !webTabIDs.contains($0) }
+			syncedWorkspace.spaces[index].pinnedTabIDs.removeAll { !webTabIDs.contains($0) }
+			if let selectedID = syncedWorkspace.spaces[index].selectedTabID,
+			   !webTabIDs.contains(selectedID)
+			{
+				syncedWorkspace.spaces[index].selectedTabID = syncedWorkspace.spaces[index].tabIDs.first
+			}
+		}
+		return BrowserSyncDocument(
 			tabs: webTabs.map(\.openTab),
+			workspace: syncedWorkspace,
 			bookmarks: bookmarks,
 			browser: BrowserSnapshot(
 				selectedTabID: persistedSelectedTabID,
@@ -443,6 +615,11 @@ final class Browser {
 		closedTabIDs = document.browser.closedTabIDs
 		deletedBookmarkIDs = document.browser.deletedBookmarkIDs
 		bookmarks = document.bookmarks
+		workspace = document.workspace ?? BrowserWorkspace.migrated(
+			tabs: document.tabs,
+			selectedTabID: document.browser.selectedTabID,
+			theme: Defaults[.browserTheme]
+		)
 		if !tabs.contains(where: { $0.id == selectedTabID }) {
 			selectedTabID = tabs[0].id
 		}
@@ -456,7 +633,91 @@ final class Browser {
 		if !recentlyUsedTabIDs.contains(selectedTabID) {
 			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
 		}
+		reconcileWorkspace()
 		schedulePersistence()
+	}
+
+	func receiveSharedState(from source: Browser) {
+		persistenceTask?.cancel()
+		persistenceTask = nil
+		let currentTabs = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
+		let sharedTabs = source.tabs.map(\.openTab)
+		tabs = sharedTabs.map { saved in
+			if let current = currentTabs[saved.id], current.openTab == saved {
+				return current
+			}
+			let tab = BrowserTab(openTab: saved)
+			configure(tab)
+			return tab
+		}
+		let selectedSpaceID = workspace.selectedSpaceID
+		let selectedTabsBySpace = Dictionary(uniqueKeysWithValues: workspace.spaces.map { ($0.id, $0.selectedTabID) })
+		workspace = source.workspace
+		if workspace.spaces.contains(where: { $0.id == selectedSpaceID }) {
+			workspace.selectedSpaceID = selectedSpaceID
+		}
+		for index in workspace.spaces.indices {
+			if let selectedID = selectedTabsBySpace[workspace.spaces[index].id] ?? nil,
+			   tabs.contains(where: { $0.id == selectedID })
+			{
+				workspace.spaces[index].selectedTabID = selectedID
+			}
+		}
+		bookmarks = source.bookmarks
+		closedTabIDs = source.closedTabIDs
+		deletedBookmarkIDs = source.deletedBookmarkIDs
+		if !tabs.contains(where: { $0.id == selectedTabID }) {
+			selectedTabID = tabs.first?.id ?? UUID()
+		}
+		reconcileWorkspace()
+		if !workspace.favouriteTabIDs.contains(selectedTabID),
+		   !selectedSpace.tabIDs.contains(selectedTabID)
+		{
+			let savedID = selectedSpace.selectedTabID.flatMap { id in
+				selectedSpace.tabIDs.contains(id) || workspace.favouriteTabIDs.contains(id) ? id : nil
+			}
+			if let replacementID = savedID ?? selectedSpace.tabIDs.first ?? workspace.favouriteTabIDs.first {
+				selectedTabID = replacementID
+				if let tab = tabs.first(where: { $0.id == replacementID }), tab.isHibernated {
+					tab.wake()
+					configure(tab)
+				}
+			} else {
+				addTab()
+			}
+		}
+	}
+
+	private func reconcileWorkspace() {
+		if workspace.spaces.isEmpty {
+			workspace = BrowserWorkspace.migrated(
+				tabs: tabs.map(\.openTab),
+				selectedTabID: selectedTabID,
+				theme: Defaults[.browserTheme]
+			)
+		}
+		if !workspace.spaces.contains(where: { $0.id == workspace.selectedSpaceID }) {
+			workspace.selectedSpaceID = workspace.spaces[0].id
+		}
+		let existingIDs = Set(tabs.map(\.id))
+		workspace.favouriteTabIDs.removeAll { !existingIDs.contains($0) }
+		for index in workspace.spaces.indices {
+			workspace.spaces[index].tabIDs.removeAll { !existingIDs.contains($0) }
+			let tabIDs = Set(workspace.spaces[index].tabIDs)
+			workspace.spaces[index].pinnedTabIDs.removeAll {
+				!tabIDs.contains($0)
+			}
+		}
+		let assignedIDs = Set(workspace.favouriteTabIDs + workspace.spaces.flatMap(\.tabIDs))
+		let unassignedIDs = tabs.map(\.id).filter { !assignedIDs.contains($0) }
+		if let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
+			workspace.spaces[index].tabIDs.append(contentsOf: unassignedIDs)
+			if workspace.spaces[index].tabIDs.contains(selectedTabID)
+				|| workspace.favouriteTabIDs.contains(selectedTabID)
+			{
+				workspace.spaces[index].selectedTabID = selectedTabID
+			}
+		}
 	}
 
 	private func schedulePersistence() {
@@ -472,8 +733,10 @@ final class Browser {
 	private func persist() {
 		guard let persistence else { return }
 		do {
+			reconcileWorkspace()
 			try persistence.saveBookmarks(bookmarks)
 			try persistence.saveOpenTabs(tabs.map(\.openTab))
+			try persistence.saveWorkspace(workspace)
 			try persistence.saveBrowserSnapshot(
 				BrowserSnapshot(
 					selectedTabID: selectedTabID,
@@ -482,6 +745,7 @@ final class Browser {
 				)
 			)
 			persistenceErrorDescription = nil
+			BrowserWindowRegistry.shared.publish(from: self)
 			BrowserSync.shared.scheduleSync()
 		} catch {
 			persistenceErrorDescription = error.localizedDescription

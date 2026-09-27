@@ -39,9 +39,14 @@ final class BrowserSync {
 	}
 
 	func attach(_ browser: Browser) {
+		guard self.browser !== browser else { return }
 		self.browser = browser
 		if isSignedIn {
-			Task { await syncNow() }
+			if lastSync == nil {
+				Task { await syncNow() }
+			} else {
+				scheduleSync()
+			}
 		}
 	}
 
@@ -135,7 +140,7 @@ final class BrowserSync {
 			let local = browser.syncDocument(settings: settingSnapshot())
 			let decoder = JSONDecoder()
 			let documents = try snapshots.map { try decoder.decode(BrowserSyncDocument.self, from: $0.payload) }
-			guard documents.allSatisfy({ $0.version == 1 }) else {
+			guard documents.allSatisfy({ $0.version == 1 || $0.version == 2 }) else {
 				throw BrowserSyncError.unsupportedVersion
 			}
 			let merged = documents.reduce(local) { $0.merging($1) }

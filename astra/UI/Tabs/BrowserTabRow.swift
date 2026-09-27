@@ -10,14 +10,25 @@ struct BrowserTabRow: View {
 	let tab: BrowserTab
 	let browser: Browser
 	let isSelected: Bool
-	@Default(.browserTheme) private var theme
+	private var theme: BrowserTheme {
+		browser.theme
+	}
+
 	@State private var isRenaming = false
 	@State private var isHovered = false
 	@State private var renameText = ""
 	@FocusState private var isTitleFocused: Bool
+	#if os(macOS)
+		@Environment(\.openWindow) private var openWindow
+		@State private var tabDrag = BrowserTabDragCoordinator.shared
+	#endif
 
 	private var tabIndex: Int? {
-		browser.tabs.firstIndex(where: { $0.id == tab.id })
+		browser.normalTabs.firstIndex(where: { $0.id == tab.id })
+	}
+
+	private var isPinned: Bool {
+		browser.selectedSpace.pinnedTabIDs.contains(tab.id)
 	}
 
 	private var canCloseAbove: Bool {
@@ -26,7 +37,7 @@ struct BrowserTabRow: View {
 
 	private var canCloseBelow: Bool {
 		guard let tabIndex else { return false }
-		return tabIndex < browser.tabs.count - 1
+		return tabIndex < browser.normalTabs.count - 1
 	}
 
 	@State private var hovered = false
@@ -52,7 +63,7 @@ struct BrowserTabRow: View {
 				.frame(width: 13, height: 16)
 		}
 		.buttonStyle(.plain)
-		.accessibilityLabel("Close Tab")
+		.accessibilityLabel(isPinned ? "Hibernate Tab" : "Close Tab")
 		.accessibilityIdentifier("close-tab-\(tab.id.uuidString)")
 	}
 
@@ -73,7 +84,6 @@ struct BrowserTabRow: View {
 						favicon
 							.resizable()
 							.scaledToFit()
-							.saturation(tab.isHibernated ? 0 : 1)
 					} else {
 						Image(systemName: "globe")
 					}
@@ -152,6 +162,29 @@ struct BrowserTabRow: View {
 					)
 			}
 		}
+		#if os(macOS)
+		.background {
+			BrowserDropZone(
+				browser: browser,
+				area: browser.selectedSpace.pinnedTabIDs.contains(tab.id) ? .pinned : .normal,
+				spaceID: browser.workspace.selectedSpaceID,
+				beforeTabID: tab.id
+			)
+		}
+		.highPriorityGesture(
+			DragGesture(minimumDistance: 8)
+				.onChanged { _ in
+					if tabDrag.activeTabID != tab.id {
+						browser.flushPersistence()
+						tabDrag.begin(tab.id, from: browser)
+					}
+					tabDrag.update()
+				}
+				.onEnded { _ in
+					tabDrag.drop(openWindow: openWindow)
+				}
+		)
+		#endif
 		.onHover { isHovered = $0 }
 		.contextMenu {
 			if tab.internalPage == nil {
@@ -168,8 +201,18 @@ struct BrowserTabRow: View {
 				.disabled(tab.isHibernated)
 				.accessibilityIdentifier("hibernate-tab-\(tab.id.uuidString)")
 
-				Button("Pin Tab", systemImage: "pin") {}
-					.disabled(true)
+				if isPinned {
+					Button("Unpin Tab", systemImage: "pin.slash") {
+						browser.moveTab(tab.id, to: .normal)
+					}
+				} else {
+					Button("Pin Tab", systemImage: "pin") {
+						browser.moveTab(tab.id, to: .pinned)
+					}
+				}
+				Button("Add to Favourites", systemImage: "star") {
+					browser.moveTab(tab.id, to: .favourite)
+				}
 
 				Divider()
 
@@ -192,12 +235,12 @@ struct BrowserTabRow: View {
 			Button("Close Other Tabs", systemImage: "xmark.circle") {
 				browser.closeOtherTabs(tab.id)
 			}
-			.disabled(browser.tabs.count < 2)
+			.disabled(browser.normalTabs.count < 2)
 
-			Button(role: .destructive) {
+			Button(role: isPinned ? nil : .destructive) {
 				browser.closeTab(tab.id)
 			} label: {
-				Label("Close Tab", systemImage: "xmark")
+				Label(isPinned ? "Hibernate Tab" : "Close Tab", systemImage: isPinned ? "moon.zzz" : "xmark")
 			}
 		}
 		.onChange(of: isSelected) { _, selected in
