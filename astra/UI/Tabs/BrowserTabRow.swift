@@ -29,12 +29,30 @@ struct BrowserTabRow: View {
 		return tabIndex < browser.tabs.count - 1
 	}
 
+	@State private var hovered = false
+
 	private var closeButton: some View {
-		Button("Close Tab", systemImage: "xmark") {
+		Button {
 			browser.closeTab(tab.id)
+		} label: {
+			Image(systemName: "xmark")
+				.frame(width: 22, height: 22)
+				.background {
+					if hovered {
+						Color.primary
+							.colorInvert()
+							.opacity(0.3)
+							.clipShape(RoundedRectangle(cornerRadius: 9))
+					}
+				}
+				.contentShape(RoundedRectangle(cornerRadius: 9))
+				.onHover {
+					hovered = $0
+				}
+				.frame(width: 13, height: 16)
 		}
-		.labelStyle(.iconOnly)
 		.buttonStyle(.plain)
+		.accessibilityLabel("Close Tab")
 		.accessibilityIdentifier("close-tab-\(tab.id.uuidString)")
 	}
 

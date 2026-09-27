@@ -9,6 +9,11 @@ struct DesktopBrowserShell: View {
 	@Default(.browserTheme) private var theme
 	@Default(.sidebarShown) private var sidebarShown
 	@State private var toastManager = ToastManager.shared
+	@State private var downloads = BrowserDownloadManager.shared
+	@State private var showsDownloads = false
+	@State private var flight: DownloadFlight?
+	@State private var flightProgress = 0.0
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var isFullScreen = false
 	#if os(macOS)
 		@State private var controlTabSwitcher: ControlTabSwitcher
@@ -125,75 +130,129 @@ struct DesktopBrowserShell: View {
 
 	@State private var newTabHovered = false
 
+	private struct DownloadFlight: Identifiable {
+		let id: UUID
+		let source: UnitPoint
+		let symbol: String
+	}
+
+	private var downloadsBottomBar: some View {
+		HStack {
+			Button {
+				withAnimation(reduceMotion ? .none : .smooth(duration: 0.32)) {
+					showsDownloads.toggle()
+				}
+			} label: {
+				HStack(spacing: 9) {
+					ZStack {
+						Image(systemName: downloads.buttonSymbol)
+							.frame(width: 20, height: 20)
+						if let progress = downloads.activeProgress {
+							Circle()
+								.trim(from: 0, to: progress)
+								.stroke(theme.progressColor, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+								.rotationEffect(.degrees(-90))
+								.frame(width: 29, height: 29)
+						}
+					}
+				}
+				.frame(maxWidth: .infinity, alignment: .leading)
+				.contentShape(Rectangle())
+			}
+			.buttonStyle(.plain)
+			.accessibilityLabel(showsDownloads ? "Show Tabs" : "Show Downloads")
+			.accessibilityValue(downloads.activeProgress.map { "\(Int($0 * 100)) percent" } ?? "No active downloads")
+			.accessibilityIdentifier("downloads-button")
+		}
+		.padding(.horizontal, 12)
+		.padding(.vertical, 9)
+		.frame(height: 48)
+	}
+
 	var body: some View {
 		BrowserSplitView(sidebarShown: $browser.sidebarShown) {
-			ZStack(alignment: .top) {
-				ScrollView {
-					LazyVStack(spacing: 2) {
-						ForEach(browser.tabs) { tab in
-							BrowserTabRow(
-								tab: tab,
-								browser: browser,
-								isSelected: browser.selectedTabID == tab.id
-							)
-						}
-						.reorderable()
-
-						Spacer(minLength: 0)
-
-						Button {
-							browser.addTab()
-						} label: {
-							Label("New Tab", systemImage: "plus")
-								.frame(maxWidth: .infinity, alignment: .leading)
-								.contentShape(Rectangle())
-						}
-						.keyboardShortcut("T", modifiers: .command)
-						.buttonStyle(.plain)
-						.padding(.horizontal, 8)
-						.foregroundStyle(theme.foregroundColor.opacity(0.65))
-						.onHover {
-							newTabHovered = $0
-						}
-						.frame(height: 28)
-						.background {
-							if newTabHovered {
-								Color.clear
-									.glassEffect(
-										.regular,
-										in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+			VStack(spacing: 0) {
+				ZStack(alignment: .top) {
+					ZStack(alignment: .top) {
+						ScrollView {
+							LazyVStack(spacing: 2) {
+								ForEach(browser.tabs) { tab in
+									BrowserTabRow(
+										tab: tab,
+										browser: browser,
+										isSelected: browser.selectedTabID == tab.id
 									)
-							}
-						}
-//						.padding(.top, 10)
-						.accessibilityIdentifier("new-tab")
-					}
-					.reorderContainer(for: BrowserTab.self) { difference in
-						switch difference.destination.position {
-							case let .before(id):
-								browser.reorderTabs(difference.sources, before: id)
-							case .end:
-								browser.reorderTabs(difference.sources, before: nil)
-						}
-					}
-					.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
-					.padding(.top, 35)
-				}
+								}
+								.reorderable()
 
-				HazeEffect(
-					maskProvider: LinearGradientMaskProvider(
-						startPoint: .top,
-						endPoint: .bottom,
-						startOpacity: 1,
-						endOpacity: 0,
-						isSmooth: true
-					),
-					maxBlurRadius: 2
-				)
-				.frame(height: BrowserChromeMetrics.topBarRegionHeight)
-				.frame(maxWidth: .infinity)
+								Spacer(minLength: 0)
+
+								Button {
+									browser.addTab()
+								} label: {
+									Label("New Tab", systemImage: "plus")
+										.frame(maxWidth: .infinity, alignment: .leading)
+										.contentShape(Rectangle())
+								}
+								.keyboardShortcut("T", modifiers: .command)
+								.buttonStyle(.plain)
+								.padding(.horizontal, 8)
+								.foregroundStyle(theme.foregroundColor.opacity(0.65))
+								.onHover {
+									newTabHovered = $0
+								}
+								.frame(height: 28)
+								.background {
+									if newTabHovered {
+										Color.clear
+											.glassEffect(
+												.regular,
+												in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+											)
+									}
+								}
+								//						.padding(.top, 10)
+								.accessibilityIdentifier("new-tab")
+							}
+							.reorderContainer(for: BrowserTab.self) { difference in
+								switch difference.destination.position {
+									case let .before(id):
+										browser.reorderTabs(difference.sources, before: id)
+									case .end:
+										browser.reorderTabs(difference.sources, before: nil)
+								}
+							}
+							.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
+							.padding(.top, 35)
+						}
+
+						HazeEffect(
+							maskProvider: LinearGradientMaskProvider(
+								startPoint: .top,
+								endPoint: .bottom,
+								startOpacity: 1,
+								endOpacity: 0,
+								isSmooth: true
+							),
+							maxBlurRadius: 2
+						)
+						.frame(height: BrowserChromeMetrics.topBarRegionHeight)
+						.frame(maxWidth: .infinity)
+					}
+					.foregroundStyle(theme.foregroundColor)
+					.offset(x: showsDownloads ? BrowserChromeMetrics.expandedSidebarWidth : 0)
+
+					DownloadsSidebarView(manager: downloads)
+						.foregroundStyle(theme.foregroundColor)
+						.offset(x: showsDownloads ? 0 : -BrowserChromeMetrics.expandedSidebarWidth)
+				}
+				.frame(maxWidth: .infinity, maxHeight: .infinity)
+				.clipped()
+				.safeAreaBar(edge: .bottom) {
+					downloadsBottomBar
+						.foregroundStyle(theme.foregroundColor)
+				}
 			}
-			.foregroundStyle(theme.foregroundColor)
 
 		} content: {
 			ZStack(alignment: .top) {
@@ -316,6 +375,46 @@ struct DesktopBrowserShell: View {
 		}
 		.overlay(alignment: .topLeading) {
 			navigationBarControls
+		}
+		.overlay {
+			GeometryReader { geometry in
+				if let flight, !reduceMotion {
+					let startX = (sidebarShown ? BrowserChromeMetrics.expandedSidebarWidth : 0)
+						+ (geometry.size.width - (sidebarShown ? BrowserChromeMetrics.expandedSidebarWidth : 0)) * flight.source.x
+					let startY = BrowserChromeMetrics.topBarRegionHeight
+						+ (geometry.size.height - BrowserChromeMetrics.topBarRegionHeight) * flight.source.y
+					let endX: CGFloat = 25
+					let endY = geometry.size.height - 24
+					Image(systemName: flight.symbol)
+						.font(.system(size: 24, weight: .semibold))
+						.foregroundStyle(theme.progressColor)
+						.scaleEffect(1 - flightProgress * 0.65)
+						.opacity(1 - flightProgress * 0.2)
+						.position(
+							x: startX + (endX - startX) * flightProgress,
+							y: startY + (endY - startY) * flightProgress - sin(flightProgress * .pi) * 60
+						)
+						.accessibilityHidden(true)
+				}
+			}
+			.allowsHitTesting(false)
+		}
+		.onChange(of: downloads.latestStart?.id) { _, _ in
+			guard let start = downloads.latestStart,
+			      let item = downloads.items.first(where: { $0.id == start.id })
+			else { return }
+			flightProgress = 0
+			flight = DownloadFlight(id: start.id, source: start.source, symbol: item.symbol)
+			withAnimation(reduceMotion ? .none : .smooth(duration: 0.7)) {
+				flightProgress = 1
+			}
+		}
+		.task(id: flight?.id) {
+			guard flight != nil else { return }
+			try? await Task.sleep(for: .milliseconds(750))
+			if !Task.isCancelled {
+				flight = nil
+			}
 		}
 		#if os(macOS)
 		.overlay {

@@ -121,6 +121,10 @@ final class BrowserController: NSObject {
 	private(set) var hasTopEdgeContent = false
 	private(set) var themeColor: Color?
 	private(set) var themeColorIsLight: Bool?
+	private var pendingDownloadSource: UnitPoint?
+	private var pendingDownloadSiteURL: URL?
+	private var isDownloadHandoff = false
+	private var pageURLBeforeDownload: URL?
 	#if os(macOS)
 		private(set) var previewSnapshot: NSImage?
 	#endif
@@ -249,6 +253,7 @@ final class BrowserController: NSObject {
 				MainActor.assumeIsolated {
 					guard let self else { return }
 					guard !self.awaitsNavigationCommit else { return }
+					guard !self.isDownloadHandoff else { return }
 					guard let url = change.newValue ?? webView.url else { return }
 					self.url = url
 					if !webView.isLoading {
@@ -483,9 +488,12 @@ extension BrowserController: WKNavigationDelegate {
 		decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
 	) {
 		if navigationAction.shouldPerformDownload {
+			prepareDownloadHandoff(in: webView)
 			decisionHandler(.download)
 			return
 		}
+		isDownloadHandoff = false
+		pageURLBeforeDownload = nil
 		#if os(macOS)
 			let shiftPressed = navigationAction.modifierFlags.contains(.shift)
 		#else
@@ -499,6 +507,8 @@ extension BrowserController: WKNavigationDelegate {
 			if navigationAction.targetFrame?.isMainFrame == true {
 				switch navigationAction.navigationType {
 					case .linkActivated, .formSubmitted, .formResubmitted:
+						pendingDownloadSource = (webView as? PeekSourceWebView)?.sourceIfRecent
+						pendingDownloadSiteURL = webView.url
 						historyManager.beginVisit()
 						(webView as? PeekSourceWebView)?.consumeRecentClick()
 					default:
@@ -514,25 +524,41 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webView(
-		_: WKWebView,
+		_ webView: WKWebView,
 		decidePolicyFor navigationResponse: WKNavigationResponse,
 		decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
 	) {
 		let disposition = (navigationResponse.response as? HTTPURLResponse)?
 			.value(forHTTPHeaderField: "Content-Disposition")
 		if !navigationResponse.canShowMIMEType || disposition?.lowercased().hasPrefix("attachment") == true {
+			prepareDownloadHandoff(in: webView)
 			decisionHandler(.download)
 		} else {
+			pendingDownloadSource = nil
+			pendingDownloadSiteURL = nil
 			decisionHandler(.allow)
 		}
 	}
 
-	func webView(_: WKWebView, navigationAction _: WKNavigationAction, didBecome download: WKDownload) {
-		BrowserDownloadManager.shared.start(download)
+	func webView(_ webView: WKWebView, navigationAction _: WKNavigationAction, didBecome download: WKDownload) {
+		BrowserDownloadManager.shared.start(
+			download,
+			sourceURL: pageURLBeforeDownload ?? webView.url,
+			source: newWindowSource(in: webView)
+		)
+		restorePageAfterDownloadHandoff()
 	}
 
-	func webView(_: WKWebView, navigationResponse _: WKNavigationResponse, didBecome download: WKDownload) {
-		BrowserDownloadManager.shared.start(download)
+	func webView(_ webView: WKWebView, navigationResponse _: WKNavigationResponse, didBecome download: WKDownload) {
+		let source = pendingDownloadSource ?? newWindowSource(in: webView)
+		BrowserDownloadManager.shared.start(
+			download,
+			sourceURL: pendingDownloadSiteURL ?? pageURLBeforeDownload ?? webView.url,
+			source: source
+		)
+		pendingDownloadSource = nil
+		pendingDownloadSiteURL = nil
+		restorePageAfterDownloadHandoff()
 	}
 
 	func webView(_: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -546,7 +572,16 @@ extension BrowserController: WKNavigationDelegate {
 	private func handleNavigationFailure(_ navigation: WKNavigation!, error: Error) {
 		guard navigation === currentNavigation else { return }
 		let error = error as NSError
+		if isDownloadHandoff,
+		   error.domain == "WebKitErrorDomain" && error.code == 102
+		   || error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled
+		{
+			restorePageAfterDownloadHandoff()
+			return
+		}
 		guard error.domain != NSURLErrorDomain || error.code != NSURLErrorCancelled else { return }
+		isDownloadHandoff = false
+		pageURLBeforeDownload = nil
 		awaitsNavigationCommit = false
 		historyManager.cancelVisit()
 		if let failedURL = error.userInfo[NSURLErrorFailingURLErrorKey] as? URL ?? url {
@@ -569,8 +604,24 @@ extension BrowserController: WKNavigationDelegate {
 		webView.underPageBackgroundColor = nil
 	}
 
+	private func prepareDownloadHandoff(in webView: WKWebView) {
+		isDownloadHandoff = true
+		pageURLBeforeDownload = historyManager.currentURL ?? webView.url
+	}
+
+	private func restorePageAfterDownloadHandoff() {
+		guard isDownloadHandoff else { return }
+		historyManager.cancelVisit()
+		awaitsNavigationCommit = false
+		navigationFailure = nil
+		url = pageURLBeforeDownload
+		navigationDidChange?()
+	}
+
 	func webView(_: WKWebView, didCommit navigation: WKNavigation!) {
 		guard navigation === currentNavigation else { return }
+		isDownloadHandoff = false
+		pageURLBeforeDownload = nil
 		navigationFailure = nil
 		awaitsNavigationCommit = false
 		updateHistory()
@@ -641,8 +692,10 @@ extension BrowserController: WKUIDelegate {
 		windowFeatures _: WKWindowFeatures
 	) -> WKWebView? {
 		if navigationAction.shouldPerformDownload {
+			let source = newWindowSource(in: webView)
+			let sourceURL = webView.url
 			webView.startDownload(using: navigationAction.request) { download in
-				BrowserDownloadManager.shared.start(download)
+				BrowserDownloadManager.shared.start(download, sourceURL: sourceURL, source: source)
 			}
 			return nil
 		}
@@ -670,6 +723,13 @@ private final class PeekSourceWebView: WKWebView {
 	var shiftClick = false
 	var hasShiftClick: Bool {
 		shiftClick && ProcessInfo.processInfo.systemUptime - clickTime < 2
+	}
+
+	var sourceIfRecent: UnitPoint? {
+		guard clickTime > 0,
+		      ProcessInfo.processInfo.systemUptime - clickTime < 2
+		else { return nil }
+		return clickSource
 	}
 
 	@discardableResult

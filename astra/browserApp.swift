@@ -45,6 +45,7 @@ struct browserApp: App {
 			ContentView(browser: $browser)
 				.task {
 					updates.start()
+					BrowserDownloadManager.shared.resumeAvailableDownloads()
 				}
 				.sheet(isPresented: $updates.isPresented) {
 					BrowserUpdateSheet(updates: updates)

@@ -8,6 +8,17 @@
 import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+		guard BrowserDownloadManager.shared.activeProgress != nil else {
+			return .terminateNow
+		}
+		Task { @MainActor in
+			await BrowserDownloadManager.shared.pauseAllForQuit()
+			sender.reply(toApplicationShouldTerminate: true)
+		}
+		return .terminateLater
+	}
+
 	func applicationDidFinishLaunching(_: Notification) {
 		// Disable for any windows already open
 		disableTabbing()

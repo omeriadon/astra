@@ -18,18 +18,6 @@ struct BrowserContentView: View {
 			content
 				.frame(width: proxy.size.width, height: proxy.size.height)
 				.background(theme.contentShade(for: colorScheme))
-				.background {
-					HazeEffect(
-						maskProvider: LinearGradientMaskProvider(
-							startPoint: .top,
-							endPoint: .bottom,
-							startOpacity: 1.0,
-							endOpacity: 1.0,
-							isSmooth: false
-						),
-						maxBlurRadius: 1
-					)
-				}
 				.allowsHitTesting(browser.selectedTab?.peeks.isEmpty ?? true)
 				.accessibilityHidden(!(browser.selectedTab?.peeks.isEmpty ?? true))
 		}
