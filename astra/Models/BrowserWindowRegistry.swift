@@ -8,17 +8,6 @@ final class BrowserWindowRegistry {
 
 	private(set) var activeBrowserID: UUID?
 	@ObservationIgnored private var browsers: [WeakBrowser] = []
-	@ObservationIgnored private var detachedTabs: [UUID: UUID] = [:]
-
-	func prepareDetachedWindow(for tabID: UUID) -> UUID {
-		let windowID = UUID()
-		detachedTabs[windowID] = tabID
-		return windowID
-	}
-
-	func takeDetachedTab(for windowID: UUID) -> UUID? {
-		detachedTabs.removeValue(forKey: windowID)
-	}
 
 	var activeBrowser: Browser? {
 		browsers.first { $0.browser?.windowID == activeBrowserID }?.browser

@@ -5,17 +5,20 @@ struct BrowserWorkspace: Codable, Equatable {
 	var favouriteTabIDs: [UUID]
 	var favouritesModifiedAt: Date
 	var selectedSpaceID: UUID
+	var deletedSpaceIDs: Set<UUID>
 
 	init(
 		spaces: [BrowserSpace],
 		favouriteTabIDs: [UUID],
 		favouritesModifiedAt: Date = .now,
-		selectedSpaceID: UUID
+		selectedSpaceID: UUID,
+		deletedSpaceIDs: Set<UUID> = []
 	) {
 		self.spaces = spaces
 		self.favouriteTabIDs = favouriteTabIDs
 		self.favouritesModifiedAt = favouritesModifiedAt
 		self.selectedSpaceID = selectedSpaceID
+		self.deletedSpaceIDs = deletedSpaceIDs
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -23,6 +26,7 @@ struct BrowserWorkspace: Codable, Equatable {
 		case favouriteTabIDs
 		case favouritesModifiedAt
 		case selectedSpaceID
+		case deletedSpaceIDs
 	}
 
 	init(from decoder: Decoder) throws {
@@ -31,6 +35,7 @@ struct BrowserWorkspace: Codable, Equatable {
 		favouriteTabIDs = try values.decode([UUID].self, forKey: .favouriteTabIDs)
 		favouritesModifiedAt = try values.decodeIfPresent(Date.self, forKey: .favouritesModifiedAt) ?? .distantPast
 		selectedSpaceID = try values.decode(UUID.self, forKey: .selectedSpaceID)
+		deletedSpaceIDs = try values.decodeIfPresent(Set<UUID>.self, forKey: .deletedSpaceIDs) ?? []
 	}
 
 	static func migrated(

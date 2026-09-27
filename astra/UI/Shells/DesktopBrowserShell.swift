@@ -58,14 +58,35 @@ struct DesktopBrowserShell: View {
 		}
 		.padding(
 			.leading,
-			sidebarShown
-				? (isFullScreen ? 0 : 10)
-				: (isFullScreen ? 80 : BrowserChromeMetrics.persistentControlsAreaWidth)
+			sidebarShown ? 10 : BrowserChromeMetrics.persistentControlsAreaWidth
 		)
 		.padding(.trailing, 10)
 		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 		.frame(maxWidth: .infinity, alignment: .leading)
 		.environment(\.colorScheme, topBarColorScheme)
+		.overlay(alignment: .bottom) {
+			if let controller = browser.selectedTab?.activeController {
+				BrowserLoadingBar(
+					isLoading: controller.isLoading,
+					estimatedProgress: controller.estimatedProgress,
+					theme: theme
+				)
+				.frame(height: 1.5)
+				.id(browser.selectedTabID)
+			}
+		}
+	}
+
+	private var topBar: some View {
+		Group {
+			if browser.selectedTab?.internalPage == nil {
+				websiteControls
+			} else {
+				Color.clear
+			}
+		}
+		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
+		.background(theme.tabColor)
 	}
 
 	private var navigationBarControls: some View {
@@ -92,25 +113,6 @@ struct DesktopBrowserShell: View {
 			.foregroundStyle(theme.foregroundColor)
 			.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
 			.accessibilityIdentifier("sidebar-toggle")
-
-			Button {
-				browser.openInternalPage(.themeEditor)
-
-			} label: {
-				Label("Edit Theme", systemImage: "paintpalette")
-					.labelStyle(.iconOnly)
-					.frame(
-						width: BrowserChromeMetrics.topBarButtonLabelWidth,
-						height: BrowserChromeMetrics.topBarButtonLabelHeight
-					)
-					.font(.body.scaled(by: 0.9))
-			}
-			.controlSize(.regular)
-			.buttonSizing(.fitted)
-			.buttonStyle(.bordered)
-			.foregroundStyle(theme.foregroundColor)
-			.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
-			.accessibilityIdentifier("edit-browser-theme")
 		}
 		.frame(
 			width: BrowserChromeMetrics.persistentControlsAreaWidth,
@@ -128,14 +130,14 @@ struct DesktopBrowserShell: View {
 		return themeColorIsLight ? .light : .dark
 	}
 
-	private var topBarBackgroundShape: RoundedRectangle {
-		RoundedRectangle(cornerRadius: contentCornerRadius)
-	}
-
 	private var contentCornerRadius: CGFloat {
 		sidebarShown
 			? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar
 			: BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar
+	}
+
+	private var spacePush: AnyTransition {
+		.push(from: browser.spaceSwitchDirection > 0 ? .trailing : .leading)
 	}
 
 	@State private var newTabHovered = false
@@ -246,34 +248,52 @@ struct DesktopBrowserShell: View {
 	private var tabSidebar: some View {
 		ScrollView {
 			LazyVStack(spacing: 2) {
-				LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
-					ForEach(browser.favouriteTabs) { tab in
-						BrowserFavouriteTile(tab: tab, browser: browser)
+				if !browser.favouriteTabs.isEmpty {
+					LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
+						ForEach(browser.favouriteTabs) { tab in
+							BrowserFavouriteTile(tab: tab, browser: browser)
+						}
 					}
+					.padding(.bottom, 12)
+					#if os(macOS)
+						.background {
+							BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
+						}
+					#endif
 				}
-				.frame(minHeight: browser.favouriteTabs.isEmpty ? 34 : 42)
-				.padding(.bottom, 12)
 				#if os(macOS)
-					.background {
-						BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
+					if browser.favouriteTabs.isEmpty, tabDrag.activeTabID != nil {
+						Color.clear
+							.frame(height: 34)
+							.background {
+								BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
+							}
 					}
 				#endif
 
-				VStack(spacing: 2) {
-					ForEach(browser.pinnedTabs) { tab in
-						BrowserTabRow(tab: tab, browser: browser, isSelected: browser.selectedTabID == tab.id)
+				if !browser.pinnedTabs.isEmpty {
+					VStack(spacing: 2) {
+						ForEach(browser.pinnedTabs) { tab in
+							BrowserTabRow(tab: tab, browser: browser, isSelected: browser.selectedTabID == tab.id)
+						}
 					}
-				}
-				.frame(minHeight: 28)
-				#if os(macOS)
+					#if os(macOS)
 					.background {
 						BrowserDropZone(browser: browser, area: .pinned, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
 					}
-				#endif
-				if !browser.pinnedTabs.isEmpty {
+					#endif
 					Divider()
 						.padding(.vertical, 8)
 				}
+				#if os(macOS)
+					if browser.pinnedTabs.isEmpty, tabDrag.activeTabID != nil {
+						Color.clear
+							.frame(height: 28)
+							.background {
+								BrowserDropZone(browser: browser, area: .pinned, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
+							}
+					}
+				#endif
 				VStack(spacing: 2) {
 					ForEach(browser.normalTabs) { tab in
 						BrowserTabRow(tab: tab, browser: browser, isSelected: browser.selectedTabID == tab.id)
@@ -287,19 +307,8 @@ struct DesktopBrowserShell: View {
 				#endif
 			}
 			.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
-			.padding(.top, 35)
-		}
-	}
-
-	private var animatedThemeBackground: some View {
-		ZStack {
-			if let transitionFromTheme, let transitionToTheme {
-				BrowserThemeBackground(theme: transitionFromTheme)
-				BrowserThemeBackground(theme: transitionToTheme)
-					.opacity(themeBlend)
-			} else {
-				BrowserThemeBackground(theme: theme)
-			}
+			.padding(.top, 4)
+			.padding(.bottom, 48)
 		}
 	}
 
@@ -326,8 +335,12 @@ struct DesktopBrowserShell: View {
 
 	private func completeSpaceThemeTransition(from oldID: UUID, to newID: UUID) {
 		let oldTheme = browser.workspace.spaces.first(where: { $0.id == oldID })?.theme ?? theme
-		transitionFromTheme = transitionFromTheme ?? oldTheme
+		let continuesPreview = transitionFromTheme != nil && transitionToTheme == theme
+		transitionFromTheme = continuesPreview ? transitionFromTheme : oldTheme
 		transitionToTheme = theme
+		if !continuesPreview {
+			themeBlend = 0
+		}
 		themeTransitionGeneration += 1
 		let generation = themeTransitionGeneration
 		withAnimation(reduceMotion ? nil : .smooth(duration: 0.3), completionCriteria: .logicallyComplete) {
@@ -345,8 +358,12 @@ struct DesktopBrowserShell: View {
 	var body: some View {
 		BrowserSplitView(sidebarShown: $browser.sidebarShown) {
 			VStack(spacing: 0) {
+				navigationBarControls
+					.frame(maxWidth: .infinity, alignment: .leading)
 				ZStack(alignment: .top) {
 					tabSidebar
+						.id(browser.workspace.selectedSpaceID)
+						.transition(spacePush)
 						.foregroundStyle(theme.foregroundColor)
 						.offset(x: showsDownloads ? BrowserChromeMetrics.expandedSidebarWidth : 0)
 
@@ -354,113 +371,82 @@ struct DesktopBrowserShell: View {
 						.foregroundStyle(theme.foregroundColor)
 						.offset(x: showsDownloads ? 0 : -BrowserChromeMetrics.expandedSidebarWidth)
 				}
+				.animation(reduceMotion ? nil : .smooth(duration: 0.32), value: browser.workspace.selectedSpaceID)
+				.clipped()
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
-				.safeAreaBar(edge: .bottom) {
-					downloadsBottomBar
-						.foregroundStyle(theme.foregroundColor)
+				.overlay(alignment: .bottom) {
+					ZStack(alignment: .bottom) {
+						HazeEffect(
+							maskProvider: LinearGradientMaskProvider(
+								startPoint: .bottom,
+								endPoint: .top,
+								startOpacity: 1,
+								endOpacity: 0,
+								isSmooth: true
+							),
+							maxBlurRadius: 2
+						)
+						.frame(height: 56)
+						.allowsHitTesting(false)
+						downloadsBottomBar
+							.foregroundStyle(theme.foregroundColor)
+					}
 				}
 			}
 
 		} content: {
-			ZStack(alignment: .top) {
-				BrowserContentView(
-					browser: browser,
-					insets: BrowserViewportInsets(
-						obscured: EdgeInsets(top: browser.selectedTab?.internalPage == nil ? BrowserChromeMetrics.topBarRegionHeight : 0, leading: 0, bottom: 0, trailing: 0),
-						minimum: EdgeInsets(top: browser.selectedTab?.internalPage == nil ? BrowserChromeMetrics.topBarRegionHeight : 0, leading: 0, bottom: 0, trailing: 0),
-						maximum: EdgeInsets(top: browser.selectedTab?.internalPage == nil ? BrowserChromeMetrics.topBarRegionHeight : 0, leading: 0, bottom: 0, trailing: 0)
-					)
-				)
-				#if os(macOS)
-				.blur(radius: windowRegistry.hasActiveDuplicate(of: browser) ? 10 : 0)
-				#endif
-
-				Group {
-					if browser.selectedTab?.internalPage == nil {
-						HazeEffect(
-							maskProvider: LinearGradientMaskProvider(
-								startPoint: .top,
-								endPoint: .bottom,
-								startOpacity: 1.0,
-								endOpacity: browser.selectedTab?.activeController?.hasTopEdgeContent == true ? 1.0 : 0.0,
-								isSmooth: browser.selectedTab?.activeController?.hasTopEdgeContent == true
-							),
-							maxBlurRadius: browser.selectedTab?.activeController?.hasTopEdgeContent == true ? 8 : 4
-						)
-						.frame(height: BrowserChromeMetrics.topBarRegionHeight)
-						.frame(maxWidth: .infinity)
-					}
-				}
-				.background {
-					if browser.selectedTab?.internalPage == nil,
-					   let themeColor = browser.selectedTab?.activeController?.themeColor
-					{
-						themeColor.opacity(0.6)
-							.mask {
-								if browser.selectedTab?.activeController?.hasTopEdgeContent == true {
-									Color.white
-								} else {
-									LinearGradient(colors: [.clear, .white], startPoint: .bottom, endPoint: .top)
-								}
-							}
-					}
-				}
-				.overlay(alignment: .bottom) {
-					if browser.selectedTab?.internalPage == nil,
-					   let controller = browser.selectedTab?.activeController
-					{
-						VStack {
-							Spacer()
-
-							BrowserLoadingBar(
-								isLoading: controller.isLoading,
-								estimatedProgress: controller.estimatedProgress,
-								theme: theme
-							)
-							.frame(height: 1.5)
-							.frame(maxWidth: .infinity)
-						}
-						.frame(height: BrowserChromeMetrics.topBarRegionHeight)
-						.clipShape(topBarBackgroundShape)
-						.id(browser.selectedTabID)
-					}
-				}
-
-				VStack(spacing: 0) {
-					Color.clear
-						.frame(height: browser.selectedTab?.internalPage == nil ? BrowserChromeMetrics.topBarRegionHeight : 0)
-						.allowsHitTesting(false)
+			VStack(spacing: 0) {
+				topBar
+				ZStack(alignment: .top) {
+					BrowserContentView(browser: browser)
+					#if os(macOS)
+						.blur(radius: windowRegistry.hasActiveDuplicate(of: browser) ? 10 : 0)
+					#endif
 
 					if let tab = browser.selectedTab {
 						PeekStackView(tab: tab, browser: browser)
 							.id(tab.id)
 					}
 				}
-			}
-			.overlay(alignment: .topTrailing) {
-				if let toast = toastManager.toast {
-					BrowserToastView(toast: toast)
-						.padding(.top, BrowserChromeMetrics.topBarRegionHeight + 12)
-						.padding(.trailing, 14)
-						.transition(.move(edge: .trailing))
+				.animation(reduceMotion ? nil : .smooth(duration: 0.32), value: browser.workspace.selectedSpaceID)
+				.overlay(alignment: .topTrailing) {
+					if let toast = toastManager.toast {
+						BrowserToastView(toast: toast)
+							.padding(.top, 12)
+							.padding(.trailing, 14)
+							.transition(.move(edge: .trailing))
+					}
 				}
-			}
-			.animation(.easeOut(duration: 0.1), value: toastManager.toast != nil)
-			.clipShape(RoundedRectangle(cornerRadius: contentCornerRadius))
-			.overlay {
-				if isLocalhost {
-					RoundedRectangle(cornerRadius: contentCornerRadius)
-						.inset(by: -2)
-						.strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [10, 5]))
-						.foregroundStyle(.yellow)
+				.animation(.easeOut(duration: 0.1), value: toastManager.toast != nil)
+				.clipShape(RoundedRectangle(cornerRadius: contentCornerRadius))
+				.overlay {
+					if isLocalhost {
+						RoundedRectangle(cornerRadius: contentCornerRadius)
+							.inset(by: -2)
+							.strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [10, 5]))
+							.foregroundStyle(.yellow)
+					}
 				}
-			}
-			.animation(.smooth(duration: 0.3)) { view in
-				view
-					.padding(sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
+				.animation(.smooth(duration: 0.3)) { view in
+					view
+						.padding(sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
+				}
+				.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
 		}
-		.background { animatedThemeBackground }
+		.background {
+			BrowserThemeBackground(
+				theme: transitionToTheme ?? theme,
+				transitionFromTheme: transitionFromTheme,
+				transitionProgress: themeBlend,
+				transitionDirection: CGFloat(browser.spaceSwitchDirection)
+			)
+		}
+		.overlay(alignment: .topLeading) {
+			if !sidebarShown {
+				navigationBarControls
+			}
+		}
 		.onChange(of: browser.workspace.selectedSpaceID) { oldID, newID in
 			completeSpaceThemeTransition(from: oldID, to: newID)
 		}
@@ -496,20 +482,6 @@ struct DesktopBrowserShell: View {
 				.accessibilityHidden(true)
 		}
 		#endif
-		.overlay(alignment: .top) {
-			if browser.selectedTab?.internalPage == nil {
-				websiteControls
-					.padding(
-						.leading,
-						sidebarShown
-							? BrowserChromeMetrics.expandedSidebarWidth + BrowserChromeMetrics.shellEdgePadding
-							: 0
-					)
-			}
-		}
-		.overlay(alignment: .topLeading) {
-			navigationBarControls
-		}
 		.overlay {
 			GeometryReader { geometry in
 				if let flight, !reduceMotion {

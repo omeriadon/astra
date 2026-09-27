@@ -40,13 +40,10 @@ final class BrowserSync {
 
 	func attach(_ browser: Browser) {
 		guard self.browser !== browser else { return }
+		let hadBrowser = self.browser != nil
 		self.browser = browser
-		if isSignedIn {
-			if lastSync == nil {
-				Task { await syncNow() }
-			} else {
-				scheduleSync()
-			}
+		if isSignedIn, !hadBrowser {
+			Task { await syncNow() }
 		}
 	}
 

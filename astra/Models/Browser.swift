@@ -11,6 +11,7 @@ final class Browser {
 	private(set) var tabs: [BrowserTab]
 	private(set) var selectedTabID: UUID
 	private(set) var workspace: BrowserWorkspace
+	private(set) var spaceSwitchDirection = 1
 	private(set) var recentlyUsedTabIDs: [UUID]
 	private(set) var bookmarks: [Bookmark]
 	private(set) var closedTabIDs: Set<UUID>
@@ -69,14 +70,40 @@ final class Browser {
 
 	func createSpace() {
 		let space = BrowserSpace()
+		spaceSwitchDirection = 1
 		workspace.spaces.append(space)
 		workspace.selectedSpaceID = space.id
 		openInternalPage(.themeEditor)
 		schedulePersistence()
 	}
 
+	func deleteSpace(_ id: UUID) {
+		guard workspace.spaces.count > 1,
+		      let removed = workspace.spaces.first(where: { $0.id == id }),
+		      let destinationIndex = workspace.spaces.firstIndex(where: { $0.id != id })
+		else { return }
+		let destinationID = workspace.spaces[destinationIndex].id
+		let destinationTabIDs = Set(workspace.spaces[destinationIndex].tabIDs)
+		let destinationPinnedIDs = Set(workspace.spaces[destinationIndex].pinnedTabIDs)
+		workspace.spaces[destinationIndex].tabIDs.append(contentsOf: removed.tabIDs.filter { !destinationTabIDs.contains($0) })
+		workspace.spaces[destinationIndex].pinnedTabIDs.append(contentsOf: removed.pinnedTabIDs.filter { !destinationPinnedIDs.contains($0) })
+		if removed.tabIDs.contains(selectedTabID) {
+			workspace.spaces[destinationIndex].selectedTabID = selectedTabID
+		}
+		workspace.spaces[destinationIndex].modifiedAt = .now
+		workspace.spaces.removeAll { $0.id == id }
+		workspace.deletedSpaceIDs.insert(id)
+		if workspace.selectedSpaceID == id {
+			selectSpace(destinationID)
+		}
+		schedulePersistence()
+	}
+
 	func selectSpace(_ id: UUID) {
-		guard workspace.spaces.contains(where: { $0.id == id }) else { return }
+		guard let nextIndex = workspace.spaces.firstIndex(where: { $0.id == id }) else { return }
+		if let currentIndex = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
+			spaceSwitchDirection = nextIndex >= currentIndex ? 1 : -1
+		}
 		workspace.selectedSpaceID = id
 		let space = selectedSpace
 		if let tabID = space.selectedTabID,
@@ -289,9 +316,12 @@ final class Browser {
 	func selectTab(_ id: UUID) {
 		guard let tab = tabs.first(where: { $0.id == id }) else { return }
 		if !workspace.favouriteTabIDs.contains(id),
-		   let owner = workspace.spaces.first(where: { $0.tabIDs.contains(id) })
+		   let ownerIndex = workspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })
 		{
-			workspace.selectedSpaceID = owner.id
+			if let currentIndex = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
+				spaceSwitchDirection = ownerIndex >= currentIndex ? 1 : -1
+			}
+			workspace.selectedSpaceID = workspace.spaces[ownerIndex].id
 		}
 		if tab.isHibernated {
 			tab.wake()
@@ -643,7 +673,9 @@ final class Browser {
 		let currentTabs = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
 		let sharedTabs = source.tabs.map(\.openTab)
 		tabs = sharedTabs.map { saved in
-			if let current = currentTabs[saved.id], current.openTab == saved {
+			if let current = currentTabs[saved.id],
+			   current.openTab == saved || (saved.id == selectedTabID && current.controller != nil)
+			{
 				return current
 			}
 			let tab = BrowserTab(openTab: saved)

@@ -59,7 +59,7 @@
 			targets.removeValue(forKey: id)
 		}
 
-		func drop(openWindow: OpenWindowAction) {
+		func drop() {
 			guard let activeTabID else { return }
 			let point = NSEvent.mouseLocation
 			let target = targets.values
@@ -80,9 +80,6 @@
 					target.window?.makeKeyAndOrderFront(nil)
 				}
 				browser.flushPersistence()
-			} else {
-				let windowID = BrowserWindowRegistry.shared.prepareDetachedWindow(for: activeTabID)
-				openWindow(id: "detached-tab", value: windowID)
 			}
 			self.activeTabID = nil
 			sourceBrowserID = nil

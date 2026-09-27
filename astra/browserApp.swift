@@ -68,13 +68,5 @@ struct browserApp: App {
 				}
 			#endif
 		}
-
-		#if os(macOS)
-			WindowGroup(id: "detached-tab", for: UUID.self) { windowID in
-				ContentView(detachedWindowID: windowID.wrappedValue)
-			}
-			.windowStyle(.hiddenTitleBar)
-			.windowBackgroundDragBehavior(.disabled)
-		#endif
 	}
 }

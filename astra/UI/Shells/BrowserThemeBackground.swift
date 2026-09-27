@@ -6,7 +6,9 @@ import SwiftUI
 
 struct BrowserThemeBackground: View {
 	let theme: BrowserTheme
-	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	var transitionFromTheme: BrowserTheme?
+	var transitionProgress = 1.0
+	var transitionDirection: CGFloat = 1
 	#if os(macOS)
 		private static let blurStyle = NSMaterialView.Effect.MaterialStyle(
 			backgroundColor: .clear,
@@ -48,6 +50,30 @@ struct BrowserThemeBackground: View {
 				Color.gray
 			#endif
 
+			GeometryReader { geometry in
+				ZStack {
+					if let transitionFromTheme {
+						let distance = geometry.size.width * transitionDirection
+						ThemeSurface(theme: transitionFromTheme)
+							.offset(x: -distance * transitionProgress)
+						ThemeSurface(theme: theme)
+							.offset(x: distance * (1 - transitionProgress))
+					} else {
+						ThemeSurface(theme: theme)
+					}
+				}
+			}
+			.clipped()
+		}
+	}
+}
+
+private struct ThemeSurface: View {
+	let theme: BrowserTheme
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+	var body: some View {
+		ZStack {
 			MeshGradientSurface(points: theme.meshColorPoints)
 				.opacity(theme.meshOpacity)
 				.animation(reduceMotion ? nil : .smooth(duration: 0.2), value: theme.meshOpacity)

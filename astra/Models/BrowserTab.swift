@@ -43,7 +43,7 @@ enum BrowserInternalPage: Equatable {
 	var title: String {
 		switch self {
 			case .themeEditor:
-				"Theme"
+				"Edit Space"
 			case .settings:
 				"Settings"
 			#if DEBUG

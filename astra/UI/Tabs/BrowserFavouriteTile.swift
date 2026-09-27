@@ -4,7 +4,6 @@ struct BrowserFavouriteTile: View {
 	let tab: BrowserTab
 	let browser: Browser
 	#if os(macOS)
-		@Environment(\.openWindow) private var openWindow
 		@State private var tabDrag = BrowserTabDragCoordinator.shared
 	#endif
 
@@ -48,7 +47,7 @@ struct BrowserFavouriteTile: View {
 					tabDrag.update()
 				}
 				.onEnded { _ in
-					tabDrag.drop(openWindow: openWindow)
+					tabDrag.drop()
 				}
 		)
 		#endif

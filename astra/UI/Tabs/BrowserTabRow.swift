@@ -19,7 +19,6 @@ struct BrowserTabRow: View {
 	@State private var renameText = ""
 	@FocusState private var isTitleFocused: Bool
 	#if os(macOS)
-		@Environment(\.openWindow) private var openWindow
 		@State private var tabDrag = BrowserTabDragCoordinator.shared
 	#endif
 
@@ -181,7 +180,7 @@ struct BrowserTabRow: View {
 					tabDrag.update()
 				}
 				.onEnded { _ in
-					tabDrag.drop(openWindow: openWindow)
+					tabDrag.drop()
 				}
 		)
 		#endif

@@ -10,6 +10,13 @@
 		@FocusedValue(\.browser) private var browser
 
 		var body: some Commands {
+			CommandGroup(after: .toolbar) {
+				Button("Edit Space", systemImage: "paintpalette") {
+					browser?.openInternalPage(.themeEditor)
+				}
+				.disabled(browser == nil)
+			}
+
 			CommandGroup(after: .appSettings) {
 				Button("Settings...", systemImage: "gear") {
 					browser?.openInternalPage(.settings)

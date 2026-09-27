@@ -3,6 +3,7 @@
 	import SwiftUI
 
 	struct SpaceWheelReader: NSViewRepresentable {
+		let sidebarShown: Bool
 		let onScroll: (NSEvent) -> Void
 
 		func makeNSView(context _: Context) -> WheelView {
@@ -10,10 +11,12 @@
 		}
 
 		func updateNSView(_ view: WheelView, context _: Context) {
+			view.sidebarShown = sidebarShown
 			view.onScroll = onScroll
 		}
 
 		final class WheelView: NSView {
+			var sidebarShown = true
 			var onScroll: (NSEvent) -> Void
 			private var monitor: Any?
 
@@ -34,11 +37,14 @@
 					self.monitor = nil
 				}
 				guard window != nil else { return }
-				monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+				monitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .swipe]) { [weak self] event in
+					let horizontalDelta = event.type == .swipe ? event.deltaX : event.scrollingDeltaX
+					let verticalDelta = event.type == .swipe ? event.deltaY : event.scrollingDeltaY
 					guard let self,
 					      event.window === window,
-					      bounds.contains(convert(event.locationInWindow, from: nil)),
-					      abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY),
+					      sidebarShown,
+					      (0 ... BrowserChromeMetrics.expandedSidebarWidth).contains(event.locationInWindow.x),
+					      abs(horizontalDelta) > max(0.5, abs(verticalDelta) * 0.75),
 					      event.momentumPhase.isEmpty
 					else { return event }
 					onScroll(event)

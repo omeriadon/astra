@@ -61,7 +61,9 @@ struct BrowserSyncDocument: Codable, Equatable {
 
 		if var workspace = workspace ?? other.workspace {
 			if let otherWorkspace = other.workspace {
+				workspace.deletedSpaceIDs.formUnion(otherWorkspace.deletedSpaceIDs)
 				for space in otherWorkspace.spaces {
+					guard !workspace.deletedSpaceIDs.contains(space.id) else { continue }
 					if let index = workspace.spaces.firstIndex(where: { $0.id == space.id }) {
 						if space.modifiedAt > workspace.spaces[index].modifiedAt {
 							workspace.spaces[index] = space
@@ -75,6 +77,13 @@ struct BrowserSyncDocument: Codable, Equatable {
 					workspace.favouritesModifiedAt = otherWorkspace.favouritesModifiedAt
 				}
 			}
+			workspace.spaces.removeAll { workspace.deletedSpaceIDs.contains($0.id) }
+			if workspace.spaces.isEmpty {
+				workspace.spaces = [BrowserSpace()]
+			}
+			if !workspace.spaces.contains(where: { $0.id == workspace.selectedSpaceID }) {
+				workspace.selectedSpaceID = workspace.spaces[0].id
+			}
 			var assigned = Set(workspace.favouriteTabIDs)
 			let newestSpacesFirst = workspace.spaces.indices.sorted {
 				workspace.spaces[$0].modifiedAt > workspace.spaces[$1].modifiedAt
@@ -85,9 +94,8 @@ struct BrowserSyncDocument: Codable, Equatable {
 				workspace.spaces[index].pinnedTabIDs.removeAll { !tabIDs.contains($0) }
 			}
 			let unassignedIDs = merged.tabs.map(\.id).filter { !assigned.contains($0) }
-			if let firstIndex = workspace.spaces.firstIndex(where: { $0.id == BrowserSpace.firstID }) {
-				workspace.spaces[firstIndex].tabIDs.append(contentsOf: unassignedIDs)
-			}
+			let firstIndex = workspace.spaces.firstIndex(where: { $0.id == BrowserSpace.firstID }) ?? 0
+			workspace.spaces[firstIndex].tabIDs.append(contentsOf: unassignedIDs)
 			merged.workspace = workspace
 		}
 
