@@ -52,6 +52,7 @@ struct browserApp: App {
 		}
 		#if os(macOS)
 		.windowStyle(.titleBar)
+		.windowToolbarStyle(.unifiedCompact(showsTitle: false))
 		.windowBackgroundDragBehavior(.disabled)
 		#endif
 

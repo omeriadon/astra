@@ -51,11 +51,30 @@ struct DesktopBrowserShell: View {
 	}
 
 	#if os(macOS)
-		private var topBarDragRegion: some View {
-			Color.clear
-				.contentShape(Rectangle())
-				.gesture(WindowDragGesture())
-				.accessibilityHidden(true)
+		private var toolbarSidebarToggle: some View {
+			Button {
+				browser.sidebarShown.toggle()
+			} label: {
+				Label("Toggle Sidebar", systemImage: "sidebar.leading")
+					.labelStyle(.iconOnly)
+			}
+			.accessibilityIdentifier("sidebar-toggle")
+		}
+
+		private var toolbarAddressField: some View {
+			BrowserAddressField(browser: browser)
+				.environment(\.colorScheme, topBarColorScheme)
+				.overlay(alignment: .bottom) {
+					if let controller = browser.selectedTab?.activeController {
+						BrowserLoadingBar(
+							isLoading: controller.isLoading,
+							estimatedProgress: controller.estimatedProgress,
+							theme: theme
+						)
+						.frame(height: 1.5)
+						.id(browser.selectedTabID)
+					}
+				}
 		}
 	#endif
 
@@ -72,12 +91,8 @@ struct DesktopBrowserShell: View {
 			}
 
 			BrowserAddressField(browser: browser)
-			#if os(macOS)
-				topBarDragRegion
-					.frame(maxWidth: .infinity, maxHeight: .infinity)
-			#else
-				Spacer(minLength: 0)
-			#endif
+
+			Spacer(minLength: 0)
 		}
 		.padding(
 			.leading,
@@ -104,11 +119,8 @@ struct DesktopBrowserShell: View {
 			if browser.selectedTab?.internalPage == nil {
 				websiteControls
 			} else {
-				#if os(macOS)
-					topBarDragRegion
-				#else
-					Color.clear
-				#endif
+				Color.clear
+					.allowsHitTesting(false)
 			}
 		}
 		.frame(height: BrowserChromeMetrics.topBarContentHeight)
@@ -421,12 +433,9 @@ struct DesktopBrowserShell: View {
 	var body: some View {
 		BrowserSplitView(sidebarShown: $browser.sidebarShown) {
 			VStack(spacing: 0) {
-				navigationBarControls
-					.frame(maxWidth: .infinity, alignment: .leading)
-				#if os(macOS)
-					.background {
-						WindowDragBackground()
-					}
+				#if !os(macOS)
+					navigationBarControls
+						.frame(maxWidth: .infinity, alignment: .leading)
 				#endif
 				ZStack(alignment: .top) {
 					tabSidebar(for: browser.selectedSpace)
@@ -471,7 +480,9 @@ struct DesktopBrowserShell: View {
 
 		} content: {
 			VStack(spacing: 0) {
-				topBar
+				#if !os(macOS)
+					topBar
+				#endif
 				ZStack(alignment: .top) {
 					BrowserContentView(browser: browser)
 					#if os(macOS)
@@ -516,14 +527,44 @@ struct DesktopBrowserShell: View {
 				transitionProgress: themeBlend
 			)
 		}
-		.overlay(alignment: .topLeading) {
-			if !sidebarShown {
-				navigationBarControls
+		#if !os(macOS)
+			.overlay(alignment: .topLeading) {
+				if !sidebarShown {
+					navigationBarControls
+				}
 			}
-		}
+		#endif
 		.onChange(of: browser.workspace.selectedSpaceID) { oldID, newID in
 			completeSpaceThemeTransition(from: oldID, to: newID)
 		}
+		#if os(macOS)
+		.toolbar {
+			ToolbarItem(placement: .navigation) {
+				toolbarSidebarToggle
+			}
+
+			if browser.selectedTab?.internalPage == nil,
+			   let controller = browser.selectedTab?.activeController
+			{
+				ToolbarItem(placement: .navigation) {
+					BrowserNavigationControls(controller: controller)
+						.controlSize(.regular)
+						.labelStyle(.iconOnly)
+						.buttonSizing(.fitted)
+						.buttonStyle(.bordered)
+						.foregroundStyle(theme.foregroundColor)
+						.id(ObjectIdentifier(controller))
+				}
+
+				ToolbarItem(placement: .principal) {
+					toolbarAddressField
+				}
+			}
+		}
+		.toolbarBackground(theme.tabColor, for: .windowToolbar)
+		.toolbarBackground(.visible, for: .windowToolbar)
+		.toolbarColorScheme(topBarColorScheme, for: .windowToolbar)
+		#endif
 		#if os(macOS)
 		.background {
 			BrowserDropZone(
