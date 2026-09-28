@@ -89,20 +89,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	private var topBar: some View {
-		ZStack {
-			if let transitionFromTheme {
-				transitionFromTheme.tabColor
-					.opacity(1 - themeBlend)
-					.overlay((transitionToTheme ?? theme).tabColor.opacity(themeBlend))
-			} else {
-				theme.tabColor
-			}
-
-			#if os(macOS)
-				WindowDragBackground()
-					.accessibilityHidden(true)
-			#endif
-
+		Group {
 			if browser.selectedTab?.internalPage == nil {
 				websiteControls
 			} else {
@@ -111,6 +98,15 @@ struct DesktopBrowserShell: View {
 			}
 		}
 		.frame(height: BrowserChromeMetrics.topBarContentHeight)
+		.background {
+			if let transitionFromTheme {
+				transitionFromTheme.tabColor
+					.opacity(1 - themeBlend)
+					.overlay((transitionToTheme ?? theme).tabColor.opacity(themeBlend))
+			} else {
+				theme.tabColor
+			}
+		}
 		.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar : BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar))
 		.padding([.top, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 	}
