@@ -100,7 +100,7 @@ struct DesktopBrowserShell: View {
 					.allowsHitTesting(false)
 			}
 		}
-		.frame(height: BrowserChromeMetrics.topBarContentHeight)
+		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 		.background {
 			if let transitionFromTheme {
 				transitionFromTheme.tabColor
