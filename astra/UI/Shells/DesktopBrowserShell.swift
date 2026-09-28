@@ -72,6 +72,11 @@ struct DesktopBrowserShell: View {
 		)
 		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 		.frame(maxWidth: .infinity, alignment: .leading)
+		#if os(macOS)
+			.background {
+				NonDraggableTitlebarRegion()
+			}
+		#endif
 		.environment(\.colorScheme, topBarColorScheme)
 		.overlay(alignment: .bottom) {
 			if let controller = browser.selectedTab?.activeController {
