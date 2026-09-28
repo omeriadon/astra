@@ -50,6 +50,15 @@ struct DesktopBrowserShell: View {
 		} ?? false
 	}
 
+	#if os(macOS)
+		private var topBarDragRegion: some View {
+			Color.clear
+				.contentShape(Rectangle())
+				.gesture(WindowDragGesture())
+				.accessibilityHidden(true)
+		}
+	#endif
+
 	private var websiteControls: some View {
 		HStack(spacing: 10) {
 			if let controller = browser.selectedTab?.activeController {
@@ -64,15 +73,17 @@ struct DesktopBrowserShell: View {
 
 			BrowserAddressField(browser: browser)
 			#if os(macOS)
-				WindowDragBackground()
-					.frame(maxWidth: .infinity)
+				topBarDragRegion
+					.frame(maxWidth: .infinity, maxHeight: .infinity)
+			#else
+				Spacer(minLength: 0)
 			#endif
 		}
 		.padding(
 			.leading,
 			sidebarShown ? 10 : BrowserChromeMetrics.persistentControlsAreaWidth
 		)
-		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
+		.frame(height: BrowserChromeMetrics.topBarContentHeight)
 		.frame(maxWidth: .infinity, alignment: .leading)
 		.environment(\.colorScheme, topBarColorScheme)
 		.overlay(alignment: .bottom) {
@@ -89,7 +100,19 @@ struct DesktopBrowserShell: View {
 	}
 
 	private var topBar: some View {
-		ZStack {
+		Group {
+			if browser.selectedTab?.internalPage == nil {
+				websiteControls
+			} else {
+				#if os(macOS)
+					topBarDragRegion
+				#else
+					Color.clear
+				#endif
+			}
+		}
+		.frame(height: BrowserChromeMetrics.topBarContentHeight)
+		.background {
 			if let transitionFromTheme {
 				transitionFromTheme.tabColor
 					.opacity(1 - themeBlend)
@@ -97,17 +120,18 @@ struct DesktopBrowserShell: View {
 			} else {
 				theme.tabColor
 			}
-
-			if browser.selectedTab?.internalPage == nil {
-				websiteControls
-			} else {
-				Color.clear
-					.allowsHitTesting(false)
-			}
 		}
-		.frame(height: BrowserChromeMetrics.topBarContentHeight)
-		.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar : BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar))
-		.padding([.top, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
+		.clipShape(
+			RoundedRectangle(
+				cornerRadius: sidebarShown
+					? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar
+					: BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar
+			)
+		)
+		.padding(
+			[.top, .horizontal],
+			sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0
+		)
 	}
 
 	private var navigationBarControls: some View {

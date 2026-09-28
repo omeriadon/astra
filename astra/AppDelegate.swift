@@ -20,22 +20,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	func applicationDidFinishLaunching(_: Notification) {
-		// Disable for any windows already open
-		disableTabbing()
+		configureExistingWindows()
 
-		// Observe future windows opening
 		NotificationCenter.default.addObserver(
 			forName: NSWindow.didBecomeKeyNotification,
 			object: nil,
 			queue: .main
-		) { [weak self] _ in
-			self?.disableTabbing()
+		) { [weak self] notification in
+			guard let window = notification.object as? NSWindow else { return }
+			self?.configure(window)
 		}
 	}
 
-	private func disableTabbing() {
+	private func configureExistingWindows() {
 		for window in NSApplication.shared.windows {
-			window.tabbingMode = .disallowed
+			configure(window)
 		}
+	}
+
+	private func configure(_ window: NSWindow) {
+		window.tabbingMode = .disallowed
+
+		// Keep the real AppKit title bar and traffic lights, but let Astra's
+		// content render through it. This avoids SwiftUI's hidden-title-bar
+		// toolbar/glass hierarchy, which can intercept pointer events.
+		window.titleVisibility = .hidden
+		window.titlebarAppearsTransparent = true
+		window.styleMask.insert(.fullSizeContentView)
+		window.toolbar = nil
+		window.titlebarSeparatorStyle = .none
+
+		// Astra owns every draggable region explicitly.
+		window.isMovableByWindowBackground = false
+		window.isMovable = false
 	}
 }

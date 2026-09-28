@@ -32,7 +32,6 @@
 
 			override func viewDidMoveToWindow() {
 				super.viewDidMoveToWindow()
-				window?.isMovable = false
 				onWindow(window)
 			}
 		}

@@ -51,7 +51,8 @@ struct browserApp: App {
 				}
 		}
 		#if os(macOS)
-		.windowStyle(.hiddenTitleBar)
+		.windowStyle(.titleBar)
+		.windowBackgroundDragBehavior(.disabled)
 		#endif
 
 		.commands {
