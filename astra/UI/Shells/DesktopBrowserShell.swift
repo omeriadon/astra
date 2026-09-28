@@ -63,10 +63,8 @@ struct DesktopBrowserShell: View {
 			}
 
 			BrowserAddressField(browser: browser)
-			#if os(macOS)
-				WindowDragBackground()
-					.frame(minWidth: BrowserChromeMetrics.topBarRegionHeight, maxWidth: .infinity)
-			#endif
+
+			Spacer(minLength: 0)
 		}
 		.padding(
 			.leading,
@@ -275,10 +273,7 @@ struct DesktopBrowserShell: View {
 						.padding(.bottom, 12)
 						#if os(macOS)
 							.background {
-								ZStack {
-									WindowDragBackground()
-									BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
-								}
+								BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
 							}
 						#endif
 					}
@@ -331,11 +326,6 @@ struct DesktopBrowserShell: View {
 				.padding(.top, 4)
 				.padding(.bottom, 48)
 				.frame(minHeight: geometry.size.height, alignment: .top)
-				#if os(macOS)
-					.background {
-						WindowDragBackground()
-					}
-				#endif
 			}
 		}
 	}
@@ -400,11 +390,6 @@ struct DesktopBrowserShell: View {
 			VStack(spacing: 0) {
 				navigationBarControls
 					.frame(maxWidth: .infinity, alignment: .leading)
-				#if os(macOS)
-					.background {
-						WindowDragBackground()
-					}
-				#endif
 				ZStack(alignment: .top) {
 					tabSidebar(for: browser.selectedSpace)
 						.foregroundStyle(theme.foregroundColor)
