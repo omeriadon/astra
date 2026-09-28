@@ -63,9 +63,10 @@ struct DesktopBrowserShell: View {
 			}
 
 			BrowserAddressField(browser: browser)
+				.frame(maxWidth: .infinity, alignment: .leading)
 			#if os(macOS)
 				WindowDragBackground()
-					.frame(minWidth: BrowserChromeMetrics.topBarRegionHeight, maxWidth: .infinity)
+					.frame(width: BrowserChromeMetrics.topBarDragRegionWidth)
 			#endif
 		}
 		.padding(
@@ -106,13 +107,6 @@ struct DesktopBrowserShell: View {
 			}
 		}
 		.frame(height: BrowserChromeMetrics.topBarContentHeight)
-		#if os(macOS)
-			.background {
-				Color.clear
-					.contentShape(Rectangle())
-					.gesture(WindowDragGesture())
-			}
-		#endif
 		.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar : BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar))
 		.padding([.top, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 	}
