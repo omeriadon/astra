@@ -25,16 +25,6 @@ struct browserApp: App {
 			Settings {
 				EmptyView()
 			}
-			.commands {
-				BrowserCommands()
-
-				CommandGroup(replacing: .appTermination) {
-					Button("Quit astra") {
-						(NSApp.delegate as? AppDelegate)?.requestQuit()
-					}
-					.keyboardShortcut("q", modifiers: .command)
-				}
-			}
 		}
 	#else
 		@State private var updates = UpdateManager.shared
