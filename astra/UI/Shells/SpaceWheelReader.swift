@@ -40,6 +40,10 @@
 				fatalError("init(coder:) is unavailable")
 			}
 
+			override func hitTest(_: NSPoint) -> NSView? {
+				nil
+			}
+
 			override func viewDidMoveToWindow() {
 				super.viewDidMoveToWindow()
 				gestureX = 0

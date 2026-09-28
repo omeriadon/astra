@@ -20,5 +20,4 @@ enum BrowserChromeMetrics {
 	static let topBarButtonLabelWidth: CGFloat = 0
 	static let topBarButtonLabelHeight: CGFloat = 11
 	static let topBarButtonCornerRadius: CGFloat = 12
-	static let windowDragStripHeight: CGFloat = 3
 }

@@ -93,6 +93,7 @@ struct BrowserSpacesBar: View {
 				) { amount, isComplete in
 					handleSwipe(amount, isComplete: isComplete)
 				}
+				.allowsHitTesting(false)
 			}
 			#endif
 			.onChange(of: browser.workspace.selectedSpaceID, initial: true) { _, id in

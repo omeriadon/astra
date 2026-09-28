@@ -7,24 +7,32 @@ struct DownloadsSidebarView: View {
 	@State private var previewURL: URL?
 
 	var body: some View {
-		ScrollView {
-			LazyVStack(alignment: .leading, spacing: 5) {
-				Text("Downloads")
-					.font(.headline)
-					.padding(.horizontal, 8)
-					.padding(.bottom, 6)
+		GeometryReader { geometry in
+			ScrollView {
+				LazyVStack(alignment: .leading, spacing: 5) {
+					Text("Downloads")
+						.font(.headline)
+						.padding(.horizontal, 8)
+						.padding(.bottom, 6)
 
-				if manager.items.isEmpty {
-					ContentUnavailableView("No Downloads", systemImage: "arrow.down.circle")
-						.frame(maxWidth: .infinity)
-				} else {
-					ForEach(manager.items) { item in
-						row(item)
+					if manager.items.isEmpty {
+						ContentUnavailableView("No Downloads", systemImage: "arrow.down.circle")
+							.frame(maxWidth: .infinity)
+					} else {
+						ForEach(manager.items) { item in
+							row(item)
+						}
 					}
 				}
+				.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
+				.padding(.top, 35)
+				.frame(minHeight: geometry.size.height, alignment: .top)
+				#if os(macOS)
+					.background {
+						WindowDragBackground()
+					}
+				#endif
 			}
-			.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
-			.padding(.top, 35)
 		}
 		.quickLookPreview($previewURL)
 		.accessibilityIdentifier("downloads-list")

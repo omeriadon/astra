@@ -54,16 +54,24 @@ struct DesktopBrowserShell: View {
 		HStack(spacing: 10) {
 			if let controller = browser.selectedTab?.activeController {
 				BrowserNavigationControls(controller: controller)
+					.controlSize(.regular)
+					.labelStyle(.iconOnly)
+					.buttonSizing(.fitted)
+					.buttonStyle(.bordered)
+					.foregroundStyle(theme.foregroundColor)
 					.id(ObjectIdentifier(controller))
 			}
 
 			BrowserAddressField(browser: browser)
+			#if os(macOS)
+				WindowDragBackground()
+					.frame(minWidth: BrowserChromeMetrics.topBarRegionHeight, maxWidth: .infinity)
+			#endif
 		}
 		.padding(
 			.leading,
 			sidebarShown ? 10 : BrowserChromeMetrics.persistentControlsAreaWidth
 		)
-		.padding(.trailing, 10)
 		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 		.frame(maxWidth: .infinity, alignment: .leading)
 		.environment(\.colorScheme, topBarColorScheme)
@@ -81,15 +89,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	private var topBar: some View {
-		Group {
-			if browser.selectedTab?.internalPage == nil {
-				websiteControls
-			} else {
-				Color.clear
-			}
-		}
-		.frame(height: BrowserChromeMetrics.topBarContentHeight)
-		.background {
+		ZStack {
 			if let transitionFromTheme {
 				transitionFromTheme.tabColor
 					.opacity(1 - themeBlend)
@@ -97,7 +97,20 @@ struct DesktopBrowserShell: View {
 			} else {
 				theme.tabColor
 			}
+
+			#if os(macOS)
+				WindowDragBackground()
+					.accessibilityHidden(true)
+			#endif
+
+			if browser.selectedTab?.internalPage == nil {
+				websiteControls
+			} else {
+				Color.clear
+					.allowsHitTesting(false)
+			}
 		}
+		.frame(height: BrowserChromeMetrics.topBarContentHeight)
 		.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar : BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar))
 		.padding([.top, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 	}
@@ -254,69 +267,80 @@ struct DesktopBrowserShell: View {
 	}
 
 	private func tabSidebar(for space: BrowserSpace) -> some View {
-		ScrollView {
-			LazyVStack(spacing: 2) {
-				if !browser.favouriteTabs.isEmpty {
-					LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
-						ForEach(browser.favouriteTabs) { tab in
-							BrowserFavouriteTile(tab: tab, browser: browser)
+		GeometryReader { geometry in
+			ScrollView {
+				LazyVStack(spacing: 2) {
+					if !browser.favouriteTabs.isEmpty {
+						LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
+							ForEach(browser.favouriteTabs) { tab in
+								BrowserFavouriteTile(tab: tab, browser: browser)
+							}
 						}
+						.padding(.bottom, 12)
+						#if os(macOS)
+							.background {
+								ZStack {
+									WindowDragBackground()
+									BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
+								}
+							}
+						#endif
 					}
-					.padding(.bottom, 12)
 					#if os(macOS)
-						.background {
-							BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
+						if browser.favouriteTabs.isEmpty, tabDrag.activeTabID != nil {
+							Color.clear
+								.frame(height: 34)
+								.background {
+									BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
+								}
 						}
 					#endif
-				}
-				#if os(macOS)
-					if browser.favouriteTabs.isEmpty, tabDrag.activeTabID != nil {
-						Color.clear
-							.frame(height: 34)
-							.background {
-								BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
-							}
-					}
-				#endif
 
-				if !space.pinnedTabIDs.isEmpty {
+					if !space.pinnedTabIDs.isEmpty {
+						VStack(spacing: 2) {
+							ForEach(space.pinnedTabIDs.compactMap { id in browser.tabs.first { $0.id == id } }) { tab in
+								BrowserTabRow(tab: tab, browser: browser, isSelected: space.id == browser.workspace.selectedSpaceID && browser.selectedTabID == tab.id)
+							}
+						}
+						#if os(macOS)
+						.background {
+							BrowserDropZone(browser: browser, area: .pinned, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
+						}
+						#endif
+						Divider()
+							.padding(.vertical, 8)
+					}
+					#if os(macOS)
+						if space.pinnedTabIDs.isEmpty, tabDrag.activeTabID != nil {
+							Color.clear
+								.frame(height: 28)
+								.background {
+									BrowserDropZone(browser: browser, area: .pinned, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
+								}
+						}
+					#endif
 					VStack(spacing: 2) {
-						ForEach(space.pinnedTabIDs.compactMap { id in browser.tabs.first { $0.id == id } }) { tab in
+						ForEach(space.tabIDs.filter { !space.pinnedTabIDs.contains($0) }.compactMap { id in browser.tabs.first { $0.id == id } }) { tab in
 							BrowserTabRow(tab: tab, browser: browser, isSelected: space.id == browser.workspace.selectedSpaceID && browser.selectedTabID == tab.id)
 						}
+						newTabButton
 					}
 					#if os(macOS)
 					.background {
-						BrowserDropZone(browser: browser, area: .pinned, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
+						BrowserDropZone(browser: browser, area: .normal, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
 					}
 					#endif
-					Divider()
-						.padding(.vertical, 8)
 				}
+				.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
+				.padding(.top, 4)
+				.padding(.bottom, 48)
+				.frame(minHeight: geometry.size.height, alignment: .top)
 				#if os(macOS)
-					if space.pinnedTabIDs.isEmpty, tabDrag.activeTabID != nil {
-						Color.clear
-							.frame(height: 28)
-							.background {
-								BrowserDropZone(browser: browser, area: .pinned, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
-							}
+					.background {
+						WindowDragBackground()
 					}
-				#endif
-				VStack(spacing: 2) {
-					ForEach(space.tabIDs.filter { !space.pinnedTabIDs.contains($0) }.compactMap { id in browser.tabs.first { $0.id == id } }) { tab in
-						BrowserTabRow(tab: tab, browser: browser, isSelected: space.id == browser.workspace.selectedSpaceID && browser.selectedTabID == tab.id)
-					}
-					newTabButton
-				}
-				#if os(macOS)
-				.background {
-					BrowserDropZone(browser: browser, area: .normal, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
-				}
 				#endif
 			}
-			.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
-			.padding(.top, 4)
-			.padding(.bottom, 48)
 		}
 	}
 
@@ -380,6 +404,11 @@ struct DesktopBrowserShell: View {
 			VStack(spacing: 0) {
 				navigationBarControls
 					.frame(maxWidth: .infinity, alignment: .leading)
+				#if os(macOS)
+					.background {
+						WindowDragBackground()
+					}
+				#endif
 				ZStack(alignment: .top) {
 					tabSidebar(for: browser.selectedSpace)
 						.foregroundStyle(theme.foregroundColor)
@@ -493,19 +522,12 @@ struct DesktopBrowserShell: View {
 					windowRegistry.activate(browser)
 				}
 			}
+			.allowsHitTesting(false)
 		}
 		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
 			if let window = notification.object as? NSWindow, window === hostWindow {
 				windowRegistry.activate(browser)
 			}
-		}
-		.overlay(alignment: .top) {
-			Color.clear
-				.frame(height: BrowserChromeMetrics.windowDragStripHeight)
-				.frame(maxWidth: .infinity)
-				.contentShape(Rectangle())
-				.gesture(WindowDragGesture())
-				.accessibilityHidden(true)
 		}
 		#endif
 		.overlay {

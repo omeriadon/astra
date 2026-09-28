@@ -26,8 +26,13 @@
 				fatalError("init(coder:) is unavailable")
 			}
 
+			override func hitTest(_: NSPoint) -> NSView? {
+				nil
+			}
+
 			override func viewDidMoveToWindow() {
 				super.viewDidMoveToWindow()
+				window?.isMovable = false
 				onWindow(window)
 			}
 		}

@@ -18,56 +18,53 @@ struct BrowserNavigationControls: View {
 
 	var body: some View {
 		HStack(spacing: 6) {
-			Menu {
-				if controller.canGoBack {
-					ForEach((0 ..< controller.historyIndex).reversed(), id: \.self) { index in
-						Button(
-							controller.history[index].absoluteString,
-							systemImage: "clock.arrow.circlepath"
-						) {
-							controller.go(toHistoryIndex: index)
-						}
-					}
-				}
+			Button {
+				controller.goBack()
 			} label: {
 				navigationLabel(
 					"Back",
 					systemImage: "chevron.backward"
 				)
-			} primaryAction: {
-				controller.goBack()
+			}
+			.contextMenu {
+				ForEach((0 ..< controller.historyIndex).reversed(), id: \.self) { index in
+					Button(
+						controller.history[index].absoluteString,
+						systemImage: "clock.arrow.circlepath"
+					) {
+						controller.go(toHistoryIndex: index)
+					}
+				}
 			}
 			.disabled(!controller.canGoBack)
 			.accessibilityIdentifier("browser-back")
 
-			Menu {
-				if controller.canGoForward {
-					ForEach((controller.historyIndex + 1) ..< controller.history.count, id: \.self) { index in
-						Button(
-							controller.history[index].absoluteString,
-							systemImage: "clock.arrow.circlepath"
-						) {
-							controller.go(toHistoryIndex: index)
-						}
-					}
-				}
+			Button {
+				controller.goForward()
 			} label: {
 				navigationLabel(
 					"Forward",
 					systemImage: "chevron.forward"
 				)
-			} primaryAction: {
-				controller.goForward()
+			}
+			.contextMenu {
+				ForEach((controller.historyIndex + 1) ..< controller.history.count, id: \.self) { index in
+					Button(
+						controller.history[index].absoluteString,
+						systemImage: "clock.arrow.circlepath"
+					) {
+						controller.go(toHistoryIndex: index)
+					}
+				}
 			}
 			.disabled(!controller.canGoForward)
 			.accessibilityIdentifier("browser-forward")
 
-			Menu {
-				Button(
-					"Force Reload",
-					systemImage: "arrow.trianglehead.2.clockwise.rotate.90"
-				) {
-					controller.reloadFromOrigin()
+			Button {
+				if controller.isLoading {
+					controller.stopLoading()
+				} else {
+					controller.reload()
 				}
 			} label: {
 				Label("Reload", systemImage: "arrow.clockwise")
@@ -78,12 +75,13 @@ struct BrowserNavigationControls: View {
 						height: BrowserChromeMetrics.topBarButtonLabelHeight
 					)
 					.font(.body.scaled(by: 0.9))
-
-			} primaryAction: {
-				if controller.isLoading {
-					controller.stopLoading()
-				} else {
-					controller.reload()
+			}
+			.contextMenu {
+				Button(
+					"Force Reload",
+					systemImage: "arrow.trianglehead.2.clockwise.rotate.90"
+				) {
+					controller.reloadFromOrigin()
 				}
 			}
 			.overlay {
@@ -109,7 +107,6 @@ struct BrowserNavigationControls: View {
 			)
 			.accessibilityIdentifier("browser-reload")
 		}
-		.menuIndicator(.hidden)
 		.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
 		.id(controller.history)
 		.id(controller.historyIndex)
