@@ -63,14 +63,16 @@ struct DesktopBrowserShell: View {
 			}
 
 			BrowserAddressField(browser: browser)
-
-			Spacer(minLength: 0)
+			#if os(macOS)
+				WindowDragBackground()
+					.frame(minWidth: BrowserChromeMetrics.topBarRegionHeight, maxWidth: .infinity)
+			#endif
 		}
 		.padding(
 			.leading,
 			sidebarShown ? 10 : BrowserChromeMetrics.persistentControlsAreaWidth
 		)
-		.frame(height: BrowserChromeMetrics.topBarContentHeight)
+		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 		.frame(maxWidth: .infinity, alignment: .leading)
 		.environment(\.colorScheme, topBarColorScheme)
 		.overlay(alignment: .bottom) {
@@ -87,7 +89,20 @@ struct DesktopBrowserShell: View {
 	}
 
 	private var topBar: some View {
-		Group {
+		ZStack {
+			if let transitionFromTheme {
+				transitionFromTheme.tabColor
+					.opacity(1 - themeBlend)
+					.overlay((transitionToTheme ?? theme).tabColor.opacity(themeBlend))
+			} else {
+				theme.tabColor
+			}
+
+			#if os(macOS)
+				WindowDragBackground()
+					.accessibilityHidden(true)
+			#endif
+
 			if browser.selectedTab?.internalPage == nil {
 				websiteControls
 			} else {
@@ -96,26 +111,8 @@ struct DesktopBrowserShell: View {
 			}
 		}
 		.frame(height: BrowserChromeMetrics.topBarContentHeight)
-		.background {
-			if let transitionFromTheme {
-				transitionFromTheme.tabColor
-					.opacity(1 - themeBlend)
-					.overlay((transitionToTheme ?? theme).tabColor.opacity(themeBlend))
-			} else {
-				theme.tabColor
-			}
-		}
-		.clipShape(
-			RoundedRectangle(
-				cornerRadius: sidebarShown
-					? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar
-					: BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar
-			)
-		)
-		.padding(
-			[.top, .horizontal],
-			sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0
-		)
+		.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar : BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar))
+		.padding([.top, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 	}
 
 	private var navigationBarControls: some View {
@@ -405,9 +402,12 @@ struct DesktopBrowserShell: View {
 	var body: some View {
 		BrowserSplitView(sidebarShown: $browser.sidebarShown) {
 			VStack(spacing: 0) {
-				#if !os(macOS)
-					navigationBarControls
-						.frame(maxWidth: .infinity, alignment: .leading)
+				navigationBarControls
+					.frame(maxWidth: .infinity, alignment: .leading)
+				#if os(macOS)
+					.background {
+						WindowDragBackground()
+					}
 				#endif
 				ZStack(alignment: .top) {
 					tabSidebar(for: browser.selectedSpace)
@@ -452,9 +452,7 @@ struct DesktopBrowserShell: View {
 
 		} content: {
 			VStack(spacing: 0) {
-				#if !os(macOS)
-					topBar
-				#endif
+				topBar
 				ZStack(alignment: .top) {
 					BrowserContentView(browser: browser)
 					#if os(macOS)
@@ -499,17 +497,14 @@ struct DesktopBrowserShell: View {
 				transitionProgress: themeBlend
 			)
 		}
-		#if !os(macOS)
 		.overlay(alignment: .topLeading) {
 			if !sidebarShown {
 				navigationBarControls
 			}
 		}
-		#endif
 		.onChange(of: browser.workspace.selectedSpaceID) { oldID, newID in
 			completeSpaceThemeTransition(from: oldID, to: newID)
 		}
-
 		#if os(macOS)
 		.background {
 			BrowserDropZone(
@@ -519,10 +514,6 @@ struct DesktopBrowserShell: View {
 				beforeTabID: nil,
 				isWindowFallback: true
 			)
-		}
-		.background {
-			BrowserTitlebarInstaller(browser: browser)
-				.allowsHitTesting(false)
 		}
 		.background {
 			WindowFocusReader { window in
@@ -666,8 +657,9 @@ struct DesktopBrowserShell: View {
 		}
 		.animation(.snappy(duration: 0.2), value: Date.now < quitExpiry)
 		#endif
+		.ignoresSafeArea()
 		#if os(macOS)
-		.focusedValue(\.browser, browser)
+			.focusedValue(\.browser, browser)
 		#endif
 	}
 }
