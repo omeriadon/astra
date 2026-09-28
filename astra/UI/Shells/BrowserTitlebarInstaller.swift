@@ -165,9 +165,6 @@
 				exitFullScreenObserver = nil
 			}
 
-			deinit {
-				removeObservers()
-			}
 		}
 
 		final class ProbeView: NSView {
