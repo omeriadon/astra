@@ -58,6 +58,7 @@
 			window.tabbingMode = .disallowed
 			window.collectionBehavior.insert(.fullScreenPrimary)
 			window.isReleasedWhenClosed = false
+			window.acceptsMouseMovedEvents = true
 		}
 
 		func showWindow() {
@@ -74,11 +75,15 @@
 		}
 
 		func windowWillEnterFullScreen(_: Notification) {
-			chromeView.setWindowControlsHidden(true)
+			chromeView.setFullScreen(true)
 		}
 
 		func windowDidExitFullScreen(_: Notification) {
-			chromeView.setWindowControlsHidden(false)
+			chromeView.setFullScreen(false)
+		}
+
+		func windowDidResize(_: Notification) {
+			window.invalidateShadow()
 		}
 	}
 
@@ -120,7 +125,7 @@
 	}
 
 	private final class BrowserWindowContentView: NSView {
-		private let windowControls: NSStackView
+		private let windowControls: TrafficLightClusterView
 
 		init(
 			hostingView: NSView,
@@ -140,12 +145,14 @@
 			)
 
 			let controls = [close, minimize, fullscreen].compactMap(\.self)
-			windowControls = NSStackView(views: controls)
+			windowControls = TrafficLightClusterView(buttons: controls)
 
 			super.init(frame: .zero)
 
 			wantsLayer = true
 			layer?.masksToBounds = true
+			layer?.cornerRadius = BrowserChromeMetrics.windowCornerRadius
+			layer?.cornerCurve = .continuous
 
 			hostingView.translatesAutoresizingMaskIntoConstraints = false
 			addSubview(hostingView)
@@ -183,8 +190,60 @@
 			fatalError("init(coder:) is unavailable")
 		}
 
-		func setWindowControlsHidden(_ hidden: Bool) {
-			windowControls.isHidden = hidden
+		func setFullScreen(_ fullScreen: Bool) {
+			windowControls.isHidden = fullScreen
+			layer?.cornerRadius = fullScreen ? 0 : BrowserChromeMetrics.windowCornerRadius
+			window?.invalidateShadow()
+		}
+	}
+
+	private final class TrafficLightClusterView: NSStackView {
+		private let trafficLightButtons: [NSButton]
+		private var hoverTrackingArea: NSTrackingArea?
+
+		init(buttons: [NSButton]) {
+			trafficLightButtons = buttons
+			super.init(views: buttons)
+
+			orientation = .horizontal
+			alignment = .centerY
+			spacing = 8
+		}
+
+		@available(*, unavailable)
+		required init?(coder _: NSCoder) {
+			fatalError("init(coder:) is unavailable")
+		}
+
+		override func updateTrackingAreas() {
+			super.updateTrackingAreas()
+
+			if let hoverTrackingArea {
+				removeTrackingArea(hoverTrackingArea)
+			}
+
+			let area = NSTrackingArea(
+				rect: bounds,
+				options: [.mouseEnteredAndExited, .activeInKeyWindow],
+				owner: self,
+				userInfo: nil
+			)
+			addTrackingArea(area)
+			hoverTrackingArea = area
+		}
+
+		override func mouseEntered(with event: NSEvent) {
+			super.mouseEntered(with: event)
+			for button in trafficLightButtons {
+				button.mouseEntered(with: event)
+			}
+		}
+
+		override func mouseExited(with event: NSEvent) {
+			super.mouseExited(with: event)
+			for button in trafficLightButtons {
+				button.mouseExited(with: event)
+			}
 		}
 	}
 #endif

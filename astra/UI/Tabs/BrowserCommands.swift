@@ -2,98 +2,133 @@
 	import AppKit
 	import SwiftUI
 
-	extension FocusedValues {
-		@Entry var browser: Browser?
-	}
-
 	struct BrowserCommands: Commands {
-		@FocusedValue(\.browser) private var browser
-
 		var body: some Commands {
 			CommandGroup(after: .toolbar) {
-				Button("Toggle Sidebar", systemImage: "sidebar.leading") {
-					browser?.sidebarShown.toggle()
-				}
-				.keyboardShortcut("S", modifiers: .command)
-				.disabled(browser == nil)
-
-				Button("Edit Space", systemImage: "paintpalette") {
-					browser?.openInternalPage(.themeEditor)
-				}
-				.disabled(browser == nil)
+				BrowserCommandItems(section: .toolbar)
 			}
 
 			CommandGroup(after: .appSettings) {
-				Button("Settings...", systemImage: "gear") {
-					browser?.openInternalPage(.settings)
-				}
-				.keyboardShortcut(",", modifiers: .command)
-				.disabled(browser == nil)
+				BrowserCommandItems(section: .settings)
 			}
 
 			CommandGroup(replacing: .appInfo) {
-				Button("About astra", systemImage: "info.circle") {
-					browser?.openInternalPage(.settings)
-				}
-				.disabled(browser == nil)
+				BrowserCommandItems(section: .about)
 				CheckForUpdatesView(updater: UpdateManager.shared.updater)
 			}
 
 			CommandMenu("Navigation") {
-				Button("Open Location", systemImage: "link", action: openLocation)
-					.keyboardShortcut("L", modifiers: .command)
-					.disabled(browser == nil)
-
-				Button("Back", systemImage: "chevron.backward", action: goBack)
-					.keyboardShortcut("[", modifiers: .command)
-					.disabled(!(browser?.selectedTab?.activeController?.canGoBack ?? false))
-
-				Button("Forward", systemImage: "chevron.forward", action: goForward)
-					.keyboardShortcut("]", modifiers: .command)
-					.disabled(!(browser?.selectedTab?.activeController?.canGoForward ?? false))
-
-				Divider()
-
-				Button("Reload", systemImage: "arrow.clockwise", action: reload)
-					.keyboardShortcut("R", modifiers: .command)
-					.disabled(browser?.selectedTab?.activeController?.url == nil)
-
-				Button("Force Reload", systemImage: "arrow.trianglehead.2.clockwise.rotate.90", action: forceReload)
-					.keyboardShortcut("R", modifiers: [.command, .shift])
-					.disabled(browser?.selectedTab?.activeController?.url == nil)
-
-				Divider()
-
-				Button("Zoom In", systemImage: "plus.magnifyingglass", action: zoomIn)
-					.keyboardShortcut("=", modifiers: .command)
-					.disabled(browser?.selectedTab?.activeController?.url == nil)
-
-				Button("Zoom Out", systemImage: "minus.magnifyingglass", action: zoomOut)
-					.keyboardShortcut("-", modifiers: .command)
-					.disabled(browser?.selectedTab?.activeController?.url == nil)
-
-				Button("Actual Size", systemImage: "1.magnifyingglass") {
-					browser?.selectedTab?.activeController?.resetZoom()
-				}
-				.keyboardShortcut("0", modifiers: .command)
-				.disabled(browser?.selectedTab?.activeController?.url == nil)
-				.accessibilityIdentifier("browser-reset-zoom")
+				BrowserCommandItems(section: .navigation)
 			}
 
 			CommandMenu("Bookmarks") {
-				Button("Add Bookmark", systemImage: "bookmark", action: addBookmark)
-					.keyboardShortcut("B", modifiers: .command)
-					.disabled(!(browser?.canBookmarkSelectedPage ?? false))
+				BrowserCommandItems(section: .bookmarks)
 			}
 
 			CommandMenu("Tab") {
-				Button("Duplicate Tab", systemImage: "plus.square.on.square", action: duplicateSelectedTab)
-					.keyboardShortcut("D", modifiers: .command)
-					.disabled(browser?.selectedTab == nil || browser?.selectedTab?.internalPage != nil)
+				BrowserCommandItems(section: .tab)
+			}
+		}
+	}
 
-				Button("Copy URL", systemImage: "doc.on.doc", action: copySelectedURL)
-					.keyboardShortcut("C", modifiers: .option)
+	private struct BrowserCommandItems: View {
+		enum Section {
+			case toolbar
+			case settings
+			case about
+			case navigation
+			case bookmarks
+			case tab
+		}
+
+		let section: Section
+
+		@State private var windowRegistry = BrowserWindowRegistry.shared
+
+		private var browser: Browser? {
+			windowRegistry.activeBrowser
+		}
+
+		var body: some View {
+			switch section {
+				case .toolbar:
+					Button("Toggle Sidebar", systemImage: "sidebar.leading") {
+						browser?.sidebarShown.toggle()
+					}
+					.keyboardShortcut("S", modifiers: .command)
+					.disabled(browser == nil)
+
+					Button("Edit Space", systemImage: "paintpalette") {
+						browser?.openInternalPage(.themeEditor)
+					}
+					.disabled(browser == nil)
+
+				case .settings:
+					Button("Settings...", systemImage: "gear") {
+						browser?.openInternalPage(.settings)
+					}
+					.keyboardShortcut(",", modifiers: .command)
+					.disabled(browser == nil)
+
+				case .about:
+					Button("About astra", systemImage: "info.circle") {
+						browser?.openInternalPage(.settings)
+					}
+					.disabled(browser == nil)
+
+				case .navigation:
+					Button("Open Location", systemImage: "link", action: openLocation)
+						.keyboardShortcut("L", modifiers: .command)
+						.disabled(browser == nil)
+
+					Button("Back", systemImage: "chevron.backward", action: goBack)
+						.keyboardShortcut("[", modifiers: .command)
+						.disabled(!(browser?.selectedTab?.activeController?.canGoBack ?? false))
+
+					Button("Forward", systemImage: "chevron.forward", action: goForward)
+						.keyboardShortcut("]", modifiers: .command)
+						.disabled(!(browser?.selectedTab?.activeController?.canGoForward ?? false))
+
+					Divider()
+
+					Button("Reload", systemImage: "arrow.clockwise", action: reload)
+						.keyboardShortcut("R", modifiers: .command)
+						.disabled(browser?.selectedTab?.activeController?.url == nil)
+
+					Button("Force Reload", systemImage: "arrow.trianglehead.2.clockwise.rotate.90", action: forceReload)
+						.keyboardShortcut("R", modifiers: [.command, .shift])
+						.disabled(browser?.selectedTab?.activeController?.url == nil)
+
+					Divider()
+
+					Button("Zoom In", systemImage: "plus.magnifyingglass", action: zoomIn)
+						.keyboardShortcut("=", modifiers: .command)
+						.disabled(browser?.selectedTab?.activeController?.url == nil)
+
+					Button("Zoom Out", systemImage: "minus.magnifyingglass", action: zoomOut)
+						.keyboardShortcut("-", modifiers: .command)
+						.disabled(browser?.selectedTab?.activeController?.url == nil)
+
+					Button("Actual Size", systemImage: "1.magnifyingglass") {
+						browser?.selectedTab?.activeController?.resetZoom()
+					}
+					.keyboardShortcut("0", modifiers: .command)
 					.disabled(browser?.selectedTab?.activeController?.url == nil)
+					.accessibilityIdentifier("browser-reset-zoom")
+
+				case .bookmarks:
+					Button("Add Bookmark", systemImage: "bookmark", action: addBookmark)
+						.keyboardShortcut("B", modifiers: .command)
+						.disabled(!(browser?.canBookmarkSelectedPage ?? false))
+
+				case .tab:
+					Button("Duplicate Tab", systemImage: "plus.square.on.square", action: duplicateSelectedTab)
+						.keyboardShortcut("D", modifiers: .command)
+						.disabled(browser?.selectedTab == nil || browser?.selectedTab?.internalPage != nil)
+
+					Button("Copy URL", systemImage: "doc.on.doc", action: copySelectedURL)
+						.keyboardShortcut("C", modifiers: .option)
+						.disabled(browser?.selectedTab?.activeController?.url == nil)
 			}
 		}
 
