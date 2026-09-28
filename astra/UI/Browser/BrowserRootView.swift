@@ -11,9 +11,6 @@ struct BrowserRootView: View {
 
 	var body: some View {
 		shell
-		#if os(macOS)
-			.focusedSceneValue(\.browser, browser)
-		#endif
 			.onAppear {
 				sync.attach(browser)
 			}
