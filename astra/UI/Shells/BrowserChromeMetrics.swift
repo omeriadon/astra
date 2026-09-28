@@ -5,7 +5,6 @@ enum BrowserChromeMetrics {
 	static let expandedSidebarWidth: CGFloat = 224
 
 	static let topBarContentHeight: CGFloat = 20
-	static let topBarDragRegionWidth: CGFloat = 96
 
 	// macos 27 window radius is 20
 

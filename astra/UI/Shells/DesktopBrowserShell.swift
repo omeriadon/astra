@@ -63,10 +63,9 @@ struct DesktopBrowserShell: View {
 			}
 
 			BrowserAddressField(browser: browser)
-				.frame(maxWidth: .infinity, alignment: .leading)
 			#if os(macOS)
 				WindowDragBackground()
-					.frame(width: BrowserChromeMetrics.topBarDragRegionWidth)
+					.frame(maxWidth: .infinity)
 			#endif
 		}
 		.padding(

@@ -17,6 +17,7 @@ struct BrowserAddressField: View {
 
 	var body: some View {
 		addressInput
+			.fixedSize(horizontal: true, vertical: false)
 			.onChange(of: browser.selectedTabID) { _, _ in
 				updateForSelectedTab()
 			}
