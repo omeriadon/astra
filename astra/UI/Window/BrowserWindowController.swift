@@ -32,7 +32,7 @@
 
 			let window = BrowserWindow(
 				contentRect: initialFrame,
-				styleMask: [.borderless, .closable, .miniaturizable, .resizable],
+				styleMask: [.borderless, .resizable],
 				backing: .buffered,
 				defer: false
 			)
