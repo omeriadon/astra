@@ -50,33 +50,6 @@ struct DesktopBrowserShell: View {
 		} ?? false
 	}
 
-	#if os(macOS)
-		private var toolbarSidebarToggle: some View {
-			Button {
-				browser.sidebarShown.toggle()
-			} label: {
-				Label("Toggle Sidebar", systemImage: "sidebar.leading")
-					.labelStyle(.iconOnly)
-			}
-			.accessibilityIdentifier("sidebar-toggle")
-		}
-
-		private var toolbarAddressField: some View {
-			BrowserAddressField(browser: browser)
-				.environment(\.colorScheme, topBarColorScheme)
-				.overlay(alignment: .bottom) {
-					if let controller = browser.selectedTab?.activeController {
-						BrowserLoadingBar(
-							isLoading: controller.isLoading,
-							estimatedProgress: controller.estimatedProgress,
-							theme: theme
-						)
-						.frame(height: 1.5)
-						.id(browser.selectedTabID)
-					}
-				}
-		}
-	#endif
 
 	private var websiteControls: some View {
 		HStack(spacing: 10) {
@@ -537,34 +510,7 @@ struct DesktopBrowserShell: View {
 		.onChange(of: browser.workspace.selectedSpaceID) { oldID, newID in
 			completeSpaceThemeTransition(from: oldID, to: newID)
 		}
-		#if os(macOS)
-		.toolbar {
-			ToolbarItem(placement: .navigation) {
-				toolbarSidebarToggle
-			}
 
-			if browser.selectedTab?.internalPage == nil,
-			   let controller = browser.selectedTab?.activeController
-			{
-				ToolbarItem(placement: .navigation) {
-					BrowserNavigationControls(controller: controller)
-						.controlSize(.regular)
-						.labelStyle(.iconOnly)
-						.buttonSizing(.fitted)
-						.buttonStyle(.bordered)
-						.foregroundStyle(theme.foregroundColor)
-						.id(ObjectIdentifier(controller))
-				}
-
-				ToolbarItem(placement: .principal) {
-					toolbarAddressField
-				}
-			}
-		}
-		.toolbarBackground(theme.tabColor, for: .windowToolbar)
-		.toolbarBackground(.visible, for: .windowToolbar)
-		.toolbarColorScheme(topBarColorScheme, for: .windowToolbar)
-		#endif
 		#if os(macOS)
 		.background {
 			BrowserDropZone(
@@ -574,6 +520,10 @@ struct DesktopBrowserShell: View {
 				beforeTabID: nil,
 				isWindowFallback: true
 			)
+		}
+		.background {
+			BrowserTitlebarInstaller(browser: browser)
+				.allowsHitTesting(false)
 		}
 		.background {
 			WindowFocusReader { window in
