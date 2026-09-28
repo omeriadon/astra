@@ -658,9 +658,6 @@ struct DesktopBrowserShell: View {
 		.animation(.snappy(duration: 0.2), value: Date.now < quitExpiry)
 		#endif
 		.ignoresSafeArea()
-		#if os(macOS)
-			.focusedValue(\.browser, browser)
-		#endif
 	}
 }
 
