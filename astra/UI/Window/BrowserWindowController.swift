@@ -43,14 +43,13 @@
 			self.window = window
 
 			let hostedRoot = MacBrowserHostedRoot(browser: browser)
-			let hostingView = BrowserHostingView(rootView: hostedRoot)
-			hostingView.autoresizingMask = [.width, .height]
-			hostingView.frame = NSRect(origin: .zero, size: initialSize)
+			let hostingView = NSHostingView(rootView: hostedRoot)
+			let contentHost = BrowserContentHostView(hostingView: hostingView)
 
 			super.init()
 
 			window.delegate = self
-			window.contentView = hostingView
+			window.contentView = contentHost
 			window.contentMinSize = NSSize(width: 640, height: 480)
 			window.title = "astra"
 			window.titleVisibility = .hidden
@@ -77,20 +76,48 @@
 		}
 	}
 
-	private final class BrowserHostingView<Content: View>: NSHostingView<Content> {
+	private final class BrowserContentHostView: NSView {
+		init(hostingView: NSView) {
+			super.init(frame: .zero)
+
+			hostingView.translatesAutoresizingMaskIntoConstraints = false
+			addSubview(hostingView)
+
+			NSLayoutConstraint.activate([
+				hostingView.leadingAnchor.constraint(equalTo: leadingAnchor),
+				hostingView.trailingAnchor.constraint(equalTo: trailingAnchor),
+				hostingView.topAnchor.constraint(equalTo: topAnchor),
+				hostingView.bottomAnchor.constraint(equalTo: bottomAnchor),
+			])
+
+			#if DEBUG
+				assert(
+					responds(to: NSSelectorFromString("_opaqueRectForWindowMoveWhenInTitlebar")),
+					"AppKit titlebar drag override is not visible to Objective-C"
+				)
+			#endif
+		}
+
+		@available(*, unavailable)
+		required init?(coder _: NSCoder) {
+			fatalError("init(coder:) is unavailable")
+		}
+
 		override var mouseDownCanMoveWindow: Bool {
 			false
 		}
 
-		// AppKit gives the hidden titlebar region special drag handling for
-		// full-size-content windows. Firefox, Chromium, and Zed override this
-		// selector so interactive app content owns mouse handling in that region.
+		// NSWindowStyleMaskFullSizeContentView normally lets AppKit force
+		// titlebar-overlapping content into the native window-drag region even
+		// when mouseDownCanMoveWindow is false. Firefox, Chromium, and Zed use
+		// this private selector to mark app-owned titlebar content as opaque to
+		// that drag-region calculation.
 		//
-		// This is an undocumented AppKit selector. Returning our entire bounds
-		// makes the hosted SwiftUI hierarchy non-draggable by AppKit; Astra then
-		// opts specific blank regions back into dragging via performDrag(with:).
+		// Returning the entire host bounds disables AppKit's implicit titlebar
+		// dragging across Astra. Explicit WindowDragBackground views still move
+		// the window with NSWindow.performDrag(with:).
 		@objc(_opaqueRectForWindowMoveWhenInTitlebar)
-		func astraOpaqueRectForWindowMoveWhenInTitlebar() -> NSRect {
+		func opaqueRectForWindowMoveWhenInTitlebar() -> NSRect {
 			bounds
 		}
 	}
