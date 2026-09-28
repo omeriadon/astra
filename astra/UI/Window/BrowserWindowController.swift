@@ -43,7 +43,7 @@
 			self.window = window
 
 			let hostedRoot = MacBrowserHostedRoot(browser: browser)
-			let hostingView = NSHostingView(rootView: hostedRoot)
+			let hostingView = BrowserHostingView(rootView: hostedRoot)
 			hostingView.autoresizingMask = [.width, .height]
 			hostingView.frame = NSRect(origin: .zero, size: initialSize)
 
@@ -74,6 +74,24 @@
 		func windowWillClose(_: Notification) {
 			browser.flushPersistence()
 			onClose?()
+		}
+	}
+
+	private final class BrowserHostingView<Content: View>: NSHostingView<Content> {
+		override var mouseDownCanMoveWindow: Bool {
+			false
+		}
+
+		// AppKit gives the hidden titlebar region special drag handling for
+		// full-size-content windows. Firefox, Chromium, and Zed override this
+		// selector so interactive app content owns mouse handling in that region.
+		//
+		// This is an undocumented AppKit selector. Returning our entire bounds
+		// makes the hosted SwiftUI hierarchy non-draggable by AppKit; Astra then
+		// opts specific blank regions back into dragging via performDrag(with:).
+		@objc(_opaqueRectForWindowMoveWhenInTitlebar)
+		func astraOpaqueRectForWindowMoveWhenInTitlebar() -> NSRect {
+			bounds
 		}
 	}
 

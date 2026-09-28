@@ -16,17 +16,28 @@ extension Color {
 	)
 }
 
-@main
-struct browserApp: App {
-	#if os(macOS)
-		@NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+#if os(macOS)
+	import AppKit
 
-		var body: some Scene {
-			Settings {
-				EmptyView()
-			}
+	@main
+	enum browserApp {
+		@MainActor
+		static func main() {
+			let application = NSApplication.shared
+			let delegate = AppDelegate()
+
+			application.setActivationPolicy(.regular)
+			application.delegate = delegate
+			application.run()
+
+			// NSApplication's delegate is not an ownership boundary we want to
+			// rely on. Keep it alive for the entire run loop explicitly.
+			_ = delegate
 		}
-	#else
+	}
+#else
+	@main
+	struct browserApp: App {
 		@State private var updates = UpdateManager.shared
 
 		var body: some Scene {
@@ -41,5 +52,5 @@ struct browserApp: App {
 					}
 			}
 		}
-	#endif
-}
+	}
+#endif

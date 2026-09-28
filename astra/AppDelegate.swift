@@ -14,8 +14,11 @@
 		private var windows: [BrowserWindowController] = []
 		private var lastQuitAttempt: Date?
 
-		func applicationDidFinishLaunching(_: Notification) {
+		func applicationWillFinishLaunching(_: Notification) {
 			installMainMenu()
+		}
+
+		func applicationDidFinishLaunching(_: Notification) {
 			UpdateManager.shared.start()
 			BrowserDownloadManager.shared.resumeAvailableDownloads()
 			openBrowserWindow()
@@ -312,7 +315,7 @@
 			windowMenu.addItem(responderItem("Minimize", action: #selector(NSWindow.performMiniaturize(_:)), key: "m"))
 			windowMenu.addItem(responderItem("Zoom", action: #selector(NSWindow.performZoom(_:))))
 			windowMenu.addItem(.separator())
-			windowMenu.addItem(responderItem("Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:))))
+			windowMenu.addItem(item("Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), target: NSApp))
 			NSApp.windowsMenu = windowMenu
 
 			let helpMenu = NSMenu(title: "Help")
