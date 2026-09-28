@@ -8,7 +8,7 @@
 		let window: NSWindow
 		var onClose: (() -> Void)?
 
-		convenience init() {
+		override convenience init() {
 			self.init(browser: Browser())
 		}
 

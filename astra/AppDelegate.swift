@@ -7,6 +7,7 @@
 
 #if os(macOS)
 	import AppKit
+	import Sparkle
 
 	@MainActor
 	final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -109,11 +110,10 @@
 		}
 
 		@objc private func newTab(_: Any?) {
-			let browser: Browser
-			if let activeBrowser {
-				browser = activeBrowser
+			let browser: Browser = if let activeBrowser {
+				activeBrowser
 			} else {
-				browser = openBrowserWindow().browser
+				openBrowserWindow().browser
 			}
 			browser.addTab()
 		}
