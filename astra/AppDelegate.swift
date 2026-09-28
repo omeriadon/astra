@@ -36,8 +36,8 @@
 			hasVisibleWindows flag: Bool
 		) -> Bool {
 			if !flag {
-				if let window = windows.first?.window {
-					window.makeKeyAndOrderFront(nil)
+				if let controller = windows.first {
+					controller.showWindow()
 				} else {
 					openBrowserWindow()
 				}
@@ -73,8 +73,7 @@
 				windows.removeAll { $0 === controller }
 			}
 			windows.append(controller)
-			controller.showWindow(nil)
-			controller.window?.makeKeyAndOrderFront(nil)
+			controller.showWindow()
 			NSApp.activate()
 			return controller
 		}
@@ -88,7 +87,7 @@
 				controller = existing
 			} else if let existing = windows.first {
 				controller = existing
-				existing.window?.makeKeyAndOrderFront(nil)
+				existing.showWindow()
 			} else {
 				controller = openBrowserWindow()
 			}

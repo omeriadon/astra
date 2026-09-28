@@ -3,11 +3,11 @@
 	import SwiftUI
 
 	@MainActor
-	final class BrowserWindowController: NSWindowController, NSWindowDelegate {
+	final class BrowserWindowController: NSObject, NSWindowDelegate {
 		let browser: Browser
+		let window: BrowserWindow
 		var onClose: (() -> Void)?
 
-		private let browserWindow: BrowserWindow
 		private let chromeView: BrowserWindowContentView
 
 		convenience init() {
@@ -36,7 +36,7 @@
 				backing: .buffered,
 				defer: false
 			)
-			browserWindow = window
+			self.window = window
 
 			let hostedRoot = MacBrowserHostedRoot(browser: browser)
 			let hostingView = NSHostingView(rootView: hostedRoot)
@@ -45,7 +45,7 @@
 				window: window
 			)
 
-			super.init(window: window)
+			super.init()
 
 			window.delegate = self
 			window.contentView = chromeView
@@ -60,9 +60,8 @@
 			window.isReleasedWhenClosed = false
 		}
 
-		@available(*, unavailable)
-		required init?(coder _: NSCoder) {
-			fatalError("init(coder:) is unavailable")
+		func showWindow() {
+			window.makeKeyAndOrderFront(nil)
 		}
 
 		func windowDidBecomeKey(_: Notification) {
