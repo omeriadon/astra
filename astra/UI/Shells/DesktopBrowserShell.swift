@@ -98,11 +98,6 @@ struct DesktopBrowserShell: View {
 				theme.tabColor
 			}
 
-			#if os(macOS)
-				WindowDragBackground()
-					.accessibilityHidden(true)
-			#endif
-
 			if browser.selectedTab?.internalPage == nil {
 				websiteControls
 			} else {
@@ -111,6 +106,13 @@ struct DesktopBrowserShell: View {
 			}
 		}
 		.frame(height: BrowserChromeMetrics.topBarContentHeight)
+		#if os(macOS)
+			.background {
+				Color.clear
+					.contentShape(Rectangle())
+					.gesture(WindowDragGesture())
+			}
+		#endif
 		.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar : BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar))
 		.padding([.top, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 	}
