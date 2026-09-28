@@ -11,6 +11,12 @@
 
 		var body: some Commands {
 			CommandGroup(after: .toolbar) {
+				Button("Toggle Sidebar", systemImage: "sidebar.leading") {
+					browser?.sidebarShown.toggle()
+				}
+				.keyboardShortcut("S", modifiers: .command)
+				.disabled(browser == nil)
+
 				Button("Edit Space", systemImage: "paintpalette") {
 					browser?.openInternalPage(.themeEditor)
 				}

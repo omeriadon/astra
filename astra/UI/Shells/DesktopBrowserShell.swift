@@ -88,7 +88,7 @@ struct DesktopBrowserShell: View {
 				Color.clear
 			}
 		}
-		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
+		.frame(height: BrowserChromeMetrics.topBarContentHeight)
 		.background {
 			if let transitionFromTheme {
 				transitionFromTheme.tabColor
@@ -98,6 +98,8 @@ struct DesktopBrowserShell: View {
 				theme.tabColor
 			}
 		}
+		.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar : BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar))
+		.padding([.top, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 	}
 
 	private var navigationBarControls: some View {
@@ -119,7 +121,6 @@ struct DesktopBrowserShell: View {
 			.controlSize(.regular)
 			.labelStyle(.iconOnly)
 			.buttonSizing(.fitted)
-			.keyboardShortcut("S", modifiers: .command)
 			.buttonStyle(.bordered)
 			.foregroundStyle(theme.foregroundColor)
 			.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
@@ -454,7 +455,8 @@ struct DesktopBrowserShell: View {
 				}
 				.animation(.smooth(duration: 0.3)) { view in
 					view
-						.padding(sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
+						.padding(.top, BrowserChromeMetrics.shellEdgePadding)
+						.padding([.bottom, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 				}
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
