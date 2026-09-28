@@ -60,10 +60,31 @@
 			window.tabbingMode = .disallowed
 			window.collectionBehavior.insert(.fullScreenPrimary)
 			window.isReleasedWhenClosed = false
+
+			promoteContentAboveTitlebar()
 		}
 
 		func showWindow() {
 			window.makeKeyAndOrderFront(nil)
+			promoteContentAboveTitlebar()
+
+			// AppKit can rebuild/reorder the theme-frame hierarchy when the
+			// window first becomes visible. Re-apply once that pass completes.
+			DispatchQueue.main.async { [weak self] in
+				self?.promoteContentAboveTitlebar()
+			}
+		}
+
+		private func promoteContentAboveTitlebar() {
+			guard let contentView = window.contentView,
+			      let themeFrame = contentView.superview
+			else { return }
+
+			themeFrame.addSubview(
+				contentView,
+				positioned: .above,
+				relativeTo: nil
+			)
 		}
 
 		func windowDidBecomeKey(_: Notification) {
@@ -73,6 +94,10 @@
 		func windowWillClose(_: Notification) {
 			browser.flushPersistence()
 			onClose?()
+		}
+
+		func windowDidResize(_: Notification) {
+			promoteContentAboveTitlebar()
 		}
 	}
 
@@ -105,6 +130,32 @@
 
 		override var mouseDownCanMoveWindow: Bool {
 			false
+		}
+
+		override func hitTest(_ point: NSPoint) -> NSView? {
+			// This view is deliberately placed above AppKit's titlebar
+			// container. Let the real traffic-light buttons underneath remain
+			// the hit-test targets in their native frames.
+			if let window {
+				for type in [
+					NSWindow.ButtonType.closeButton,
+					.miniaturizeButton,
+					.zoomButton,
+				] {
+					guard let button = window.standardWindowButton(type) else {
+						continue
+					}
+
+					let buttonRect = convert(button.bounds, from: button)
+						.insetBy(dx: -4, dy: -4)
+
+					if buttonRect.contains(point) {
+						return nil
+					}
+				}
+			}
+
+			return super.hitTest(point)
 		}
 
 		// NSWindowStyleMaskFullSizeContentView normally lets AppKit force
