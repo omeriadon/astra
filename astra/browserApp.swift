@@ -18,55 +18,38 @@ extension Color {
 
 @main
 struct browserApp: App {
-	@State private var updates = UpdateManager.shared
-
 	#if os(macOS)
-		@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-		@State private var lastQuitAttempt: Date?
+		@NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-		private func requestQuit() {
-			let now = Date()
-
-			if let lastQuitAttempt,
-			   now.timeIntervalSince(lastQuitAttempt) < 0.5
-			{
-				NSApplication.shared.terminate(nil)
-				self.lastQuitAttempt = nil
-			} else {
-				lastQuitAttempt = now
+		var body: some Scene {
+			Settings {
+				EmptyView()
 			}
-		}
+			.commands {
+				BrowserCommands()
 
-	#endif
-
-	var body: some Scene {
-		WindowGroup {
-			ContentView()
-				.task {
-					updates.start()
-					BrowserDownloadManager.shared.resumeAvailableDownloads()
-				}
-				.sheet(isPresented: $updates.isPresented) {
-					BrowserUpdateSheet(updates: updates)
-				}
-		}
-		#if os(macOS)
-		.windowStyle(.titleBar)
-		.windowBackgroundDragBehavior(.disabled)
-		#endif
-
-		.commands {
-			BrowserCommands()
-
-			#if os(macOS)
 				CommandGroup(replacing: .appTermination) {
-					Button("Quit browser") {
-						requestQuit()
-						BrowserWindowRegistry.shared.activeBrowser?.isAboutToQuit = true
+					Button("Quit astra") {
+						(NSApp.delegate as? AppDelegate)?.requestQuit()
 					}
 					.keyboardShortcut("q", modifiers: .command)
 				}
-			#endif
+			}
 		}
-	}
+	#else
+		@State private var updates = UpdateManager.shared
+
+		var body: some Scene {
+			WindowGroup {
+				ContentView()
+					.task {
+						updates.start()
+						BrowserDownloadManager.shared.resumeAvailableDownloads()
+					}
+					.sheet(isPresented: $updates.isPresented) {
+						BrowserUpdateSheet(updates: updates)
+					}
+			}
+		}
+	#endif
 }

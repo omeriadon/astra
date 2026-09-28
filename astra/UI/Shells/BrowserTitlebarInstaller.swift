@@ -164,7 +164,6 @@
 				enterFullScreenObserver = nil
 				exitFullScreenObserver = nil
 			}
-
 		}
 
 		final class ProbeView: NSView {

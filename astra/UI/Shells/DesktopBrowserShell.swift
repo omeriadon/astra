@@ -50,7 +50,6 @@ struct DesktopBrowserShell: View {
 		} ?? false
 	}
 
-
 	private var websiteControls: some View {
 		HStack(spacing: 10) {
 			if let controller = browser.selectedTab?.activeController {
@@ -501,11 +500,11 @@ struct DesktopBrowserShell: View {
 			)
 		}
 		#if !os(macOS)
-			.overlay(alignment: .topLeading) {
-				if !sidebarShown {
-					navigationBarControls
-				}
+		.overlay(alignment: .topLeading) {
+			if !sidebarShown {
+				navigationBarControls
 			}
+		}
 		#endif
 		.onChange(of: browser.workspace.selectedSpaceID) { oldID, newID in
 			completeSpaceThemeTransition(from: oldID, to: newID)
@@ -668,7 +667,7 @@ struct DesktopBrowserShell: View {
 		.animation(.snappy(duration: 0.2), value: Date.now < quitExpiry)
 		#endif
 		#if os(macOS)
-			.focusedValue(\.browser, browser)
+		.focusedValue(\.browser, browser)
 		#endif
 	}
 }
