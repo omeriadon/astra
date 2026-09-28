@@ -20,33 +20,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	func applicationDidFinishLaunching(_: Notification) {
-		configureExistingWindows()
+		disableTabbing()
 
 		NotificationCenter.default.addObserver(
 			forName: NSWindow.didBecomeKeyNotification,
 			object: nil,
 			queue: .main
-		) { [weak self] notification in
-			guard let window = notification.object as? NSWindow else { return }
-			self?.configure(window)
+		) { [weak self] _ in
+			self?.disableTabbing()
 		}
 	}
 
-	private func configureExistingWindows() {
+	private func disableTabbing() {
 		for window in NSApplication.shared.windows {
-			configure(window)
+			window.tabbingMode = .disallowed
 		}
-	}
-
-	private func configure(_ window: NSWindow) {
-		window.tabbingMode = .disallowed
-
-		// SwiftUI can leave WindowGroup windows with the taller default title-bar
-		// geometry even when the scene requests a compact unified toolbar.
-		// Force the actual AppKit window to use compact unified chrome.
-		window.toolbarStyle = .unifiedCompact
-		window.titleVisibility = .hidden
-		window.titlebarAppearsTransparent = true
-		window.titlebarSeparatorStyle = .none
 	}
 }
