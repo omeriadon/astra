@@ -266,71 +266,91 @@ struct DesktopBrowserShell: View {
 	}
 
 	private func tabSidebar(for space: BrowserSpace) -> some View {
-		GeometryReader { geometry in
-			ScrollView {
-				LazyVStack(spacing: 2) {
-					if !browser.favouriteTabs.isEmpty {
-						LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
-							ForEach(browser.favouriteTabs) { tab in
-								BrowserFavouriteTile(tab: tab, browser: browser)
+		// Single O(n) lookup + filtered lists per sidebar render instead of
+		// O(n²) tabs.first scans inside every row.
+		let tabsByID = browser.tabsByID
+		let pinnedTabs = space.pinnedTabIDs.compactMap { tabsByID[$0] }
+		let pinnedSet = Set(space.pinnedTabIDs)
+		let normalTabs = space.tabIDs.filter { !pinnedSet.contains($0) }.compactMap { tabsByID[$0] }
+		let isActiveSpace = space.id == browser.workspace.selectedSpaceID
+		let selectedID = browser.selectedTabID
+		return GeometryReader { geometry in
+			ScrollViewReader { reader in
+				ScrollView {
+					LazyVStack(spacing: 2) {
+						if !browser.favouriteTabs.isEmpty {
+							LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
+								ForEach(browser.favouriteTabs) { tab in
+									BrowserFavouriteTile(tab: tab, browser: browser)
+								}
 							}
-						}
-						.padding(.bottom, 12)
-						#if os(macOS)
-							.background {
-								BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
-							}
-						#endif
-					}
-					#if os(macOS)
-						if browser.favouriteTabs.isEmpty, tabDrag.activeTabID != nil {
-							Color.clear
-								.frame(height: 34)
+							.padding(.bottom, 12)
+							#if os(macOS)
 								.background {
 									BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
 								}
+							#endif
 						}
-					#endif
-
-					if !space.pinnedTabIDs.isEmpty {
-						VStack(spacing: 2) {
-							ForEach(space.pinnedTabIDs.compactMap { id in browser.tabs.first { $0.id == id } }) { tab in
-								BrowserTabRow(tab: tab, browser: browser, isSelected: space.id == browser.workspace.selectedSpaceID && browser.selectedTabID == tab.id)
+						#if os(macOS)
+							if browser.favouriteTabs.isEmpty, tabDrag.activeTabID != nil {
+								Color.clear
+									.frame(height: 34)
+									.background {
+										BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
+									}
 							}
+						#endif
+
+						if !pinnedTabs.isEmpty {
+							VStack(spacing: 2) {
+								ForEach(pinnedTabs) { tab in
+									BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, pinned: true)
+										.id(tab.id)
+								}
+							}
+							#if os(macOS)
+							.background {
+								BrowserDropZone(browser: browser, area: .pinned, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
+							}
+							#endif
+							Divider()
+								.padding(.vertical, 8)
+						}
+						#if os(macOS)
+							if space.pinnedTabIDs.isEmpty, tabDrag.activeTabID != nil {
+								Color.clear
+									.frame(height: 28)
+									.background {
+										BrowserDropZone(browser: browser, area: .pinned, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
+									}
+							}
+						#endif
+						VStack(spacing: 2) {
+							ForEach(Array(normalTabs.enumerated()), id: \.element.id) { index, tab in
+								BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: index, normalCount: normalTabs.count, pinned: false)
+									.id(tab.id)
+							}
+							newTabButton
 						}
 						#if os(macOS)
 						.background {
-							BrowserDropZone(browser: browser, area: .pinned, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
+							BrowserDropZone(browser: browser, area: .normal, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
 						}
 						#endif
-						Divider()
-							.padding(.vertical, 8)
 					}
-					#if os(macOS)
-						if space.pinnedTabIDs.isEmpty, tabDrag.activeTabID != nil {
-							Color.clear
-								.frame(height: 28)
-								.background {
-									BrowserDropZone(browser: browser, area: .pinned, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
-								}
-						}
-					#endif
-					VStack(spacing: 2) {
-						ForEach(space.tabIDs.filter { !space.pinnedTabIDs.contains($0) }.compactMap { id in browser.tabs.first { $0.id == id } }) { tab in
-							BrowserTabRow(tab: tab, browser: browser, isSelected: space.id == browser.workspace.selectedSpaceID && browser.selectedTabID == tab.id)
-						}
-						newTabButton
-					}
-					#if os(macOS)
-					.background {
-						BrowserDropZone(browser: browser, area: .normal, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
-					}
-					#endif
+					.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
+					.padding(.top, 4)
+					.padding(.bottom, 48)
+					.frame(minHeight: geometry.size.height, alignment: .top)
 				}
-				.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
-				.padding(.top, 4)
-				.padding(.bottom, 48)
-				.frame(minHeight: geometry.size.height, alignment: .top)
+				.onChange(of: selectedID, initial: true) { _, id in
+					// Only scroll the active space's list; the swipe-preview
+					// copy has allowsHitTesting(false) and no reader anchor.
+					guard isActiveSpace else { return }
+					withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
+						reader.scrollTo(id, anchor: .center)
+					}
+				}
 			}
 		}
 	}

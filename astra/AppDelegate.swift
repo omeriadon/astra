@@ -21,6 +21,7 @@
 		func applicationDidFinishLaunching(_: Notification) {
 			UpdateManager.shared.start()
 			BrowserDownloadManager.shared.resumeAvailableDownloads()
+			BrowserController.prewarmSharedProcess()
 			openBrowserWindow()
 		}
 

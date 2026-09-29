@@ -5,8 +5,12 @@ import WebKit
 
 #if os(macOS)
 	import AppKit
+
+	private typealias PlatformImage = NSImage
 #elseif os(iOS)
 	import UIKit
+
+	private typealias PlatformImage = UIImage
 #endif
 
 @MainActor
@@ -53,6 +57,14 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	private var cacheGeneration = 0
 	@ObservationIgnored
 	private var requestGenerations: [ObjectIdentifier: Int] = [:]
+	@ObservationIgnored
+	private var faviconSaveTask: Task<Void, Never>?
+	/// Decoded-once cache: row bodies call image() on every render, and
+	/// PlatformImage(data:) decode per row is what made selection lag with N tabs.
+	@ObservationIgnored
+	private var decodedImages: [String: PlatformImage] = [:]
+	@ObservationIgnored
+	private var liveImages: [ObjectIdentifier: (cacheKey: String, image: PlatformImage)] = [:]
 
 	var isEmpty: Bool {
 		favicons.isEmpty
@@ -93,21 +105,25 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 
 	func image(for pageURL: URL?, in webView: WKWebView? = nil) -> Image? {
 		guard let key = Self.cacheKey(for: pageURL) else { return nil }
-		let liveFavicon = webView.flatMap { liveFavicons[ObjectIdentifier($0)] }
-		let data = if liveFavicon?.cacheKey == key {
-			liveFavicon?.data
-		} else {
-			favicons[key]
+		if let webView {
+			let webViewID = ObjectIdentifier(webView)
+			if let live = liveFavicons[webViewID], live.cacheKey == key {
+				if let cached = liveImages[webViewID], cached.cacheKey == key {
+					return Self.swiftUIImage(cached.image)
+				}
+				if let decoded = Self.makePlatformImage(live.data) {
+					liveImages[webViewID] = (key, decoded)
+					return Self.swiftUIImage(decoded)
+				}
+				return nil
+			}
 		}
-		guard let data else { return nil }
-
-		#if os(macOS)
-			guard let image = NSImage(data: data) else { return nil }
-			return Image(nsImage: image)
-		#elseif os(iOS)
-			guard let image = UIImage(data: data) else { return nil }
-			return Image(uiImage: image)
-		#endif
+		if let cached = decodedImages[key] {
+			return Self.swiftUIImage(cached)
+		}
+		guard let data = favicons[key], let decoded = Self.makePlatformImage(data) else { return nil }
+		decodedImages[key] = decoded
+		return Self.swiftUIImage(decoded)
 	}
 
 	func loadFavicon(for pageURL: URL, from webView: WKWebView, onlyIfMissing: Bool = false) async {
@@ -137,24 +153,39 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		      200 ..< 300 ~= response.statusCode,
 		      !data.isEmpty,
 		      data.count <= 1_000_000,
-		      Self.isImage(data),
 		      generation == cacheGeneration,
-		      requestGenerations[webViewID] == requestGeneration
+		      requestGenerations[webViewID] == requestGeneration,
+		      let platformImage = Self.makePlatformImage(data)
 		else { return }
 
 		liveFavicons[webViewID] = (key, data)
+		liveImages[webViewID] = (key, platformImage)
 		guard favicons[key] != data else { return }
 
 		favicons[key] = data
-		try? persistence?.saveFavicons(favicons)
+		decodedImages[key] = platformImage
+		scheduleFaviconSave()
 	}
 
 	func clear() {
 		cacheGeneration += 1
 		requestGenerations.removeAll()
 		liveFavicons.removeAll()
+		liveImages.removeAll()
+		decodedImages.removeAll()
 		favicons.removeAll()
-		try? persistence?.saveFavicons(favicons)
+		scheduleFaviconSave()
+	}
+
+	private func scheduleFaviconSave() {
+		guard persistence != nil else { return }
+		faviconSaveTask?.cancel()
+		let snapshot = favicons
+		faviconSaveTask = Task.detached(priority: .utility) { [persistence] in
+			try? await Task.sleep(for: .milliseconds(800))
+			guard !Task.isCancelled else { return }
+			try? persistence?.saveFavicons(snapshot)
+		}
 	}
 
 	func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -176,11 +207,19 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		return url.host?.lowercased()
 	}
 
-	private static func isImage(_ data: Data) -> Bool {
+	private static func makePlatformImage(_ data: Data) -> PlatformImage? {
 		#if os(macOS)
-			NSImage(data: data) != nil
+			NSImage(data: data)
 		#elseif os(iOS)
-			UIImage(data: data) != nil
+			UIImage(data: data)
+		#endif
+	}
+
+	private static func swiftUIImage(_ image: PlatformImage) -> Image {
+		#if os(macOS)
+			Image(nsImage: image)
+		#elseif os(iOS)
+			Image(uiImage: image)
 		#endif
 	}
 }

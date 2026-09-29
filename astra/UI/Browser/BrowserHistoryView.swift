@@ -4,7 +4,11 @@ struct BrowserHistoryView: View {
 	let browser: Browser
 
 	private var historyTabs: [OpenTab] {
-		(browser.openHistoryTabs + browser.closedHistoryTabs)
+		// Filter live tabs by currentURL before copying full histories via openTab.
+		let live = browser.tabs.filter { $0.internalPage == nil && $0.currentURL != nil }
+			.map(\.openTab)
+			.filter { $0.url != nil }
+		return (live + browser.closedHistoryTabs.filter { $0.url != nil })
 			.sorted { $0.modifiedAt > $1.modifiedAt }
 	}
 
@@ -36,7 +40,7 @@ struct BrowserHistoryView: View {
 private struct HistoryTabGroup: View {
 	let browser: Browser
 	let tab: OpenTab
-	@State private var isExpanded = true
+	@State private var isExpanded = false
 
 	var body: some View {
 		DisclosureGroup(isExpanded: $isExpanded) {
@@ -44,6 +48,7 @@ private struct HistoryTabGroup: View {
 				HistoryRow(
 					title: url.host ?? url.absoluteString,
 					detail: url.absoluteString,
+					url: url,
 					symbol: index == tab.historyIndex ? "circle.fill" : "clock",
 					identifier: "history-visit-\(tab.id.uuidString)-\(index)",
 					open: { browser.openHistoryURL(url, inBackground: false) },
@@ -54,6 +59,7 @@ private struct HistoryTabGroup: View {
 			HistoryRow(
 				title: tab.customTitle ?? tab.pageTitle,
 				detail: tab.url?.absoluteString ?? "",
+				url: tab.url,
 				symbol: "rectangle.on.rectangle",
 				identifier: "history-tab-\(tab.id.uuidString)",
 				open: { browser.openHistoryTab(tab, inBackground: false) },
@@ -66,6 +72,7 @@ private struct HistoryTabGroup: View {
 private struct HistoryRow: View {
 	let title: String
 	let detail: String
+	let url: URL?
 	let symbol: String
 	let identifier: String
 	let open: () -> Void
@@ -86,7 +93,14 @@ private struct HistoryRow: View {
 					}
 					.frame(maxWidth: .infinity, alignment: .leading)
 				} icon: {
-					Image(systemName: symbol)
+					Group {
+						if let favicon = FaviconStore.shared.image(for: url) {
+							favicon.resizable().scaledToFit()
+						} else {
+							Image(systemName: symbol)
+						}
+					}
+					.frame(width: 16, height: 16)
 				}
 				.contentShape(Rectangle())
 			}

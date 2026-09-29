@@ -10,6 +10,10 @@ struct BrowserTabRow: View {
 	let tab: BrowserTab
 	let browser: Browser
 	let isSelected: Bool
+	/// Precomputed by the parent sidebar (avoids O(n²) normalTabs scans per row).
+	var tabIndex: Int?
+	var normalCount: Int?
+	var pinned: Bool?
 	private var theme: BrowserTheme {
 		browser.theme
 	}
@@ -22,21 +26,25 @@ struct BrowserTabRow: View {
 		@State private var tabDrag = BrowserTabDragCoordinator.shared
 	#endif
 
-	private var tabIndex: Int? {
-		browser.normalTabs.firstIndex(where: { $0.id == tab.id })
+	private var resolvedTabIndex: Int? {
+		tabIndex ?? browser.normalTabs.firstIndex(where: { $0.id == tab.id })
+	}
+
+	private var resolvedNormalCount: Int {
+		normalCount ?? browser.normalTabs.count
 	}
 
 	private var isPinned: Bool {
-		browser.selectedSpace.pinnedTabIDs.contains(tab.id)
+		pinned ?? browser.selectedSpace.pinnedTabIDs.contains(tab.id)
 	}
 
 	private var canCloseAbove: Bool {
-		(tabIndex ?? 0) > 0
+		(resolvedTabIndex ?? 0) > 0
 	}
 
 	private var canCloseBelow: Bool {
-		guard let tabIndex else { return false }
-		return tabIndex < browser.normalTabs.count - 1
+		guard let resolvedTabIndex else { return false }
+		return resolvedTabIndex < resolvedNormalCount - 1
 	}
 
 	@State private var hovered = false
@@ -234,7 +242,7 @@ struct BrowserTabRow: View {
 			Button("Close Other Tabs", systemImage: "xmark.circle") {
 				browser.closeOtherTabs(tab.id)
 			}
-			.disabled(browser.normalTabs.count < 2)
+			.disabled(resolvedNormalCount < 2)
 
 			Button(role: isPinned ? nil : .destructive) {
 				browser.closeTab(tab.id)

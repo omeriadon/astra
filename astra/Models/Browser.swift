@@ -39,6 +39,18 @@ final class Browser {
 	@ObservationIgnored
 	private var persistenceTask: Task<Void, Never>?
 
+	@ObservationIgnored
+	private var pendingFullPersistence = false
+
+	/// O(1) tab lookup for sidebar/history rows (avoids O(n²) scans).
+	var tabsByID: [UUID: BrowserTab] {
+		Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
+	}
+
+	func tab(withID id: UUID) -> BrowserTab? {
+		tabsByID[id]
+	}
+
 	var selectedTab: BrowserTab? {
 		tabs.first { $0.id == selectedTabID }
 	}
@@ -286,6 +298,7 @@ final class Browser {
 			configure(selectedTab)
 		}
 		BrowserWindowRegistry.shared.register(self)
+		BrowserController.prewarmSharedProcess()
 		if loadedPersistence != nil {
 			persist()
 		}
@@ -297,7 +310,13 @@ final class Browser {
 		configure(tab)
 		tabs.append(tab)
 		recentlyUsedTabIDs.insert(tab.id, at: min(1, recentlyUsedTabIDs.count))
+		// Assign to the selected space synchronously so the sidebar row
+		// appears in the same transaction as the content switch (previously
+		// this only happened in debounced persist() → ~500ms row delay).
+		reconcileWorkspace()
 		selectTab(tab.id)
+		// New tab changes open-tabs.json; selection-only save is not enough.
+		schedulePersistence(fullState: true)
 		return tab
 	}
 
@@ -308,6 +327,7 @@ final class Browser {
 		}
 		let tab = BrowserTab(internalPage: page)
 		tabs.append(tab)
+		reconcileWorkspace()
 		selectTab(tab.id)
 	}
 
@@ -332,22 +352,34 @@ final class Browser {
 			isHibernated: inBackground
 		)
 		configure(tab)
+		if !inBackground {
+			// Start WebView + load on this runloop instead of waiting for
+			// ContentView's Color.clear + Task.yield hop.
+			tab.controller?.prepareWebView()
+		}
 		tabs.append(tab)
+		reconcileWorkspace()
 		if inBackground {
 			schedulePersistence()
 		} else {
 			selectTab(tab.id)
+			schedulePersistence(fullState: true)
 		}
 	}
 
 	func openHistoryURL(_ url: URL, inBackground: Bool) {
 		let tab = BrowserTab(initialURL: url)
 		configure(tab)
+		if !inBackground {
+			tab.controller?.prepareWebView()
+		}
 		tabs.append(tab)
+		reconcileWorkspace()
 		if inBackground {
 			schedulePersistence()
 		} else {
 			selectTab(tab.id)
+			schedulePersistence(fullState: true)
 		}
 	}
 
@@ -369,7 +401,8 @@ final class Browser {
 			}
 			workspace.selectedSpaceID = workspace.spaces[ownerIndex].id
 		}
-		if tab.isHibernated {
+		let didWake = tab.isHibernated
+		if didWake {
 			tab.wake()
 			configure(tab)
 		}
@@ -380,7 +413,9 @@ final class Browser {
 		recentlyUsedTabIDs.removeAll { $0 == id }
 		recentlyUsedTabIDs.insert(id, at: 0)
 		tab.controller?.loadFaviconIfMissing()
-		schedulePersistence()
+		// Waking rebuilds the controller (open-tabs changed); pure selection
+		// only needs workspace+snapshot.
+		schedulePersistence(fullState: didWake)
 	}
 
 	func switchCandidates(forward: Bool) -> [UUID] {
@@ -442,6 +477,7 @@ final class Browser {
 		)
 		configure(tab)
 		tabs.insert(tab, at: index + 1)
+		reconcileWorkspace()
 		selectTab(tab.id)
 	}
 
@@ -487,6 +523,7 @@ final class Browser {
 			recentlyUsedTabIDs.removeAll { $0 == selectedTabID }
 			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
 		}
+		reconcileWorkspace()
 		schedulePersistence()
 	}
 
@@ -505,6 +542,7 @@ final class Browser {
 		source.dismissPeek(id)
 		configure(tab)
 		tabs.append(tab)
+		reconcileWorkspace()
 		selectTab(tab.id)
 	}
 
@@ -528,6 +566,7 @@ final class Browser {
 	func flushPersistence() {
 		persistenceTask?.cancel()
 		persistenceTask = nil
+		pendingFullPersistence = true
 		persist()
 	}
 
@@ -622,6 +661,7 @@ final class Browser {
 		selectedTabID = selectedID
 		recentlyUsedTabIDs.removeAll { $0 == selectedID }
 		recentlyUsedTabIDs.insert(selectedID, at: 0)
+		reconcileWorkspace()
 		schedulePersistence()
 	}
 
@@ -814,36 +854,60 @@ final class Browser {
 		}
 	}
 
-	private func schedulePersistence() {
+	private func schedulePersistence(fullState: Bool = true) {
 		guard persistence != nil else { return }
+		if fullState {
+			pendingFullPersistence = true
+		}
+		let isFull = pendingFullPersistence
 		persistenceTask?.cancel()
 		persistenceTask = Task { @MainActor [weak self] in
-			try? await Task.sleep(for: .milliseconds(300))
+			try? await Task.sleep(for: .milliseconds(isFull ? 300 : 150))
 			guard !Task.isCancelled, let self else { return }
 			persist()
 		}
 	}
 
+	private func schedulePersistence() {
+		schedulePersistence(fullState: true)
+	}
+
+	private func scheduleSelectionPersistence() {
+		schedulePersistence(fullState: false)
+	}
+
 	private func persist() {
 		guard let persistence else { return }
-		do {
-			reconcileWorkspace()
-			try persistence.saveBookmarks(bookmarks)
-			try persistence.saveOpenTabs(tabs.map(\.openTab))
-			try persistence.saveClosedTabs(closedHistoryTabs)
-			try persistence.saveWorkspace(workspace)
-			try persistence.saveBrowserSnapshot(
-				BrowserSnapshot(
-					selectedTabID: selectedTabID,
-					closedTabIDs: closedTabIDs,
-					deletedBookmarkIDs: deletedBookmarkIDs
-				)
+		reconcileWorkspace()
+		let isFull = pendingFullPersistence
+		pendingFullPersistence = false
+		let state = BrowserPersistedState(
+			bookmarks: bookmarks,
+			openTabs: isFull ? tabs.map(\.openTab) : [],
+			closedTabs: isFull ? closedHistoryTabs : [],
+			workspace: workspace,
+			snapshot: BrowserSnapshot(
+				selectedTabID: selectedTabID,
+				closedTabIDs: closedTabIDs,
+				deletedBookmarkIDs: deletedBookmarkIDs
 			)
-			persistenceErrorDescription = nil
-			BrowserWindowRegistry.shared.publish(from: self)
-			BrowserSync.shared.scheduleSync()
-		} catch {
-			persistenceErrorDescription = error.localizedDescription
+		)
+		// Encode + file IO off-main so Cmd+T / history-open stay instant.
+		Task.detached(priority: .utility) { [persistence, state] in
+			do {
+				try persistence.savePersistedState(state, full: isFull)
+				await MainActor.run { [weak self] in
+					guard let self else { return }
+					persistenceErrorDescription = nil
+					BrowserWindowRegistry.shared.publishSoon(from: self)
+					BrowserSync.shared.scheduleSync()
+				}
+			} catch {
+				let message = error.localizedDescription
+				await MainActor.run { [weak self] in
+					self?.persistenceErrorDescription = message
+				}
+			}
 		}
 	}
 }

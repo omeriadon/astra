@@ -9,6 +9,42 @@ import WebKit
 @MainActor
 @Observable
 final class BrowserController: NSObject {
+	private static let sharedProcessPool = WKProcessPool()
+	private static var cachedSafariUserAgentSuffix: String?
+
+	/// Resolve once per launch, not once per tab (was NSWorkspace + Bundle plist per makeWebView).
+	private static func safariUserAgentSuffix() -> String? {
+		if let cachedSafariUserAgentSuffix {
+			return cachedSafariUserAgentSuffix
+		}
+		#if os(macOS)
+			let suffix: String? = if let safariURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Safari"),
+			                         let safariVersion = Bundle(url: safariURL)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+			{
+				"Version/\(safariVersion) Safari/605.1.15"
+			} else {
+				nil
+			}
+		#else
+			let suffix: String? = nil
+		#endif
+		cachedSafariUserAgentSuffix = suffix
+		return suffix
+	}
+
+	/// Spawn the WebContent/Network processes + warm the UA lookup off the
+	/// tab-creation critical path. Safe to call repeatedly.
+	static func prewarmSharedProcess() {
+		_ = sharedProcessPool
+		_ = safariUserAgentSuffix()
+		Task { @MainActor in
+			let config = WKWebViewConfiguration()
+			config.processPool = sharedProcessPool
+			// Thrown away; existence warms the shared process pool.
+			_ = WKWebView(frame: .zero, configuration: config)
+		}
+	}
+
 	private static let scrollPositionMessageName = "scrollPositionChanged"
 	private static let topEdgeMessageName = "topEdgeChanged"
 	private static let scrollPositionScript = """
@@ -189,13 +225,10 @@ final class BrowserController: NSObject {
 
 	private func makeWebView() -> WKWebView {
 		let configuration = WKWebViewConfiguration()
-		#if os(macOS)
-			if let safariURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Safari"),
-			   let safariVersion = Bundle(url: safariURL)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-			{
-				configuration.applicationNameForUserAgent = "Version/\(safariVersion) Safari/605.1.15"
-			}
-		#endif
+		configuration.processPool = Self.sharedProcessPool
+		if let suffix = Self.safariUserAgentSuffix() {
+			configuration.applicationNameForUserAgent = suffix
+		}
 		FaviconStore.shared.configureFaviconObservation(in: configuration.userContentController)
 		let webView = PeekSourceWebView(frame: .zero, configuration: configuration)
 		createdWebView = webView
@@ -289,6 +322,9 @@ final class BrowserController: NSObject {
 			},
 		]
 		isWebViewReady = true
+		// Start any deferred navigation immediately; WKWebView loads fine
+		// with a zero frame so we don't wait for first layout.
+		loadPendingRequest()
 		return webView
 	}
 
@@ -404,7 +440,7 @@ final class BrowserController: NSObject {
 
 	private func load(_ request: URLRequest) {
 		awaitsNavigationCommit = true
-		guard let webView = createdWebView, !webView.bounds.isEmpty else {
+		guard let webView = createdWebView else {
 			pendingRequest = request
 			return
 		}
