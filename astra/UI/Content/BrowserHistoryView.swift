@@ -2,8 +2,35 @@ import SwiftUI
 
 struct BrowserHistoryView: View {
 	let browser: Browser
+	@State private var cachedHistory: [OpenTab]
+	@State private var cachedHistoryKey: HistoryCacheKey
 
-	private var historyTabs: [OpenTab] {
+	init(browser: Browser) {
+		self.browser = browser
+		let history = Self.computeHistoryTabs(browser: browser)
+		_cachedHistory = State(initialValue: history)
+		_cachedHistoryKey = State(initialValue: Self.historyKey(browser: browser))
+	}
+
+	/// Every openTab mutation bumps modifiedAt to now (which always exceeds the
+	/// previous maximum), so counts + maxima capture all inputs to the compute.
+	private struct HistoryCacheKey: Equatable {
+		var tabCount: Int
+		var closedCount: Int
+		var latestTabModification: Double
+		var latestClosedModification: Double
+	}
+
+	private static func historyKey(browser: Browser) -> HistoryCacheKey {
+		HistoryCacheKey(
+			tabCount: browser.tabs.count,
+			closedCount: browser.closedHistoryTabs.count,
+			latestTabModification: browser.tabs.map(\.modifiedAt.timeIntervalSince1970).max() ?? 0,
+			latestClosedModification: browser.closedHistoryTabs.map(\.modifiedAt.timeIntervalSince1970).max() ?? 0
+		)
+	}
+
+	private static func computeHistoryTabs(browser: Browser) -> [OpenTab] {
 		// Filter live tabs by currentURL before copying full histories via openTab.
 		let live = browser.tabs.filter { $0.internalPage == nil && $0.currentURL != nil }
 			.map(\.openTab)
@@ -13,7 +40,11 @@ struct BrowserHistoryView: View {
 	}
 
 	var body: some View {
-		HistoryListView(browser: browser, historyTabs: historyTabs)
+		HistoryListView(browser: browser, historyTabs: cachedHistory)
+			.onChange(of: Self.historyKey(browser: browser)) { _, _ in
+				cachedHistoryKey = Self.historyKey(browser: browser)
+				cachedHistory = Self.computeHistoryTabs(browser: browser)
+			}
 	}
 }
 
@@ -63,6 +94,7 @@ private struct HistoryTabGroup: View {
 					open: { browser.openHistoryURL(url, inBackground: false) },
 					openInBackground: { browser.openHistoryURL(url, inBackground: true) }
 				)
+				.equatable()
 			}
 		} label: {
 			HistoryRow(
@@ -74,6 +106,7 @@ private struct HistoryTabGroup: View {
 				open: { browser.openHistoryTab(tab, inBackground: false) },
 				openInBackground: { browser.openHistoryTab(tab, inBackground: true) }
 			)
+			.equatable()
 		}
 	}
 }
@@ -145,5 +178,17 @@ private struct HistoryRow: View {
 		.buttonStyle(.plain)
 		.accessibilityLabel("Open \(title) in background")
 		.accessibilityIdentifier("\(identifier)-background")
+	}
+}
+
+/// Actions are derived from (browser, tab, url), so data equality implies
+/// action equality; closures are intentionally excluded.
+extension HistoryRow: Equatable {
+	static func == (lhs: HistoryRow, rhs: HistoryRow) -> Bool {
+		lhs.title == rhs.title
+			&& lhs.detail == rhs.detail
+			&& lhs.url == rhs.url
+			&& lhs.symbol == rhs.symbol
+			&& lhs.identifier == rhs.identifier
 	}
 }

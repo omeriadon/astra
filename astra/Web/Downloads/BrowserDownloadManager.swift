@@ -26,6 +26,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	private var isClosing = false
 	private var restorationStarted = false
 	private var lastPersistedAt = Date.distantPast
+	@ObservationIgnored private var downloadPersistTask: Task<Void, Never>?
 	private let storeURL: URL
 	private(set) var items: [BrowserDownload] = []
 	private(set) var latestStart: (id: UUID, source: UnitPoint)?
@@ -48,10 +49,20 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 		storeURL = directory.appendingPathComponent("downloads.json")
 		super.init()
-		if let data = try? Data(contentsOf: storeURL),
-		   let saved = try? JSONDecoder().decode([BrowserDownload].self, from: data)
-		{
-			items = saved.map { item in
+		hydrateItems()
+		#if DEBUG
+			assert(Self.safeStem("../unsafe\\name") == "unsafename")
+		#endif
+		updateDockProgress()
+	}
+
+	private func hydrateItems() {
+		let url = storeURL
+		Task.detached(priority: .utility) {
+			guard let data = try? Data(contentsOf: url),
+			      let saved = try? JSONDecoder().decode([BrowserDownload].self, from: data)
+			else { return }
+			let restored = saved.map { item -> BrowserDownload in
 				var item = item
 				if item.status == .downloading, item.segments == nil {
 					item.status = .paused
@@ -59,11 +70,15 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				}
 				return item
 			}
+			await MainActor.run { [weak self] in
+				guard let self else { return }
+				let liveIDs = Set(items.map(\.id))
+				items = items + restored.filter { !liveIDs.contains($0.id) }
+				restorationStarted = false
+				resumeAvailableDownloads()
+				updateDockProgress()
+			}
 		}
-		#if DEBUG
-			assert(Self.safeStem("../unsafe\\name") == "unsafename")
-		#endif
-		updateDockProgress()
 	}
 
 	func start(_ download: WKDownload, sourceURL: URL? = nil, source: UnitPoint = .center) {
@@ -294,7 +309,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				items[index].errorMessage = data == nil ? "This download cannot resume." : nil
 			}
 		}
-		persist()
+		flushDownloads()
 	}
 
 	func delete(_ itemID: UUID) {
@@ -490,36 +505,58 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			segmentFailed(itemID)
 			return
 		}
+		let sourceURL = partURL
+		let destinationURL = items[itemIndex].fileURL
+		let startOffset = segment.start
+		let partSize = segment.end - segment.start + 1
+		// 1 MiB-chunk file copy off-main; state updates below on main.
+		Task.detached(priority: .utility) {
+			do {
+				let source = try FileHandle(forReadingFrom: sourceURL)
+				let destination = try FileHandle(forWritingTo: destinationURL)
+				try destination.seek(toOffset: UInt64(startOffset))
+				while let data = try source.read(upToCount: 1024 * 1024), !data.isEmpty {
+					try destination.write(contentsOf: data)
+				}
+				try source.close()
+				try destination.close()
+				try FileManager.default.removeItem(at: sourceURL)
+				await MainActor.run { [weak self] in
+					self?.finishSegment(itemID, index: index, partSize: partSize)
+				}
+			} catch {
+				await MainActor.run { [weak self] in
+					self?.segmentFailed(itemID)
+				}
+			}
+		}
+	}
+
+	private func finishSegment(_ itemID: UUID, index: Int, partSize: Int64) {
+		guard let itemIndex = items.firstIndex(where: { $0.id == itemID }),
+		      items[itemIndex].status == .downloading,
+		      items[itemIndex].segments?.indices.contains(index) == true
+		else { return }
+		items[itemIndex].segments?[index].completed = true
+		items[itemIndex].segments?[index].received = partSize
+		updateSegmentProgress(itemID, index: index, received: partSize)
+		persist()
+		guard items[itemIndex].segments?.allSatisfy(\.completed) == true else { return }
 		do {
-			let source = try FileHandle(forReadingFrom: partURL)
-			let destination = try FileHandle(forWritingTo: items[itemIndex].fileURL)
-			try destination.seek(toOffset: UInt64(segment.start))
-			while let data = try source.read(upToCount: 1024 * 1024), !data.isEmpty {
-				try destination.write(contentsOf: data)
-			}
-			try source.close()
-			try destination.close()
-			try FileManager.default.removeItem(at: partURL)
-			items[itemIndex].segments?[index].completed = true
-			items[itemIndex].segments?[index].received = segment.end - segment.start + 1
-			updateSegmentProgress(itemID, index: index, received: segment.end - segment.start + 1)
+			let temporaryURL = items[itemIndex].fileURL
+			let completedURL = uniqueDestination(
+				fileName: temporaryURL.deletingPathExtension().lastPathComponent,
+				in: temporaryURL.deletingLastPathComponent(),
+				excludingTemporary: temporaryURL
+			)
+			try FileManager.default.moveItem(at: temporaryURL, to: completedURL)
+			items[itemIndex].fileURL = completedURL
+			items[itemIndex].status = .completed
+			items[itemIndex].progress = 1
+			items[itemIndex].segments = nil
+			updateDockProgress()
 			persist()
-			if items[itemIndex].segments?.allSatisfy(\.completed) == true {
-				let temporaryURL = items[itemIndex].fileURL
-				let completedURL = uniqueDestination(
-					fileName: temporaryURL.deletingPathExtension().lastPathComponent,
-					in: temporaryURL.deletingLastPathComponent(),
-					excludingTemporary: temporaryURL
-				)
-				try FileManager.default.moveItem(at: temporaryURL, to: completedURL)
-				items[itemIndex].fileURL = completedURL
-				items[itemIndex].status = .completed
-				items[itemIndex].progress = 1
-				items[itemIndex].segments = nil
-				updateDockProgress()
-				persist()
-				ToastManager.shared.show(symbol: "arrow.down.circle", message: "Downloaded \(completedURL.lastPathComponent)")
-			}
+			ToastManager.shared.show(symbol: "arrow.down.circle", message: "Downloaded \(completedURL.lastPathComponent)")
 		} catch {
 			segmentFailed(itemID)
 		}
@@ -586,6 +623,27 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	private func persist() {
+		persistSoon()
+	}
+
+	/// Encode + atomic write off-main; progress ticks arrive far more often
+	/// than durability requires. Quit path uses flushDownloads() instead.
+	private func persistSoon() {
+		downloadPersistTask?.cancel()
+		let snapshot = items
+		let url = storeURL
+		downloadPersistTask = Task.detached(priority: .utility) {
+			try? await Task.sleep(for: .milliseconds(500))
+			guard !Task.isCancelled else { return }
+			guard let data = try? JSONEncoder().encode(snapshot) else { return }
+			try? data.write(to: url, options: .atomic)
+		}
+	}
+
+	/// Synchronous write for app termination, where background work may not finish.
+	private func flushDownloads() {
+		downloadPersistTask?.cancel()
+		downloadPersistTask = nil
 		do {
 			let data = try JSONEncoder().encode(items)
 			try data.write(to: storeURL, options: .atomic)

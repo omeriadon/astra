@@ -37,7 +37,9 @@ struct BrowserAddressField: View {
 		}
 		.onChange(of: browser.selectedTab?.activeController?.url) { _, url in
 			guard !isFocused else { return }
-			addressText = BrowserAddress.displayString(for: url, style: addressDisplayStyle, isEditing: false)
+			let next = BrowserAddress.displayString(for: url, style: addressDisplayStyle, isEditing: false)
+			guard next != addressText else { return }
+			addressText = next
 		}
 		.onChange(of: addressDisplayStyle) { _, _ in
 			updateAddressFromURL()
@@ -76,11 +78,13 @@ struct BrowserAddressField: View {
 	}
 
 	private func updateAddressFromURL() {
-		addressText = BrowserAddress.displayString(
+		let next = BrowserAddress.displayString(
 			for: browser.selectedTab?.activeController?.url,
 			style: addressDisplayStyle,
 			isEditing: isFocused
 		)
+		guard next != addressText else { return }
+		addressText = next
 	}
 
 	private func submitAddress() {

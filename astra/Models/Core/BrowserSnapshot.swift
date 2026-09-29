@@ -1,6 +1,6 @@
 import Foundation
 
-struct BrowserSnapshot: Codable, Equatable {
+struct BrowserSnapshot: Codable, Equatable, Sendable {
 	var selectedTabID: UUID
 	var closedTabIDs: Set<UUID>
 	var deletedBookmarkIDs: Set<UUID>

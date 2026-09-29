@@ -1,6 +1,6 @@
 import Foundation
 
-struct OpenPeek: Codable, Equatable, Identifiable {
+struct OpenPeek: Codable, Equatable, Identifiable, Sendable {
 	let id: UUID
 	let depth: Int
 	let sourceX: Double

@@ -162,6 +162,20 @@ struct BrowserTabRow: View {
 	}
 }
 
+/// Favicons arrive via FaviconStore.shared.image inside TabIconView, which stays
+/// independently subscribed: skipping unchanged rows here never blocks new icons.
+extension BrowserTabRow: Equatable {
+	static func == (lhs: BrowserTabRow, rhs: BrowserTabRow) -> Bool {
+		lhs.tab === rhs.tab
+			&& lhs.browser === rhs.browser
+			&& lhs.theme == rhs.theme
+			&& lhs.isSelected == rhs.isSelected
+			&& lhs.tabIndex == rhs.tabIndex
+			&& lhs.normalCount == rhs.normalCount
+			&& lhs.pinned == rhs.pinned
+	}
+}
+
 private struct TabIconView: View {
 	let tab: BrowserTab
 	let browser: Browser

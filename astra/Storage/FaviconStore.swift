@@ -71,16 +71,28 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	}
 
 	override private init() {
+		let persistence: BrowserPersistence?
 		do {
-			let persistence = try BrowserPersistence()
-			let favicons = try persistence.loadFavicons()
-			self.persistence = persistence
-			self.favicons = favicons
+			persistence = try BrowserPersistence()
 		} catch {
 			persistence = nil
-			favicons = [:]
 		}
+		self.persistence = persistence
+		favicons = [:]
 		super.init()
+
+		// Decode the base64 icon dict off-main; rows show placeholders until set.
+		if let persistence {
+			Task.detached(priority: .utility) { [persistence] in
+				guard let loaded = try? persistence.loadFavicons(), !loaded.isEmpty else { return }
+				await MainActor.run { [weak self] in
+					guard let self else { return }
+					for (key, data) in loaded where favicons[key] == nil {
+						favicons[key] = data
+					}
+				}
+			}
+		}
 
 		#if DEBUG
 			assert(Self.cacheKey(for: URL(string: "https://www.example.com/page")!) == "www.example.com")

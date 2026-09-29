@@ -166,6 +166,8 @@ final class BrowserController: NSObject {
 	@ObservationIgnored
 	var navigationDidChange: (@MainActor () -> Void)?
 	@ObservationIgnored
+	var scrollPositionDidChange: (@MainActor () -> Void)?
+	@ObservationIgnored
 	var titleDidChange: (@MainActor (String?) -> Void)?
 	@ObservationIgnored
 	var newWindowRequested: (@MainActor (URL, UnitPoint) -> Void)?
@@ -193,6 +195,10 @@ final class BrowserController: NSObject {
 		private var previewSnapshotRefreshTask: Task<Void, Never>?
 		@ObservationIgnored
 		private var isRefreshingPreviewSnapshot = false
+		/// Set by Browser.selectTab: only the selected tab snapshots itself on
+		/// the background loop. Explicit refreshes (Ctrl-Tab) bypass this.
+		@ObservationIgnored
+		var previewSnapshotRefreshSuspended = false
 	#endif
 
 	init(
@@ -507,6 +513,7 @@ final class BrowserController: NSObject {
 					}
 
 					guard let self else { return }
+					guard !previewSnapshotRefreshSuspended else { continue }
 					await refreshPreviewSnapshot()
 				}
 			}
@@ -672,7 +679,7 @@ extension BrowserController: WKNavigationDelegate {
 		let generation = navigationGeneration
 		if let url {
 			Task { @MainActor in
-				await FaviconStore.shared.loadFavicon(for: url, from: webView)
+				await FaviconStore.shared.loadFavicon(for: url, from: webView, onlyIfMissing: true)
 			}
 		}
 		Task { @MainActor [weak self] in
@@ -713,7 +720,11 @@ extension BrowserController: WKScriptMessageHandler {
 		let nextPosition = BrowserScrollPosition(x: x, y: y)
 		guard scrollPosition != nextPosition else { return }
 		scrollPosition = nextPosition
-		navigationDidChange?()
+		if let scrollPositionDidChange {
+			scrollPositionDidChange()
+		} else {
+			navigationDidChange?()
+		}
 	}
 }
 

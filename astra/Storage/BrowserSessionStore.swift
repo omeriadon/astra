@@ -5,7 +5,8 @@ enum BrowserSessionStore {
 	private static let service = "com.omeriadon.browser.sync"
 	private static let account = "session"
 
-	static func load() throws -> String? {
+	/// Stateless Keychain access; nonisolated so launch never blocks on it.
+	nonisolated static func load() throws -> String? {
 		var query = baseQuery
 		query[kSecReturnData as String] = true
 		query[kSecMatchLimit as String] = kSecMatchLimitOne

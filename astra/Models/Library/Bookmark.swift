@@ -1,6 +1,6 @@
 import Foundation
 
-struct Bookmark: Codable, Identifiable, Equatable {
+struct Bookmark: Codable, Identifiable, Equatable, Sendable {
 	var id: UUID
 	var name: String
 	var url: URL

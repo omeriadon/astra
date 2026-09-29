@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct BrowserTheme: Codable, Equatable {
+struct BrowserTheme: Codable, Equatable, Sendable {
 	var usesGradient = false
 	var firstColor = BrowserColor(red: 0.25, green: 0.29, blue: 0.34)
 	var secondColor = BrowserColor(red: 0.25, green: 0.29, blue: 0.34)
@@ -19,7 +19,7 @@ struct BrowserTheme: Codable, Equatable {
 	var shaderNoiseMonochrome = true
 	var appearanceMode = ThemeAppearanceMode.auto
 
-	init() {}
+	nonisolated init() {}
 
 	private enum CodingKeys: String, CodingKey {
 		case usesGradient
@@ -168,7 +168,7 @@ struct BrowserTheme: Codable, Equatable {
 	}
 }
 
-enum ThemeAppearanceMode: String, Codable, CaseIterable, Identifiable {
+enum ThemeAppearanceMode: String, Codable, CaseIterable, Identifiable, Sendable {
 	case light
 	case dark
 	case auto
@@ -194,7 +194,7 @@ enum ThemeAppearanceMode: String, Codable, CaseIterable, Identifiable {
 	}
 }
 
-struct ThemeColorPoint: Codable, Equatable, Identifiable {
+struct ThemeColorPoint: Codable, Equatable, Identifiable, Sendable {
 	static let migratedFirstID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1))
 	static let migratedSecondID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2))
 
@@ -216,7 +216,7 @@ struct ThemeColorPoint: Codable, Equatable, Identifiable {
 	}
 }
 
-struct BrowserColor: Codable, Equatable {
+struct BrowserColor: Codable, Equatable, Sendable {
 	var red: Double
 	var green: Double
 	var blue: Double
@@ -256,7 +256,7 @@ struct BrowserColor: Codable, Equatable {
 	}
 }
 
-enum ThemeGradientDirection: String, Codable, CaseIterable, Identifiable {
+enum ThemeGradientDirection: String, Codable, CaseIterable, Identifiable, Sendable {
 	case top
 	case bottom
 	case leading

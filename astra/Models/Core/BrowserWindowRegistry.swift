@@ -22,6 +22,12 @@ final class BrowserWindowRegistry {
 	}
 
 	func activate(_ browser: Browser) {
+		// WindowFocusReader and didBecomeKeyNotification both fire for one
+		// focus change; every operation below is idempotent, so skip the
+		// repeat unless there is a hibernated tab to wake.
+		if activeBrowserID == browser.windowID, browser.selectedTab?.isHibernated != true {
+			return
+		}
 		activeBrowserID = browser.windowID
 		if browser.selectedTab?.isHibernated == true {
 			browser.selectTab(browser.selectedTabID)

@@ -22,8 +22,7 @@ final class BrowserSync {
 	@ObservationIgnored private let deviceID: UUID
 
 	private init() {
-		sessionToken = try? BrowserSessionStore.load()
-		isSignedIn = sessionToken != nil
+		isSignedIn = false
 		let storedVersions = UserDefaults.standard.dictionary(forKey: "syncSettingVersions") as? [String: Double] ?? [:]
 		settingVersions = storedVersions.mapValues(Date.init(timeIntervalSince1970:))
 		knownSettings = (try? Self.readSettings()) ?? [:]
@@ -35,6 +34,18 @@ final class BrowserSync {
 			let id = UUID()
 			UserDefaults.standard.set(id.uuidString, forKey: "syncDeviceID")
 			deviceID = id
+		}
+		// Keychain can block on crypto/disk; never on the launch path.
+		Task.detached(priority: .utility) {
+			guard let token = try? BrowserSessionStore.load() else { return }
+			await MainActor.run { [weak self] in
+				guard let self, sessionToken == nil else { return }
+				sessionToken = token
+				isSignedIn = true
+				if browser != nil {
+					Task { await syncNow() }
+				}
+			}
 		}
 	}
 
@@ -135,23 +146,30 @@ final class BrowserSync {
 				bearer: sessionToken
 			)
 			let local = browser.syncDocument(settings: settingSnapshot())
-			let decoder = JSONDecoder()
-			let documents = try snapshots.map { try decoder.decode(BrowserSyncDocument.self, from: $0.payload) }
-			guard documents.allSatisfy({ $0.version == 1 || $0.version == 2 }) else {
-				throw BrowserSyncError.unsupportedVersion
-			}
-			let merged = documents.reduce(local) { $0.merging($1) }
+			// Decode + merge off-main; docs are Sendable values.
+			let merged = try await Task.detached(priority: .utility) {
+				let decoder = JSONDecoder()
+				let documents = try snapshots.map { try decoder.decode(BrowserSyncDocument.self, from: $0.payload) }
+				guard documents.allSatisfy({ $0.version == 1 || $0.version == 2 }) else {
+					throw BrowserSyncError.unsupportedVersion
+				}
+				return documents.reduce(local) { $0.merging($1) }
+			}.value
 			if merged != local {
 				browser.applySyncDocument(merged)
 				try applySettings(merged.settings)
 			}
 
 			let outgoing = browser.syncDocument(settings: settingSnapshot())
-			let ownDocument = try snapshots
-				.first(where: { $0.deviceID == deviceID })
-				.map { try decoder.decode(BrowserSyncDocument.self, from: $0.payload) }
-			if ownDocument != outgoing {
-				let payload = try JSONEncoder().encode(outgoing)
+			let pushPayload: Data? = try await Task.detached(priority: .utility) {
+				let decoder = JSONDecoder()
+				let ownDocument = try snapshots
+					.first(where: { $0.deviceID == deviceID })
+					.map { try decoder.decode(BrowserSyncDocument.self, from: $0.payload) }
+				guard ownDocument != outgoing else { return nil }
+				return try JSONEncoder().encode(outgoing)
+			}.value
+			if let payload = pushPayload {
 				let _: ServerSnapshot = try await request(
 					path: "v1/sync",
 					method: "PUT",
@@ -269,12 +287,12 @@ private struct SyncRequest: Encodable {
 	let payload: Data
 }
 
-private struct ServerSnapshot: Decodable {
+private struct ServerSnapshot: Decodable, Sendable {
 	let deviceID: UUID
 	let payload: Data
 }
 
-private enum BrowserSyncError: LocalizedError {
+private enum BrowserSyncError: LocalizedError, Sendable {
 	case http(Int)
 	case invalidResponse
 	case invalidServerURL

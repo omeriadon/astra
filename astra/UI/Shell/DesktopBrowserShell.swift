@@ -248,7 +248,9 @@ struct DesktopBrowserShell: View {
 		}
 		.blur(radius: browser.isAboutToQuit ? 5 : 0)
 		.overlay(alignment: .center) {
-			QuitBannerOverlay(quitExpiry: quitExpiry)
+			if Date.now < quitExpiry {
+				QuitBannerOverlay(quitExpiry: quitExpiry)
+			}
 		}
 		.onChange(of: browser.isAboutToQuit) { _, newValue in
 			if newValue {
@@ -262,6 +264,7 @@ struct DesktopBrowserShell: View {
 
 			guard Date.now >= quitExpiry else { return }
 			browser.isAboutToQuit = false
+			quitExpiry = .distantPast
 		}
 		.animation(.snappy(duration: 0.2), value: Date.now < quitExpiry)
 		#endif
@@ -323,7 +326,8 @@ private struct ShellSidebarListView: View {
 						if !pinnedTabs.isEmpty {
 							VStack(spacing: 2) {
 								ForEach(pinnedTabs) { tab in
-									BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, pinned: true)
+									BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalTabs.count, pinned: true)
+										.equatable()
 										.id(tab.id)
 								}
 							}
@@ -347,6 +351,7 @@ private struct ShellSidebarListView: View {
 						VStack(spacing: 2) {
 							ForEach(Array(normalTabs.enumerated()), id: \.element.id) { index, tab in
 								BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: index, normalCount: normalTabs.count, pinned: false)
+									.equatable()
 									.id(tab.id)
 							}
 							ShellNewTabButton(browser: browser, theme: theme)
@@ -437,15 +442,29 @@ private struct ShellTopBarView: View {
 			.environment(\.colorScheme, topBarColorScheme)
 			.overlay(alignment: .bottom) {
 				if let controller = browser.selectedTab?.activeController {
-					BrowserLoadingBar(
-						isLoading: controller.isLoading,
-						estimatedProgress: controller.estimatedProgress,
-						theme: theme
+					ShellTopBarLoadingBar(
+						controller: controller,
+						theme: theme,
+						tabID: browser.selectedTabID
 					)
-					.frame(height: 1.5)
-					.id(browser.selectedTabID)
 				}
 			}
+	}
+}
+
+private struct ShellTopBarLoadingBar: View {
+	let controller: BrowserController
+	let theme: BrowserTheme
+	let tabID: UUID
+
+	var body: some View {
+		BrowserLoadingBar(
+			isLoading: controller.isLoading,
+			estimatedProgress: controller.estimatedProgress,
+			theme: theme
+		)
+		.frame(height: 1.5)
+		.id(tabID)
 	}
 }
 

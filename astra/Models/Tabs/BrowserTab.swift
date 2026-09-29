@@ -120,8 +120,18 @@ final class BrowserTab: Identifiable {
 	@ObservationIgnored
 	var didChange: (@MainActor () -> Void)?
 
+	/// Scroll-only updates (persisted on a slow debounce, no cross-window fan-out).
+	@ObservationIgnored
+	var didScrollChange: (@MainActor () -> Void)?
+
+	@ObservationIgnored
+	private var openTabCache: OpenTab?
+
 	var openTab: OpenTab {
-		OpenTab(
+		if let openTabCache {
+			return openTabCache
+		}
+		let next = OpenTab(
 			id: id,
 			internalPage: internalPage?.persistenceID,
 			pageTitle: pageTitle,
@@ -135,6 +145,8 @@ final class BrowserTab: Identifiable {
 			modifiedAt: modifiedAt,
 			peeks: isHibernated ? storedPeeks : peeks.map(\.openPeek)
 		)
+		openTabCache = next
+		return next
 	}
 
 	init(
@@ -275,11 +287,17 @@ final class BrowserTab: Identifiable {
 		peek.controller.navigationDidChange = { [weak self] in
 			self?.markModified()
 		}
+		peek.controller.scrollPositionDidChange = { [weak self] in
+			self?.markModifiedForScroll()
+		}
 	}
 
 	private func observeController() {
 		controller?.navigationDidChange = { [weak self] in
 			self?.markModified()
+		}
+		controller?.scrollPositionDidChange = { [weak self] in
+			self?.markModifiedForScroll()
 		}
 		controller?.titleDidChange = { [weak self] title in
 			self?.updatePageTitle(title)
@@ -288,6 +306,13 @@ final class BrowserTab: Identifiable {
 
 	private func markModified() {
 		modifiedAt = .now
+		openTabCache = nil
 		didChange?()
+	}
+
+	private func markModifiedForScroll() {
+		modifiedAt = .now
+		openTabCache = nil
+		didScrollChange?()
 	}
 }

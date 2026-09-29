@@ -1,6 +1,6 @@
 import Foundation
 
-struct OpenTab: Codable, Identifiable, Equatable {
+struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 	var id: UUID
 	var internalPage: String?
 	var pageTitle: String

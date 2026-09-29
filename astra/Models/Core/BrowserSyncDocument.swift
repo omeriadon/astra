@@ -1,6 +1,6 @@
 import Foundation
 
-struct BrowserSyncDocument: Codable, Equatable {
+struct BrowserSyncDocument: Codable, Equatable, Sendable {
 	var version: Int = 2
 	var tabs: [OpenTab]
 	var workspace: BrowserWorkspace?
@@ -31,7 +31,7 @@ struct BrowserSyncDocument: Codable, Equatable {
 		case settings
 	}
 
-	init(from decoder: Decoder) throws {
+	nonisolated init(from decoder: Decoder) throws {
 		let values = try decoder.container(keyedBy: CodingKeys.self)
 		version = try values.decodeIfPresent(Int.self, forKey: .version) ?? 1
 		tabs = try values.decode([OpenTab].self, forKey: .tabs)
@@ -41,7 +41,17 @@ struct BrowserSyncDocument: Codable, Equatable {
 		settings = try values.decode([String: SyncedSetting].self, forKey: .settings)
 	}
 
-	func merging(_ other: Self) -> Self {
+	nonisolated func encode(to encoder: Encoder) throws {
+		var values = encoder.container(keyedBy: CodingKeys.self)
+		try values.encode(version, forKey: .version)
+		try values.encode(tabs, forKey: .tabs)
+		try values.encodeIfPresent(workspace, forKey: .workspace)
+		try values.encode(bookmarks, forKey: .bookmarks)
+		try values.encode(browser, forKey: .browser)
+		try values.encode(settings, forKey: .settings)
+	}
+
+	nonisolated func merging(_ other: Self) -> Self {
 		var merged = self
 		merged.browser.closedTabIDs.formUnion(other.browser.closedTabIDs)
 		merged.browser.deletedBookmarkIDs.formUnion(other.browser.deletedBookmarkIDs)
@@ -119,13 +129,13 @@ struct BrowserSyncDocument: Codable, Equatable {
 	}
 }
 
-struct SyncedSetting: Codable, Equatable {
+struct SyncedSetting: Codable, Equatable, Sendable {
 	var value: Data?
 	var modifiedAt: Date
 }
 
 private extension Sequence where Element: Hashable {
-	func uniqued() -> [Element] {
+	nonisolated func uniqued() -> [Element] {
 		var seen = Set<Element>()
 		return filter { seen.insert($0).inserted }
 	}

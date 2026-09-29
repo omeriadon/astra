@@ -1,6 +1,6 @@
 import Foundation
 
-struct BrowserSpace: Codable, Equatable, Identifiable {
+struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
 	static let firstID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3))
 	static let symbols = [
 		"circle.grid.2x2.fill", "star.fill", "moon.stars.fill", "sun.max.fill", "cloud.sun.fill",
@@ -24,7 +24,7 @@ struct BrowserSpace: Codable, Equatable, Identifiable {
 	var selectedTabID: UUID?
 	var modifiedAt: Date
 
-	init(
+	nonisolated init(
 		id: UUID = UUID(),
 		name: String = "Space",
 		symbol: String = "circle.grid.2x2.fill",
