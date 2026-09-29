@@ -304,6 +304,7 @@ private struct ShellSidebarListView: View {
 							LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
 								ForEach(browser.favouriteTabs) { tab in
 									BrowserFavouriteTile(tab: tab, browser: browser)
+										.equatable()
 								}
 							}
 							.padding(.bottom, 12)

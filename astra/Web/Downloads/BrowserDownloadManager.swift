@@ -27,6 +27,25 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	private var restorationStarted = false
 	private var lastPersistedAt = Date.distantPast
 	@ObservationIgnored private var downloadPersistTask: Task<Void, Never>?
+	@ObservationIgnored private var lastProgressForward: [UUID: (fraction: Double, at: Date)] = [:]
+
+	/// Progress chunks arrive far more often than the eye (or dock) can use.
+	/// Coalesce sub-half-percent ticks within 250 ms; completion always forwards.
+	private func shouldForwardProgress(_ itemID: UUID, fraction: Double) -> Bool {
+		guard fraction < 1 else {
+			lastProgressForward[itemID] = nil
+			return true
+		}
+		if let last = lastProgressForward[itemID],
+		   abs(fraction - last.fraction) < 0.005,
+		   Date.now.timeIntervalSince(last.at) < 0.25
+		{
+			return false
+		}
+		lastProgressForward[itemID] = (fraction, .now)
+		return true
+	}
+
 	private let storeURL: URL
 	private(set) var items: [BrowserDownload] = []
 	private(set) var latestStart: (id: UUID, source: UnitPoint)?
@@ -353,6 +372,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			return
 		}
 		items.remove(at: index)
+		lastProgressForward[itemID] = nil
 		updateDockProgress()
 		persist()
 	}
@@ -470,7 +490,9 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		let downloaded = items[itemIndex].segments?.reduce(Int64(0)) { sum, segment in
 			sum + (segment.completed ? segment.end - segment.start + 1 : segment.received)
 		} ?? 0
-		items[itemIndex].progress = min(Double(downloaded) / Double(total), 1)
+		let fraction = min(Double(downloaded) / Double(total), 1)
+		guard shouldForwardProgress(itemID, fraction: fraction) else { return }
+		items[itemIndex].progress = fraction
 		updateDockProgress()
 		if Date.now.timeIntervalSince(lastPersistedAt) > 1 {
 			persist()
@@ -615,7 +637,9 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		guard let index = items.firstIndex(where: { $0.id == itemID }),
 		      items[index].status == .downloading
 		else { return }
-		items[index].progress = min(max(fraction, 0), 1)
+		let clamped = min(max(fraction, 0), 1)
+		guard shouldForwardProgress(itemID, fraction: clamped) else { return }
+		items[index].progress = clamped
 		updateDockProgress()
 		if Date.now.timeIntervalSince(lastPersistedAt) > 1 {
 			persist()
@@ -635,8 +659,15 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		downloadPersistTask = Task.detached(priority: .utility) {
 			try? await Task.sleep(for: .milliseconds(500))
 			guard !Task.isCancelled else { return }
-			guard let data = try? JSONEncoder().encode(snapshot) else { return }
-			try? data.write(to: url, options: .atomic)
+			do {
+				let data = try JSONEncoder().encode(snapshot)
+				try data.write(to: url, options: .atomic)
+			} catch {
+				let message = error.localizedDescription
+				await MainActor.run {
+					ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "Could not save downloads: \(message)")
+				}
+			}
 		}
 	}
 

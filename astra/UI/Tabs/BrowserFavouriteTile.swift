@@ -11,17 +11,7 @@ struct BrowserFavouriteTile: View {
 		Button {
 			browser.selectTab(tab.id)
 		} label: {
-			Group {
-				if let favicon = FaviconStore.shared.image(for: tab.currentURL, in: tab.controller?.webViewIfLoaded) {
-					favicon.resizable().scaledToFit()
-				} else {
-					Image(systemName: tab.internalPage?.symbol ?? "globe")
-				}
-			}
-			.frame(width: 20, height: 20)
-			.frame(maxWidth: .infinity)
-			.frame(height: 42)
-			.contentShape(RoundedRectangle(cornerRadius: 10))
+			FavouriteIconView(tab: tab)
 		}
 		.buttonStyle(.plain)
 		.background {
@@ -62,5 +52,34 @@ struct BrowserFavouriteTile: View {
 				browser.moveTab(tab.id, to: .normal)
 			}
 		}
+	}
+}
+
+private struct FavouriteIconView: View {
+	let tab: BrowserTab
+
+	var body: some View {
+		Group {
+			if let favicon = FaviconStore.shared.image(for: tab.currentURL, in: tab.controller?.webViewIfLoaded) {
+				favicon.resizable().scaledToFit()
+			} else {
+				Image(systemName: tab.internalPage?.symbol ?? "globe")
+			}
+		}
+		.frame(width: 20, height: 20)
+		.frame(maxWidth: .infinity)
+		.frame(height: 42)
+		.contentShape(RoundedRectangle(cornerRadius: 10))
+	}
+}
+
+/// Icons refresh via FavouriteIconView's own FaviconStore subscription;
+/// skipping unchanged tiles here never blocks new icons.
+extension BrowserFavouriteTile: Equatable {
+	static func == (lhs: BrowserFavouriteTile, rhs: BrowserFavouriteTile) -> Bool {
+		lhs.tab === rhs.tab
+			&& lhs.browser === rhs.browser
+			&& (lhs.browser.selectedTabID == lhs.tab.id) == (rhs.browser.selectedTabID == rhs.tab.id)
+			&& lhs.tab.title == rhs.tab.title
 	}
 }

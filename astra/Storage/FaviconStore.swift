@@ -65,6 +65,8 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	private var decodedImages: [String: PlatformImage] = [:]
 	@ObservationIgnored
 	private var liveImages: [ObjectIdentifier: (cacheKey: String, image: PlatformImage)] = [:]
+	@ObservationIgnored
+	private var inFlightFaviconKeys = Set<String>()
 
 	var isEmpty: Bool {
 		favicons.isEmpty
@@ -156,6 +158,12 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		      let iconURL = URL(string: address),
 		      iconURL.scheme == "https" || iconURL.scheme == "http"
 		else { return }
+
+		// Simultaneous navigations to one host share a single fetch; losers
+		// read the cached result via favicons[key] on their next lookup.
+		guard !inFlightFaviconKeys.contains(key) else { return }
+		inFlightFaviconKeys.insert(key)
+		defer { inFlightFaviconKeys.remove(key) }
 
 		var request = URLRequest(url: iconURL)
 		request.cachePolicy = .reloadRevalidatingCacheData

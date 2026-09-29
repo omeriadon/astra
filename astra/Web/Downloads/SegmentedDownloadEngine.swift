@@ -2,6 +2,8 @@ import Foundation
 
 @MainActor
 final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
+	private let progressThrottle = NSLock()
+	private nonisolated(unsafe) var lastProgressHop: [String: Date] = [:]
 	private lazy var session: URLSession = {
 		let identifier = (Bundle.main.bundleIdentifier ?? "browser") + ".segmentedDownloads"
 		let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
@@ -50,6 +52,20 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		totalBytesExpectedToWrite _: Int64
 	) {
 		guard let (itemID, index) = Self.identify(downloadTask) else { return }
+		// Disk chunks arrive far more often than progress UI can use; the
+		// manager coalesces values too, this just avoids the MainActor hop.
+		let key = downloadTask.taskDescription ?? ""
+		let now = Date()
+		progressThrottle.lock()
+		let due: Bool
+		if let last = lastProgressHop[key], now.timeIntervalSince(last) < 0.1 {
+			due = false
+		} else {
+			lastProgressHop[key] = now
+			due = true
+		}
+		progressThrottle.unlock()
+		guard due else { return }
 		Task { @MainActor in
 			BrowserDownloadManager.shared.updateSegmentProgress(itemID, index: index, received: totalBytesWritten)
 		}
@@ -61,6 +77,11 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		didFinishDownloadingTo location: URL
 	) {
 		guard let (itemID, index) = Self.identify(downloadTask) else { return }
+		if let description = downloadTask.taskDescription {
+			progressThrottle.lock()
+			lastProgressHop[description] = nil
+			progressThrottle.unlock()
+		}
 		let partURL = Self.partURL(itemID, index: index)
 		let response = downloadTask.response as? HTTPURLResponse
 		do {
@@ -85,6 +106,11 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		guard error != nil,
 		      let (itemID, _) = Self.identify(task)
 		else { return }
+		if let description = task.taskDescription {
+			progressThrottle.lock()
+			lastProgressHop[description] = nil
+			progressThrottle.unlock()
+		}
 		Task { @MainActor in
 			BrowserDownloadManager.shared.segmentFailed(itemID)
 		}

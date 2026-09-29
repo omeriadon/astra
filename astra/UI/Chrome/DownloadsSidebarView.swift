@@ -25,6 +25,7 @@ struct DownloadsSidebarView: View {
 								theme: theme,
 								previewURL: $previewURL
 							)
+							.equatable()
 						}
 					}
 				}
@@ -152,5 +153,14 @@ private struct SegmentProgressBar: View {
 			}
 		}
 		.accessibilityHidden(true)
+	}
+}
+
+extension DownloadRowView: Equatable {
+	static func == (lhs: DownloadRowView, rhs: DownloadRowView) -> Bool {
+		lhs.item == rhs.item
+			&& lhs.manager === rhs.manager
+			&& lhs.theme == rhs.theme
+			&& lhs.previewURL == rhs.previewURL
 	}
 }
