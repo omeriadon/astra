@@ -3,17 +3,16 @@ import SwiftUI
 struct BrowserHistoryView: View {
 	let browser: Browser
 
+	private var historyTabs: [OpenTab] {
+		(browser.openHistoryTabs + browser.closedHistoryTabs)
+			.sorted { $0.modifiedAt > $1.modifiedAt }
+	}
+
 	var body: some View {
 		List {
-			Section("Open Tabs") {
-				ForEach(browser.openHistoryTabs) { tab in
-					tabHistory(tab)
-				}
-			}
-
-			Section("Closed Tabs") {
-				ForEach(Array(browser.closedHistoryTabs.enumerated()), id: \.offset) { item in
-					tabHistory(item.element)
+			Section("Tabs") {
+				ForEach(historyTabs) { tab in
+					HistoryTabGroup(browser: browser, tab: tab)
 				}
 			}
 		}
@@ -27,15 +26,21 @@ struct BrowserHistoryView: View {
 				.padding(.vertical, 14)
 		}
 		.overlay {
-			if browser.openHistoryTabs.isEmpty, browser.closedHistoryTabs.isEmpty {
+			if historyTabs.isEmpty {
 				ContentUnavailableView("No History", systemImage: "clock.arrow.circlepath")
 			}
 		}
 	}
+}
 
-	private func tabHistory(_ tab: OpenTab) -> some View {
-		DisclosureGroup {
-			ForEach(Array(tab.history.enumerated()), id: \.offset) { index, url in
+private struct HistoryTabGroup: View {
+	let browser: Browser
+	let tab: OpenTab
+	@State private var isExpanded = true
+
+	var body: some View {
+		DisclosureGroup(isExpanded: $isExpanded) {
+			ForEach(Array(tab.history.enumerated().reversed()), id: \.offset) { index, url in
 				HistoryRow(
 					title: url.host ?? url.absoluteString,
 					detail: url.absoluteString,

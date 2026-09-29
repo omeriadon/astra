@@ -635,7 +635,11 @@ final class Browser {
 
 	private func archiveHistory(of removedTabs: [BrowserTab]) {
 		let snapshots = removedTabs.filter { $0.internalPage == nil }
-			.map(\.openTab)
+			.map { tab in
+				var snapshot = tab.openTab
+				snapshot.modifiedAt = .now
+				return snapshot
+			}
 			.filter { $0.url != nil }
 		closedHistoryTabs.insert(contentsOf: snapshots, at: 0)
 	}
