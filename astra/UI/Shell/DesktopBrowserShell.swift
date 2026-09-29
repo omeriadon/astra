@@ -526,7 +526,7 @@ private struct ShellNewTabButton: View {
 				.frame(maxWidth: .infinity, alignment: .leading)
 				.contentShape(Rectangle())
 		}
-		.keyboardShortcut("T", modifiers: .command)
+		.keyboardShortcut("t", modifiers: .command)
 		.buttonStyle(.plain)
 		.padding(.horizontal, 8)
 		.foregroundStyle(theme.foregroundColor.opacity(0.65))

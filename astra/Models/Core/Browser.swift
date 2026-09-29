@@ -398,6 +398,13 @@ final class Browser {
 		}
 	}
 
+	func reopenLastClosedTab() {
+		guard !closedHistoryTabs.isEmpty else { return }
+		let saved = closedHistoryTabs.removeFirst()
+		openHistoryTab(saved, inBackground: false)
+		schedulePersistence()
+	}
+
 	func openHistoryURL(_ url: URL, inBackground: Bool) {
 		let tab = BrowserTab(initialURL: url)
 		configure(tab)
@@ -729,7 +736,6 @@ final class Browser {
 				snapshot.modifiedAt = .now
 				return snapshot
 			}
-			.filter { $0.url != nil }
 		closedHistoryTabs.insert(contentsOf: snapshots, at: 0)
 	}
 

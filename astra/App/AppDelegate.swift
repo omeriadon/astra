@@ -127,6 +127,10 @@
 			browser.closeTab(browser.selectedTabID)
 		}
 
+		@objc private func reopenLastClosedTab(_: Any?) {
+			activeBrowser?.reopenLastClosedTab()
+		}
+
 		@objc private func closeWindow(_: Any?) {
 			NSApp.keyWindow?.performClose(nil)
 		}
@@ -251,6 +255,12 @@
 			fileMenu.addItem(item("New Tab", action: #selector(newTab(_:)), key: "t"))
 			fileMenu.addItem(.separator())
 			fileMenu.addItem(item("Close Tab", action: #selector(closeTab(_:)), key: "w"))
+			fileMenu.addItem(item(
+				"Reopen Closed Tab",
+				action: #selector(reopenLastClosedTab(_:)),
+				key: "t",
+				modifiers: [.command, .shift]
+			))
 			fileMenu.addItem(item(
 				"Close Window",
 				action: #selector(closeWindow(_:)),
