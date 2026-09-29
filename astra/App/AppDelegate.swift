@@ -7,6 +7,7 @@
 
 #if os(macOS)
 	import AppKit
+	import Defaults
 	import Sparkle
 
 	@MainActor
@@ -58,6 +59,11 @@
 		}
 
 		func requestQuit() {
+			guard Defaults[.requireDoublePressToQuit] else {
+				NSApplication.shared.terminate(nil)
+				return
+			}
+
 			let now = Date()
 
 			if let lastQuitAttempt,

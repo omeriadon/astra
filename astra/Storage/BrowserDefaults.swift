@@ -21,6 +21,7 @@ extension Defaults.Keys {
 		"zoomOutInPeeks",
 		"renameDownloadsWithAppleIntelligence",
 		"copyMailtoAddresses",
+		"requireDoublePressToQuit",
 		"browserTheme",
 	]
 
@@ -36,6 +37,11 @@ extension Defaults.Keys {
 
 	static let copyMailtoAddresses = Key<Bool>(
 		"copyMailtoAddresses",
+		default: true
+	)
+
+	static let requireDoublePressToQuit = Key<Bool>(
+		"requireDoublePressToQuit",
 		default: true
 	)
 

@@ -72,7 +72,7 @@ struct BrowserSettingsView: View {
 						symbol: "gearshape.2",
 						section: .advanced,
 						identifier: "settings-advanced",
-						terms: ["Links", "Copy email addresses from mailto links"]
+						terms: ["Links", "Copy email addresses from mailto links", "Quit", "Press Command-Q twice to quit"]
 					)
 				case .about:
 					Definition(
