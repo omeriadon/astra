@@ -2,10 +2,15 @@ import Defaults
 import Haze
 import SwiftUI
 
-struct BrowserContentView: View {
+struct BrowserContentView: View, Animatable {
 	let browser: Browser
 	var insets = BrowserViewportInsets()
 	@Environment(\.colorScheme) private var colorScheme
+
+	var animatableData: CGFloat {
+		get { insets.obscured.top }
+		set { insets.obscured.top = newValue }
+	}
 
 	var body: some View {
 		GeometryReader { proxy in
