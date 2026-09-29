@@ -16,11 +16,15 @@ struct DownloadsSidebarView: View {
 						.padding(.bottom, 6)
 
 					if manager.items.isEmpty {
-						ContentUnavailableView("No Downloads", systemImage: "arrow.down.circle")
-							.frame(maxWidth: .infinity)
+						DownloadsEmptyView()
 					} else {
 						ForEach(manager.items) { item in
-							row(item)
+							DownloadRowView(
+								item: item,
+								manager: manager,
+								theme: theme,
+								previewURL: $previewURL
+							)
 						}
 					}
 				}
@@ -37,8 +41,22 @@ struct DownloadsSidebarView: View {
 		.quickLookPreview($previewURL)
 		.accessibilityIdentifier("downloads-list")
 	}
+}
 
-	private func row(_ item: BrowserDownload) -> some View {
+private struct DownloadsEmptyView: View {
+	var body: some View {
+		ContentUnavailableView("No Downloads", systemImage: "arrow.down.circle")
+			.frame(maxWidth: .infinity)
+	}
+}
+
+private struct DownloadRowView: View {
+	let item: BrowserDownload
+	let manager: BrowserDownloadManager
+	let theme: BrowserTheme
+	@Binding var previewURL: URL?
+
+	var body: some View {
 		HStack(alignment: .top, spacing: 9) {
 			Image(systemName: item.symbol)
 				.frame(width: 18)
@@ -60,10 +78,13 @@ struct DownloadsSidebarView: View {
 							ForEach(segments.indices, id: \.self) { index in
 								let segment = segments[index]
 								let size = Double(segment.end - segment.start + 1)
-								progressBar(segment.completed ? 1 : Double(segment.received) / size)
+								SegmentProgressBar(
+									progress: segment.completed ? 1 : Double(segment.received) / size,
+									theme: theme
+								)
 							}
 						} else {
-							progressBar(item.progress)
+							SegmentProgressBar(progress: item.progress, theme: theme)
 						}
 					}
 					.frame(height: 5)
@@ -114,8 +135,13 @@ struct DownloadsSidebarView: View {
 		.accessibilityLabel("\(item.name), \(item.sourceURL?.host ?? "unknown website"), \(item.status.rawValue)")
 		.accessibilityIdentifier("download-\(item.id.uuidString)")
 	}
+}
 
-	private func progressBar(_ progress: Double) -> some View {
+private struct SegmentProgressBar: View {
+	let progress: Double
+	let theme: BrowserTheme
+
+	var body: some View {
 		GeometryReader { geometry in
 			ZStack(alignment: .leading) {
 				Capsule()

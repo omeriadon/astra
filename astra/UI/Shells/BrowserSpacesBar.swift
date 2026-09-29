@@ -15,52 +15,13 @@ struct BrowserSpacesBar: View {
 			ScrollView(.horizontal) {
 				HStack(spacing: 4) {
 					ForEach(browser.workspace.spaces) { space in
-						Button {
-							browser.selectSpace(space.id)
-						} label: {
-							Label(space.name, systemImage: space.symbol)
-								.labelStyle(.iconOnly)
-								.frame(width: 25, height: 25)
-								.background {
-									if browser.workspace.selectedSpaceID == space.id {
-										RoundedRectangle(cornerRadius: 8)
-											.fill(Color.primary.gradient)
-											.opacity(0.4)
-									}
-								}
-						}
-						.buttonStyle(.plain)
-						.contextMenu {
-							Button("Edit Space", systemImage: "paintpalette") {
-								browser.selectSpace(space.id)
-								browser.openInternalPage(.themeEditor)
-							}
-							Button("Delete Space", systemImage: "trash", role: .destructive) {
-								spaceToDelete = space
-								showsDeleteAlert = true
-							}
-							.disabled(browser.workspace.spaces.count == 1)
-						}
-						.accessibilityLabel(space.name)
-						.accessibilityAddTraits(browser.workspace.selectedSpaceID == space.id ? .isSelected : [])
-						.accessibilityIdentifier("space-\(space.id.uuidString)")
-						#if os(macOS)
-							.background {
-								BrowserDropZone(
-									browser: browser,
-									area: .normal,
-									spaceID: space.id,
-									beforeTabID: nil
-								)
-							}
-						#endif
-							.id(space.id)
-							.scrollTransition(axis: .horizontal) { content, phase in
-								content
-									.opacity(phase.isIdentity ? 1 : 0.25)
-									.scaleEffect(phase.isIdentity ? 1 : 0.7)
-									.blur(radius: phase.isIdentity ? 0 : 4)
-							}
+						SpaceButtonView(
+							browser: browser,
+							space: space,
+							isSelected: browser.workspace.selectedSpaceID == space.id,
+							spaceToDelete: $spaceToDelete,
+							showsDeleteAlert: $showsDeleteAlert
+						)
 					}
 				}
 			}
@@ -112,6 +73,63 @@ struct BrowserSpacesBar: View {
 			Button(role: .cancel) {}
 		} message: { space in
 			Text("Tabs in \(space.name) will move to another Space.")
+		}
+	}
+
+	private struct SpaceButtonView: View {
+		let browser: Browser
+		let space: BrowserSpace
+		let isSelected: Bool
+		@Binding var spaceToDelete: BrowserSpace?
+		@Binding var showsDeleteAlert: Bool
+
+		var body: some View {
+			Button {
+				browser.selectSpace(space.id)
+			} label: {
+				Label(space.name, systemImage: space.symbol)
+					.labelStyle(.iconOnly)
+					.frame(width: 25, height: 25)
+					.background {
+						if isSelected {
+							RoundedRectangle(cornerRadius: 8)
+								.fill(Color.primary.gradient)
+								.opacity(0.4)
+						}
+					}
+			}
+			.buttonStyle(.plain)
+			.contextMenu {
+				Button("Edit Space", systemImage: "paintpalette") {
+					browser.selectSpace(space.id)
+					browser.openInternalPage(.themeEditor)
+				}
+				Button("Delete Space", systemImage: "trash", role: .destructive) {
+					spaceToDelete = space
+					showsDeleteAlert = true
+				}
+				.disabled(browser.workspace.spaces.count == 1)
+			}
+			.accessibilityLabel(space.name)
+			.accessibilityAddTraits(isSelected ? .isSelected : [])
+			.accessibilityIdentifier("space-\(space.id.uuidString)")
+			#if os(macOS)
+				.background {
+					BrowserDropZone(
+						browser: browser,
+						area: .normal,
+						spaceID: space.id,
+						beforeTabID: nil
+					)
+				}
+			#endif
+				.id(space.id)
+				.scrollTransition(axis: .horizontal) { content, phase in
+					content
+						.opacity(phase.isIdentity ? 1 : 0.25)
+						.scaleEffect(phase.isIdentity ? 1 : 0.7)
+						.blur(radius: phase.isIdentity ? 0 : 4)
+				}
 		}
 	}
 

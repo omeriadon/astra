@@ -55,30 +55,34 @@ struct PeekCardView: View {
 	var body: some View {
 		ZStack {
 			if peek.controller.isWebViewReady {
-				BrowserWebView(controller: peek.controller)
-					.clipShape(.rect(cornerRadius: cornerRadius))
-					.opacity(showsWebContent ? 1 : 0)
+				PeekWebContent(
+					controller: peek.controller,
+					cornerRadius: cornerRadius,
+					showsWebContent: showsWebContent
+				)
 			}
 
 			if showsPlaceholder {
-				RoundedRectangle(cornerRadius: cornerRadius)
-					.fill(peek.controller.themeColor ?? .black)
-					.scaleEffect(reduceMotion || peek.isPresented ? 1 : 0.001)
-					.offset(reduceMotion || peek.isPresented ? .zero : sourceOffset)
-					.transition(.opacity)
+				PeekPlaceholder(
+					themeColor: peek.controller.themeColor,
+					cornerRadius: cornerRadius,
+					sourceOffset: reduceMotion || peek.isPresented ? .zero : sourceOffset,
+					scale: reduceMotion || peek.isPresented ? 1 : 0.001
+				)
 			}
 		}
 		.frame(width: cardRect.width, height: cardRect.height)
 		.overlay(alignment: .topLeading) {
-			GlassEffectContainer(spacing: 10) {
-				VStack(spacing: 10) {
-					if isTopmost, !showsPlaceholder {
-						peekButton("Close Peek", symbol: "xmark", identifier: "close-peek", action: dismiss)
-						peekButton("Open Peek in New Tab", symbol: "arrow.up.left.and.arrow.down.right", identifier: "promote-peek", action: promote)
-					}
-				}
-			}
-			.animation(controlsAnimation, value: isTopmost)
+			PeekControlsOverlay(
+				isTopmost: isTopmost,
+				showsPlaceholder: showsPlaceholder,
+				controlSize: controlSize,
+				controlsAnimation: controlsAnimation,
+				controlsNamespace: controlsNamespace,
+				depth: peek.depth,
+				onDismiss: dismiss,
+				onPromote: promote
+			)
 			.offset(x: -controlSize - 15, y: 16)
 		}
 //			.shadow(color: .black.opacity(0.38), radius: 32, y: 18)
@@ -167,5 +171,97 @@ struct PeekCardView: View {
 			}
 			onPromote()
 		}
+	}
+}
+
+private struct PeekWebContent: View {
+	let controller: BrowserController
+	let cornerRadius: CGFloat
+	let showsWebContent: Bool
+
+	var body: some View {
+		BrowserWebView(controller: controller)
+			.clipShape(.rect(cornerRadius: cornerRadius))
+			.opacity(showsWebContent ? 1 : 0)
+	}
+}
+
+private struct PeekPlaceholder: View {
+	let themeColor: Color?
+	let cornerRadius: CGFloat
+	let sourceOffset: CGSize
+	let scale: CGFloat
+
+	var body: some View {
+		RoundedRectangle(cornerRadius: cornerRadius)
+			.fill(themeColor ?? .black)
+			.scaleEffect(scale)
+			.offset(sourceOffset)
+			.transition(.opacity)
+	}
+}
+
+private struct PeekControlsOverlay: View {
+	let isTopmost: Bool
+	let showsPlaceholder: Bool
+	let controlSize: CGFloat
+	let controlsAnimation: Animation
+	let controlsNamespace: Namespace.ID
+	let depth: Int
+	let onDismiss: () -> Void
+	let onPromote: () -> Void
+
+	var body: some View {
+		GlassEffectContainer(spacing: 10) {
+			VStack(spacing: 10) {
+				if isTopmost, !showsPlaceholder {
+					PeekControlButton(
+						title: "Close Peek",
+						symbol: "xmark",
+						identifier: "close-peek",
+						depth: depth,
+						controlSize: controlSize,
+						controlsNamespace: controlsNamespace,
+						action: onDismiss
+					)
+					PeekControlButton(
+						title: "Open Peek in New Tab",
+						symbol: "arrow.up.left.and.arrow.down.right",
+						identifier: "promote-peek",
+						depth: depth,
+						controlSize: controlSize,
+						controlsNamespace: controlsNamespace,
+						action: onPromote
+					)
+				}
+			}
+		}
+		.animation(controlsAnimation, value: isTopmost)
+	}
+}
+
+private struct PeekControlButton: View {
+	let title: String
+	let symbol: String
+	let identifier: String
+	let depth: Int
+	let controlSize: CGFloat
+	let controlsNamespace: Namespace.ID
+	let action: () -> Void
+
+	var body: some View {
+		Button(action: action) {
+			Label(title, systemImage: symbol)
+				.labelStyle(.iconOnly)
+				.font(.system(size: 20, weight: .medium))
+				.frame(width: controlSize, height: controlSize)
+				.contentShape(Circle())
+		}
+		.buttonStyle(.plain)
+		.glassEffect(.regular.interactive(), in: .circle)
+		.glassEffectID(identifier, in: controlsNamespace)
+		.glassEffectTransition(.materialize)
+		.accessibilityLabel(title)
+		.accessibilityIdentifier("\(identifier)-\(depth)")
 	}
 }

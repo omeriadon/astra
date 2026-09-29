@@ -8,31 +8,12 @@ struct PeekStackView: View {
 		GeometryReader { proxy in
 			ZStack {
 				ForEach(tab.peeks) { peek in
-					PeekInputShield(
-						isTopmost: peek.id == tab.peeks.last?.id,
-						onDismiss: dismissTopPeek
-					)
-					.frame(width: proxy.size.width, height: proxy.size.height)
-					.opacity(peek.isPresented ? 1 : 0)
-					.accessibilityLabel("Dismiss Peek")
-					.accessibilityIdentifier("dismiss-peek-\(peek.depth)")
-
-					PeekCardView(
+					PeekLayerView(
+						tab: tab,
+						browser: browser,
 						peek: peek,
-						viewportSize: proxy.size,
-						isTopmost: peek.id == tab.peeks.last?.id,
-						onDismiss: {
-							guard tab.peeks.last?.id == peek.id else { return }
-							dismissTopPeek()
-						},
-						onPromote: {
-							browser.promotePeek(in: tab, id: peek.id)
-						},
-						onDismissCompleted: {
-							tab.dismissPeek(peek.id)
-						}
+						viewportSize: proxy.size
 					)
-					.id(peek.id)
 				}
 			}
 			.frame(width: proxy.size.width, height: proxy.size.height)
@@ -48,6 +29,45 @@ struct PeekStackView: View {
 				}
 			}
 		#endif
+	}
+
+	private func dismissTopPeek() {
+		tab.requestPeekDismissal()
+	}
+}
+
+private struct PeekLayerView: View {
+	let tab: BrowserTab
+	let browser: Browser
+	let peek: BrowserPeek
+	let viewportSize: CGSize
+
+	var body: some View {
+		PeekInputShield(
+			isTopmost: peek.id == tab.peeks.last?.id,
+			onDismiss: dismissTopPeek
+		)
+		.frame(width: viewportSize.width, height: viewportSize.height)
+		.opacity(peek.isPresented ? 1 : 0)
+		.accessibilityLabel("Dismiss Peek")
+		.accessibilityIdentifier("dismiss-peek-\(peek.depth)")
+
+		PeekCardView(
+			peek: peek,
+			viewportSize: viewportSize,
+			isTopmost: peek.id == tab.peeks.last?.id,
+			onDismiss: {
+				guard tab.peeks.last?.id == peek.id else { return }
+				dismissTopPeek()
+			},
+			onPromote: {
+				browser.promotePeek(in: tab, id: peek.id)
+			},
+			onDismissCompleted: {
+				tab.dismissPeek(peek.id)
+			}
+		)
+		.id(peek.id)
 	}
 
 	private func dismissTopPeek() {

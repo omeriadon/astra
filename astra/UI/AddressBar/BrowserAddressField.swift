@@ -16,68 +16,42 @@ struct BrowserAddressField: View {
 	}
 
 	var body: some View {
-		addressInput
-			.onChange(of: browser.selectedTabID) { _, _ in
-				updateForSelectedTab()
-			}
-			.onChange(of: browser.addressFocusRequest) { _, _ in
-				isFocused = true
-			}
-			.onChange(of: browser.selectedTab?.peeks.last?.id) { _, _ in
-				isFocused = false
-				updateAddressFromURL()
-			}
-			.onChange(of: browser.selectedTab?.activeController?.url) { _, url in
-				guard !isFocused else { return }
-				addressText = BrowserAddress.displayString(for: url, style: addressDisplayStyle, isEditing: false)
-			}
-			.onChange(of: addressDisplayStyle) { _, _ in
-				updateAddressFromURL()
-			}
-			.onChange(of: isFocused) { _, focused in
-				addressText = BrowserAddress.displayString(
-					for: browser.selectedTab?.activeController?.url,
-					style: addressDisplayStyle,
-					isEditing: focused
-				)
-			}
-			.onAppear {
-				updateForSelectedTab()
-			}
-	}
-
-	private var addressInput: some View {
-		TextField("Search or type a URL", text: $addressText)
-			.textFieldStyle(.plain)
-			.fontDesign(.monospaced)
-			.lineLimit(1)
-			.foregroundStyle(isDimmed ? .clear : .primary)
-			.padding(.leading, isGoogleSearch ? 20 : 0)
-			.focused($isFocused)
-			.submitLabel(.go)
-			.onSubmit(submitAddress)
-			.onKeyPress(.escape) {
-				isFocused = false
-				return .handled
-			}
-			.overlay(alignment: .leading) {
-				HStack(spacing: 6) {
-					if isGoogleSearch {
-						Image(systemName: "magnifyingglass")
-							.accessibilityHidden(true)
-					}
-					if isDimmed {
-						Text(dimmedAddressText)
-							.fontDesign(.monospaced)
-							.lineLimit(1)
-							.frame(maxWidth: .infinity, alignment: .leading)
-					}
-				}
-				.allowsHitTesting(false)
-				.accessibilityHidden(true)
-			}
-			.accessibilityLabel("Address")
-			.accessibilityIdentifier("browser-address")
+		AddressTextField(
+			addressText: $addressText,
+			isFocused: $isFocused,
+			isDimmed: isDimmed,
+			isGoogleSearch: isGoogleSearch,
+			dimmedAddressText: dimmedAddressText,
+			onSubmitAddress: submitAddress,
+			onEscape: { isFocused = false }
+		)
+		.onChange(of: browser.selectedTabID) { _, _ in
+			updateForSelectedTab()
+		}
+		.onChange(of: browser.addressFocusRequest) { _, _ in
+			isFocused = true
+		}
+		.onChange(of: browser.selectedTab?.peeks.last?.id) { _, _ in
+			isFocused = false
+			updateAddressFromURL()
+		}
+		.onChange(of: browser.selectedTab?.activeController?.url) { _, url in
+			guard !isFocused else { return }
+			addressText = BrowserAddress.displayString(for: url, style: addressDisplayStyle, isEditing: false)
+		}
+		.onChange(of: addressDisplayStyle) { _, _ in
+			updateAddressFromURL()
+		}
+		.onChange(of: isFocused) { _, focused in
+			addressText = BrowserAddress.displayString(
+				for: browser.selectedTab?.activeController?.url,
+				style: addressDisplayStyle,
+				isEditing: focused
+			)
+		}
+		.onAppear {
+			updateForSelectedTab()
+		}
 	}
 
 	private var dimmedAddressText: AttributedString {
@@ -114,5 +88,63 @@ struct BrowserAddressField: View {
 		browser.selectedTab?.activeController?.load(destination)
 		addressText = BrowserAddress.displayString(for: destination, style: addressDisplayStyle, isEditing: false)
 		isFocused = false
+	}
+}
+
+private struct AddressTextField: View {
+	@Binding var addressText: String
+	var isFocused: FocusState<Bool>.Binding
+	var isDimmed: Bool
+	var isGoogleSearch: Bool
+	var dimmedAddressText: AttributedString
+	var onSubmitAddress: () -> Void
+	var onEscape: () -> Void
+
+	var body: some View {
+		TextField("Search or type a URL", text: $addressText)
+			.textFieldStyle(.plain)
+			.fontDesign(.monospaced)
+			.lineLimit(1)
+			.foregroundStyle(isDimmed ? .clear : .primary)
+			.padding(.leading, isGoogleSearch ? 20 : 0)
+			.focused(isFocused)
+			.submitLabel(.go)
+			.onSubmit(onSubmitAddress)
+			.onKeyPress(.escape) {
+				onEscape()
+				return .handled
+			}
+			.overlay(alignment: .leading) {
+				DimmedAddressOverlay(
+					isGoogleSearch: isGoogleSearch,
+					isDimmed: isDimmed,
+					dimmedAddressText: dimmedAddressText
+				)
+			}
+			.accessibilityLabel("Address")
+			.accessibilityIdentifier("browser-address")
+	}
+}
+
+private struct DimmedAddressOverlay: View {
+	var isGoogleSearch: Bool
+	var isDimmed: Bool
+	var dimmedAddressText: AttributedString
+
+	var body: some View {
+		HStack(spacing: 6) {
+			if isGoogleSearch {
+				Image(systemName: "magnifyingglass")
+					.accessibilityHidden(true)
+			}
+			if isDimmed {
+				Text(dimmedAddressText)
+					.fontDesign(.monospaced)
+					.lineLimit(1)
+					.frame(maxWidth: .infinity, alignment: .leading)
+			}
+		}
+		.allowsHitTesting(false)
+		.accessibilityHidden(true)
 	}
 }

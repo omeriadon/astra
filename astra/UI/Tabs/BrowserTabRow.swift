@@ -47,105 +47,26 @@ struct BrowserTabRow: View {
 		return resolvedTabIndex < resolvedNormalCount - 1
 	}
 
-	@State private var hovered = false
-
-	private var closeButton: some View {
-		Button {
-			browser.closeTab(tab.id)
-		} label: {
-			Image(systemName: "xmark")
-				.frame(width: 22, height: 22)
-				.background {
-					if hovered {
-						Color.primary
-							.colorInvert()
-							.opacity(0.3)
-							.clipShape(RoundedRectangle(cornerRadius: 9))
-					}
-				}
-				.contentShape(RoundedRectangle(cornerRadius: 9))
-				.onHover {
-					hovered = $0
-				}
-				.frame(width: 13, height: 16)
-		}
-		.buttonStyle(.plain)
-		.accessibilityLabel(isPinned ? "Hibernate Tab" : "Close Tab")
-		.accessibilityIdentifier("close-tab-\(tab.id.uuidString)")
-	}
-
 	var body: some View {
 		HStack(spacing: 6) {
-			Button {
-				browser.selectTab(tab.id)
-			} label: {
-				Label {
-					Text("Select Tab")
-				} icon: {
-					if let page = tab.internalPage {
-						Image(systemName: page.symbol)
-					} else if let favicon = FaviconStore.shared.image(
-						for: tab.currentURL,
-						in: tab.controller?.webViewIfLoaded
-					) {
-						favicon
-							.resizable()
-							.scaledToFit()
-					} else {
-						Image(systemName: "globe")
-					}
-				}
-				.labelStyle(.iconOnly)
-				.frame(width: 16, height: 16)
-			}
-			.buttonStyle(.plain)
-			.accessibilityIdentifier("select-tab-\(tab.id.uuidString)")
+			TabIconView(tab: tab, browser: browser)
 
-			if isRenaming {
-				TextField("Tab Name", text: $renameText)
-					.textFieldStyle(.plain)
-					.focused($isTitleFocused)
-					.onSubmit(commitRenaming)
-					.onKeyPress(.escape) {
-						cancelRenaming()
-						return .handled
-					}
-					.onChange(of: isTitleFocused) { _, isFocused in
-						if !isFocused, isRenaming {
-							commitRenaming()
-						}
-					}
-					.accessibilityIdentifier("tab-name-\(tab.id.uuidString)")
-			} else {
-				Text(verbatim: tab.title)
-					.lineLimit(1)
-					.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-					.contentShape(Rectangle())
-					.onTapGesture {
-						browser.selectTab(tab.id)
-					}
-					.simultaneousGesture(
-						TapGesture(count: 2)
-							.onEnded { _ in beginRenaming() }
-					)
-					.accessibilityLabel(Text(verbatim: tab.title))
-					.accessibilityAddTraits(.isButton)
-					.accessibilityAction(.default) {
-						browser.selectTab(tab.id)
-					}
-					.accessibilityActions {
-						if tab.internalPage == nil {
-							Button("Rename", systemImage: "pencil") { beginRenaming() }
-						}
-					}
-					.accessibilityIdentifier("tab-title-\(tab.id.uuidString)")
-			}
+			TabTitleView(
+				tab: tab,
+				browser: browser,
+				isRenaming: isRenaming,
+				renameText: $renameText,
+				isTitleFocused: $isTitleFocused,
+				onBeginRenaming: beginRenaming,
+				onCommitRenaming: commitRenaming,
+				onCancelRenaming: cancelRenaming
+			)
 
 			if isSelected {
-				closeButton
+				TabCloseButton(tab: tab, browser: browser, isPinned: isPinned)
 					.keyboardShortcut("W", modifiers: .command)
 			} else {
-				closeButton
+				TabCloseButton(tab: tab, browser: browser, isPinned: isPinned)
 					.opacity(isHovered ? 1 : 0)
 					.allowsHitTesting(isHovered)
 					.accessibilityHidden(!isHovered)
@@ -194,61 +115,15 @@ struct BrowserTabRow: View {
 		#endif
 		.onHover { isHovered = $0 }
 		.contextMenu {
-			if tab.internalPage == nil {
-				Button("Revert Tab Name", systemImage: "arrow.uturn.backward", action: tab.revertTitle)
-					.disabled(!tab.hasCustomTitle)
-
-				Button("Duplicate Tab", systemImage: "plus.square.on.square") {
-					browser.duplicateTab(tab.id)
-				}
-
-				Button("Hibernate Tab", systemImage: "moon.zzz") {
-					browser.hibernateTab(tab.id)
-				}
-				.disabled(tab.isHibernated)
-				.accessibilityIdentifier("hibernate-tab-\(tab.id.uuidString)")
-
-				if isPinned {
-					Button("Unpin Tab", systemImage: "pin.slash") {
-						browser.moveTab(tab.id, to: .normal)
-					}
-				} else {
-					Button("Pin Tab", systemImage: "pin") {
-						browser.moveTab(tab.id, to: .pinned)
-					}
-				}
-				Button("Add to Favourites", systemImage: "star") {
-					browser.moveTab(tab.id, to: .favourite)
-				}
-
-				Divider()
-
-				Button("Copy URL", systemImage: "doc.on.doc", action: copyURL)
-					.disabled(tab.currentURL == nil)
-
-				Divider()
-			}
-
-			Button("Close Tabs Above", systemImage: "arrow.up.to.line") {
-				browser.closeTabsAbove(tab.id)
-			}
-			.disabled(!canCloseAbove)
-
-			Button("Close Tabs Below", systemImage: "arrow.down.to.line") {
-				browser.closeTabsBelow(tab.id)
-			}
-			.disabled(!canCloseBelow)
-
-			Button("Close Other Tabs", systemImage: "xmark.circle") {
-				browser.closeOtherTabs(tab.id)
-			}
-			.disabled(resolvedNormalCount < 2)
-
-			Button(role: isPinned ? nil : .destructive) {
-				browser.closeTab(tab.id)
-			} label: {
-				Label(isPinned ? "Hibernate Tab" : "Close Tab", systemImage: isPinned ? "moon.zzz" : "xmark")
-			}
+			TabRowContextMenu(
+				tab: tab,
+				browser: browser,
+				isPinned: isPinned,
+				canCloseAbove: canCloseAbove,
+				canCloseBelow: canCloseBelow,
+				normalCount: resolvedNormalCount,
+				onCopyURL: copyURL
+			)
 		}
 		.onChange(of: isSelected) { _, selected in
 			if !selected, isRenaming {
@@ -284,5 +159,190 @@ struct BrowserTabRow: View {
 		#elseif os(iOS)
 			UIPasteboard.general.url = url
 		#endif
+	}
+}
+
+private struct TabIconView: View {
+	let tab: BrowserTab
+	let browser: Browser
+
+	var body: some View {
+		Button {
+			browser.selectTab(tab.id)
+		} label: {
+			Label {
+				Text("Select Tab")
+			} icon: {
+				if let page = tab.internalPage {
+					Image(systemName: page.symbol)
+				} else if let favicon = FaviconStore.shared.image(
+					for: tab.currentURL,
+					in: tab.controller?.webViewIfLoaded
+				) {
+					favicon
+						.resizable()
+						.scaledToFit()
+				} else {
+					Image(systemName: "globe")
+				}
+			}
+			.labelStyle(.iconOnly)
+			.frame(width: 16, height: 16)
+		}
+		.buttonStyle(.plain)
+		.accessibilityIdentifier("select-tab-\(tab.id.uuidString)")
+	}
+}
+
+private struct TabTitleView: View {
+	let tab: BrowserTab
+	let browser: Browser
+	let isRenaming: Bool
+	@Binding var renameText: String
+	var isTitleFocused: FocusState<Bool>.Binding
+	let onBeginRenaming: () -> Void
+	let onCommitRenaming: () -> Void
+	let onCancelRenaming: () -> Void
+
+	var body: some View {
+		if isRenaming {
+			TextField("Tab Name", text: $renameText)
+				.textFieldStyle(.plain)
+				.focused(isTitleFocused)
+				.onSubmit(onCommitRenaming)
+				.onKeyPress(.escape) {
+					onCancelRenaming()
+					return .handled
+				}
+				.onChange(of: isTitleFocused.wrappedValue) { _, isFocused in
+					if !isFocused, isRenaming {
+						onCommitRenaming()
+					}
+				}
+				.accessibilityIdentifier("tab-name-\(tab.id.uuidString)")
+		} else {
+			Text(verbatim: tab.title)
+				.lineLimit(1)
+				.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+				.contentShape(Rectangle())
+				.onTapGesture {
+					browser.selectTab(tab.id)
+				}
+				.simultaneousGesture(
+					TapGesture(count: 2)
+						.onEnded { _ in onBeginRenaming() }
+				)
+				.accessibilityLabel(Text(verbatim: tab.title))
+				.accessibilityAddTraits(.isButton)
+				.accessibilityAction(.default) {
+					browser.selectTab(tab.id)
+				}
+				.accessibilityActions {
+					if tab.internalPage == nil {
+						Button("Rename", systemImage: "pencil") { onBeginRenaming() }
+					}
+				}
+				.accessibilityIdentifier("tab-title-\(tab.id.uuidString)")
+		}
+	}
+}
+
+private struct TabCloseButton: View {
+	let tab: BrowserTab
+	let browser: Browser
+	let isPinned: Bool
+	@State private var hovered = false
+
+	var body: some View {
+		Button {
+			browser.closeTab(tab.id)
+		} label: {
+			Image(systemName: "xmark")
+				.frame(width: 22, height: 22)
+				.background {
+					if hovered {
+						Color.primary
+							.colorInvert()
+							.opacity(0.3)
+							.clipShape(RoundedRectangle(cornerRadius: 9))
+					}
+				}
+				.contentShape(RoundedRectangle(cornerRadius: 9))
+				.onHover {
+					hovered = $0
+				}
+				.frame(width: 13, height: 16)
+		}
+		.buttonStyle(.plain)
+		.accessibilityLabel(isPinned ? "Hibernate Tab" : "Close Tab")
+		.accessibilityIdentifier("close-tab-\(tab.id.uuidString)")
+	}
+}
+
+private struct TabRowContextMenu: View {
+	let tab: BrowserTab
+	let browser: Browser
+	let isPinned: Bool
+	let canCloseAbove: Bool
+	let canCloseBelow: Bool
+	let normalCount: Int
+	let onCopyURL: () -> Void
+
+	var body: some View {
+		if tab.internalPage == nil {
+			Button("Revert Tab Name", systemImage: "arrow.uturn.backward", action: tab.revertTitle)
+				.disabled(!tab.hasCustomTitle)
+
+			Button("Duplicate Tab", systemImage: "plus.square.on.square") {
+				browser.duplicateTab(tab.id)
+			}
+
+			Button("Hibernate Tab", systemImage: "moon.zzz") {
+				browser.hibernateTab(tab.id)
+			}
+			.disabled(tab.isHibernated)
+			.accessibilityIdentifier("hibernate-tab-\(tab.id.uuidString)")
+
+			if isPinned {
+				Button("Unpin Tab", systemImage: "pin.slash") {
+					browser.moveTab(tab.id, to: .normal)
+				}
+			} else {
+				Button("Pin Tab", systemImage: "pin") {
+					browser.moveTab(tab.id, to: .pinned)
+				}
+			}
+			Button("Add to Favourites", systemImage: "star") {
+				browser.moveTab(tab.id, to: .favourite)
+			}
+
+			Divider()
+
+			Button("Copy URL", systemImage: "doc.on.doc", action: onCopyURL)
+				.disabled(tab.currentURL == nil)
+
+			Divider()
+		}
+
+		Button("Close Tabs Above", systemImage: "arrow.up.to.line") {
+			browser.closeTabsAbove(tab.id)
+		}
+		.disabled(!canCloseAbove)
+
+		Button("Close Tabs Below", systemImage: "arrow.down.to.line") {
+			browser.closeTabsBelow(tab.id)
+		}
+		.disabled(!canCloseBelow)
+
+		Button("Close Other Tabs", systemImage: "xmark.circle") {
+			browser.closeOtherTabs(tab.id)
+		}
+		.disabled(normalCount < 2)
+
+		Button(role: isPinned ? nil : .destructive) {
+			browser.closeTab(tab.id)
+		} label: {
+			Label(isPinned ? "Hibernate Tab" : "Close Tab", systemImage: isPinned ? "moon.zzz" : "xmark")
+		}
 	}
 }

@@ -20,70 +20,11 @@ struct BrowserThemeEditorView: View {
 		)
 	}
 
-	@State private var hover = ""
-
 	var body: some View {
 		VStack(spacing: 24) {
 			Spacer(minLength: 0)
 			HStack(spacing: 12) {
-				Button {
-					showsSymbolPicker.toggle()
-				} label: {
-					Label("Space Symbol", systemImage: browser.selectedSpace.symbol)
-						.labelStyle(.iconOnly)
-						.font(.title)
-						.frame(width: 45, height: 38)
-				}
-				.frame(width: 45, height: 38)
-				.buttonStyle(.glass(.clear))
-				.buttonBorderShape(.circle)
-				.frame(width: 45, height: 38)
-				.accessibilityLabel("Choose Space Symbol")
-				.accessibilityIdentifier("space-symbol-picker")
-				.popover(isPresented: $showsSymbolPicker) {
-					ScrollView {
-						LazyVGrid(columns: Array(repeating: GridItem(.fixed(40)), count: 5), spacing: 8) {
-							ForEach(BrowserSpace.symbols, id: \.self) { symbol in
-								Button {
-									browser.setSelectedSpaceSymbol(symbol)
-									showsSymbolPicker = false
-								} label: {
-									Label(symbol, systemImage: symbol)
-										.labelStyle(.iconOnly)
-										.contentShape(.rect)
-								}
-								.buttonStyle(.plain)
-								.frame(width: 40, height: 40)
-								.background(
-									browser.selectedSpace.symbol == symbol
-										? .white.opacity(0.3)
-										: .clear,
-									in: RoundedRectangle(cornerRadius: 15)
-								)
-								.background(
-									hover == symbol
-										? .white.opacity(0.3)
-										: .clear,
-									in: RoundedRectangle(cornerRadius: 15)
-								)
-								.onHover {
-									hover = symbol
-
-									if $0 {
-										NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
-									} else {
-										hover = ""
-									}
-								}
-								.glassEffect(.clear.interactive(), in: RoundedRectangle(cornerRadius: 15))
-								.accessibilityLabel(symbol.replacingOccurrences(of: ".", with: " "))
-								.accessibilityAddTraits(browser.selectedSpace.symbol == symbol ? .isSelected : [])
-							}
-						}
-						.padding(15)
-					}
-					.presentationSizing(.fitted)
-				}
+				SpaceSymbolButton(browser: browser, showsSymbolPicker: $showsSymbolPicker)
 
 				TextField("Space Name", text: spaceName)
 					.font(.title2)
@@ -113,10 +54,194 @@ struct BrowserThemeEditorView: View {
 	}
 }
 
+private struct SpaceSymbolButton: View {
+	let browser: Browser
+	@Binding var showsSymbolPicker: Bool
+	@State private var hover = ""
+
+	var body: some View {
+		Button {
+			showsSymbolPicker.toggle()
+		} label: {
+			Label("Space Symbol", systemImage: browser.selectedSpace.symbol)
+				.labelStyle(.iconOnly)
+				.font(.title)
+				.frame(width: 45, height: 38)
+		}
+		.frame(width: 45, height: 38)
+		.buttonStyle(.glass(.clear))
+		.buttonBorderShape(.circle)
+		.frame(width: 45, height: 38)
+		.accessibilityLabel("Choose Space Symbol")
+		.accessibilityIdentifier("space-symbol-picker")
+		.popover(isPresented: $showsSymbolPicker) {
+			ScrollView {
+				LazyVGrid(columns: Array(repeating: GridItem(.fixed(40)), count: 5), spacing: 8) {
+					ForEach(BrowserSpace.symbols, id: \.self) { symbol in
+						Button {
+							browser.setSelectedSpaceSymbol(symbol)
+							showsSymbolPicker = false
+						} label: {
+							Label(symbol, systemImage: symbol)
+								.labelStyle(.iconOnly)
+								.contentShape(.rect)
+						}
+						.buttonStyle(.plain)
+						.frame(width: 40, height: 40)
+						.background(
+							browser.selectedSpace.symbol == symbol
+								? .white.opacity(0.3)
+								: .clear,
+							in: RoundedRectangle(cornerRadius: 15)
+						)
+						.background(
+							hover == symbol
+								? .white.opacity(0.3)
+								: .clear,
+							in: RoundedRectangle(cornerRadius: 15)
+						)
+						.onHover {
+							hover = symbol
+
+							if $0 {
+								NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+							} else {
+								hover = ""
+							}
+						}
+						.glassEffect(.clear.interactive(), in: RoundedRectangle(cornerRadius: 15))
+						.accessibilityLabel(symbol.replacingOccurrences(of: ".", with: " "))
+						.accessibilityAddTraits(browser.selectedSpace.symbol == symbol ? .isSelected : [])
+					}
+				}
+				.padding(15)
+			}
+			.presentationSizing(.fitted)
+		}
+	}
+}
+
 private struct MeshGradientEditorView: View {
 	@Binding var theme: BrowserTheme
 	@Binding var editingPointID: UUID?
 	@Binding var pickerDismissalSignal: Int
+
+	private var translucency: Binding<Double> {
+		Binding(
+			get: { 1 - theme.meshOpacity },
+			set: { theme.meshOpacity = 1 - $0 }
+		)
+	}
+
+	var body: some View {
+		VStack(spacing: 12) {
+			MeshGradientCanvas(
+				theme: $theme,
+				editingPointID: $editingPointID,
+				pickerDismissalSignal: $pickerDismissalSignal
+			)
+			.aspectRatio(1, contentMode: .fit)
+			.zIndex(1)
+			.overlay(alignment: .top) {
+				AppearanceModeOverlay(theme: $theme, editingPointID: editingPointID)
+			}
+			.overlay(alignment: .bottom) {
+				AddPointOverlay(theme: $theme, editingPointID: editingPointID)
+			}
+			.accessibilityIdentifier("theme-mesh-editor")
+
+			#if os(macOS)
+				ThemeControlSlider(
+					value: translucency,
+					label: "Translucency",
+					symbol: "circle.dotted.and.circle",
+					identifier: "theme-window-translucency",
+					tickCount: 7
+				)
+				.padding(.horizontal, -23)
+				.allowsHitTesting(editingPointID == nil)
+			#endif
+
+			NoiseRowView(theme: $theme, editingPointID: editingPointID)
+		}
+		.padding(.horizontal, 12)
+		.padding(.top, 12)
+		.padding(.bottom)
+		.containerShape(.rect(cornerRadius: 36))
+		.onChange(of: theme.meshColorPoints.map(\.id)) { _, ids in
+			if let editingPointID, !ids.contains(editingPointID) {
+				self.editingPointID = nil
+			}
+		}
+	}
+}
+
+private struct AppearanceModeOverlay: View {
+	@Binding var theme: BrowserTheme
+	let editingPointID: UUID?
+
+	var body: some View {
+		GlassEffectContainer(spacing: 4) {
+			if editingPointID == nil {
+				HStack(spacing: 8) {
+					ForEach(ThemeAppearanceMode.allCases) { mode in
+						Button {
+							withAnimation(.smooth(duration: 0.2)) {
+								theme.appearanceMode = mode
+							}
+						} label: {
+							Label(mode.title, systemImage: mode.symbol)
+								.labelStyle(.iconOnly)
+								.frame(width: 25, height: 25)
+						}
+						.buttonStyle(.glass(.clear))
+						.buttonBorderShape(.circle)
+						.tint(theme.appearanceMode == mode ? .white.opacity(0.3) : .clear)
+						.glassEffectTransition(.materialize)
+						.accessibilityAddTraits(theme.appearanceMode == mode ? .isSelected : [])
+						.accessibilityIdentifier("theme-appearance-\(mode.rawValue)")
+					}
+				}
+				.transition(.opacity.combined(with: .scale(scale: 0.7)))
+			}
+		}
+		.padding(12)
+		.animation(.smooth(duration: 0.2), value: editingPointID)
+	}
+}
+
+private struct AddPointOverlay: View {
+	@Binding var theme: BrowserTheme
+	let editingPointID: UUID?
+
+	var body: some View {
+		GlassEffectContainer(spacing: 4) {
+			if theme.meshColorPoints.count < 4, editingPointID == nil {
+				Button {
+					withAnimation(.smooth(duration: 0.2)) {
+						_ = theme.addMeshColorPoint()
+					}
+				} label: {
+					Label("Add color point", systemImage: "plus")
+						.labelStyle(.iconOnly)
+						.frame(width: 25, height: 25)
+				}
+				.buttonStyle(.glass(.clear.interactive()))
+				.buttonBorderShape(.circle)
+				.glassEffectTransition(.materialize)
+				.accessibilityIdentifier("theme-mesh-add-point")
+			}
+		}
+		.frame(width: 44, height: 44)
+		.padding(12)
+		.animation(.smooth(duration: 0.2), value: theme.meshColorPoints.count)
+		.animation(.smooth(duration: 0.2), value: editingPointID)
+	}
+}
+
+private struct NoiseRowView: View {
+	@Binding var theme: BrowserTheme
+	let editingPointID: UUID?
 
 	private var normalizedNoiseAmount: Binding<Double> {
 		Binding(
@@ -143,133 +268,43 @@ private struct MeshGradientEditorView: View {
 		)
 	}
 
-	private var translucency: Binding<Double> {
-		Binding(
-			get: { 1 - theme.meshOpacity },
-			set: { theme.meshOpacity = 1 - $0 }
-		)
-	}
-
 	var body: some View {
-		VStack(spacing: 12) {
-			MeshGradientCanvas(
-				theme: $theme,
-				editingPointID: $editingPointID,
-				pickerDismissalSignal: $pickerDismissalSignal
-			)
-			.aspectRatio(1, contentMode: .fit)
-			.zIndex(1)
-			.overlay(alignment: .top) {
-				GlassEffectContainer(spacing: 4) {
-					if editingPointID == nil {
-						HStack(spacing: 8) {
-							ForEach(ThemeAppearanceMode.allCases) { mode in
-								Button {
-									withAnimation(.smooth(duration: 0.2)) {
-										theme.appearanceMode = mode
-									}
-								} label: {
-									Label(mode.title, systemImage: mode.symbol)
-										.labelStyle(.iconOnly)
-										.frame(width: 25, height: 25)
-								}
-								.buttonStyle(.glass(.clear))
-								.buttonBorderShape(.circle)
-								.tint(theme.appearanceMode == mode ? .white.opacity(0.3) : .clear)
-								.glassEffectTransition(.materialize)
-								.accessibilityAddTraits(theme.appearanceMode == mode ? .isSelected : [])
-								.accessibilityIdentifier("theme-appearance-\(mode.rawValue)")
-							}
-						}
-						.transition(.opacity.combined(with: .scale(scale: 0.7)))
-					}
-				}
-				.padding(12)
-				.animation(.smooth(duration: 0.2), value: editingPointID)
-			}
-			.overlay(alignment: .bottom) {
-				GlassEffectContainer(spacing: 4) {
-					if theme.meshColorPoints.count < 4, editingPointID == nil {
-						Button {
-							withAnimation(.smooth(duration: 0.2)) {
-								_ = theme.addMeshColorPoint()
-							}
-						} label: {
-							Label("Add color point", systemImage: "plus")
-								.labelStyle(.iconOnly)
-								.frame(width: 25, height: 25)
-						}
-						.buttonStyle(.glass(.clear.interactive()))
-						.buttonBorderShape(.circle)
-						.glassEffectTransition(.materialize)
-						.accessibilityIdentifier("theme-mesh-add-point")
-					}
-				}
-				.frame(width: 44, height: 44)
-				.padding(12)
-				.animation(.smooth(duration: 0.2), value: theme.meshColorPoints.count)
-				.animation(.smooth(duration: 0.2), value: editingPointID)
-			}
-			.accessibilityIdentifier("theme-mesh-editor")
-
-			#if os(macOS)
+		GeometryReader { geometry in
+			ZStack(alignment: .topLeading) {
 				ThemeControlSlider(
-					value: translucency,
-					label: "Translucency",
-					symbol: "circle.dotted.and.circle",
-					identifier: "theme-window-translucency",
-					tickCount: 7
+					value: normalizedNoiseAmount,
+					label: "Noise amount",
+					symbol: "app.background.dotted",
+					identifier: "theme-noise-amount",
+					tickCount: 6
 				)
-				.padding(.horizontal, -23)
-				.allowsHitTesting(editingPointID == nil)
-			#endif
+				.frame(width: (geometry.size.width - 28) * 5 / 6 + 74)
+				.offset(x: -23)
 
-			GeometryReader { geometry in
-				ZStack(alignment: .topLeading) {
-					ThemeControlSlider(
-						value: normalizedNoiseAmount,
-						label: "Noise amount",
-						symbol: "app.background.dotted",
-						identifier: "theme-noise-amount",
-						tickCount: 6
-					)
-					.frame(width: (geometry.size.width - 28) * 5 / 6 + 74)
-					.offset(x: -23)
-
-					Button {
-						withAnimation(.smooth(duration: 0.2)) {
-							monochromeNoise.wrappedValue.toggle()
-						}
-					} label: {
-						Label(
-							"Monochrome noise",
-							systemImage: theme.shaderNoiseMonochrome ? "lightspectrum.horizontal" : "circle"
-						)
-						.font(.system(size: 20, weight: .medium))
-						.labelStyle(.iconOnly)
-						.frame(width: 34, height: 34)
+				Button {
+					withAnimation(.smooth(duration: 0.2)) {
+						monochromeNoise.wrappedValue.toggle()
 					}
-					.buttonStyle(.glass)
-					.buttonBorderShape(.circle)
-					.tint(theme.shaderNoiseMonochrome ? theme.tabColor.opacity(0.8) : .clear)
-					.accessibilityValue(theme.shaderNoiseMonochrome ? "On" : "Off")
-					.accessibilityIdentifier("theme-noise-monochrome-toggle")
-					.animation(.smooth(duration: 0.2), value: theme.shaderNoiseMonochrome)
-					.position(x: geometry.size.width - 17, y: 23)
+				} label: {
+					Label(
+						"Monochrome noise",
+						systemImage: theme.shaderNoiseMonochrome ? "lightspectrum.horizontal" : "circle"
+					)
+					.font(.system(size: 20, weight: .medium))
+					.labelStyle(.iconOnly)
+					.frame(width: 34, height: 34)
 				}
-			}
-			.frame(height: 46)
-			.allowsHitTesting(editingPointID == nil)
-		}
-		.padding(.horizontal, 12)
-		.padding(.top, 12)
-		.padding(.bottom)
-		.containerShape(.rect(cornerRadius: 36))
-		.onChange(of: theme.meshColorPoints.map(\.id)) { _, ids in
-			if let editingPointID, !ids.contains(editingPointID) {
-				self.editingPointID = nil
+				.buttonStyle(.glass)
+				.buttonBorderShape(.circle)
+				.tint(theme.shaderNoiseMonochrome ? theme.tabColor.opacity(0.8) : .clear)
+				.accessibilityValue(theme.shaderNoiseMonochrome ? "On" : "Off")
+				.accessibilityIdentifier("theme-noise-monochrome-toggle")
+				.animation(.smooth(duration: 0.2), value: theme.shaderNoiseMonochrome)
+				.position(x: geometry.size.width - 17, y: 23)
 			}
 		}
+		.frame(height: 46)
+		.allowsHitTesting(editingPointID == nil)
 	}
 }
 
@@ -384,20 +419,7 @@ private struct MeshGradientCanvas: View {
 				MeshGradientSurface(points: theme.meshColorPoints)
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
 					.overlay {
-						ZStack {
-							Canvas { context, size in
-								for x in stride(from: CGFloat(11), to: size.width, by: 22) {
-									for y in stride(from: CGFloat(11), to: size.height, by: 22) {
-										let dot = Path(ellipseIn: CGRect(x: x - 1, y: y - 1, width: 2, height: 2))
-										context.fill(dot, with: .color(.white.opacity(0.2)))
-									}
-								}
-							}
-							.allowsHitTesting(false)
-							.accessibilityHidden(true)
-						}
-						.padding([.top, .leading], 3)
-						.padding([.bottom, .trailing], 2)
+						DotGridOverlay()
 					}
 					.clipShape(ContainerRelativeShape())
 					.contentShape(Rectangle())
@@ -423,76 +445,17 @@ private struct MeshGradientCanvas: View {
 						x: CGFloat(point.x) * geometry.size.width,
 						y: CGFloat(point.y) * geometry.size.height
 					)
-					if editingPointID == point.id {
-						let target = pickerCenter(for: point, in: geometry.size)
-						CircularThemeColorPicker(
-							color: colorBinding(for: point.id),
-							dismissalSignal: pickerDismissalSignal,
-							centerShift: CGSize(
-								width: target.x - pointPosition.x,
-								height: target.y - pointPosition.y
-							),
-							onClose: {
-								if editingPointID == point.id {
-									withAnimation(reduceMotion ? nil : .smooth(duration: 0.15)) {
-										editingPointID = nil
-									}
-								}
-							},
-							onDelete: {
-								withAnimation(.smooth(duration: 0.2)) {
-									theme.removeMeshColorPoint(id: point.id)
-									if editingPointID == point.id {
-										editingPointID = nil
-									}
-								}
-							}
-						)
-						.position(pointPosition)
-						.zIndex(1)
-					} else {
-						Button {
-							withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.66)) {
-								editingPointID = point.id
-							}
-						} label: {
-							Image(systemName: "circle.fill")
-								.font(.system(size: 22))
-								.foregroundStyle(point.color.color)
-								.frame(width: 25, height: 25)
-						}
-						.buttonStyle(.glass(.clear))
-						.buttonBorderShape(.circle)
-						.tint(point.color.color.opacity(0.4))
-						.glassEffectTransition(.materialize)
-						.opacity(editingPointID == nil ? 1 : 0)
-						.scaleEffect(editingPointID == nil ? 1 : 0.65)
-						.allowsHitTesting(editingPointID == nil)
-						.animation(.smooth(duration: 0.2), value: editingPointID)
-						.highPriorityGesture(
-							DragGesture(minimumDistance: 3, coordinateSpace: .named("theme-mesh-canvas"))
-								.onChanged { value in
-									move(point: point, by: value.translation, in: geometry.size)
-								}
-								.onEnded { _ in dragPointID = nil }
-						)
-						.position(pointPosition)
-						.accessibilityLabel("Color point \(pointIndex + 1)")
-						.accessibilityHint("Drag to move. Click to change color.")
-						.accessibilityIdentifier("theme-color-point-\(point.id.uuidString)")
-						.accessibilityAction(named: "Move left") {
-							theme.moveMeshColorPoint(id: point.id, to: CGPoint(x: point.x - 0.02, y: point.y))
-						}
-						.accessibilityAction(named: "Move right") {
-							theme.moveMeshColorPoint(id: point.id, to: CGPoint(x: point.x + 0.02, y: point.y))
-						}
-						.accessibilityAction(named: "Move up") {
-							theme.moveMeshColorPoint(id: point.id, to: CGPoint(x: point.x, y: point.y - 0.02))
-						}
-						.accessibilityAction(named: "Move down") {
-							theme.moveMeshColorPoint(id: point.id, to: CGPoint(x: point.x, y: point.y + 0.02))
-						}
-					}
+					MeshColorPointView(
+						point: point,
+						pointIndex: pointIndex,
+						pointPosition: pointPosition,
+						theme: $theme,
+						editingPointID: $editingPointID,
+						pickerDismissalSignal: $pickerDismissalSignal,
+						geometrySize: geometry.size,
+						onMovePoint: { move(point: point, by: $0, in: geometry.size) },
+						onDragEnded: { dragPointID = nil }
+					)
 				}
 			}
 			.coordinateSpace(name: "theme-mesh-canvas")
@@ -520,6 +483,111 @@ private struct MeshGradientCanvas: View {
 	private func normalized(_ position: CGPoint, in size: CGSize) -> CGPoint {
 		CGPoint(x: position.x / size.width, y: position.y / size.height)
 	}
+}
+
+private struct DotGridOverlay: View {
+	var body: some View {
+		ZStack {
+			Canvas { context, size in
+				for x in stride(from: CGFloat(11), to: size.width, by: 22) {
+					for y in stride(from: CGFloat(11), to: size.height, by: 22) {
+						let dot = Path(ellipseIn: CGRect(x: x - 1, y: y - 1, width: 2, height: 2))
+						context.fill(dot, with: .color(.white.opacity(0.2)))
+					}
+				}
+			}
+			.allowsHitTesting(false)
+			.accessibilityHidden(true)
+		}
+		.padding([.top, .leading], 3)
+		.padding([.bottom, .trailing], 2)
+	}
+}
+
+private struct MeshColorPointView: View {
+	let point: ThemeColorPoint
+	let pointIndex: Int
+	let pointPosition: CGPoint
+	@Binding var theme: BrowserTheme
+	@Binding var editingPointID: UUID?
+	@Binding var pickerDismissalSignal: Int
+	let geometrySize: CGSize
+	let onMovePoint: (CGSize) -> Void
+	let onDragEnded: () -> Void
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+	var body: some View {
+		if editingPointID == point.id {
+			let target = pickerCenter(for: point, in: geometrySize)
+			CircularThemeColorPicker(
+				color: colorBinding(for: point.id),
+				dismissalSignal: pickerDismissalSignal,
+				centerShift: CGSize(
+					width: target.x - pointPosition.x,
+					height: target.y - pointPosition.y
+				),
+				onClose: {
+					if editingPointID == point.id {
+						withAnimation(reduceMotion ? nil : .smooth(duration: 0.15)) {
+							editingPointID = nil
+						}
+					}
+				},
+				onDelete: {
+					withAnimation(.smooth(duration: 0.2)) {
+						theme.removeMeshColorPoint(id: point.id)
+						if editingPointID == point.id {
+							editingPointID = nil
+						}
+					}
+				}
+			)
+			.position(pointPosition)
+			.zIndex(1)
+		} else {
+			Button {
+				withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.66)) {
+					editingPointID = point.id
+				}
+			} label: {
+				Image(systemName: "circle.fill")
+					.font(.system(size: 22))
+					.foregroundStyle(point.color.color)
+					.frame(width: 25, height: 25)
+			}
+			.buttonStyle(.glass(.clear))
+			.buttonBorderShape(.circle)
+			.tint(point.color.color.opacity(0.4))
+			.glassEffectTransition(.materialize)
+			.opacity(editingPointID == nil ? 1 : 0)
+			.scaleEffect(editingPointID == nil ? 1 : 0.65)
+			.allowsHitTesting(editingPointID == nil)
+			.animation(.smooth(duration: 0.2), value: editingPointID)
+			.highPriorityGesture(
+				DragGesture(minimumDistance: 3, coordinateSpace: .named("theme-mesh-canvas"))
+					.onChanged { value in
+						onMovePoint(value.translation)
+					}
+					.onEnded { _ in onDragEnded() }
+			)
+			.position(pointPosition)
+			.accessibilityLabel("Color point \(pointIndex + 1)")
+			.accessibilityHint("Drag to move. Click to change color.")
+			.accessibilityIdentifier("theme-color-point-\(point.id.uuidString)")
+			.accessibilityAction(named: "Move left") {
+				theme.moveMeshColorPoint(id: point.id, to: CGPoint(x: point.x - 0.02, y: point.y))
+			}
+			.accessibilityAction(named: "Move right") {
+				theme.moveMeshColorPoint(id: point.id, to: CGPoint(x: point.x + 0.02, y: point.y))
+			}
+			.accessibilityAction(named: "Move up") {
+				theme.moveMeshColorPoint(id: point.id, to: CGPoint(x: point.x, y: point.y - 0.02))
+			}
+			.accessibilityAction(named: "Move down") {
+				theme.moveMeshColorPoint(id: point.id, to: CGPoint(x: point.x, y: point.y + 0.02))
+			}
+		}
+	}
 
 	private func pickerCenter(for point: ThemeColorPoint, in size: CGSize) -> CGPoint {
 		let margin = min(CircularThemeColorPicker.diameter / 2, size.width / 2, size.height / 2)
@@ -546,42 +614,4 @@ private func performThemeAlignmentHaptic() {
 	#elseif os(iOS)
 		UISelectionFeedbackGenerator().selectionChanged()
 	#endif
-}
-
-struct MeshGradientSurface: View {
-	let points: [ThemeColorPoint]
-	private static let meshLocations: [SIMD2<Float>] = (0 ..< 100).map { index in
-		SIMD2<Float>(Float(index % 10) / 9, Float(index / 10) / 9)
-	}
-
-	var body: some View {
-		if points.isEmpty {
-			Color.clear
-		} else {
-			MeshGradient(
-				width: 10,
-				height: 10,
-				points: Self.meshLocations,
-				colors: meshColors,
-				background: .clear,
-				smoothsColors: true
-			)
-		}
-	}
-
-	private var meshColors: [Color] {
-		Self.meshLocations.map { location in
-			let weightedColors = points.map { point -> (Double, BrowserColor) in
-				let deltaX = Double(location.x) - point.x
-				let deltaY = Double(location.y) - point.y
-				let weight = 1 / (deltaX * deltaX + deltaY * deltaY + 0.015)
-				return (weight, point.color)
-			}
-			let totalWeight = weightedColors.reduce(0) { $0 + $1.0 }
-			let red = weightedColors.reduce(0) { $0 + $1.0 * $1.1.red } / totalWeight
-			let green = weightedColors.reduce(0) { $0 + $1.0 * $1.1.green } / totalWeight
-			let blue = weightedColors.reduce(0) { $0 + $1.0 * $1.1.blue } / totalWeight
-			return Color(.sRGB, red: red, green: green, blue: blue, opacity: 1)
-		}
-	}
 }

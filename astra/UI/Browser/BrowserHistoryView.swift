@@ -13,6 +13,15 @@ struct BrowserHistoryView: View {
 	}
 
 	var body: some View {
+		HistoryListView(browser: browser, historyTabs: historyTabs)
+	}
+}
+
+private struct HistoryListView: View {
+	let browser: Browser
+	let historyTabs: [OpenTab]
+
+	var body: some View {
 		List {
 			Section("Tabs") {
 				ForEach(historyTabs) { tab in
@@ -69,6 +78,22 @@ private struct HistoryTabGroup: View {
 	}
 }
 
+private struct HistoryFaviconIcon: View {
+	let url: URL?
+	let symbol: String
+
+	var body: some View {
+		Group {
+			if let favicon = FaviconStore.shared.image(for: url) {
+				favicon.resizable().scaledToFit()
+			} else {
+				Image(systemName: symbol)
+			}
+		}
+		.frame(width: 16, height: 16)
+	}
+}
+
 private struct HistoryRow: View {
 	let title: String
 	let detail: String
@@ -93,14 +118,7 @@ private struct HistoryRow: View {
 					}
 					.frame(maxWidth: .infinity, alignment: .leading)
 				} icon: {
-					Group {
-						if let favicon = FaviconStore.shared.image(for: url) {
-							favicon.resizable().scaledToFit()
-						} else {
-							Image(systemName: symbol)
-						}
-					}
-					.frame(width: 16, height: 16)
+					HistoryFaviconIcon(url: url, symbol: symbol)
 				}
 				.contentShape(Rectangle())
 			}

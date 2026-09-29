@@ -28,7 +28,6 @@ struct DesktopBrowserShell: View {
 	#if os(macOS)
 		@State private var controlTabSwitcher: ControlTabSwitcher
 		@State private var windowRegistry = BrowserWindowRegistry.shared
-		@State private var tabDrag = BrowserTabDragCoordinator.shared
 		@State private var hostWindow: NSWindow?
 	#endif
 
@@ -50,105 +49,6 @@ struct DesktopBrowserShell: View {
 		} ?? false
 	}
 
-	private var websiteControls: some View {
-		HStack(spacing: 10) {
-			if let controller = browser.selectedTab?.activeController {
-				BrowserNavigationControls(controller: controller)
-					.controlSize(.regular)
-					.labelStyle(.iconOnly)
-					.buttonSizing(.fitted)
-					.buttonStyle(.bordered)
-					.foregroundStyle(theme.foregroundColor)
-					.id(ObjectIdentifier(controller))
-			}
-
-			BrowserAddressField(browser: browser)
-
-			Spacer(minLength: 0)
-		}
-		.padding(
-			.leading,
-			sidebarShown ? 10 : BrowserChromeMetrics.persistentControlsAreaWidth
-		)
-		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
-		.frame(maxWidth: .infinity, alignment: .leading)
-		#if os(macOS)
-			.background {
-				NonDraggableTitlebarRegion()
-			}
-		#endif
-			.environment(\.colorScheme, topBarColorScheme)
-			.overlay(alignment: .bottom) {
-				if let controller = browser.selectedTab?.activeController {
-					BrowserLoadingBar(
-						isLoading: controller.isLoading,
-						estimatedProgress: controller.estimatedProgress,
-						theme: theme
-					)
-					.frame(height: 1.5)
-					.id(browser.selectedTabID)
-				}
-			}
-	}
-
-	private var topBar: some View {
-		Group {
-			if browser.selectedTab?.internalPage == nil {
-				websiteControls
-			} else {
-				Color.clear
-					.allowsHitTesting(false)
-			}
-		}
-		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
-		.background {
-			if let transitionFromTheme {
-				transitionFromTheme.tabColor
-					.opacity(1 - themeBlend)
-					.overlay((transitionToTheme ?? theme).tabColor.opacity(themeBlend))
-			} else {
-				theme.tabColor
-			}
-		}
-		.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar : BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar))
-		.padding([.top, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
-	}
-
-	private var navigationBarControls: some View {
-		HStack(spacing: 5) {
-			Spacer()
-				.frame(width: isFullScreen ? 0 : 80)
-
-			Button {
-				browser.sidebarShown.toggle()
-			} label: {
-				Label("Toggle Sidebar", systemImage: "sidebar.leading")
-					.labelStyle(.iconOnly)
-					.frame(
-						width: BrowserChromeMetrics.topBarButtonLabelWidth,
-						height: BrowserChromeMetrics.topBarButtonLabelHeight
-					)
-					.font(.body.scaled(by: 0.9))
-			}
-			.controlSize(.regular)
-			.labelStyle(.iconOnly)
-			.buttonSizing(.fitted)
-			.buttonStyle(.bordered)
-			.foregroundStyle(theme.foregroundColor)
-			.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
-			.accessibilityIdentifier("sidebar-toggle")
-		}
-		.frame(
-			width: BrowserChromeMetrics.persistentControlsAreaWidth,
-			height: BrowserChromeMetrics.topBarRegionHeight,
-			alignment: .leading
-		)
-		.environment(
-			\.colorScheme,
-			sidebarShown ? colorScheme : topBarColorScheme
-		)
-	}
-
 	private var topBarColorScheme: ColorScheme {
 		guard let themeColorIsLight = browser.selectedTab?.activeController?.themeColorIsLight else { return colorScheme }
 		return themeColorIsLight ? .light : .dark
@@ -160,112 +60,231 @@ struct DesktopBrowserShell: View {
 			: BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar
 	}
 
-	@State private var newTabHovered = false
-
-	private struct DownloadFlight: Identifiable {
-		let id: UUID
-		let source: UnitPoint
-		let symbol: String
+	private func previewSpaceTheme(_ targetID: UUID?, progress: Double) {
+		guard let targetID,
+		      let targetIndex = browser.workspace.spaces.firstIndex(where: { $0.id == targetID }),
+		      let currentIndex = browser.workspace.spaces.firstIndex(where: { $0.id == browser.workspace.selectedSpaceID })
+		else {
+			withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) {
+				swipeTargetID = nil
+				swipeProgress = 0
+				if transitionToTheme != nil, transitionToTheme != theme {
+					themeBlend = 0
+				}
+			}
+			return
+		}
+		let target = browser.workspace.spaces[targetIndex]
+		swipeDirection = targetIndex > currentIndex ? 1 : -1
+		swipeTargetID = targetID
+		swipeProgress = reduceMotion ? 0 : progress
+		if transitionToTheme != target.theme {
+			transitionFromTheme = theme
+			transitionToTheme = target.theme
+			themeBlend = 0
+		}
+		themeBlend = progress
 	}
 
-	@State private var downloadsHover = false
-	@State private var addSpaceHover = false
-
-	private var downloadsBottomBar: some View {
-		HStack {
-			Button {
-				withAnimation(reduceMotion ? .none : .smooth(duration: 0.32)) {
-					showsDownloads.toggle()
-				}
-			} label: {
-				HStack(spacing: 9) {
-					ZStack {
-						Image(systemName: downloads.buttonSymbol)
-						if let progress = downloads.activeProgress {
-							Circle()
-								.trim(from: 0, to: progress)
-								.stroke(theme.progressColor, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-								.rotationEffect(.degrees(-90))
-						}
-					}
-				}
-				.frame(width: 25, height: 25)
-				.background {
-					if downloadsHover {
-						RoundedRectangle(cornerRadius: 8)
-							.fill(Color.primary.gradient)
-							.opacity(0.3)
-					}
-					if showsDownloads {
-						RoundedRectangle(cornerRadius: 8)
-							.fill(Color.primary.gradient)
-							.opacity(0.4)
-					}
-				}
-				.contentShape(Rectangle())
-			}
-			.buttonStyle(.plain)
-			.keyboardShortcut("J", modifiers: .command)
-			.accessibilityLabel(showsDownloads ? "Show Tabs" : "Show Downloads")
-			.accessibilityValue(downloads.activeProgress.map { "\(Int($0 * 100)) percent" } ?? "No active downloads")
-			.accessibilityIdentifier("downloads-button")
-			.onHover { i in
-				withAnimation(.smooth(duration: 0.1)) {
-					downloadsHover = i
-				}
-			}
-
-			BrowserSpacesBar(browser: browser, onSwipeProgress: previewSpaceTheme)
-				.frame(maxWidth: .infinity)
-
-			Button {
-				browser.createSpace()
-			} label: {
-				Image(systemName: "plus")
-					.frame(width: 25, height: 25)
-					.background {
-						if addSpaceHover {
-							RoundedRectangle(cornerRadius: 8)
-								.fill(Color.primary.gradient)
-								.opacity(0.3)
-						}
-					}
-					.contentShape(Rectangle())
-			}
-			.buttonStyle(.plain)
-			.accessibilityLabel("Add Space")
-			.accessibilityIdentifier("add-space")
-			.onHover { addSpaceHover = $0 }
+	private func completeSpaceThemeTransition(from oldID: UUID, to newID: UUID) {
+		if swipeTargetID == newID, swipeProgress >= 0.99 {
+			swipeTargetID = nil
+			swipeProgress = 0
+			transitionFromTheme = nil
+			transitionToTheme = nil
+			themeBlend = 0
+			return
 		}
-		.padding([.horizontal, .bottom], 8)
+		swipeTargetID = nil
+		swipeProgress = 0
+		let oldTheme = browser.workspace.spaces.first(where: { $0.id == oldID })?.theme ?? theme
+		transitionFromTheme = oldTheme
+		transitionToTheme = theme
+		themeBlend = 0
+		themeTransitionGeneration += 1
+		let generation = themeTransitionGeneration
+		withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24), completionCriteria: .logicallyComplete) {
+			themeBlend = 1
+		} completion: {
+			guard generation == themeTransitionGeneration,
+			      browser.workspace.selectedSpaceID == newID
+			else { return }
+			transitionFromTheme = nil
+			transitionToTheme = nil
+			themeBlend = 0
+		}
 	}
 
-	private var newTabButton: some View {
-		Button {
-			browser.addTab()
-		} label: {
-			Label("New Tab", systemImage: "plus")
-				.frame(maxWidth: .infinity, alignment: .leading)
-				.contentShape(Rectangle())
+	var body: some View {
+		BrowserSplitView(sidebarShown: $browser.sidebarShown) {
+			ShellSidebarColumn(
+				browser: browser,
+				theme: theme,
+				sidebarShown: sidebarShown,
+				isFullScreen: isFullScreen,
+				colorScheme: colorScheme,
+				topBarColorScheme: topBarColorScheme,
+				showsDownloads: $showsDownloads,
+				swipeTargetID: swipeTargetID,
+				swipeProgress: swipeProgress,
+				swipeDirection: swipeDirection,
+				downloads: downloads,
+				onSwipeProgress: previewSpaceTheme
+			)
+
+		} content: {
+			ShellContentColumn(
+				browser: browser,
+				theme: theme,
+				sidebarShown: sidebarShown,
+				topBarColorScheme: topBarColorScheme,
+				transitionFromTheme: transitionFromTheme,
+				transitionToTheme: transitionToTheme,
+				themeBlend: themeBlend,
+				toastManager: toastManager,
+				isLocalhost: isLocalhost,
+				contentCornerRadius: contentCornerRadius
+			)
 		}
-		.keyboardShortcut("T", modifiers: .command)
-		.buttonStyle(.plain)
-		.padding(.horizontal, 8)
-		.foregroundStyle(theme.foregroundColor.opacity(0.65))
-		.onHover { newTabHovered = $0 }
-		.frame(height: 28)
 		.background {
-			if newTabHovered {
-				Color.clear.glassEffect(
-					.regular,
-					in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+			BrowserThemeBackground(
+				theme: transitionToTheme ?? theme,
+				transitionFromTheme: transitionFromTheme,
+				transitionProgress: themeBlend
+			)
+		}
+		.overlay(alignment: .topLeading) {
+			if !sidebarShown {
+				ShellNavigationBarControls(
+					browser: browser,
+					theme: theme,
+					isFullScreen: isFullScreen,
+					sidebarShown: sidebarShown,
+					colorScheme: colorScheme,
+					topBarColorScheme: topBarColorScheme
 				)
 			}
 		}
-		.accessibilityIdentifier("new-tab")
-	}
+		.onChange(of: browser.workspace.selectedSpaceID) { oldID, newID in
+			completeSpaceThemeTransition(from: oldID, to: newID)
+		}
+		#if os(macOS)
+		.background {
+			BrowserDropZone(
+				browser: browser,
+				area: .normal,
+				spaceID: browser.workspace.selectedSpaceID,
+				beforeTabID: nil,
+				isWindowFallback: true
+			)
+		}
+		.background {
+			WindowFocusReader { window in
+				hostWindow = window
+				if window?.isKeyWindow == true {
+					windowRegistry.activate(browser)
+				}
+			}
+			.allowsHitTesting(false)
+		}
+		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
+			if let window = notification.object as? NSWindow, window === hostWindow {
+				windowRegistry.activate(browser)
+			}
+		}
+		#endif
+		.overlay {
+			DownloadFlightOverlay(
+				flight: flight,
+				flightProgress: flightProgress,
+				sidebarShown: sidebarShown,
+				theme: theme
+			)
+			.allowsHitTesting(false)
+		}
+		#if os(macOS)
+		.overlay {
+			TabDragOverlay(browser: browser, hostWindow: hostWindow)
+				.allowsHitTesting(false)
+		}
+		#endif
+		.onChange(of: downloads.latestStart?.id) { _, _ in
+			guard let start = downloads.latestStart,
+			      let item = downloads.items.first(where: { $0.id == start.id })
+			else { return }
+			flightProgress = 0
+			flight = DownloadFlight(id: start.id, source: start.source, symbol: item.symbol)
+			withAnimation(reduceMotion ? .none : .smooth(duration: 0.7)) {
+				flightProgress = 1
+			}
+		}
+		.task(id: flight?.id) {
+			guard flight != nil else { return }
+			try? await Task.sleep(for: .milliseconds(750))
+			if !Task.isCancelled {
+				flight = nil
+			}
+		}
+		#if os(macOS)
+		.overlay {
+			ControlTabSwitcherPreview(browser: browser, switcher: controlTabSwitcher)
+				.animation(.easeInOut(duration: 0.05), value: controlTabSwitcher.isPreviewVisible)
+		}
+		.onAppear {
+			controlTabSwitcher.start()
+			isFullScreen = NSApp.keyWindow?.styleMask.contains(.fullScreen) == true
+		}
+		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+			isFullScreen = true
+		}
+		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+			isFullScreen = false
+		}
+		.onChange(of: browser.visibleTabs.map(\.id)) { _, _ in
+			controlTabSwitcher.tabsDidChange()
+		}
+		.onDisappear {
+			controlTabSwitcher.stop()
+		}
+		.blur(radius: browser.isAboutToQuit ? 5 : 0)
+		.overlay(alignment: .center) {
+			QuitBannerOverlay(quitExpiry: quitExpiry)
+		}
+		.onChange(of: browser.isAboutToQuit) { _, newValue in
+			if newValue {
+				quitExpiry = .now.addingTimeInterval(1)
+			}
+		}
+		.task(id: quitExpiry) {
+			guard quitExpiry > .now else { return }
 
-	private func tabSidebar(for space: BrowserSpace) -> some View {
+			try? await Task.sleep(until: .now + .seconds(quitExpiry.timeIntervalSinceNow))
+
+			guard Date.now >= quitExpiry else { return }
+			browser.isAboutToQuit = false
+		}
+		.animation(.snappy(duration: 0.2), value: Date.now < quitExpiry)
+		#endif
+		.ignoresSafeArea()
+	}
+}
+
+private struct DownloadFlight: Identifiable {
+	let id: UUID
+	let source: UnitPoint
+	let symbol: String
+}
+
+private struct ShellSidebarListView: View {
+	let browser: Browser
+	let space: BrowserSpace
+	let theme: BrowserTheme
+	#if os(macOS)
+		@State private var tabDrag = BrowserTabDragCoordinator.shared
+	#endif
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+	var body: some View {
 		// Single O(n) lookup + filtered lists per sidebar render instead of
 		// O(n²) tabs.first scans inside every row.
 		let tabsByID = browser.tabsByID
@@ -330,7 +349,7 @@ struct DesktopBrowserShell: View {
 								BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: index, normalCount: normalTabs.count, pinned: false)
 									.id(tab.id)
 							}
-							newTabButton
+							ShellNewTabButton(browser: browser, theme: theme)
 						}
 						#if os(macOS)
 						.background {
@@ -354,213 +373,411 @@ struct DesktopBrowserShell: View {
 			}
 		}
 	}
+}
 
-	private func previewSpaceTheme(_ targetID: UUID?, progress: Double) {
-		guard let targetID,
-		      let targetIndex = browser.workspace.spaces.firstIndex(where: { $0.id == targetID }),
-		      let currentIndex = browser.workspace.spaces.firstIndex(where: { $0.id == browser.workspace.selectedSpaceID })
-		else {
-			withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) {
-				swipeTargetID = nil
-				swipeProgress = 0
-				if transitionToTheme != nil, transitionToTheme != theme {
-					themeBlend = 0
-				}
-			}
-			return
-		}
-		let target = browser.workspace.spaces[targetIndex]
-		swipeDirection = targetIndex > currentIndex ? 1 : -1
-		swipeTargetID = targetID
-		swipeProgress = reduceMotion ? 0 : progress
-		if transitionToTheme != target.theme {
-			transitionFromTheme = theme
-			transitionToTheme = target.theme
-			themeBlend = 0
-		}
-		themeBlend = progress
-	}
-
-	private func completeSpaceThemeTransition(from oldID: UUID, to newID: UUID) {
-		if swipeTargetID == newID, swipeProgress >= 0.99 {
-			swipeTargetID = nil
-			swipeProgress = 0
-			transitionFromTheme = nil
-			transitionToTheme = nil
-			themeBlend = 0
-			return
-		}
-		swipeTargetID = nil
-		swipeProgress = 0
-		let oldTheme = browser.workspace.spaces.first(where: { $0.id == oldID })?.theme ?? theme
-		transitionFromTheme = oldTheme
-		transitionToTheme = theme
-		themeBlend = 0
-		themeTransitionGeneration += 1
-		let generation = themeTransitionGeneration
-		withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24), completionCriteria: .logicallyComplete) {
-			themeBlend = 1
-		} completion: {
-			guard generation == themeTransitionGeneration,
-			      browser.workspace.selectedSpaceID == newID
-			else { return }
-			transitionFromTheme = nil
-			transitionToTheme = nil
-			themeBlend = 0
-		}
-	}
+private struct ShellTopBarView: View {
+	let browser: Browser
+	let theme: BrowserTheme
+	let sidebarShown: Bool
+	let topBarColorScheme: ColorScheme
+	let transitionFromTheme: BrowserTheme?
+	let transitionToTheme: BrowserTheme?
+	let themeBlend: Double
 
 	var body: some View {
-		BrowserSplitView(sidebarShown: $browser.sidebarShown) {
-			VStack(spacing: 0) {
-				navigationBarControls
-					.frame(maxWidth: .infinity, alignment: .leading)
-				ZStack(alignment: .top) {
-					tabSidebar(for: browser.selectedSpace)
-						.foregroundStyle(theme.foregroundColor)
-						.offset(x: showsDownloads ? BrowserChromeMetrics.expandedSidebarWidth : -swipeDirection * BrowserChromeMetrics.expandedSidebarWidth * swipeProgress)
-
-					if let swipeTargetID,
-					   let target = browser.workspace.spaces.first(where: { $0.id == swipeTargetID }),
-					   !showsDownloads
-					{
-						tabSidebar(for: target)
-							.foregroundStyle(target.theme.foregroundColor)
-							.allowsHitTesting(false)
-							.offset(x: swipeDirection * BrowserChromeMetrics.expandedSidebarWidth * (1 - swipeProgress))
-					}
-
-					DownloadsSidebarView(manager: downloads, theme: theme)
-						.foregroundStyle(theme.foregroundColor)
-						.offset(x: showsDownloads ? 0 : -BrowserChromeMetrics.expandedSidebarWidth)
-				}
-				.clipped()
-				.frame(maxWidth: .infinity, maxHeight: .infinity)
-				.overlay(alignment: .bottom) {
-					ZStack(alignment: .bottom) {
-						HazeEffect(
-							maskProvider: LinearGradientMaskProvider(
-								startPoint: .bottom,
-								endPoint: .top,
-								startOpacity: 1,
-								endOpacity: 0,
-								isSmooth: true
-							),
-							maxBlurRadius: 2
-						)
-						.frame(height: 56)
-						.allowsHitTesting(false)
-						downloadsBottomBar
-							.foregroundStyle(theme.foregroundColor)
-					}
-				}
-			}
-
-		} content: {
-			VStack(spacing: 0) {
-				topBar
-				ZStack(alignment: .top) {
-					BrowserContentView(browser: browser)
-					#if os(macOS)
-						.blur(radius: windowRegistry.hasActiveDuplicate(of: browser) ? 10 : 0)
-					#endif
-
-					if let tab = browser.selectedTab {
-						PeekStackView(tab: tab, browser: browser)
-							.id(tab.id)
-					}
-				}
-				.overlay(alignment: .topTrailing) {
-					if let toast = toastManager.toast {
-						BrowserToastView(toast: toast)
-							.padding(.top, 12)
-							.padding(.trailing, 14)
-							.transition(.move(edge: .trailing))
-					}
-				}
-				.animation(.easeOut(duration: 0.1), value: toastManager.toast != nil)
-				.clipShape(RoundedRectangle(cornerRadius: contentCornerRadius))
-				.overlay {
-					if isLocalhost {
-						RoundedRectangle(cornerRadius: contentCornerRadius)
-							.inset(by: -2)
-							.strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [10, 5]))
-							.foregroundStyle(.yellow)
-					}
-				}
-				.animation(.smooth(duration: 0.3)) { view in
-					view
-						.padding(.top, BrowserChromeMetrics.shellEdgePadding)
-						.padding([.bottom, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
-				}
-				.frame(maxWidth: .infinity, maxHeight: .infinity)
+		Group {
+			if browser.selectedTab?.internalPage == nil {
+				websiteControls
+			} else {
+				Color.clear
+					.allowsHitTesting(false)
 			}
 		}
+		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 		.background {
-			BrowserThemeBackground(
-				theme: transitionToTheme ?? theme,
-				transitionFromTheme: transitionFromTheme,
-				transitionProgress: themeBlend
-			)
-		}
-		.overlay(alignment: .topLeading) {
-			if !sidebarShown {
-				navigationBarControls
+			if let transitionFromTheme {
+				transitionFromTheme.tabColor
+					.opacity(1 - themeBlend)
+					.overlay((transitionToTheme ?? theme).tabColor.opacity(themeBlend))
+			} else {
+				theme.tabColor
 			}
 		}
-		.onChange(of: browser.workspace.selectedSpaceID) { oldID, newID in
-			completeSpaceThemeTransition(from: oldID, to: newID)
+		.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar : BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar))
+		.padding([.top, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
+	}
+
+	private var websiteControls: some View {
+		HStack(spacing: 10) {
+			if let controller = browser.selectedTab?.activeController {
+				BrowserNavigationControls(controller: controller)
+					.controlSize(.regular)
+					.labelStyle(.iconOnly)
+					.buttonSizing(.fitted)
+					.buttonStyle(.bordered)
+					.foregroundStyle(theme.foregroundColor)
+					.id(ObjectIdentifier(controller))
+			}
+
+			BrowserAddressField(browser: browser)
+
+			Spacer(minLength: 0)
 		}
+		.padding(
+			.leading,
+			sidebarShown ? 10 : BrowserChromeMetrics.persistentControlsAreaWidth
+		)
+		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
+		.frame(maxWidth: .infinity, alignment: .leading)
 		#if os(macOS)
-		.background {
-			BrowserDropZone(
-				browser: browser,
-				area: .normal,
-				spaceID: browser.workspace.selectedSpaceID,
-				beforeTabID: nil,
-				isWindowFallback: true
-			)
-		}
-		.background {
-			WindowFocusReader { window in
-				hostWindow = window
-				if window?.isKeyWindow == true {
-					windowRegistry.activate(browser)
-				}
+			.background {
+				NonDraggableTitlebarRegion()
 			}
-			.allowsHitTesting(false)
-		}
-		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
-			if let window = notification.object as? NSWindow, window === hostWindow {
-				windowRegistry.activate(browser)
-			}
-		}
 		#endif
-		.overlay {
-			GeometryReader { geometry in
-				if let flight, !reduceMotion {
-					let startX = (sidebarShown ? BrowserChromeMetrics.expandedSidebarWidth : 0)
-						+ (geometry.size.width - (sidebarShown ? BrowserChromeMetrics.expandedSidebarWidth : 0)) * flight.source.x
-					let startY = BrowserChromeMetrics.topBarRegionHeight
-						+ (geometry.size.height - BrowserChromeMetrics.topBarRegionHeight) * flight.source.y
-					let endX: CGFloat = 25
-					let endY = geometry.size.height - 24
-					Image(systemName: flight.symbol)
-						.font(.system(size: 24, weight: .semibold))
-						.foregroundStyle(theme.progressColor)
-						.scaleEffect(1 - flightProgress * 0.65)
-						.opacity(1 - flightProgress * 0.2)
-						.position(
-							x: startX + (endX - startX) * flightProgress,
-							y: startY + (endY - startY) * flightProgress - sin(flightProgress * .pi) * 60
-						)
-						.accessibilityHidden(true)
+			.environment(\.colorScheme, topBarColorScheme)
+			.overlay(alignment: .bottom) {
+				if let controller = browser.selectedTab?.activeController {
+					BrowserLoadingBar(
+						isLoading: controller.isLoading,
+						estimatedProgress: controller.estimatedProgress,
+						theme: theme
+					)
+					.frame(height: 1.5)
+					.id(browser.selectedTabID)
 				}
 			}
-			.allowsHitTesting(false)
+	}
+}
+
+private struct ShellNavigationBarControls: View {
+	let browser: Browser
+	let theme: BrowserTheme
+	let isFullScreen: Bool
+	let sidebarShown: Bool
+	let colorScheme: ColorScheme
+	let topBarColorScheme: ColorScheme
+
+	var body: some View {
+		HStack(spacing: 5) {
+			Spacer()
+				.frame(width: isFullScreen ? 0 : 80)
+
+			Button {
+				browser.sidebarShown.toggle()
+			} label: {
+				Label("Toggle Sidebar", systemImage: "sidebar.leading")
+					.labelStyle(.iconOnly)
+					.frame(
+						width: BrowserChromeMetrics.topBarButtonLabelWidth,
+						height: BrowserChromeMetrics.topBarButtonLabelHeight
+					)
+					.font(.body.scaled(by: 0.9))
+			}
+			.controlSize(.regular)
+			.labelStyle(.iconOnly)
+			.buttonSizing(.fitted)
+			.buttonStyle(.bordered)
+			.foregroundStyle(theme.foregroundColor)
+			.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
+			.accessibilityIdentifier("sidebar-toggle")
 		}
-		#if os(macOS)
-		.overlay {
+		.frame(
+			width: BrowserChromeMetrics.persistentControlsAreaWidth,
+			height: BrowserChromeMetrics.topBarRegionHeight,
+			alignment: .leading
+		)
+		.environment(
+			\.colorScheme,
+			sidebarShown ? colorScheme : topBarColorScheme
+		)
+	}
+}
+
+private struct ShellNewTabButton: View {
+	let browser: Browser
+	let theme: BrowserTheme
+	@State private var newTabHovered = false
+
+	var body: some View {
+		Button {
+			browser.addTab()
+		} label: {
+			Label("New Tab", systemImage: "plus")
+				.frame(maxWidth: .infinity, alignment: .leading)
+				.contentShape(Rectangle())
+		}
+		.keyboardShortcut("T", modifiers: .command)
+		.buttonStyle(.plain)
+		.padding(.horizontal, 8)
+		.foregroundStyle(theme.foregroundColor.opacity(0.65))
+		.onHover { newTabHovered = $0 }
+		.frame(height: 28)
+		.background {
+			if newTabHovered {
+				Color.clear.glassEffect(
+					.regular,
+					in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+				)
+			}
+		}
+		.accessibilityIdentifier("new-tab")
+	}
+}
+
+private struct ShellDownloadsBarView: View {
+	let browser: Browser
+	let theme: BrowserTheme
+	let downloads: BrowserDownloadManager
+	@Binding var showsDownloads: Bool
+	let onSwipeProgress: (UUID?, Double) -> Void
+	@State private var downloadsHover = false
+	@State private var addSpaceHover = false
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+	var body: some View {
+		HStack {
+			Button {
+				withAnimation(reduceMotion ? .none : .smooth(duration: 0.32)) {
+					showsDownloads.toggle()
+				}
+			} label: {
+				HStack(spacing: 9) {
+					ZStack {
+						Image(systemName: downloads.buttonSymbol)
+						if let progress = downloads.activeProgress {
+							Circle()
+								.trim(from: 0, to: progress)
+								.stroke(theme.progressColor, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+								.rotationEffect(.degrees(-90))
+						}
+					}
+				}
+				.frame(width: 25, height: 25)
+				.background {
+					if downloadsHover {
+						RoundedRectangle(cornerRadius: 8)
+							.fill(Color.primary.gradient)
+							.opacity(0.3)
+					}
+					if showsDownloads {
+						RoundedRectangle(cornerRadius: 8)
+							.fill(Color.primary.gradient)
+							.opacity(0.4)
+					}
+				}
+				.contentShape(Rectangle())
+			}
+			.buttonStyle(.plain)
+			.keyboardShortcut("J", modifiers: .command)
+			.accessibilityLabel(showsDownloads ? "Show Tabs" : "Show Downloads")
+			.accessibilityValue(downloads.activeProgress.map { "\(Int($0 * 100)) percent" } ?? "No active downloads")
+			.accessibilityIdentifier("downloads-button")
+			.onHover { i in
+				withAnimation(.smooth(duration: 0.1)) {
+					downloadsHover = i
+				}
+			}
+
+			BrowserSpacesBar(browser: browser, onSwipeProgress: onSwipeProgress)
+				.frame(maxWidth: .infinity)
+
+			Button {
+				browser.createSpace()
+			} label: {
+				Image(systemName: "plus")
+					.frame(width: 25, height: 25)
+					.background {
+						if addSpaceHover {
+							RoundedRectangle(cornerRadius: 8)
+								.fill(Color.primary.gradient)
+								.opacity(0.3)
+						}
+					}
+					.contentShape(Rectangle())
+			}
+			.buttonStyle(.plain)
+			.accessibilityLabel("Add Space")
+			.accessibilityIdentifier("add-space")
+			.onHover { addSpaceHover = $0 }
+		}
+		.padding([.horizontal, .bottom], 8)
+	}
+}
+
+private struct ShellSidebarColumn: View {
+	let browser: Browser
+	let theme: BrowserTheme
+	let sidebarShown: Bool
+	let isFullScreen: Bool
+	let colorScheme: ColorScheme
+	let topBarColorScheme: ColorScheme
+	@Binding var showsDownloads: Bool
+	let swipeTargetID: UUID?
+	let swipeProgress: Double
+	let swipeDirection: CGFloat
+	let downloads: BrowserDownloadManager
+	let onSwipeProgress: (UUID?, Double) -> Void
+
+	var body: some View {
+		VStack(spacing: 0) {
+			ShellNavigationBarControls(
+				browser: browser,
+				theme: theme,
+				isFullScreen: isFullScreen,
+				sidebarShown: sidebarShown,
+				colorScheme: colorScheme,
+				topBarColorScheme: topBarColorScheme
+			)
+			.frame(maxWidth: .infinity, alignment: .leading)
+			ZStack(alignment: .top) {
+				ShellSidebarListView(browser: browser, space: browser.selectedSpace, theme: theme)
+					.foregroundStyle(theme.foregroundColor)
+					.offset(x: showsDownloads ? BrowserChromeMetrics.expandedSidebarWidth : -swipeDirection * BrowserChromeMetrics.expandedSidebarWidth * swipeProgress)
+
+				if let swipeTargetID,
+				   let target = browser.workspace.spaces.first(where: { $0.id == swipeTargetID }),
+				   !showsDownloads
+				{
+					ShellSidebarListView(browser: browser, space: target, theme: theme)
+						.foregroundStyle(target.theme.foregroundColor)
+						.allowsHitTesting(false)
+						.offset(x: swipeDirection * BrowserChromeMetrics.expandedSidebarWidth * (1 - swipeProgress))
+				}
+
+				DownloadsSidebarView(manager: downloads, theme: theme)
+					.foregroundStyle(theme.foregroundColor)
+					.offset(x: showsDownloads ? 0 : -BrowserChromeMetrics.expandedSidebarWidth)
+			}
+			.clipped()
+			.frame(maxWidth: .infinity, maxHeight: .infinity)
+			.overlay(alignment: .bottom) {
+				ZStack(alignment: .bottom) {
+					HazeEffect(
+						maskProvider: LinearGradientMaskProvider(
+							startPoint: .bottom,
+							endPoint: .top,
+							startOpacity: 1,
+							endOpacity: 0,
+							isSmooth: true
+						),
+						maxBlurRadius: 2
+					)
+					.frame(height: 56)
+					.allowsHitTesting(false)
+					ShellDownloadsBarView(
+						browser: browser,
+						theme: theme,
+						downloads: downloads,
+						showsDownloads: $showsDownloads,
+						onSwipeProgress: onSwipeProgress
+					)
+					.foregroundStyle(theme.foregroundColor)
+				}
+			}
+		}
+	}
+}
+
+private struct ShellContentColumn: View {
+	let browser: Browser
+	let theme: BrowserTheme
+	let sidebarShown: Bool
+	let topBarColorScheme: ColorScheme
+	let transitionFromTheme: BrowserTheme?
+	let transitionToTheme: BrowserTheme?
+	let themeBlend: Double
+	let toastManager: ToastManager
+	let isLocalhost: Bool
+	let contentCornerRadius: CGFloat
+
+	var body: some View {
+		VStack(spacing: 0) {
+			ShellTopBarView(
+				browser: browser,
+				theme: theme,
+				sidebarShown: sidebarShown,
+				topBarColorScheme: topBarColorScheme,
+				transitionFromTheme: transitionFromTheme,
+				transitionToTheme: transitionToTheme,
+				themeBlend: themeBlend
+			)
+			ZStack(alignment: .top) {
+				BrowserContentView(browser: browser)
+				#if os(macOS)
+					.blur(radius: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser) ? 10 : 0)
+				#endif
+
+				if let tab = browser.selectedTab {
+					PeekStackView(tab: tab, browser: browser)
+						.id(tab.id)
+				}
+			}
+			.overlay(alignment: .topTrailing) {
+				if let toast = toastManager.toast {
+					BrowserToastView(toast: toast)
+						.padding(.top, 12)
+						.padding(.trailing, 14)
+						.transition(.move(edge: .trailing))
+				}
+			}
+			.animation(.easeOut(duration: 0.1), value: toastManager.toast != nil)
+			.clipShape(RoundedRectangle(cornerRadius: contentCornerRadius))
+			.overlay {
+				if isLocalhost {
+					RoundedRectangle(cornerRadius: contentCornerRadius)
+						.inset(by: -2)
+						.strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [10, 5]))
+						.foregroundStyle(.yellow)
+				}
+			}
+			.animation(.smooth(duration: 0.3)) { view in
+				view
+					.padding(.top, BrowserChromeMetrics.shellEdgePadding)
+					.padding([.bottom, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
+			}
+			.frame(maxWidth: .infinity, maxHeight: .infinity)
+		}
+	}
+}
+
+private struct DownloadFlightOverlay: View {
+	let flight: DownloadFlight?
+	let flightProgress: Double
+	let sidebarShown: Bool
+	let theme: BrowserTheme
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+	var body: some View {
+		GeometryReader { geometry in
+			if let flight, !reduceMotion {
+				let startX = (sidebarShown ? BrowserChromeMetrics.expandedSidebarWidth : 0)
+					+ (geometry.size.width - (sidebarShown ? BrowserChromeMetrics.expandedSidebarWidth : 0)) * flight.source.x
+				let startY = BrowserChromeMetrics.topBarRegionHeight
+					+ (geometry.size.height - BrowserChromeMetrics.topBarRegionHeight) * flight.source.y
+				let endX: CGFloat = 25
+				let endY = geometry.size.height - 24
+				Image(systemName: flight.symbol)
+					.font(.system(size: 24, weight: .semibold))
+					.foregroundStyle(theme.progressColor)
+					.scaleEffect(1 - flightProgress * 0.65)
+					.opacity(1 - flightProgress * 0.2)
+					.position(
+						x: startX + (endX - startX) * flightProgress,
+						y: startY + (endY - startY) * flightProgress - sin(flightProgress * .pi) * 60
+					)
+					.accessibilityHidden(true)
+			}
+		}
+	}
+}
+
+#if os(macOS)
+	private struct TabDragOverlay: View {
+		let browser: Browser
+		let hostWindow: NSWindow?
+		@State private var tabDrag = BrowserTabDragCoordinator.shared
+
+		var body: some View {
 			GeometryReader { geometry in
 				if let tabID = tabDrag.activeTabID,
 				   let tab = browser.tabs.first(where: { $0.id == tabID }),
@@ -575,49 +792,15 @@ struct DesktopBrowserShell: View {
 						.accessibilityHidden(true)
 				}
 			}
-			.allowsHitTesting(false)
 		}
-		#endif
-		.onChange(of: downloads.latestStart?.id) { _, _ in
-			guard let start = downloads.latestStart,
-			      let item = downloads.items.first(where: { $0.id == start.id })
-			else { return }
-			flightProgress = 0
-			flight = DownloadFlight(id: start.id, source: start.source, symbol: item.symbol)
-			withAnimation(reduceMotion ? .none : .smooth(duration: 0.7)) {
-				flightProgress = 1
-			}
-		}
-		.task(id: flight?.id) {
-			guard flight != nil else { return }
-			try? await Task.sleep(for: .milliseconds(750))
-			if !Task.isCancelled {
-				flight = nil
-			}
-		}
-		#if os(macOS)
-		.overlay {
-			ControlTabSwitcherPreview(browser: browser, switcher: controlTabSwitcher)
-				.animation(.easeInOut(duration: 0.05), value: controlTabSwitcher.isPreviewVisible)
-		}
-		.onAppear {
-			controlTabSwitcher.start()
-			isFullScreen = NSApp.keyWindow?.styleMask.contains(.fullScreen) == true
-		}
-		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
-			isFullScreen = true
-		}
-		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
-			isFullScreen = false
-		}
-		.onChange(of: browser.visibleTabs.map(\.id)) { _, _ in
-			controlTabSwitcher.tabsDidChange()
-		}
-		.onDisappear {
-			controlTabSwitcher.stop()
-		}
-		.blur(radius: browser.isAboutToQuit ? 5 : 0)
-		.overlay(alignment: .center) {
+	}
+#endif
+
+#if os(macOS)
+	private struct QuitBannerOverlay: View {
+		let quitExpiry: Date
+
+		var body: some View {
 			TimelineView(.animation) { timeline in
 				let showQuitMessage = timeline.date < quitExpiry
 
@@ -648,24 +831,8 @@ struct DesktopBrowserShell: View {
 				.animation(.snappy(duration: 0.2), value: showQuitMessage)
 			}
 		}
-		.onChange(of: browser.isAboutToQuit) { _, newValue in
-			if newValue {
-				quitExpiry = .now.addingTimeInterval(1)
-			}
-		}
-		.task(id: quitExpiry) {
-			guard quitExpiry > .now else { return }
-
-			try? await Task.sleep(until: .now + .seconds(quitExpiry.timeIntervalSinceNow))
-
-			guard Date.now >= quitExpiry else { return }
-			browser.isAboutToQuit = false
-		}
-		.animation(.snappy(duration: 0.2), value: Date.now < quitExpiry)
-		#endif
-		.ignoresSafeArea()
 	}
-}
+#endif
 
 #Preview {
 	DesktopBrowserShell(browser: Browser())
