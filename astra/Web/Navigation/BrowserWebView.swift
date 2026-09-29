@@ -14,6 +14,13 @@ struct BrowserWebView {
 	var maximumViewportInsets = EdgeInsets()
 }
 
+extension BrowserWebView: Animatable {
+	var animatableData: CGFloat {
+		get { obscuredInsets.top }
+		set { obscuredInsets.top = newValue }
+	}
+}
+
 #if os(iOS)
 
 	extension BrowserWebView: UIViewRepresentable {

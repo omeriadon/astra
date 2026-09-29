@@ -25,10 +25,12 @@ struct DesktopBrowserShell: View {
 	@State private var swipeTargetID: UUID?
 	@State private var swipeProgress = 0.0
 	@State private var swipeDirection: CGFloat = 1
+	@State private var isTopBarRevealed = false
 	#if os(macOS)
 		@State private var controlTabSwitcher: ControlTabSwitcher
 		@State private var windowRegistry = BrowserWindowRegistry.shared
 		@State private var hostWindow: NSWindow?
+		@State private var windowButtonAnimationGeneration = 0
 	#endif
 
 	@State private var quitExpiry: Date = .distantPast
@@ -59,6 +61,42 @@ struct DesktopBrowserShell: View {
 			? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar
 			: BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar
 	}
+
+	#if os(macOS)
+		private func updateWindowButtons(in window: NSWindow?, animated: Bool = true) {
+			guard let window else { return }
+			let hidden = !sidebarShown && !isTopBarRevealed
+			let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
+				.compactMap { window.standardWindowButton($0) }
+			windowButtonAnimationGeneration += 1
+			let generation = windowButtonAnimationGeneration
+
+			guard animated, !reduceMotion else {
+				for button in buttons {
+					button.alphaValue = hidden ? 0 : 1
+					button.isHidden = hidden
+					button.isEnabled = !hidden
+				}
+				return
+			}
+
+			for button in buttons {
+				button.isHidden = false
+				button.isEnabled = !hidden
+			}
+			NSAnimationContext.runAnimationGroup { context in
+				context.duration = 0.2
+				for button in buttons {
+					button.animator().alphaValue = hidden ? 0 : 1
+				}
+			} completionHandler: {
+				guard generation == windowButtonAnimationGeneration, hidden else { return }
+				for button in buttons {
+					button.isHidden = true
+				}
+			}
+		}
+	#endif
 
 	private func previewSpaceTheme(_ targetID: UUID?, progress: Double) {
 		guard let targetID,
@@ -137,13 +175,16 @@ struct DesktopBrowserShell: View {
 				browser: browser,
 				theme: theme,
 				sidebarShown: sidebarShown,
+				isFullScreen: isFullScreen,
+				colorScheme: colorScheme,
 				topBarColorScheme: topBarColorScheme,
 				transitionFromTheme: transitionFromTheme,
 				transitionToTheme: transitionToTheme,
 				themeBlend: themeBlend,
 				toastManager: toastManager,
 				isLocalhost: isLocalhost,
-				contentCornerRadius: contentCornerRadius
+				contentCornerRadius: contentCornerRadius,
+				isTopBarRevealed: $isTopBarRevealed
 			)
 		}
 		.background {
@@ -152,18 +193,6 @@ struct DesktopBrowserShell: View {
 				transitionFromTheme: transitionFromTheme,
 				transitionProgress: themeBlend
 			)
-		}
-		.overlay(alignment: .topLeading) {
-			if !sidebarShown {
-				ShellNavigationBarControls(
-					browser: browser,
-					theme: theme,
-					isFullScreen: isFullScreen,
-					sidebarShown: sidebarShown,
-					colorScheme: colorScheme,
-					topBarColorScheme: topBarColorScheme
-				)
-			}
 		}
 		.onChange(of: browser.workspace.selectedSpaceID) { oldID, newID in
 			completeSpaceThemeTransition(from: oldID, to: newID)
@@ -181,6 +210,7 @@ struct DesktopBrowserShell: View {
 		.background {
 			WindowFocusReader { window in
 				hostWindow = window
+				updateWindowButtons(in: window, animated: false)
 				if window?.isKeyWindow == true {
 					windowRegistry.activate(browser)
 				}
@@ -191,6 +221,12 @@ struct DesktopBrowserShell: View {
 			if let window = notification.object as? NSWindow, window === hostWindow {
 				windowRegistry.activate(browser)
 			}
+		}
+		.onChange(of: sidebarShown) { _, _ in
+			updateWindowButtons(in: hostWindow)
+		}
+		.onChange(of: isTopBarRevealed) { _, _ in
+			updateWindowButtons(in: hostWindow)
 		}
 		#endif
 		.overlay {
@@ -702,6 +738,8 @@ private struct ShellContentColumn: View {
 	let browser: Browser
 	let theme: BrowserTheme
 	let sidebarShown: Bool
+	let isFullScreen: Bool
+	let colorScheme: ColorScheme
 	let topBarColorScheme: ColorScheme
 	let transitionFromTheme: BrowserTheme?
 	let transitionToTheme: BrowserTheme?
@@ -709,7 +747,8 @@ private struct ShellContentColumn: View {
 	let toastManager: ToastManager
 	let isLocalhost: Bool
 	let contentCornerRadius: CGFloat
-	@State private var isTopBarRevealed = false
+	@Binding var isTopBarRevealed: Bool
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	private var topBar: some View {
 		ShellTopBarView(
@@ -773,7 +812,7 @@ private struct ShellContentColumn: View {
 			}
 			.animation(.smooth(duration: 0.3)) { view in
 				view
-					.padding(.top, BrowserChromeMetrics.shellEdgePadding)
+					.padding(.top, sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 					.padding([.bottom, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 			}
 			.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -786,9 +825,24 @@ private struct ShellContentColumn: View {
 						.frame(height: isTopBarRevealed ? BrowserChromeMetrics.topBarRegionHeight : 6)
 					if isTopBarRevealed {
 						topBar
+							.overlay(alignment: .topLeading) {
+								ShellNavigationBarControls(
+									browser: browser,
+									theme: theme,
+									isFullScreen: isFullScreen,
+									sidebarShown: sidebarShown,
+									colorScheme: colorScheme,
+									topBarColorScheme: topBarColorScheme
+								)
+							}
+							.transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
 					}
 				}
-				.onHover { isTopBarRevealed = $0 }
+				.onHover { hovering in
+					withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+						isTopBarRevealed = hovering
+					}
+				}
 			}
 		}
 		.onChange(of: sidebarShown) { _, _ in
