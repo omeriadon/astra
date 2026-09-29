@@ -366,10 +366,11 @@ final class Browser {
 		webTabs.map(\.openTab).filter { $0.url != nil }
 	}
 
-	func openHistoryTab(_ saved: OpenTab, inBackground: Bool) {
-		if !inBackground, tabs.contains(where: { $0.id == saved.id }) {
-			selectTab(saved.id)
-			return
+	@discardableResult
+	func openHistoryTab(_ saved: OpenTab, inBackground: Bool) -> BrowserTab {
+		if !inBackground, let existing = tabs.first(where: { $0.id == saved.id }) {
+			selectTab(existing.id)
+			return existing
 		}
 		let tab = BrowserTab(
 			pageTitle: saved.pageTitle,
@@ -396,12 +397,23 @@ final class Browser {
 			selectTab(tab.id)
 			schedulePersistence(fullState: true)
 		}
+		return tab
 	}
 
 	func reopenLastClosedTab() {
 		guard !closedHistoryTabs.isEmpty else { return }
 		let saved = closedHistoryTabs.removeFirst()
-		openHistoryTab(saved, inBackground: false)
+		let tab = openHistoryTab(saved, inBackground: false)
+		if let spaceID = saved.closedSpaceID,
+		   let normalIndex = saved.closedNormalIndex,
+		   let space = workspace.spaces.first(where: { $0.id == spaceID })
+		{
+			let normalIDs = space.tabIDs.filter {
+				!space.pinnedTabIDs.contains($0) && $0 != tab.id
+			}
+			let targetID = normalIDs.dropFirst(max(0, normalIndex)).first
+			moveTab(tab.id, to: .normal, in: spaceID, before: targetID)
+		}
 		schedulePersistence()
 	}
 
@@ -734,6 +746,12 @@ final class Browser {
 			.map { tab in
 				var snapshot = tab.openTab
 				snapshot.modifiedAt = .now
+				if let space = workspace.spaces.first(where: { $0.tabIDs.contains(tab.id) }) {
+					snapshot.closedSpaceID = space.id
+					snapshot.closedNormalIndex = space.tabIDs
+						.filter { !space.pinnedTabIDs.contains($0) }
+						.firstIndex(of: tab.id)
+				}
 				return snapshot
 			}
 		closedHistoryTabs.insert(contentsOf: snapshots, at: 0)

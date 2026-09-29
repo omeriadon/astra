@@ -232,11 +232,21 @@ final class BrowserController: NSObject {
 
 	private func makeWebView() -> WKWebView {
 		let configuration = WKWebViewConfiguration()
+		#if os(macOS)
+			configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
+		#endif
 		if let suffix = Self.safariUserAgentSuffix() {
 			configuration.applicationNameForUserAgent = suffix
 		}
 		FaviconStore.shared.configureFaviconObservation(in: configuration.userContentController)
 		let webView = PeekSourceWebView(frame: .zero, configuration: configuration)
+		#if os(macOS)
+			webView.isInspectable = true
+			// WebKit's docked inspector resizes the web view outside SwiftUI's layout.
+			let inspectorAttachmentView = NSView(frame: .zero)
+			inspectorAttachmentView.isHidden = true
+			webView.setValue(inspectorAttachmentView, forKey: "inspectorAttachmentView")
+		#endif
 		createdWebView = webView
 		let scrollHandler = WeakScriptMessageHandler(delegate: self)
 		webView.configuration.userContentController.add(

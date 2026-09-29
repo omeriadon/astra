@@ -13,6 +13,8 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 	var isHibernated: Bool
 	var modifiedAt: Date
 	var peeks: [OpenPeek]
+	var closedSpaceID: UUID?
+	var closedNormalIndex: Int?
 
 	nonisolated init(
 		id: UUID = UUID(),
@@ -26,7 +28,9 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		scrollPosition: BrowserScrollPosition = .zero,
 		isHibernated: Bool = false,
 		modifiedAt: Date = .now,
-		peeks: [OpenPeek] = []
+		peeks: [OpenPeek] = [],
+		closedSpaceID: UUID? = nil,
+		closedNormalIndex: Int? = nil
 	) {
 		self.id = id
 		self.internalPage = internalPage
@@ -40,6 +44,8 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		self.scrollPosition = scrollPosition
 		self.isHibernated = isHibernated
 		self.modifiedAt = modifiedAt
+		self.closedSpaceID = closedSpaceID
+		self.closedNormalIndex = closedNormalIndex
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -56,6 +62,8 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		case scrollPosition
 		case isHibernated
 		case modifiedAt
+		case closedSpaceID
+		case closedNormalIndex
 	}
 
 	nonisolated init(from decoder: Decoder) throws {
@@ -82,6 +90,8 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		scrollPosition = try container.decodeIfPresent(BrowserScrollPosition.self, forKey: .scrollPosition) ?? .zero
 		isHibernated = try container.decodeIfPresent(Bool.self, forKey: .isHibernated) ?? false
 		modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? .distantPast
+		closedSpaceID = try container.decodeIfPresent(UUID.self, forKey: .closedSpaceID)
+		closedNormalIndex = try container.decodeIfPresent(Int.self, forKey: .closedNormalIndex)
 	}
 
 	nonisolated func encode(to encoder: Encoder) throws {
@@ -98,6 +108,8 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		try container.encode(scrollPosition, forKey: .scrollPosition)
 		try container.encode(isHibernated, forKey: .isHibernated)
 		try container.encode(modifiedAt, forKey: .modifiedAt)
+		try container.encodeIfPresent(closedSpaceID, forKey: .closedSpaceID)
+		try container.encodeIfPresent(closedNormalIndex, forKey: .closedNormalIndex)
 	}
 
 	private nonisolated static func clampedIndex(_ index: Int, count: Int) -> Int {

@@ -204,6 +204,16 @@
 			activeBrowser?.selectedTab?.activeController?.resetZoom()
 		}
 
+		@objc private func toggleWebInspector(_: Any?) {
+			guard let webView = activeBrowser?.selectedTab?.activeController?.webViewIfLoaded,
+			      webView.responds(to: NSSelectorFromString("_inspector")),
+			      let inspector = webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject
+			else { return }
+
+			let action = inspector.value(forKey: "visible") as? Bool == true ? "hide" : "show"
+			inspector.perform(NSSelectorFromString(action))
+		}
+
 		@objc private func addBookmark(_: Any?) {
 			activeBrowser?.bookmarkSelectedPage()
 		}
@@ -296,6 +306,13 @@
 			mainMenu.addItem(menuRoot("View", submenu: viewMenu))
 			viewMenu.addItem(item("Toggle Sidebar", action: #selector(toggleSidebar(_:)), key: "s"))
 			viewMenu.addItem(item("Edit Space", action: #selector(editSpace(_:))))
+			viewMenu.addItem(.separator())
+			viewMenu.addItem(item(
+				"Web Inspector",
+				action: #selector(toggleWebInspector(_:)),
+				key: "i",
+				modifiers: [.command, .option]
+			))
 			viewMenu.addItem(.separator())
 			viewMenu.addItem(item(
 				"Enter Full Screen",
