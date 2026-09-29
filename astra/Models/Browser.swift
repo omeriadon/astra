@@ -14,6 +14,7 @@ final class Browser {
 	private(set) var spaceSwitchDirection = 1
 	private(set) var recentlyUsedTabIDs: [UUID]
 	private(set) var bookmarks: [Bookmark]
+	private(set) var closedHistoryTabs: [OpenTab]
 	private(set) var closedTabIDs: Set<UUID>
 	private(set) var deletedBookmarkIDs: Set<UUID>
 	private(set) var persistenceErrorDescription: String?
@@ -200,6 +201,7 @@ final class Browser {
 		let loadedSelectedTabID: UUID
 		let loadedWorkspace: BrowserWorkspace
 		let loadedBookmarks: [Bookmark]
+		let loadedClosedHistoryTabs: [OpenTab]
 		let loadedClosedTabIDs: Set<UUID>
 		let loadedDeletedBookmarkIDs: Set<UUID>
 		let loadedPersistence: BrowserPersistence?
@@ -211,6 +213,7 @@ final class Browser {
 			let snapshot = try store.loadBrowserSnapshot()
 			let savedWorkspace = try? store.loadWorkspace()
 			let bookmarks = try store.loadBookmarks()
+			let closedHistoryTabs = try store.loadClosedTabs()
 			let restoredTabs = savedTabs.compactMap { saved -> BrowserTab? in
 				let internalPage = saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:))
 				guard saved.internalPage == nil || internalPage != nil else { return nil }
@@ -238,6 +241,7 @@ final class Browser {
 				theme: Defaults[.browserTheme]
 			)
 			loadedBookmarks = bookmarks
+			loadedClosedHistoryTabs = closedHistoryTabs
 			loadedClosedTabIDs = snapshot?.closedTabIDs ?? []
 			loadedDeletedBookmarkIDs = snapshot?.deletedBookmarkIDs ?? []
 			loadedPersistence = store
@@ -252,6 +256,7 @@ final class Browser {
 				theme: Defaults[.browserTheme]
 			)
 			loadedBookmarks = []
+			loadedClosedHistoryTabs = []
 			loadedClosedTabIDs = []
 			loadedDeletedBookmarkIDs = []
 			loadedPersistence = nil
@@ -263,6 +268,7 @@ final class Browser {
 		workspace = loadedWorkspace
 		recentlyUsedTabIDs = [loadedSelectedTabID]
 		bookmarks = loadedBookmarks
+		closedHistoryTabs = loadedClosedHistoryTabs
 		closedTabIDs = loadedClosedTabIDs
 		deletedBookmarkIDs = loadedDeletedBookmarkIDs
 		persistence = loadedPersistence
@@ -303,6 +309,46 @@ final class Browser {
 		let tab = BrowserTab(internalPage: page)
 		tabs.append(tab)
 		selectTab(tab.id)
+	}
+
+	var openHistoryTabs: [OpenTab] {
+		webTabs.map(\.openTab).filter { $0.url != nil }
+	}
+
+	func openHistoryTab(_ saved: OpenTab, inBackground: Bool) {
+		if !inBackground, tabs.contains(where: { $0.id == saved.id }) {
+			selectTab(saved.id)
+			return
+		}
+		let tab = BrowserTab(
+			pageTitle: saved.pageTitle,
+			customTitle: saved.customTitle,
+			initialURL: saved.url,
+			history: saved.history,
+			historyIndex: saved.historyIndex,
+			openPeeks: saved.peeks,
+			pageZoom: saved.pageZoom,
+			scrollPosition: saved.scrollPosition,
+			isHibernated: inBackground
+		)
+		configure(tab)
+		tabs.append(tab)
+		if inBackground {
+			schedulePersistence()
+		} else {
+			selectTab(tab.id)
+		}
+	}
+
+	func openHistoryURL(_ url: URL, inBackground: Bool) {
+		let tab = BrowserTab(initialURL: url)
+		configure(tab)
+		tabs.append(tab)
+		if inBackground {
+			schedulePersistence()
+		} else {
+			selectTab(tab.id)
+		}
 	}
 
 	#if DEBUG
@@ -415,6 +461,9 @@ final class Browser {
 		}
 		let wasSelected = selectedTabID == id
 		let wasInternal = tabs[index].internalPage != nil
+		if !wasInternal {
+			archiveHistory(of: [tabs[index]])
+		}
 		releaseAfterTabUpdate([tabs[index]])
 		tabs.remove(at: index)
 		if !wasInternal {
@@ -564,6 +613,7 @@ final class Browser {
 		let ids = ids.subtracting(protectedIDs)
 		guard !ids.isEmpty else { return }
 		let removedTabs = tabs.filter { ids.contains($0.id) }
+		archiveHistory(of: removedTabs)
 		let closedWebIDs = Set(removedTabs.filter { $0.internalPage == nil }.map(\.id))
 		releaseAfterTabUpdate(removedTabs)
 		tabs.removeAll { ids.contains($0.id) }
@@ -581,6 +631,13 @@ final class Browser {
 			try? await Task.sleep(for: .milliseconds(100))
 			withExtendedLifetime(removedTabs) {}
 		}
+	}
+
+	private func archiveHistory(of removedTabs: [BrowserTab]) {
+		let snapshots = removedTabs.filter { $0.internalPage == nil }
+			.map(\.openTab)
+			.filter { $0.url != nil }
+		closedHistoryTabs.insert(contentsOf: snapshots, at: 0)
 	}
 
 	func syncDocument(settings: [String: SyncedSetting]) -> BrowserSyncDocument {
@@ -696,6 +753,7 @@ final class Browser {
 			}
 		}
 		bookmarks = source.bookmarks
+		closedHistoryTabs = source.closedHistoryTabs
 		closedTabIDs = source.closedTabIDs
 		deletedBookmarkIDs = source.deletedBookmarkIDs
 		if !tabs.contains(where: { $0.id == selectedTabID }) {
@@ -768,6 +826,7 @@ final class Browser {
 			reconcileWorkspace()
 			try persistence.saveBookmarks(bookmarks)
 			try persistence.saveOpenTabs(tabs.map(\.openTab))
+			try persistence.saveClosedTabs(closedHistoryTabs)
 			try persistence.saveWorkspace(workspace)
 			try persistence.saveBrowserSnapshot(
 				BrowserSnapshot(

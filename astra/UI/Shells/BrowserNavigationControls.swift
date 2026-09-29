@@ -48,7 +48,7 @@ struct BrowserNavigationControls: View {
 				)
 			}
 			.contextMenu {
-				ForEach((controller.historyIndex + 1) ..< controller.history.count, id: \.self) { index in
+				ForEach(min(controller.historyIndex + 1, controller.history.count) ..< controller.history.count, id: \.self) { index in
 					Button(
 						controller.history[index].absoluteString,
 						systemImage: "clock.arrow.circlepath"

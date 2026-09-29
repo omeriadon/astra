@@ -34,6 +34,8 @@ struct BrowserContentView: View {
 						searchText: $settingsSearchText,
 						selectedPage: $settingsPage
 					)
+				case .history:
+					BrowserHistoryView(browser: browser)
 				#if DEBUG
 					case let .failedWebsiteState(kind):
 						BrowserNavigationErrorView(kind: kind) {

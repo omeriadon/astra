@@ -77,18 +77,18 @@ struct DesktopBrowserShell: View {
 				NonDraggableTitlebarRegion()
 			}
 		#endif
-		.environment(\.colorScheme, topBarColorScheme)
-		.overlay(alignment: .bottom) {
-			if let controller = browser.selectedTab?.activeController {
-				BrowserLoadingBar(
-					isLoading: controller.isLoading,
-					estimatedProgress: controller.estimatedProgress,
-					theme: theme
-				)
-				.frame(height: 1.5)
-				.id(browser.selectedTabID)
+			.environment(\.colorScheme, topBarColorScheme)
+			.overlay(alignment: .bottom) {
+				if let controller = browser.selectedTab?.activeController {
+					BrowserLoadingBar(
+						isLoading: controller.isLoading,
+						estimatedProgress: controller.estimatedProgress,
+						theme: theme
+					)
+					.frame(height: 1.5)
+					.id(browser.selectedTabID)
+				}
 			}
-		}
 	}
 
 	private var topBar: some View {

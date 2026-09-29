@@ -142,6 +142,10 @@
 			activeBrowser?.openInternalPage(.settings)
 		}
 
+		@objc private func openHistory(_: Any?) {
+			activeBrowser?.openInternalPage(.history)
+		}
+
 		@objc private func showAbout(_: Any?) {
 			activeBrowser?.openInternalPage(.settings)
 		}
@@ -280,6 +284,8 @@
 
 			let navigationMenu = NSMenu(title: "Navigation")
 			mainMenu.addItem(menuRoot("Navigation", submenu: navigationMenu))
+			navigationMenu.addItem(item("History", action: #selector(openHistory(_:)), key: "y"))
+			navigationMenu.addItem(.separator())
 			navigationMenu.addItem(item("Open Location", action: #selector(openLocation(_:)), key: "l"))
 			navigationMenu.addItem(item("Back", action: #selector(goBack(_:)), key: "["))
 			navigationMenu.addItem(item("Forward", action: #selector(goForward(_:)), key: "]"))

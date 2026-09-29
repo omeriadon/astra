@@ -7,6 +7,7 @@ import WebKit
 enum BrowserInternalPage: Equatable {
 	case themeEditor
 	case settings
+	case history
 	#if DEBUG
 		case failedWebsiteState(BrowserNavigationFailure.Kind)
 	#endif
@@ -15,6 +16,7 @@ enum BrowserInternalPage: Equatable {
 		switch self {
 			case .themeEditor: "themeEditor"
 			case .settings: "settings"
+			case .history: "history"
 			#if DEBUG
 				case let .failedWebsiteState(kind): "failedWebsiteState:\(kind.rawValue)"
 			#endif
@@ -25,6 +27,7 @@ enum BrowserInternalPage: Equatable {
 		switch persistenceID {
 			case "themeEditor": self = .themeEditor
 			case "settings": self = .settings
+			case "history": self = .history
 			default:
 				#if DEBUG
 					if persistenceID.hasPrefix("failedWebsiteState:"),
@@ -46,6 +49,8 @@ enum BrowserInternalPage: Equatable {
 				"Edit Space"
 			case .settings:
 				"Settings"
+			case .history:
+				"History"
 			#if DEBUG
 				case let .failedWebsiteState(kind):
 					String(localized: kind.title)
@@ -59,6 +64,8 @@ enum BrowserInternalPage: Equatable {
 				"paintpalette"
 			case .settings:
 				"gearshape"
+			case .history:
+				"clock.arrow.circlepath"
 			#if DEBUG
 				case let .failedWebsiteState(kind):
 					kind.systemImage

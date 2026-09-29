@@ -107,15 +107,15 @@
 			false
 		}
 
-		// NSWindowStyleMaskFullSizeContentView normally lets AppKit force
-		// titlebar-overlapping content into the native window-drag region even
-		// when mouseDownCanMoveWindow is false. Firefox, Chromium, and Zed use
-		// this private selector to mark app-owned titlebar content as opaque to
-		// that drag-region calculation.
-		//
-		// Returning the entire host bounds disables AppKit's implicit titlebar
-		// dragging across Astra. Explicit WindowDragBackground views still move
-		// the window with NSWindow.performDrag(with:).
+		/// NSWindowStyleMaskFullSizeContentView normally lets AppKit force
+		/// titlebar-overlapping content into the native window-drag region even
+		/// when mouseDownCanMoveWindow is false. Firefox, Chromium, and Zed use
+		/// this private selector to mark app-owned titlebar content as opaque to
+		/// that drag-region calculation.
+		///
+		/// Returning the entire host bounds disables AppKit's implicit titlebar
+		/// dragging across Astra. Explicit WindowDragBackground views still move
+		/// the window with NSWindow.performDrag(with:).
 		@objc(_opaqueRectForWindowMoveWhenInTitlebar)
 		func opaqueRectForWindowMoveWhenInTitlebar() -> NSRect {
 			bounds
