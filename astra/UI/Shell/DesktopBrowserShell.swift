@@ -709,20 +709,41 @@ private struct ShellContentColumn: View {
 	let toastManager: ToastManager
 	let isLocalhost: Bool
 	let contentCornerRadius: CGFloat
+	@State private var isTopBarRevealed = false
+
+	private var topBar: some View {
+		ShellTopBarView(
+			browser: browser,
+			theme: theme,
+			sidebarShown: sidebarShown,
+			topBarColorScheme: topBarColorScheme,
+			transitionFromTheme: transitionFromTheme,
+			transitionToTheme: transitionToTheme,
+			themeBlend: themeBlend
+		)
+	}
+
+	private var viewportInsets: BrowserViewportInsets {
+		guard !sidebarShown else { return BrowserViewportInsets() }
+		let topInset = EdgeInsets(
+			top: BrowserChromeMetrics.topBarRegionHeight,
+			leading: 0,
+			bottom: 0,
+			trailing: 0
+		)
+		return BrowserViewportInsets(
+			obscured: isTopBarRevealed ? topInset : EdgeInsets(),
+			maximum: topInset
+		)
+	}
 
 	var body: some View {
 		VStack(spacing: 0) {
-			ShellTopBarView(
-				browser: browser,
-				theme: theme,
-				sidebarShown: sidebarShown,
-				topBarColorScheme: topBarColorScheme,
-				transitionFromTheme: transitionFromTheme,
-				transitionToTheme: transitionToTheme,
-				themeBlend: themeBlend
-			)
+			if sidebarShown {
+				topBar
+			}
 			ZStack(alignment: .top) {
-				BrowserContentView(browser: browser)
+				BrowserContentView(browser: browser, insets: viewportInsets)
 				#if os(macOS)
 					.blur(radius: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser) ? 10 : 0)
 				#endif
@@ -757,6 +778,22 @@ private struct ShellContentColumn: View {
 			}
 			.frame(maxWidth: .infinity, maxHeight: .infinity)
 		}
+		.overlay(alignment: .top) {
+			if !sidebarShown {
+				ZStack(alignment: .top) {
+					Color.clear
+						.contentShape(Rectangle())
+						.frame(height: isTopBarRevealed ? BrowserChromeMetrics.topBarRegionHeight : 6)
+					if isTopBarRevealed {
+						topBar
+					}
+				}
+				.onHover { isTopBarRevealed = $0 }
+			}
+		}
+		.onChange(of: sidebarShown) { _, _ in
+			isTopBarRevealed = false
+		}
 	}
 }
 
@@ -772,8 +809,9 @@ private struct DownloadFlightOverlay: View {
 			if let flight, !reduceMotion {
 				let startX = (sidebarShown ? BrowserChromeMetrics.expandedSidebarWidth : 0)
 					+ (geometry.size.width - (sidebarShown ? BrowserChromeMetrics.expandedSidebarWidth : 0)) * flight.source.x
-				let startY = BrowserChromeMetrics.topBarRegionHeight
-					+ (geometry.size.height - BrowserChromeMetrics.topBarRegionHeight) * flight.source.y
+				let topBarHeight = sidebarShown ? BrowserChromeMetrics.topBarRegionHeight : 0
+				let startY = topBarHeight
+					+ (geometry.size.height - topBarHeight) * flight.source.y
 				let endX: CGFloat = 25
 				let endY = geometry.size.height - 24
 				Image(systemName: flight.symbol)
