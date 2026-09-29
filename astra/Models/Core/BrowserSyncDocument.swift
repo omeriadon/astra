@@ -110,9 +110,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		}
 
 		var bookmarksByID = bookmarks.reduce(into: [UUID: Bookmark]()) { $0[$1.id] = $1 }
-		for bookmark in other.bookmarks where bookmarksByID[bookmark.id] == nil {
-			bookmarksByID[bookmark.id] = bookmark
-		}
+		bookmarksByID.merge(other.bookmarks.map { ($0.id, $0) }) { current, _ in current }
 		let deletedBookmarkIDs = merged.browser.deletedBookmarkIDs
 		merged.bookmarks = (bookmarks.map(\.id) + other.bookmarks.map(\.id))
 			.uniqued()

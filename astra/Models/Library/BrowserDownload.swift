@@ -7,7 +7,7 @@ enum BrowserDownloadStatus: String, Codable, Sendable {
 	case failed
 }
 
-struct BrowserDownloadSegment: Codable, Sendable {
+struct BrowserDownloadSegment: Codable, Equatable, Sendable {
 	static let minimumSegmentBytes: Int64 = 128 * 1024 * 1024
 	static let maximumConnections = 16
 
@@ -34,7 +34,7 @@ struct BrowserDownloadSegment: Codable, Sendable {
 	}
 }
 
-struct BrowserDownload: Codable, Identifiable, Sendable {
+struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 	let id: UUID
 	let createdAt: Date
 	let sourceURL: URL?

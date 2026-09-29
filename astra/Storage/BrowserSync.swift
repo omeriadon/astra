@@ -43,7 +43,7 @@ final class BrowserSync {
 				sessionToken = token
 				isSignedIn = true
 				if browser != nil {
-					Task { await syncNow() }
+					Task { await self.syncNow() }
 				}
 			}
 		}
@@ -161,6 +161,7 @@ final class BrowserSync {
 			}
 
 			let outgoing = browser.syncDocument(settings: settingSnapshot())
+			let deviceID = deviceID
 			let pushPayload: Data? = try await Task.detached(priority: .utility) {
 				let decoder = JSONDecoder()
 				let ownDocument = try snapshots

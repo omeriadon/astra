@@ -1,7 +1,7 @@
 import Foundation
 
 struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
-	static let firstID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3))
+	nonisolated static let firstID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3))
 	static let symbols = [
 		"circle.grid.2x2.fill", "star.fill", "moon.stars.fill", "sun.max.fill", "cloud.sun.fill",
 		"leaf.fill", "flame.fill", "drop.fill", "bolt.fill", "heart.fill",

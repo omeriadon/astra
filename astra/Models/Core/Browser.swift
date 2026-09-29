@@ -518,7 +518,6 @@ final class Browser {
 
 	func closeTab(_ id: UUID) {
 		guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-		let nextVisibleID = visibleTabs.first(where: { $0.id != id })?.id
 		if workspace.favouriteTabIDs.contains(id) || workspace.spaces.contains(where: { $0.pinnedTabIDs.contains(id) }) {
 			hibernateTab(id)
 			if selectedTabID == id {
@@ -529,6 +528,10 @@ final class Browser {
 				}
 			}
 			return
+		}
+		let normalIDs = normalTabs.map(\.id)
+		let nextNormalID = normalIDs.firstIndex(of: id).flatMap { row in
+			row > 0 ? normalIDs[row - 1] : normalIDs.dropFirst().first
 		}
 		let wasSelected = selectedTabID == id
 		let wasInternal = tabs[index].internalPage != nil
@@ -546,15 +549,12 @@ final class Browser {
 			addTab()
 			return
 		}
-		if wasSelected, nextVisibleID == nil {
-			addTab()
-			return
-		}
-
 		if wasSelected {
-			selectedTabID = wasInternal
-				? recentlyUsedTabIDs.first(where: { recentID in tabs.contains { $0.id == recentID } }) ?? tabs[0].id
-				: nextVisibleID ?? tabs[min(index, tabs.count - 1)].id
+			guard let nextNormalID else {
+				addTab()
+				return
+			}
+			selectedTabID = nextNormalID
 			recentlyUsedTabIDs.removeAll { $0 == selectedTabID }
 			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
 			if let selected = tabs.first(where: { $0.id == selectedTabID }), selected.isHibernated {
