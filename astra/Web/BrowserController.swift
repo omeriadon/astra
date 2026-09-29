@@ -9,7 +9,6 @@ import WebKit
 @MainActor
 @Observable
 final class BrowserController: NSObject {
-	private static let sharedProcessPool = WKProcessPool()
 	private static var cachedSafariUserAgentSuffix: String?
 
 	/// Resolve once per launch, not once per tab (was NSWorkspace + Bundle plist per makeWebView).
@@ -34,14 +33,13 @@ final class BrowserController: NSObject {
 
 	/// Spawn the WebContent/Network processes + warm the UA lookup off the
 	/// tab-creation critical path. Safe to call repeatedly.
+	/// (Since macOS 12 all configurations share one process pool, so merely
+	/// creating a throwaway WKWebView is enough to warm it.)
 	static func prewarmSharedProcess() {
-		_ = sharedProcessPool
 		_ = safariUserAgentSuffix()
 		Task { @MainActor in
-			let config = WKWebViewConfiguration()
-			config.processPool = sharedProcessPool
-			// Thrown away; existence warms the shared process pool.
-			_ = WKWebView(frame: .zero, configuration: config)
+			// Thrown away; existence warms the shared WebKit processes.
+			_ = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
 		}
 	}
 
@@ -225,7 +223,6 @@ final class BrowserController: NSObject {
 
 	private func makeWebView() -> WKWebView {
 		let configuration = WKWebViewConfiguration()
-		configuration.processPool = Self.sharedProcessPool
 		if let suffix = Self.safariUserAgentSuffix() {
 			configuration.applicationNameForUserAgent = suffix
 		}

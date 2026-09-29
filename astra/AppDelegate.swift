@@ -258,18 +258,21 @@
 
 			let editMenu = NSMenu(title: "Edit")
 			mainMenu.addItem(menuRoot("Edit", submenu: editMenu))
-			editMenu.addItem(responderItem("Undo", action: Selector(("undo:")), key: "z"))
+			// Standard Edit actions dispatch through the responder chain by
+			// name; NSSelectorFromString keeps them dynamic without tripping
+			// the explicit-Selector-construction warning.
+			editMenu.addItem(responderItem("Undo", action: NSSelectorFromString("undo:"), key: "z"))
 			editMenu.addItem(responderItem(
 				"Redo",
-				action: Selector(("redo:")),
+				action: NSSelectorFromString("redo:"),
 				key: "z",
 				modifiers: [.command, .shift]
 			))
 			editMenu.addItem(.separator())
-			editMenu.addItem(responderItem("Cut", action: Selector(("cut:")), key: "x"))
-			editMenu.addItem(responderItem("Copy", action: Selector(("copy:")), key: "c"))
-			editMenu.addItem(responderItem("Paste", action: Selector(("paste:")), key: "v"))
-			editMenu.addItem(responderItem("Select All", action: Selector(("selectAll:")), key: "a"))
+			editMenu.addItem(responderItem("Cut", action: NSSelectorFromString("cut:"), key: "x"))
+			editMenu.addItem(responderItem("Copy", action: NSSelectorFromString("copy:"), key: "c"))
+			editMenu.addItem(responderItem("Paste", action: NSSelectorFromString("paste:"), key: "v"))
+			editMenu.addItem(responderItem("Select All", action: NSSelectorFromString("selectAll:"), key: "a"))
 
 			let viewMenu = NSMenu(title: "View")
 			mainMenu.addItem(menuRoot("View", submenu: viewMenu))

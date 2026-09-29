@@ -201,18 +201,20 @@ struct BrowserUpdateSheet: View {
 
 	BrowserUpdateSheet(updates: updates)
 		.task {
-			let statuses: [UpdateManager.Status] = [
-				.available,
-			]
+			#if DEBUG
+				let statuses: [UpdateManager.Status] = [
+					.available,
+				]
 
-			var index = 0
+				var index = 0
 
-			while !Task.isCancelled {
-				updates.showPreview(statuses[index])
+				while !Task.isCancelled {
+					updates.showPreview(statuses[index])
 
-				try? await Task.sleep(for: .seconds(2))
+					try? await Task.sleep(for: .seconds(2))
 
-				index = (index + 1) % statuses.count
-			}
+					index = (index + 1) % statuses.count
+				}
+			#endif
 		}
 }

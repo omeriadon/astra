@@ -29,13 +29,22 @@ struct BrowserWorkspace: Codable, Equatable {
 		case deletedSpaceIDs
 	}
 
-	init(from decoder: Decoder) throws {
+	nonisolated init(from decoder: Decoder) throws {
 		let values = try decoder.container(keyedBy: CodingKeys.self)
 		spaces = try values.decode([BrowserSpace].self, forKey: .spaces)
 		favouriteTabIDs = try values.decode([UUID].self, forKey: .favouriteTabIDs)
 		favouritesModifiedAt = try values.decodeIfPresent(Date.self, forKey: .favouritesModifiedAt) ?? .distantPast
 		selectedSpaceID = try values.decode(UUID.self, forKey: .selectedSpaceID)
 		deletedSpaceIDs = try values.decodeIfPresent(Set<UUID>.self, forKey: .deletedSpaceIDs) ?? []
+	}
+
+	nonisolated func encode(to encoder: Encoder) throws {
+		var values = encoder.container(keyedBy: CodingKeys.self)
+		try values.encode(spaces, forKey: .spaces)
+		try values.encode(favouriteTabIDs, forKey: .favouriteTabIDs)
+		try values.encode(favouritesModifiedAt, forKey: .favouritesModifiedAt)
+		try values.encode(selectedSpaceID, forKey: .selectedSpaceID)
+		try values.encode(deletedSpaceIDs, forKey: .deletedSpaceIDs)
 	}
 
 	static func migrated(

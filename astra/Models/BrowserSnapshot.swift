@@ -21,10 +21,17 @@ struct BrowserSnapshot: Codable, Equatable {
 		case deletedBookmarkIDs
 	}
 
-	init(from decoder: Decoder) throws {
+	nonisolated init(from decoder: Decoder) throws {
 		let container = try decoder.container(keyedBy: CodingKeys.self)
 		selectedTabID = try container.decodeIfPresent(UUID.self, forKey: .selectedTabID) ?? UUID()
 		closedTabIDs = try container.decodeIfPresent(Set<UUID>.self, forKey: .closedTabIDs) ?? []
 		deletedBookmarkIDs = try container.decodeIfPresent(Set<UUID>.self, forKey: .deletedBookmarkIDs) ?? []
+	}
+
+	nonisolated func encode(to encoder: Encoder) throws {
+		var container = encoder.container(keyedBy: CodingKeys.self)
+		try container.encode(selectedTabID, forKey: .selectedTabID)
+		try container.encode(closedTabIDs, forKey: .closedTabIDs)
+		try container.encode(deletedBookmarkIDs, forKey: .deletedBookmarkIDs)
 	}
 }

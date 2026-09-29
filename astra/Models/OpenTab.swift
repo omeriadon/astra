@@ -14,7 +14,7 @@ struct OpenTab: Codable, Identifiable, Equatable {
 	var modifiedAt: Date
 	var peeks: [OpenPeek]
 
-	init(
+	nonisolated init(
 		id: UUID = UUID(),
 		internalPage: String? = nil,
 		pageTitle: String = "New Tab",
@@ -58,7 +58,7 @@ struct OpenTab: Codable, Identifiable, Equatable {
 		case modifiedAt
 	}
 
-	init(from decoder: Decoder) throws {
+	nonisolated init(from decoder: Decoder) throws {
 		let container = try decoder.container(keyedBy: CodingKeys.self)
 		id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
 		internalPage = try container.decodeIfPresent(String.self, forKey: .internalPage)
@@ -84,7 +84,7 @@ struct OpenTab: Codable, Identifiable, Equatable {
 		modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? .distantPast
 	}
 
-	func encode(to encoder: Encoder) throws {
+	nonisolated func encode(to encoder: Encoder) throws {
 		var container = encoder.container(keyedBy: CodingKeys.self)
 		try container.encode(id, forKey: .id)
 		try container.encodeIfPresent(internalPage, forKey: .internalPage)
@@ -100,7 +100,7 @@ struct OpenTab: Codable, Identifiable, Equatable {
 		try container.encode(modifiedAt, forKey: .modifiedAt)
 	}
 
-	private static func clampedIndex(_ index: Int, count: Int) -> Int {
+	private nonisolated static func clampedIndex(_ index: Int, count: Int) -> Int {
 		guard count > 0 else { return 0 }
 		return min(max(index, 0), count - 1)
 	}

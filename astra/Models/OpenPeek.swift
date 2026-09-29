@@ -45,7 +45,7 @@ struct OpenPeek: Codable, Equatable, Identifiable {
 		self.scrollPosition = scrollPosition
 	}
 
-	init(from decoder: Decoder) throws {
+	nonisolated init(from decoder: Decoder) throws {
 		let container = try decoder.container(keyedBy: CodingKeys.self)
 		id = try container.decode(UUID.self, forKey: .id)
 		depth = try container.decode(Int.self, forKey: .depth)
