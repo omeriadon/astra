@@ -13,6 +13,7 @@ struct BrowserSettingsView: View {
 		case ui
 		case account
 		case privacyAndSecurity
+		case advanced
 		case about
 		#if DEBUG
 			case failedWebsiteStates
@@ -64,6 +65,14 @@ struct BrowserSettingsView: View {
 						section: .advanced,
 						identifier: "settings-privacy-and-security",
 						terms: ["Website Data", "Clear All Favicons"]
+					)
+				case .advanced:
+					Definition(
+						title: "Advanced",
+						symbol: "gearshape.2",
+						section: .advanced,
+						identifier: "settings-advanced",
+						terms: ["Links", "Copy email addresses from mailto links"]
 					)
 				case .about:
 					Definition(
@@ -159,6 +168,8 @@ struct BrowserSettingsView: View {
 						BrowserAccountSettingsView()
 					case .privacyAndSecurity:
 						BrowserPrivacyAndSecuritySettingsView()
+					case .advanced:
+						BrowserAdvancedSettingsView()
 					case .about:
 						AboutView()
 					#if DEBUG

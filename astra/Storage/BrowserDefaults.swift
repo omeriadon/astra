@@ -20,6 +20,7 @@ extension Defaults.Keys {
 		"peekLevel",
 		"zoomOutInPeeks",
 		"renameDownloadsWithAppleIntelligence",
+		"copyMailtoAddresses",
 		"browserTheme",
 	]
 
@@ -30,6 +31,11 @@ extension Defaults.Keys {
 
 	static let renameDownloadsWithAppleIntelligence = Key<Bool>(
 		"renameDownloadsWithAppleIntelligence",
+		default: true
+	)
+
+	static let copyMailtoAddresses = Key<Bool>(
+		"copyMailtoAddresses",
 		default: true
 	)
 

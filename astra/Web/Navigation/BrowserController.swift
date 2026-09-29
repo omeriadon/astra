@@ -1,9 +1,12 @@
 import CoreGraphics
+import Defaults
 import Observation
 import SwiftUI
 import WebKit
 #if os(macOS)
 	import AppKit
+#elseif os(iOS)
+	import UIKit
 #endif
 
 @MainActor
@@ -527,6 +530,10 @@ extension BrowserController: WKNavigationDelegate {
 		decidePolicyFor navigationAction: WKNavigationAction,
 		decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
 	) {
+		if let url = navigationAction.request.url, handleMailtoLink(url) {
+			decisionHandler(.cancel)
+			return
+		}
 		if navigationAction.shouldPerformDownload {
 			prepareDownloadHandoff(in: webView)
 			decisionHandler(.download)
@@ -735,6 +742,9 @@ extension BrowserController: WKUIDelegate {
 		for navigationAction: WKNavigationAction,
 		windowFeatures _: WKWindowFeatures
 	) -> WKWebView? {
+		if let url = navigationAction.request.url, handleMailtoLink(url) {
+			return nil
+		}
 		if navigationAction.shouldPerformDownload {
 			let source = newWindowSource(in: webView)
 			let sourceURL = webView.url
@@ -753,6 +763,28 @@ extension BrowserController: WKUIDelegate {
 
 	private func newWindowSource(in webView: WKWebView) -> UnitPoint {
 		(webView as? PeekSourceWebView)?.consumeSource() ?? .center
+	}
+
+	private func handleMailtoLink(_ url: URL) -> Bool {
+		guard url.scheme?.lowercased() == "mailto" else { return false }
+
+		let addresses = URLComponents(url: url, resolvingAgainstBaseURL: false)?.path ?? ""
+		if Defaults[.copyMailtoAddresses], !addresses.isEmpty {
+			#if os(macOS)
+				NSPasteboard.general.clearContents()
+				NSPasteboard.general.setString(addresses, forType: .string)
+			#elseif os(iOS)
+				UIPasteboard.general.string = addresses
+			#endif
+			ToastManager.shared.show(symbol: "doc.on.doc", message: "Email address copied")
+		} else {
+			#if os(macOS)
+				NSWorkspace.shared.open(url)
+			#elseif os(iOS)
+				UIApplication.shared.open(url)
+			#endif
+		}
+		return true
 	}
 }
 
