@@ -21,6 +21,7 @@ final class Browser {
 
 	var isAboutToQuit: Bool = false
 	var addressFocusRequest = 0
+	var settingsPage: BrowserSettingsView.Page = .ui
 	var sidebarShown: Bool {
 		get {
 			access(keyPath: \.sidebarShown)

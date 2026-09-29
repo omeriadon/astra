@@ -38,9 +38,8 @@ struct BrowserContentView: View {
 }
 
 private struct InternalPageHost: View {
-	let browser: Browser
+	@Bindable var browser: Browser
 	@State private var settingsSearchText = ""
-	@State private var settingsPage: BrowserSettingsView.Page = .ui
 	#if DEBUG
 		@State private var failedStateRefreshID = 0
 	#endif
@@ -54,7 +53,7 @@ private struct InternalPageHost: View {
 					BrowserSettingsView(
 						browser: browser,
 						searchText: $settingsSearchText,
-						selectedPage: $settingsPage
+						selectedPage: $browser.settingsPage
 					)
 				case .history:
 					BrowserHistoryView(browser: browser)

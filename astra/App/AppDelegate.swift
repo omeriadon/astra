@@ -148,7 +148,9 @@
 		}
 
 		@objc private func showAbout(_: Any?) {
-			activeBrowser?.openInternalPage(.settings)
+			guard let browser = activeBrowser else { return }
+			browser.settingsPage = .about
+			browser.openInternalPage(.settings)
 		}
 
 		@objc private func checkForUpdates(_: Any?) {
