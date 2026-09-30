@@ -1083,9 +1083,6 @@ final class Browser {
 			return
 		}
 		reconcileWorkspace()
-		#if os(iOS)
-			WatchLibraryConnection.shared.publish(WatchLibrary(browser: self))
-		#endif
 		let isFull = pendingFullPersistence || pendingScrollPersistence
 		let isStructural = pendingFullPersistence
 		pendingFullPersistence = false

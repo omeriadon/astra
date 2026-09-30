@@ -1,7 +1,8 @@
+import AuthenticationServices
 import SwiftUI
 
 struct WatchLibraryView: View {
-	@State private var connection = WatchLibraryConnection.shared
+	@State private var connection = WatchLibrarySync()
 	@State private var browser = WatchBrowser()
 	@State private var selectedPage = "bookmarks"
 	@State private var didSelectInitialPage = false
@@ -9,7 +10,28 @@ struct WatchLibraryView: View {
 
 	var body: some View {
 		Group {
-			if let library = connection.library {
+			if !connection.isSignedIn {
+				List {
+					Section("Account") {
+						SignInWithAppleButton(.signIn) { _ in
+						} onCompletion: { result in
+							Task { await connection.signIn(result: result) }
+						}
+						.frame(height: 44)
+						.disabled(connection.isLoading)
+						.accessibilityLabel("Sign in with Apple")
+						.accessibilityIdentifier("watch.signInWithApple")
+						if connection.isLoading {
+							ProgressView("Signing In")
+						}
+						if let error = connection.errorDescription {
+							Text(error)
+								.accessibilityIdentifier("watch.syncError")
+						}
+					}
+				}
+				.listStyle(.carousel)
+			} else if let library = connection.library {
 				TabView(selection: $selectedPage) {
 					page(title: "Bookmarks", symbol: "book.closed.fill", theme: library.spaces.first?.theme ?? BrowserTheme()) {
 						links(library.bookmarks, symbol: "bookmark.fill")
@@ -38,13 +60,16 @@ struct WatchLibraryView: View {
 				ContentUnavailableView {
 					Label("Your Spaces", systemImage: "circle.grid.2x2.fill")
 				} description: {
-					Text(connection.errorDescription ?? "Open Astra on your paired iPhone to sync spaces and bookmarks.")
+					Text(connection.errorDescription ?? "Loading your spaces and bookmarks from the server.")
+				} actions: {
+					accountControls
 				}
 			}
 		}
+		.task { await connection.restoreSession() }
 		.onChange(of: scenePhase) { _, phase in
 			if phase == .active {
-				connection.refresh()
+				Task { await connection.refresh() }
 			}
 		}
 		.onChange(of: connection.library?.spaces.map(\.id), initial: true) { _, ids in
@@ -74,6 +99,27 @@ struct WatchLibraryView: View {
 		}
 	}
 
+	@ViewBuilder
+	private var accountControls: some View {
+		Button("Refresh", systemImage: "arrow.triangle.2.circlepath") {
+			Task { await connection.refresh() }
+		}
+		.disabled(connection.isLoading)
+		.accessibilityLabel("Refresh from server")
+		.accessibilityIdentifier("watch.refresh")
+		Button(role: .destructive) {
+			connection.signOut()
+		} label: {
+			Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+		}
+		.disabled(connection.isLoading)
+		.accessibilityLabel("Sign out")
+		.accessibilityIdentifier("watch.signOut")
+		if connection.isLoading {
+			ProgressView("Syncing")
+		}
+	}
+
 	private func page(
 		title: String,
 		symbol: String,
@@ -86,6 +132,9 @@ struct WatchLibraryView: View {
 				.accessibilityAddTraits(.isHeader)
 				.listRowBackground(Color.clear)
 			content()
+			Section("Account") {
+				accountControls
+			}
 			if let error = connection.errorDescription {
 				Text(error)
 					.font(.caption)
