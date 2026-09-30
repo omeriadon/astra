@@ -16,7 +16,7 @@ extension Defaults.Keys {
 
 	static let syncServerURL = Key<String>(
 		"syncServerURL",
-		default: "https://timetable.adonis.pt/browser-sync"
+		default: "https://203.17.177.58:9644"
 	)
 
 	static let syncedSettingNames: Set<String> = [
