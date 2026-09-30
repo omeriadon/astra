@@ -62,6 +62,8 @@ private struct InternalPageHost: View {
 					)
 				case .history:
 					BrowserHistoryView(browser: browser)
+				case .bookmarks:
+					BrowserBookmarksView(browser: browser)
 				#if DEBUG
 					case let .failedWebsiteState(kind):
 						BrowserNavigationErrorView(kind: kind) {

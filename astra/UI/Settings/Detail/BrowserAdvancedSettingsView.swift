@@ -12,13 +12,17 @@ struct BrowserAdvancedSettingsView: View {
 			Section("Links") {
 				Toggle("Copy email addresses from mailto links", isOn: $copyMailtoAddresses)
 					.accessibilityIdentifier("copy-mailto-addresses")
+					.id("Copy email addresses from mailto links")
 			}
+			.id("Links")
 
 			#if os(macOS)
 				Section("Quit") {
 					Toggle("Press Command-Q twice to quit", isOn: $requireDoublePressToQuit)
 						.accessibilityIdentifier("require-double-press-to-quit")
+						.id("Press Command-Q twice to quit")
 				}
+				.id("Quit")
 			#endif
 		}
 		.scrollContentBackground(.hidden)

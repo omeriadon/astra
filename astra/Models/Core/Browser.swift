@@ -23,6 +23,17 @@ final class Browser {
 	var isAboutToQuit: Bool = false
 	var addressFocusRequest = 0
 	var settingsPage: BrowserSettingsView.Page = .ui
+	var settingsScrollTarget: String?
+	var newTabSearchText = "" {
+		didSet {
+			guard oldValue != newTabSearchText else { return }
+			newTabSearchSelection = nil
+			newTabGoogleSuggestions = []
+		}
+	}
+
+	var newTabSearchSelection: String?
+	var newTabGoogleSuggestions: [String] = []
 	var sidebarShown: Bool {
 		get {
 			access(keyPath: \.sidebarShown)
@@ -422,8 +433,8 @@ final class Browser {
 		#endif
 	}
 
-	func openInternalPage(_ page: BrowserInternalPage) {
-		if let existing = visibleTabs.first(where: { $0.internalPage == page }) {
+	func openInternalPage(_ page: BrowserInternalPage, inNewTab: Bool = false) {
+		if !inNewTab, let existing = visibleTabs.first(where: { $0.internalPage == page }) {
 			selectTab(existing.id)
 			return
 		}
@@ -431,6 +442,7 @@ final class Browser {
 		tabs.append(tab)
 		reconcileWorkspace()
 		selectTab(tab.id)
+		schedulePersistence(fullState: true)
 	}
 
 	var openHistoryTabs: [OpenTab] {
@@ -529,6 +541,11 @@ final class Browser {
 			tab.wake()
 			configure(tab)
 		}
+		if selectedTabID != id {
+			newTabSearchText = ""
+			newTabSearchSelection = nil
+			newTabGoogleSuggestions = []
+		}
 		selectedTabID = id
 		if let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
 			workspace.spaces[index].selectedTabID = id
@@ -575,6 +592,10 @@ final class Browser {
 
 	func openBookmark(_ bookmark: Bookmark) {
 		guard let tab = selectedTab else { return }
+		if tab.internalPage != nil {
+			openHistoryURL(bookmark.url, inBackground: false)
+			return
+		}
 		if tab.isHibernated {
 			tab.wake()
 			configure(tab)
