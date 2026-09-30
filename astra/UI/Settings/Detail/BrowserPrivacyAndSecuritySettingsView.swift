@@ -9,7 +9,9 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 				}
 				.disabled(FaviconStore.shared.isEmpty)
 				.accessibilityIdentifier("clear-all-favicons")
+				.id("Clear All Favicons")
 			}
+			.id("Website Data")
 		}
 		.scrollContentBackground(.hidden)
 		.listStyle(.sidebar)

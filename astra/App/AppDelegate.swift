@@ -11,7 +11,7 @@
 	import Sparkle
 
 	@MainActor
-	final class AppDelegate: NSObject, NSApplicationDelegate {
+	final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 		private var windows: [BrowserWindowController] = []
 		private var lastQuitAttempt: Date?
 
@@ -157,6 +157,45 @@
 			activeBrowser?.openInternalPage(.history)
 		}
 
+		@objc private func openBookmarks(_: Any?) {
+			activeBrowser?.openInternalPage(.bookmarks)
+		}
+
+		@objc private func openSavedBookmark(_ sender: NSMenuItem) {
+			guard let browser = activeBrowser,
+			      let id = sender.representedObject as? UUID,
+			      let bookmark = browser.bookmarks.first(where: { $0.id == id })
+			else { return }
+			browser.openBookmark(bookmark)
+		}
+
+		#if DEBUG
+			@objc private func openDebugPage(_ sender: NSMenuItem) {
+				guard let id = sender.representedObject as? String,
+				      let page = BrowserInternalPage(persistenceID: id)
+				else { return }
+				let browser = activeBrowser ?? openBrowserWindow().browser
+				browser.openInternalPage(page, inNewTab: true)
+			}
+		#endif
+
+		func menuWillOpen(_ menu: NSMenu) {
+			guard menu.title == "Bookmarks" else { return }
+			menu.removeAllItems()
+			menu.addItem(item("Add Bookmark", action: #selector(addBookmark(_:)), key: "b"))
+			menu.addItem(item("Open Bookmarks", action: #selector(openBookmarks(_:))))
+			let bookmarks = activeBrowser?.bookmarks ?? []
+			if !bookmarks.isEmpty {
+				menu.addItem(.separator())
+				for bookmark in bookmarks {
+					let menuItem = item(bookmark.name, action: #selector(openSavedBookmark(_:)))
+					menuItem.representedObject = bookmark.id
+					menuItem.image = NSImage(systemSymbolName: "bookmark", accessibilityDescription: "Bookmark")
+					menu.addItem(menuItem)
+				}
+			}
+		}
+
 		@objc private func showAbout(_: Any?) {
 			guard let browser = activeBrowser else { return }
 			browser.settingsPage = .about
@@ -241,6 +280,19 @@
 			let appMenu = NSMenu()
 			mainMenu.addItem(menuRoot("astra", submenu: appMenu))
 			appMenu.addItem(item("About astra", action: #selector(showAbout(_:))))
+			#if DEBUG
+				appMenu.addItem(.separator())
+				let heading = NSMenuItem(title: "Internal Pages", action: nil, keyEquivalent: "")
+				heading.isEnabled = false
+				appMenu.addItem(heading)
+				for page in BrowserInternalPage.allCases {
+					let menuItem = item(page.title, action: #selector(openDebugPage(_:)))
+					menuItem.representedObject = page.persistenceID
+					menuItem.image = NSImage(systemSymbolName: page.symbol, accessibilityDescription: page.title)
+					appMenu.addItem(menuItem)
+				}
+				appMenu.addItem(.separator())
+			#endif
 			appMenu.addItem(item("Check for Updates…", action: #selector(checkForUpdates(_:))))
 			appMenu.addItem(.separator())
 
@@ -343,7 +395,9 @@
 
 			let bookmarksMenu = NSMenu(title: "Bookmarks")
 			mainMenu.addItem(menuRoot("Bookmarks", submenu: bookmarksMenu))
+			bookmarksMenu.delegate = self
 			bookmarksMenu.addItem(item("Add Bookmark", action: #selector(addBookmark(_:)), key: "b"))
+			bookmarksMenu.addItem(item("Open Bookmarks", action: #selector(openBookmarks(_:))))
 
 			let tabMenu = NSMenu(title: "Tab")
 			mainMenu.addItem(menuRoot("Tab", submenu: tabMenu))

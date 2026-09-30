@@ -127,7 +127,7 @@ private struct HistoryFaviconIcon: View {
 	}
 }
 
-private struct HistoryRow: View {
+struct HistoryRow: View {
 	let title: String
 	let detail: String
 	let url: URL?

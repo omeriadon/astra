@@ -23,8 +23,26 @@ struct BrowserAddressField: View {
 			isGoogleSearch: isGoogleSearch,
 			dimmedAddressText: dimmedAddressText,
 			onSubmitAddress: submitAddress,
-			onEscape: { isFocused = false }
+			onEscape: {
+				browser.newTabSearchSelection = nil
+				isFocused = false
+			},
+			onMoveSelection: { offset in
+				guard browser.isShowingNewTab else { return false }
+				browser.moveNewTabSearchSelection(by: offset)
+				return true
+			}
 		)
+		.onChange(of: addressText) { _, text in
+			if browser.isShowingNewTab {
+				browser.newTabSearchText = text
+			}
+		}
+		.onChange(of: browser.newTabSearchText) { _, text in
+			if browser.isShowingNewTab, addressText != text {
+				addressText = text
+			}
+		}
 		.onChange(of: browser.selectedTabID) { _, _ in
 			updateForSelectedTab()
 		}
@@ -45,6 +63,10 @@ struct BrowserAddressField: View {
 			updateAddressFromURL()
 		}
 		.onChange(of: isFocused) { _, focused in
+			if browser.isShowingNewTab {
+				addressText = browser.newTabSearchText
+				return
+			}
 			addressText = BrowserAddress.displayString(
 				for: browser.selectedTab?.activeController?.url,
 				style: addressDisplayStyle,
@@ -78,6 +100,10 @@ struct BrowserAddressField: View {
 	}
 
 	private func updateAddressFromURL() {
+		if browser.isShowingNewTab {
+			addressText = browser.newTabSearchText
+			return
+		}
 		let next = BrowserAddress.displayString(
 			for: browser.selectedTab?.activeController?.url,
 			style: addressDisplayStyle,
@@ -88,6 +114,13 @@ struct BrowserAddressField: View {
 	}
 
 	private func submitAddress() {
+		if browser.isShowingNewTab {
+			browser.newTabSearchText = addressText
+			browser.submitNewTabSearch()
+			isFocused = false
+			updateAddressFromURL()
+			return
+		}
 		guard let destination = BrowserAddress.destination(for: addressText) else { return }
 		browser.selectedTab?.activeController?.load(destination)
 		addressText = BrowserAddress.displayString(for: destination, style: addressDisplayStyle, isEditing: false)
@@ -103,6 +136,7 @@ private struct AddressTextField: View {
 	var dimmedAddressText: AttributedString
 	var onSubmitAddress: () -> Void
 	var onEscape: () -> Void
+	var onMoveSelection: (Int) -> Bool
 
 	var body: some View {
 		TextField("Search or type a URL", text: $addressText)
@@ -114,6 +148,12 @@ private struct AddressTextField: View {
 			.focused(isFocused)
 			.submitLabel(.go)
 			.onSubmit(onSubmitAddress)
+			.onKeyPress(.downArrow) {
+				onMoveSelection(1) ? .handled : .ignored
+			}
+			.onKeyPress(.upArrow) {
+				onMoveSelection(-1) ? .handled : .ignored
+			}
 			.onKeyPress(.escape) {
 				onEscape()
 				return .handled

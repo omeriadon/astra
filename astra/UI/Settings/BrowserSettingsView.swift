@@ -96,14 +96,11 @@ struct BrowserSettingsView: View {
 		}
 
 		func matches(_ query: String) -> Bool {
-			let words = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-				.split(whereSeparator: \.isWhitespace)
-			guard !words.isEmpty else { return true }
+			guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
 			let metadata = definition
 			let text = ([metadata.title, metadata.section?.rawValue ?? ""] + metadata.terms)
 				.joined(separator: " ")
-				.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-			return words.allSatisfy { text.contains($0) }
+			return BrowserSearchMatching.score(query, in: text) > 0
 		}
 	}
 
@@ -160,22 +157,30 @@ struct BrowserSettingsView: View {
 
 			Divider()
 
-			Group {
-				switch selectedPage {
-					case .ui:
-						BrowserGeneralSettingsView()
-					case .account:
-						BrowserAccountSettingsView()
-					case .privacyAndSecurity:
-						BrowserPrivacyAndSecuritySettingsView()
-					case .advanced:
-						BrowserAdvancedSettingsView()
-					case .about:
-						AboutView()
-					#if DEBUG
-						case .failedWebsiteStates:
-							BrowserFailedWebsiteStatesSettingsView(browser: browser)
-					#endif
+			ScrollViewReader { proxy in
+				Group {
+					switch selectedPage {
+						case .ui:
+							BrowserGeneralSettingsView()
+						case .account:
+							BrowserAccountSettingsView()
+						case .privacyAndSecurity:
+							BrowserPrivacyAndSecuritySettingsView()
+						case .advanced:
+							BrowserAdvancedSettingsView()
+						case .about:
+							AboutView()
+						#if DEBUG
+							case .failedWebsiteStates:
+								BrowserFailedWebsiteStatesSettingsView(browser: browser)
+						#endif
+					}
+				}
+				.id(selectedPage)
+				.task(id: browser.settingsScrollTarget) {
+					guard let target = browser.settingsScrollTarget else { return }
+					await Task.yield()
+					proxy.scrollTo(target, anchor: .top)
 				}
 			}
 			.padding(.horizontal, selectedPage != .about ? 16 : 0)
@@ -198,6 +203,7 @@ struct BrowserSettingsView: View {
 			isSelected: selectedPage == page,
 			identifier: metadata.identifier
 		) {
+			browser.settingsScrollTarget = nil
 			selectedPage = page
 		}
 		.listRowInsets(EdgeInsets())

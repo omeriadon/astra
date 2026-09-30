@@ -4,19 +4,29 @@ import Observation
 // stop removing import webkit, it is used by `pageZoom`
 import WebKit
 
-enum BrowserInternalPage: Equatable {
+enum BrowserInternalPage: Equatable, CaseIterable {
 	case themeEditor
 	case settings
 	case history
+	case bookmarks
 	#if DEBUG
 		case failedWebsiteState(BrowserNavigationFailure.Kind)
 	#endif
+
+	static var allCases: [Self] {
+		var pages: [Self] = [.themeEditor, .settings, .history, .bookmarks]
+		#if DEBUG
+			pages += BrowserNavigationFailure.Kind.allCases.map { .failedWebsiteState($0) }
+		#endif
+		return pages
+	}
 
 	var persistenceID: String {
 		switch self {
 			case .themeEditor: "themeEditor"
 			case .settings: "settings"
 			case .history: "history"
+			case .bookmarks: "bookmarks"
 			#if DEBUG
 				case let .failedWebsiteState(kind): "failedWebsiteState:\(kind.rawValue)"
 			#endif
@@ -28,6 +38,7 @@ enum BrowserInternalPage: Equatable {
 			case "themeEditor": self = .themeEditor
 			case "settings": self = .settings
 			case "history": self = .history
+			case "bookmarks": self = .bookmarks
 			default:
 				#if DEBUG
 					if persistenceID.hasPrefix("failedWebsiteState:"),
@@ -51,6 +62,8 @@ enum BrowserInternalPage: Equatable {
 				"Settings"
 			case .history:
 				"History"
+			case .bookmarks:
+				"Bookmarks"
 			#if DEBUG
 				case let .failedWebsiteState(kind):
 					String(localized: kind.title)
@@ -66,6 +79,8 @@ enum BrowserInternalPage: Equatable {
 				"gearshape"
 			case .history:
 				"clock.arrow.circlepath"
+			case .bookmarks:
+				"bookmark"
 			#if DEBUG
 				case let .failedWebsiteState(kind):
 					kind.systemImage

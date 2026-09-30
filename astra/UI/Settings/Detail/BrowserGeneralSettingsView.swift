@@ -17,6 +17,7 @@ struct BrowserGeneralSettingsView: View {
 				VStack(spacing: addressDisplayStyleSpacing) {
 					ForEach(AddressDisplayStyle.allCases) { style in
 						addressDisplayStyleOption(style: style)
+							.id(style.title)
 					}
 				}
 				.padding(5)
@@ -25,6 +26,7 @@ struct BrowserGeneralSettingsView: View {
 						.clipShape(RoundedRectangle(cornerRadius: 20))
 				}
 				.accessibilityIdentifier("address-display-style-picker")
+				.id("Address Bar")
 			}
 
 			Section("Peek") {
@@ -35,29 +37,37 @@ struct BrowserGeneralSettingsView: View {
 					}
 				}
 				.accessibilityIdentifier("peek-level-picker")
+				.id("Levels")
 
 				if peekLevel != .none {
 					Toggle("Zoom out in Peeks", isOn: $zoomOutInPeeks)
 						.accessibilityIdentifier("zoom-out-in-peeks-toggle")
+						.id("Zoom out in Peeks")
 				}
 			}
+			.id("Peek")
 
 			Section("Downloads") {
 				Toggle("Rename downloads with Apple Intelligence", isOn: $renameDownloadsWithAppleIntelligence)
 					.accessibilityLabel("Rename downloads with Apple Intelligence")
 					.accessibilityIdentifier("rename-downloads-with-apple-intelligence")
+					.id("Rename downloads with Apple Intelligence")
 
 				ZStack {}
 			}
+			.id("Downloads")
 
 			Section("Updates") {
 				Toggle("Automatically check for updates", isOn: $updates.automaticChecks)
 					.accessibilityIdentifier("automatically-check-for-updates")
+					.id("Automatically check for updates")
 
 				Toggle("Automatically install updates", isOn: $updates.automaticInstalls)
 					.disabled(!updates.automaticChecks || !updates.updater.allowsAutomaticUpdates)
 					.accessibilityIdentifier("automatically-install-updates")
+					.id("Automatically install updates")
 			}
+			.id("Updates")
 		}
 		.scrollContentBackground(.hidden)
 		.listStyle(.sidebar)

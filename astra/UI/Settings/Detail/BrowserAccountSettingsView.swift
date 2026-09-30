@@ -14,10 +14,12 @@ struct BrowserAccountSettingsView: View {
 					.autocorrectionDisabled()
 					.disabled(sync.isSignedIn)
 					.accessibilityIdentifier("sync-server-url")
+					.id("Sync Server URL")
 
 				if sync.isSignedIn {
 					Label("Signed in with Apple", systemImage: "person.crop.circle.badge.checkmark")
 						.accessibilityIdentifier("apple-account-status")
+						.id("Signed in with Apple")
 
 					Button(role: .destructive) {
 						sync.signOut()
@@ -25,6 +27,7 @@ struct BrowserAccountSettingsView: View {
 						Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
 					}
 					.accessibilityIdentifier("sign-out")
+					.id("Sign Out")
 				} else {
 					SignInWithAppleButton(.signIn) { _ in
 					} onCompletion: { result in
@@ -33,6 +36,7 @@ struct BrowserAccountSettingsView: View {
 					.frame(height: 44)
 					.accessibilityLabel("Sign in with Apple")
 					.accessibilityIdentifier("sign-in-with-apple")
+					.id("Sign in with Apple")
 				}
 
 				#if DEBUG
@@ -41,6 +45,7 @@ struct BrowserAccountSettingsView: View {
 					}
 					.disabled(!sync.isSignedIn || sync.isSyncing)
 					.accessibilityIdentifier("debug-sync-now")
+					.id("Sync Now")
 				#endif
 
 				if sync.isSyncing {
