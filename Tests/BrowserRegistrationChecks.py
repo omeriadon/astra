@@ -1,5 +1,5 @@
 # Run with the source plist or the built app's Contents/Info.plist:
-# python3 Tests/BrowserRegistrationChecks.py astra/Info.plist
+# python3 Tests/BrowserRegistrationChecks.py astra/Special/Info.plist
 import plistlib
 import sys
 from pathlib import Path
