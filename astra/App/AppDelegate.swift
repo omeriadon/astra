@@ -20,6 +20,7 @@
 		}
 
 		func applicationDidFinishLaunching(_: Notification) {
+			Task { await BrowserExtensionManager.shared.prepare() }
 			UpdateManager.shared.start()
 			BrowserDownloadManager.shared.resumeAvailableDownloads()
 			BrowserController.prewarmSharedProcess()

@@ -60,7 +60,7 @@ final class Browser {
 	}
 
 	func tab(withID id: UUID) -> BrowserTab? {
-		tabsByID[id]
+		tabs.first { $0.id == id }
 	}
 
 	var selectedTab: BrowserTab? {
@@ -76,17 +76,19 @@ final class Browser {
 	}
 
 	var favouriteTabs: [BrowserTab] {
-		workspace.favouriteTabIDs.compactMap { id in tabs.first { $0.id == id } }
+		let lookup = tabsByID
+		return workspace.favouriteTabIDs.compactMap { lookup[$0] }
 	}
 
 	var pinnedTabs: [BrowserTab] {
-		selectedSpace.pinnedTabIDs.compactMap { id in tabs.first { $0.id == id } }
+		let lookup = tabsByID
+		return selectedSpace.pinnedTabIDs.compactMap { lookup[$0] }
 	}
 
 	var normalTabs: [BrowserTab] {
-		selectedSpace.tabIDs
-			.filter { !selectedSpace.pinnedTabIDs.contains($0) }
-			.compactMap { id in tabs.first { $0.id == id } }
+		let lookup = tabsByID
+		let pinnedIDs = Set(selectedSpace.pinnedTabIDs)
+		return selectedSpace.tabIDs.filter { !pinnedIDs.contains($0) }.compactMap { lookup[$0] }
 	}
 
 	var visibleTabs: [BrowserTab] {
@@ -112,6 +114,7 @@ final class Browser {
 		let destinationPinnedIDs = Set(workspace.spaces[destinationIndex].pinnedTabIDs)
 		workspace.spaces[destinationIndex].tabIDs.append(contentsOf: removed.tabIDs.filter { !destinationTabIDs.contains($0) })
 		workspace.spaces[destinationIndex].pinnedTabIDs.append(contentsOf: removed.pinnedTabIDs.filter { !destinationPinnedIDs.contains($0) })
+		workspace.spaces[destinationIndex].pinnedFolders.append(contentsOf: removed.pinnedFolders)
 		if removed.tabIDs.contains(selectedTabID) {
 			workspace.spaces[destinationIndex].selectedTabID = selectedTabID
 		}
@@ -170,6 +173,44 @@ final class Browser {
 		case normal
 	}
 
+	func createPinnedFolder(named name: String = "New Folder") {
+		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) else { return }
+		workspace.spaces[index].pinnedFolders.append(PinnedTabFolder(name: name))
+		workspace.spaces[index].modifiedAt = .now
+		schedulePersistence()
+	}
+
+	func renamePinnedFolder(_ id: UUID, to name: String) {
+		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }),
+		      let folderIndex = workspace.spaces[index].pinnedFolders.firstIndex(where: { $0.id == id }),
+		      !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+		workspace.spaces[index].pinnedFolders[folderIndex].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+		workspace.spaces[index].modifiedAt = .now
+		schedulePersistence()
+	}
+
+	func deletePinnedFolder(_ id: UUID) {
+		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) else { return }
+		workspace.spaces[index].pinnedFolders.removeAll { $0.id == id }
+		workspace.spaces[index].modifiedAt = .now
+		schedulePersistence()
+	}
+
+	func movePinnedTab(_ tabID: UUID, toFolder folderID: UUID?) {
+		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }),
+		      workspace.spaces[index].pinnedTabIDs.contains(tabID) else { return }
+		for folderIndex in workspace.spaces[index].pinnedFolders.indices {
+			workspace.spaces[index].pinnedFolders[folderIndex].tabIDs.removeAll { $0 == tabID }
+		}
+		if let folderID,
+		   let folderIndex = workspace.spaces[index].pinnedFolders.firstIndex(where: { $0.id == folderID })
+		{
+			workspace.spaces[index].pinnedFolders[folderIndex].tabIDs.append(tabID)
+		}
+		workspace.spaces[index].modifiedAt = .now
+		schedulePersistence()
+	}
+
 	func moveTab(_ id: UUID, to area: TabArea, in spaceID: UUID? = nil, before targetID: UUID? = nil) {
 		guard tabs.contains(where: { $0.id == id }) else { return }
 		let wasFavourite = workspace.favouriteTabIDs.contains(id)
@@ -180,6 +221,9 @@ final class Browser {
 			}
 			workspace.spaces[index].tabIDs.removeAll { $0 == id }
 			workspace.spaces[index].pinnedTabIDs.removeAll { $0 == id }
+			for folderIndex in workspace.spaces[index].pinnedFolders.indices {
+				workspace.spaces[index].pinnedFolders[folderIndex].tabIDs.removeAll { $0 == id }
+			}
 		}
 		if area == .favourite {
 			let index = targetID.flatMap { workspace.favouriteTabIDs.firstIndex(of: $0) } ?? workspace.favouriteTabIDs.endIndex
@@ -333,19 +377,24 @@ final class Browser {
 			selectedTab.wake()
 			configure(selectedTab)
 		}
+		BrowserExtensionManager.shared.sync(self)
 	}
 
 	@discardableResult
-	func addTab() -> BrowserTab {
+	func addTab(inBackground: Bool = false) -> BrowserTab {
 		let tab = BrowserTab()
 		configure(tab)
 		tabs.append(tab)
-		recentlyUsedTabIDs.insert(tab.id, at: min(1, recentlyUsedTabIDs.count))
+		if !inBackground {
+			recentlyUsedTabIDs.insert(tab.id, at: min(1, recentlyUsedTabIDs.count))
+		}
 		// Assign to the selected space synchronously so the sidebar row
 		// appears in the same transaction as the content switch (previously
 		// this only happened in debounced persist() → ~500ms row delay).
 		reconcileWorkspace()
-		selectTab(tab.id)
+		if !inBackground {
+			selectTab(tab.id)
+		}
 		// New tab changes open-tabs.json; selection-only save is not enough.
 		schedulePersistence(fullState: true)
 		return tab
@@ -417,7 +466,8 @@ final class Browser {
 		schedulePersistence()
 	}
 
-	func openHistoryURL(_ url: URL, inBackground: Bool) {
+	@discardableResult
+	func openHistoryURL(_ url: URL, inBackground: Bool) -> BrowserTab {
 		let tab = BrowserTab(initialURL: url)
 		configure(tab)
 		if !inBackground {
@@ -431,6 +481,7 @@ final class Browser {
 			selectTab(tab.id)
 			schedulePersistence(fullState: true)
 		}
+		return tab
 	}
 
 	#if DEBUG
@@ -515,10 +566,11 @@ final class Browser {
 		schedulePersistence()
 	}
 
-	func duplicateTab(_ id: UUID) {
-		guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+	@discardableResult
+	func duplicateTab(_ id: UUID) -> BrowserTab? {
+		guard let index = tabs.firstIndex(where: { $0.id == id }) else { return nil }
 		let source = tabs[index]
-		guard source.internalPage == nil else { return }
+		guard source.internalPage == nil else { return nil }
 		let sourceSnapshot = source.openTab
 		let tab = BrowserTab(
 			pageTitle: source.pageTitle,
@@ -534,6 +586,7 @@ final class Browser {
 		tabs.insert(tab, at: index + 1)
 		reconcileWorkspace()
 		selectTab(tab.id)
+		return tab
 	}
 
 	func closeTab(_ id: UUID) {
@@ -589,6 +642,7 @@ final class Browser {
 	func hibernateTab(_ id: UUID) {
 		guard let tab = tabs.first(where: { $0.id == id }), !tab.isHibernated else { return }
 		tab.hibernate()
+		BrowserExtensionManager.shared.webViewDidChange(for: id, in: self)
 		schedulePersistence()
 	}
 
@@ -643,6 +697,14 @@ final class Browser {
 	private func configure(_ tab: BrowserTab) {
 		attachPersistence(to: tab)
 		guard let controller = tab.controller else { return }
+		controller.extensionStateDidChange = { [weak self] in
+			guard let self else { return }
+			BrowserExtensionManager.shared.sync(self)
+		}
+		controller.extensionWebViewDidChange = { [weak self, id = tab.id] in
+			guard let self else { return }
+			BrowserExtensionManager.shared.webViewDidChange(for: id, in: self)
+		}
 		controller.escapeRequested = { [weak tab] in
 			tab?.requestPeekDismissal()
 		}
@@ -914,6 +976,10 @@ final class Browser {
 			workspace.spaces[index].pinnedTabIDs.removeAll {
 				!tabIDs.contains($0)
 			}
+			let pinnedIDs = Set(workspace.spaces[index].pinnedTabIDs)
+			for folderIndex in workspace.spaces[index].pinnedFolders.indices {
+				workspace.spaces[index].pinnedFolders[folderIndex].tabIDs.removeAll { !pinnedIDs.contains($0) }
+			}
 		}
 		let assignedIDs = Set(workspace.favouriteTabIDs + workspace.spaces.flatMap(\.tabIDs))
 		let unassignedIDs = tabs.map(\.id).filter { !assignedIDs.contains($0) }
@@ -928,6 +994,7 @@ final class Browser {
 	}
 
 	private func schedulePersistence(fullState: Bool = true) {
+		BrowserExtensionManager.shared.sync(self)
 		guard persistence != nil else { return }
 		if fullState {
 			pendingFullPersistence = true

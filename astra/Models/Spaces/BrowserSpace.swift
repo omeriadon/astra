@@ -1,5 +1,11 @@
 import Foundation
 
+struct PinnedTabFolder: Codable, Equatable, Identifiable, Sendable {
+	var id = UUID()
+	var name: String
+	var tabIDs: [UUID] = []
+}
+
 struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
 	nonisolated static let firstID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3))
 	static let symbols = [
@@ -21,6 +27,7 @@ struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
 	var theme: BrowserTheme
 	var tabIDs: [UUID]
 	var pinnedTabIDs: [UUID]
+	var pinnedFolders: [PinnedTabFolder]
 	var selectedTabID: UUID?
 	var modifiedAt: Date
 
@@ -31,6 +38,7 @@ struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
 		theme: BrowserTheme = BrowserTheme(),
 		tabIDs: [UUID] = [],
 		pinnedTabIDs: [UUID] = [],
+		pinnedFolders: [PinnedTabFolder] = [],
 		selectedTabID: UUID? = nil,
 		modifiedAt: Date = .now
 	) {
@@ -40,7 +48,25 @@ struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
 		self.theme = theme
 		self.tabIDs = tabIDs
 		self.pinnedTabIDs = pinnedTabIDs
+		self.pinnedFolders = pinnedFolders
 		self.selectedTabID = selectedTabID
 		self.modifiedAt = modifiedAt
+	}
+
+	private enum CodingKeys: String, CodingKey {
+		case id, name, symbol, theme, tabIDs, pinnedTabIDs, pinnedFolders, selectedTabID, modifiedAt
+	}
+
+	nonisolated init(from decoder: Decoder) throws {
+		let values = try decoder.container(keyedBy: CodingKeys.self)
+		id = try values.decode(UUID.self, forKey: .id)
+		name = try values.decode(String.self, forKey: .name)
+		symbol = try values.decode(String.self, forKey: .symbol)
+		theme = try values.decode(BrowserTheme.self, forKey: .theme)
+		tabIDs = try values.decode([UUID].self, forKey: .tabIDs)
+		pinnedTabIDs = try values.decode([UUID].self, forKey: .pinnedTabIDs)
+		pinnedFolders = try values.decodeIfPresent([PinnedTabFolder].self, forKey: .pinnedFolders) ?? []
+		selectedTabID = try values.decodeIfPresent(UUID.self, forKey: .selectedTabID)
+		modifiedAt = try values.decode(Date.self, forKey: .modifiedAt)
 	}
 }

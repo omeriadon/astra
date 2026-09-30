@@ -63,11 +63,19 @@ private struct HistoryListView: View {
 		.listStyle(.sidebar)
 		.scrollContentBackground(.hidden)
 		.safeAreaBar(edge: .top) {
-			Label("History", systemImage: "clock.arrow.circlepath")
-				.font(.title2.bold())
+			Text("History")
+				.monospaced()
+				.font(.largeTitle.bold())
+				.lineLimit(1)
+				.minimumScaleFactor(0.7)
+				.contentTransition(.numericText())
+				.geometryGroup()
+				.environment(\.contentTransitionAddsDrawingGroup, true)
+				.frame(height: 42)
 				.frame(maxWidth: .infinity, alignment: .leading)
 				.padding(.horizontal, 24)
-				.padding(.vertical, 14)
+				.padding(.top, 12)
+				.padding(.bottom, 12)
 		}
 		.overlay {
 			if historyTabs.isEmpty {

@@ -45,6 +45,7 @@ extension Color {
 				ContentView()
 					.task {
 						updates.start()
+						await BrowserExtensionManager.shared.prepare()
 						BrowserDownloadManager.shared.resumeAvailableDownloads()
 					}
 					.sheet(isPresented: $updates.isPresented) {

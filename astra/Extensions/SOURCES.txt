@@ -1,0 +1,8 @@
+Dark Reader 4.9.133 (Manifest V3 Chrome build)
+https://github.com/darkreader/darkreader/releases/tag/v4.9.133
+License: MIT (DarkReader-LICENSE.txt)
+
+uBlock Origin Lite 2026.926.2202 (Safari WebExtension build)
+https://github.com/uBlockOrigin/uBOL-home/releases/tag/2026.926.2202
+Source: https://github.com/gorhill/uBlock/tree/master/platform/mv3
+License: GPL-3.0 (uBlock-Origin-Lite-LICENSE.txt)

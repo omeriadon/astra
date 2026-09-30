@@ -102,6 +102,10 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 				workspace.spaces[index].tabIDs.removeAll { !assigned.insert($0).inserted }
 				let tabIDs = Set(workspace.spaces[index].tabIDs)
 				workspace.spaces[index].pinnedTabIDs.removeAll { !tabIDs.contains($0) }
+				let pinnedIDs = Set(workspace.spaces[index].pinnedTabIDs)
+				for folderIndex in workspace.spaces[index].pinnedFolders.indices {
+					workspace.spaces[index].pinnedFolders[folderIndex].tabIDs.removeAll { !pinnedIDs.contains($0) }
+				}
 			}
 			let unassignedIDs = merged.tabs.map(\.id).filter { !assigned.contains($0) }
 			let firstIndex = workspace.spaces.firstIndex(where: { $0.id == BrowserSpace.firstID }) ?? 0

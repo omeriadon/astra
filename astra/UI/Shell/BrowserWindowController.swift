@@ -47,6 +47,7 @@
 			let contentHost = BrowserContentHostView(hostingView: hostingView)
 
 			super.init()
+			BrowserExtensionManager.shared.extensionWindow(for: browser).nativeWindow = window
 
 			window.delegate = self
 			window.contentView = contentHost
@@ -71,6 +72,7 @@
 		}
 
 		func windowWillClose(_: Notification) {
+			BrowserExtensionManager.shared.closeWindow(for: browser)
 			browser.flushPersistence()
 			onClose?()
 		}

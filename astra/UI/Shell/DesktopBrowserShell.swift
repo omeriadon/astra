@@ -328,6 +328,8 @@ private struct ShellSidebarListView: View {
 		// O(n²) tabs.first scans inside every row.
 		let tabsByID = browser.tabsByID
 		let pinnedTabs = space.pinnedTabIDs.compactMap { tabsByID[$0] }
+		let folderTabIDs = Set(space.pinnedFolders.flatMap(\.tabIDs))
+		let ungroupedPinnedTabs = pinnedTabs.filter { !folderTabIDs.contains($0.id) }
 		let pinnedSet = Set(space.pinnedTabIDs)
 		let normalTabs = space.tabIDs.filter { !pinnedSet.contains($0) }.compactMap { tabsByID[$0] }
 		let isActiveSpace = space.id == browser.workspace.selectedSpaceID
@@ -360,9 +362,22 @@ private struct ShellSidebarListView: View {
 							}
 						#endif
 
-						if !pinnedTabs.isEmpty {
+						if !pinnedTabs.isEmpty || !space.pinnedFolders.isEmpty {
 							VStack(spacing: 2) {
-								ForEach(pinnedTabs) { tab in
+								HStack {
+									Text("Pinned Tabs")
+										.font(.caption)
+									Spacer()
+									Button("New Folder", systemImage: "folder.badge.plus") {
+										browser.createPinnedFolder()
+									}
+									.labelStyle(.iconOnly)
+									.accessibilityIdentifier("new-pinned-folder")
+								}
+								ForEach(space.pinnedFolders) { folder in
+									PinnedFolderRow(folder: folder, browser: browser, tabsByID: tabsByID, selectedID: selectedID, isActiveSpace: isActiveSpace, normalCount: normalTabs.count)
+								}
+								ForEach(ungroupedPinnedTabs) { tab in
 									BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalTabs.count, pinned: true)
 										.equatable()
 										.id(tab.id)
@@ -375,6 +390,13 @@ private struct ShellSidebarListView: View {
 							#endif
 							Divider()
 								.padding(.vertical, 8)
+						}
+						if pinnedTabs.isEmpty, space.pinnedFolders.isEmpty {
+							Button("New Pinned Folder", systemImage: "folder.badge.plus") {
+								browser.createPinnedFolder()
+							}
+							.buttonStyle(.plain)
+							.accessibilityIdentifier("new-pinned-folder")
 						}
 						#if os(macOS)
 							if space.pinnedTabIDs.isEmpty, tabDrag.activeTabID != nil {
@@ -417,8 +439,58 @@ private struct ShellSidebarListView: View {
 	}
 }
 
+private struct PinnedFolderRow: View {
+	let folder: PinnedTabFolder
+	let browser: Browser
+	let tabsByID: [UUID: BrowserTab]
+	let selectedID: UUID
+	let isActiveSpace: Bool
+	let normalCount: Int
+	@State private var isExpanded = true
+	@State private var isRenaming = false
+	@State private var name = ""
+
+	var body: some View {
+		VStack(spacing: 2) {
+			Button {
+				isExpanded.toggle()
+			} label: {
+				Label(folder.name, systemImage: isExpanded ? "folder.fill" : "folder")
+					.frame(maxWidth: .infinity, alignment: .leading)
+			}
+			.buttonStyle(.plain)
+			.accessibilityIdentifier("pinned-folder-\(folder.id.uuidString)")
+			.contextMenu {
+				Button("Rename Folder", systemImage: "pencil") {
+					name = folder.name
+					isRenaming = true
+				}
+				Button("Delete Folder", systemImage: "trash", role: .destructive) {
+					browser.deletePinnedFolder(folder.id)
+				}
+			}
+			.alert("Rename Folder", isPresented: $isRenaming) {
+				TextField("Folder Name", text: $name)
+				Button("Save", systemImage: "checkmark", role: .confirm) {
+					browser.renamePinnedFolder(folder.id, to: name)
+				}
+				Button(role: .cancel) {}
+			}
+			if isExpanded {
+				ForEach(folder.tabIDs.compactMap { tabsByID[$0] }) { tab in
+					BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalCount, pinned: true)
+						.equatable()
+						.padding(.leading, 12)
+						.id(tab.id)
+				}
+			}
+		}
+	}
+}
+
 private struct ShellTopBarView: View {
 	let browser: Browser
+	@State private var extensions = BrowserExtensionManager.shared
 	let theme: BrowserTheme
 	let sidebarShown: Bool
 	let topBarColorScheme: ColorScheme
@@ -464,6 +536,69 @@ private struct ShellTopBarView: View {
 			BrowserAddressField(browser: browser)
 
 			Spacer(minLength: 0)
+			if let listing = browser.selectedTab?.activeController?.url,
+			   ChromeExtensionPackage.extensionID(from: listing) != nil
+			{
+				Button("Install Extension", systemImage: "square.and.arrow.down") {
+					Task { await extensions.installFromChromeStore(listing) }
+				}
+				.disabled(extensions.isInstallingFromStore)
+				.accessibilityIdentifier("install-chrome-store-extension")
+			}
+			let _ = extensions.actionsRevision
+			ForEach(extensions.loadedNames().filter { extensions.isPinned($0) }, id: \.self) { name in
+				let action = extensions.action(for: name, in: browser)
+				Button {
+					extensions.performAction(name, in: browser)
+				} label: {
+					#if os(macOS)
+						if let icon = action?.icon(for: CGSize(width: 18, height: 18)) {
+							Image(nsImage: icon)
+								.resizable()
+								.frame(width: 18, height: 18)
+						} else {
+							Label(action?.label ?? extensions.title(for: name), systemImage: "puzzlepiece.extension.fill")
+								.labelStyle(.iconOnly)
+						}
+					#else
+						if let icon = action?.icon(for: CGSize(width: 18, height: 18)) {
+							Image(uiImage: icon)
+								.resizable()
+								.frame(width: 18, height: 18)
+						} else {
+							Label(action?.label ?? extensions.title(for: name), systemImage: "puzzlepiece.extension.fill")
+								.labelStyle(.iconOnly)
+						}
+					#endif
+				}
+				.disabled(action?.isEnabled == false)
+				.controlSize(.regular)
+				.buttonSizing(.fitted)
+				.buttonStyle(.bordered)
+				.foregroundStyle(theme.foregroundColor)
+				.accessibilityLabel(action?.label ?? extensions.title(for: name))
+				.accessibilityIdentifier("extension-action-\(name)")
+			}
+
+			Menu {
+				ForEach(extensions.availableNames, id: \.self) { name in
+					extensionMenuItem(extensions.title(for: name), name: name)
+				}
+				Divider()
+				Button("Manage Extensions", systemImage: "gearshape") {
+					browser.settingsPage = .extensions
+					browser.openInternalPage(.settings)
+				}
+			} label: {
+				Label("Extensions", systemImage: "puzzlepiece.extension")
+					.labelStyle(.iconOnly)
+			}
+			.controlSize(.regular)
+			.buttonSizing(.fitted)
+			.buttonStyle(.bordered)
+			.foregroundStyle(theme.foregroundColor)
+			.accessibilityLabel("Extensions")
+			.accessibilityIdentifier("browser-extensions")
 		}
 		.padding(
 			.leading,
@@ -486,6 +621,22 @@ private struct ShellTopBarView: View {
 					)
 				}
 			}
+	}
+
+	@ViewBuilder
+	private func extensionMenuItem(_ title: String, name: String) -> some View {
+		if extensions.isLoaded(name) {
+			Button("Open \(title)", systemImage: "puzzlepiece.extension") {
+				extensions.performAction(name, in: browser)
+			}
+		}
+		Button(title, systemImage: extensions.isLoaded(name) ? "checkmark.circle.fill" : "circle") {
+			extensions.setEnabled(!extensions.isEnabled(name), for: name)
+		}
+		if let error = extensions.loadErrors[name] {
+			Button("\(title): \(error)", systemImage: "exclamationmark.triangle") {}
+				.disabled(true)
+		}
 	}
 }
 

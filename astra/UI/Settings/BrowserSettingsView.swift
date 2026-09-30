@@ -13,6 +13,7 @@ struct BrowserSettingsView: View {
 		case ui
 		case account
 		case privacyAndSecurity
+		case extensions
 		case advanced
 		case about
 		#if DEBUG
@@ -65,6 +66,14 @@ struct BrowserSettingsView: View {
 						section: .advanced,
 						identifier: "settings-privacy-and-security",
 						terms: ["Website Data", "Clear All Favicons"]
+					)
+				case .extensions:
+					Definition(
+						title: "Extensions",
+						symbol: "puzzlepiece.extension",
+						section: .advanced,
+						identifier: "settings-extensions",
+						terms: ["Chrome", "Safari", "Web Store", "Dark Reader", "uBlock Origin Lite", "Import ZIP"]
 					)
 				case .advanced:
 					Definition(
@@ -144,7 +153,7 @@ struct BrowserSettingsView: View {
 				.padding(.vertical, 6)
 				.glassEffect(.regular, in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
 				.padding(.horizontal, 12)
-				.padding(.top, !browser.sidebarShown ? 37 : 12)
+				.padding(.top, 12)
 				.padding(.bottom, 12)
 			}
 			.safeAreaBar(edge: .bottom) {
@@ -170,6 +179,8 @@ struct BrowserSettingsView: View {
 						BrowserPrivacyAndSecuritySettingsView()
 					case .advanced:
 						BrowserAdvancedSettingsView()
+					case .extensions:
+						BrowserExtensionsSettingsView(browser: browser)
 					case .about:
 						AboutView()
 					#if DEBUG

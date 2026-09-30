@@ -14,6 +14,13 @@ import WebKit
 final class BrowserController: NSObject {
 	private static var cachedSafariUserAgentSuffix: String?
 
+	private static func userAgentOverride(for url: URL?) -> String? {
+		guard let url,
+		      url.host == "chromewebstore.google.com"
+		      || (url.host == "chrome.google.com" && url.path.hasPrefix("/webstore")) else { return nil }
+		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+	}
+
 	/// Resolve once per launch, not once per tab (was NSWorkspace + Bundle plist per makeWebView).
 	private static func safariUserAgentSuffix() -> String? {
 		if let cachedSafariUserAgentSuffix {
@@ -48,6 +55,45 @@ final class BrowserController: NSObject {
 
 	private static let scrollPositionMessageName = "scrollPositionChanged"
 	private static let topEdgeMessageName = "topEdgeChanged"
+	private static let zapFinishedMessageName = "zapFinished"
+	private static let zapScript = """
+	(() => {
+		if (window.__astraZap) return;
+		let target;
+		const style = document.createElement('style');
+		style.textContent = '[data-astra-zap] { outline: 3px solid #f35 !important; cursor: crosshair !important; }';
+		document.documentElement.append(style);
+		const move = event => {
+			const next = event.target;
+			if (target === next) return;
+			target?.removeAttribute('data-astra-zap');
+			target = next;
+			target?.setAttribute('data-astra-zap', '');
+		};
+		const finish = () => {
+			target?.removeAttribute('data-astra-zap');
+			style.remove();
+			document.removeEventListener('pointermove', move, true);
+			document.removeEventListener('click', click, true);
+			document.removeEventListener('keydown', key, true);
+			delete window.__astraZap;
+			window.webkit.messageHandlers.zapFinished.postMessage(true);
+		};
+		const click = event => {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			if (target && target !== document.body && target !== document.documentElement) target.remove();
+			finish();
+		};
+		const key = event => {
+			if (event.key === 'Escape') { event.preventDefault(); finish(); }
+		};
+		window.__astraZap = finish;
+		document.addEventListener('pointermove', move, true);
+		document.addEventListener('click', click, true);
+		document.addEventListener('keydown', key, true);
+	})();
+	"""
 	private static let scrollPositionScript = """
 	(() => {
 		let pending;
@@ -125,6 +171,19 @@ final class BrowserController: NSObject {
 	}
 
 	private(set) var isWebViewReady = false
+	private(set) var isZapping = false
+
+	func toggleZap() {
+		guard let webView = createdWebView, url != nil else { return }
+		if isZapping {
+			webView.evaluateJavaScript("window.__astraZap?.()")
+			isZapping = false
+		} else {
+			webView.evaluateJavaScript(Self.zapScript)
+			isZapping = true
+		}
+	}
+
 	var pageZoom = 1.0 {
 		didSet {
 			if let createdWebView, Double(createdWebView.pageZoom) != pageZoom {
@@ -168,6 +227,10 @@ final class BrowserController: NSObject {
 
 	@ObservationIgnored
 	var navigationDidChange: (@MainActor () -> Void)?
+	@ObservationIgnored
+	var extensionStateDidChange: (@MainActor () -> Void)?
+	@ObservationIgnored
+	var extensionWebViewDidChange: (@MainActor () -> Void)?
 	@ObservationIgnored
 	var scrollPositionDidChange: (@MainActor () -> Void)?
 	@ObservationIgnored
@@ -232,6 +295,7 @@ final class BrowserController: NSObject {
 
 	private func makeWebView() -> WKWebView {
 		let configuration = WKWebViewConfiguration()
+		configuration.webExtensionController = BrowserExtensionManager.shared.controller
 		#if os(macOS)
 			configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
 		#endif
@@ -258,6 +322,11 @@ final class BrowserController: NSObject {
 			scrollHandler,
 			contentWorld: .page,
 			name: Self.topEdgeMessageName
+		)
+		webView.configuration.userContentController.add(
+			scrollHandler,
+			contentWorld: .page,
+			name: Self.zapFinishedMessageName
 		)
 		webView.configuration.userContentController.addUserScript(
 			WKUserScript(
@@ -291,6 +360,7 @@ final class BrowserController: NSObject {
 			webView.observe(\.isLoading, options: [.initial, .new]) { [weak self] webView, _ in
 				MainActor.assumeIsolated {
 					self?.isLoading = webView.isLoading
+					self?.extensionStateDidChange?()
 				}
 			},
 			webView.observe(\.estimatedProgress, options: [.initial, .new]) { [weak self] webView, _ in
@@ -338,6 +408,7 @@ final class BrowserController: NSObject {
 			},
 		]
 		isWebViewReady = true
+		extensionWebViewDidChange?()
 		// Start any deferred navigation immediately; WKWebView loads fine
 		// with a zero frame so we don't wait for first layout.
 		loadPendingRequest()
@@ -461,6 +532,7 @@ final class BrowserController: NSObject {
 			return
 		}
 		pendingRequest = nil
+		webView.customUserAgent = Self.userAgentOverride(for: request.url)
 		currentNavigation = webView.load(request)
 	}
 
@@ -540,6 +612,9 @@ extension BrowserController: WKNavigationDelegate {
 		decidePolicyFor navigationAction: WKNavigationAction,
 		decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
 	) {
+		if navigationAction.targetFrame?.isMainFrame == true {
+			webView.customUserAgent = Self.userAgentOverride(for: navigationAction.request.url)
+		}
 		if let url = navigationAction.request.url, handleMailtoLink(url) {
 			decisionHandler(.cancel)
 			return
@@ -652,6 +727,7 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+		isZapping = false
 		currentNavigation = navigation
 		navigationFailure = nil
 		awaitsNavigationCommit = true
@@ -720,6 +796,10 @@ extension BrowserController: WKNavigationDelegate {
 extension BrowserController: WKScriptMessageHandler {
 	func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
 		guard message.frameInfo.isMainFrame else { return }
+		if message.name == Self.zapFinishedMessageName {
+			isZapping = false
+			return
+		}
 
 		if message.name == Self.topEdgeMessageName {
 			if let occupied = message.body as? Bool {

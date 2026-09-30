@@ -321,6 +321,18 @@ private struct TabRowContextMenu: View {
 				Button("Unpin Tab", systemImage: "pin.slash") {
 					browser.moveTab(tab.id, to: .normal)
 				}
+				if !browser.selectedSpace.pinnedFolders.isEmpty {
+					Menu("Move to Folder", systemImage: "folder") {
+						Button("No Folder", systemImage: "tray") {
+							browser.movePinnedTab(tab.id, toFolder: nil)
+						}
+						ForEach(browser.selectedSpace.pinnedFolders) { folder in
+							Button(folder.name, systemImage: "folder") {
+								browser.movePinnedTab(tab.id, toFolder: folder.id)
+							}
+						}
+					}
+				}
 			} else {
 				Button("Pin Tab", systemImage: "pin") {
 					browser.moveTab(tab.id, to: .pinned)

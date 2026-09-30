@@ -16,9 +16,14 @@ final class BrowserWindowRegistry {
 			?? browsers.first { $0.browser != nil }?.browser
 	}
 
+	var openBrowsers: [Browser] {
+		browsers.compactMap(\.browser)
+	}
+
 	func register(_ browser: Browser) {
 		browsers.removeAll { $0.browser == nil }
 		browsers.append(WeakBrowser(browser))
+		BrowserExtensionManager.shared.sync(browser)
 	}
 
 	func activate(_ browser: Browser) {
@@ -29,6 +34,7 @@ final class BrowserWindowRegistry {
 			return
 		}
 		activeBrowserID = browser.windowID
+		BrowserExtensionManager.shared.focus(browser)
 		if browser.selectedTab?.isHibernated == true {
 			browser.selectTab(browser.selectedTabID)
 		}

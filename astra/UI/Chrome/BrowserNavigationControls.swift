@@ -8,6 +8,14 @@ struct BrowserNavigationControls: View {
 			NavigationBackButton(controller: controller)
 			NavigationForwardButton(controller: controller)
 			NavigationReloadButton(controller: controller)
+			Button("Zap Element", systemImage: "bolt.slash") {
+				controller.toggleZap()
+			}
+			.labelStyle(.iconOnly)
+			.buttonStyle(.glass)
+			.tint(controller.isZapping ? .red : nil)
+			.accessibilityLabel(controller.isZapping ? "Cancel Zap" : "Zap Element")
+			.accessibilityIdentifier("browser-zap-element")
 		}
 		.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
 		.id(controller.history)
