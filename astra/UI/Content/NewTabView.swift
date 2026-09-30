@@ -2,6 +2,7 @@ import SwiftUI
 
 struct NewTabView: View {
 	@Bindable var browser: Browser
+	@FocusState private var isSearchFocused: Bool
 
 	var body: some View {
 		ScrollViewReader { proxy in
@@ -47,6 +48,12 @@ struct NewTabView: View {
 		}
 		.frame(maxWidth: 680)
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
+		.task(id: browser.selectedTabID) {
+			isSearchFocused = true
+		}
+		.onChange(of: browser.addressFocusRequest) { _, _ in
+			isSearchFocused = true
+		}
 		.task(id: browser.newTabSearchText) {
 			let query = browser.newTabSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
 			guard !query.isEmpty else { return }
@@ -72,6 +79,7 @@ struct NewTabView: View {
 				Image(systemName: "magnifyingglass")
 					.accessibilityHidden(true)
 				TextField("Search or type a URL", text: $browser.newTabSearchText)
+					.focused($isSearchFocused)
 					.textFieldStyle(.plain)
 					.fontDesign(.monospaced)
 					.submitLabel(.go)

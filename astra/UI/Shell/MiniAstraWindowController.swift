@@ -1,7 +1,6 @@
 #if os(macOS)
 	import AppKit
 	import Defaults
-	import QuartzCore
 	import SwiftUI
 
 	@MainActor
@@ -10,6 +9,7 @@
 		let window: NSPanel
 		var onClose: (() -> Void)?
 		var onPromote: ((BrowserTab) -> Void)?
+		private var openingPanel: NSPanel?
 		private let openingOrigin: NSPoint
 
 		init(url: URL? = nil) {
@@ -60,33 +60,28 @@
 		}
 
 		func showWindow() {
+			guard openingPanel == nil else { return }
 			if window.isMiniaturized {
 				window.deminiaturize(nil)
 			}
-			guard !window.isVisible,
-			      Defaults[.miniAstraWindowAnimation],
-			      !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-			else {
-				window.makeKeyAndOrderFront(nil)
-				return
+			if !window.isVisible,
+			   Defaults[.miniAstraWindowAnimation],
+			   !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+			{
+				openingPanel = MiniAstraOpeningAnimation.panel(for: window, from: openingOrigin) { [weak self] in
+					guard let self, let openingPanel else { return }
+					window.makeKeyAndOrderFront(nil)
+					window.orderFrontRegardless()
+					openingPanel.close()
+					self.openingPanel = nil
+				}
+				if let openingPanel {
+					openingPanel.orderFrontRegardless()
+					return
+				}
 			}
-			let destination = window.frame
-			let minimumSize = window.contentMinSize
-			window.contentMinSize = .zero
-			window.setFrame(
-				NSRect(x: openingOrigin.x, y: openingOrigin.y, width: 1, height: 1),
-				display: false
-			)
-			window.alphaValue = 0
 			window.makeKeyAndOrderFront(nil)
-			NSAnimationContext.runAnimationGroup { context in
-				context.duration = 0.28
-				context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-				window.animator().setFrame(destination, display: true)
-				window.animator().alphaValue = 1
-			} completionHandler: { [weak self] in
-				self?.window.contentMinSize = minimumSize
-			}
+			window.orderFrontRegardless()
 		}
 
 		@objc func promote() {
@@ -98,6 +93,8 @@
 		}
 
 		func windowWillClose(_: Notification) {
+			openingPanel?.close()
+			openingPanel = nil
 			onClose?()
 		}
 	}

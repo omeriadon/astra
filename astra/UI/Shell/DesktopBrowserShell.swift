@@ -154,38 +154,41 @@ struct DesktopBrowserShell: View {
 	}
 
 	var body: some View {
-		BrowserSplitView(sidebarShown: $browser.sidebarShown) {
-			ShellSidebarColumn(
-				browser: browser,
-				theme: theme,
-				sidebarShown: sidebarShown,
-				isFullScreen: isFullScreen,
-				colorScheme: colorScheme,
-				topBarColorScheme: topBarColorScheme,
-				showsDownloads: $showsDownloads,
-				swipeTargetID: swipeTargetID,
-				swipeProgress: swipeProgress,
-				swipeDirection: swipeDirection,
-				downloads: downloads,
-				onSwipeProgress: previewSpaceTheme
-			)
+		GeometryReader { geometry in
+			BrowserSplitView(sidebarShown: $browser.sidebarShown) {
+				ShellSidebarColumn(
+					browser: browser,
+					theme: theme,
+					sidebarShown: sidebarShown,
+					isFullScreen: isFullScreen,
+					colorScheme: colorScheme,
+					topBarColorScheme: topBarColorScheme,
+					showsDownloads: $showsDownloads,
+					swipeTargetID: swipeTargetID,
+					swipeProgress: swipeProgress,
+					swipeDirection: swipeDirection,
+					downloads: downloads,
+					onSwipeProgress: previewSpaceTheme
+				)
 
-		} content: {
-			ShellContentColumn(
-				browser: browser,
-				theme: theme,
-				sidebarShown: sidebarShown,
-				isFullScreen: isFullScreen,
-				colorScheme: colorScheme,
-				topBarColorScheme: topBarColorScheme,
-				transitionFromTheme: transitionFromTheme,
-				transitionToTheme: transitionToTheme,
-				themeBlend: themeBlend,
-				toastManager: toastManager,
-				isLocalhost: isLocalhost,
-				contentCornerRadius: contentCornerRadius,
-				isTopBarRevealed: $isTopBarRevealed
-			)
+			} content: {
+				ShellContentColumn(
+					browser: browser,
+					theme: theme,
+					sidebarShown: sidebarShown,
+					isFullScreen: isFullScreen,
+					colorScheme: colorScheme,
+					topBarColorScheme: topBarColorScheme,
+					transitionFromTheme: transitionFromTheme,
+					transitionToTheme: transitionToTheme,
+					themeBlend: themeBlend,
+					toastManager: toastManager,
+					isLocalhost: isLocalhost,
+					contentCornerRadius: contentCornerRadius,
+					windowWidth: geometry.size.width,
+					isTopBarRevealed: $isTopBarRevealed
+				)
+			}
 		}
 		.background {
 			BrowserThemeBackground(
@@ -426,11 +429,13 @@ private struct ShellSidebarListView: View {
 					.padding(.bottom, 48)
 					.frame(minHeight: geometry.size.height, alignment: .top)
 				}
-				.onChange(of: selectedID, initial: true) { _, id in
+				.onChange(of: selectedID, initial: true) { oldID, id in
 					// Only scroll the active space's list; the swipe-preview
 					// copy has allowsHitTesting(false) and no reader anchor.
 					guard isActiveSpace else { return }
-					withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
+					// Initial layout and disk restoration should settle without a scroll animation.
+					let animate = !reduceMotion && oldID != id && tabsByID[oldID] != nil
+					withAnimation(animate ? .smooth(duration: 0.25) : nil) {
 						reader.scrollTo(id, anchor: .center)
 					}
 				}
@@ -499,26 +504,22 @@ struct ShellTopBarView: View {
 	let themeBlend: Double
 
 	var body: some View {
-		Group {
-			if browser.selectedTab?.internalPage == nil {
-				websiteControls
-			} else {
-				Color.clear
-					.allowsHitTesting(false)
-			}
+		if browser.selectedTab?.internalPage == nil, !browser.isShowingNewTab {
+			websiteControls
+				.transition(.identity)
+				.frame(height: BrowserChromeMetrics.topBarRegionHeight)
+				.background {
+					if let transitionFromTheme {
+						transitionFromTheme.tabColor
+							.opacity(1 - themeBlend)
+							.overlay((transitionToTheme ?? theme).tabColor.opacity(themeBlend))
+					} else {
+						theme.tabColor
+					}
+				}
+				.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar : BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar))
+				.padding([.top, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 		}
-		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
-		.background {
-			if let transitionFromTheme {
-				transitionFromTheme.tabColor
-					.opacity(1 - themeBlend)
-					.overlay((transitionToTheme ?? theme).tabColor.opacity(themeBlend))
-			} else {
-				theme.tabColor
-			}
-		}
-		.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar : BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar))
-		.padding([.top, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 	}
 
 	private var websiteControls: some View {
@@ -668,25 +669,6 @@ private struct ShellNavigationBarControls: View {
 		HStack(spacing: 5) {
 			Spacer()
 				.frame(width: isFullScreen ? 0 : 80)
-
-			Button {
-				browser.sidebarShown.toggle()
-			} label: {
-				Label("Toggle Sidebar", systemImage: "sidebar.leading")
-					.labelStyle(.iconOnly)
-					.frame(
-						width: BrowserChromeMetrics.topBarButtonLabelWidth,
-						height: BrowserChromeMetrics.topBarButtonLabelHeight
-					)
-					.font(.body.scaled(by: 0.9))
-			}
-			.controlSize(.regular)
-			.labelStyle(.iconOnly)
-			.buttonSizing(.fitted)
-			.buttonStyle(.bordered)
-			.foregroundStyle(theme.foregroundColor)
-			.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
-			.accessibilityIdentifier("sidebar-toggle")
 		}
 		.frame(
 			width: BrowserChromeMetrics.persistentControlsAreaWidth,
@@ -898,6 +880,7 @@ private struct ShellContentColumn: View {
 	let toastManager: ToastManager
 	let isLocalhost: Bool
 	let contentCornerRadius: CGFloat
+	let windowWidth: CGFloat
 	@Binding var isTopBarRevealed: Bool
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -905,7 +888,7 @@ private struct ShellContentColumn: View {
 		ShellTopBarView(
 			browser: browser,
 			theme: theme,
-			sidebarShown: sidebarShown,
+			sidebarShown: true,
 			topBarColorScheme: topBarColorScheme,
 			transitionFromTheme: transitionFromTheme,
 			transitionToTheme: transitionToTheme,
@@ -913,87 +896,78 @@ private struct ShellContentColumn: View {
 		)
 	}
 
-	private var viewportInsets: BrowserViewportInsets {
-		guard !sidebarShown else { return BrowserViewportInsets() }
-		let topInset = EdgeInsets(
-			top: BrowserChromeMetrics.topBarRegionHeight,
-			leading: 0,
-			bottom: 0,
-			trailing: 0
-		)
-		return BrowserViewportInsets(
-			obscured: isTopBarRevealed ? topInset : EdgeInsets(),
-			maximum: topInset
-		)
+	private var topBarHeight: CGFloat {
+		guard browser.selectedTab?.internalPage == nil, !browser.isShowingNewTab else { return 0 }
+		guard sidebarShown || isTopBarRevealed else { return 0 }
+		return BrowserChromeMetrics.topBarRegionHeight
+			+ BrowserChromeMetrics.shellEdgePadding
 	}
 
 	var body: some View {
-		VStack(spacing: 0) {
-			if sidebarShown {
-				topBar
-			}
-			ZStack(alignment: .top) {
-				BrowserContentView(browser: browser, insets: viewportInsets)
-				#if os(macOS)
-					.blur(radius: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser) ? 10 : 0)
-				#endif
+		ZStack(alignment: .top) {
+			topBar
+				.frame(width: max(0, windowWidth - BrowserChromeMetrics.expandedSidebarWidth))
+				.frame(height: BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding, alignment: .top)
+				.transaction { transaction in
+					transaction.animation = nil
+				}
+				.frame(maxWidth: .infinity, alignment: .trailing)
+				.frame(height: topBarHeight, alignment: .top)
+				.clipped()
+				.allowsHitTesting(topBarHeight > 0)
+				.accessibilityHidden(topBarHeight == 0)
 
-				if let tab = browser.selectedTab {
-					PeekStackView(tab: tab, browser: browser)
-						.id(tab.id)
-				}
-			}
-			.overlay(alignment: .topTrailing) {
-				if let toast = toastManager.toast {
-					BrowserToastView(toast: toast)
-						.padding(.top, 12)
-						.padding(.trailing, 14)
-						.transition(.move(edge: .trailing))
-				}
-			}
-			.animation(.easeOut(duration: 0.1), value: toastManager.toast != nil)
-			.clipShape(RoundedRectangle(cornerRadius: contentCornerRadius))
-			.overlay {
-				if isLocalhost {
-					RoundedRectangle(cornerRadius: contentCornerRadius)
-						.inset(by: -2)
-						.strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [10, 5]))
-						.foregroundStyle(.yellow)
-				}
-			}
-			.animation(.smooth(duration: 0.3)) { view in
-				view
-					.padding(.top, sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
-					.padding([.bottom, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
-			}
-			.frame(maxWidth: .infinity, maxHeight: .infinity)
-		}
-		.overlay(alignment: .top) {
-			if !sidebarShown {
+			VStack(spacing: 0) {
+				Spacer(minLength: 0)
+					.frame(height: topBarHeight)
 				ZStack(alignment: .top) {
-					Color.clear
-						.contentShape(Rectangle())
-						.frame(height: isTopBarRevealed ? BrowserChromeMetrics.topBarRegionHeight : 6)
-					if isTopBarRevealed {
-						topBar
-							.overlay(alignment: .topLeading) {
-								ShellNavigationBarControls(
-									browser: browser,
-									theme: theme,
-									isFullScreen: isFullScreen,
-									sidebarShown: sidebarShown,
-									colorScheme: colorScheme,
-									topBarColorScheme: topBarColorScheme
-								)
-							}
-							.transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+					BrowserContentView(browser: browser)
+					#if os(macOS)
+						.blur(radius: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser) ? 10 : 0)
+					#endif
+
+					if let tab = browser.selectedTab {
+						PeekStackView(tab: tab, browser: browser)
+							.id(tab.id)
 					}
 				}
-				.onHover { hovering in
-					withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
-						isTopBarRevealed = hovering
+				.overlay(alignment: .topTrailing) {
+					if let toast = toastManager.toast {
+						BrowserToastView(toast: toast)
+							.padding(.top, 12)
+							.padding(.trailing, 14)
+							.transition(.move(edge: .trailing))
 					}
 				}
+				.animation(.easeOut(duration: 0.1), value: toastManager.toast != nil)
+				.clipShape(RoundedRectangle(cornerRadius: contentCornerRadius))
+				.overlay {
+					if isLocalhost {
+						RoundedRectangle(cornerRadius: contentCornerRadius)
+							.inset(by: -2)
+							.strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [10, 5]))
+							.foregroundStyle(.yellow)
+					}
+				}
+				.animation(.smooth(duration: 0.3)) { view in
+					view
+						.padding(.top, sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
+						.padding([.bottom, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
+				}
+				.frame(maxWidth: .infinity, maxHeight: .infinity)
+			}
+		}
+		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: topBarHeight)
+		.animation(nil, value: browser.selectedTabID)
+		.onContinuousHover { phase in
+			switch phase {
+				case let .active(location):
+					let revealHeight = isTopBarRevealed
+						? BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding
+						: 6
+					isTopBarRevealed = !sidebarShown && location.y < revealHeight
+				case .ended:
+					isTopBarRevealed = false
 			}
 		}
 		.onChange(of: sidebarShown) { _, _ in
