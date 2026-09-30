@@ -78,7 +78,7 @@
 		}
 	}
 
-	private final class BrowserContentHostView: NSView {
+	final class BrowserContentHostView: NSView {
 		init(hostingView: NSView) {
 			super.init(frame: .zero)
 

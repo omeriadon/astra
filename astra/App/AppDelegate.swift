@@ -13,10 +13,18 @@
 	@MainActor
 	final class AppDelegate: NSObject, NSApplicationDelegate {
 		private var windows: [BrowserWindowController] = []
+		private var miniWindows: [MiniAstraWindowController] = []
 		private var lastQuitAttempt: Date?
 
 		func applicationWillFinishLaunching(_: Notification) {
 			installMainMenu()
+			NotificationCenter.default.addObserver(
+				self,
+				selector: #selector(newMiniAstra(_:)),
+				name: MiniAstraShortcut.notification,
+				object: nil
+			)
+			MiniAstraShortcut.shared.update()
 		}
 
 		func applicationDidFinishLaunching(_: Notification) {
@@ -24,7 +32,9 @@
 			UpdateManager.shared.start()
 			BrowserDownloadManager.shared.resumeAvailableDownloads()
 			BrowserController.prewarmSharedProcess()
-			openBrowserWindow()
+			if miniWindows.isEmpty {
+				openBrowserWindow()
+			}
 		}
 
 		func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -55,7 +65,11 @@
 
 		func application(_: NSApplication, open urls: [URL]) {
 			for url in urls where url.scheme == "http" || url.scheme == "https" {
-				open(url)
+				if Defaults[.miniAstraEnabled] {
+					openMiniAstra(url: url)
+				} else {
+					open(url)
+				}
 			}
 		}
 
@@ -93,7 +107,45 @@
 		}
 
 		private var activeBrowser: Browser? {
-			BrowserWindowRegistry.shared.activeBrowser
+			activeMiniWindow?.browser ?? BrowserWindowRegistry.shared.activeBrowser
+		}
+
+		private var activeMiniWindow: MiniAstraWindowController? {
+			miniWindows.first { $0.window === NSApp.keyWindow }
+		}
+
+		private var mainWindow: BrowserWindowController {
+			windows.first { $0.browser === BrowserWindowRegistry.shared.activeBrowser }
+				?? windows.first
+				?? openBrowserWindow()
+		}
+
+		func openMiniAstra(url: URL? = nil) {
+			let controller = MiniAstraWindowController(url: url)
+			controller.onClose = { [weak self, weak controller] in
+				guard let self, let controller else { return }
+				miniWindows.removeAll { $0 === controller }
+			}
+			controller.onPromote = { [weak self] tab in
+				guard let self else { return }
+				let destination = mainWindow
+				#if DEBUG
+					let webView = tab.controller?.webViewIfLoaded
+				#endif
+				destination.browser.adoptMiniTab(tab)
+				destination.showWindow()
+				NSApp.activate()
+				#if DEBUG
+					assert(destination.browser.selectedTab === tab)
+					assert(destination.browser.selectedTab?.controller?.webViewIfLoaded === webView)
+				#endif
+			}
+			miniWindows.append(controller)
+			controller.showWindow()
+		}
+
+		@objc private func newMiniAstra(_: Any?) {
+			openMiniAstra()
 		}
 
 		private func open(_ url: URL) {
@@ -121,6 +173,10 @@
 		}
 
 		@objc private func newTab(_: Any?) {
+			if activeMiniWindow != nil {
+				openMiniAstra()
+				return
+			}
 			let browser: Browser = if let activeBrowser {
 				activeBrowser
 			} else {
@@ -130,11 +186,16 @@
 		}
 
 		@objc private func closeTab(_: Any?) {
+			if let mini = activeMiniWindow {
+				mini.window.performClose(nil)
+				return
+			}
 			guard let browser = activeBrowser else { return }
 			browser.closeTab(browser.selectedTabID)
 		}
 
 		@objc private func reopenLastClosedTab(_: Any?) {
+			guard activeMiniWindow == nil else { return }
 			activeBrowser?.reopenLastClosedTab()
 		}
 
@@ -143,23 +204,32 @@
 		}
 
 		@objc private func toggleSidebar(_: Any?) {
+			guard activeMiniWindow == nil else { return }
 			activeBrowser?.sidebarShown.toggle()
 		}
 
 		@objc private func editSpace(_: Any?) {
-			activeBrowser?.openInternalPage(.themeEditor)
+			let controller = mainWindow
+			controller.browser.openInternalPage(.themeEditor)
+			controller.showWindow()
 		}
 
 		@objc private func openSettings(_: Any?) {
-			activeBrowser?.openInternalPage(.settings)
+			let controller = mainWindow
+			controller.browser.openInternalPage(.settings)
+			controller.showWindow()
 		}
 
 		@objc private func openHistory(_: Any?) {
-			activeBrowser?.openInternalPage(.history)
+			let controller = mainWindow
+			controller.browser.openInternalPage(.history)
+			controller.showWindow()
 		}
 
 		@objc private func showAbout(_: Any?) {
-			guard let browser = activeBrowser else { return }
+			let controller = mainWindow
+			controller.showWindow()
+			let browser = controller.browser
 			browser.settingsPage = .about
 			browser.openInternalPage(.settings)
 		}
@@ -220,6 +290,10 @@
 		}
 
 		@objc private func duplicateTab(_: Any?) {
+			if let mini = activeMiniWindow {
+				openMiniAstra(url: mini.browser.selectedTab?.currentURL)
+				return
+			}
 			guard let browser = activeBrowser else { return }
 			browser.duplicateTab(browser.selectedTabID)
 		}
@@ -270,6 +344,7 @@
 			mainMenu.addItem(menuRoot("File", submenu: fileMenu))
 			fileMenu.addItem(item("New Window", action: #selector(newWindow(_:)), key: "n"))
 			fileMenu.addItem(item("New Tab", action: #selector(newTab(_:)), key: "t"))
+			fileMenu.addItem(item("New Mini Astra", action: #selector(newMiniAstra(_:))))
 			fileMenu.addItem(.separator())
 			fileMenu.addItem(item("Close Tab", action: #selector(closeTab(_:)), key: "w"))
 			fileMenu.addItem(item(

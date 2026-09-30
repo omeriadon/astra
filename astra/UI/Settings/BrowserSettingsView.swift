@@ -44,6 +44,7 @@ struct BrowserSettingsView: View {
 						identifier: "settings-ui",
 						terms: [
 							"Address Bar", "Peek", "Levels",
+							"Mini Astra", "links", "cursor", "animation", "shortcut",
 							"Zoom out in Peeks", "Downloads", "Rename downloads with Apple Intelligence",
 							"Updates", "Automatically check for updates", "Automatically install updates",
 						] + AddressDisplayStyle.allCases.map(\.title) + PeekLevel.allCases.map(\.title)
