@@ -6,7 +6,7 @@ extension BrowserTheme: Defaults.Serializable {}
 
 extension Defaults.Keys {
 	static let miniAstraEnabled = Key<Bool>("miniAstraEnabled", default: true)
-	static let miniAstraCursorAnimation = Key<Bool>("miniAstraCursorAnimation", default: false)
+	static let miniAstraWindowAnimation = Key<Bool>("miniAstraWindowAnimation", default: true)
 	static let miniAstraShortcutEnabled = Key<Bool>("miniAstraShortcutEnabled", default: false)
 
 	static let sidebarShown = Key<Bool>(

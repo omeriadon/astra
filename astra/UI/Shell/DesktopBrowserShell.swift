@@ -488,7 +488,7 @@ private struct PinnedFolderRow: View {
 	}
 }
 
-private struct ShellTopBarView: View {
+struct ShellTopBarView: View {
 	let browser: Browser
 	@State private var extensions = BrowserExtensionManager.shared
 	let theme: BrowserTheme

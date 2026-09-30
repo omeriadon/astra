@@ -2,6 +2,10 @@ import Defaults
 import Sparkle
 import SwiftUI
 
+#if os(macOS)
+	import AppKit
+#endif
+
 let addressDisplayStyleSpacing: CGFloat = 8
 
 struct BrowserGeneralSettingsView: View {
@@ -12,13 +16,44 @@ struct BrowserGeneralSettingsView: View {
 	@Default(.renameDownloadsWithAppleIntelligence) private var renameDownloadsWithAppleIntelligence
 
 	#if os(macOS)
+		@State private var isDefaultBrowser = false
+		@State private var isSettingDefaultBrowser = false
+		@State private var defaultBrowserError: String?
 		@Default(.miniAstraEnabled) private var miniAstraEnabled
-		@Default(.miniAstraCursorAnimation) private var miniAstraCursorAnimation
+		@Default(.miniAstraWindowAnimation) private var miniAstraWindowAnimation
 		@Default(.miniAstraShortcutEnabled) private var miniAstraShortcutEnabled
 	#endif
 
 	var body: some View {
 		List {
+			#if os(macOS)
+				Section("Default Browser") {
+					Text(isDefaultBrowser ? "Astra is your default browser." : "Open web links from other apps in Astra.")
+						.foregroundStyle(.secondary)
+						.accessibilityIdentifier("default-browser-status")
+
+					Button("Make Default Browser", systemImage: "globe", role: .confirm) {
+						Task { await makeDefaultBrowser() }
+					}
+					.buttonStyle(.glassProminent)
+					.disabled(isDefaultBrowser || isSettingDefaultBrowser)
+					.accessibilityLabel("Make Astra the default web browser")
+					.accessibilityIdentifier("make-default-browser")
+					.id("Make Default Browser")
+
+					if let defaultBrowserError {
+						Text(defaultBrowserError)
+							.foregroundStyle(.red)
+							.accessibilityIdentifier("default-browser-error")
+					}
+				}
+				.id("Default Browser")
+				.onAppear(perform: refreshDefaultBrowser)
+				.onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+					refreshDefaultBrowser()
+				}
+			#endif
+
 			Section("Address Bar") {
 				VStack(spacing: addressDisplayStyleSpacing) {
 					ForEach(AddressDisplayStyle.allCases) { style in
@@ -40,11 +75,11 @@ struct BrowserGeneralSettingsView: View {
 					Toggle("Open links from other apps in Mini Astra", isOn: $miniAstraEnabled)
 						.accessibilityIdentifier("mini-astra-enabled")
 
-					Toggle("Animate cursor into Mini Astra", isOn: $miniAstraCursorAnimation)
-						.accessibilityIdentifier("mini-astra-cursor-animation")
+					Toggle("Animate Mini Astra from the pointer", isOn: $miniAstraWindowAnimation)
+						.accessibilityIdentifier("mini-astra-window-animation")
 
-					if miniAstraCursorAnimation {
-						Text("Moves the pointer into the window. Stops when you move the mouse and respects Reduce Motion.")
+					if miniAstraWindowAnimation {
+						Text("Expands the window from the pointer position. Respects Reduce Motion.")
 							.font(.caption)
 							.foregroundStyle(.secondary)
 					}
@@ -108,6 +143,37 @@ struct BrowserGeneralSettingsView: View {
 		.scrollContentBackground(.hidden)
 		.listStyle(.sidebar)
 	}
+
+	#if os(macOS)
+		private func refreshDefaultBrowser() {
+			isDefaultBrowser = ["http", "https"].allSatisfy { scheme in
+				guard let url = URL(string: "\(scheme)://example.com"),
+				      let applicationURL = NSWorkspace.shared.urlForApplication(toOpen: url),
+				      let bundleIdentifier = Bundle.main.bundleIdentifier
+				else { return false }
+				return Bundle(url: applicationURL)?.bundleIdentifier == bundleIdentifier
+			}
+		}
+
+		private func makeDefaultBrowser() async {
+			isSettingDefaultBrowser = true
+			defaultBrowserError = nil
+			defer {
+				isSettingDefaultBrowser = false
+				refreshDefaultBrowser()
+			}
+			do {
+				for scheme in ["http", "https"] {
+					try await NSWorkspace.shared.setDefaultApplication(
+						at: Bundle.main.bundleURL,
+						toOpenURLsWithScheme: scheme
+					)
+				}
+			} catch {
+				defaultBrowserError = error.localizedDescription
+			}
+		}
+	#endif
 
 	private func addressDisplayStyleOption(style: AddressDisplayStyle) -> some View {
 		HStack {

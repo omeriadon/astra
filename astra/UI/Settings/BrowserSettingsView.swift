@@ -43,6 +43,7 @@ struct BrowserSettingsView: View {
 						section: .ui,
 						identifier: "settings-ui",
 						terms: [
+							"Default Browser", "Make Default Browser",
 							"Address Bar", "Peek", "Levels",
 							"Mini Astra", "links", "cursor", "animation", "shortcut",
 							"Zoom out in Peeks", "Downloads", "Rename downloads with Apple Intelligence",

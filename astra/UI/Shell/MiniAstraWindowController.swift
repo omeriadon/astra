@@ -1,18 +1,20 @@
 #if os(macOS)
 	import AppKit
 	import Defaults
+	import QuartzCore
 	import SwiftUI
 
 	@MainActor
 	final class MiniAstraWindowController: NSObject, NSWindowDelegate {
 		let browser = Browser(isMini: true)
-		let window: NSWindow
+		let window: NSPanel
 		var onClose: (() -> Void)?
 		var onPromote: ((BrowserTab) -> Void)?
-		private var cursorTask: Task<Void, Never>?
+		private let openingOrigin: NSPoint
 
 		init(url: URL? = nil) {
 			let cursor = NSEvent.mouseLocation
+			openingOrigin = cursor
 			let visibleFrame = NSScreen.screens.first { $0.frame.contains(cursor) }?.visibleFrame
 				?? NSScreen.main?.visibleFrame
 				?? NSRect(x: 0, y: 0, width: 1280, height: 800)
@@ -24,7 +26,7 @@
 					width: size.width,
 					height: size.height
 				),
-				styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+				styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView, .nonactivatingPanel],
 				backing: .buffered,
 				defer: false
 			)
@@ -38,6 +40,8 @@
 			window.tabbingMode = .disallowed
 			window.collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace]
 			window.isReleasedWhenClosed = false
+			window.hidesOnDeactivate = false
+			window.becomesKeyOnlyIfNeeded = false
 			(window as? MiniAstraWindow)?.onPromote = { [weak self] in self?.promote() }
 			let zoomButton = window.standardWindowButton(.zoomButton)
 			zoomButton?.target = self
@@ -45,7 +49,7 @@
 			zoomButton?.toolTip = "Move to Workspace"
 			zoomButton?.setAccessibilityLabel("Move to Workspace")
 			zoomButton?.setAccessibilityIdentifier("mini-astra-window-promote")
-			let root = MiniAstraView(browser: browser) { [weak self] in self?.promote() }
+			let root = MiniAstraView(browser: browser)
 			window.contentView = BrowserContentHostView(hostingView: NSHostingView(rootView: root))
 			if let url {
 				browser.selectedTab?.controller?.load(url)
@@ -59,14 +63,34 @@
 			if window.isMiniaturized {
 				window.deminiaturize(nil)
 			}
+			guard !window.isVisible,
+			      Defaults[.miniAstraWindowAnimation],
+			      !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+			else {
+				window.makeKeyAndOrderFront(nil)
+				return
+			}
+			let destination = window.frame
+			let minimumSize = window.contentMinSize
+			window.contentMinSize = .zero
+			window.setFrame(
+				NSRect(x: openingOrigin.x, y: openingOrigin.y, width: 1, height: 1),
+				display: false
+			)
+			window.alphaValue = 0
 			window.makeKeyAndOrderFront(nil)
-			NSApp.activate()
-			animateCursor()
+			NSAnimationContext.runAnimationGroup { context in
+				context.duration = 0.28
+				context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+				window.animator().setFrame(destination, display: true)
+				window.animator().alphaValue = 1
+			} completionHandler: { [weak self] in
+				self?.window.contentMinSize = minimumSize
+			}
 		}
 
 		@objc func promote() {
 			guard let tab = browser.selectedTab, let onPromote else { return }
-			cursorTask?.cancel()
 			// Detach the hosted web view before the main window mounts the same controller.
 			window.contentView = nil
 			onPromote(tab)
@@ -74,45 +98,20 @@
 		}
 
 		func windowWillClose(_: Notification) {
-			cursorTask?.cancel()
 			onClose?()
-		}
-
-		private func animateCursor() {
-			cursorTask?.cancel()
-			guard Defaults[.miniAstraCursorAnimation],
-			      !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-			      let start = CGEvent(source: nil)?.location
-			else { return }
-			let target = CGPoint(
-				x: window.frame.midX,
-				y: CGDisplayBounds(CGMainDisplayID()).height - window.frame.midY
-			)
-			cursorTask = Task { @MainActor [weak self] in
-				var previous = start
-				for step in 1 ... 18 {
-					guard let self, !Task.isCancelled, window.isKeyWindow,
-					      Defaults[.miniAstraCursorAnimation],
-					      !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-					      let current = CGEvent(source: nil)?.location,
-					      hypot(current.x - previous.x, current.y - previous.y) < 4
-					else { return }
-					let progress = Double(step) / 18
-					let eased = progress * progress * (3 - 2 * progress)
-					let point = CGPoint(
-						x: start.x + (target.x - start.x) * eased,
-						y: start.y + (target.y - start.y) * eased
-					)
-					guard CGWarpMouseCursorPosition(point) == .success else { return }
-					previous = point
-					try? await Task.sleep(for: .milliseconds(14))
-				}
-			}
 		}
 	}
 
-	private final class MiniAstraWindow: NSWindow {
+	private final class MiniAstraWindow: NSPanel {
 		var onPromote: (() -> Void)?
+
+		override var canBecomeKey: Bool {
+			true
+		}
+
+		override var canBecomeMain: Bool {
+			false
+		}
 
 		override func toggleFullScreen(_: Any?) {
 			onPromote?()
