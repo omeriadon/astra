@@ -11,6 +11,12 @@ struct BrowserGeneralSettingsView: View {
 	@Default(.zoomOutInPeeks) private var zoomOutInPeeks
 	@Default(.renameDownloadsWithAppleIntelligence) private var renameDownloadsWithAppleIntelligence
 
+	#if os(macOS)
+		@Default(.miniAstraEnabled) private var miniAstraEnabled
+		@Default(.miniAstraCursorAnimation) private var miniAstraCursorAnimation
+		@Default(.miniAstraShortcutEnabled) private var miniAstraShortcutEnabled
+	#endif
+
 	var body: some View {
 		List {
 			Section("Address Bar") {
@@ -26,6 +32,36 @@ struct BrowserGeneralSettingsView: View {
 				}
 				.accessibilityIdentifier("address-display-style-picker")
 			}
+
+			#if os(macOS)
+				Section("Mini Astra") {
+					Toggle("Open links from other apps in Mini Astra", isOn: $miniAstraEnabled)
+						.accessibilityIdentifier("mini-astra-enabled")
+
+					Toggle("Animate cursor into Mini Astra", isOn: $miniAstraCursorAnimation)
+						.accessibilityIdentifier("mini-astra-cursor-animation")
+
+					if miniAstraCursorAnimation {
+						Text("Moves the pointer into the window. Stops when you move the mouse and respects Reduce Motion.")
+							.font(.caption)
+							.foregroundStyle(.secondary)
+					}
+
+					Toggle("Enable global shortcut: ⌃⌥⌘N", isOn: $miniAstraShortcutEnabled)
+						.accessibilityLabel("Enable global Mini Astra shortcut: Control Option Command N")
+						.accessibilityIdentifier("mini-astra-shortcut-enabled")
+						.onChange(of: miniAstraShortcutEnabled) { _, _ in
+							MiniAstraShortcut.shared.update()
+						}
+					Text("Opens a blank Mini Astra window from any app while Astra is running.")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+					if MiniAstraShortcut.shared.registrationFailed {
+						Text("The shortcut could not be registered. Disable any conflicting shortcut, then enable it again.")
+							.foregroundStyle(.red)
+					}
+				}
+			#endif
 
 			Section("Peek") {
 				Picker("Levels", selection: $peekLevel) {

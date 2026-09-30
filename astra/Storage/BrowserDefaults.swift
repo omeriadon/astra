@@ -5,6 +5,10 @@ extension PeekLevel: Defaults.Serializable {}
 extension BrowserTheme: Defaults.Serializable {}
 
 extension Defaults.Keys {
+	static let miniAstraEnabled = Key<Bool>("miniAstraEnabled", default: true)
+	static let miniAstraCursorAnimation = Key<Bool>("miniAstraCursorAnimation", default: false)
+	static let miniAstraShortcutEnabled = Key<Bool>("miniAstraShortcutEnabled", default: false)
+
 	static let sidebarShown = Key<Bool>(
 		"sidebarShown",
 		default: true

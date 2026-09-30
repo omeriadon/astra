@@ -8,6 +8,7 @@ import WebKit
 @Observable
 final class Browser {
 	let windowID = UUID()
+	let isMini: Bool
 	private(set) var tabs: [BrowserTab]
 	private(set) var selectedTabID: UUID
 	private(set) var workspace: BrowserWorkspace
@@ -219,8 +220,11 @@ final class Browser {
 		selectedTab?.internalPage == nil ? selectedTabID : webTabs.first?.id ?? selectedTabID
 	}
 
-	init() {
-		BrowserWindowRegistry.shared.activeBrowser?.flushPersistence()
+	init(isMini: Bool = false) {
+		self.isMini = isMini
+		if !isMini {
+			BrowserWindowRegistry.shared.activeBrowser?.flushPersistence()
+		}
 		// Synchronous placeholder only: disk decode happens off-main in
 		// hydrateFromDisk() so the first frame never waits on JSON.
 		let placeholder = BrowserTab()
@@ -228,7 +232,9 @@ final class Browser {
 		var persistenceStore: BrowserPersistence?
 		var persistenceError: String?
 		do {
-			persistenceStore = try BrowserPersistence()
+			if !isMini {
+				persistenceStore = try BrowserPersistence()
+			}
 		} catch {
 			persistenceError = error.localizedDescription
 		}
@@ -250,7 +256,9 @@ final class Browser {
 		didFinishHydration = persistenceStore == nil
 		reconcileWorkspace()
 		configure(placeholder)
-		BrowserWindowRegistry.shared.register(self)
+		if !isMini {
+			BrowserWindowRegistry.shared.register(self)
+		}
 		BrowserController.prewarmSharedProcess()
 		if persistenceStore != nil {
 			hydrateFromDisk(placeholderID: placeholderID)
@@ -349,6 +357,20 @@ final class Browser {
 		// New tab changes open-tabs.json; selection-only save is not enough.
 		schedulePersistence(fullState: true)
 		return tab
+	}
+
+	func adoptMiniTab(_ tab: BrowserTab) {
+		guard !tabs.contains(where: { $0.id == tab.id }) else { return }
+		configure(tab)
+		tabs.append(tab)
+		reconcileWorkspace()
+		selectTab(tab.id)
+		schedulePersistence(fullState: true)
+		#if DEBUG
+			assert(selectedTab === tab)
+			assert(selectedSpace.tabIDs.contains(tab.id))
+			assert(tabs.filter { $0.id == tab.id }.count == 1)
+		#endif
 	}
 
 	func openInternalPage(_ page: BrowserInternalPage) {
@@ -648,6 +670,10 @@ final class Browser {
 		}
 		controller.newWindowRequested = { [weak self, weak controller, weak tab] url, source in
 			guard let self, let controller, let tab else { return }
+			if isMini {
+				controller.load(url)
+				return
+			}
 			if Defaults[.peekLevel] == .none {
 				openNewTab(url)
 				return
