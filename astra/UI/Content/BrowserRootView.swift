@@ -5,6 +5,19 @@ struct BrowserRootView: View {
 	@State private var sync = BrowserSync.shared
 	@Environment(\.scenePhase) private var scenePhase
 
+	#if os(macOS)
+		@State private var controlTabSwitcher: ControlTabSwitcher
+		@State private var hostWindow: NSWindow?
+		@State private var quitExpiry: Date = .distantPast
+	#endif
+
+	init(browser: Binding<Browser>) {
+		_browser = browser
+		#if os(macOS)
+			_controlTabSwitcher = State(initialValue: ControlTabSwitcher(browser: browser.wrappedValue))
+		#endif
+	}
+
 	#if os(iOS)
 		@Environment(\.horizontalSizeClass) private var horizontalSizeClass
 	#endif
@@ -22,6 +35,63 @@ struct BrowserRootView: View {
 					browser.flushPersistence()
 				}
 			}
+		#if os(macOS)
+			.background {
+				BrowserDropZone(
+					browser: browser,
+					area: .normal,
+					spaceID: browser.workspace.selectedSpaceID,
+					beforeTabID: nil,
+					isWindowFallback: true
+				)
+			}
+			.background {
+				WindowFocusReader { window in
+					hostWindow = window
+					if window?.isKeyWindow == true {
+						BrowserWindowRegistry.shared.activate(browser)
+					}
+				}
+				.allowsHitTesting(false)
+			}
+			.onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
+				if let window = notification.object as? NSWindow, window === hostWindow {
+					BrowserWindowRegistry.shared.activate(browser)
+				}
+			}
+			.overlay {
+				ControlTabSwitcherPreview(browser: browser, switcher: controlTabSwitcher)
+					.animation(.easeInOut(duration: 0.05), value: controlTabSwitcher.isPreviewVisible)
+			}
+			.onAppear {
+				controlTabSwitcher.start()
+			}
+			.onChange(of: browser.visibleTabs.map(\.id)) { _, _ in
+				controlTabSwitcher.tabsDidChange()
+			}
+			.onDisappear {
+				controlTabSwitcher.stop()
+			}
+			.blur(radius: browser.isAboutToQuit ? 5 : 0)
+			.overlay(alignment: .center) {
+				if Date.now < quitExpiry {
+					QuitBannerOverlay(quitExpiry: quitExpiry)
+				}
+			}
+			.onChange(of: browser.isAboutToQuit) { _, newValue in
+				if newValue {
+					quitExpiry = .now.addingTimeInterval(1)
+				}
+			}
+			.task(id: quitExpiry) {
+				guard quitExpiry > .now else { return }
+				try? await Task.sleep(until: .now + .seconds(quitExpiry.timeIntervalSinceNow))
+				guard !Task.isCancelled, Date.now >= quitExpiry else { return }
+				browser.isAboutToQuit = false
+				quitExpiry = .distantPast
+			}
+			.animation(.snappy(duration: 0.2), value: Date.now < quitExpiry)
+		#endif
 	}
 
 	@ViewBuilder
@@ -39,3 +109,41 @@ struct BrowserRootView: View {
 		#endif
 	}
 }
+
+#if os(macOS)
+	private struct QuitBannerOverlay: View {
+		let quitExpiry: Date
+
+		var body: some View {
+			TimelineView(.animation) { timeline in
+				let showQuitMessage = timeline.date < quitExpiry
+
+				GlassEffectContainer {
+					if showQuitMessage {
+						ZStack {
+							Rectangle()
+								.fill(Color.black.gradient)
+								.opacity(0.2)
+
+							Label {
+								Text("Press \(Image(systemName: "command"))Q again to quit")
+							} icon: {
+								Image(systemName: "rectangle.portrait.and.arrow.right")
+							}
+							.monospaced()
+							.font(.title2)
+							.padding(.horizontal, 20)
+							.padding(.vertical, 16)
+							.glassEffect(
+								.regular,
+								in: RoundedRectangle(cornerRadius: 20)
+							)
+							.glassEffectTransition(.materialize)
+						}
+					}
+				}
+				.animation(.snappy(duration: 0.2), value: showQuitMessage)
+			}
+		}
+	}
+#endif

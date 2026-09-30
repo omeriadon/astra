@@ -14,6 +14,9 @@ struct BrowserTabRow: View {
 	var tabIndex: Int?
 	var normalCount: Int?
 	var pinned: Bool?
+	var onSelectTab: ((UUID) -> Void)?
+	var navigationNamespace: Namespace.ID?
+	@Namespace private var rowTransitions
 	private var theme: BrowserTheme {
 		browser.theme
 	}
@@ -49,7 +52,7 @@ struct BrowserTabRow: View {
 
 	var body: some View {
 		HStack(spacing: 6) {
-			TabIconView(tab: tab, browser: browser)
+			TabIconView(tab: tab, browser: browser, onSelectTab: onSelectTab)
 
 			TabTitleView(
 				tab: tab,
@@ -59,21 +62,23 @@ struct BrowserTabRow: View {
 				isTitleFocused: $isTitleFocused,
 				onBeginRenaming: beginRenaming,
 				onCommitRenaming: commitRenaming,
-				onCancelRenaming: cancelRenaming
+				onCancelRenaming: cancelRenaming,
+				onSelectTab: onSelectTab
 			)
 
-			if isSelected {
-				TabCloseButton(tab: tab, browser: browser, isPinned: isPinned)
+			if isSelected || onSelectTab != nil {
+				TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
 					.keyboardShortcut("W", modifiers: .command)
 			} else {
-				TabCloseButton(tab: tab, browser: browser, isPinned: isPinned)
+				TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
 					.opacity(isHovered ? 1 : 0)
 					.allowsHitTesting(isHovered)
 					.accessibilityHidden(!isHovered)
 			}
 		}
 		.padding(.horizontal, 8)
-		.frame(height: 28)
+		.frame(height: onSelectTab == nil ? 28 : 44)
+		.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? rowTransitions)
 		.foregroundStyle(theme.foregroundColor)
 		.background {
 			if isSelected {
@@ -122,7 +127,9 @@ struct BrowserTabRow: View {
 				canCloseAbove: canCloseAbove,
 				canCloseBelow: canCloseBelow,
 				normalCount: resolvedNormalCount,
-				onCopyURL: copyURL
+				onCopyURL: copyURL,
+				onBeginRenaming: beginRenaming,
+				onSelectTab: onSelectTab
 			)
 		}
 		.onChange(of: isSelected) { _, selected in
@@ -173,16 +180,20 @@ extension BrowserTabRow: Equatable {
 			&& lhs.tabIndex == rhs.tabIndex
 			&& lhs.normalCount == rhs.normalCount
 			&& lhs.pinned == rhs.pinned
+			&& (lhs.onSelectTab == nil) == (rhs.onSelectTab == nil)
+			&& lhs.navigationNamespace == rhs.navigationNamespace
 	}
 }
 
 private struct TabIconView: View {
 	let tab: BrowserTab
 	let browser: Browser
+	var onSelectTab: ((UUID) -> Void)?
 
 	var body: some View {
 		Button {
 			browser.selectTab(tab.id)
+			onSelectTab?(tab.id)
 		} label: {
 			Label {
 				Text("Select Tab")
@@ -201,7 +212,7 @@ private struct TabIconView: View {
 				}
 			}
 			.labelStyle(.iconOnly)
-			.frame(width: 16, height: 16)
+			.frame(width: onSelectTab == nil ? 16 : 22, height: onSelectTab == nil ? 16 : 22)
 		}
 		.buttonStyle(.plain)
 		.accessibilityIdentifier("select-tab-\(tab.id.uuidString)")
@@ -217,6 +228,7 @@ private struct TabTitleView: View {
 	let onBeginRenaming: () -> Void
 	let onCommitRenaming: () -> Void
 	let onCancelRenaming: () -> Void
+	var onSelectTab: ((UUID) -> Void)?
 
 	var body: some View {
 		if isRenaming {
@@ -241,6 +253,7 @@ private struct TabTitleView: View {
 				.contentShape(Rectangle())
 				.onTapGesture {
 					browser.selectTab(tab.id)
+					onSelectTab?(tab.id)
 				}
 				.simultaneousGesture(
 					TapGesture(count: 2)
@@ -250,6 +263,7 @@ private struct TabTitleView: View {
 				.accessibilityAddTraits(.isButton)
 				.accessibilityAction(.default) {
 					browser.selectTab(tab.id)
+					onSelectTab?(tab.id)
 				}
 				.accessibilityActions {
 					if tab.internalPage == nil {
@@ -265,6 +279,7 @@ private struct TabCloseButton: View {
 	let tab: BrowserTab
 	let browser: Browser
 	let isPinned: Bool
+	var isCompact = false
 	@State private var hovered = false
 
 	var body: some View {
@@ -285,7 +300,7 @@ private struct TabCloseButton: View {
 				.onHover {
 					hovered = $0
 				}
-				.frame(width: 13, height: 16)
+				.frame(width: isCompact ? 44 : 13, height: isCompact ? 44 : 16)
 		}
 		.buttonStyle(.plain)
 		.accessibilityLabel(isPinned ? "Hibernate Tab" : "Close Tab")
@@ -301,14 +316,19 @@ private struct TabRowContextMenu: View {
 	let canCloseBelow: Bool
 	let normalCount: Int
 	let onCopyURL: () -> Void
+	let onBeginRenaming: () -> Void
+	var onSelectTab: ((UUID) -> Void)?
 
 	var body: some View {
 		if tab.internalPage == nil {
+			Button("Rename Tab", systemImage: "pencil", action: onBeginRenaming)
 			Button("Revert Tab Name", systemImage: "arrow.uturn.backward", action: tab.revertTitle)
 				.disabled(!tab.hasCustomTitle)
 
 			Button("Duplicate Tab", systemImage: "plus.square.on.square") {
-				browser.duplicateTab(tab.id)
+				if browser.duplicateTab(tab.id) != nil {
+					onSelectTab?(tab.id)
+				}
 			}
 
 			Button("Hibernate Tab", systemImage: "moon.zzz") {
@@ -338,6 +358,14 @@ private struct TabRowContextMenu: View {
 					browser.moveTab(tab.id, to: .pinned)
 				}
 			}
+			Menu("Move to Space", systemImage: "rectangle.3.group") {
+				ForEach(browser.workspace.spaces) { space in
+					Button(space.name, systemImage: space.symbol) {
+						browser.moveTab(tab.id, to: isPinned ? .pinned : .normal, in: space.id)
+					}
+				}
+			}
+			.accessibilityIdentifier("move-tab-space-\(tab.id.uuidString)")
 			Button("Add to Favourites", systemImage: "star") {
 				browser.moveTab(tab.id, to: .favourite)
 			}

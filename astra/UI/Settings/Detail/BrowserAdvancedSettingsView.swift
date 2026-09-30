@@ -26,6 +26,10 @@ struct BrowserAdvancedSettingsView: View {
 			#endif
 		}
 		.scrollContentBackground(.hidden)
-		.listStyle(.sidebar)
+		#if os(iOS)
+			.listStyle(.insetGrouped)
+		#else
+			.listStyle(.sidebar)
+		#endif
 	}
 }

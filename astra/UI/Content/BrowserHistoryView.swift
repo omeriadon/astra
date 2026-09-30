@@ -60,28 +60,34 @@ private struct HistoryListView: View {
 				}
 			}
 		}
+		#if os(iOS)
+		.listStyle(.insetGrouped)
+		#else
 		.listStyle(.sidebar)
+		#endif
 		.scrollContentBackground(.hidden)
-		.safeAreaBar(edge: .top) {
-			Text("History")
-				.monospaced()
-				.font(.largeTitle.bold())
-				.lineLimit(1)
-				.minimumScaleFactor(0.7)
-				.contentTransition(.numericText())
-				.geometryGroup()
-				.environment(\.contentTransitionAddsDrawingGroup, true)
-				.frame(height: 42)
-				.frame(maxWidth: .infinity, alignment: .leading)
-				.padding(.horizontal, 24)
-				.padding(.top, 12)
-				.padding(.bottom, 12)
-		}
-		.overlay {
-			if historyTabs.isEmpty {
-				ContentUnavailableView("No History", systemImage: "clock.arrow.circlepath")
+		#if os(macOS)
+			.safeAreaBar(edge: .top) {
+				Text("History")
+					.monospaced()
+					.font(.largeTitle.bold())
+					.lineLimit(1)
+					.minimumScaleFactor(0.7)
+					.contentTransition(.numericText())
+					.geometryGroup()
+					.environment(\.contentTransitionAddsDrawingGroup, true)
+					.frame(height: 42)
+					.frame(maxWidth: .infinity, alignment: .leading)
+					.padding(.horizontal, 24)
+					.padding(.top, 12)
+					.padding(.bottom, 12)
 			}
-		}
+		#endif
+			.overlay {
+				if historyTabs.isEmpty {
+					ContentUnavailableView("No History", systemImage: "clock.arrow.circlepath")
+				}
+			}
 	}
 }
 
@@ -164,8 +170,11 @@ struct HistoryRow: View {
 				.contentShape(Rectangle())
 			}
 			.buttonStyle(.plain)
-			.accessibilityLabel("Open \(title)")
-			.accessibilityIdentifier(identifier)
+			#if os(iOS)
+				.frame(minHeight: 44)
+			#endif
+				.accessibilityLabel("Open \(title)")
+				.accessibilityIdentifier(identifier)
 
 			#if os(macOS)
 				if isHovered {
@@ -184,8 +193,12 @@ struct HistoryRow: View {
 		}
 		.labelStyle(.iconOnly)
 		.buttonStyle(.plain)
-		.accessibilityLabel("Open \(title) in background")
-		.accessibilityIdentifier("\(identifier)-background")
+		#if os(iOS)
+			.frame(width: 44, height: 44)
+			.contentShape(Rectangle())
+		#endif
+			.accessibilityLabel("Open \(title) in background")
+			.accessibilityIdentifier("\(identifier)-background")
 	}
 }
 

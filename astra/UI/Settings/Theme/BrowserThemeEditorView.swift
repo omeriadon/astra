@@ -45,12 +45,15 @@ struct BrowserThemeEditorView: View {
 			Spacer(minLength: 0)
 		}
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
-		.contentShape(Rectangle())
-		.onTapGesture {
-			if editingPointID != nil {
-				pickerDismissalSignal += 1
+		#if os(iOS)
+			.padding(.horizontal, 16)
+		#endif
+			.contentShape(Rectangle())
+			.onTapGesture {
+				if editingPointID != nil {
+					pickerDismissalSignal += 1
+				}
 			}
-		}
 	}
 }
 
@@ -72,52 +75,57 @@ private struct SpaceSymbolButton: View {
 		.buttonStyle(.glass(.clear))
 		.buttonBorderShape(.circle)
 		.frame(width: 45, height: 38)
-		.accessibilityLabel("Choose Space Symbol")
-		.accessibilityIdentifier("space-symbol-picker")
-		.popover(isPresented: $showsSymbolPicker) {
-			ScrollView {
-				LazyVGrid(columns: Array(repeating: GridItem(.fixed(40)), count: 5), spacing: 8) {
-					ForEach(BrowserSpace.symbols, id: \.self) { symbol in
-						Button {
-							browser.setSelectedSpaceSymbol(symbol)
-							showsSymbolPicker = false
-						} label: {
-							Label(symbol, systemImage: symbol)
-								.labelStyle(.iconOnly)
-								.contentShape(.rect)
-						}
-						.buttonStyle(.plain)
-						.frame(width: 40, height: 40)
-						.background(
-							browser.selectedSpace.symbol == symbol
-								? .white.opacity(0.3)
-								: .clear,
-							in: RoundedRectangle(cornerRadius: 15)
-						)
-						.background(
-							hover == symbol
-								? .white.opacity(0.3)
-								: .clear,
-							in: RoundedRectangle(cornerRadius: 15)
-						)
-						.onHover {
-							hover = symbol
-
-							if $0 {
-								NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
-							} else {
-								hover = ""
+		#if os(iOS)
+			.frame(minHeight: 44)
+			.contentShape(Rectangle())
+		#endif
+			.accessibilityLabel("Choose Space Symbol")
+			.accessibilityIdentifier("space-symbol-picker")
+			.popover(isPresented: $showsSymbolPicker) {
+				ScrollView {
+					LazyVGrid(columns: Array(repeating: GridItem(.fixed(44)), count: 5), spacing: 8) {
+						ForEach(BrowserSpace.symbols, id: \.self) { symbol in
+							Button {
+								browser.setSelectedSpaceSymbol(symbol)
+								showsSymbolPicker = false
+							} label: {
+								Label(symbol, systemImage: symbol)
+									.labelStyle(.iconOnly)
+									.contentShape(.rect)
 							}
+							.buttonStyle(.plain)
+							.frame(width: 44, height: 44)
+							.background(
+								browser.selectedSpace.symbol == symbol
+									? .white.opacity(0.3)
+									: .clear,
+								in: RoundedRectangle(cornerRadius: 15)
+							)
+							.background(
+								hover == symbol
+									? .white.opacity(0.3)
+									: .clear,
+								in: RoundedRectangle(cornerRadius: 15)
+							)
+							.onHover {
+								hover = symbol
+
+								if $0 {
+									performThemeAlignmentHaptic()
+								} else {
+									hover = ""
+								}
+							}
+							.glassEffect(.clear.interactive(), in: RoundedRectangle(cornerRadius: 15))
+							.accessibilityLabel(symbol.replacingOccurrences(of: ".", with: " "))
+							.accessibilityAddTraits(browser.selectedSpace.symbol == symbol ? .isSelected : [])
+							.accessibilityIdentifier("space-symbol-\(symbol)")
 						}
-						.glassEffect(.clear.interactive(), in: RoundedRectangle(cornerRadius: 15))
-						.accessibilityLabel(symbol.replacingOccurrences(of: ".", with: " "))
-						.accessibilityAddTraits(browser.selectedSpace.symbol == symbol ? .isSelected : [])
 					}
+					.padding(15)
 				}
-				.padding(15)
+				.presentationSizing(.fitted)
 			}
-			.presentationSizing(.fitted)
-		}
 	}
 }
 
@@ -148,6 +156,7 @@ private struct MeshGradientEditorView: View {
 			.overlay(alignment: .bottom) {
 				AddPointOverlay(theme: $theme, editingPointID: editingPointID)
 			}
+			.environment(\.colorScheme, .dark)
 			.accessibilityIdentifier("theme-mesh-editor")
 
 			#if os(macOS)
@@ -192,7 +201,11 @@ private struct AppearanceModeOverlay: View {
 						} label: {
 							Label(mode.title, systemImage: mode.symbol)
 								.labelStyle(.iconOnly)
+							#if os(iOS)
+								.frame(width: 44, height: 44)
+							#else
 								.frame(width: 25, height: 25)
+							#endif
 						}
 						.buttonStyle(.glass(.clear))
 						.buttonBorderShape(.circle)
@@ -224,7 +237,11 @@ private struct AddPointOverlay: View {
 				} label: {
 					Label("Add color point", systemImage: "plus")
 						.labelStyle(.iconOnly)
+					#if os(iOS)
+						.frame(width: 44, height: 44)
+					#else
 						.frame(width: 25, height: 25)
+					#endif
 				}
 				.buttonStyle(.glass(.clear.interactive()))
 				.buttonBorderShape(.circle)

@@ -317,7 +317,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		guard let extensionObject = contexts[name]?.webExtension else { return "" }
 		let permissions = extensionObject.requestedPermissions.map { Self.permissionTitle($0) }.sorted()
 		let websites = extensionObject.requestedPermissionMatchPatterns.map {
-			$0.matchesAllHosts ? "Read and change data on all websites" : "Read and change data on \($0.host)"
+			$0.matchesAllHosts ? "Read and change data on all websites" : "Read and change data on \($0.host ?? "*")"
 		}.sorted()
 		return Set(permissions + websites).sorted().map { "• \($0)" }.joined(separator: "\n")
 	}

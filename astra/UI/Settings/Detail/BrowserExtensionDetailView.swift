@@ -31,10 +31,12 @@ struct BrowserExtensionDetailView: View {
 				LabeledContent("Version", value: extensions.version(for: name))
 				LabeledContent("ID", value: name)
 				LabeledContent("Source", value: extensions.source(for: name) == .chrome ? "Chrome" : "Safari")
-				Text(extensions.sourcePath(for: name))
-					.font(.caption)
-					.foregroundStyle(.secondary)
-					.textSelection(.enabled)
+				#if os(macOS)
+					Text(extensions.sourcePath(for: name))
+						.font(.caption)
+						.foregroundStyle(.secondary)
+						.textSelection(.enabled)
+				#endif
 			}
 			Section("Permissions") {
 				Text(extensions.permissionSummary(for: name))
@@ -81,15 +83,26 @@ struct BrowserExtensionDetailView: View {
 				}
 			}
 		}
+		#if os(iOS)
+		.listStyle(.insetGrouped)
+		#else
 		.listStyle(.sidebar)
+		#endif
 		.scrollContentBackground(.hidden)
 		.navigationTitle(extensions.title(for: name))
-		.confirmationDialog("Remove \(extensions.title(for: name))?", isPresented: $showsRemoveConfirmation) {
-			Button("Remove Extension", systemImage: "trash", role: .destructive) {
-				extensions.removeInstalled(name)
-				dismiss()
+		#if os(iOS)
+			.navigationBarTitleDisplayMode(.inline)
+			.containerBackground(.clear, for: .navigation)
+		#endif
+			.background {
+				BrowserThemeBackground(theme: browser.theme).ignoresSafeArea()
 			}
-			Button(role: .cancel) {}
-		}
+			.confirmationDialog("Remove \(extensions.title(for: name))?", isPresented: $showsRemoveConfirmation) {
+				Button("Remove Extension", systemImage: "trash", role: .destructive) {
+					extensions.removeInstalled(name)
+					dismiss()
+				}
+				Button(role: .cancel) {}
+			}
 	}
 }

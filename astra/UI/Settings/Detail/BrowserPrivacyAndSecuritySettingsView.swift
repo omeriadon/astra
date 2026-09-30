@@ -14,6 +14,10 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 			.id("Website Data")
 		}
 		.scrollContentBackground(.hidden)
-		.listStyle(.sidebar)
+		#if os(iOS)
+			.listStyle(.insetGrouped)
+		#else
+			.listStyle(.sidebar)
+		#endif
 	}
 }

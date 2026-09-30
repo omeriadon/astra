@@ -5,7 +5,6 @@
 //  Created by Adon Omeri on 20/9/2026.
 //
 
-import Sparkle
 import SwiftUI
 
 extension Color {
@@ -38,18 +37,12 @@ extension Color {
 #else
 	@main
 	struct browserApp: App {
-		@State private var updates = UpdateManager.shared
-
 		var body: some Scene {
 			WindowGroup {
 				ContentView()
 					.task {
-						updates.start()
 						await BrowserExtensionManager.shared.prepare()
 						BrowserDownloadManager.shared.resumeAvailableDownloads()
-					}
-					.sheet(isPresented: $updates.isPresented) {
-						BrowserUpdateSheet(updates: updates)
 					}
 			}
 		}

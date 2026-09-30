@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-enum BrowserSessionStore {
+nonisolated enum BrowserSessionStore {
 	private static let service = "com.omeriadon.browser.sync"
 	private static let account = "session"
 

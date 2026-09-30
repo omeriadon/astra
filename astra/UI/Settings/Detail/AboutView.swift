@@ -18,7 +18,9 @@ extension Bundle {
 }
 
 struct AboutView: View {
-	@Bindable private var updates = UpdateManager.shared
+	#if os(macOS)
+		@Bindable private var updates = UpdateManager.shared
+	#endif
 	@State private var pointerLocation: CGPoint?
 
 	var body: some View {
@@ -44,7 +46,9 @@ struct AboutView: View {
 						Text("\(version) \(Text("(\(build))").foregroundStyle(.secondary))")
 					}
 
-					CheckForUpdatesView(updater: updates.updater)
+					#if os(macOS)
+						CheckForUpdatesView(updater: updates.updater)
+					#endif
 
 					Spacer()
 				}

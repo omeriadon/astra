@@ -3,6 +3,9 @@ import SwiftUI
 struct BrowserFavouriteTile: View {
 	let tab: BrowserTab
 	let browser: Browser
+	var onSelectTab: ((UUID) -> Void)?
+	var navigationNamespace: Namespace.ID?
+	@Namespace private var tileTransitions
 	#if os(macOS)
 		@State private var tabDrag = BrowserTabDragCoordinator.shared
 	#endif
@@ -10,10 +13,12 @@ struct BrowserFavouriteTile: View {
 	var body: some View {
 		Button {
 			browser.selectTab(tab.id)
+			onSelectTab?(tab.id)
 		} label: {
 			FavouriteIconView(tab: tab)
 		}
 		.buttonStyle(.plain)
+		.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? tileTransitions)
 		.background {
 			RoundedRectangle(cornerRadius: 10)
 				.fill(browser.selectedTabID == tab.id ? .white.opacity(0.3) : .white.opacity(0.12))
@@ -81,5 +86,7 @@ extension BrowserFavouriteTile: Equatable {
 			&& lhs.browser === rhs.browser
 			&& (lhs.browser.selectedTabID == lhs.tab.id) == (rhs.browser.selectedTabID == rhs.tab.id)
 			&& lhs.tab.title == rhs.tab.title
+			&& (lhs.onSelectTab == nil) == (rhs.onSelectTab == nil)
+			&& lhs.navigationNamespace == rhs.navigationNamespace
 	}
 }

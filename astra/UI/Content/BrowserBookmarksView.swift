@@ -27,20 +27,26 @@ struct BrowserBookmarksView: View {
 				}
 			}
 		}
+		#if os(iOS)
+		.listStyle(.insetGrouped)
+		#else
 		.listStyle(.sidebar)
+		#endif
 		.scrollContentBackground(.hidden)
-		.safeAreaBar(edge: .top) {
-			Label("Bookmarks", systemImage: "bookmark")
-				.font(.title2.bold())
-				.frame(maxWidth: .infinity, alignment: .leading)
-				.padding(.horizontal, 24)
-				.padding(.vertical, 14)
-		}
-		.overlay {
-			if browser.bookmarks.isEmpty {
-				ContentUnavailableView("No Bookmarks", systemImage: "bookmark")
+		#if os(macOS)
+			.safeAreaBar(edge: .top) {
+				Label("Bookmarks", systemImage: "bookmark")
+					.font(.title2.bold())
+					.frame(maxWidth: .infinity, alignment: .leading)
+					.padding(.horizontal, 24)
+					.padding(.vertical, 14)
 			}
-		}
+		#endif
+			.overlay {
+				if browser.bookmarks.isEmpty {
+					ContentUnavailableView("No Bookmarks", systemImage: "bookmark")
+				}
+			}
 	}
 }
 

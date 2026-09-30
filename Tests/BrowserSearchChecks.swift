@@ -37,6 +37,12 @@ struct BrowserSearchChecks {
 		assert(ranked.first?.kind == .action)
 		assert(ranked.filter { $0.kind == .typed }.count == 1)
 		assert(BrowserSearchResult.ranked(results.reversed()).map(\.id) == BrowserSearchResult.ranked(results).map(\.id))
-		print("Search matching and balanced ranking checks passed")
+		assert(BrowserSearchResult.selected(in: ranked, id: nil, automaticallySelectFirst: true)?.id == ranked.first?.id)
+		assert(BrowserSearchResult.selected(in: ranked, id: typed.id, automaticallySelectFirst: true)?.id == typed.id)
+		assert(BrowserSearchResult.selected(in: ranked, id: "removed", automaticallySelectFirst: true)?.id == ranked.first?.id)
+		assert(BrowserSearchResult.selected(in: ranked, id: nil, automaticallySelectFirst: false) == nil)
+		assert(BrowserSearchResult.selected(in: ranked, id: ranked.last?.id, automaticallySelectFirst: true)?.id == ranked.last?.id)
+		assert(BrowserSearchResult.selected(in: [], id: nil, automaticallySelectFirst: true) == nil)
+		print("Search matching, balanced ranking, and automatic selection checks passed")
 	}
 }

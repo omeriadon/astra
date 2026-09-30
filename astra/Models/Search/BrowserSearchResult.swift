@@ -24,6 +24,13 @@ struct BrowserSearchResult: Identifiable {
 	let score: Double
 	let perform: @MainActor () -> Void
 
+	static func selected(in results: [Self], id: String?, automaticallySelectFirst: Bool) -> Self? {
+		if let result = results.first(where: { $0.id == id }) {
+			return result
+		}
+		return automaticallySelectFirst ? results.first : nil
+	}
+
 	static func ranked(_ results: [Self]) -> [Self] {
 		let sorted = results.sorted {
 			if $0.score != $1.score {

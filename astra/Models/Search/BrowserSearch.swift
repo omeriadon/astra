@@ -86,20 +86,26 @@ extension Browser {
 		return results
 	}
 
+	var selectedNewTabSearchResult: BrowserSearchResult? {
+		BrowserSearchResult.selected(
+			in: newTabSearchResults,
+			id: newTabSearchSelection,
+			automaticallySelectFirst: !newTabSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+		)
+	}
+
 	func moveNewTabSearchSelection(by offset: Int) {
 		let results = newTabSearchResults
 		guard !results.isEmpty else { return }
-		let index = results.firstIndex { $0.id == newTabSearchSelection }
+		let selectedID = selectedNewTabSearchResult?.id
+		let index = results.firstIndex { $0.id == selectedID }
 		let next = index.map { ($0 + offset + results.count) % results.count }
 			?? (offset > 0 ? 0 : results.count - 1)
 		newTabSearchSelection = results[next].id
 	}
 
 	func submitNewTabSearch() {
-		let results = newTabSearchResults
-		let result = results.first { $0.id == newTabSearchSelection }
-			?? results.first { $0.kind == .typed }
-		result?.perform()
+		selectedNewTabSearchResult?.perform()
 		newTabSearchSelection = nil
 	}
 }

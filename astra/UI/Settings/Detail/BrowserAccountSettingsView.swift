@@ -12,6 +12,10 @@ struct BrowserAccountSettingsView: View {
 				TextField("Sync Server URL", text: $syncServerURL)
 					.textContentType(.URL)
 					.autocorrectionDisabled()
+				#if os(iOS)
+					.textInputAutocapitalization(.never)
+					.keyboardType(.URL)
+				#endif
 					.disabled(sync.isSignedIn)
 					.accessibilityIdentifier("sync-server-url")
 					.id("Sync Server URL")
@@ -64,6 +68,10 @@ struct BrowserAccountSettingsView: View {
 			}
 		}
 		.scrollContentBackground(.hidden)
-		.listStyle(.sidebar)
+		#if os(iOS)
+			.listStyle(.insetGrouped)
+		#else
+			.listStyle(.sidebar)
+		#endif
 	}
 }

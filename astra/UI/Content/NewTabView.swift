@@ -5,6 +5,7 @@ struct NewTabView: View {
 	@FocusState private var isSearchFocused: Bool
 
 	var body: some View {
+		let selectedResultID = browser.selectedNewTabSearchResult?.id
 		ScrollViewReader { proxy in
 			List {
 				Section(browser.newTabSearchText.isEmpty ? "Browser Actions" : "Suggestions") {
@@ -27,9 +28,9 @@ struct NewTabView: View {
 							.contentShape(Rectangle())
 						}
 						.buttonStyle(.plain)
-						.listRowBackground(Color.primary.opacity(browser.newTabSearchSelection == result.id ? 0.12 : 0))
+						.listRowBackground(Color.primary.opacity(selectedResultID == result.id ? 0.12 : 0))
 						.accessibilityLabel("\(result.title), \(result.detail)")
-						.accessibilityAddTraits(browser.newTabSearchSelection == result.id ? [.isSelected] : [])
+						.accessibilityAddTraits(selectedResultID == result.id ? [.isSelected] : [])
 						.accessibilityIdentifier("new-tab-result-\(result.id)")
 						.id(result.id)
 					}
@@ -40,7 +41,7 @@ struct NewTabView: View {
 			.safeAreaBar(edge: .top) {
 				searchHeader
 			}
-			.onChange(of: browser.newTabSearchSelection) { _, selection in
+			.onChange(of: selectedResultID) { _, selection in
 				if let selection {
 					proxy.scrollTo(selection)
 				}
@@ -81,7 +82,13 @@ struct NewTabView: View {
 				TextField("Search or type a URL", text: $browser.newTabSearchText)
 					.focused($isSearchFocused)
 					.textFieldStyle(.plain)
+				#if os(macOS)
 					.fontDesign(.monospaced)
+				#elseif os(iOS)
+					.textInputAutocapitalization(.never)
+					.autocorrectionDisabled()
+					.keyboardType(.webSearch)
+				#endif
 					.submitLabel(.go)
 					.onSubmit { browser.submitNewTabSearch() }
 					.onKeyPress(.downArrow) {
@@ -93,7 +100,7 @@ struct NewTabView: View {
 						return .handled
 					}
 					.onKeyPress(.escape) {
-						browser.newTabSearchSelection = nil
+						browser.newTabSearchSelection = "typed"
 						return .handled
 					}
 					.accessibilityLabel("Search the web, history, or browser actions")

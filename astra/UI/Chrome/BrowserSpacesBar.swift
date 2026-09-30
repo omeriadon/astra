@@ -6,6 +6,7 @@ import SwiftUI
 struct BrowserSpacesBar: View {
 	let browser: Browser
 	let onSwipeProgress: (UUID?, Double) -> Void
+	var onOpenPage: (() -> Void)?
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var spaceToDelete: BrowserSpace?
 	@State private var showsDeleteAlert = false
@@ -20,7 +21,8 @@ struct BrowserSpacesBar: View {
 							space: space,
 							isSelected: browser.workspace.selectedSpaceID == space.id,
 							spaceToDelete: $spaceToDelete,
-							showsDeleteAlert: $showsDeleteAlert
+							showsDeleteAlert: $showsDeleteAlert,
+							onOpenPage: onOpenPage
 						)
 					}
 				}
@@ -63,7 +65,11 @@ struct BrowserSpacesBar: View {
 				}
 			}
 		}
+		#if os(iOS)
+		.frame(height: 44)
+		#else
 		.frame(height: 25)
+		#endif
 		.alert("Delete Space?", isPresented: $showsDeleteAlert, presenting: spaceToDelete) { space in
 			Button(role: .destructive) {
 				browser.deleteSpace(space.id)
@@ -82,6 +88,7 @@ struct BrowserSpacesBar: View {
 		let isSelected: Bool
 		@Binding var spaceToDelete: BrowserSpace?
 		@Binding var showsDeleteAlert: Bool
+		var onOpenPage: (() -> Void)?
 
 		var body: some View {
 			Button {
@@ -89,7 +96,11 @@ struct BrowserSpacesBar: View {
 			} label: {
 				Label(space.name, systemImage: space.symbol)
 					.labelStyle(.iconOnly)
+				#if os(iOS)
+					.frame(width: 44, height: 44)
+				#else
 					.frame(width: 25, height: 25)
+				#endif
 					.background {
 						if isSelected {
 							RoundedRectangle(cornerRadius: 8)
@@ -103,6 +114,7 @@ struct BrowserSpacesBar: View {
 				Button("Edit Space", systemImage: "paintpalette") {
 					browser.selectSpace(space.id)
 					browser.openInternalPage(.themeEditor)
+					onOpenPage?()
 				}
 				Button("Delete Space", systemImage: "trash", role: .destructive) {
 					spaceToDelete = space

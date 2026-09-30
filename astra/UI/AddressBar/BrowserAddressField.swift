@@ -24,7 +24,7 @@ struct BrowserAddressField: View {
 			dimmedAddressText: dimmedAddressText,
 			onSubmitAddress: submitAddress,
 			onEscape: {
-				browser.newTabSearchSelection = nil
+				browser.newTabSearchSelection = "typed"
 				isFocused = false
 			},
 			onMoveSelection: { offset in

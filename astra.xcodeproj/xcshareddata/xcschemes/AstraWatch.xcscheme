@@ -16,7 +16,7 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "2A8BC066306D04E60028E780"
                BuildableName = "AstraWatch Watch App.app"
-               BlueprintName = "AstraWatch Watch App"
+               BlueprintName = "Watch"
                ReferencedContainer = "container:astra.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>

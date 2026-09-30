@@ -11,7 +11,6 @@ struct DesktopBrowserShell: View {
 	}
 
 	@Default(.sidebarShown) private var sidebarShown
-	@State private var toastManager = ToastManager.shared
 	@State private var downloads = BrowserDownloadManager.shared
 	@State private var showsDownloads = false
 	@State private var flight: DownloadFlight?
@@ -27,29 +26,9 @@ struct DesktopBrowserShell: View {
 	@State private var swipeDirection: CGFloat = 1
 	@State private var isTopBarRevealed = false
 	#if os(macOS)
-		@State private var controlTabSwitcher: ControlTabSwitcher
-		@State private var windowRegistry = BrowserWindowRegistry.shared
 		@State private var hostWindow: NSWindow?
 		@State private var windowButtonAnimationGeneration = 0
 	#endif
-
-	@State private var quitExpiry: Date = .distantPast
-
-	init(browser: Browser) {
-		self.browser = browser
-		#if os(macOS)
-			_controlTabSwitcher = State(initialValue: ControlTabSwitcher(browser: browser))
-		#endif
-	}
-
-	var isLocalhost: Bool {
-		browser.selectedTab?.activeController?.url?.host.map { host in
-			host == "localhost"
-				|| host.hasSuffix(".localhost")
-				|| host == "127.0.0.1"
-				|| host == "::1"
-		} ?? false
-	}
 
 	private var topBarColorScheme: ColorScheme {
 		guard let themeColorIsLight = browser.selectedTab?.activeController?.themeColorIsLight else { return colorScheme }
@@ -182,8 +161,6 @@ struct DesktopBrowserShell: View {
 					transitionFromTheme: transitionFromTheme,
 					transitionToTheme: transitionToTheme,
 					themeBlend: themeBlend,
-					toastManager: toastManager,
-					isLocalhost: isLocalhost,
 					contentCornerRadius: contentCornerRadius,
 					windowWidth: geometry.size.width,
 					isTopBarRevealed: $isTopBarRevealed
@@ -202,28 +179,11 @@ struct DesktopBrowserShell: View {
 		}
 		#if os(macOS)
 		.background {
-			BrowserDropZone(
-				browser: browser,
-				area: .normal,
-				spaceID: browser.workspace.selectedSpaceID,
-				beforeTabID: nil,
-				isWindowFallback: true
-			)
-		}
-		.background {
 			WindowFocusReader { window in
 				hostWindow = window
 				updateWindowButtons(in: window, animated: false)
-				if window?.isKeyWindow == true {
-					windowRegistry.activate(browser)
-				}
 			}
 			.allowsHitTesting(false)
-		}
-		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
-			if let window = notification.object as? NSWindow, window === hostWindow {
-				windowRegistry.activate(browser)
-			}
 		}
 		.onChange(of: sidebarShown) { _, _ in
 			updateWindowButtons(in: hostWindow)
@@ -265,12 +225,7 @@ struct DesktopBrowserShell: View {
 			}
 		}
 		#if os(macOS)
-		.overlay {
-			ControlTabSwitcherPreview(browser: browser, switcher: controlTabSwitcher)
-				.animation(.easeInOut(duration: 0.05), value: controlTabSwitcher.isPreviewVisible)
-		}
 		.onAppear {
-			controlTabSwitcher.start()
 			isFullScreen = NSApp.keyWindow?.styleMask.contains(.fullScreen) == true
 		}
 		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
@@ -279,33 +234,6 @@ struct DesktopBrowserShell: View {
 		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
 			isFullScreen = false
 		}
-		.onChange(of: browser.visibleTabs.map(\.id)) { _, _ in
-			controlTabSwitcher.tabsDidChange()
-		}
-		.onDisappear {
-			controlTabSwitcher.stop()
-		}
-		.blur(radius: browser.isAboutToQuit ? 5 : 0)
-		.overlay(alignment: .center) {
-			if Date.now < quitExpiry {
-				QuitBannerOverlay(quitExpiry: quitExpiry)
-			}
-		}
-		.onChange(of: browser.isAboutToQuit) { _, newValue in
-			if newValue {
-				quitExpiry = .now.addingTimeInterval(1)
-			}
-		}
-		.task(id: quitExpiry) {
-			guard quitExpiry > .now else { return }
-
-			try? await Task.sleep(until: .now + .seconds(quitExpiry.timeIntervalSinceNow))
-
-			guard Date.now >= quitExpiry else { return }
-			browser.isAboutToQuit = false
-			quitExpiry = .distantPast
-		}
-		.animation(.snappy(duration: 0.2), value: Date.now < quitExpiry)
 		#endif
 		.ignoresSafeArea()
 	}
@@ -315,346 +243,6 @@ private struct DownloadFlight: Identifiable {
 	let id: UUID
 	let source: UnitPoint
 	let symbol: String
-}
-
-private struct ShellSidebarListView: View {
-	let browser: Browser
-	let space: BrowserSpace
-	let theme: BrowserTheme
-	#if os(macOS)
-		@State private var tabDrag = BrowserTabDragCoordinator.shared
-	#endif
-	@Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-	var body: some View {
-		// Single O(n) lookup + filtered lists per sidebar render instead of
-		// O(n²) tabs.first scans inside every row.
-		let tabsByID = browser.tabsByID
-		let pinnedTabs = space.pinnedTabIDs.compactMap { tabsByID[$0] }
-		let folderTabIDs = Set(space.pinnedFolders.flatMap(\.tabIDs))
-		let ungroupedPinnedTabs = pinnedTabs.filter { !folderTabIDs.contains($0.id) }
-		let pinnedSet = Set(space.pinnedTabIDs)
-		let normalTabs = space.tabIDs.filter { !pinnedSet.contains($0) }.compactMap { tabsByID[$0] }
-		let isActiveSpace = space.id == browser.workspace.selectedSpaceID
-		let selectedID = browser.selectedTabID
-		return GeometryReader { geometry in
-			ScrollViewReader { reader in
-				ScrollView {
-					LazyVStack(spacing: 2) {
-						if !browser.favouriteTabs.isEmpty {
-							LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
-								ForEach(browser.favouriteTabs) { tab in
-									BrowserFavouriteTile(tab: tab, browser: browser)
-										.equatable()
-								}
-							}
-							.padding(.bottom, 12)
-							#if os(macOS)
-								.background {
-									BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
-								}
-							#endif
-						}
-						#if os(macOS)
-							if browser.favouriteTabs.isEmpty, tabDrag.activeTabID != nil {
-								Color.clear
-									.frame(height: 34)
-									.background {
-										BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
-									}
-							}
-						#endif
-
-						if !pinnedTabs.isEmpty || !space.pinnedFolders.isEmpty {
-							VStack(spacing: 2) {
-								HStack {
-									Text("Pinned Tabs")
-										.font(.caption)
-									Spacer()
-									Button("New Folder", systemImage: "folder.badge.plus") {
-										browser.createPinnedFolder()
-									}
-									.labelStyle(.iconOnly)
-									.accessibilityIdentifier("new-pinned-folder")
-								}
-								ForEach(space.pinnedFolders) { folder in
-									PinnedFolderRow(folder: folder, browser: browser, tabsByID: tabsByID, selectedID: selectedID, isActiveSpace: isActiveSpace, normalCount: normalTabs.count)
-								}
-								ForEach(ungroupedPinnedTabs) { tab in
-									BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalTabs.count, pinned: true)
-										.equatable()
-										.id(tab.id)
-								}
-							}
-							#if os(macOS)
-							.background {
-								BrowserDropZone(browser: browser, area: .pinned, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
-							}
-							#endif
-							Divider()
-								.padding(.vertical, 8)
-						}
-						if pinnedTabs.isEmpty, space.pinnedFolders.isEmpty {
-							Button("New Pinned Folder", systemImage: "folder.badge.plus") {
-								browser.createPinnedFolder()
-							}
-							.buttonStyle(.plain)
-							.accessibilityIdentifier("new-pinned-folder")
-						}
-						#if os(macOS)
-							if space.pinnedTabIDs.isEmpty, tabDrag.activeTabID != nil {
-								Color.clear
-									.frame(height: 28)
-									.background {
-										BrowserDropZone(browser: browser, area: .pinned, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
-									}
-							}
-						#endif
-						VStack(spacing: 2) {
-							ForEach(Array(normalTabs.enumerated()), id: \.element.id) { index, tab in
-								BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: index, normalCount: normalTabs.count, pinned: false)
-									.equatable()
-									.id(tab.id)
-							}
-							ShellNewTabButton(browser: browser, theme: theme)
-						}
-						#if os(macOS)
-						.background {
-							BrowserDropZone(browser: browser, area: .normal, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
-						}
-						#endif
-					}
-					.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
-					.padding(.top, 4)
-					.padding(.bottom, 48)
-					.frame(minHeight: geometry.size.height, alignment: .top)
-				}
-				.onChange(of: selectedID, initial: true) { oldID, id in
-					// Only scroll the active space's list; the swipe-preview
-					// copy has allowsHitTesting(false) and no reader anchor.
-					guard isActiveSpace else { return }
-					// Initial layout and disk restoration should settle without a scroll animation.
-					let animate = !reduceMotion && oldID != id && tabsByID[oldID] != nil
-					withAnimation(animate ? .smooth(duration: 0.25) : nil) {
-						reader.scrollTo(id, anchor: .center)
-					}
-				}
-			}
-		}
-	}
-}
-
-private struct PinnedFolderRow: View {
-	let folder: PinnedTabFolder
-	let browser: Browser
-	let tabsByID: [UUID: BrowserTab]
-	let selectedID: UUID
-	let isActiveSpace: Bool
-	let normalCount: Int
-	@State private var isExpanded = true
-	@State private var isRenaming = false
-	@State private var name = ""
-
-	var body: some View {
-		VStack(spacing: 2) {
-			Button {
-				isExpanded.toggle()
-			} label: {
-				Label(folder.name, systemImage: isExpanded ? "folder.fill" : "folder")
-					.frame(maxWidth: .infinity, alignment: .leading)
-			}
-			.buttonStyle(.plain)
-			.accessibilityIdentifier("pinned-folder-\(folder.id.uuidString)")
-			.contextMenu {
-				Button("Rename Folder", systemImage: "pencil") {
-					name = folder.name
-					isRenaming = true
-				}
-				Button("Delete Folder", systemImage: "trash", role: .destructive) {
-					browser.deletePinnedFolder(folder.id)
-				}
-			}
-			.alert("Rename Folder", isPresented: $isRenaming) {
-				TextField("Folder Name", text: $name)
-				Button("Save", systemImage: "checkmark", role: .confirm) {
-					browser.renamePinnedFolder(folder.id, to: name)
-				}
-				Button(role: .cancel) {}
-			}
-			if isExpanded {
-				ForEach(folder.tabIDs.compactMap { tabsByID[$0] }) { tab in
-					BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalCount, pinned: true)
-						.equatable()
-						.padding(.leading, 12)
-						.id(tab.id)
-				}
-			}
-		}
-	}
-}
-
-struct ShellTopBarView: View {
-	let browser: Browser
-	@State private var extensions = BrowserExtensionManager.shared
-	let theme: BrowserTheme
-	let sidebarShown: Bool
-	let topBarColorScheme: ColorScheme
-	let transitionFromTheme: BrowserTheme?
-	let transitionToTheme: BrowserTheme?
-	let themeBlend: Double
-
-	var body: some View {
-		if browser.selectedTab?.internalPage == nil, !browser.isShowingNewTab {
-			websiteControls
-				.transition(.identity)
-				.frame(height: BrowserChromeMetrics.topBarRegionHeight)
-				.background {
-					if let transitionFromTheme {
-						transitionFromTheme.tabColor
-							.opacity(1 - themeBlend)
-							.overlay((transitionToTheme ?? theme).tabColor.opacity(themeBlend))
-					} else {
-						theme.tabColor
-					}
-				}
-				.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar : BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar))
-				.padding([.top, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
-		}
-	}
-
-	private var websiteControls: some View {
-		HStack(spacing: 10) {
-			if let controller = browser.selectedTab?.activeController {
-				BrowserNavigationControls(controller: controller)
-					.controlSize(.regular)
-					.labelStyle(.iconOnly)
-					.buttonSizing(.fitted)
-					.buttonStyle(.bordered)
-					.foregroundStyle(theme.foregroundColor)
-					.id(ObjectIdentifier(controller))
-			}
-
-			BrowserAddressField(browser: browser)
-
-			Spacer(minLength: 0)
-			if let listing = browser.selectedTab?.activeController?.url,
-			   ChromeExtensionPackage.extensionID(from: listing) != nil
-			{
-				Button("Install Extension", systemImage: "square.and.arrow.down") {
-					Task { await extensions.installFromChromeStore(listing) }
-				}
-				.disabled(extensions.isInstallingFromStore)
-				.accessibilityIdentifier("install-chrome-store-extension")
-			}
-			let _ = extensions.actionsRevision
-			ForEach(extensions.loadedNames().filter { extensions.isPinned($0) }, id: \.self) { name in
-				let action = extensions.action(for: name, in: browser)
-				Button {
-					extensions.performAction(name, in: browser)
-				} label: {
-					#if os(macOS)
-						if let icon = action?.icon(for: CGSize(width: 18, height: 18)) {
-							Image(nsImage: icon)
-								.resizable()
-								.frame(width: 18, height: 18)
-						} else {
-							Label(action?.label ?? extensions.title(for: name), systemImage: "puzzlepiece.extension.fill")
-								.labelStyle(.iconOnly)
-						}
-					#else
-						if let icon = action?.icon(for: CGSize(width: 18, height: 18)) {
-							Image(uiImage: icon)
-								.resizable()
-								.frame(width: 18, height: 18)
-						} else {
-							Label(action?.label ?? extensions.title(for: name), systemImage: "puzzlepiece.extension.fill")
-								.labelStyle(.iconOnly)
-						}
-					#endif
-				}
-				.disabled(action?.isEnabled == false)
-				.controlSize(.regular)
-				.buttonSizing(.fitted)
-				.buttonStyle(.bordered)
-				.foregroundStyle(theme.foregroundColor)
-				.accessibilityLabel(action?.label ?? extensions.title(for: name))
-				.accessibilityIdentifier("extension-action-\(name)")
-			}
-
-			Menu {
-				ForEach(extensions.availableNames, id: \.self) { name in
-					extensionMenuItem(extensions.title(for: name), name: name)
-				}
-				Divider()
-				Button("Manage Extensions", systemImage: "gearshape") {
-					browser.settingsPage = .extensions
-					browser.openInternalPage(.settings)
-				}
-			} label: {
-				Label("Extensions", systemImage: "puzzlepiece.extension")
-					.labelStyle(.iconOnly)
-			}
-			.controlSize(.regular)
-			.buttonSizing(.fitted)
-			.buttonStyle(.bordered)
-			.foregroundStyle(theme.foregroundColor)
-			.accessibilityLabel("Extensions")
-			.accessibilityIdentifier("browser-extensions")
-		}
-		.padding(
-			.leading,
-			sidebarShown ? 10 : BrowserChromeMetrics.persistentControlsAreaWidth
-		)
-		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
-		.frame(maxWidth: .infinity, alignment: .leading)
-		#if os(macOS)
-			.background {
-				NonDraggableTitlebarRegion()
-			}
-		#endif
-			.environment(\.colorScheme, topBarColorScheme)
-			.overlay(alignment: .bottom) {
-				if let controller = browser.selectedTab?.activeController {
-					ShellTopBarLoadingBar(
-						controller: controller,
-						theme: theme,
-						tabID: browser.selectedTabID
-					)
-				}
-			}
-	}
-
-	@ViewBuilder
-	private func extensionMenuItem(_ title: String, name: String) -> some View {
-		if extensions.isLoaded(name) {
-			Button("Open \(title)", systemImage: "puzzlepiece.extension") {
-				extensions.performAction(name, in: browser)
-			}
-		}
-		Button(title, systemImage: extensions.isLoaded(name) ? "checkmark.circle.fill" : "circle") {
-			extensions.setEnabled(!extensions.isEnabled(name), for: name)
-		}
-		if let error = extensions.loadErrors[name] {
-			Button("\(title): \(error)", systemImage: "exclamationmark.triangle") {}
-				.disabled(true)
-		}
-	}
-}
-
-private struct ShellTopBarLoadingBar: View {
-	let controller: BrowserController
-	let theme: BrowserTheme
-	let tabID: UUID
-
-	var body: some View {
-		BrowserLoadingBar(
-			isLoading: controller.isLoading,
-			estimatedProgress: controller.estimatedProgress,
-			theme: theme
-		)
-		.frame(height: 1.5)
-		.id(tabID)
-	}
 }
 
 private struct ShellNavigationBarControls: View {
@@ -679,117 +267,6 @@ private struct ShellNavigationBarControls: View {
 			\.colorScheme,
 			sidebarShown ? colorScheme : topBarColorScheme
 		)
-	}
-}
-
-private struct ShellNewTabButton: View {
-	let browser: Browser
-	let theme: BrowserTheme
-	@State private var newTabHovered = false
-
-	var body: some View {
-		Button {
-			browser.addTab()
-		} label: {
-			Label("New Tab", systemImage: "plus")
-				.frame(maxWidth: .infinity, alignment: .leading)
-				.contentShape(Rectangle())
-		}
-		.keyboardShortcut("t", modifiers: .command)
-		.buttonStyle(.plain)
-		.padding(.horizontal, 8)
-		.foregroundStyle(theme.foregroundColor.opacity(0.65))
-		.onHover { newTabHovered = $0 }
-		.frame(height: 28)
-		.background {
-			if newTabHovered {
-				Color.clear.glassEffect(
-					.regular,
-					in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
-				)
-			}
-		}
-		.accessibilityIdentifier("new-tab")
-	}
-}
-
-private struct ShellDownloadsBarView: View {
-	let browser: Browser
-	let theme: BrowserTheme
-	let downloads: BrowserDownloadManager
-	@Binding var showsDownloads: Bool
-	let onSwipeProgress: (UUID?, Double) -> Void
-	@State private var downloadsHover = false
-	@State private var addSpaceHover = false
-	@Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-	var body: some View {
-		HStack {
-			Button {
-				withAnimation(reduceMotion ? .none : .smooth(duration: 0.32)) {
-					showsDownloads.toggle()
-				}
-			} label: {
-				HStack(spacing: 9) {
-					ZStack {
-						Image(systemName: downloads.buttonSymbol)
-						if let progress = downloads.activeProgress {
-							Circle()
-								.trim(from: 0, to: progress)
-								.stroke(theme.progressColor, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-								.rotationEffect(.degrees(-90))
-						}
-					}
-				}
-				.frame(width: 25, height: 25)
-				.background {
-					if downloadsHover {
-						RoundedRectangle(cornerRadius: 8)
-							.fill(Color.primary.gradient)
-							.opacity(0.3)
-					}
-					if showsDownloads {
-						RoundedRectangle(cornerRadius: 8)
-							.fill(Color.primary.gradient)
-							.opacity(0.4)
-					}
-				}
-				.contentShape(Rectangle())
-			}
-			.buttonStyle(.plain)
-			.keyboardShortcut("J", modifiers: .command)
-			.accessibilityLabel(showsDownloads ? "Show Tabs" : "Show Downloads")
-			.accessibilityValue(downloads.activeProgress.map { "\(Int($0 * 100)) percent" } ?? "No active downloads")
-			.accessibilityIdentifier("downloads-button")
-			.onHover { i in
-				withAnimation(.smooth(duration: 0.1)) {
-					downloadsHover = i
-				}
-			}
-
-			BrowserSpacesBar(browser: browser, onSwipeProgress: onSwipeProgress)
-				.frame(maxWidth: .infinity)
-
-			Button {
-				browser.createSpace()
-			} label: {
-				Image(systemName: "plus")
-					.frame(width: 25, height: 25)
-					.background {
-						if addSpaceHover {
-							RoundedRectangle(cornerRadius: 8)
-								.fill(Color.primary.gradient)
-								.opacity(0.3)
-						}
-					}
-					.contentShape(Rectangle())
-			}
-			.buttonStyle(.plain)
-			.accessibilityLabel("Add Space")
-			.accessibilityIdentifier("add-space")
-			.onHover { addSpaceHover = $0 }
-		}
-		.padding([.horizontal, .bottom], 8)
 	}
 }
 
@@ -877,8 +354,6 @@ private struct ShellContentColumn: View {
 	let transitionFromTheme: BrowserTheme?
 	let transitionToTheme: BrowserTheme?
 	let themeBlend: Double
-	let toastManager: ToastManager
-	let isLocalhost: Bool
 	let contentCornerRadius: CGFloat
 	let windowWidth: CGFloat
 	@Binding var isTopBarRevealed: Bool
@@ -920,41 +395,13 @@ private struct ShellContentColumn: View {
 			VStack(spacing: 0) {
 				Spacer(minLength: 0)
 					.frame(height: topBarHeight)
-				ZStack(alignment: .top) {
-					BrowserContentView(browser: browser)
-					#if os(macOS)
-						.blur(radius: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser) ? 10 : 0)
-					#endif
-
-					if let tab = browser.selectedTab {
-						PeekStackView(tab: tab, browser: browser)
-							.id(tab.id)
+				BrowserPageView(browser: browser, cornerRadius: contentCornerRadius)
+					.animation(.smooth(duration: 0.3)) { view in
+						view
+							.padding(.top, sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
+							.padding([.bottom, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 					}
-				}
-				.overlay(alignment: .topTrailing) {
-					if let toast = toastManager.toast {
-						BrowserToastView(toast: toast)
-							.padding(.top, 12)
-							.padding(.trailing, 14)
-							.transition(.move(edge: .trailing))
-					}
-				}
-				.animation(.easeOut(duration: 0.1), value: toastManager.toast != nil)
-				.clipShape(RoundedRectangle(cornerRadius: contentCornerRadius))
-				.overlay {
-					if isLocalhost {
-						RoundedRectangle(cornerRadius: contentCornerRadius)
-							.inset(by: -2)
-							.strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [10, 5]))
-							.foregroundStyle(.yellow)
-					}
-				}
-				.animation(.smooth(duration: 0.3)) { view in
-					view
-						.padding(.top, sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
-						.padding([.bottom, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
-				}
-				.frame(maxWidth: .infinity, maxHeight: .infinity)
+					.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
 		}
 		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: topBarHeight)
@@ -1028,44 +475,6 @@ private struct DownloadFlightOverlay: View {
 						.position(x: point.x, y: geometry.size.height - point.y)
 						.accessibilityHidden(true)
 				}
-			}
-		}
-	}
-#endif
-
-#if os(macOS)
-	private struct QuitBannerOverlay: View {
-		let quitExpiry: Date
-
-		var body: some View {
-			TimelineView(.animation) { timeline in
-				let showQuitMessage = timeline.date < quitExpiry
-
-				GlassEffectContainer {
-					if showQuitMessage {
-						ZStack {
-							Rectangle()
-								.fill(Color.black.gradient)
-								.opacity(0.2)
-
-							Label {
-								Text("Press \(Image(systemName: "command"))Q again to quit")
-							} icon: {
-								Image(systemName: "rectangle.portrait.and.arrow.right")
-							}
-							.monospaced()
-							.font(.title2)
-							.padding(.horizontal, 20)
-							.padding(.vertical, 16)
-							.glassEffect(
-								.regular,
-								in: RoundedRectangle(cornerRadius: 20)
-							)
-							.glassEffectTransition(.materialize)
-						}
-					}
-				}
-				.animation(.snappy(duration: 0.2), value: showQuitMessage)
 			}
 		}
 	}

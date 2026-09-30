@@ -10,33 +10,40 @@ struct DownloadsSidebarView: View {
 		GeometryReader { geometry in
 			ScrollView {
 				LazyVStack(alignment: .leading, spacing: 5) {
-					Text("Downloads")
-						.font(.headline)
-						.padding(.horizontal, 8)
-						.padding(.bottom, 6)
+					#if os(macOS)
+						Text("Downloads")
+							.font(.headline)
+							.padding(.horizontal, 8)
+							.padding(.bottom, 6)
+					#endif
 
-					if manager.items.isEmpty {
-						DownloadsEmptyView()
-					} else {
-						ForEach(manager.items) { item in
-							DownloadRowView(
-								item: item,
-								manager: manager,
-								theme: theme,
-								previewURL: $previewURL
-							)
-							.equatable()
-						}
+					ForEach(manager.items) { item in
+						DownloadRowView(
+							item: item,
+							manager: manager,
+							theme: theme,
+							previewURL: $previewURL
+						)
+						.equatable()
 					}
 				}
 				.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
-				.padding(.top, 35)
-				.frame(minHeight: geometry.size.height, alignment: .top)
+				#if os(macOS)
+					.padding(.top, 35)
+				#else
+					.padding(.vertical, 16)
+				#endif
+					.frame(minHeight: geometry.size.height, alignment: .top)
 				#if os(macOS)
 					.background {
 						WindowDragBackground()
 					}
 				#endif
+			}
+		}
+		.overlay {
+			if manager.items.isEmpty {
+				DownloadsEmptyView()
 			}
 		}
 		.quickLookPreview($previewURL)
