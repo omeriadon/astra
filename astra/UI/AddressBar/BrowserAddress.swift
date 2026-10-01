@@ -229,6 +229,10 @@ enum BrowserAddress {
 		guard let colon = value.firstIndex(of: ":") else {
 			return false
 		}
+		let authority = value[value.index(after: colon)...]
+		guard !authority.hasPrefix("//") else {
+			return false
+		}
 		let prefix = value[..<colon]
 		return prefix.contains(".") || prefix.lowercased() == "localhost"
 	}

@@ -4,9 +4,9 @@ Task / selected optional scope: Full packet scope. Search engines, custom HTTPS 
 
 Branch / worktree / baseline commit: `astra/roadmap/14-address-search-config`, `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/14-address-search-config`, baseline `0159f9ffdf97ef0fbafd5485adc5222d83b56d4f`.
 
-Status: Build verified on macOS. Runtime/provider acceptance remains pending.
+Status: macOS build verified before the final parser guard; the guard and helper suite compile and pass locally. Runtime/provider acceptance remains pending.
 
-Commit(s), or explicit uncommitted state: `23be171` (`configure address search`), `cba6b412fd8ce1fba6a829a5422c238d009feb05` (`harden address search configuration`), plus the handoff evidence checkpoint reported to the primary.
+Commit(s), or explicit uncommitted state: `23be171` (`configure address search`), `cba6b412fd8ce1fba6a829a5422c238d009feb05` (`harden address search configuration`), `2a75812f82c6d387aa25421ae35241c321638482` (`record address search build`), plus the parser-correction checkpoint reported to the primary.
 
 Changed files and behavior:
 
@@ -16,7 +16,7 @@ Changed files and behavior:
 - `astra/Storage/BrowserDefaults.swift`, `astra/UI/Settings/Detail/BrowserGeneralSettingsView.swift`: deterministic Google defaults, synced portable search configuration, normal/private engine pickers, HTTPS template editing/validation feedback, keyword shortcuts and private suggestions opt-in.
 - `docs/astra-roadmap/checks-14-address-search.swift`: no-network checks using the production address/configuration helpers.
 
-Acceptance cases satisfied, with evidence: Executed the helper check across explicit and scheme-less URLs, localhost, IPv4/IPv6 with ports, Unicode hosts/paths, wrappers, credential/restricted schemes, malformed custom configuration, built-in and custom providers, static and percent-encoded parameter names, keyword shortcuts, Google regional results, private-provider policy, and query values containing `+ & = % #` plus Unicode. It checks full and dimmed address highlighting, stable sorted JSON encoding, escaped control input within configured field bounds, provider-aware suggestion query encoding, and real Google/DuckDuckGo payload parsing for valid and malformed shapes.
+Acceptance cases satisfied, with evidence: Executed the helper check across explicit and scheme-less URLs, localhost, IPv4/IPv6 with ports, Unicode hosts/paths, wrappers, dotted external application schemes, malformed hostname ports, credential/restricted schemes, malformed custom configuration, built-in and custom providers, static and percent-encoded parameter names, keyword shortcuts, Google regional results, private-provider policy, and query values containing `+ & = % #` plus Unicode. It checks full and dimmed address highlighting, stable sorted JSON encoding, escaped control input within configured field bounds, provider-aware suggestion query encoding, and real Google/DuckDuckGo payload parsing for valid and malformed shapes.
 
 Checks run, scheme/destination/workspace and results:
 
@@ -41,9 +41,10 @@ Checks run, scheme/destination/workspace and results:
   astra/UI/Settings/Detail/BrowserGeneralSettingsView.swift` — passed.
 - `git diff --check` — passed.
 - Xcode workspace: `workspace-l7ivJ1QAez`, exact path `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/14-address-search-config/astra.xcodeproj`; scheme `astra`; destination `My Mac` (macOS27.2, arm64).
-- Xcode diagnostics: zero issues for all eight changed Swift files. One parallel request timed out; its standalone retry returned zero issues.
+- Xcode diagnostics before the final parser guard: zero issues for all eight changed Swift files. One parallel request timed out; its standalone retry returned zero issues. The final guard was compiled by the production-helper check.
 - Xcode `BuildProject`, `buildForTesting: false`: passed, “The project built successfully.” Elapsed20.732 seconds; no errors. Log: `/var/folders/s_/ms68q0zx137_d7r08rxtnp9w0000gq/T/ActionArtifacts/default/BuildProject/BuildProject-Log-20261001-175128.txt`.
 - Closed only task workspace `workspace-l7ivJ1QAez`. No app launch or hosted tests.
+- The final explicit-authority parser guard was compiled in the current no-network `swiftc` helper check. No additional Xcode build was run; the primary reserved the IDE for packet05 and noted the downstream PiP build will verify integration.
 
 Checks written but not executed: None for the helper checks; the written check file was executed. No Xcode app-level checks were run.
 
@@ -53,4 +54,4 @@ Migration, compatibility and private-data impact: Missing setting uses the deter
 
 Capability gates / unresolved issues: Suggestions are implemented only for Google and DuckDuckGo. Bing and custom providers retain local search but do not fetch remote suggestions. Live provider acceptance is pending runtime checks. No server changes.
 
-Merge prerequisites / follow-up ownership: Primary review and the Xcode slot/build are complete. Packet14 was brought forward because its reserved files are disjoint from packet05's permissions-writer files; this does not mark packet17 complete.
+Merge prerequisites / follow-up ownership: Packet14 was brought forward because its reserved files are disjoint from packet05's permissions-writer files; this does not mark packet17 complete. The final parser guard passed production-helper compilation and checks; downstream PiP Xcode build covers integration.
