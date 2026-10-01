@@ -138,6 +138,7 @@ final class BrowserTab: Identifiable {
 	private var storedScrollPosition: BrowserScrollPosition
 	private var storedPeeks: [OpenPeek]
 	private(set) var modifiedAt: Date
+	private var restorationBaseline: OpenTab?
 
 	@ObservationIgnored
 	var didChange: (@MainActor () -> Void)?
@@ -230,6 +231,7 @@ final class BrowserTab: Identifiable {
 		for peek in peeks {
 			observe(peek)
 		}
+		restorationBaseline = openTab
 	}
 
 	convenience init(openTab saved: OpenTab) {
@@ -269,6 +271,7 @@ final class BrowserTab: Identifiable {
 		storedPageZoom = controller.pageZoom
 		storedScrollPosition = controller.scrollPosition
 		storedPeeks = peeks.map(\.openPeek)
+		restorationBaseline = openTab
 		for peek in peeks {
 			peek.controller.stopForClose()
 		}
@@ -373,7 +376,7 @@ final class BrowserTab: Identifiable {
 
 	private func observe(_ peek: BrowserPeek) {
 		peek.controller.navigationDidChange = { [weak self] in
-			self?.markModified()
+			self?.markNavigationModified()
 		}
 		peek.controller.scrollPositionDidChange = { [weak self] in
 			self?.markModifiedForScroll()
@@ -382,7 +385,7 @@ final class BrowserTab: Identifiable {
 
 	private func observeController() {
 		controller?.navigationDidChange = { [weak self] in
-			self?.markModified()
+			self?.markNavigationModified()
 		}
 		controller?.scrollPositionDidChange = { [weak self] in
 			self?.markModifiedForScroll()
@@ -398,7 +401,21 @@ final class BrowserTab: Identifiable {
 		didChange?()
 	}
 
+	private func markNavigationModified() {
+		openTabCache = nil
+		if let restorationBaseline, openTab.hasSameNavigationState(as: restorationBaseline) {
+			return
+		}
+		restorationBaseline = nil
+		markModified()
+	}
+
 	private func markModifiedForScroll() {
+		openTabCache = nil
+		if let restorationBaseline, openTab.hasSameNavigationState(as: restorationBaseline) {
+			return
+		}
+		restorationBaseline = nil
 		modifiedAt = .now
 		openTabCache = nil
 		didScrollChange?()

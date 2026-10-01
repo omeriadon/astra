@@ -52,3 +52,7 @@ Preserve unrelated architecture, formatting and user changes. No pushes, merges,
 ## Handoff
 
 Return changed files, selected scope, completed checks, pending cases, data/privacy/migration impact and unresolved issues. Write `docs/astra-roadmap/handoffs/09-history.md` using the dispatch template. The primary reviews; the user merges later.
+
+## Updated sync requirement
+
+Consume task29’s timestamped history merge, deletion and clear policy. Keep visit time distinct from last modification, update freshness on actual record edits, and keep private visits excluded. History is no longer a local-only product scope; preserve device caches and sync conflict protection.

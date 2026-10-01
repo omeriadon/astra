@@ -18,17 +18,27 @@ final class BrowserSync {
 	@ObservationIgnored private let networkMonitor = NWPathMonitor()
 	@ObservationIgnored private var networkWasAvailable: Bool?
 	@ObservationIgnored private var sessionToken: String?
+	@ObservationIgnored private var tokenEndpoint: String?
 	@ObservationIgnored private var scheduledSync: Task<Void, Never>?
 	@ObservationIgnored private var syncRequestedWhileBusy = false
 	@ObservationIgnored private var knownSettings: [String: Data]
 	@ObservationIgnored private var settingVersions: [String: Date]
 	@ObservationIgnored private let deviceID: UUID
+	@ObservationIgnored private var settingsObserver: NSObjectProtocol?
+	@ObservationIgnored private var observedServerAddress: String?
+	@ObservationIgnored private var authGeneration: UInt64 = 0
 
 	private init() {
 		isSignedIn = false
 		let storedVersions = UserDefaults.standard.dictionary(forKey: "syncSettingVersions") as? [String: Double] ?? [:]
 		settingVersions = storedVersions.mapValues(Date.init(timeIntervalSince1970:))
+		tokenEndpoint = UserDefaults.standard.string(forKey: "syncTokenEndpoint")
 		knownSettings = (try? Self.readSettings()) ?? [:]
+		observedServerAddress = SyncServerAddress.normalized(Defaults[.syncServerURL], allowLocalHTTP: Self.allowsLocalHTTP)?.absoluteString
+		for key in knownSettings.keys where settingVersions[key] == nil {
+			settingVersions[key] = .distantPast
+		}
+		UserDefaults.standard.set(settingVersions.mapValues(\.timeIntervalSince1970), forKey: "syncSettingVersions")
 		if let storedID = UserDefaults.standard.string(forKey: "syncDeviceID"),
 		   let id = UUID(uuidString: storedID)
 		{
@@ -37,6 +47,16 @@ final class BrowserSync {
 			let id = UUID()
 			UserDefaults.standard.set(id.uuidString, forKey: "syncDeviceID")
 			deviceID = id
+		}
+		settingsObserver = NotificationCenter.default.addObserver(
+			forName: UserDefaults.didChangeNotification,
+			object: UserDefaults.standard,
+			queue: .main
+		) { [weak self] _ in
+			Task { @MainActor [weak self] in
+				self?.serverAddressDidChange()
+				self?.settingsDidChange()
+			}
 		}
 		networkMonitor.pathUpdateHandler = { path in
 			let available = path.status == .satisfied
@@ -54,7 +74,9 @@ final class BrowserSync {
 		Task.detached(priority: .utility) {
 			guard let token = try? BrowserSessionStore.load() else { return }
 			await MainActor.run { [weak self] in
-				guard let self, sessionToken == nil else { return }
+				guard let self, sessionToken == nil,
+					  SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
+				else { return }
 				sessionToken = token
 				isSignedIn = true
 				if browser != nil {
@@ -69,7 +91,7 @@ final class BrowserSync {
 		guard self.browser !== browser else { return }
 		let hadBrowser = self.browser != nil
 		self.browser = browser
-		if isSignedIn, !hadBrowser {
+		if isSignedIn, !hadBrowser, browser.isReadyForSync {
 			Task { await syncNow() }
 		}
 	}
@@ -92,6 +114,18 @@ final class BrowserSync {
 		}
 	}
 
+	private func serverAddressDidChange() {
+		let currentAddress = currentServerAddress?.absoluteString
+		guard currentAddress != observedServerAddress else { return }
+		observedServerAddress = currentAddress
+		authGeneration &+= 1
+		guard isSignedIn else { return }
+		sessionToken = nil
+		isSignedIn = false
+		scheduledSync?.cancel()
+		errorDescription = "The sync server changed. Sign in again for this server."
+	}
+
 	func scheduleSync() {
 		guard isSignedIn, browser != nil else { return }
 		scheduledSync?.cancel()
@@ -103,7 +137,12 @@ final class BrowserSync {
 	}
 
 	func signIn(result: Result<ASAuthorization, any Error>) async {
+		authGeneration &+= 1
+		let signInGeneration = authGeneration
 		do {
+			guard let signInAddress = currentServerAddress else {
+				throw BrowserSyncError.invalidServerURL
+			}
 			let authorization = try result.get()
 			guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
 			      let identityToken = credential.identityToken,
@@ -117,8 +156,14 @@ final class BrowserSync {
 				body: AuthenticationRequest(identityToken: token),
 				bearer: nil
 			)
+			guard authGeneration == signInGeneration,
+				currentServerAddress?.absoluteString == signInAddress.absoluteString else {
+				throw BrowserSyncError.serverChanged
+			}
 			try BrowserSessionStore.save(response.token)
 			sessionToken = response.token
+			tokenEndpoint = signInAddress.absoluteString
+			UserDefaults.standard.set(tokenEndpoint, forKey: "syncTokenEndpoint")
 			isSignedIn = true
 			errorDescription = nil
 			await syncNow()
@@ -130,7 +175,10 @@ final class BrowserSync {
 	func signOut() {
 		do {
 			try BrowserSessionStore.delete()
+			authGeneration &+= 1
 			sessionToken = nil
+			tokenEndpoint = nil
+			UserDefaults.standard.removeObject(forKey: "syncTokenEndpoint")
 			isSignedIn = false
 			scheduledSync?.cancel()
 			errorDescription = nil
@@ -140,11 +188,15 @@ final class BrowserSync {
 	}
 
 	func syncNow() async {
-		guard let browser, let sessionToken else { return }
+		guard let browser, browser.isReadyForSync,
+			  let sessionToken,
+			  SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
+		else { return }
 		guard !isSyncing else {
 			syncRequestedWhileBusy = true
 			return
 		}
+		let syncGeneration = authGeneration
 		isSyncing = true
 		defer {
 			isSyncing = false
@@ -161,13 +213,15 @@ final class BrowserSync {
 				body: AuthenticationRequest?.none,
 				bearer: sessionToken
 			)
-			guard self.sessionToken == sessionToken else { return }
+			guard self.sessionToken == sessionToken,
+				authGeneration == syncGeneration,
+				SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 			let local = browser.syncDocument(settings: settingSnapshot())
 			// Decode + merge off-main; docs are Sendable values.
 			let merged = try await Task.detached(priority: .utility) {
 				let decoder = JSONDecoder()
 				let documents = try snapshots.map { try decoder.decode(BrowserSyncDocument.self, from: $0.payload) }
-				guard documents.allSatisfy({ $0.version == 1 || $0.version == 2 }) else {
+				guard documents.allSatisfy(\.hasSupportedVersion) else {
 					throw BrowserSyncError.unsupportedVersion
 				}
 				guard documents.allSatisfy(\.hasValidStructure) else {
@@ -175,12 +229,34 @@ final class BrowserSync {
 				}
 				return documents.reduce(local) { $0.merging($1) }
 			}.value
-			if merged != local {
-				browser.applySyncDocument(merged)
-				try applySettings(merged.settings)
+			guard self.sessionToken == sessionToken,
+				authGeneration == syncGeneration,
+				SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
+			settingsDidChange()
+			let currentBrowsers = BrowserWindowRegistry.shared.openBrowsers.filter {
+				!$0.isPrivate && !$0.isMini && $0.session === browser.session
+					&& $0.isReadyForSync
+			}
+			let latest = currentBrowsers.reduce(browser.syncDocument(settings: settingSnapshot())) { partial, peer in
+				partial.merging(peer.syncDocument(settings: settingSnapshot()))
+			}
+			let protectedMerge = merged.merging(latest)
+			if protectedMerge != local {
+				for target in currentBrowsers {
+					target.applySyncDocument(protectedMerge)
+				}
+				try applySettings(protectedMerge.settings)
+				for target in currentBrowsers {
+					await target.flushAndWaitForPersistence()
+				}
+				guard self.sessionToken == sessionToken,
+					authGeneration == syncGeneration,
+					SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 			}
 
-			let outgoing = browser.syncDocument(settings: settingSnapshot())
+			let outgoing = currentBrowsers.reduce(browser.syncDocument(settings: settingSnapshot())) { partial, peer in
+				partial.merging(peer.syncDocument(settings: settingSnapshot()))
+			}
 			let deviceID = deviceID
 			let pushPayload: Data? = try await Task.detached(priority: .utility) {
 				let decoder = JSONDecoder()
@@ -188,15 +264,28 @@ final class BrowserSync {
 					.first(where: { $0.deviceID == deviceID })
 					.map { try decoder.decode(BrowserSyncDocument.self, from: $0.payload) }
 				guard ownDocument != outgoing else { return nil }
-				return try JSONEncoder().encode(outgoing)
+				let payload = try JSONEncoder().encode(outgoing)
+				guard payload.count <= 16 * 1024 * 1024 else {
+					throw BrowserSyncError.payloadTooLarge
+				}
+				return payload
 			}.value
+			guard self.sessionToken == sessionToken,
+				authGeneration == syncGeneration,
+				SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 			if let payload = pushPayload {
+				guard self.sessionToken == sessionToken,
+					authGeneration == syncGeneration,
+					SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 				let _: ServerSnapshot = try await request(
 					path: "v1/sync",
 					method: "PUT",
 					body: SyncRequest(deviceID: deviceID, payload: payload),
 					bearer: sessionToken
 				)
+				guard self.sessionToken == sessionToken,
+					authGeneration == syncGeneration,
+					SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 			}
 			lastSync = .now
 			errorDescription = nil
@@ -217,20 +306,31 @@ final class BrowserSync {
 	}
 
 	private func applySettings(_ settings: [String: SyncedSetting]) throws {
+		var updates: [(String, Any? , Date)] = []
 		for key in Defaults.Keys.syncedSettingNames {
 			guard let setting = settings[key],
-			      setting.modifiedAt > (settingVersions[key] ?? .distantPast)
+			      setting.shouldApply(
+					over: knownSettings[key],
+					newerThan: settingVersions[key] ?? .distantPast
+				)
 			else { continue }
 			if let data = setting.value {
 				let object = try PropertyListSerialization.propertyList(from: data, format: nil)
 				guard let wrapped = object as? [String: Any], let value = wrapped["value"] else {
 					throw BrowserSyncError.invalidSetting
 				}
+				updates.append((key, value, setting.modifiedAt))
+			} else {
+				updates.append((key, nil, setting.modifiedAt))
+			}
+		}
+		for (key, value, modifiedAt) in updates {
+			if let value {
 				UserDefaults.standard.set(value, forKey: key)
 			} else {
 				UserDefaults.standard.removeObject(forKey: key)
 			}
-			settingVersions[key] = setting.modifiedAt
+			settingVersions[key] = modifiedAt
 		}
 		knownSettings = try Self.readSettings()
 		UserDefaults.standard.set(
@@ -241,8 +341,10 @@ final class BrowserSync {
 
 	private static func readSettings() throws -> [String: Data] {
 		var settings: [String: Data] = [:]
+		let bundleID = Bundle.main.bundleIdentifier ?? "com.omeriadon.astra"
+		let storedValues = UserDefaults.standard.persistentDomain(forName: bundleID) ?? [:]
 		for key in Defaults.Keys.syncedSettingNames {
-			guard let value = UserDefaults.standard.object(forKey: key) else { continue }
+			guard let value = storedValues[key] else { continue }
 			settings[key] = try PropertyListSerialization.data(
 				fromPropertyList: ["value": value],
 				format: .binary,
@@ -258,10 +360,7 @@ final class BrowserSync {
 		body: (some Encodable)?,
 		bearer: String?
 	) async throws -> Response {
-		let address = Defaults[.syncServerURL].trimmingCharacters(in: .whitespacesAndNewlines)
-		guard let baseURL = URL(string: address), let host = baseURL.host,
-		      !host.isEmpty,
-		      baseURL.scheme == "https" || Self.isAllowedLocalHTTP(baseURL)
+		guard let baseURL = SyncServerAddress.normalized(Defaults[.syncServerURL], allowLocalHTTP: Self.allowsLocalHTTP)
 		else {
 			throw BrowserSyncError.invalidServerURL
 		}
@@ -274,6 +373,9 @@ final class BrowserSync {
 			request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 		}
 		if let bearer {
+			guard bearer == sessionToken, SyncServerAddress.isBound(tokenEndpoint, to: baseURL) else {
+				throw BrowserSyncError.serverChanged
+			}
 			request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
 		}
 		for attempt in 0 ..< 3 {
@@ -305,12 +407,21 @@ final class BrowserSync {
 		throw BrowserSyncError.invalidResponse
 	}
 
-	private static func isAllowedLocalHTTP(_ url: URL) -> Bool {
+	private var currentServerAddress: URL? {
+		SyncServerAddress.normalized(Defaults[.syncServerURL], allowLocalHTTP: Self.allowsLocalHTTP)
+	}
+
+	private static var allowsLocalHTTP: Bool {
 		#if DEBUG
-			url.scheme == "http" && ["localhost", "127.0.0.1", "::1"].contains(url.host)
+			true
 		#else
 			false
 		#endif
+	}
+
+	func hydrationDidFinish(_ browser: Browser) {
+		guard self.browser === browser, isSignedIn else { return }
+		Task { await syncNow() }
 	}
 }
 
@@ -339,6 +450,8 @@ private enum BrowserSyncError: LocalizedError, Sendable {
 	case invalidSetting
 	case missingAppleToken
 	case unsupportedVersion
+	case serverChanged
+	case payloadTooLarge
 
 	var errorDescription: String? {
 		switch self {
@@ -347,13 +460,17 @@ private enum BrowserSyncError: LocalizedError, Sendable {
 			case .invalidResponse:
 				"The sync server returned an invalid response."
 			case .invalidServerURL:
-				"Enter a valid HTTPS sync server URL."
+				"Enter a valid sync server URL using HTTPS. The scheme may be omitted."
 			case .invalidSetting:
 				"The sync server returned an invalid setting."
 			case .missingAppleToken:
 				"Apple did not return an identity token."
 			case .unsupportedVersion:
 				"The sync server contains data from a newer browser version."
+			case .serverChanged:
+				"The sync server changed during sign-in. Sign in again."
+			case .payloadTooLarge:
+				"Local sync data exceeds the server's 16 MB request limit. The local copy is safe."
 		}
 	}
 }

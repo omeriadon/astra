@@ -31,6 +31,12 @@ final class Browser {
 	private(set) var closedHistoryTabs: [OpenTab]
 	private(set) var closedTabIDs: Set<UUID>
 	private(set) var deletedBookmarkIDs: Set<UUID>
+	private(set) var closedTabsAt: [UUID: Date]
+	private(set) var deletedBookmarksAt: [UUID: Date]
+	private(set) var deletedSpacesAt: [UUID: Date]
+	private(set) var deletedVisitsAt: [UUID: Date]
+	private(set) var historyClearedAt: Date
+	private(set) var selectedTabModifiedAt: Date
 	private(set) var persistenceErrorDescription: String?
 
 	@ObservationIgnored
@@ -87,6 +93,7 @@ final class Browser {
 	/// stash flags so a placeholder window never saves or broadcasts itself.
 	@ObservationIgnored
 	private var didFinishHydration = true
+	var isReadyForSync: Bool { didFinishHydration && !hydrationFailed && persistence != nil }
 
 	@ObservationIgnored
 	private var hydrationFailed = false
@@ -143,6 +150,8 @@ final class Browser {
 		spaceSwitchDirection = 1
 		workspace.spaces.append(space)
 		workspace.selectedSpaceID = space.id
+		workspace.modifiedAt = .now
+		workspace.selectionModifiedAt = .now
 		openInternalPage(.themeEditor)
 		schedulePersistence()
 	}
@@ -162,8 +171,11 @@ final class Browser {
 			workspace.spaces[destinationIndex].selectedTabID = selectedTabID
 		}
 		workspace.spaces[destinationIndex].modifiedAt = .now
+		workspace.modifiedAt = .now
 		workspace.spaces.removeAll { $0.id == id }
 		workspace.deletedSpaceIDs.insert(id)
+		workspace.deletedSpacesAt[id] = .now
+		deletedSpacesAt[id] = workspace.deletedSpacesAt[id]
 		if workspace.selectedSpaceID == id {
 			selectSpace(destinationID)
 		}
@@ -176,6 +188,8 @@ final class Browser {
 			spaceSwitchDirection = nextIndex >= currentIndex ? 1 : -1
 		}
 		workspace.selectedSpaceID = id
+		workspace.modifiedAt = .now
+		workspace.selectionModifiedAt = .now
 		let space = selectedSpace
 		if let tabID = space.selectedTabID,
 		   space.tabIDs.contains(tabID) || workspace.favouriteTabIDs.contains(tabID)
@@ -220,6 +234,7 @@ final class Browser {
 		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) else { return }
 		workspace.spaces[index].pinnedFolders.append(PinnedTabFolder(name: name))
 		workspace.spaces[index].modifiedAt = .now
+		workspace.modifiedAt = .now
 		schedulePersistence()
 	}
 
@@ -228,14 +243,18 @@ final class Browser {
 		      let folderIndex = workspace.spaces[index].pinnedFolders.firstIndex(where: { $0.id == id }),
 		      !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 		workspace.spaces[index].pinnedFolders[folderIndex].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+		workspace.spaces[index].pinnedFolders[folderIndex].modifiedAt = .now
 		workspace.spaces[index].modifiedAt = .now
+		workspace.modifiedAt = .now
 		schedulePersistence()
 	}
 
 	func deletePinnedFolder(_ id: UUID) {
 		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) else { return }
 		workspace.spaces[index].pinnedFolders.removeAll { $0.id == id }
+		workspace.spaces[index].deletedPinnedFoldersAt[id] = .now
 		workspace.spaces[index].modifiedAt = .now
+		workspace.modifiedAt = .now
 		schedulePersistence()
 	}
 
@@ -249,8 +268,10 @@ final class Browser {
 		   let folderIndex = workspace.spaces[index].pinnedFolders.firstIndex(where: { $0.id == folderID })
 		{
 			workspace.spaces[index].pinnedFolders[folderIndex].tabIDs.append(tabID)
+			workspace.spaces[index].pinnedFolders[folderIndex].modifiedAt = .now
 		}
 		workspace.spaces[index].modifiedAt = .now
+		workspace.modifiedAt = .now
 		schedulePersistence()
 	}
 
@@ -287,12 +308,14 @@ final class Browser {
 		} else {
 			return
 		}
+		workspace.modifiedAt = .now
 		if selectedTabID == id,
 		   area != .favourite,
 		   let spaceID,
 		   workspace.selectedSpaceID != spaceID
 		{
 			workspace.selectedSpaceID = spaceID
+			workspace.selectionModifiedAt = .now
 			selectTab(id)
 		}
 		schedulePersistence()
@@ -315,8 +338,9 @@ final class Browser {
 		}
 		// Synchronous placeholder only: disk decode happens off-main in
 		// hydrateFromDisk() so the first frame never waits on JSON.
-		let placeholder = BrowserTab(session: session)
+		let placeholder = BrowserTab(modifiedAt: .distantPast, session: session)
 		let placeholderID = placeholder.id
+		let placeholderModifiedAt = placeholder.modifiedAt
 		var persistenceStore: BrowserPersistence?
 		var persistenceError: String?
 		do {
@@ -339,6 +363,12 @@ final class Browser {
 		closedHistoryTabs = []
 		closedTabIDs = []
 		deletedBookmarkIDs = []
+		closedTabsAt = [:]
+		deletedBookmarksAt = [:]
+		deletedSpacesAt = [:]
+		deletedVisitsAt = [:]
+		historyClearedAt = .distantPast
+		selectedTabModifiedAt = .distantPast
 		persistence = persistenceStore
 		persistenceErrorDescription = persistenceError
 		persistenceTask = nil
@@ -350,7 +380,7 @@ final class Browser {
 		}
 		BrowserController.prewarmSharedProcess()
 		if persistenceStore != nil {
-			hydrateFromDisk(placeholderID: placeholderID)
+			hydrateFromDisk(placeholderID: placeholderID, placeholderModifiedAt: placeholderModifiedAt)
 		}
 	}
 
@@ -364,7 +394,7 @@ final class Browser {
 		var historyVisits: [BrowserVisit]?
 	}
 
-	private func hydrateFromDisk(placeholderID: UUID) {
+	private func hydrateFromDisk(placeholderID: UUID, placeholderModifiedAt: Date) {
 		guard let persistence else { return }
 		Task.detached(priority: .userInitiated) { [persistence] in
 			do {
@@ -391,7 +421,7 @@ final class Browser {
 					for tab in self?.tabs ?? [] {
 						tab.invalidateStoredSnapshot()
 					}
-					self?.applyHydratedState(loaded, placeholderID: placeholderID)
+					self?.applyHydratedState(loaded, placeholderID: placeholderID, placeholderModifiedAt: placeholderModifiedAt)
 				}
 			} catch {
 				let message = error.localizedDescription
@@ -404,14 +434,54 @@ final class Browser {
 		}
 	}
 
-	private func applyHydratedState(_ loaded: HydratedState, placeholderID: UUID) {
+	private func applyHydratedState(_ loaded: HydratedState, placeholderID: UUID, placeholderModifiedAt: Date) {
 		defer {
 			didFinishHydration = true
 			persist()
+			BrowserSync.shared.hydrationDidFinish(self)
 		}
-		// Something (sync, external URL, another window) already replaced the
-		// placeholder: live state wins, disk state will merge on next launch.
-		guard tabs.count == 1, tabs.first?.id == placeholderID else { return }
+		let placeholderIsUntouched = tabs.count == 1
+			&& tabs.first?.id == placeholderID
+			&& tabs.first?.modifiedAt == placeholderModifiedAt
+			&& tabs.first?.currentURL == nil
+		guard placeholderIsUntouched else {
+			let cachedTabs = loaded.tabs
+			let cachedWorkspace = loaded.workspace ?? BrowserWorkspace.migrated(
+				tabs: cachedTabs,
+				selectedTabID: loaded.snapshot?.selectedTabID ?? cachedTabs.first?.id ?? UUID(),
+				theme: Defaults[.browserTheme]
+			)
+			let cached = BrowserSyncDocument(
+				tabs: cachedTabs,
+				workspace: cachedWorkspace,
+				bookmarks: loaded.bookmarks,
+				history: loaded.historyVisits ?? Self.migratedHistory(loaded.tabs + loaded.closedTabs),
+				browser: loaded.snapshot ?? BrowserSnapshot(),
+				settings: [:]
+			)
+			let current = BrowserSyncDocument(
+				tabs: tabs.map(\.openTab),
+				workspace: workspace,
+				bookmarks: bookmarks,
+				history: historyVisits,
+				browser: BrowserSnapshot(
+					selectedTabID: selectedTabID,
+					selectedTabModifiedAt: selectedTabModifiedAt,
+					closedTabIDs: closedTabIDs,
+					deletedBookmarkIDs: deletedBookmarkIDs,
+					deletedBookmarksAt: deletedBookmarksAt,
+					closedTabsAt: closedTabsAt,
+					deletedSpacesAt: deletedSpacesAt,
+					deletedVisitsAt: deletedVisitsAt,
+					historyClearedAt: historyClearedAt
+				),
+				settings: [:]
+			)
+			let merged = current.merging(cached)
+			applySyncDocument(merged)
+			closedHistoryTabs = loaded.closedTabs
+			return
+		}
 		let restoredTabs = loaded.tabs.compactMap { saved -> BrowserTab? in
 			let internalPage = saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:))
 			guard saved.internalPage == nil || internalPage != nil else { return nil }
@@ -455,7 +525,13 @@ final class Browser {
 		}
 		closedHistoryTabs = loaded.closedTabs
 		closedTabIDs = loaded.snapshot?.closedTabIDs ?? []
+		selectedTabModifiedAt = loaded.snapshot?.selectedTabModifiedAt ?? .distantPast
 		deletedBookmarkIDs = loaded.snapshot?.deletedBookmarkIDs ?? []
+		closedTabsAt = loaded.snapshot?.closedTabsAt ?? [:]
+		deletedBookmarksAt = loaded.snapshot?.deletedBookmarksAt ?? [:]
+		deletedSpacesAt = loaded.snapshot?.deletedSpacesAt ?? [:]
+		deletedVisitsAt = loaded.snapshot?.deletedVisitsAt ?? [:]
+		historyClearedAt = loaded.snapshot?.historyClearedAt ?? .distantPast
 		persistenceErrorDescription = nil
 		reconcileWorkspace()
 		for tab in newTabs {
@@ -482,6 +558,7 @@ final class Browser {
 		// appears in the same transaction as the content switch (previously
 		// this only happened in debounced persist() → ~500ms row delay).
 		reconcileWorkspace()
+		markWorkspaceStructureChanged()
 		if !inBackground {
 			selectTab(tab.id)
 		}
@@ -550,6 +627,7 @@ final class Browser {
 		}
 		tabs.append(tab)
 		reconcileWorkspace()
+		markWorkspaceStructureChanged()
 		if inBackground {
 			schedulePersistence()
 		} else {
@@ -623,9 +701,13 @@ final class Browser {
 			newTabGoogleSuggestions = []
 		}
 		selectedTabID = id
+		selectedTabModifiedAt = .now
 		if let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
 			workspace.spaces[index].selectedTabID = id
+			workspace.spaces[index].modifiedAt = .now
 		}
+		workspace.modifiedAt = .now
+		workspace.selectionModifiedAt = .now
 		recentlyUsedTabIDs.removeAll { $0 == id }
 		recentlyUsedTabIDs.insert(id, at: 0)
 		tab.controller?.loadFaviconIfMissing()
@@ -682,6 +764,7 @@ final class Browser {
 	func removeBookmark(_ id: UUID) {
 		bookmarks.removeAll { $0.id == id }
 		deletedBookmarkIDs.insert(id)
+		deletedBookmarksAt[id] = .now
 		schedulePersistence()
 	}
 
@@ -706,6 +789,7 @@ final class Browser {
 		configure(tab)
 		tabs.insert(tab, at: index + 1)
 		reconcileWorkspace()
+		markWorkspaceStructureChanged()
 		selectTab(tab.id)
 		return tab
 	}
@@ -749,7 +833,12 @@ final class Browser {
 		tabs.remove(at: index)
 		if !wasInternal {
 			closedTabIDs.insert(id)
+			closedTabsAt[id] = .now
 		}
+		for index in workspace.spaces.indices where workspace.spaces[index].tabIDs.contains(id) {
+			workspace.spaces[index].modifiedAt = .now
+		}
+		workspace.modifiedAt = .now
 		recentlyUsedTabIDs.removeAll { $0 == id }
 
 		if tabs.isEmpty {
@@ -762,6 +851,8 @@ final class Browser {
 				return
 			}
 			selectedTabID = nextNormalID
+			selectedTabModifiedAt = .now
+			workspace.selectionModifiedAt = .now
 			recentlyUsedTabIDs.removeAll { $0 == selectedTabID }
 			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
 			if let selected = tabs.first(where: { $0.id == selectedTabID }), selected.isHibernated {
@@ -859,6 +950,7 @@ final class Browser {
 			if lastVisitedURL[controller.id] == url, lastVisitedDocument[controller.id] == controller.navigationIdentifier {
 				if let id = lastVisitID[controller.id], let index = historyVisits.firstIndex(where: { $0.id == id }) {
 					historyVisits[index].title = title
+					historyVisits[index].modifiedAt = .now
 				}
 				continue
 			}
@@ -874,6 +966,10 @@ final class Browser {
 		guard !isPrivate else { return }
 		let retained = BrowserVisit.retained(historyVisits, days: Defaults[.historyRetentionDays])
 		guard retained != historyVisits else { return }
+		let retainedIDs = Set(retained.map(\.id))
+		for visit in historyVisits where !retainedIDs.contains(visit.id) {
+			deletedVisitsAt[visit.id] = .now
+		}
 		historyVisits = retained
 		schedulePersistence()
 	}
@@ -891,6 +987,8 @@ final class Browser {
 
 	private func clearLocalHistory() {
 		historyVisits.removeAll()
+		historyClearedAt = .now
+		deletedVisitsAt.removeAll()
 		lastVisitID.removeAll()
 		closedHistoryTabs.removeAll()
 		for tab in tabs {
@@ -906,10 +1004,16 @@ final class Browser {
 	func removeHistory(_ ids: Set<UUID>) {
 		guard !isPrivate, !isMini else { return }
 		historyVisits.removeAll { ids.contains($0.id) }
+		for id in ids {
+			deletedVisitsAt[id] = .now
+		}
 		for browser in BrowserWindowRegistry.shared.openBrowsers
 			where browser !== self && browser.session === session && !browser.isPrivate && !browser.isMini
 		{
 			browser.historyVisits.removeAll { ids.contains($0.id) }
+			for id in ids {
+				browser.deletedVisitsAt[id] = .now
+			}
 		}
 		schedulePersistence()
 	}
@@ -919,7 +1023,7 @@ final class Browser {
 		var existing = Set(bookmarks.map(\.url))
 		for bookmark in incoming where ["http", "https", "file"].contains(bookmark.url.scheme?.lowercased() ?? "") {
 			guard existing.insert(bookmark.url).inserted else { continue }
-			bookmarks.append(Bookmark(name: bookmark.name, url: BrowserAddress.withoutCredentials(bookmark.url)))
+			bookmarks.append(Bookmark(name: bookmark.name, url: BrowserAddress.withoutCredentials(bookmark.url), modifiedAt: bookmark.modifiedAt))
 		}
 		schedulePersistence()
 	}
@@ -929,7 +1033,10 @@ final class Browser {
 		var existing = Set(historyVisits.map(\.url))
 		for visit in incoming where ["http", "https"].contains(visit.url.scheme?.lowercased() ?? "") {
 			guard existing.insert(visit.url).inserted else { continue }
-			historyVisits.append(BrowserVisit(url: BrowserAddress.withoutCredentials(visit.url), title: visit.title, visitedAt: visit.visitedAt))
+			var visit = visit
+			visit.url = BrowserAddress.withoutCredentials(visit.url)
+			visit.modifiedAt = .now
+			historyVisits.append(visit)
 		}
 		historyVisits.sort { $0.visitedAt > $1.visitedAt }
 		schedulePersistence()
@@ -1130,8 +1237,17 @@ final class Browser {
 		releaseAfterTabUpdate(removedTabs)
 		tabs.removeAll { ids.contains($0.id) }
 		closedTabIDs.formUnion(closedWebIDs)
+		for id in closedWebIDs {
+			closedTabsAt[id] = .now
+		}
+		for index in workspace.spaces.indices where workspace.spaces[index].tabIDs.contains(where: ids.contains) {
+			workspace.spaces[index].modifiedAt = .now
+		}
+		workspace.modifiedAt = .now
 		recentlyUsedTabIDs.removeAll { ids.contains($0) }
 		selectedTabID = selectedID
+		selectedTabModifiedAt = .now
+		workspace.selectionModifiedAt = .now
 		recentlyUsedTabIDs.removeAll { $0 == selectedID }
 		recentlyUsedTabIDs.insert(selectedID, at: 0)
 		if let selected = tabs.first(where: { $0.id == selectedID }), selected.isHibernated {
@@ -1179,6 +1295,9 @@ final class Browser {
 		for index in syncedWorkspace.spaces.indices {
 			syncedWorkspace.spaces[index].tabIDs.removeAll { !webTabIDs.contains($0) }
 			syncedWorkspace.spaces[index].pinnedTabIDs.removeAll { !webTabIDs.contains($0) }
+			for folderIndex in syncedWorkspace.spaces[index].pinnedFolders.indices {
+				syncedWorkspace.spaces[index].pinnedFolders[folderIndex].tabIDs.removeAll { !webTabIDs.contains($0) }
+			}
 			if let selectedID = syncedWorkspace.spaces[index].selectedTabID,
 			   !webTabIDs.contains(selectedID)
 			{
@@ -1188,6 +1307,7 @@ final class Browser {
 		return BrowserSyncDocument(
 			tabs: syncedTabs.map { tab in
 				var snapshot = tab.openTab
+				snapshot.url = snapshot.url.map(BrowserAddress.withoutCredentials)
 				snapshot.history = snapshot.url.map { [$0] } ?? []
 				snapshot.historyIndex = 0
 				snapshot.restorationState = nil
@@ -1196,11 +1316,26 @@ final class Browser {
 				return snapshot
 			},
 			workspace: syncedWorkspace,
-			bookmarks: bookmarks.filter { ["http", "https"].contains($0.url.scheme?.lowercased() ?? "") },
+			bookmarks: bookmarks.filter { ["http", "https"].contains($0.url.scheme?.lowercased() ?? "") }.map { bookmark in
+				var bookmark = bookmark
+				bookmark.url = BrowserAddress.withoutCredentials(bookmark.url)
+				return bookmark
+			},
+			history: historyVisits.filter { ["http", "https"].contains($0.url.scheme?.lowercased() ?? "") }.map { visit in
+				var visit = visit
+				visit.url = BrowserAddress.withoutCredentials(visit.url)
+				return visit
+			},
 			browser: BrowserSnapshot(
 				selectedTabID: persistedSelectedTabID,
+				selectedTabModifiedAt: selectedTabModifiedAt,
 				closedTabIDs: closedTabIDs,
-				deletedBookmarkIDs: deletedBookmarkIDs
+				deletedBookmarkIDs: deletedBookmarkIDs,
+				deletedBookmarksAt: deletedBookmarksAt,
+				closedTabsAt: closedTabsAt,
+				deletedSpacesAt: deletedSpacesAt,
+				deletedVisitsAt: deletedVisitsAt,
+				historyClearedAt: historyClearedAt
 			),
 			settings: settings
 		)
@@ -1245,13 +1380,25 @@ final class Browser {
 			tabs = changedTabs + tabs.filter { $0.internalPage != nil }
 		}
 		closedTabIDs = document.browser.closedTabIDs
+		if document.browser.selectedTabModifiedAt > selectedTabModifiedAt {
+			selectedTabID = document.browser.selectedTabID
+			selectedTabModifiedAt = document.browser.selectedTabModifiedAt
+		}
 		deletedBookmarkIDs = document.browser.deletedBookmarkIDs
+		closedTabsAt = document.browser.closedTabsAt
+		deletedBookmarksAt = document.browser.deletedBookmarksAt
+		deletedSpacesAt = document.browser.deletedSpacesAt
+		deletedVisitsAt = document.browser.deletedVisitsAt
+		historyClearedAt = document.browser.historyClearedAt
 		bookmarks = document.bookmarks
+		historyVisits = document.history
 		workspace = document.workspace ?? BrowserWorkspace.migrated(
 			tabs: document.tabs,
 			selectedTabID: document.browser.selectedTabID,
 			theme: Defaults[.browserTheme]
 		)
+		workspace.deletedSpaceIDs.formUnion(document.browser.deletedSpacesAt.keys)
+		workspace.deletedSpacesAt.merge(document.browser.deletedSpacesAt) { max($0, $1) }
 		if !tabs.contains(where: { $0.id == selectedTabID }) {
 			selectedTabID = tabs[0].id
 		}
@@ -1325,6 +1472,13 @@ final class Browser {
 			} else {
 				addTab()
 			}
+		}
+	}
+
+	private func markWorkspaceStructureChanged() {
+		workspace.modifiedAt = .now
+		if let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
+			workspace.spaces[index].modifiedAt = .now
 		}
 	}
 
@@ -1418,10 +1572,16 @@ final class Browser {
 			openTabs: tabs.map(\.openTab),
 			closedTabs: closedHistoryTabs,
 			workspace: workspace,
-			snapshot: BrowserSnapshot(
+				snapshot: BrowserSnapshot(
 				selectedTabID: selectedTabID,
+				selectedTabModifiedAt: selectedTabModifiedAt,
 				closedTabIDs: closedTabIDs,
-				deletedBookmarkIDs: deletedBookmarkIDs
+				deletedBookmarkIDs: deletedBookmarkIDs,
+				deletedBookmarksAt: deletedBookmarksAt,
+				closedTabsAt: closedTabsAt,
+				deletedSpacesAt: deletedSpacesAt,
+				deletedVisitsAt: deletedVisitsAt,
+				historyClearedAt: historyClearedAt
 			),
 			historyVisits: historyVisits
 		)

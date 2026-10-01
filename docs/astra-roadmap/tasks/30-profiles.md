@@ -52,3 +52,7 @@ Preserve unrelated architecture, formatting and user changes. No pushes, merges,
 ## Handoff
 
 Return changed files, selected scope, completed checks, pending cases, data/privacy/migration impact and unresolved issues. Write `docs/astra-roadmap/handoffs/30-profiles.md` using the dispatch template. The primary reviews; the user merges later.
+
+## Required cache/update metadata
+
+Preserve task29’s user-required local cache and timestamped merge contract. Every new synchronized entity, ordering/deletion scope and portable setting participates in persisted last-update metadata. Stamp actual local mutations, preserve remote/decoded timestamps, and verify that stale incoming data cannot replace newer local changes. Register added portable settings; retain explicit device-only exclusions.

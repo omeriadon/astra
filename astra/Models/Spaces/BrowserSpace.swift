@@ -4,6 +4,26 @@ struct PinnedTabFolder: Codable, Equatable, Identifiable, Sendable {
 	var id = UUID()
 	var name: String
 	var tabIDs: [UUID] = []
+	var modifiedAt: Date = .now
+
+	init(id: UUID = UUID(), name: String, tabIDs: [UUID] = [], modifiedAt: Date = .now) {
+		self.id = id
+		self.name = name
+		self.tabIDs = tabIDs
+		self.modifiedAt = modifiedAt
+	}
+
+	private enum CodingKeys: String, CodingKey {
+		case id, name, tabIDs, modifiedAt
+	}
+
+	nonisolated init(from decoder: Decoder) throws {
+		let values = try decoder.container(keyedBy: CodingKeys.self)
+		id = try values.decode(UUID.self, forKey: .id)
+		name = try values.decode(String.self, forKey: .name)
+		tabIDs = try values.decodeIfPresent([UUID].self, forKey: .tabIDs) ?? []
+		modifiedAt = try values.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? .distantPast
+	}
 }
 
 struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
@@ -28,6 +48,7 @@ struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
 	var tabIDs: [UUID]
 	var pinnedTabIDs: [UUID]
 	var pinnedFolders: [PinnedTabFolder]
+	var deletedPinnedFoldersAt: [UUID: Date]
 	var selectedTabID: UUID?
 	var modifiedAt: Date
 
@@ -39,6 +60,7 @@ struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
 		tabIDs: [UUID] = [],
 		pinnedTabIDs: [UUID] = [],
 		pinnedFolders: [PinnedTabFolder] = [],
+		deletedPinnedFoldersAt: [UUID: Date] = [:],
 		selectedTabID: UUID? = nil,
 		modifiedAt: Date = .now
 	) {
@@ -49,12 +71,13 @@ struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
 		self.tabIDs = tabIDs
 		self.pinnedTabIDs = pinnedTabIDs
 		self.pinnedFolders = pinnedFolders
+		self.deletedPinnedFoldersAt = deletedPinnedFoldersAt
 		self.selectedTabID = selectedTabID
 		self.modifiedAt = modifiedAt
 	}
 
 	private enum CodingKeys: String, CodingKey {
-		case id, name, symbol, theme, tabIDs, pinnedTabIDs, pinnedFolders, selectedTabID, modifiedAt
+		case id, name, symbol, theme, tabIDs, pinnedTabIDs, pinnedFolders, deletedPinnedFoldersAt, selectedTabID, modifiedAt
 	}
 
 	nonisolated init(from decoder: Decoder) throws {
@@ -66,7 +89,8 @@ struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
 		tabIDs = try values.decode([UUID].self, forKey: .tabIDs)
 		pinnedTabIDs = try values.decode([UUID].self, forKey: .pinnedTabIDs)
 		pinnedFolders = try values.decodeIfPresent([PinnedTabFolder].self, forKey: .pinnedFolders) ?? []
+		deletedPinnedFoldersAt = try values.decodeIfPresent([UUID: Date].self, forKey: .deletedPinnedFoldersAt) ?? [:]
 		selectedTabID = try values.decodeIfPresent(UUID.self, forKey: .selectedTabID)
-		modifiedAt = try values.decode(Date.self, forKey: .modifiedAt)
+		modifiedAt = try values.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? .distantPast
 	}
 }

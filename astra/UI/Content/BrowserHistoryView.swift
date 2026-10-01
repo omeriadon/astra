@@ -63,7 +63,7 @@ struct BrowserHistoryView: View {
 			}
 			Button(role: .cancel) {}
 		} message: {
-			Text("This removes visited-page records and recently closed tabs on this Mac. Your open pages and bookmarks are kept.")
+			Text("When sync is enabled, this removes browsing history from all synced devices. Recently closed tabs are cleared on this Mac. Open pages and bookmarks are kept.")
 		}
 		.overlay {
 			if filteredVisits.isEmpty {

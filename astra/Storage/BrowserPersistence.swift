@@ -49,6 +49,8 @@ final class BrowserPersistence: @unchecked Sendable {
 		let state: BrowserPersistedState
 	}
 
+	private nonisolated static let currentVersion = 2
+
 	@MainActor
 	init() throws {
 		directory = try persistenceDirectory()
@@ -129,7 +131,7 @@ final class BrowserPersistence: @unchecked Sendable {
 	}
 
 	nonisolated func savePersistedState(_ state: BrowserPersistedState) throws {
-		let data = try JSONEncoder().encode(Envelope(version: 1, state: state))
+		let data = try JSONEncoder().encode(Envelope(version: Self.currentVersion, state: state))
 		_ = try decodeSnapshot(data)
 		let currentURL = directory.appendingPathComponent("browser-state.json")
 		var historyWasRemoved = false
@@ -169,10 +171,13 @@ final class BrowserPersistence: @unchecked Sendable {
 		guard data.count <= 64 * 1024 * 1024 else {
 			throw BrowserPersistenceError.invalidSnapshot
 		}
-		let envelope = try JSONDecoder().decode(Envelope.self, from: data)
-		guard envelope.version == 1 else {
+		guard let header = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+			  let version = header["version"] as? Int
+		else { throw BrowserPersistenceError.invalidSnapshot }
+		guard (1 ... Self.currentVersion).contains(version) else {
 			throw BrowserPersistenceError.unsupportedVersion
 		}
+		let envelope = try JSONDecoder().decode(Envelope.self, from: data)
 		let state = envelope.state
 		guard Set(state.openTabs.map(\.id)).count == state.openTabs.count,
 		      Set(state.bookmarks.map(\.id)).count == state.bookmarks.count,

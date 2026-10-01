@@ -42,7 +42,7 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 | [26-reader-translation-source](tasks/26-reader-translation-source.md) | queued | — |
 | [27-internal-urls](tasks/27-internal-urls.md) | queued | — |
 | [28-settings](tasks/28-settings.md) | queued | — |
-| [29-sync](tasks/29-sync.md) | queued | — |
+| [29-sync](tasks/29-sync.md) | in progress; user priority override | Device cache, endpoint validation and timestamps for all synchronized records |
 | [30-profiles](tasks/30-profiles.md) | queued | — |
 | [31-macos-automation-webapps](tasks/31-macos-automation-webapps.md) | queued | — |
 | [32-ios-integration](tasks/32-ios-integration.md) | queued | — |

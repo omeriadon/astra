@@ -9,7 +9,7 @@ struct BrowserAccountSettingsView: View {
 	var body: some View {
 		List {
 			Section("Account & Sync") {
-				Text("Tabs, bookmarks, and selected settings are sent to your sync server over HTTPS. Browsing history stays on this Mac. Private windows are excluded. Sync data is not end-to-end encrypted.")
+				Text("Tabs, bookmarks, browsing history, spaces, and portable browser settings are sent to your sync server over HTTPS. Private windows, local files, sync credentials, and device settings are excluded. Sync data is not end-to-end encrypted.")
 					.font(.caption)
 					.foregroundStyle(.secondary)
 				TextField("Sync Server URL", text: $syncServerURL)

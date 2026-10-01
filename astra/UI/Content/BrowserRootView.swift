@@ -38,7 +38,6 @@ struct BrowserRootView: View {
 				sync.attach(browser)
 			}
 			.onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
-				sync.settingsDidChange()
 				browser.applyHistoryRetention()
 			}
 			.onChange(of: scenePhase) { _, phase in

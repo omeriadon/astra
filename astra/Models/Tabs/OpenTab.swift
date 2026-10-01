@@ -19,6 +19,14 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 	var restorationState: Data?
 	var recordsNavigationHistory: Bool
 
+	nonisolated func hasSameNavigationState(as other: Self) -> Bool {
+		url == other.url
+			&& history == other.history
+			&& historyIndex == other.historyIndex
+			&& pageZoom == other.pageZoom
+			&& scrollPosition == other.scrollPosition
+	}
+
 	nonisolated init(
 		id: UUID = UUID(),
 		internalPage: String? = nil,

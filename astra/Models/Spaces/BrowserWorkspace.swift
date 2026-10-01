@@ -6,27 +6,33 @@ struct BrowserWorkspace: Codable, Equatable, Sendable {
 	var favouritesModifiedAt: Date
 	var selectedSpaceID: UUID
 	var deletedSpaceIDs: Set<UUID>
+	var deletedSpacesAt: [UUID: Date]
+	var modifiedAt: Date
+	var selectionModifiedAt: Date
 
 	init(
 		spaces: [BrowserSpace],
 		favouriteTabIDs: [UUID],
 		favouritesModifiedAt: Date = .now,
 		selectedSpaceID: UUID,
-		deletedSpaceIDs: Set<UUID> = []
+		deletedSpaceIDs: Set<UUID> = [],
+		deletedSpacesAt: [UUID: Date] = [:],
+		modifiedAt: Date = .now,
+		selectionModifiedAt: Date = .now
 	) {
 		self.spaces = spaces
 		self.favouriteTabIDs = favouriteTabIDs
 		self.favouritesModifiedAt = favouritesModifiedAt
 		self.selectedSpaceID = selectedSpaceID
 		self.deletedSpaceIDs = deletedSpaceIDs
+		self.deletedSpacesAt = deletedSpacesAt
+		self.modifiedAt = modifiedAt
+		self.selectionModifiedAt = selectionModifiedAt
 	}
 
 	private enum CodingKeys: String, CodingKey {
-		case spaces
-		case favouriteTabIDs
-		case favouritesModifiedAt
-		case selectedSpaceID
-		case deletedSpaceIDs
+		case spaces, favouriteTabIDs, favouritesModifiedAt, selectedSpaceID
+		case deletedSpaceIDs, deletedSpacesAt, modifiedAt, selectionModifiedAt
 	}
 
 	nonisolated init(from decoder: Decoder) throws {
@@ -36,6 +42,9 @@ struct BrowserWorkspace: Codable, Equatable, Sendable {
 		favouritesModifiedAt = try values.decodeIfPresent(Date.self, forKey: .favouritesModifiedAt) ?? .distantPast
 		selectedSpaceID = try values.decode(UUID.self, forKey: .selectedSpaceID)
 		deletedSpaceIDs = try values.decodeIfPresent(Set<UUID>.self, forKey: .deletedSpaceIDs) ?? []
+		deletedSpacesAt = try values.decodeIfPresent([UUID: Date].self, forKey: .deletedSpacesAt) ?? [:]
+		modifiedAt = try values.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? .distantPast
+		selectionModifiedAt = try values.decodeIfPresent(Date.self, forKey: .selectionModifiedAt) ?? .distantPast
 	}
 
 	nonisolated func encode(to encoder: Encoder) throws {
@@ -45,6 +54,9 @@ struct BrowserWorkspace: Codable, Equatable, Sendable {
 		try values.encode(favouritesModifiedAt, forKey: .favouritesModifiedAt)
 		try values.encode(selectedSpaceID, forKey: .selectedSpaceID)
 		try values.encode(deletedSpaceIDs, forKey: .deletedSpaceIDs)
+		try values.encode(deletedSpacesAt, forKey: .deletedSpacesAt)
+		try values.encode(modifiedAt, forKey: .modifiedAt)
+		try values.encode(selectionModifiedAt, forKey: .selectionModifiedAt)
 	}
 
 	static func migrated(
@@ -56,8 +68,16 @@ struct BrowserWorkspace: Codable, Equatable, Sendable {
 			id: BrowserSpace.firstID,
 			theme: theme,
 			tabIDs: tabs.map(\.id),
-			selectedTabID: selectedTabID
+			selectedTabID: selectedTabID,
+			modifiedAt: .distantPast
 		)
-		return Self(spaces: [space], favouriteTabIDs: [], selectedSpaceID: space.id)
+		return Self(
+			spaces: [space],
+			favouriteTabIDs: [],
+			favouritesModifiedAt: .distantPast,
+			selectedSpaceID: space.id,
+			modifiedAt: .distantPast,
+			selectionModifiedAt: .distantPast
+		)
 	}
 }

@@ -64,7 +64,7 @@ IDs, branch suffixes and packet filenames are stable. Every branch uses `astra/r
 | [06-failures-offline](tasks/06-failures-offline.md) | P0 | 02 | No automatic replay of non-idempotent requests |
 | [07-tabs-spaces](tasks/07-tabs-spaces.md) | P1 | 03, 04 | Cross-window transfer must preserve session boundaries |
 | [08-windows-os-restoration](tasks/08-windows-os-restoration.md) | P1 | 07 | Preserve current shared normal-window behavior |
-| [09-history](tasks/09-history.md) | P1 | 03, 04 | Local visit history; existing sync excludes it |
+| [09-history](tasks/09-history.md) | P1 | 03, 04 | User now requires timestamped history sync; consume task29 contract |
 | [10-bookmarks-reading-list](tasks/10-bookmarks-reading-list.md) | P1 / P2 | 03 | Reading list/offline snapshots are optional |
 | [11-favicons](tasks/11-favicons.md) | P1 | 04 | Session-scoped privacy and bounded storage |
 | [12-downloads](tasks/12-downloads.md) | P1 | 02, 04, 05 | Resume only where supported; preserve quarantine |
@@ -85,7 +85,7 @@ IDs, branch suffixes and packet filenames are stable. Every branch uses `astra/r
 | [26-reader-translation-source](tasks/26-reader-translation-source.md) | P2 | 16, 18, 25 | Reader/translation need capability/provider choices |
 | [27-internal-urls](tasks/27-internal-urls.md) | P1 / P2 | 02, 03, 17, 20 | Existing native pages remain usable without a custom scheme |
 | [28-settings](tasks/28-settings.md) | P1 | 14, 18, 19, 21, 22, 24, 24a, 26, 27 | Show only supported and selected features |
-| [29-sync](tasks/29-sync.md) | P1 / P2 | 03, 04, 07, 09, 10, 28 | Server contract, history sync and E2EE are separate gates |
+| [29-sync](tasks/29-sync.md) | P0 user priority | Reviewed 00/01 baseline | Endpoint validation, device cache and per-record timestamped sync including history; E2EE/provider gates remain |
 | [30-profiles](tasks/30-profiles.md) | P2 | 04, 18, 22, 28, 29 | Explicit profile product decision required |
 | [31-macos-automation-webapps](tasks/31-macos-automation-webapps.md) | P1 / P2 | 08, 17, 23, 27, 28 | PWA, Handoff, Spotlight and automation are optional |
 | [32-ios-integration](tasks/32-ios-integration.md) | P1 follow-up | 17, 23, 24, 24a, 25, 28, 31 | Entitlements, background limits and scene behavior need platform checks |
@@ -159,3 +159,7 @@ The final release gate includes crash/corrupt-state recovery, normal/private iso
 ## Dispatch material
 
 Use [the dispatch and worktree procedure](dispatch.md) plus exactly one packet from `tasks/`. The packet includes source entry points, write ownership, required behavior, acceptance cases and verification. Record results in the packet-specific handoff report described by the dispatch procedure. The user merges reviewed branches later; implementation agents never push or merge them.
+
+## Execution priority update
+
+The user reported sync URL errors and missing data and required local caching plus last-updated protection for every synchronized item. Task 29 runs before remaining foundation work and establishes the mandatory cache/merge contract consumed by subsequent packets. History sync is selected. See contracts.md and execution.md.

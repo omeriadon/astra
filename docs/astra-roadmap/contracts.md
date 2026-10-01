@@ -34,3 +34,13 @@ This baseline records the existing attachment points for roadmap work. It does n
 | Xcode project, scheme, entitlements and release metadata | Existing project and shared scheme | 00, 23, 27, 31–33 |
 
 Reserve shared-file edits through the primary before a later packet changes an owner listed above. Extend an existing owner first; split responsibility only when an actual feature needs a distinct boundary.
+
+## User-required sync/cache contract
+
+Local device storage remains usable independently of account or network state. Restore cached settings and browser records before sync. Invalid endpoint, offline failure, token expiration and sign-out retain normal cached data. Remote application is saved locally, and failure to save remains visible.
+
+Every synchronized record and ordering/selection/deletion scope carries a persisted last-update value. Existing `modifiedAt`/`favouritesModifiedAt` names serve that purpose; future bookmarks, history, spaces/folders, settings, reading-list/profile metadata or other synced additions must participate explicitly. Local mutations update their owning version. Decode, render, encode and restoration do not invent newer updates. Unknown legacy freshness uses a deterministic migration policy.
+
+Incoming sync merges against the latest local state after every relevant await. Newer local records survive, including edits in another same-session window. Absence of a record is not deletion; timestamped tombstones and history-clear metadata control deletion. A missing tombstone never removes a record merely because its legacy timestamp is unknown. Tie resolution and ordering must converge deterministically. Private data, device credentials, endpoints, local files and restoration blobs remain outside portable payloads.
+
+History is now explicitly included in the user-selected sync scope. Task 09 consumes this contract rather than returning to the earlier local-only history policy. Future feature tasks register portable settings and metadata with the sync/cache schema when adding them; per-device values remain local for a documented reason.
