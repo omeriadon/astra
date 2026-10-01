@@ -24,7 +24,7 @@
 			      let text = String(data: data, encoding: .utf8) else { return }
 			NSPasteboard.general.clearContents()
 			NSPasteboard.general.setString(text, forType: .string)
-			ToastManager.shared.show(symbol: "doc.on.doc", message: "Diagnostics copied")
+			(browser?.session.toastManager ?? ToastManager.shared).show(symbol: "doc.on.doc", message: "Diagnostics copied")
 		}
 	}
 #endif

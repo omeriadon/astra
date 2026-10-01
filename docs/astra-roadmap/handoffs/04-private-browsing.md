@@ -39,6 +39,8 @@ Pending runtime cases: create two private windows and a normal window, exercise 
 
 Migration, compatibility and private-data impact: no data format or migration changed. Normal windows keep the shared toast behavior. Private downloads still save files by explicit user choice; only their queue and metadata are transient. Private bookmarks can be used within the private window and disappear with it; the normal bookmark store and portable export remain inaccessible from private browsing.
 
-Capability gates / unresolved issues: `BrowserDiagnostics.copy(for:)` in `BrowserDiagnostics.swift:27` still uses the global toast manager. Its generic “Diagnostics copied” toast can appear in normal windows when diagnostics are explicitly copied from a private window; the copied report includes `privateWindow: true` by explicit user action. This file was outside the reserved write set and remains for primary disposition. Private Web Push remains experimental and disabled; no private API expansion was made.
+Capability gates / unresolved issues: primary routed the remaining diagnostics-copy toast through the originating session manager. Explicit diagnostic export still includes its documented private-window flag. Private Web Push remains experimental and disabled; no private API expansion was made. Runtime isolation remains unverified.
 
 Merge prerequisites / follow-up ownership: reviewed commits 00/01/02/03/06/11/29 and task 24 are present. Primary should review the residual diagnostics toast boundary and retain all pending runtime gates.
+
+Primary close-out: the one-line diagnostics toast correction reuses the existing session manager. Source parsed successfully; final affected-file Xcode diagnostics are recorded in CONTINUE.md.
