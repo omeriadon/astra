@@ -51,7 +51,7 @@ final class BrowserPeek: Identifiable {
 		}
 	}
 
-	init(openPeek: OpenPeek) {
+	init(openPeek: OpenPeek, session: BrowserWebSession = .shared) {
 		id = openPeek.id
 		depth = openPeek.depth
 		source = UnitPoint(
@@ -60,6 +60,7 @@ final class BrowserPeek: Identifiable {
 		)
 		controller = BrowserController(
 			initialURL: openPeek.url,
+			session: session,
 			history: openPeek.history,
 			historyIndex: openPeek.historyIndex,
 			scrollPosition: openPeek.scrollPosition

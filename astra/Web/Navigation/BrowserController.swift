@@ -23,6 +23,10 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var liveHistoryPrefix: [URL]
 	@ObservationIgnored
 	private var mediaObservationTask: Task<Void, Never>?
+	@ObservationIgnored
+	private var faviconTask: Task<Void, Never>?
+	@ObservationIgnored
+	private var isInvalidated = false
 	private(set) var isPlayingMedia = false
 	private(set) var mediaTitle: String?
 	private(set) var mediaArtist: String?
@@ -418,14 +422,15 @@ final class BrowserController: NSObject, Identifiable {
 
 	func refreshActivity() async {
 		guard let webView = createdWebView else { return }
+		let documentID = navigationIdentifier
 		let state = await webView.requestMediaPlaybackState()
+		guard owns(webView), documentID == navigationIdentifier else { return }
 		isPlayingMedia = state == .playing
 		if state == .playing || state == .none {
 			pausedFromBrowser = false
 		}
 		if state == .playing {
 			let script = "({ title: navigator.mediaSession?.metadata?.title ?? '', artist: navigator.mediaSession?.metadata?.artist ?? '' })"
-			let documentID = navigationIdentifier
 			let metadata: [String: String]? = await withCheckedContinuation { continuation in
 				webView.evaluateJavaScript(script, in: nil, in: .defaultClient) { result in
 					continuation.resume(returning: (try? result.get()) as? [String: String])
@@ -441,7 +446,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func findNext(backwards: Bool = false) {
-		guard let webView = createdWebView else { return }
+		guard let webView = createdWebView, owns(webView) else { return }
 		findGeneration += 1
 		let generation = findGeneration
 		let configuration = WKFindConfiguration()
@@ -474,10 +479,13 @@ final class BrowserController: NSObject, Identifiable {
 	#endif
 
 	func pauseMedia() {
+		guard let webView = createdWebView, owns(webView) else { return }
+		let documentID = navigationIdentifier
 		pausedFromBrowser = true
-		createdWebView?.pauseAllMediaPlayback(completionHandler: { [weak self] in
-			self?.isPlayingMedia = false
-			self?.pausedFromBrowser = true
+		webView.pauseAllMediaPlayback(completionHandler: { [weak self, weak webView] in
+			guard let self, let webView, owns(webView), documentID == navigationIdentifier else { return }
+			self.isPlayingMedia = false
+			self.pausedFromBrowser = true
 		})
 	}
 
@@ -493,13 +501,51 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func stopForClose() {
+		guard !isInvalidated else { return }
+		isInvalidated = true
 		navigationGeneration += 1
+		findGeneration += 1
+		observations.forEach { $0.invalidate() }
+		observations.removeAll()
 		securityScopedFile?.stopAccessingSecurityScopedResource()
 		securityScopedFile = nil
 		mediaObservationTask?.cancel()
+		mediaObservationTask = nil
+		faviconTask?.cancel()
+		faviconTask = nil
+		#if os(macOS)
+			previewSnapshotRefreshTask?.cancel()
+			previewSnapshotRefreshTask = nil
+			previewSnapshot = nil
+		#endif
+		createdWebView?.navigationDelegate = nil
+		createdWebView?.uiDelegate = nil
 		createdWebView?.stopLoading()
 		createdWebView?.setAllMediaPlaybackSuspended(true, completionHandler: nil)
 		stopCapture()
+		(createdWebView as? PeekSourceWebView)?.onEscape = nil
+		(createdWebView as? PeekSourceWebView)?.onLayout = nil
+		(createdWebView as? PeekSourceWebView)?.onZoomIn = nil
+		(createdWebView as? PeekSourceWebView)?.onZoomOut = nil
+		(createdWebView as? PeekSourceWebView)?.onResetZoom = nil
+		for name in [Self.scrollPositionMessageName, Self.topEdgeMessageName, Self.zapFinishedMessageName, "pageActivityChanged", "faviconChanged"] {
+			createdWebView?.configuration.userContentController.removeScriptMessageHandler(forName: name, contentWorld: .defaultClient)
+		}
+		createdWebView?.configuration.userContentController.removeAllUserScripts()
+		navigationDidChange = nil
+		extensionStateDidChange = nil
+		extensionWebViewDidChange = nil
+		scrollPositionDidChange = nil
+		titleDidChange = nil
+		popupRequested = nil
+		newTabRequested = nil
+		closeRequested = nil
+		newWindowRequested = nil
+		escapeRequested = nil
+	}
+
+	private func owns(_ webView: WKWebView) -> Bool {
+		!isInvalidated && createdWebView === webView
 	}
 
 	var encryptedInteractionState: Data? {
@@ -509,6 +555,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func restoreInteractionState(_ state: Any, historyPrefix: [URL]) {
+		guard !isInvalidated else { return }
 		liveHistoryPrefix = historyPrefix
 		webView.interactionState = state
 		updateHistory()
@@ -678,6 +725,8 @@ final class BrowserController: NSObject, Identifiable {
 
 	deinit {
 		mediaObservationTask?.cancel()
+		faviconTask?.cancel()
+		observations.forEach { $0.invalidate() }
 		#if os(macOS)
 			previewSnapshotRefreshTask?.cancel()
 		#endif
@@ -776,12 +825,15 @@ final class BrowserController: NSObject, Identifiable {
 
 	func loadFaviconIfMissing() {
 		guard let url, let webView = createdWebView else { return }
-		Task { @MainActor in
-			await session.favicons.loadFavicon(
-				for: url,
-				from: webView,
-				onlyIfMissing: true
-			)
+		loadFavicon(for: url, in: webView)
+	}
+
+	private func loadFavicon(for url: URL, in webView: WKWebView) {
+		faviconTask?.cancel()
+		faviconTask = Task { @MainActor [weak self, weak webView] in
+			guard let self, let webView, owns(webView) else { return }
+			await session.favicons.loadFavicon(for: url, from: webView, onlyIfMissing: true)
+			guard owns(webView) else { return }
 		}
 	}
 
@@ -791,7 +843,10 @@ final class BrowserController: NSObject, Identifiable {
 		}
 
 		func refreshPreviewSnapshot() async {
+			guard let webView = createdWebView, owns(webView) else { return }
+			let generation = navigationGeneration
 			guard let image = await takeSnapshot() else { return }
+			guard owns(webView), generation == navigationGeneration else { return }
 			previewSnapshot = image
 		}
 	#endif
@@ -855,7 +910,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	private func takeSnapshot() async -> SnapshotImage? {
-		guard url != nil, let webView = createdWebView, !webView.bounds.isEmpty else { return nil }
+		guard !isInvalidated, url != nil, let webView = createdWebView, !webView.bounds.isEmpty else { return nil }
 		#if os(macOS)
 			guard !isRefreshingPreviewSnapshot else { return nil }
 			isRefreshingPreviewSnapshot = true
@@ -870,7 +925,8 @@ final class BrowserController: NSObject, Identifiable {
 
 	private func capturePageSnapshot(generation: Int) async {
 		guard let image = await takeSnapshot(),
-		      generation == navigationGeneration
+		      generation == navigationGeneration,
+		      !isInvalidated
 		else { return }
 
 		#if os(macOS)
@@ -904,6 +960,10 @@ extension BrowserController: WKNavigationDelegate {
 		preferences: WKWebpagePreferences,
 		decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
 	) {
+		guard owns(webView) else {
+			decisionHandler(.cancel, preferences)
+			return
+		}
 		#if os(macOS)
 			preferences.globalPrivacyControlEnabled = Defaults[.globalPrivacyControl]
 			let host = navigationAction.request.url?.host?.lowercased() ?? ""
@@ -981,6 +1041,10 @@ extension BrowserController: WKNavigationDelegate {
 		decidePolicyFor navigationResponse: WKNavigationResponse,
 		decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
 	) {
+		guard owns(webView) else {
+			decisionHandler(.cancel)
+			return
+		}
 		let disposition = (navigationResponse.response as? HTTPURLResponse)?
 			.value(forHTTPHeaderField: "Content-Disposition")
 		if !navigationResponse.canShowMIMEType || disposition?.lowercased().hasPrefix("attachment") == true {
@@ -994,6 +1058,7 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webView(_ webView: WKWebView, navigationAction _: WKNavigationAction, didBecome download: WKDownload) {
+		guard owns(webView) else { return }
 		session.downloads.start(
 			download,
 			sourceURL: pageURLBeforeDownload ?? webView.url,
@@ -1003,6 +1068,7 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webView(_ webView: WKWebView, navigationResponse _: WKNavigationResponse, didBecome download: WKDownload) {
+		guard owns(webView) else { return }
 		let source = pendingDownloadSource ?? newWindowSource(in: webView)
 		session.downloads.start(
 			download,
@@ -1014,11 +1080,13 @@ extension BrowserController: WKNavigationDelegate {
 		restorePageAfterDownloadHandoff()
 	}
 
-	func webView(_: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+	func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+		guard owns(webView) else { return }
 		handleNavigationFailure(navigation, error: error)
 	}
 
-	func webView(_: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+	func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+		guard owns(webView) else { return }
 		handleNavigationFailure(navigation, error: error)
 	}
 
@@ -1043,11 +1111,13 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+		guard owns(webView) else { return }
 		guard let url = webView.url ?? url else { return }
 		navigationFailure = BrowserNavigationFailure(kind: .webContentTerminated, url: url)
 	}
 
 	func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+		guard owns(webView) else { return }
 		isZapping = false
 		mediaTitle = nil
 		mediaArtist = nil
@@ -1076,9 +1146,9 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+		guard owns(webView), navigation === currentNavigation else { return }
 		committedURL = webView.url
 		hasUnsavedChanges = false
-		guard navigation === currentNavigation else { return }
 		isDownloadHandoff = false
 		pageURLBeforeDownload = nil
 		navigationFailure = nil
@@ -1087,7 +1157,7 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-		guard navigation === currentNavigation else { return }
+		guard owns(webView), navigation === currentNavigation else { return }
 		updateHistory()
 		if !hasDeclaredThemeColor,
 		   let pageBackgroundColor = webView.underPageBackgroundColor
@@ -1097,9 +1167,7 @@ extension BrowserController: WKNavigationDelegate {
 		restoreScrollPositionIfNeeded(in: webView)
 		let generation = navigationGeneration
 		if let url {
-			Task { @MainActor in
-				await session.favicons.loadFavicon(for: url, from: webView, onlyIfMissing: true)
-			}
+			loadFavicon(for: url, in: webView)
 		}
 		Task { @MainActor [weak self] in
 			guard let self else { return }
@@ -1111,9 +1179,11 @@ extension BrowserController: WKNavigationDelegate {
 	private func restoreScrollPositionIfNeeded(in webView: WKWebView) {
 		guard let restoredScrollPosition else { return }
 		self.restoredScrollPosition = nil
+		let generation = navigationGeneration
 		let script = "window.scrollTo(\(restoredScrollPosition.x), \(restoredScrollPosition.y));"
-		Task { @MainActor in
+		Task { @MainActor [weak self, weak webView] in
 			try? await Task.sleep(for: .milliseconds(150))
+			guard let self, let webView, owns(webView), generation == navigationGeneration else { return }
 			_ = try? await webView.evaluateJavaScript(script)
 		}
 	}
@@ -1121,6 +1191,7 @@ extension BrowserController: WKNavigationDelegate {
 
 extension BrowserController: WKScriptMessageHandler {
 	func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
+		guard !isInvalidated else { return }
 		if message.name == "pageActivityChanged" {
 			guard let activity = message.body as? String else { return }
 			switch activity {
@@ -1172,6 +1243,7 @@ extension BrowserController: WKUIDelegate {
 		for navigationAction: WKNavigationAction,
 		windowFeatures _: WKWindowFeatures
 	) -> WKWebView? {
+		guard owns(webView) else { return nil }
 		if navigationAction.targetFrame == nil, let destination = navigationAction.request.url,
 		   navigationIntercept?(destination) == true
 		{
@@ -1183,8 +1255,9 @@ extension BrowserController: WKUIDelegate {
 		if navigationAction.shouldPerformDownload {
 			let source = newWindowSource(in: webView)
 			let sourceURL = webView.url
-			webView.startDownload(using: navigationAction.request) { download in
-				self.session.downloads.start(download, sourceURL: sourceURL, source: source)
+			webView.startDownload(using: navigationAction.request) { [weak self, weak webView] download in
+				guard let self, let webView, owns(webView) else { return }
+				session.downloads.start(download, sourceURL: sourceURL, source: source)
 			}
 			return nil
 		}
@@ -1259,7 +1332,8 @@ extension BrowserController: WKUIDelegate {
 				let response = await BrowserWebsiteUI.present(alert, in: webView.window) { [self, webView] in
 					navigationIdentifier == documentID && webView.window?.isVisible == true
 				}
-				guard response == .alertFirstButtonReturn else { return }
+				guard owns(webView), navigationIdentifier == documentID,
+				      response == .alertFirstButtonReturn else { return }
 				let configuration = NSWorkspace.OpenConfiguration()
 				configuration.addsToRecentItems = false
 				do {

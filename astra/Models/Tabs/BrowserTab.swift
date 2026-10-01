@@ -209,7 +209,7 @@ final class BrowserTab: Identifiable {
 		storedScrollPosition = scrollPosition
 		storedPeeks = openPeeks
 		self.modifiedAt = modifiedAt
-		peeks = isHibernated ? [] : openPeeks.map(BrowserPeek.init(openPeek:))
+		peeks = isHibernated ? [] : openPeeks.map { BrowserPeek(openPeek: $0, session: session) }
 		controller = if isHibernated || internalPage != nil {
 			nil
 		} else {
@@ -303,7 +303,7 @@ final class BrowserTab: Identifiable {
 		}
 		storedInteractionState = nil
 		self.controller = controller
-		peeks = storedPeeks.map(BrowserPeek.init(openPeek:))
+		peeks = storedPeeks.map { BrowserPeek(openPeek: $0, session: session) }
 		observeController()
 		for peek in peeks {
 			observe(peek)
@@ -324,6 +324,13 @@ final class BrowserTab: Identifiable {
 		}
 		peeks.removeSubrange(index...)
 		markModified()
+	}
+
+	func takePeekForPromotion(_ id: UUID) -> BrowserPeek? {
+		guard peeks.last?.id == id else { return nil }
+		let peek = peeks.removeLast()
+		markModified()
+		return peek
 	}
 
 	func requestPeekDismissal() {

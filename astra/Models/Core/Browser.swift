@@ -790,16 +790,22 @@ final class Browser {
 	}
 
 	func promotePeek(in source: BrowserTab, id: UUID) {
-		guard let peek = source.peeks.last, peek.id == id else { return }
+		guard let peek = source.takePeekForPromotion(id) else { return }
+		let webView = peek.controller.webViewIfLoaded
+		let navigationIdentifier = peek.controller.navigationIdentifier
 		let tab = BrowserTab(
 			pageTitle: peek.controller.webViewIfLoaded?.title ?? "New Tab",
 			existingController: peek.controller
 		)
-		source.dismissPeek(id)
 		configure(tab)
 		tabs.append(tab)
 		reconcileWorkspace()
 		selectTab(tab.id)
+		assert(tab.controller === peek.controller)
+		assert(tab.controller?.navigationIdentifier == navigationIdentifier)
+		if let webView {
+			assert(tab.controller?.webViewIfLoaded === webView)
+		}
 	}
 
 	func closeTabsAbove(_ id: UUID) {

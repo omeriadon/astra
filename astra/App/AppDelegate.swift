@@ -61,7 +61,7 @@
 			source.setEventHandler {
 				Task { @MainActor in
 					for browser in BrowserWindowRegistry.shared.openBrowsers {
-						for tab in browser.tabs where tab.id != browser.selectedTabID {
+						for tab in browser.tabs {
 							tab.controller?.discardPreviewSnapshot()
 							for peek in tab.peeks {
 								peek.controller.discardPreviewSnapshot()
@@ -79,6 +79,11 @@
 				      !authentication.wasLaunchedByAuthenticationServices else { return }
 				openBrowserWindow()
 			}
+		}
+
+		func applicationWillTerminate(_: Notification) {
+			memoryPressureSource?.cancel()
+			memoryPressureSource = nil
 		}
 
 		func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
