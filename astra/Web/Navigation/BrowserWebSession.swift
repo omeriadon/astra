@@ -28,6 +28,24 @@ final class BrowserWebSession {
 			: .shared
 		favicons = isPrivate ? FaviconStore(isPrivate: true) : .shared
 		permissions = BrowserSitePermissions(isPrivate: isPrivate)
+		permissions.didUpdate = { [weak permissions] entry in
+			guard let permissions,
+			      entry == nil || entry?.decision != .allowOnce else { return }
+			for browser in BrowserWindowRegistry.shared.openBrowsers where browser.session.permissions === permissions {
+				for tab in browser.tabs {
+					let controllers = [tab.controller].compactMap(\.self) + tab.peeks.map(\.controller)
+					for controller in controllers {
+						guard let entry else {
+							controller.stopCapture()
+							continue
+						}
+						guard entry.capability == .camera || entry.capability == .microphone,
+						      (controller.committedURL ?? controller.url).flatMap(BrowserSitePermissions.origin(for:)) == entry.topOrigin else { continue }
+						controller.stopCapture(capability: entry.capability)
+					}
+				}
+			}
+		}
 		#if os(macOS)
 			if !isPrivate {
 				BrowserWebPushManager.shared.attach(to: dataStore, permissions: permissions)

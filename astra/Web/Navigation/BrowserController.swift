@@ -1,4 +1,6 @@
 import CoreGraphics
+import AVFoundation
+import CoreLocation
 import Defaults
 import Observation
 import SwiftUI
@@ -46,6 +48,8 @@ final class BrowserController: NSObject, Identifiable {
 	var popupRequested: ((WKWebViewConfiguration, UnitPoint, Bool?) -> WKWebView?)?
 	var newTabRequested: ((URLRequest, Bool) -> Void)?
 	var closeRequested: (() -> Void)?
+	@ObservationIgnored
+	var promptOwnership: ((WKWebView) -> Bool)?
 	@ObservationIgnored
 	private var isOpeningExternalApplication = false
 	@ObservationIgnored
@@ -291,6 +295,8 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var themeColorIsLight: Bool?
 	private var pendingDownloadSource: UnitPoint?
 	private var pendingDownloadSiteURL: URL?
+	@ObservationIgnored
+	private var automaticDownloadPolicy = BrowserSitePermissions.AutomaticDownloadPolicy()
 	private var isDownloadHandoff = false
 	private var pageURLBeforeDownload: URL?
 	#if os(macOS)
@@ -604,9 +610,23 @@ final class BrowserController: NSObject, Identifiable {
 		}
 	}
 
+	func ownsPrompt(in webView: WKWebView, documentID: Int) -> Bool {
+		guard owns(webView), navigationIdentifier == documentID,
+		      promptOwnership?(webView) == true else { return false }
+		#if os(macOS)
+			guard let window = webView.window, window.isVisible else { return false }
+			return window.isKeyWindow || window.attachedSheet?.isKeyWindow == true
+		#else
+			guard let window = webView.window, !window.isHidden,
+			      window.windowScene?.activationState == .foregroundActive else { return false }
+			return true
+		#endif
+	}
+
 	func stopForClose() {
 		guard !isInvalidated else { return }
 		isInvalidated = true
+		promptOwnership = nil
 		if let connectivityObserver {
 			NotificationCenter.default.removeObserver(connectivityObserver)
 			self.connectivityObserver = nil
@@ -616,6 +636,7 @@ final class BrowserController: NSObject, Identifiable {
 		pendingRequest = nil
 		navigationFailure = nil
 		contentProcessTerminations = BrowserContentProcessTerminationTracker()
+		session.permissions.removeTemporaryDecisions(controllerID: id)
 		navigationGeneration += 1
 		findGeneration += 1
 		observations.forEach { $0.invalidate() }
@@ -691,7 +712,7 @@ final class BrowserController: NSObject, Identifiable {
 		configuration.preferences.isElementFullscreenEnabled = true
 		configuration.preferences.isFraudulentWebsiteWarningEnabled = true
 		configuration.preferences.inactiveSchedulingPolicy = .suspend
-		configuration.mediaTypesRequiringUserActionForPlayback = .audio
+		configuration.mediaTypesRequiringUserActionForPlayback = .all
 		configuration.allowsAirPlayForMediaPlayback = true
 		#if os(macOS)
 			_ = AstraConfigureWebPushPreferences(configuration.preferences, !session.isPrivate && BrowserWebPushManager.shared.hasNativeSupport)
@@ -1117,6 +1138,23 @@ extension BrowserController: WKNavigationDelegate {
 			return
 		}
 		if navigationAction.shouldPerformDownload {
+			if automaticDownloadPolicy.reserveAttempt() {
+				let documentID = navigationIdentifier
+				Task { @MainActor [weak self, weak webView] in
+					guard let self, let webView else {
+						decisionHandler(.cancel, preferences)
+						return
+					}
+					let permission = await requestMultipleDownloadPermission(in: webView)
+					guard permission == .grant, ownsPrompt(in: webView, documentID: documentID) else {
+						decisionHandler(.cancel, preferences)
+						return
+					}
+					prepareDownloadHandoff(in: webView)
+					decisionHandler(.download, preferences)
+				}
+				return
+			}
 			prepareDownloadHandoff(in: webView)
 			decisionHandler(.download, preferences)
 			return
@@ -1157,9 +1195,14 @@ extension BrowserController: WKNavigationDelegate {
 				currentRequest = navigationAction.request
 				webView.customUserAgent = Self.userAgentOverride(for: navigationAction.request.url)
 				switch navigationAction.navigationType {
-					case .linkActivated, .formSubmitted, .formResubmitted:
+					case .linkActivated:
 						pendingDownloadSource = (webView as? PeekSourceWebView)?.sourceIfRecent
 						pendingDownloadSiteURL = webView.url
+						historyManager.beginVisit()
+						(webView as? PeekSourceWebView)?.consumeRecentClick()
+					case .formSubmitted, .formResubmitted:
+						pendingDownloadSource = (webView as? PeekSourceWebView)?.sourceIfRecent
+						pendingDownloadSiteURL = committedURL ?? webView.url
 						historyManager.beginVisit()
 						(webView as? PeekSourceWebView)?.consumeRecentClick()
 					default:
@@ -1187,6 +1230,23 @@ extension BrowserController: WKNavigationDelegate {
 		let disposition = (navigationResponse.response as? HTTPURLResponse)?
 			.value(forHTTPHeaderField: "Content-Disposition")
 		if !navigationResponse.canShowMIMEType || disposition?.lowercased().hasPrefix("attachment") == true {
+			if automaticDownloadPolicy.reserveAttempt() {
+				let documentID = navigationIdentifier
+				Task { @MainActor [weak self, weak webView] in
+					guard let self, let webView else {
+						decisionHandler(.cancel)
+						return
+					}
+					let permission = await requestMultipleDownloadPermission(in: webView)
+					guard permission == .grant, ownsPrompt(in: webView, documentID: documentID) else {
+						decisionHandler(.cancel)
+						return
+					}
+					prepareDownloadHandoff(in: webView)
+					decisionHandler(.download)
+				}
+				return
+			}
 			prepareDownloadHandoff(in: webView)
 			decisionHandler(.download)
 		} else {
@@ -1284,6 +1344,7 @@ extension BrowserController: WKNavigationDelegate {
 		failedRequest = nil
 		navigationFailure = nil
 		awaitsNavigationCommit = true
+		session.permissions.removeTemporaryDecisions(controllerID: id)
 		navigationGeneration += 1
 		hasDeclaredThemeColor = false
 		hasTopEdgeContent = false
@@ -1293,6 +1354,11 @@ extension BrowserController: WKNavigationDelegate {
 	private func prepareDownloadHandoff(in webView: WKWebView) {
 		isDownloadHandoff = true
 		pageURLBeforeDownload = historyManager.currentURL ?? webView.url
+	}
+
+	private func requestMultipleDownloadPermission(in webView: WKWebView) async -> WKPermissionDecision {
+		guard let topSite = committedURL ?? webView.url else { return .deny }
+		return await requestPermission([.automaticDownloads], originURL: topSite, topURL: topSite, in: webView)
 	}
 
 	private func restorePageAfterDownloadHandoff() {
@@ -1307,6 +1373,7 @@ extension BrowserController: WKNavigationDelegate {
 	func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
 		guard owns(webView), navigation === currentNavigation else { return }
 		committedURL = webView.url
+		automaticDownloadPolicy.didCommitDocument()
 		contentProcessTerminations.navigationCommitted(at: webView.url)
 		hasUnsavedChanges = false
 		isDownloadHandoff = false
@@ -1413,6 +1480,29 @@ extension BrowserController: WKUIDelegate {
 			return nil
 		}
 		if navigationAction.shouldPerformDownload {
+			let requiresPermission = automaticDownloadPolicy.reserveAttempt()
+			if requiresPermission {
+				guard let topSite = committedURL ?? webView.url,
+				      let topOrigin = BrowserSitePermissions.origin(for: topSite) else { return nil }
+				let decision = session.permissions.effectiveDecision(
+					origin: topOrigin,
+					topOrigin: topOrigin,
+					capability: .automaticDownloads,
+					controllerID: id,
+					documentID: navigationIdentifier
+				)
+				if decision == nil {
+					let documentID = navigationIdentifier
+					Task { @MainActor [weak self, weak webView] in
+						guard let self, let webView,
+						      await requestMultipleDownloadPermission(in: webView) == .grant,
+						      ownsPrompt(in: webView, documentID: documentID) else { return }
+						session.toastManager.show(symbol: "checkmark.circle", message: "Automatic downloads allowed. Retry the page action.")
+					}
+					return nil
+				}
+				guard decision == .allowAlways || decision == .allowOnce else { return nil }
+			}
 			let source = newWindowSource(in: webView)
 			let sourceURL = webView.url
 			webView.startDownload(using: navigationAction.request) { [weak self, weak webView] download in
@@ -1431,7 +1521,45 @@ extension BrowserController: WKUIDelegate {
 		#else
 			let inBackground: Bool? = nil
 		#endif
-		return popupRequested?(configuration, newWindowSource(in: webView), inBackground)
+		guard navigationAction.request.url != nil,
+		      let originID = Self.securityOrigin(navigationAction.sourceFrame.securityOrigin),
+		      let topOrigin = webView.url.flatMap(BrowserSitePermissions.origin(for:)) else { return nil }
+		let documentID = navigationIdentifier
+		let source = newWindowSource(in: webView)
+		let permission = session.permissions.effectiveDecision(
+			origin: originID,
+			topOrigin: topOrigin,
+			capability: .popups,
+			controllerID: id,
+			documentID: documentID
+		)
+		if permission == .deny || !ownsPrompt(in: webView, documentID: documentID) {
+			return nil
+		}
+		if navigationAction.navigationType == .linkActivated,
+		   permission == nil || permission == .allowOnce || permission == .allowAlways
+		{
+			return popupRequested?(configuration, source, inBackground)
+		}
+		if permission == .allowAlways || permission == .allowOnce {
+			return popupRequested?(configuration, source, inBackground)
+		}
+		Task { @MainActor [weak self, weak webView] in
+			guard let self, let webView,
+			      await requestPermission([.popups], origin: navigationAction.sourceFrame.securityOrigin, in: webView) == .grant,
+			      ownsPrompt(in: webView, documentID: documentID),
+			      (committedURL ?? webView.url).flatMap(BrowserSitePermissions.origin(for:)) == topOrigin else { return }
+			session.toastManager.show(symbol: "checkmark.circle", message: "Pop-ups allowed. Retry the page action.")
+		}
+		return nil
+	}
+
+	private static func securityOrigin(_ origin: WKSecurityOrigin) -> String? {
+		var parts = URLComponents()
+		parts.scheme = origin.protocol
+		parts.host = origin.host
+		parts.port = origin.port > 0 ? origin.port : nil
+		return parts.url.flatMap(BrowserSitePermissions.origin(for:))
 	}
 
 	#if os(macOS)
@@ -1458,6 +1586,7 @@ extension BrowserController: WKUIDelegate {
 		in webView: WKWebView
 	) -> Bool {
 		guard let scheme = BrowserAddress.externalApplicationScheme(for: url) else { return false }
+		guard ownsPrompt(in: webView, documentID: navigationIdentifier) else { return true }
 		let addresses = URLComponents(url: url, resolvingAgainstBaseURL: false)?.path ?? ""
 		if scheme == "mailto", Defaults[.copyMailtoAddresses], !addresses.isEmpty {
 			#if os(macOS)
@@ -1502,9 +1631,9 @@ extension BrowserController: WKUIDelegate {
 					confirm: "Open Application"
 				)
 				let response = await BrowserWebsiteUI.present(alert, in: webView.window) { [self, webView] in
-					owns(webView) && navigationIdentifier == documentID && webView.window?.isVisible == true
+					ownsPrompt(in: webView, documentID: documentID)
 				}
-				guard owns(webView), navigationIdentifier == documentID,
+				guard ownsPrompt(in: webView, documentID: documentID),
 				      response == .alertFirstButtonReturn else { return }
 				lastExternalApplicationRequestTime = ProcessInfo.processInfo.systemUptime
 				let configuration = NSWorkspace.OpenConfiguration()

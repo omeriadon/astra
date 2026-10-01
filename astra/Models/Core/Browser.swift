@@ -1126,6 +1126,13 @@ final class Browser {
 	private func configure(_ tab: BrowserTab) {
 		attachPersistence(to: tab)
 		guard let controller = tab.controller else { return }
+		controller.promptOwnership = { [weak self, weak tab, weak controller] webView in
+			guard let self, let tab, let controller,
+			      tabs.contains(where: { $0 === tab }),
+			      selectedTabID == tab.id,
+			      tab.activeController === controller else { return false }
+			return webView.window != nil
+		}
 		controller.navigationIntercept = navigationIntercept
 		controller.extensionStateDidChange = { [weak self] in
 			guard let self else { return }
@@ -1204,6 +1211,13 @@ final class Browser {
 	}
 
 	private func configure(_ peek: BrowserPeek, in tab: BrowserTab) {
+		peek.controller.promptOwnership = { [weak self, weak tab, weak controller = peek.controller] webView in
+			guard let self, let tab, let controller,
+			      tabs.contains(where: { $0 === tab }),
+			      selectedTabID == tab.id,
+			      tab.activeController === controller else { return false }
+			return webView.window != nil
+		}
 		peek.controller.navigationIntercept = navigationIntercept
 		peek.controller.popupRequested = { [weak self, weak tab, weak peek] configuration, source, inBackground in
 			guard let self, let tab, let peek else { return nil }

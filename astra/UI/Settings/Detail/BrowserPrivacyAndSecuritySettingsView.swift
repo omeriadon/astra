@@ -11,6 +11,10 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 	@Default(.tryHTTPSFirst) private var tryHTTPSFirst
 	@Default(.globalPrivacyControl) private var globalPrivacyControl
 
+	private var visiblePermissionEntries: [BrowserSitePermissions.Entry] {
+		session.permissions.entries.filter { BrowserSitePermissions.websiteCapabilities.contains($0.capability) }
+	}
+
 	var body: some View {
 		List {
 			#if os(macOS)
@@ -24,6 +28,10 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 						.foregroundStyle(.secondary)
 				}
 			#endif
+			Section("Media Playback") {
+				Text("Audio and video require a click to play on every site.")
+					.foregroundStyle(.secondary)
+			}
 			Section("Browsing History") {
 				Picker("Keep History", selection: $historyRetentionDays) {
 					Text("Until Cleared").tag(0)
@@ -85,15 +93,19 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 			.id("Website Data")
 
 			Section("Website Permissions") {
-				if session.permissions.entries.isEmpty {
-					Text("Websites ask before accessing your camera, microphone, or location.")
+				if session.permissions.isSavedDataReadOnly {
+					Text("Saved permission settings use a newer format. Reset all website permissions before changing them.")
 						.foregroundStyle(.secondary)
 				}
-				ForEach(session.permissions.entries) { entry in
+				if visiblePermissionEntries.isEmpty {
+					Text("Website controls include camera, microphone, location, pop-ups, and automatic downloads. Camera, microphone, and location also require system permission. Motion access is available on iOS.")
+						.foregroundStyle(.secondary)
+				}
+				ForEach(visiblePermissionEntries) { entry in
 					HStack {
 						VStack(alignment: .leading, spacing: 3) {
 							Text(verbatim: entry.origin)
-							BrowserSitePermissionPicker(permissions: session.permissions, origin: entry.origin, topOrigin: entry.topOrigin, capability: entry.capability, onChange: { stopCapture(for: entry) })
+							BrowserSitePermissionPicker(permissions: session.permissions, origin: entry.origin, topOrigin: entry.topOrigin, capability: entry.capability)
 							if entry.origin != entry.topOrigin {
 								Text("Embedded in \(entry.topOrigin)")
 									.font(.caption)
@@ -102,7 +114,6 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 						}
 						Spacer()
 						Button("Reset Permission", systemImage: "arrow.counterclockwise") {
-							stopCapture(for: entry)
 							session.permissions.remove(entry)
 						}
 						.labelStyle(.iconOnly)
@@ -111,10 +122,9 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 					}
 				}
 				Button("Reset All Website Permissions", systemImage: "arrow.counterclockwise") {
-					stopCapture()
 					session.permissions.reset()
 				}
-				.disabled(session.permissions.entries.isEmpty)
+				.disabled(!session.permissions.hasDecisions)
 				.accessibilityIdentifier("reset-all-site-permissions")
 				.id("Reset All Website Permissions")
 			}
@@ -143,19 +153,4 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 			.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
 	}
 
-	private func stopCapture(for entry: BrowserSitePermissions.Entry? = nil) {
-		for browser in BrowserWindowRegistry.shared.openBrowsers where browser.session === session {
-			for tab in browser.tabs {
-				let controllers = [tab.controller].compactMap(\.self) + tab.peeks.map(\.controller)
-				for controller in controllers {
-					if let entry,
-					   controller.url.flatMap(BrowserSitePermissions.origin(for:)) != entry.topOrigin
-					{
-						continue
-					}
-					controller.stopCapture(capability: entry?.capability)
-				}
-			}
-		}
-	}
 }

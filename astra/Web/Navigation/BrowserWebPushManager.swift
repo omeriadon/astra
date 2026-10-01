@@ -49,6 +49,7 @@ final class BrowserWebPushManager: NSObject, UNUserNotificationCenterDelegate {
 		      let url = Self.originURL(origin), url.scheme == "https",
 		      let originID = BrowserSitePermissions.origin(for: url),
 		      webView.url.flatMap(BrowserSitePermissions.origin(for:)) == originID,
+		      controller.ownsPrompt(in: webView, documentID: documentID),
 		      let window = webView.window, window.isVisible,
 		      let permissions else { return false }
 		let decision = permissions.decision(origin: originID, topOrigin: originID, capability: .notifications)
@@ -61,7 +62,7 @@ final class BrowserWebPushManager: NSObject, UNUserNotificationCenterDelegate {
 				cancel: "Don't Allow"
 			)
 			let response = await BrowserWebsiteUI.present(alert, in: window) {
-				controller.navigationIdentifier == documentID && webView.window?.isVisible == true
+				controller.ownsPrompt(in: webView, documentID: documentID)
 			}
 			guard response == .alertFirstButtonReturn || response == .alertSecondButtonReturn else { return false }
 			if response == .alertSecondButtonReturn {
@@ -75,7 +76,7 @@ final class BrowserWebPushManager: NSObject, UNUserNotificationCenterDelegate {
 		} catch {
 			return false
 		}
-		guard controller.navigationIdentifier == documentID, webView.window?.isVisible == true else { return false }
+		guard controller.ownsPrompt(in: webView, documentID: documentID) else { return false }
 		permissions.set(granted, origin: originID, topOrigin: originID, capability: .notifications)
 		return granted
 	}

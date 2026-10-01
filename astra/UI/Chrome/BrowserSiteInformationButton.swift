@@ -37,19 +37,30 @@ private struct BrowserSiteInformationView: View {
 				}
 			}
 			Section("Website Permissions") {
+				if controller.session.permissions.isSavedDataReadOnly {
+					Text("Reset website permissions in Privacy and Security before saving changes.")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+				}
 				if let url = controller.committedURL,
 				   let origin = BrowserSitePermissions.origin(for: url)
 				{
-					ForEach(BrowserSitePermissions.Capability.allCases, id: \.self) { capability in
+					ForEach(BrowserSitePermissions.websiteCapabilities, id: \.self) { capability in
 						BrowserSitePermissionPicker(
 							permissions: controller.session.permissions,
 							origin: origin,
 							topOrigin: origin,
 							capability: capability,
-							onChange: { controller.stopCapture(capability: capability) }
+							controllerID: controller.id,
+							documentID: controller.navigationIdentifier
 						)
 					}
-					Text("Changes apply to new requests. Existing camera and microphone capture stops when access is changed.")
+					Text(controller.session.isPrivate
+						? "Permission choices last only for this private window. Allow Once lasts for this page."
+						: "Always Allow is stored on this device. Allow Once lasts for this page. Deny blocks this site until changed. Closing or canceling a prompt does not save a block.")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+					Text("Audio and video require a click to play on every site.")
 						.font(.caption)
 						.foregroundStyle(.secondary)
 				}
@@ -67,35 +78,47 @@ struct BrowserSitePermissionPicker: View {
 	let origin: String
 	let topOrigin: String
 	let capability: BrowserSitePermissions.Capability
-	var onChange: () -> Void = {}
+	var controllerID: UUID?
+	var documentID: Int?
 
 	private var selection: Binding<String> {
 		Binding {
-			switch permissions.decision(origin: origin, topOrigin: topOrigin, capability: capability) {
-				case true: "allow"
-				case false: "block"
-				case nil: "ask"
-			}
-		} set: { value in
-			let entry = BrowserSitePermissions.Entry(
+			switch permissions.effectiveDecision(
 				origin: origin,
 				topOrigin: topOrigin,
 				capability: capability,
-				allowed: value == "allow"
-			)
-			if value == "ask" {
+				controllerID: controllerID,
+				documentID: documentID
+			) {
+				case .allowOnce: "once"
+				case .allowAlways: "allow"
+				case .deny: "block"
+				case nil: "ask"
+			}
+		} set: { value in
+			if value == "once", let controllerID, let documentID {
+				permissions.set(.allowOnce, origin: origin, topOrigin: topOrigin, capability: capability, controllerID: controllerID, documentID: documentID)
+			} else if value == "ask" {
+				let entry = BrowserSitePermissions.Entry(
+					origin: origin,
+					topOrigin: topOrigin,
+					capability: capability,
+					decision: .allowAlways
+				)
 				permissions.remove(entry)
 			} else {
-				permissions.set(value == "allow", origin: origin, topOrigin: topOrigin, capability: capability)
+				permissions.set(value == "allow" ? .allowAlways : .deny, origin: origin, topOrigin: topOrigin, capability: capability)
 			}
-			onChange()
 		}
 	}
 
 	var body: some View {
 		Picker(capability.title, selection: selection) {
 			Label("Ask", systemImage: "questionmark.circle").tag("ask")
-			Label("Allow", systemImage: "checkmark.circle").tag("allow")
+			if controllerID != nil, documentID != nil {
+				Label("Allow Once", systemImage: "checkmark.circle").tag("once")
+			}
+			Label("Always Allow", systemImage: "checkmark.circle").tag("allow")
 			Label("Block", systemImage: "hand.raised").tag("block")
 		}
 		.accessibilityIdentifier("site-permission-\(capability.rawValue)-\(origin)")
