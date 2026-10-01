@@ -23,6 +23,9 @@ struct AddressSearchChecks {
 		precondition(BrowserAddress.destination(for: "javascript:alert(1)", configuration: configuration) == nil)
 		precondition(BrowserAddress.destination(for: "file:///etc/passwd", configuration: configuration) == nil)
 		precondition(BrowserAddress.destination(for: "mailto:test@example.com", configuration: configuration)?.scheme == "mailto")
+		precondition(BrowserAddress.destination(for: "com.example.app://target", configuration: configuration)?.scheme == "com.example.app")
+		precondition(BrowserAddress.destination(for: "example.com:notaport", configuration: configuration)?.host == "www.google.com")
+		precondition(BrowserAddress.destination(for: "javascript://alert", configuration: configuration) == nil)
 
 		let query = "C++ & 100%=x # café"
 		guard let searchURL = configuration.searchURL(for: query) else { fatalError("missing default search URL") }
