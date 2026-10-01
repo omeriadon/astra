@@ -9,12 +9,14 @@ final class BrowserSitePermissions {
 		case camera
 		case microphone
 		case location
+		case notifications
 
 		var title: String {
 			switch self {
 				case .camera: "Camera"
 				case .microphone: "Microphone"
 				case .location: "Location"
+				case .notifications: "Notifications"
 			}
 		}
 	}
@@ -33,6 +35,8 @@ final class BrowserSitePermissions {
 	private static let defaultsKey = "websitePermissions"
 	private let isPrivate: Bool
 	private(set) var entries: [Entry]
+	@ObservationIgnored
+	var didChange: (() -> Void)?
 
 	init(isPrivate: Bool) {
 		self.isPrivate = isPrivate
@@ -95,6 +99,7 @@ final class BrowserSitePermissions {
 	}
 
 	private func save() {
+		didChange?()
 		guard !isPrivate, let data = try? JSONEncoder().encode(entries) else { return }
 		UserDefaults.standard.set(data, forKey: Self.defaultsKey)
 	}

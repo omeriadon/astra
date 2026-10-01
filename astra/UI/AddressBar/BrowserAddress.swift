@@ -1,6 +1,13 @@
 import Foundation
 
 enum BrowserAddress {
+	nonisolated static func externalApplicationScheme(for url: URL) -> String? {
+		guard let scheme = url.scheme?.lowercased(),
+		      !["http", "https", "about", "data", "blob", "file", "javascript", "webkit-extension"].contains(scheme)
+		else { return nil }
+		return scheme
+	}
+
 	nonisolated static func withoutCredentials(_ url: URL) -> URL {
 		guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
 		components.user = nil

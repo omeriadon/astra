@@ -15,16 +15,31 @@ final class BrowserWebSession {
 
 	init(isPrivate: Bool = false) {
 		self.isPrivate = isPrivate
-		dataStore = isPrivate ? .nonPersistent() : .default()
+		#if os(macOS)
+			dataStore = isPrivate ? .nonPersistent() : AstraCreateWebPushDataStore() ?? .default()
+		#else
+			dataStore = isPrivate ? .nonPersistent() : .default()
+		#endif
 		downloads = isPrivate ? BrowserDownloadManager(privateDataStore: dataStore) : .shared
 		favicons = isPrivate ? FaviconStore(isPrivate: true) : .shared
 		permissions = BrowserSitePermissions(isPrivate: isPrivate)
+		#if os(macOS)
+			if !isPrivate {
+				BrowserWebPushManager.shared.attach(to: dataStore, permissions: permissions)
+				permissions.didChange = { BrowserWebPushManager.shared.permissionsChanged() }
+			}
+		#endif
 		#if DEBUG
 			assert(dataStore.isPersistent != isPrivate)
 		#endif
 	}
 
 	func clearWebsiteData() async {
+		#if os(macOS)
+			if !isPrivate {
+				BrowserWebPushManager.shared.removeDeliveredNotifications()
+			}
+		#endif
 		await dataStore.removeData(
 			ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
 			modifiedSince: .distantPast

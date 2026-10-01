@@ -41,6 +41,8 @@ final class BrowserController: NSObject, Identifiable {
 	var newTabRequested: ((URLRequest, Bool) -> Void)?
 	var closeRequested: (() -> Void)?
 	@ObservationIgnored
+	private var isOpeningExternalApplication = false
+	@ObservationIgnored
 	var navigationIntercept: ((URL) -> Bool)?
 
 	var isCapturing: Bool {
@@ -530,6 +532,7 @@ final class BrowserController: NSObject, Identifiable {
 		configuration.mediaTypesRequiringUserActionForPlayback = .audio
 		configuration.allowsAirPlayForMediaPlayback = true
 		#if os(macOS)
+			_ = AstraConfigureWebPushPreferences(configuration.preferences, !session.isPrivate && BrowserWebPushManager.shared.hasNativeSupport)
 			if configuration.preferences.responds(to: NSSelectorFromString("_setDeveloperExtrasEnabled:")) {
 				configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
 			}
@@ -918,7 +921,7 @@ extension BrowserController: WKNavigationDelegate {
 		if navigationAction.targetFrame?.isMainFrame == true {
 			webView.customUserAgent = Self.userAgentOverride(for: navigationAction.request.url)
 		}
-		if let url = navigationAction.request.url, handleExternalLink(url, in: webView) {
+		if let url = navigationAction.request.url, handleExternalLink(url, requestingOrigin: navigationAction.sourceFrame.securityOrigin, in: webView) {
 			decisionHandler(.cancel, preferences)
 			return
 		}
@@ -964,6 +967,7 @@ extension BrowserController: WKNavigationDelegate {
 						break
 				}
 			}
+			// WebKit's .allow path attempts eligible universal links and falls back to the website.
 			decisionHandler(.allow, preferences)
 			return
 		}
@@ -1173,7 +1177,7 @@ extension BrowserController: WKUIDelegate {
 		{
 			return nil
 		}
-		if let url = navigationAction.request.url, handleExternalLink(url, in: webView) {
+		if let url = navigationAction.request.url, handleExternalLink(url, requestingOrigin: navigationAction.sourceFrame.securityOrigin, in: webView) {
 			return nil
 		}
 		if navigationAction.shouldPerformDownload {
@@ -1214,9 +1218,8 @@ extension BrowserController: WKUIDelegate {
 		(webView as? PeekSourceWebView)?.consumeSource() ?? .center
 	}
 
-	private func handleExternalLink(_ url: URL, in webView: WKWebView) -> Bool {
-		guard let scheme = url.scheme?.lowercased(),
-		      !["http", "https", "about", "data", "blob", "file"].contains(scheme) else { return false }
+	private func handleExternalLink(_ url: URL, requestingOrigin: WKSecurityOrigin, in webView: WKWebView) -> Bool {
+		guard let scheme = BrowserAddress.externalApplicationScheme(for: url) else { return false }
 		let addresses = URLComponents(url: url, resolvingAgainstBaseURL: false)?.path ?? ""
 		if scheme == "mailto", Defaults[.copyMailtoAddresses], !addresses.isEmpty {
 			#if os(macOS)
@@ -1229,19 +1232,40 @@ extension BrowserController: WKUIDelegate {
 			return true
 		}
 		#if os(macOS)
-			guard NSWorkspace.shared.urlForApplication(toOpen: url) != nil else { return true }
+			guard !isOpeningExternalApplication else { return true }
+			guard let applicationURL = NSWorkspace.shared.urlForApplication(toOpen: url) else {
+				ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "No application is installed to open \(scheme) links")
+				return true
+			}
+			guard applicationURL.standardizedFileURL != Bundle.main.bundleURL.standardizedFileURL else {
+				ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "This link points back to Astra")
+				return true
+			}
+			let applicationName = FileManager.default.displayName(atPath: applicationURL.path)
+			var origin = URLComponents()
+			origin.scheme = requestingOrigin.protocol
+			origin.host = requestingOrigin.host
+			origin.port = requestingOrigin.port > 0 ? requestingOrigin.port : nil
+			let requestingSite = origin.url.flatMap(BrowserSitePermissions.origin(for:)) ?? "This page"
 			let documentID = navigationIdentifier
+			isOpeningExternalApplication = true
 			Task { @MainActor in
+				defer { isOpeningExternalApplication = false }
 				let alert = BrowserWebsiteUI.alert(
-					title: "Open another application?",
-					message: "\(webView.url?.host ?? "This website") wants to open a \(scheme) link.",
+					title: "Open \(applicationName)?",
+					message: "\(requestingSite) wants to open a \(scheme) link in \(applicationName).",
 					confirm: "Open Application"
 				)
 				let response = await BrowserWebsiteUI.present(alert, in: webView.window) { [self, webView] in
 					navigationIdentifier == documentID && webView.window?.isVisible == true
 				}
-				if response == .alertFirstButtonReturn {
-					NSWorkspace.shared.open(url)
+				guard response == .alertFirstButtonReturn else { return }
+				let configuration = NSWorkspace.OpenConfiguration()
+				configuration.addsToRecentItems = false
+				do {
+					_ = try await NSWorkspace.shared.open([url], withApplicationAt: applicationURL, configuration: configuration)
+				} catch {
+					ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "\(applicationName) could not open this link")
 				}
 			}
 		#elseif os(iOS)

@@ -8,14 +8,17 @@
 #if os(macOS)
 	import AppKit
 	import AuthenticationServices
+	import Carbon
 	import Defaults
 	import Sparkle
+	import WebKit
 
 	@MainActor
 	final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation {
 		private var windows: [BrowserWindowController] = []
 		private var miniWindows: [MiniAstraWindowController] = []
 		private var lastQuitAttempt: Date?
+		private var wasLaunchedForWebPush = false
 		private var memoryPressureSource: DispatchSourceMemoryPressure?
 
 		func applicationWillFinishLaunching(_: Notification) {
@@ -25,6 +28,14 @@
 				}
 			#endif
 			installMainMenu()
+			NSAppleEventManager.shared().setEventHandler(
+				self,
+				andSelector: #selector(handleURLEvent(_:withReplyEvent:)),
+				forEventClass: AEEventClass(kInternetEventClass),
+				andEventID: AEEventID(kAEGetURL)
+			)
+			_ = BrowserWebSession.shared
+			BrowserWebPushManager.shared.openRequested = { [weak self] url in self?.open(url) }
 			NotificationCenter.default.addObserver(
 				self,
 				selector: #selector(newMiniAstra(_:)),
@@ -61,7 +72,11 @@
 			}
 			source.resume()
 			memoryPressureSource = source
-			if miniWindows.isEmpty, !authentication.wasLaunchedByAuthenticationServices {
+			BrowserWebPushManager.shared.drainPendingMessages()
+			Task { @MainActor [weak self] in
+				await Task.yield()
+				guard let self, windows.isEmpty, miniWindows.isEmpty, !wasLaunchedForWebPush,
+				      !authentication.wasLaunchedByAuthenticationServices else { return }
 				openBrowserWindow()
 			}
 		}
@@ -119,8 +134,18 @@
 			return true
 		}
 
+		@objc private func handleURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent _: NSAppleEventDescriptor) {
+			guard let value = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+			      let url = URL(string: value) else { return }
+			application(NSApp, open: [url])
+		}
+
 		func application(_: NSApplication, open urls: [URL]) {
-			for url in urls where url.scheme == "http" || url.scheme == "https" {
+			if urls.contains(where: { $0.absoluteString == "x-webkit-app-launch://1" }) {
+				wasLaunchedForWebPush = true
+				BrowserWebPushManager.shared.drainPendingMessages()
+			}
+			for url in urls where ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
 				if Defaults[.miniAstraEnabled] {
 					openMiniAstra(url: url)
 				} else {
@@ -204,7 +229,8 @@
 			openMiniAstra()
 		}
 
-		private func open(_ url: URL) {
+		@discardableResult
+		private func open(_ url: URL) -> WKWebView? {
 			let controller: BrowserWindowController
 
 			if let keyWindow = NSApp.keyWindow,
@@ -220,6 +246,7 @@
 
 			let tab = controller.browser.addTab()
 			tab.controller?.load(url)
+			return tab.controller?.webView
 		}
 
 		// MARK: - Browser actions
