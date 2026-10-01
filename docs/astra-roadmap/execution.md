@@ -15,15 +15,15 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 | [00-baseline](tasks/00-baseline.md) | build verified; primary reviewed | `2a6932d8aab907302f252d58fcb4a8e22d848fe8`; stale test metadata removed, app builds |
 | [01-lifecycle](tasks/01-lifecycle.md) | build verified; primary reviewed | `0c50cc8faf07ee9dca8ac8aef0fe6465b14b8f72`; safe promotion, cleanup and peek session reconstruction |
 | [02-navigation-policy](tasks/02-navigation-policy.md) | reviewed; build and pure parser checks pass | `1699f4728632432225c6f88f417681c8f8f8c57a`; hooks assigned05/32 |
-| [03-persistence-restoration](tasks/03-persistence-restoration.md) | queued | — |
+| [03-persistence-restoration](tasks/03-persistence-restoration.md) | in progress | Combined reviewed00/01/02/06/11/29 source; Xcode astra/My Mac build passes |
 | [04-private-browsing](tasks/04-private-browsing.md) | queued | — |
 | [05-permissions](tasks/05-permissions.md) | queued | — |
-| [06-failures-offline](tasks/06-failures-offline.md) | queued | — |
+| [06-failures-offline](tasks/06-failures-offline.md) | build verified; primary reviewed | 42a1274; invalidation/retry guards and repeated-crash recovery; combined build passes |
 | [07-tabs-spaces](tasks/07-tabs-spaces.md) | queued | — |
 | [08-windows-os-restoration](tasks/08-windows-os-restoration.md) | queued | — |
 | [09-history](tasks/09-history.md) | queued | — |
 | [10-bookmarks-reading-list](tasks/10-bookmarks-reading-list.md) | queued | — |
-| [11-favicons](tasks/11-favicons.md) | queued | — |
+| [11-favicons](tasks/11-favicons.md) | build verified; primary reviewed | 948f8fa; bounded fetch/decoding/cache and hydration guards |
 | [12-downloads](tasks/12-downloads.md) | queued | — |
 | [13-uploads-auth-challenges](tasks/13-uploads-auth-challenges.md) | queued | — |
 | [14-address-search-config](tasks/14-address-search-config.md) | queued | — |
@@ -53,3 +53,5 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 ## Sync priority override
 
 The user reported invalid HTTPS sync URL errors and missing settings, and required on-device caching and last-updated conflict protection for every synchronized record, explicitly including history, bookmarks, spaces and settings. Packet 29 runs next against existing reviewed implementations; remaining prerequisites will consume its upgraded persistence/merge contract. The original checkout remains unchanged.
+
+Combined baseline: independent navigation, offline/failure and favicon checkpoints were cherry-picked into task03 from the reviewed sync29 branch. Original checkout remains unchanged. Xcode MCP workspace workspace-VvsSm87feh, astra/My Mac, combined build passed in29.643s with no errors.
