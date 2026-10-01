@@ -48,6 +48,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 	private let storeURL: URL
 	private let privateDataStore: WKWebsiteDataStore?
+	private let toastManager: ToastManager
 	private(set) var items: [BrowserDownload] = []
 	private(set) var latestStart: (id: UUID, source: UnitPoint)?
 
@@ -64,11 +65,12 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	override private convenience init() {
-		self.init(privateDataStore: nil)
+		self.init(privateDataStore: nil, toastManager: .shared)
 	}
 
-	init(privateDataStore: WKWebsiteDataStore?) {
+	init(privateDataStore: WKWebsiteDataStore?, toastManager: ToastManager) {
 		self.privateDataStore = privateDataStore
+		self.toastManager = toastManager
 		let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
 			.appendingPathComponent(Bundle.main.bundleIdentifier ?? "browser", isDirectory: true)
 		if privateDataStore == nil {
@@ -212,7 +214,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 					await maybeAccelerate(download, response: response)
 				}
 			} catch {
-				ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "Download failed: \(error.localizedDescription)")
+				showToast(symbol: "exclamationmark.triangle", message: "Download failed: \(error.localizedDescription)")
 				items[index].status = .failed
 				items[index].errorMessage = error.localizedDescription
 				completionHandler(nil)
@@ -290,11 +292,11 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				if let oldURL = previousTemporaryURLs.removeValue(forKey: itemID), oldURL != temporaryURL {
 					try? FileManager.default.removeItem(at: oldURL)
 				}
-				ToastManager.shared.show(symbol: "arrow.down.circle", message: "Downloaded \(completedURL.lastPathComponent)")
+				showToast(symbol: "arrow.down.circle", message: "Downloaded \(completedURL.lastPathComponent)")
 			} catch {
 				items[index].status = .failed
 				items[index].errorMessage = error.localizedDescription
-				ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "Download failed: \(error.localizedDescription)")
+				showToast(symbol: "exclamationmark.triangle", message: "Download failed: \(error.localizedDescription)")
 			}
 		}
 		finish(download)
@@ -311,7 +313,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				items[index].status = resumeData == nil ? .failed : .paused
 				items[index].errorMessage = error.localizedDescription
 			}
-			ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "Download failed: \(error.localizedDescription)")
+			showToast(symbol: "exclamationmark.triangle", message: "Download failed: \(error.localizedDescription)")
 		}
 		finish(download)
 		persist()
@@ -453,7 +455,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				try FileManager.default.removeItem(at: oldURL)
 			}
 		} catch {
-			ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "Could not delete download: \(error.localizedDescription)")
+			showToast(symbol: "exclamationmark.triangle", message: "Could not delete download: \(error.localizedDescription)")
 			return
 		}
 		items.remove(at: index)
@@ -475,7 +477,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			items[index].renamedByAppleIntelligence = false
 			persist()
 		} catch {
-			ToastManager.shared.show(symbol: "exclamationmark.triangle", message: error.localizedDescription)
+			showToast(symbol: "exclamationmark.triangle", message: error.localizedDescription)
 		}
 	}
 
@@ -671,7 +673,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			items[itemIndex].segments = nil
 			updateDockProgress()
 			persist()
-			ToastManager.shared.show(symbol: "arrow.down.circle", message: "Downloaded \(completedURL.lastPathComponent)")
+			showToast(symbol: "arrow.down.circle", message: "Downloaded \(completedURL.lastPathComponent)")
 		} catch {
 			segmentFailed(itemID)
 		}
@@ -741,6 +743,10 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		}
 	}
 
+	private func showToast(symbol: String, message: String) {
+		toastManager.show(symbol: symbol, message: message)
+	}
+
 	private func persist() {
 		persistSoon()
 	}
@@ -761,7 +767,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			} catch {
 				let message = error.localizedDescription
 				await MainActor.run {
-					ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "Could not save downloads: \(message)")
+					self.showToast(symbol: "exclamationmark.triangle", message: "Could not save downloads: \(message)")
 				}
 			}
 		}
@@ -777,7 +783,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			try data.write(to: storeURL, options: .atomic)
 			lastPersistedAt = .now
 		} catch {
-			ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "Could not save downloads: \(error.localizedDescription)")
+			showToast(symbol: "exclamationmark.triangle", message: "Could not save downloads: \(error.localizedDescription)")
 		}
 	}
 

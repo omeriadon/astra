@@ -920,7 +920,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	func resetZoom() {
 		pageZoom = 1
-		ToastManager.shared.show(symbol: "1.magnifyingglass", message: "Zoom 100%")
+		session.toastManager.show(symbol: "1.magnifyingglass", message: "Zoom 100%")
 	}
 
 	func reloadFromOrigin() {
@@ -937,7 +937,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	func zoomIn() {
 		pageZoom = min(pageZoom + 0.1, 5)
-		ToastManager.shared.show(
+		session.toastManager.show(
 			symbol: "plus.magnifyingglass",
 			message: "Zoom \(Int(pageZoom * 100))%"
 		)
@@ -945,7 +945,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	func zoomOut() {
 		pageZoom = max(pageZoom - 0.1, 0.25)
-		ToastManager.shared.show(
+		session.toastManager.show(
 			symbol: "minus.magnifyingglass",
 			message: "Zoom \(Int(pageZoom * 100))%"
 		)
@@ -1466,7 +1466,7 @@ extension BrowserController: WKUIDelegate {
 			#elseif os(iOS)
 				UIPasteboard.general.string = addresses
 			#endif
-			ToastManager.shared.show(symbol: "doc.on.doc", message: "Email address copied")
+			session.toastManager.show(symbol: "doc.on.doc", message: "Email address copied")
 			return true
 		}
 		#if os(macOS)
@@ -1477,11 +1477,11 @@ extension BrowserController: WKUIDelegate {
 			}
 			lastExternalApplicationRequestTime = now
 			guard let applicationURL = NSWorkspace.shared.urlForApplication(toOpen: url) else {
-				ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "No application is installed to open \(scheme) links")
+				session.toastManager.show(symbol: "exclamationmark.triangle", message: "No application is installed to open \(scheme) links")
 				return true
 			}
 			guard applicationURL.standardizedFileURL != Bundle.main.bundleURL.standardizedFileURL else {
-				ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "This link points back to Astra")
+				session.toastManager.show(symbol: "exclamationmark.triangle", message: "This link points back to Astra")
 				return true
 			}
 			let applicationName = FileManager.default.displayName(atPath: applicationURL.path)
@@ -1512,7 +1512,7 @@ extension BrowserController: WKUIDelegate {
 				do {
 					_ = try await NSWorkspace.shared.open([url], withApplicationAt: applicationURL, configuration: configuration)
 				} catch {
-					ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "\(applicationName) could not open this link")
+					session.toastManager.show(symbol: "exclamationmark.triangle", message: "\(applicationName) could not open this link")
 				}
 			}
 		#elseif os(iOS)
@@ -1528,7 +1528,7 @@ extension BrowserController: WKUIDelegate {
 					guard let self else { return }
 					self.isOpeningExternalApplication = false
 					if !succeeded {
-						ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "No application could open this link")
+						session.toastManager.show(symbol: "exclamationmark.triangle", message: "No application could open this link")
 					}
 				}
 			}

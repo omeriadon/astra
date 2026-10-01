@@ -84,7 +84,7 @@
 						try data.write(to: destination, options: .atomic)
 						try BrowserDownloadedFile.quarantine(destination, downloadURL: webView.url, sourceURL: webView.url)
 					} catch {
-						ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "Could not save page: \(error.localizedDescription)")
+						controller.session.toastManager.show(symbol: "exclamationmark.triangle", message: "Could not save page: \(error.localizedDescription)")
 					}
 				}
 			}

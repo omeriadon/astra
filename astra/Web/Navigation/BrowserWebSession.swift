@@ -7,6 +7,7 @@ final class BrowserWebSession {
 	static let shared = BrowserWebSession()
 	let isPrivate: Bool
 	let dataStore: WKWebsiteDataStore
+	let toastManager: ToastManager
 	let downloads: BrowserDownloadManager
 	let favicons: FaviconStore
 	let permissions: BrowserSitePermissions
@@ -15,12 +16,16 @@ final class BrowserWebSession {
 
 	init(isPrivate: Bool = false) {
 		self.isPrivate = isPrivate
+		let toastManager = isPrivate ? ToastManager() : .shared
+		self.toastManager = toastManager
 		#if os(macOS)
 			dataStore = isPrivate ? .nonPersistent() : AstraCreateWebPushDataStore() ?? .default()
 		#else
 			dataStore = isPrivate ? .nonPersistent() : .default()
 		#endif
-		downloads = isPrivate ? BrowserDownloadManager(privateDataStore: dataStore) : .shared
+		downloads = isPrivate
+			? BrowserDownloadManager(privateDataStore: dataStore, toastManager: toastManager)
+			: .shared
 		favicons = isPrivate ? FaviconStore(isPrivate: true) : .shared
 		permissions = BrowserSitePermissions(isPrivate: isPrivate)
 		#if os(macOS)
@@ -31,6 +36,7 @@ final class BrowserWebSession {
 		#endif
 		#if DEBUG
 			assert(dataStore.isPersistent != isPrivate)
+			assert(isPrivate ? toastManager !== ToastManager.shared : toastManager === ToastManager.shared)
 		#endif
 	}
 

@@ -4,7 +4,9 @@ struct BrowserPageView: View {
 	let browser: Browser
 	let cornerRadius: CGFloat
 	var insets = BrowserViewportInsets()
-	@State private var toastManager = ToastManager.shared
+	private var toastManager: ToastManager {
+		browser.session.toastManager
+	}
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	private var isLocalhost: Bool {
