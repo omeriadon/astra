@@ -4,9 +4,9 @@ Task / selected optional scope: Full packet scope. Search engines, custom HTTPS 
 
 Branch / worktree / baseline commit: `astra/roadmap/14-address-search-config`, `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/14-address-search-config`, baseline `0159f9ffdf97ef0fbafd5485adc5222d83b56d4f`.
 
-Status: Source complete. Xcode diagnostics/build remain pending because the Xcode slot is assigned to packet05.
+Status: Build verified on macOS. Runtime/provider acceptance remains pending.
 
-Commit(s), or explicit uncommitted state: `configure address search` (exact checkpoint hash is in the primary handoff).
+Commit(s), or explicit uncommitted state: `23be171` (`configure address search`), `cba6b412fd8ce1fba6a829a5422c238d009feb05` (`harden address search configuration`), plus the handoff evidence checkpoint reported to the primary.
 
 Changed files and behavior:
 
@@ -40,14 +40,17 @@ Checks run, scheme/destination/workspace and results:
   astra/Storage/BrowserDefaults.swift \
   astra/UI/Settings/Detail/BrowserGeneralSettingsView.swift` — passed.
 - `git diff --check` — passed.
-- Xcode workspace/scheme/destination/build not run. The task dispatch reserves the Xcode slot for05.
+- Xcode workspace: `workspace-l7ivJ1QAez`, exact path `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/14-address-search-config/astra.xcodeproj`; scheme `astra`; destination `My Mac` (macOS27.2, arm64).
+- Xcode diagnostics: zero issues for all eight changed Swift files. One parallel request timed out; its standalone retry returned zero issues.
+- Xcode `BuildProject`, `buildForTesting: false`: passed, “The project built successfully.” Elapsed20.732 seconds; no errors. Log: `/var/folders/s_/ms68q0zx137_d7r08rxtnp9w0000gq/T/ActionArtifacts/default/BuildProject/BuildProject-Log-20261001-175128.txt`.
+- Closed only task workspace `workspace-l7ivJ1QAez`. No app launch or hosted tests.
 
 Checks written but not executed: None for the helper checks; the written check file was executed. No Xcode app-level checks were run.
 
-Pending runtime/hardware/provider cases: Xcode compilation after packet05 releases its slot; actual address bar/settings interaction; live Google and DuckDuckGo suggestion response formats, cancellation and timeouts; no-network/offline behavior; explicit private-mode remote opt-in. No app or browser was launched.
+Pending runtime/hardware/provider cases: actual address bar/settings interaction; live Google and DuckDuckGo suggestion response formats, cancellation and timeouts; no-network/offline behavior; explicit private-mode remote opt-in. No app or browser was launched.
 
 Migration, compatibility and private-data impact: Missing setting uses the deterministic built-in Google defaults. New portable preference `browserSearchConfiguration` is registered in `Defaults.Keys.syncedSettingNames`, so existing timestamped settings cache/merge persists real changes; decode/read does not stamp. Invalid remote JSON disables search via an invalid custom configuration rather than silently routing text to Google. Private tab data and credentials are not added. Remote private suggestions remain disabled by default. The user-selected search configuration, including a custom HTTPS template and private suggestion opt-in, is a synced preference. Existing normal/private search engine choice is persisted on device.
 
 Capability gates / unresolved issues: Suggestions are implemented only for Google and DuckDuckGo. Bing and custom providers retain local search but do not fetch remote suggestions. Live provider acceptance is pending runtime checks. No server changes.
 
-Merge prerequisites / follow-up ownership: Keep scheduling adjustment recorded: packet14 was brought forward because its reserved files are disjoint from packet05's permissions-writer files; this does not mark packet17 complete. Primary review and Xcode slot/build remain outstanding.
+Merge prerequisites / follow-up ownership: Primary review and the Xcode slot/build are complete. Packet14 was brought forward because its reserved files are disjoint from packet05's permissions-writer files; this does not mark packet17 complete.
