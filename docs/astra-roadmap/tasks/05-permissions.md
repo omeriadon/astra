@@ -1,6 +1,6 @@
 # 05-permissions
 
-Priority: P0. Status: planned. Prerequisites: 04.
+Priority: P0. Status: source reviewed; Mac build verified; runtime/API gates remain. Prerequisites: 04.
 Branch: `astra/roadmap/05-permissions`. Worktree: `../astra-worktrees/05-permissions`.
 
 Read [the roadmap](../README.md) and [dispatch procedure](../dispatch.md). Implement only this packet's selected scope, using its own worktree and reserved files. No implementation starts from this document alone.

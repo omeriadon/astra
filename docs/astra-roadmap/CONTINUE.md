@@ -1,14 +1,14 @@
 # Continue Astra browser implementation
 
-This is the single handoff entry point for a new primary agent. The user requested this handoff after completing the active work because the previous context was full. Continue the authorized roadmap; do not restart it or claim the whole browser is complete.
+This is the single handoff entry point for a new primary agent. The user requested finishing the active work and recording the next resume point. Continue the authorized roadmap; do not restart it or claim the whole browser is complete.
 
 ## Start here
 
-- Working directory: `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/04-private-browsing`.
-- Branch: `astra/roadmap/04-private-browsing`.
-- Source close-out commit: `1d89883d105266a1e30e3fa9ca5f50f35ea6ea54` (`isolate private diagnostics notification`). The documentation checkpoint containing this file follows it; use this branch's latest HEAD as the next task baseline.
-- Cumulative source includes reviewed packets **00, 01, 02, 03, 04, 06, 11, 24, 29**. All nine are present in this checkout, including independent branches combined by cherry-picking reviewed commits. **Do not cherry-pick them again.**
-- **28 packets remain. PiP is required and NOT implemented.** Packet 24 covers playback/player controls, not PiP.
+- Working directory: `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/05-permissions`.
+- Branch: `astra/roadmap/05-permissions`.
+- Permission source checkpoint: `75905077e83a5df2ca97a1e69ed6838533e9680c`; handoff checkpoint: `f1315876d5bb04e1514b81d9f86c9174b516a7e1`. Use this branch's latest HEAD, including the primary close-out documentation, as the next baseline.
+- Cumulative source includes reviewed packets **00, 01, 02, 03, 04, 05, 06, 11, 24, 29**. **Do not reapply them.** Packet **14** is reviewed in its separate worktree and has NOT been combined here. Combine it exactly once in the next task worktree using the instructions below.
+- **Eleven packets are source-reviewed; twenty-six remain. PiP is required and NOT implemented.** Packet 24 covers playback/player controls, not PiP. Source review and Mac compilation do not resolve the runtime or capability gates.
 - No implementation agent is active. Existing agents have completed. Preserve every worktree/branch for the user's later integration.
 
 Read [execution.md](execution.md), [README.md](README.md), [dispatch.md](dispatch.md), [contracts.md](contracts.md), and [capabilities.md](capabilities.md), then the selected next packet. Per-packet reports are under [handoffs/](handoffs/). The reports contain exact source changes/check commands and runtime limitations.
@@ -35,11 +35,13 @@ Keep all actual edits/checks in the assigned absolute worktree. Agents share a f
 | --- | --- |
 | 00 baseline | `d1210af`; contracts/capabilities, removed stale references to deliberately deleted hosted test target |
 | 01 lifecycle | `7b8ced5`; peek promotion transfers controller without teardown; restored peeks retain session; idempotent cleanup/invalidation and non-destructive pressure policy |
-| 02 navigation | `044a925`; centralized restricted/external scheme policy, typed app URLs, corrected host:port ambiguity, throttle/stale ownership guards; remaining selected-tab prompt hook belongs05, iOS generic external confirmation belongs32 |
+| 02 navigation | `044a925`; centralized restricted/external scheme policy, typed app URLs, corrected host:port ambiguity, throttle/stale ownership guards; selected-tab prompt hook supplied by05; blank-tab ownership follow-ups remain08/17/32, iOS generic external confirmation belongs32 |
 | 03 persistence | `e5bb2ba`; local formatv3, startup restore/new-tab/homepage preserves tabs and all workspace organization, shared once-per-process clean/unclean marker, validated window records and future-state preservation |
 | 04 private | `49d35738`, `668efe0`, `1d89883d105266a1e30e3fa9ca5f50f35ea6ea54`; session-isolated private toasts for downloads/zoom/external app/export/diagnostic events; private data/services remain per-window and ephemeral |
+| 05 permissions | `75905077`, `f1315876`; controller/top-document temporary grants, persistent site decisions, selected active-controller prompts, same-session capture revocation and top-site multiple-download policy; Mac build5.913s passes; see handoff for limits |
 | 06 failures/offline | `42a1274`; retained failure requests, one body-free GET/HEAD network-return retry, no closed-controller reload, repeat-crash tracking across reloads; preserves non-idempotent replay restrictions |
 | 11 favicons | `948f8fa`; canonical origins, bounded actual requests/bytes/decodes/cache, stale hydration and cancellation checks, weak/bounded request tracking |
+| 14 address/search | separate branch source `f63f5b57487034b0a0be9bf53cbc6be6646b2654`, review HEAD `9fa4963eeb3469feaf0425cdd6a1015b7790ea17`; provider/private choices, custom HTTPS templates, keyword shortcuts, bounded suggestions, timestamped portable setting; Mac build20.732s passes before final parser guard, whose real helper checks pass |
 | 24 media | `7255d12`; native playback/pause observation, honest scoped HTML-player resume/mute and restore state, bounded detached-node tracking; no full-tab audible/WebAudio/spatial claim |
 | 29 sync | `b0fdebf` after `99b26b7`, `c726905`, `4fcb508`; priority repair described below |
 
@@ -66,20 +68,24 @@ Evidence about the reported URL error: the exact prior production validation gua
 
 ## Next work
 
-Resume with [05-permissions](tasks/05-permissions.md), whose 04 prerequisite is now complete. Finish per-origin temporary/persistent decisions, reset behavior and actual supported capabilities; route website prompts through selected-tab/window ownership so a background still-mounted tab cannot keep an external/permission prompt active.
+The user asked to finish up. Packets05 and14 are closed out; no new packet was started. Original checkout, task branches and worktrees remain intact. No push or original-checkout integration occurred.
 
-**Expedite required [24a-picture-in-picture](tasks/24a-picture-in-picture.md)** after reserving its files. Media24 is already implemented. Existing menu infrastructure can supply a minimal command before17's full audit; record that scheduling adjustment rather than declaring17 complete. PiP and05 both touch Controller: do not run them as conflicting writers. A second worker can run only a disjoint scope with satisfied current source contracts. Default later queue follows the packet dependency graph; bring a task forward only when interfaces/ownership are established and record the reason.
+Resume with required [24a-picture-in-picture](tasks/24a-picture-in-picture.md), after creating its worktree from the latest cumulative05 HEAD and combining reviewed14 there. Media24 is present. Existing menu infrastructure can supply a minimal PiP command before17's full audit; record this scheduling adjustment rather than declaring17 complete. Packet14 was brought forward because its reserved address/search/defaults/general-settings files were disjoint from05.
+
+Permission05 follow-ups remain explicit: grants use the top-level document generation, not separate iframe document identity; native non-user-activated popups remain blocked before the delegate; per-origin autoplay is unavailable; download decisions are intentionally top-site scoped and first attempts are per controller. Native OS/capture/iframe/dialog behavior and iOS compilation remain unverified. Audit blank-tab external app prompts and copied-mailto ownership in08/17/32: a new-tab controller may have no mounted WebView/window. These limits are recorded work, not evidence that the affected runtime cases passed.
+
+Packet14's complete source is in `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/14-address-search-config`, branch `astra/roadmap/14-address-search-config`. Its five checkpoints, in order, are `23be171834f77b8cc0d556d3df2c53ac19e28d2e`, `cba6b412fd8ce1fba6a829a5422c238d009feb05`, `2a75812f82c6d387aa25421ae35241c321638482`, `f63f5b57487034b0a0be9bf53cbc6be6646b2654`, and `9fa4963eeb3469feaf0425cdd6a1015b7790ea17`. The last parser guard preserves dotted external schemes containing `://`; production-helper compilation/checks pass after that correction. The next required PiP build verifies the combined source. Suggestions are Google/DuckDuckGo only; Bing/custom search works without remote suggestions. Private suggestions require explicit opt-in and remain off by default.
+
+Default later queue follows the packet dependency graph. Shared Controller/Browser writes stay serialized. No implementation agent is active.
 
 Remaining packets:
 
-- [05-permissions](tasks/05-permissions.md)
 - [07-tabs-spaces](tasks/07-tabs-spaces.md)
 - [08-windows-os-restoration](tasks/08-windows-os-restoration.md)
 - [09-history](tasks/09-history.md)
 - [10-bookmarks-reading-list](tasks/10-bookmarks-reading-list.md)
 - [12-downloads](tasks/12-downloads.md)
 - [13-uploads-auth-challenges](tasks/13-uploads-auth-challenges.md)
-- [14-address-search-config](tasks/14-address-search-config.md)
 - [15-address-intelligence](tasks/15-address-intelligence.md)
 - [16-chrome-find-zoom](tasks/16-chrome-find-zoom.md)
 - [17-keyboard-menus](tasks/17-keyboard-menus.md)
@@ -108,16 +114,26 @@ These are unimplemented packets, not just verification items. User selected opti
 Create the next worktree just before dispatch from the latest reviewed cumulative commit. Do not branch every task from the old original snapshot.
 
 ```sh
-cd /Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/04-private-browsing
+cd /Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/05-permissions
 baseline_commit=$(git rev-parse HEAD)
-task_id='05-permissions'
+task_id='24a-picture-in-picture'
 git worktree add -b "astra/roadmap/$task_id" "../$task_id" "$baseline_commit"
 ```
 
 
+Before dispatch, check the new worktree is clean and combine14 exactly once there. No worktree has been created for24a yet.
+
+```sh
+cd /Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/24a-picture-in-picture
+git status --short
+git -c core.hooksPath=/dev/null cherry-pick 23be171834f77b8cc0d556d3df2c53ac19e28d2e cba6b412fd8ce1fba6a829a5422c238d009feb05 2a75812f82c6d387aa25421ae35241c321638482 f63f5b57487034b0a0be9bf53cbc6be6646b2654 9fa4963eeb3469feaf0425cdd6a1015b7790ea17
+```
+
+Keep14's original branch/worktree intact. Record the combined checkpoint and inspect the actual result before dispatch. If24a already exists during a later resume, inspect its state instead of repeating creation or cherry-picks.
+
 Worker prompt: implement the selected packet plus user cache/timestamp contract; give absolute worktree, exact branch/base, prerequisites, reserved files, selected scope and verification. Use `gpt-6-luna`, medium reasoning and no inherited history (`fork_turns: "none"`), with complete task context. Worker writes `handoffs/<packet>.md`, checkpoints with disabled hooks, reports changed files/checks/real gates. Primary reviews actual diffs and regression cases before dependent work.
 
-Independent branches are combined by cherry-picking reviewed commits into a later **task worktree**, retaining all original task branches and leaving the original checkout untouched. Check staged/dirty files before combining; avoid applying another worker's staged edits. No original checkout merge is authorized. Current cumulative04 already contains everything above.
+Independent branches are combined by cherry-picking reviewed commits into a later **task worktree**, retaining all original task branches and leaving the original checkout untouched. Check staged/dirty files before combining; avoid applying another worker's staged edits. No original checkout merge is authorized. Current cumulative05 contains the ten listed baseline packets; the independently reviewed14 still needs combination in the next task worktree.
 
 ## PiP implementation evidence and limits
 
@@ -139,4 +155,10 @@ Installed SDK inspection found `allowsPictureInPictureMediaPlayback` inside `#if
 
 ## Close-out status
 
-Nine packets are reviewed; twenty-eight remain. All edits are isolated from the original checkout. The latest branch is the resume base, not a production release. Final reporting must distinguish source/compile evidence from runtime/provider/hardware gates and must not claim all37 are finished.
+Eleven packets are source-reviewed; twenty-six remain. Cumulative05 contains ten; independent14 must be combined in the next task worktree. All edits are isolated from the original checkout. The latest branch is the resume base, not a production release. Final reporting must distinguish source/compile evidence from runtime/provider/hardware gates and must not claim all37 are finished.
+
+## Latest verification
+
+- Permission05: final Xcode MCP `astra` / `My Mac` build passed in5.913s; zero diagnostics in eight changed production files. Task workspace `workspace-3MHijM2I3R` was closed. Actual production model/policy check passes, including synchronous download reservations, temporary/private non-persistence, legacy migration and future/malformed-data preservation. See `handoffs/05-permissions.md`.
+- Search14: Xcode MCP `astra` / `My Mac` build passed in20.732s; zero diagnostics in eight changed Swift files. Task workspace `workspace-l7ivJ1QAez` was closed. Subsequent small dotted-scheme parser correction passed production-helper compilation/checks and source parsing; no ceremonial full rebuild was run. See its separate worktree's `handoffs/14-address-search-config.md` for exact commands.
+- No app launch, hosted tests, provider operation, real user-data edits, server changes, pushes, merges or worktree deletion occurred. Both implementation workers finished.

@@ -17,7 +17,7 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 | [02-navigation-policy](tasks/02-navigation-policy.md) | reviewed; build and pure parser checks pass | `1699f4728632432225c6f88f417681c8f8f8c57a`; hooks assigned05/32 |
 | [03-persistence-restoration](tasks/03-persistence-restoration.md) | build verified; primary reviewed | 03a2b05; non-destructive startup, session marker, validated window records; refreshed Mac build25.27s passes |
 | [04-private-browsing](tasks/04-private-browsing.md) | build verified; primary reviewed | 49d35738; source close-out `1d89883d105266a1e30e3fa9ca5f50f35ea6ea54`; private session notifications isolated |
-| [05-permissions](tasks/05-permissions.md) | queued | — |
+| [05-permissions](tasks/05-permissions.md) | primary reviewed; Mac build verified; runtime/API gates open | `75905077`, handoff `f1315876`; scoped grants, prompt ownership, capture revocation, top-site multiple downloads; final Mac build5.913s |
 | [06-failures-offline](tasks/06-failures-offline.md) | build verified; primary reviewed | 42a1274; invalidation/retry guards and repeated-crash recovery; combined build passes |
 | [07-tabs-spaces](tasks/07-tabs-spaces.md) | queued | — |
 | [08-windows-os-restoration](tasks/08-windows-os-restoration.md) | queued | — |
@@ -26,7 +26,7 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 | [11-favicons](tasks/11-favicons.md) | build verified; primary reviewed | 948f8fa; bounded fetch/decoding/cache and hydration guards |
 | [12-downloads](tasks/12-downloads.md) | queued | — |
 | [13-uploads-auth-challenges](tasks/13-uploads-auth-challenges.md) | queued | — |
-| [14-address-search-config](tasks/14-address-search-config.md) | queued | — |
+| [14-address-search-config](tasks/14-address-search-config.md) | independently reviewed; Mac build and final parser helper checks pass | separate branch source `f63f5b5`, review HEAD `9fa4963`; Mac build20.732s before final helper-only parser correction; combine once in next task worktree |
 | [15-address-intelligence](tasks/15-address-intelligence.md) | queued | — |
 | [16-chrome-find-zoom](tasks/16-chrome-find-zoom.md) | queued | — |
 | [17-keyboard-menus](tasks/17-keyboard-menus.md) | queued | — |
@@ -58,4 +58,8 @@ Combined baseline: independent navigation, offline/failure and favicon checkpoin
 
 ## User-requested handoff
 
-The user requested finishing the active packet and producing a continuation file instead of starting more work in this context. Nine packets are source-reviewed; twenty-eight remain. Read [CONTINUE.md](CONTINUE.md) for the authoritative resume point, worktree rules, remaining work and verification limits. The original checkout has advanced independently since the initial snapshot; do not overwrite or merge it without a new integration instruction.
+The user requested finishing the active packet and producing a continuation file instead of starting more work in this context. Eleven packets are source-reviewed; twenty-six remain. Cumulative05 contains ten and independent14 remains on its own branch; combine it in the next task worktree. Read [CONTINUE.md](CONTINUE.md) for the authoritative resume point, worktree rules, remaining work and verification limits. The original checkout has advanced independently since the initial snapshot; do not overwrite or merge it without a new integration instruction.
+
+## Permissions/search close-out
+
+The user requested finishing up. Packets05 and14 are reviewed within their stated source/build limits. No PiP or other next packet was started. Read CONTINUE.md for the cumulative05 baseline, independent14 checkpoint sequence, and next PiP dispatch. Permission decisions are device-only; search configuration joins the existing timestamped portable setting cache. Original checkout and all worktrees remain intact.
