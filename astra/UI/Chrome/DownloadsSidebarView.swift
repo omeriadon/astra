@@ -81,6 +81,9 @@ private struct DownloadRowView: View {
 						.opacity(0.65)
 				}
 				if item.status == .downloading {
+					Text(item.progressLabel)
+						.font(.caption.monospacedDigit())
+						.foregroundStyle(.secondary)
 					HStack(spacing: 2) {
 						if let segments = item.segments {
 							ForEach(segments.indices, id: \.self) { index in
@@ -99,8 +102,8 @@ private struct DownloadRowView: View {
 					.accessibilityElement(children: .ignore)
 					.accessibilityLabel("Download progress")
 					.accessibilityValue("\(Int(item.progress * 100)) percent")
-				} else if let error = item.errorMessage {
-					Text(error)
+				} else {
+					Text(item.statusSummary)
 						.font(.caption)
 						.lineLimit(2)
 						.opacity(0.65)
@@ -134,9 +137,25 @@ private struct DownloadRowView: View {
 				Button("Resume", systemImage: "arrow.clockwise") {
 					manager.resume(item.id)
 				}
+			} else if item.canRetry {
+				Button("Retry", systemImage: "arrow.clockwise") {
+					manager.retry(item.id)
+				}
+				.accessibilityLabel("Retry download")
 			}
-			Button("Delete", systemImage: "trash", role: .destructive) {
-				manager.delete(item.id)
+			if item.status == .downloading {
+				Button("Cancel Download", systemImage: "xmark.circle", role: .destructive) {
+					manager.delete(item.id)
+				}
+				.accessibilityLabel("Cancel download")
+			} else {
+				Button(
+					item.status == .completed ? "Remove from Downloads" : "Delete",
+					systemImage: "trash",
+					role: .destructive
+				) {
+					manager.delete(item.id)
+				}
 			}
 		}
 		.accessibilityElement(children: .combine)

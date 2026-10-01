@@ -46,6 +46,27 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 
 	nonisolated func urlSession(
 		_: URLSession,
+		task: URLSessionTask,
+		willPerformHTTPRedirection response: HTTPURLResponse,
+		newRequest: URLRequest,
+		completionHandler: @escaping (URLRequest?) -> Void
+	) {
+		guard let (itemID, _) = Self.identify(task),
+		      let sourceURL = response.url,
+		      let destinationURL = newRequest.url,
+		      sourceURL != destinationURL
+		else {
+			completionHandler(newRequest)
+			return
+		}
+		completionHandler(nil)
+		Task { @MainActor in
+			BrowserDownloadManager.shared.segmentFailed(itemID)
+		}
+	}
+
+	nonisolated func urlSession(
+		_: URLSession,
 		downloadTask: URLSessionDownloadTask,
 		didWriteData _: Int64,
 		totalBytesWritten: Int64,

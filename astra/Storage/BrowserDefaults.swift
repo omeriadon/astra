@@ -48,6 +48,7 @@ extension Defaults.Keys {
 		"historyRetentionDays",
 		"searchSuggestionsEnabled",
 		"browserSearchConfiguration",
+		"downloadsAskWhereToSave",
 		"startupBehavior",
 		"homepageURL",
 	]
@@ -61,6 +62,9 @@ extension Defaults.Keys {
 		"renameDownloadsWithAppleIntelligence",
 		default: true
 	)
+
+	static let downloadsAskWhereToSave = Key<Bool>("downloadsAskWhereToSave", default: false)
+	static let downloadsFolderBookmark = Key<String>("downloadsFolderBookmark", default: "")
 
 	static let copyMailtoAddresses = Key<Bool>(
 		"copyMailtoAddresses",

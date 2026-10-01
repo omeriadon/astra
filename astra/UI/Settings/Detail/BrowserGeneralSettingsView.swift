@@ -14,6 +14,7 @@ struct BrowserGeneralSettingsView: View {
 	@Default(.peekLevel) private var peekLevel
 	@Default(.zoomOutInPeeks) private var zoomOutInPeeks
 	@Default(.renameDownloadsWithAppleIntelligence) private var renameDownloadsWithAppleIntelligence
+	@Default(.downloadsAskWhereToSave) private var downloadsAskWhereToSave
 	@Default(.startupBehavior) private var startupBehavior
 	@Default(.homepageURL) private var homepageURL
 	@Default(.browserSearchConfiguration) private var browserSearchConfigurationValue
@@ -182,6 +183,27 @@ struct BrowserGeneralSettingsView: View {
 			.id("Peek")
 
 			Section("Downloads") {
+				#if os(macOS)
+					Toggle("Ask where to save each download", isOn: $downloadsAskWhereToSave)
+						.accessibilityLabel("Ask where to save each download")
+						.accessibilityIdentifier("downloads-ask-where-to-save")
+
+					HStack {
+						Label("Download folder", systemImage: "folder")
+						Spacer()
+						Text(BrowserDownloadManager.shared.selectedDownloadFolderName)
+							.foregroundStyle(.secondary)
+							.lineLimit(1)
+							.accessibilityLabel("Current download folder")
+							.accessibilityIdentifier("downloads-current-folder")
+						Button("Choose Folder", systemImage: "folder.badge.plus") {
+							BrowserDownloadManager.shared.chooseDownloadFolder(in: NSApp.keyWindow)
+						}
+						.accessibilityLabel("Choose download folder")
+						.accessibilityIdentifier("downloads-choose-folder")
+					}
+				#endif
+
 				Toggle("Rename downloads with Apple Intelligence", isOn: $renameDownloadsWithAppleIntelligence)
 					.accessibilityLabel("Rename downloads with Apple Intelligence")
 					.accessibilityIdentifier("rename-downloads-with-apple-intelligence")

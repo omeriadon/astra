@@ -20,10 +20,14 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	private var destinations: [ObjectIdentifier: URL] = [:]
 	private var itemIDs: [ObjectIdentifier: UUID] = [:]
 	private var previousTemporaryURLs: [UUID: URL] = [:]
+	private var finalDestinations: [UUID: URL] = [:]
+	private var scopedDirectories: [UUID: URL] = [:]
 	private var accelerationAbandoned: Set<UUID> = []
 	private var resumeWebView: WKWebView?
 	@ObservationIgnored private lazy var segmented = SegmentedDownloadEngine()
 	private var isClosing = false
+	private var downloadCacheReadCompleted = false
+	private var downloadCacheIsUnreadable = false
 	private var restorationStarted = false
 	private var lastPersistedAt = Date.distantPast
 	@ObservationIgnored private var downloadPersistTask: Task<Void, Never>?
@@ -47,9 +51,11 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	private let storeURL: URL
+	private let stagingDirectory: URL
 	private let privateDataStore: WKWebsiteDataStore?
 	private let toastManager: ToastManager
 	private(set) var items: [BrowserDownload] = []
+	private(set) var selectedDownloadFolderName = ""
 	private(set) var latestStart: (id: UUID, source: UnitPoint)?
 
 	var activeProgress: Double? {
@@ -77,7 +83,11 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 		}
 		storeURL = directory.appendingPathComponent("downloads.json")
+		stagingDirectory = privateDataStore == nil
+			? directory.appendingPathComponent("download-staging", isDirectory: true)
+			: FileManager.default.temporaryDirectory.appendingPathComponent("astra-private-downloads-\(UUID().uuidString)", isDirectory: true)
 		super.init()
+		selectedDownloadFolderName = (preferredDownloadDirectory() ?? Self.defaultDownloadDirectory).lastPathComponent
 		if privateDataStore == nil {
 			hydrateItems()
 		}
@@ -90,9 +100,22 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	private func hydrateItems() {
 		let url = storeURL
 		Task.detached(priority: .utility) {
-			guard let data = try? Data(contentsOf: url),
-			      let saved = try? JSONDecoder().decode([BrowserDownload].self, from: data)
-			else { return }
+			guard let data = try? Data(contentsOf: url) else {
+				if FileManager.default.fileExists(atPath: url.path) {
+					await MainActor.run { [weak self] in self?.preserveUnreadableDownloadCache() }
+				} else {
+					await MainActor.run { [weak self] in
+						guard let self else { return }
+						downloadCacheReadCompleted = true
+						if !items.isEmpty { persist() }
+					}
+				}
+				return
+			}
+			guard let saved = try? JSONDecoder().decode([BrowserDownload].self, from: data) else {
+				await MainActor.run { [weak self] in self?.preserveUnreadableDownloadCache() }
+				return
+			}
 			let restored = saved.map { item -> BrowserDownload in
 				var item = item
 				if item.status == .downloading, item.segments == nil {
@@ -105,28 +128,48 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				guard let self else { return }
 				let liveIDs = Set(items.map(\.id))
 				items = items + restored.filter { !liveIDs.contains($0.id) }
+				for item in items where item.status == .downloading {
+					if let destinationURL = item.destinationURL {
+						finalDestinations[item.id] = destinationURL
+					}
+				}
+				downloadCacheReadCompleted = true
 				restorationStarted = false
 				resumeAvailableDownloads()
 				updateDockProgress()
+				persist()
 			}
 		}
+	}
+
+	private func preserveUnreadableDownloadCache() {
+		downloadCacheReadCompleted = true
+		downloadCacheIsUnreadable = true
+		downloadPersistTask?.cancel()
+		downloadPersistTask = nil
+		showToast(symbol: "exclamationmark.triangle", message: "Saved downloads could not be read. Existing download data was preserved.")
 	}
 
 	func start(_ download: WKDownload, sourceURL: URL? = nil, source: UnitPoint = .center) {
 		let id = ObjectIdentifier(download)
 		guard downloads[id] == nil else { return }
 		let itemID = UUID()
-		let requestURL = download.originalRequest?.url
-		let suggestedName = requestURL?.lastPathComponent ?? ""
-		let name = suggestedName.isEmpty ? "Download" : suggestedName
-		let provisionalURL = downloadDirectory.appendingPathComponent(name).appendingPathExtension("astradownload")
+		let request = download.originalRequest
+		let requestURL = credentialFreeURL(request?.url)
+		let name = BrowserDownload.safeFilename(requestURL?.lastPathComponent ?? "")
+		let provisionalURL = stagingDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("astradownload")
 		items.insert(
 			BrowserDownload(
 				id: itemID,
 				createdAt: .now,
 				sourceURL: siteURL(for: sourceURL ?? download.webView?.url ?? requestURL),
 				requestURL: requestURL,
-				requestMethod: download.originalRequest?.httpMethod,
+				retryURL: requestURL,
+				requestMethod: request?.httpMethod,
+				requestHasBody: request?.httpBody != nil || request?.httpBodyStream != nil,
+				requestHasAuthorization: request?.value(forHTTPHeaderField: "Authorization") != nil
+					|| request?.url?.user != nil
+					|| request?.url?.password != nil,
 				originalName: name,
 				fileURL: provisionalURL,
 				status: .downloading,
@@ -143,13 +186,22 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	private func attach(_ download: WKDownload, to itemID: UUID) {
+		guard items.contains(where: { $0.id == itemID && $0.status == .downloading }) else {
+			Task { @MainActor in
+				_ = await download.cancel()
+			}
+			return
+		}
 		let id = ObjectIdentifier(download)
 		downloads[id] = download
 		itemIDs[id] = itemID
 		download.delegate = self
 		observations[id] = download.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] progress, _ in
+			let fraction = progress.fractionCompleted
+			let received = progress.completedUnitCount
+			let total = progress.totalUnitCount
 			Task { @MainActor [weak self] in
-				self?.updateProgress(itemID, fraction: progress.fractionCompleted)
+				self?.updateProgress(itemID, downloadID: id, fraction: fraction, received: received, total: total)
 			}
 		}
 		updateDockProgress()
@@ -162,61 +214,95 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		completionHandler: @escaping @MainActor @Sendable (URL?) -> Void
 	) {
 		Task { @MainActor in
-			guard let itemID = itemIDs[ObjectIdentifier(download)],
-			      let index = items.firstIndex(where: { $0.id == itemID })
+			let downloadID = ObjectIdentifier(download)
+			guard let itemID = itemIDs[downloadID],
+			      downloads[downloadID] != nil,
+			      items.contains(where: { $0.id == itemID && $0.status == .downloading })
 			else {
 				completionHandler(nil)
 				return
 			}
 			let original = URL(fileURLWithPath: suggestedFilename).lastPathComponent
+			let safeOriginal = BrowserDownload.safeFilename(original)
 			let originalExtension = String(String.UnicodeScalarView(
-				URL(fileURLWithPath: original).pathExtension.unicodeScalars.filter {
+				URL(fileURLWithPath: safeOriginal).pathExtension.unicodeScalars.filter {
 					!Self.unsafeFilenameCharacters.contains($0)
 				}
 			))
-			let originalStem = URL(fileURLWithPath: original).deletingPathExtension().lastPathComponent
-			let suggestedStem = privateDataStore == nil ? await humanReadableStem(
-				original: originalStem,
-				source: items[index].sourceURL?.host ?? response.url?.host,
-				fileType: response.mimeType
-			) : nil
-			guard let index = items.firstIndex(where: { $0.id == itemID }),
-			      downloads[ObjectIdentifier(download)] != nil
-			else {
-				completionHandler(nil)
-				return
-			}
-			var stem = Self.safeStem(suggestedStem ?? originalStem)
+			let originalStem = URL(fileURLWithPath: safeOriginal).deletingPathExtension().lastPathComponent
+			var stem = Self.safeStem(originalStem)
 			let repeatedExtension = ".\(originalExtension)"
 			if !originalExtension.isEmpty,
 			   stem.lowercased().hasSuffix(repeatedExtension.lowercased())
 			{
 				stem = String(stem.dropLast(repeatedExtension.count))
 			}
-			let fileName = originalExtension.isEmpty ? stem : "\(stem).\(originalExtension)"
+			let fileName = BrowserDownload.safeFilename(originalExtension.isEmpty ? stem : "\(stem).\(originalExtension)")
 			do {
-				try FileManager.default.createDirectory(at: downloadDirectory, withIntermediateDirectories: true)
-				let completedURL = uniqueDestination(fileName: fileName, in: downloadDirectory)
-				let destination = completedURL.appendingPathExtension("astradownload")
-				if items[index].resumeData != nil {
-					previousTemporaryURLs[itemID] = items[index].fileURL
+				guard let finalURL = await self.selectedFinalDestination(
+					fileName: fileName,
+					window: download.webView?.window,
+					itemID: itemID,
+					downloadID: downloadID
+				) else {
+					completionHandler(nil)
+					if downloads[downloadID] != nil,
+					   let liveIndex = items.firstIndex(where: { $0.id == itemID && $0.status == .downloading })
+					{
+						items[liveIndex].status = .failed
+						items[liveIndex].resumeData = nil
+						items[liveIndex].errorMessage = "Download cancelled because no destination was selected."
+						try? FileManager.default.removeItem(at: items[liveIndex].fileURL)
+					}
+					finish(download)
+					persist()
+					return
 				}
-				items[index].fileURL = destination
-				items[index].originalName = original
-				items[index].requestURL = response.url
-				items[index].renamedByAppleIntelligence = suggestedStem != nil && stem != Self.safeStem(originalStem)
-				items[index].resumeData = nil
-				items[index].errorMessage = nil
-				destinations[ObjectIdentifier(download)] = destination
+				guard let currentIndex = items.firstIndex(where: { $0.id == itemID && $0.status == .downloading }),
+				      downloads[downloadID] != nil
+				else {
+					releaseScope(for: itemID)
+					completionHandler(nil)
+					return
+				}
+				try FileManager.default.createDirectory(at: stagingDirectory, withIntermediateDirectories: true)
+				let destination = stagingDirectory
+					.appendingPathComponent(UUID().uuidString)
+					.appendingPathExtension("astradownload")
+				if FileManager.default.fileExists(atPath: items[currentIndex].fileURL.path) {
+					previousTemporaryURLs[itemID] = items[currentIndex].fileURL
+				}
+				items[currentIndex].fileURL = destination
+				items[currentIndex].destinationURL = finalURL
+				items[currentIndex].originalName = safeOriginal
+				items[currentIndex].requestURL = credentialFreeURL(response.url)
+				items[currentIndex].totalBytes = response.expectedContentLength > 0 ? response.expectedContentLength : nil
+				if items[currentIndex].destinationIsFileScoped != true,
+				   items[currentIndex].fileAccessBookmark == nil,
+				   items[currentIndex].folderBookmark == nil
+				{
+					items[currentIndex].folderBookmark = Data(base64Encoded: Defaults[.downloadsFolderBookmark])
+				}
+				items[currentIndex].renamedByAppleIntelligence = false
+				items[currentIndex].resumeData = nil
+				items[currentIndex].errorMessage = nil
+				finalDestinations[itemID] = finalURL
+				destinations[downloadID] = destination
 				persist()
 				completionHandler(destination)
 				Task { @MainActor in
 					await maybeAccelerate(download, response: response)
 				}
 			} catch {
+				guard let liveIndex = items.firstIndex(where: { $0.id == itemID && $0.status == .downloading }),
+				      downloads[ObjectIdentifier(download)] != nil
+				else {
+					completionHandler(nil)
+					return
+				}
 				showToast(symbol: "exclamationmark.triangle", message: "Download failed: \(error.localizedDescription)")
-				items[index].status = .failed
-				items[index].errorMessage = error.localizedDescription
+				items[liveIndex].status = .failed
+				items[liveIndex].errorMessage = error.localizedDescription
 				completionHandler(nil)
 				finish(download)
 				persist()
@@ -235,6 +321,10 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 					?? (BrowserWindowRegistry.shared.activeBrowser?.session.downloads === self ? NSApp.keyWindow : nil)
 				let response = await BrowserWebsiteUI.authenticate(challenge, in: window) { [self, download] in
 					downloads[ObjectIdentifier(download)] != nil
+				}
+				guard downloads[ObjectIdentifier(download)] != nil else {
+					completionHandler(.cancelAuthenticationChallenge, nil)
+					return
 				}
 				completionHandler(response.0, response.1)
 			}
@@ -258,6 +348,10 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				Task { @MainActor in
 					let alert = BrowserWebsiteUI.alert(title: "Download over an insecure connection?", message: "The download redirects from HTTPS to HTTP.", confirm: "Download")
 					let choice = await BrowserWebsiteUI.present(alert, in: download.webView?.window)
+					guard downloads[ObjectIdentifier(download)] != nil else {
+						decisionHandler(.cancel)
+						return
+					}
 					decisionHandler(choice == .alertFirstButtonReturn ? .allow : .cancel)
 				}
 				return
@@ -271,28 +365,31 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		   let index = items.firstIndex(where: { $0.id == itemID }),
 		   let temporaryURL = destinations[ObjectIdentifier(download)]
 		{
-			let completedURL = uniqueDestination(
-				fileName: temporaryURL.deletingPathExtension().lastPathComponent,
-				in: temporaryURL.deletingLastPathComponent(),
-				excludingTemporary: temporaryURL
-			)
+			let proposedURL = finalDestinations[itemID] ?? items[index].destinationURL ?? temporaryURL.deletingPathExtension()
+			let completedURL = items[index].destinationIsFileScoped == true
+				? proposedURL
+				: collisionSafeDestination(proposedURL, excludingTemporary: temporaryURL, itemID: itemID)
 			do {
-				#if os(macOS)
-					try BrowserDownloadedFile.quarantine(
-						temporaryURL,
-						downloadURL: items[index].requestURL,
-						sourceURL: items[index].sourceURL
-					)
-				#endif
-				try FileManager.default.moveItem(at: temporaryURL, to: completedURL)
-				items[index].fileURL = completedURL
-				items[index].status = .completed
-				items[index].progress = 1
-				items[index].resumeData = nil
+				let committedURL = try moveToUnoccupiedDestination(
+					from: temporaryURL,
+					proposed: completedURL,
+					itemID: itemID
+				)
+				guard let currentIndex = items.firstIndex(where: { $0.id == itemID && $0.fileURL == temporaryURL }) else { return }
+				items[currentIndex].fileURL = committedURL
+				items[currentIndex].status = .completed
+				items[currentIndex].progress = 1
+				items[currentIndex].receivedBytes = items[currentIndex].totalBytes ?? items[currentIndex].receivedBytes
+				items[currentIndex].resumeData = nil
+				items[currentIndex].destinationURL = nil
 				if let oldURL = previousTemporaryURLs.removeValue(forKey: itemID), oldURL != temporaryURL {
 					try? FileManager.default.removeItem(at: oldURL)
 				}
-				showToast(symbol: "arrow.down.circle", message: "Downloaded \(completedURL.lastPathComponent)")
+				finalDestinations[itemID] = nil
+				showToast(symbol: "arrow.down.circle", message: "Downloaded \(committedURL.lastPathComponent)")
+				Task { @MainActor [weak self] in
+					await self?.renameWithAppleIntelligence(itemID, fileURL: committedURL)
+				}
 			} catch {
 				items[index].status = .failed
 				items[index].errorMessage = error.localizedDescription
@@ -312,6 +409,9 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				items[index].resumeData = resumeData
 				items[index].status = resumeData == nil ? .failed : .paused
 				items[index].errorMessage = error.localizedDescription
+				if resumeData == nil {
+					try? FileManager.default.removeItem(at: items[index].fileURL)
+				}
 			}
 			showToast(symbol: "exclamationmark.triangle", message: "Download failed: \(error.localizedDescription)")
 		}
@@ -321,10 +421,14 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 	private func finish(_ download: WKDownload) {
 		let id = ObjectIdentifier(download)
+		let itemID = itemIDs[id]
 		observations[id] = nil
 		downloads[id] = nil
 		itemIDs[id] = nil
 		destinations[id] = nil
+		if let itemID, items.first(where: { $0.id == itemID })?.segments == nil {
+			releaseScope(for: itemID)
+		}
 		updateDockProgress()
 	}
 
@@ -340,37 +444,21 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		guard !restorationStarted else { return }
 		restorationStarted = true
 		for item in items where item.status == .downloading && item.segments != nil {
-			segmented.start(item)
+			if item.destinationIsFileScoped == true && item.fileAccessBookmark == nil {
+				segmentFailed(item.id)
+			} else {
+				segmented.start(item)
+			}
 		}
 		for item in items where item.status == .paused && item.resumeData != nil {
 			resume(item.id)
 		}
-		for item in items where item.status == .paused
-			&& item.resumeData == nil
-			&& item.requestMethod == "GET"
-			&& ["http", "https"].contains(item.requestURL?.scheme ?? "")
-		{
-			restart(item.id)
+		for index in items.indices where items[index].status == .paused && items[index].resumeData == nil {
+			items[index].status = .failed
+			items[index].errorMessage = "This download has no resume data."
+			try? FileManager.default.removeItem(at: items[index].fileURL)
 		}
-	}
-
-	private func restart(_ itemID: UUID) {
-		guard let index = items.firstIndex(where: { $0.id == itemID }),
-		      let url = items[index].requestURL
-		else { return }
-		if resumeWebView == nil {
-			let configuration = WKWebViewConfiguration()
-			configuration.websiteDataStore = privateDataStore ?? .default()
-			resumeWebView = WKWebView(frame: .zero, configuration: configuration)
-		}
-		previousTemporaryURLs[itemID] = items[index].fileURL
-		items[index].status = .downloading
-		items[index].progress = 0
-		items[index].errorMessage = nil
 		persist()
-		resumeWebView?.startDownload(using: URLRequest(url: url)) { [weak self] download in
-			self?.attach(download, to: itemID)
-		}
 	}
 
 	func resume(_ itemID: UUID) {
@@ -390,15 +478,37 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		}
 	}
 
+	func retry(_ itemID: UUID) {
+		guard let index = items.firstIndex(where: { $0.id == itemID && $0.canRetry }),
+		      let url = items[index].retryURL
+		else { return }
+		if resumeWebView == nil {
+			let configuration = WKWebViewConfiguration()
+			configuration.websiteDataStore = privateDataStore ?? .default()
+			resumeWebView = WKWebView(frame: .zero, configuration: configuration)
+		}
+		items[index].status = .downloading
+		items[index].progress = 0
+		items[index].receivedBytes = 0
+		items[index].errorMessage = nil
+		persist()
+		resumeWebView?.startDownload(using: URLRequest(url: url)) { [weak self] download in
+			self?.attach(download, to: itemID)
+		}
+	}
+
 	func pauseAllForQuit() async {
 		isClosing = true
-		for (key, download) in downloads {
+		for (key, download) in Array(downloads) {
 			guard let itemID = itemIDs[key] else { continue }
 			let data = await download.cancel()
 			if let index = items.firstIndex(where: { $0.id == itemID && $0.status == .downloading }) {
 				items[index].status = .paused
 				items[index].resumeData = data
 				items[index].errorMessage = data == nil ? "This download cannot resume." : nil
+			}
+			if downloads[key] === download {
+				finish(download)
 			}
 		}
 		flushDownloads()
@@ -412,9 +522,18 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			finish(download)
 		}
 		for item in items where item.status != .completed {
+			if let segments = item.segments {
+				segmented.cancel(item.id)
+				segmented.removeParts(item.id, count: segments.count)
+			}
 			try? FileManager.default.removeItem(at: item.fileURL)
+			if let previousURL = previousTemporaryURLs.removeValue(forKey: item.id), previousURL != item.fileURL {
+				try? FileManager.default.removeItem(at: previousURL)
+			}
+			releaseScope(for: item.id)
 		}
 		items.removeAll()
+		try? FileManager.default.removeItem(at: stagingDirectory)
 		resumeWebView = nil
 	}
 
@@ -430,10 +549,12 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			itemIDs[key] = nil
 			observations[key] = nil
 			downloads[key] = nil
+			destinations[key] = nil
 			items[index].status = .paused
 			updateDockProgress()
 			Task { @MainActor in
 				_ = await download.cancel()
+				releaseScope(for: itemID)
 				removeStoredItem(itemID)
 			}
 			return
@@ -445,7 +566,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		guard let index = items.firstIndex(where: { $0.id == itemID }) else { return }
 		let item = items[index]
 		do {
-			if FileManager.default.fileExists(atPath: item.fileURL.path) {
+			if item.status != .completed, FileManager.default.fileExists(atPath: item.fileURL.path) {
 				try FileManager.default.removeItem(at: item.fileURL)
 			}
 			if let oldURL = previousTemporaryURLs.removeValue(forKey: itemID),
@@ -459,6 +580,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			return
 		}
 		items.remove(at: index)
+		releaseScope(for: itemID)
+		finalDestinations[itemID] = nil
 		lastProgressForward[itemID] = nil
 		updateDockProgress()
 		persist()
@@ -472,9 +595,12 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		let source = items[index].fileURL
 		let destination = uniqueDestination(fileName: items[index].originalName, in: source.deletingLastPathComponent())
 		do {
-			try FileManager.default.moveItem(at: source, to: destination)
-			items[index].fileURL = destination
-			items[index].renamedByAppleIntelligence = false
+			guard try withFolderAccess(for: items[index], perform: {
+				try FileManager.default.moveItem(at: source, to: destination)
+			}) != nil else { throw CocoaError(.fileWriteNoPermission) }
+			guard let currentIndex = items.firstIndex(where: { $0.id == itemID && $0.fileURL == source }) else { return }
+			items[currentIndex].fileURL = destination
+			items[currentIndex].renamedByAppleIntelligence = false
 			persist()
 		} catch {
 			showToast(symbol: "exclamationmark.triangle", message: error.localizedDescription)
@@ -484,12 +610,43 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	#if os(macOS)
 		func open(_ itemID: UUID) {
 			guard let item = items.first(where: { $0.id == itemID && $0.status == .completed }) else { return }
-			NSWorkspace.shared.open(item.fileURL)
+			let fileURL = item.fileURL
+			let riskyExtensions: Set<String> = [
+				"app", "bin", "com", "command", "dmg", "exe", "jar", "kext",
+				"mobileconfig", "msi", "pkg", "plugin", "ps1", "scpt", "sh", "vbs", "workflow",
+			]
+			guard riskyExtensions.contains(fileURL.pathExtension.lowercased()) else {
+				withFolderAccess(for: item) {
+					NSWorkspace.shared.open(fileURL)
+				}
+				return
+			}
+			Task { @MainActor [weak self] in
+				guard let self else { return }
+				let response = await BrowserWebsiteUI.present(
+					BrowserWebsiteUI.alert(
+						title: "Open a downloaded file?",
+						message: "This file can install software or run code. Open it only if you trust its source.",
+						confirm: "Open Anyway"
+					),
+					in: NSApp.keyWindow
+				) { [weak self] in
+					self?.items.contains(where: { $0.id == itemID && $0.status == .completed && $0.fileURL == fileURL }) == true
+				}
+				guard response == .alertFirstButtonReturn,
+				      let current = items.first(where: { $0.id == itemID && $0.status == .completed && $0.fileURL == fileURL })
+				else { return }
+				withFolderAccess(for: current) {
+					NSWorkspace.shared.open(fileURL)
+				}
+			}
 		}
 
 		func revealInFolder(_ itemID: UUID) {
 			guard let item = items.first(where: { $0.id == itemID }) else { return }
-			NSWorkspace.shared.activateFileViewerSelecting([item.fileURL])
+			withFolderAccess(for: item) {
+				NSWorkspace.shared.activateFileViewerSelecting([item.fileURL])
+			}
 		}
 	#endif
 
@@ -505,6 +662,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		      request.httpBody == nil,
 		      request.value(forHTTPHeaderField: "Authorization") == nil,
 		      request.value(forHTTPHeaderField: "Cookie") == nil,
+		      request.url?.user == nil,
+		      request.url?.password == nil,
 		      let url = response.url,
 		      url.scheme == "http" || url.scheme == "https",
 		      let http = response as? HTTPURLResponse,
@@ -540,7 +699,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		items[currentIndex].segments = plannedSegments
 		items[currentIndex].rangeValidator = validator
 		items[currentIndex].totalBytes = total
-		items[currentIndex].requestURL = url
+		items[currentIndex].requestURL = credentialFreeURL(url)
 		persist()
 		finish(download)
 		_ = await download.cancel()
@@ -574,6 +733,9 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		      let total = items[itemIndex].totalBytes,
 		      total > 0
 		else { return }
+		let segment = items[itemIndex].segments?[index]
+		let segmentSize = segment.map { $0.end - $0.start + 1 } ?? 0
+		let received = min(max(received, 0), segmentSize)
 		items[itemIndex].segments?[index].received = received
 		let downloaded = items[itemIndex].segments?.reduce(Int64(0)) { sum, segment in
 			sum + (segment.completed ? segment.end - segment.start + 1 : segment.received)
@@ -581,6 +743,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		let fraction = min(Double(downloaded) / Double(total), 1)
 		guard shouldForwardProgress(itemID, fraction: fraction) else { return }
 		items[itemIndex].progress = fraction
+		items[itemIndex].receivedBytes = downloaded
 		updateDockProgress()
 		if Date.now.timeIntervalSince(lastPersistedAt) > 1 {
 			persist()
@@ -654,26 +817,30 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		guard items[itemIndex].segments?.allSatisfy(\.completed) == true else { return }
 		do {
 			let temporaryURL = items[itemIndex].fileURL
-			let completedURL = uniqueDestination(
-				fileName: temporaryURL.deletingPathExtension().lastPathComponent,
-				in: temporaryURL.deletingLastPathComponent(),
-				excludingTemporary: temporaryURL
+			let proposedURL = finalDestinations[itemID] ?? items[itemIndex].destinationURL ?? temporaryURL.deletingPathExtension()
+			let completedURL = items[itemIndex].destinationIsFileScoped == true
+				? proposedURL
+				: collisionSafeDestination(proposedURL, excludingTemporary: temporaryURL, itemID: itemID)
+			let committedURL = try moveToUnoccupiedDestination(
+				from: temporaryURL,
+				proposed: completedURL,
+				itemID: itemID
 			)
-			#if os(macOS)
-				try BrowserDownloadedFile.quarantine(
-					temporaryURL,
-					downloadURL: items[itemIndex].requestURL,
-					sourceURL: items[itemIndex].sourceURL
-				)
-			#endif
-			try FileManager.default.moveItem(at: temporaryURL, to: completedURL)
-			items[itemIndex].fileURL = completedURL
-			items[itemIndex].status = .completed
-			items[itemIndex].progress = 1
-			items[itemIndex].segments = nil
+			guard let currentIndex = items.firstIndex(where: { $0.id == itemID && $0.fileURL == temporaryURL }) else { return }
+			items[currentIndex].fileURL = committedURL
+			items[currentIndex].status = .completed
+			items[currentIndex].progress = 1
+			items[currentIndex].receivedBytes = total
+			items[currentIndex].segments = nil
+			items[currentIndex].destinationURL = nil
+			finalDestinations[itemID] = nil
+			releaseScope(for: itemID)
 			updateDockProgress()
 			persist()
-			showToast(symbol: "arrow.down.circle", message: "Downloaded \(completedURL.lastPathComponent)")
+			showToast(symbol: "arrow.down.circle", message: "Downloaded \(committedURL.lastPathComponent)")
+			Task { @MainActor [weak self] in
+				await self?.renameWithAppleIntelligence(itemID, fileURL: committedURL)
+			}
 		} catch {
 			segmentFailed(itemID)
 		}
@@ -689,8 +856,10 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		segmented.removeParts(itemID, count: segments.count)
 		try? FileManager.default.removeItem(at: items[index].fileURL)
 		items[index].segments = nil
+		releaseScope(for: itemID)
 		items[index].rangeValidator = nil
 		items[index].totalBytes = nil
+		items[index].receivedBytes = 0
 		items[index].progress = 0
 		guard let url = items[index].requestURL else {
 			items[index].status = .failed
@@ -709,11 +878,165 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		}
 	}
 
-	private var downloadDirectory: URL {
+	private static var defaultDownloadDirectory: URL {
 		#if os(macOS)
 			URL.downloadsDirectory
 		#else
 			URL.documentsDirectory
+		#endif
+	}
+
+	#if os(macOS)
+	func chooseDownloadFolder(in window: NSWindow?) {
+		guard let window else { return }
+		let panel = NSOpenPanel()
+		panel.canChooseFiles = false
+		panel.canChooseDirectories = true
+		panel.allowsMultipleSelection = false
+		panel.prompt = "Choose Downloads Folder"
+		panel.beginSheetModal(for: window) { response in
+			guard response == .OK, let url = panel.url else { return }
+			let hasAccess = url.startAccessingSecurityScopedResource()
+			defer {
+				if hasAccess {
+					url.stopAccessingSecurityScopedResource()
+				}
+			}
+			do {
+				let bookmark = try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+				Defaults[.downloadsFolderBookmark] = bookmark.base64EncodedString()
+				self.selectedDownloadFolderName = url.lastPathComponent
+			} catch {
+				self.showToast(symbol: "exclamationmark.triangle", message: "Could not save downloads folder: \(error.localizedDescription)")
+			}
+		}
+	}
+	#endif
+
+	private func preferredDownloadDirectory() -> URL? {
+		#if os(macOS)
+		guard let data = Data(base64Encoded: Defaults[.downloadsFolderBookmark]), !data.isEmpty else { return nil }
+		var stale = false
+		guard let url = try? URL(
+			resolvingBookmarkData: data,
+			options: [.withSecurityScope, .withoutUI],
+			relativeTo: nil,
+			bookmarkDataIsStale: &stale
+		) else { return nil }
+		if stale, let renewed = try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil) {
+			Defaults[.downloadsFolderBookmark] = renewed.base64EncodedString()
+		}
+		return url
+		#else
+			return nil
+		#endif
+	}
+
+	private func selectedFinalDestination(
+		fileName: String,
+		window: AnyObject?,
+		itemID: UUID,
+		downloadID: ObjectIdentifier
+	) async -> URL? {
+		#if os(macOS)
+			if Defaults[.downloadsAskWhereToSave] {
+				guard let window = window as? NSWindow else { return nil }
+				let panel = NSSavePanel()
+				let previousDestination = items.first(where: { $0.id == itemID })?.destinationURL
+				panel.directoryURL = previousDestination?.deletingLastPathComponent() ?? preferredDownloadDirectory()
+				panel.nameFieldStringValue = previousDestination?.lastPathComponent ?? fileName
+				panel.canCreateDirectories = true
+				panel.prompt = "Save Download"
+				let response = await withCheckedContinuation { continuation in
+					panel.beginSheetModal(for: window) { continuation.resume(returning: $0) }
+				}
+				guard response == .OK, let url = panel.url else { return nil }
+				guard downloads[downloadID] != nil,
+				      let index = items.firstIndex(where: { $0.id == itemID && $0.status == .downloading })
+				else { return nil }
+				guard BrowserDownload.safeFilename(url.lastPathComponent) == url.lastPathComponent,
+				      url.startAccessingSecurityScopedResource()
+				else { return nil }
+				guard !FileManager.default.fileExists(atPath: url.path) else {
+					url.stopAccessingSecurityScopedResource()
+					showToast(symbol: "exclamationmark.triangle", message: "That file already exists. Choose a new name.")
+					return nil
+				}
+				guard !finalDestinations.values.contains(url.standardizedFileURL) else {
+					url.stopAccessingSecurityScopedResource()
+					showToast(symbol: "exclamationmark.triangle", message: "Another download is using that destination. Choose a new name.")
+					return nil
+				}
+				items[index].destinationIsFileScoped = true
+				items[index].fileAccessBookmark = nil
+				items[index].folderBookmark = nil
+				scopedDirectories[itemID] = url
+				return url
+			}
+			let preferredFolder = preferredDownloadDirectory()
+			let folder = preferredFolder ?? Self.defaultDownloadDirectory
+			if preferredFolder != nil {
+				guard folder.startAccessingSecurityScopedResource() else { return nil }
+				scopedDirectories[itemID] = folder
+				if let index = items.firstIndex(where: { $0.id == itemID }) {
+					items[index].destinationIsFileScoped = false
+					items[index].folderBookmark = Data(base64Encoded: Defaults[.downloadsFolderBookmark])
+					items[index].fileAccessBookmark = nil
+				}
+			} else if let index = items.firstIndex(where: { $0.id == itemID }) {
+				items[index].destinationIsFileScoped = false
+				items[index].folderBookmark = nil
+				items[index].fileAccessBookmark = nil
+			}
+			return uniqueDestination(fileName: fileName, in: folder)
+		#else
+			return uniqueDestination(fileName: fileName, in: Self.defaultDownloadDirectory)
+		#endif
+	}
+
+	private func releaseScope(for itemID: UUID) {
+		if let directory = scopedDirectories.removeValue(forKey: itemID) {
+			directory.stopAccessingSecurityScopedResource()
+		}
+	}
+
+	private func withFolderAccess<T>(for item: BrowserDownload, perform: () throws -> T) rethrows -> T? {
+		#if os(macOS)
+			if scopedDirectories[item.id] != nil {
+				return try perform()
+			}
+			if item.destinationIsFileScoped == true, item.fileAccessBookmark == nil {
+				return nil
+			}
+			let bookmark = item.fileAccessBookmark
+				?? item.folderBookmark
+				?? Data(base64Encoded: Defaults[.downloadsFolderBookmark])
+			guard let bookmark else { return try perform() }
+			var stale = false
+			guard let folder = try? URL(
+				resolvingBookmarkData: bookmark,
+				options: [.withSecurityScope, .withoutUI],
+				relativeTo: nil,
+				bookmarkDataIsStale: &stale
+			), folder.startAccessingSecurityScopedResource()
+			else { return nil }
+			defer { folder.stopAccessingSecurityScopedResource() }
+			if stale,
+			   let renewed = try? folder.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil),
+			   let index = items.firstIndex(where: { $0.id == item.id })
+			{
+				if item.fileAccessBookmark != nil {
+					items[index].fileAccessBookmark = renewed
+				} else if item.folderBookmark != nil {
+					items[index].folderBookmark = renewed
+				} else {
+					Defaults[.downloadsFolderBookmark] = renewed.base64EncodedString()
+				}
+				persist()
+			}
+			return try perform()
+		#else
+		return try perform()
 		#endif
 	}
 
@@ -730,11 +1053,24 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		return components.url
 	}
 
-	private func updateProgress(_ itemID: UUID, fraction: Double) {
+	private func credentialFreeURL(_ url: URL?) -> URL? {
+		guard let url,
+		      var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+		else { return nil }
+		components.user = nil
+		components.password = nil
+		return components.url
+	}
+
+	private func updateProgress(_ itemID: UUID, downloadID: ObjectIdentifier, fraction: Double, received: Int64, total: Int64) {
 		guard let index = items.firstIndex(where: { $0.id == itemID }),
-		      items[index].status == .downloading
+		      items[index].status == .downloading,
+		      itemIDs[downloadID] == itemID,
+		      downloads[downloadID] != nil
 		else { return }
 		let clamped = min(max(fraction, 0), 1)
+		items[index].receivedBytes = max(0, received)
+		items[index].totalBytes = total > 0 ? total : items[index].totalBytes
 		guard shouldForwardProgress(itemID, fraction: clamped) else { return }
 		items[index].progress = clamped
 		updateDockProgress()
@@ -754,7 +1090,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	/// Encode + atomic write off-main; progress ticks arrive far more often
 	/// than durability requires. Quit path uses flushDownloads() instead.
 	private func persistSoon() {
-		guard privateDataStore == nil else { return }
+		guard privateDataStore == nil, downloadCacheReadCompleted, !downloadCacheIsUnreadable else { return }
 		downloadPersistTask?.cancel()
 		let snapshot = items
 		let url = storeURL
@@ -775,7 +1111,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 	/// Synchronous write for app termination, where background work may not finish.
 	private func flushDownloads() {
-		guard privateDataStore == nil else { return }
+		guard privateDataStore == nil, downloadCacheReadCompleted, !downloadCacheIsUnreadable else { return }
 		downloadPersistTask?.cancel()
 		downloadPersistTask = nil
 		do {
@@ -787,25 +1123,139 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		}
 	}
 
-	private func uniqueDestination(fileName: String, in directory: URL, excludingTemporary: URL? = nil) -> URL {
-		let source = URL(fileURLWithPath: fileName)
-		let stem = source.deletingPathExtension().lastPathComponent
-		let fileExtension = source.pathExtension
-		var destination = directory.appending(path: fileName)
-		var number = 2
-		while FileManager.default.fileExists(atPath: destination.path)
-			|| (destination.appendingPathExtension("astradownload") != excludingTemporary
-				&& FileManager.default.fileExists(atPath: destination.appendingPathExtension("astradownload").path))
-			|| (destination.appendingPathExtension("astradownload") != excludingTemporary
-				&& destinations.values.contains(destination.appendingPathExtension("astradownload")))
-		{
-			let name = fileExtension.isEmpty
-				? "\(stem) (\(number))"
-				: "\(stem) (\(number)).\(fileExtension)"
-			destination = directory.appending(path: name)
-			number += 1
+	private func uniqueDestination(fileName: String, in directory: URL) -> URL {
+		let safeName = BrowserDownload.safeFilename(fileName)
+		let reserved = Set(destinations.values.map(\.standardizedFileURL)
+			+ finalDestinations.values.map(\.standardizedFileURL))
+		return BrowserDownload.collisionFreeURL(fileName: safeName, in: directory, reserved: reserved)
+	}
+
+	private func collisionSafeDestination(_ proposed: URL, excludingTemporary: URL, itemID: UUID) -> URL {
+		let reservations = destinations.values
+			.filter { $0 != excludingTemporary }
+			.map(\.standardizedFileURL)
+			+ finalDestinations.filter { $0.key != itemID }.values.map(\.standardizedFileURL)
+		return BrowserDownload.collisionFreeURL(
+			fileName: proposed.lastPathComponent,
+			in: proposed.deletingLastPathComponent(),
+			reserved: Set(reservations),
+			excluding: excludingTemporary
+		)
+	}
+
+	private func moveToUnoccupiedDestination(from source: URL, proposed: URL, itemID: UUID) throws -> URL {
+		guard let item = items.first(where: { $0.id == itemID }) else {
+			throw CocoaError(.fileNoSuchFile)
+		}
+		guard let destination = try withFolderAccess(for: item, perform: {
+			var destination = item.fileAccessBookmark == nil
+				&& item.destinationIsFileScoped != true
+				? collisionSafeDestination(proposed, excludingTemporary: source, itemID: itemID)
+				: proposed
+			while true {
+				guard !FileManager.default.fileExists(atPath: destination.path) else {
+					guard item.destinationIsFileScoped != true else { throw CocoaError(.fileWriteFileExists) }
+					destination = BrowserDownload.collisionFreeURL(
+						fileName: destination.lastPathComponent,
+						in: destination.deletingLastPathComponent(),
+						reserved: [destination.standardizedFileURL],
+						excluding: source
+					)
+					continue
+				}
+				#if os(macOS)
+				try BrowserDownloadedFile.quarantine(
+					source,
+					downloadURL: item.requestURL,
+					sourceURL: item.sourceURL
+				)
+				#endif
+				do {
+					try FileManager.default.copyItem(at: source, to: destination)
+					#if os(macOS)
+					if item.destinationIsFileScoped == true,
+					   let bookmark = try? destination.bookmarkData(
+						options: [.withSecurityScope],
+						includingResourceValuesForKeys: nil,
+						relativeTo: nil
+					   ) {
+						guard let currentIndex = items.firstIndex(where: { $0.id == itemID && $0.fileURL == source }) else {
+							try? FileManager.default.removeItem(at: destination)
+							throw CocoaError(.fileWriteNoPermission)
+						}
+						items[currentIndex].fileAccessBookmark = bookmark
+					} else if item.destinationIsFileScoped == true {
+						try? FileManager.default.removeItem(at: destination)
+						throw CocoaError(.fileWriteNoPermission)
+					}
+					#endif
+				} catch {
+					let cocoaError = error as NSError
+					guard item.destinationIsFileScoped != true,
+					      cocoaError.domain == NSCocoaErrorDomain,
+					      cocoaError.code == CocoaError.fileWriteFileExists.rawValue
+					else { throw error }
+					destination = BrowserDownload.collisionFreeURL(
+						fileName: destination.lastPathComponent,
+						in: destination.deletingLastPathComponent(),
+						reserved: [destination.standardizedFileURL],
+						excluding: source
+					)
+					continue
+				}
+				do {
+					#if os(macOS)
+						try BrowserDownloadedFile.quarantine(
+							destination,
+							downloadURL: item.requestURL,
+							sourceURL: item.sourceURL
+						)
+					#endif
+				} catch {
+					try? FileManager.default.removeItem(at: destination)
+					if item.destinationIsFileScoped == true,
+					   let index = items.firstIndex(where: { $0.id == itemID && $0.fileURL == source })
+					{
+						items[index].fileAccessBookmark = nil
+					}
+					throw error
+				}
+				try? FileManager.default.removeItem(at: source)
+				return destination
+			}
+		}) else {
+			throw CocoaError(.fileWriteNoPermission)
 		}
 		return destination
+	}
+
+	private func renameWithAppleIntelligence(_ itemID: UUID, fileURL: URL) async {
+		guard privateDataStore == nil,
+		      Defaults[.renameDownloadsWithAppleIntelligence],
+		      let index = items.firstIndex(where: {
+			      $0.id == itemID && $0.status == .completed && $0.fileURL == fileURL && $0.destinationIsFileScoped != true
+	      })
+		else { return }
+		let item = items[index]
+		let original = URL(fileURLWithPath: item.originalName).deletingPathExtension().lastPathComponent
+		guard let stem = await humanReadableStem(
+			original: original,
+			source: item.sourceURL?.host,
+			fileType: item.fileURL.pathExtension
+		), let currentIndex = items.firstIndex(where: { $0.id == itemID && $0.status == .completed && $0.fileURL == fileURL })
+		else { return }
+		let ext = fileURL.pathExtension
+		let name = BrowserDownload.safeFilename(ext.isEmpty ? stem : "\(stem).\(ext)")
+		guard name != fileURL.lastPathComponent else { return }
+		let destination = uniqueDestination(fileName: name, in: fileURL.deletingLastPathComponent())
+		guard (try? withFolderAccess(for: items[currentIndex], perform: {
+			try FileManager.default.moveItem(at: fileURL, to: destination)
+		})) != nil,
+		      let updatedIndex = items.firstIndex(where: { $0.id == itemID && $0.status == .completed && $0.fileURL == fileURL })
+		else { return }
+		items[updatedIndex].fileURL = destination
+		items[updatedIndex].renamedByAppleIntelligence = true
+		persist()
 	}
 
 	private func humanReadableStem(original: String, source: String?, fileType: String?) async -> String? {
