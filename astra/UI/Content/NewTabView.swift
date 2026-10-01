@@ -1,3 +1,4 @@
+import Defaults
 import SwiftUI
 
 struct NewTabView: View {
@@ -57,7 +58,7 @@ struct NewTabView: View {
 		}
 		.task(id: browser.newTabSearchText) {
 			let query = browser.newTabSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-			guard !query.isEmpty else { return }
+			guard !browser.isPrivate, Defaults[.searchSuggestionsEnabled], !query.isEmpty else { return }
 			do {
 				try await Task.sleep(for: .milliseconds(250))
 				let suggestions = try await BrowserSearchSuggestions.fetch(for: query)
@@ -72,9 +73,9 @@ struct NewTabView: View {
 
 	private var searchHeader: some View {
 		VStack(alignment: .leading, spacing: 14) {
-			Text("astra")
+			Text(browser.isPrivate ? "Private Browsing" : "astra")
 				.font(.largeTitle.bold())
-			Text("Search the web, history, or browser actions")
+			Text(browser.isPrivate ? "Tabs and website data are discarded when this window closes. Downloaded files are kept." : "Search the web, history, or browser actions")
 				.foregroundStyle(.secondary)
 			HStack(spacing: 10) {
 				Image(systemName: "magnifyingglass")

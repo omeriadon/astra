@@ -5,16 +5,11 @@ struct BrowserSettingsView: View {
 	let browser: Browser
 	@Binding var searchText: String
 	@Binding var selectedPage: Page
-	@State private var sidebarSelection: Page?
-	@State private var settingsColumn: NavigationSplitViewColumn = .sidebar
-	#if os(iOS)
-		@Environment(\.horizontalSizeClass) private var horizontalSizeClass
-	#endif
 	private var theme: BrowserTheme {
 		browser.theme
 	}
 
-	enum Page: CaseIterable, Hashable {
+	enum Page: CaseIterable {
 		case ui
 		case account
 		case privacyAndSecurity
@@ -72,7 +67,7 @@ struct BrowserSettingsView: View {
 						symbol: "hand.raised.fill",
 						section: .advanced,
 						identifier: "settings-privacy-and-security",
-						terms: ["Website Data", "Clear All Favicons"]
+						terms: ["Website Data", "Clear All Website Data", "Clear Cache", "Clear All Favicons", "Website Permissions", "Reset All Website Permissions", "Try HTTPS First", "Global Privacy Control", "Browsing History", "Keep History"]
 					)
 				case .extensions:
 					Definition(
@@ -88,7 +83,7 @@ struct BrowserSettingsView: View {
 						symbol: "gearshape.2",
 						section: .advanced,
 						identifier: "settings-advanced",
-						terms: ["Links", "Copy email addresses from mailto links", "Quit", "Press Command-Q twice to quit"]
+						terms: ["Links", "Copy email addresses from mailto links", "Quit", "Press Command-Q twice to quit", "Search", "Show Search Suggestions"]
 					)
 				case .about:
 					Definition(
@@ -121,200 +116,110 @@ struct BrowserSettingsView: View {
 	}
 
 	private var matchingPages: [Page] {
-		Page.allCases.filter { $0.matches(searchText) }
-	}
-
-	init(browser: Browser, searchText: Binding<String>, selectedPage: Binding<Page>) {
-		self.browser = browser
-		_searchText = searchText
-		_selectedPage = selectedPage
-		#if os(iOS)
-			let initialPage = selectedPage.wrappedValue == .ui ? nil : selectedPage.wrappedValue
-			_sidebarSelection = State(initialValue: initialPage)
-			_settingsColumn = State(initialValue: initialPage == nil ? .sidebar : .detail)
-		#else
-			_sidebarSelection = State(initialValue: selectedPage.wrappedValue)
-		#endif
+		Page.allCases.filter { $0.matches(searchText) && (!browser.isPrivate || $0 == .privacyAndSecurity) }
 	}
 
 	var body: some View {
-		#if os(iOS)
-			if horizontalSizeClass == .compact {
-				compactSettings
-			} else {
-				splitSettings
-			}
-		#else
-			splitSettings
-		#endif
-	}
-
-	#if os(iOS)
-		private var compactSettings: some View {
-			VStack(spacing: 0) {
-				settingsSidebar
-			}
-		}
-
-	#endif
-
-	private var splitSettings: some View {
-		NavigationSplitView(preferredCompactColumn: $settingsColumn) {
-			settingsSidebar
-				.navigationSplitViewColumnWidth(230)
-				.navigationDestination(for: Page.self) { page in
-					settingsDestination(for: page)
+		HStack(spacing: 0) {
+			List {
+				if matchingPages.isEmpty {
+					Text("No settings found")
+						.foregroundStyle(.secondary)
 				}
-		} detail: {
-			NavigationStack {
-				settingsDestination(for: sidebarSelection ?? selectedPage)
-			}
-		}
-		#if os(iOS)
-		.containerBackground(.clear, for: .navigationSplitView)
-		#endif
-		.background {
-			BrowserThemeBackground(theme: theme).ignoresSafeArea()
-		}
-		.onChange(of: sidebarSelection) { _, page in
-			if let page, selectedPage != page {
-				selectedPage = page
-			}
-		}
-		.onChange(of: selectedPage) { _, page in
-			if sidebarSelection != page {
-				sidebarSelection = page
-				settingsColumn = .detail
-			}
-		}
-		.onChange(of: browser.settingsScrollTarget, initial: true) { _, target in
-			if target != nil {
-				sidebarSelection = selectedPage
-				settingsColumn = .detail
-			}
-		}
-	}
 
-	private var listSelection: Binding<Page?>? {
-		#if os(iOS)
-			if horizontalSizeClass == .compact {
-				return nil
-			}
-		#endif
-		return $sidebarSelection
-	}
-
-	private var settingsSidebar: some View {
-		List(selection: listSelection) {
-			ForEach(Page.Section.allCases, id: \.self) { section in
-				let pages = matchingPages.filter { $0.definition.section == section }
-				if !pages.isEmpty {
-					Section(section.rawValue) {
-						ForEach(pages, id: \.self) { page in
-							settingsLink(for: page)
+				ForEach(Page.Section.allCases, id: \.self) { section in
+					let pages = matchingPages.filter { $0.definition.section == section }
+					if !pages.isEmpty {
+						Section(section.rawValue) {
+							ForEach(pages, id: \.self) { page in
+								row(for: page)
+							}
 						}
 					}
 				}
 			}
-			Section {
-				ForEach(matchingPages.filter { $0.definition.section == nil }, id: \.self) { page in
-					settingsLink(for: page)
+			.listStyle(.sidebar)
+			.scrollContentBackground(.hidden)
+			.safeAreaBar(edge: .top) {
+				HStack(spacing: 8) {
+					Image(systemName: "magnifyingglass")
+						.accessibilityHidden(true)
+					TextField("Search Settings", text: $searchText)
+						.textFieldStyle(.plain)
+						.accessibilityIdentifier("settings-search")
 				}
+				.padding(.horizontal, 8)
+				.padding(.vertical, 6)
+				.glassEffect(.regular, in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
+				.padding(.horizontal, 12)
+				.padding(.top, 12)
+				.padding(.bottom, 12)
 			}
-		}
-		#if os(iOS)
-		.listStyle(.insetGrouped)
-		#else
-		.listStyle(.sidebar)
-		#endif
-		.scrollContentBackground(.hidden)
-		.navigationTitle("Settings")
-		#if os(iOS)
-			.searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search Settings")
-		#else
-			.searchable(text: $searchText, prompt: "Search Settings")
-		#endif
-		#if os(iOS)
-		.toolbar(.visible, for: .navigationBar)
-		.containerBackground(.clear, for: .navigation)
-		#endif
-		.background {
-			BrowserThemeBackground(theme: theme).ignoresSafeArea()
-		}
-		.overlay {
-			if matchingPages.isEmpty {
-				ContentUnavailableView.search(text: searchText)
+			.safeAreaBar(edge: .bottom) {
+				VStack(spacing: 8) {
+					ForEach(matchingPages.filter { $0.definition.section == nil }, id: \.self) { page in
+						row(for: page)
+					}
+				}
+				.padding(.bottom, 6)
 			}
-		}
-	}
+			.frame(width: 230)
+			.foregroundStyle(theme.foregroundColor)
 
-	private func settingsDestination(for page: Page) -> some View {
-		ScrollViewReader { proxy in
-			settingsDetail(for: page)
+			Divider()
+
+			ScrollViewReader { proxy in
+				Group {
+					switch selectedPage {
+						case .ui:
+							BrowserGeneralSettingsView()
+						case .account:
+							BrowserAccountSettingsView()
+						case .privacyAndSecurity:
+							BrowserPrivacyAndSecuritySettingsView(session: browser.session)
+						case .advanced:
+							BrowserAdvancedSettingsView()
+						case .extensions:
+							BrowserExtensionsSettingsView(browser: browser)
+						case .about:
+							AboutView()
+						#if DEBUG
+							case .failedWebsiteStates:
+								BrowserFailedWebsiteStatesSettingsView(browser: browser)
+						#endif
+					}
+				}
+				.id(selectedPage)
 				.task(id: browser.settingsScrollTarget) {
 					guard let target = browser.settingsScrollTarget else { return }
 					await Task.yield()
 					proxy.scrollTo(target, anchor: .top)
 				}
-		}
-		.navigationTitle(page.definition.title)
-		#if os(iOS)
-			.navigationBarTitleDisplayMode(.inline)
-			.toolbar(.visible, for: .navigationBar)
-			.containerBackground(.clear, for: .navigation)
-		#endif
-			.background {
-				BrowserThemeBackground(theme: theme).ignoresSafeArea()
 			}
-	}
-
-	@ViewBuilder
-	private func settingsLink(for page: Page) -> some View {
-		#if os(iOS)
-			if horizontalSizeClass == .compact {
-				NavigationLink {
-					settingsDestination(for: page)
-						.navigationBarBackButtonHidden(false)
-						.onAppear { selectedPage = page }
-				} label: {
-					Label(page.definition.title, systemImage: page.definition.symbol)
+			.padding(.horizontal, selectedPage != .about ? 16 : 0)
+			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+			.safeAreaBar(edge: .top) {
+				if selectedPage != .about {
+					BrowserSettingsTitleView(page: selectedPage)
 				}
-				.accessibilityIdentifier(page.definition.identifier)
-			} else {
-				selectionLink(for: page)
 			}
-		#else
-			selectionLink(for: page)
-		#endif
+		}
+		.monospaced()
 	}
 
-	private func selectionLink(for page: Page) -> some View {
-		NavigationLink(value: page) {
-			Label(page.definition.title, systemImage: page.definition.symbol)
+	private func row(for page: Page) -> some View {
+		let metadata = page.definition
+		return BrowserSettingsSidebarRow(
+			title: metadata.title,
+			symbol: metadata.symbol,
+			theme: theme,
+			isSelected: selectedPage == page,
+			identifier: metadata.identifier
+		) {
+			browser.settingsScrollTarget = nil
+			selectedPage = page
 		}
-		.tag(page)
-		.accessibilityIdentifier(page.definition.identifier)
-	}
-
-	@ViewBuilder
-	private func settingsDetail(for page: Page) -> some View {
-		switch page {
-			case .ui:
-				BrowserGeneralSettingsView()
-			case .account:
-				BrowserAccountSettingsView()
-			case .privacyAndSecurity:
-				BrowserPrivacyAndSecuritySettingsView()
-			case .advanced:
-				BrowserAdvancedSettingsView()
-			case .extensions:
-				BrowserExtensionsSettingsView(browser: browser)
-			case .about:
-				AboutView()
-			#if DEBUG
-				case .failedWebsiteStates:
-					BrowserFailedWebsiteStatesSettingsView(browser: browser)
-			#endif
-		}
+		.listRowInsets(EdgeInsets())
+		.listRowBackground(Color.clear)
 	}
 }

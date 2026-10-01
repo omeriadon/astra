@@ -26,6 +26,17 @@ final class BrowserWindowRegistry {
 		BrowserExtensionManager.shared.sync(browser)
 	}
 
+	func unregister(_ browser: Browser) {
+		browsers.removeAll { $0.browser == nil || $0.browser === browser }
+		if pendingPublishSource === browser {
+			publishTask?.cancel()
+			pendingPublishSource = nil
+		}
+		if activeBrowserID == browser.windowID {
+			activeBrowserID = browsers.first?.browser?.windowID
+		}
+	}
+
 	func activate(_ browser: Browser) {
 		// WindowFocusReader and didBecomeKeyNotification both fire for one
 		// focus change; every operation below is idempotent, so skip the
@@ -38,7 +49,9 @@ final class BrowserWindowRegistry {
 		if browser.selectedTab?.isHibernated == true {
 			browser.selectTab(browser.selectedTabID)
 		}
-		BrowserSync.shared.attach(browser)
+		if !browser.isPrivate {
+			BrowserSync.shared.attach(browser)
+		}
 	}
 
 	func hasActiveDuplicate(of browser: Browser) -> Bool {
@@ -70,7 +83,7 @@ final class BrowserWindowRegistry {
 	private func publishNow(from source: Browser) {
 		browsers.removeAll { $0.browser == nil }
 		for entry in browsers {
-			guard let browser = entry.browser, browser !== source else { continue }
+			guard !source.isPrivate, let browser = entry.browser, !browser.isPrivate, browser !== source else { continue }
 			browser.receiveSharedState(from: source)
 		}
 	}

@@ -47,6 +47,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	private let storeURL: URL
+	private let privateDataStore: WKWebsiteDataStore?
 	private(set) var items: [BrowserDownload] = []
 	private(set) var latestStart: (id: UUID, source: UnitPoint)?
 
@@ -62,13 +63,22 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			?? "arrow.down.circle"
 	}
 
-	override private init() {
+	override private convenience init() {
+		self.init(privateDataStore: nil)
+	}
+
+	init(privateDataStore: WKWebsiteDataStore?) {
+		self.privateDataStore = privateDataStore
 		let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
 			.appendingPathComponent(Bundle.main.bundleIdentifier ?? "browser", isDirectory: true)
-		try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		if privateDataStore == nil {
+			try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		}
 		storeURL = directory.appendingPathComponent("downloads.json")
 		super.init()
-		hydrateItems()
+		if privateDataStore == nil {
+			hydrateItems()
+		}
 		#if DEBUG
 			assert(Self.safeStem("../unsafe\\name") == "unsafename")
 		#endif
@@ -163,11 +173,17 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				}
 			))
 			let originalStem = URL(fileURLWithPath: original).deletingPathExtension().lastPathComponent
-			let suggestedStem = await humanReadableStem(
+			let suggestedStem = privateDataStore == nil ? await humanReadableStem(
 				original: originalStem,
 				source: items[index].sourceURL?.host ?? response.url?.host,
 				fileType: response.mimeType
-			)
+			) : nil
+			guard let index = items.firstIndex(where: { $0.id == itemID }),
+			      downloads[ObjectIdentifier(download)] != nil
+			else {
+				completionHandler(nil)
+				return
+			}
 			var stem = Self.safeStem(suggestedStem ?? originalStem)
 			let repeatedExtension = ".\(originalExtension)"
 			if !originalExtension.isEmpty,
@@ -206,6 +222,48 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		}
 	}
 
+	func download(
+		_ download: WKDownload,
+		didReceive challenge: URLAuthenticationChallenge,
+		completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+	) {
+		#if os(macOS)
+			Task { @MainActor in
+				let window = download.webView?.window
+					?? (BrowserWindowRegistry.shared.activeBrowser?.session.downloads === self ? NSApp.keyWindow : nil)
+				let response = await BrowserWebsiteUI.authenticate(challenge, in: window) { [self, download] in
+					downloads[ObjectIdentifier(download)] != nil
+				}
+				completionHandler(response.0, response.1)
+			}
+		#else
+			completionHandler(.performDefaultHandling, nil)
+		#endif
+	}
+
+	func download(
+		_ download: WKDownload,
+		willPerformHTTPRedirection response: HTTPURLResponse,
+		newRequest: URLRequest,
+		decisionHandler: @escaping (WKDownload.RedirectPolicy) -> Void
+	) {
+		guard let url = newRequest.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+			decisionHandler(.cancel)
+			return
+		}
+		#if os(macOS)
+			if response.url?.scheme == "https", url.scheme == "http" {
+				Task { @MainActor in
+					let alert = BrowserWebsiteUI.alert(title: "Download over an insecure connection?", message: "The download redirects from HTTPS to HTTP.", confirm: "Download")
+					let choice = await BrowserWebsiteUI.present(alert, in: download.webView?.window)
+					decisionHandler(choice == .alertFirstButtonReturn ? .allow : .cancel)
+				}
+				return
+			}
+		#endif
+		decisionHandler(.allow)
+	}
+
 	func downloadDidFinish(_ download: WKDownload) {
 		if let itemID = itemIDs[ObjectIdentifier(download)],
 		   let index = items.firstIndex(where: { $0.id == itemID }),
@@ -217,6 +275,13 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				excludingTemporary: temporaryURL
 			)
 			do {
+				#if os(macOS)
+					try BrowserDownloadedFile.quarantine(
+						temporaryURL,
+						downloadURL: items[index].requestURL,
+						sourceURL: items[index].sourceURL
+					)
+				#endif
 				try FileManager.default.moveItem(at: temporaryURL, to: completedURL)
 				items[index].fileURL = completedURL
 				items[index].status = .completed
@@ -263,7 +328,9 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 	private func updateDockProgress() {
 		#if os(macOS)
-			DockProgress.progress = activeProgress ?? 0
+			if privateDataStore == nil {
+				DockProgress.progress = activeProgress ?? 0
+			}
 		#endif
 	}
 
@@ -290,7 +357,9 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		      let url = items[index].requestURL
 		else { return }
 		if resumeWebView == nil {
-			resumeWebView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+			let configuration = WKWebViewConfiguration()
+			configuration.websiteDataStore = privateDataStore ?? .default()
+			resumeWebView = WKWebView(frame: .zero, configuration: configuration)
 		}
 		previousTemporaryURLs[itemID] = items[index].fileURL
 		items[index].status = .downloading
@@ -307,7 +376,9 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		      let data = items[index].resumeData
 		else { return }
 		if resumeWebView == nil {
-			resumeWebView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+			let configuration = WKWebViewConfiguration()
+			configuration.websiteDataStore = privateDataStore ?? .default()
+			resumeWebView = WKWebView(frame: .zero, configuration: configuration)
 		}
 		items[index].status = .downloading
 		items[index].errorMessage = nil
@@ -329,6 +400,20 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			}
 		}
 		flushDownloads()
+	}
+
+	func endPrivateSession() async {
+		guard privateDataStore != nil else { return }
+		isClosing = true
+		for download in Array(downloads.values) {
+			_ = await download.cancel()
+			finish(download)
+		}
+		for item in items where item.status != .completed {
+			try? FileManager.default.removeItem(at: item.fileURL)
+		}
+		items.removeAll()
+		resumeWebView = nil
 	}
 
 	func delete(_ itemID: UUID) {
@@ -407,6 +492,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	#endif
 
 	private func maybeAccelerate(_ download: WKDownload, response: URLResponse) async {
+		guard privateDataStore == nil else { return }
 		let key = ObjectIdentifier(download)
 		guard let itemID = itemIDs[key],
 		      !accelerationAbandoned.contains(itemID),
@@ -571,6 +657,13 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				in: temporaryURL.deletingLastPathComponent(),
 				excludingTemporary: temporaryURL
 			)
+			#if os(macOS)
+				try BrowserDownloadedFile.quarantine(
+					temporaryURL,
+					downloadURL: items[itemIndex].requestURL,
+					sourceURL: items[itemIndex].sourceURL
+				)
+			#endif
 			try FileManager.default.moveItem(at: temporaryURL, to: completedURL)
 			items[itemIndex].fileURL = completedURL
 			items[itemIndex].status = .completed
@@ -605,7 +698,9 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		}
 		persist()
 		if resumeWebView == nil {
-			resumeWebView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+			let configuration = WKWebViewConfiguration()
+			configuration.websiteDataStore = privateDataStore ?? .default()
+			resumeWebView = WKWebView(frame: .zero, configuration: configuration)
 		}
 		resumeWebView?.startDownload(using: URLRequest(url: url)) { [weak self] download in
 			self?.attach(download, to: itemID)
@@ -653,6 +748,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	/// Encode + atomic write off-main; progress ticks arrive far more often
 	/// than durability requires. Quit path uses flushDownloads() instead.
 	private func persistSoon() {
+		guard privateDataStore == nil else { return }
 		downloadPersistTask?.cancel()
 		let snapshot = items
 		let url = storeURL
@@ -673,6 +769,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 	/// Synchronous write for app termination, where background work may not finish.
 	private func flushDownloads() {
+		guard privateDataStore == nil else { return }
 		downloadPersistTask?.cancel()
 		downloadPersistTask = nil
 		do {
@@ -719,7 +816,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		return stem == "Download" ? nil : stem
 	}
 
-	private static func safeStem(_ name: String) -> String {
+	static func safeStem(_ name: String) -> String {
 		let scalars = name.unicodeScalars.filter { !unsafeFilenameCharacters.contains($0) }
 		let cleaned = String(String.UnicodeScalarView(scalars))
 			.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))

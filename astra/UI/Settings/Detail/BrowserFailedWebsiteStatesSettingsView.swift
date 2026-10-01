@@ -22,11 +22,7 @@
 				}
 			}
 			.scrollContentBackground(.hidden)
-			#if os(iOS)
-				.listStyle(.insetGrouped)
-			#else
-				.listStyle(.sidebar)
-			#endif
+			.listStyle(.sidebar)
 		}
 	}
 #endif

@@ -2,6 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>ASWebAuthenticationSessionWebBrowserSupportCapabilities</key>
+	<dict>
+		<key>AdditionalHeaderFieldsAreSupported</key>
+		<true/>
+		<key>CallbackURLMatchingIsSupported</key>
+		<true/>
+		<key>EphemeralBrowserSessionIsSupported</key>
+		<true/>
+		<key>IsSupported</key>
+		<true/>
+	</dict>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -16,13 +27,22 @@
 			</array>
 		</dict>
 	</array>
+	<key>LSFileQuarantineEnabled</key>
+	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+	</dict>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
 	<key>SUFeedURL</key>
 	<string>https://github.com/omeriadon/astra/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>xJ3AwvPdTHBWLaYvWtJedgtrEh2tmU8atZcbU4x5A68=</string>
-	<key>SUEnableAutomaticChecks</key>
-	<true/>
-	<key>SUAutomaticallyUpdate</key>
-	<true/>
 </dict>
 </plist>

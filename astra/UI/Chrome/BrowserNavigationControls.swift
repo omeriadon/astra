@@ -5,6 +5,9 @@ struct BrowserNavigationControls: View {
 
 	var body: some View {
 		HStack(spacing: 6) {
+			#if os(macOS)
+				BrowserSiteInformationButton(controller: controller)
+			#endif
 			NavigationBackButton(controller: controller)
 			NavigationForwardButton(controller: controller)
 			NavigationReloadButton(controller: controller)

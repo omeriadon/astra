@@ -58,32 +58,22 @@ extension Browser {
 	}
 
 	private func historySearchResults(for query: String) -> [BrowserSearchResult] {
-		let history = (tabs.filter { $0.internalPage == nil }.map(\.openTab) + closedHistoryTabs)
-			.sorted { $0.modifiedAt > $1.modifiedAt }
 		var seen = Set<URL>()
-		var results: [BrowserSearchResult] = []
-		for tab in history {
-			for url in tab.history + (tab.url.map { [$0] } ?? []) {
-				guard ["https", "http"].contains(url.scheme?.lowercased() ?? ""),
-				      seen.insert(url).inserted
-				else { continue }
-				let title = url == tab.url ? (tab.customTitle ?? tab.pageTitle) : (url.host ?? url.absoluteString)
-				let score = max(
-					BrowserSearchMatching.score(query, in: title),
-					BrowserSearchMatching.score(query, in: url.host ?? ""),
-					BrowserSearchMatching.score(query, in: url.absoluteString)
-				)
-				guard score > 0 else { continue }
-				let age = max(0, Date.now.timeIntervalSince(tab.modifiedAt)) / 86400
-				results.append(BrowserSearchResult(
-					id: "history-\(url.absoluteString)", kind: .history, title: title,
-					detail: "History · \(url.absoluteString)", symbol: "clock.arrow.circlepath",
-					score: score + 0.04 / (1 + age),
-					perform: { self.selectedTab?.activeController?.load(url) }
-				))
-			}
+		return historyVisits.compactMap { visit in
+			guard seen.insert(visit.url).inserted else { return nil }
+			let score = max(
+				BrowserSearchMatching.score(query, in: visit.title),
+				BrowserSearchMatching.score(query, in: visit.url.host ?? ""),
+				BrowserSearchMatching.score(query, in: visit.url.absoluteString)
+			)
+			guard score > 0 else { return nil }
+			return BrowserSearchResult(
+				id: "history-\(visit.id)", kind: .history, title: visit.title,
+				detail: "History · \(visit.url.absoluteString)", symbol: "clock.arrow.circlepath",
+				score: score,
+				perform: { self.selectedTab?.activeController?.load(visit.url) }
+			)
 		}
-		return results
 	}
 
 	var selectedNewTabSearchResult: BrowserSearchResult? {

@@ -1,6 +1,7 @@
 import AuthenticationServices
 import Defaults
 import Foundation
+import Network
 import Observation
 
 @MainActor
@@ -14,6 +15,8 @@ final class BrowserSync {
 	private(set) var errorDescription: String?
 
 	@ObservationIgnored private weak var browser: Browser?
+	@ObservationIgnored private let networkMonitor = NWPathMonitor()
+	@ObservationIgnored private var networkWasAvailable: Bool?
 	@ObservationIgnored private var sessionToken: String?
 	@ObservationIgnored private var scheduledSync: Task<Void, Never>?
 	@ObservationIgnored private var syncRequestedWhileBusy = false
@@ -35,6 +38,18 @@ final class BrowserSync {
 			UserDefaults.standard.set(id.uuidString, forKey: "syncDeviceID")
 			deviceID = id
 		}
+		networkMonitor.pathUpdateHandler = { path in
+			let available = path.status == .satisfied
+			Task { @MainActor in
+				let sync = BrowserSync.shared
+				if sync.networkWasAvailable == false, available {
+					sync.scheduleSync()
+				}
+				sync.networkWasAvailable = available
+			}
+		}
+		networkMonitor.start(queue: DispatchQueue(label: "astra.sync.network"))
+
 		// Keychain can block on crypto/disk; never on the launch path.
 		Task.detached(priority: .utility) {
 			guard let token = try? BrowserSessionStore.load() else { return }
@@ -50,6 +65,7 @@ final class BrowserSync {
 	}
 
 	func attach(_ browser: Browser) {
+		guard !browser.isPrivate, !browser.isMini else { return }
 		guard self.browser !== browser else { return }
 		let hadBrowser = self.browser != nil
 		self.browser = browser
@@ -145,6 +161,7 @@ final class BrowserSync {
 				body: AuthenticationRequest?.none,
 				bearer: sessionToken
 			)
+			guard self.sessionToken == sessionToken else { return }
 			let local = browser.syncDocument(settings: settingSnapshot())
 			// Decode + merge off-main; docs are Sendable values.
 			let merged = try await Task.detached(priority: .utility) {
@@ -152,6 +169,9 @@ final class BrowserSync {
 				let documents = try snapshots.map { try decoder.decode(BrowserSyncDocument.self, from: $0.payload) }
 				guard documents.allSatisfy({ $0.version == 1 || $0.version == 2 }) else {
 					throw BrowserSyncError.unsupportedVersion
+				}
+				guard documents.allSatisfy(\.hasValidStructure) else {
+					throw BrowserSyncError.invalidResponse
 				}
 				return documents.reduce(local) { $0.merging($1) }
 			}.value
@@ -256,14 +276,33 @@ final class BrowserSync {
 		if let bearer {
 			request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
 		}
-		let (data, response) = try await URLSession.shared.data(for: request)
-		guard let response = response as? HTTPURLResponse else {
-			throw BrowserSyncError.invalidResponse
+		for attempt in 0 ..< 3 {
+			do {
+				try Task.checkCancellation()
+				let (data, response) = try await URLSession.shared.data(for: request)
+				guard let response = response as? HTTPURLResponse, data.count <= 16 * 1024 * 1024 else {
+					throw BrowserSyncError.invalidResponse
+				}
+				if response.statusCode == 401, bearer != nil, sessionToken == bearer {
+					signOut()
+				}
+				guard 200 ..< 300 ~= response.statusCode else {
+					throw BrowserSyncError.http(response.statusCode)
+				}
+				return try JSONDecoder().decode(Response.self, from: data)
+			} catch {
+				let transient: Bool = if case let BrowserSyncError.http(status) = error {
+					[429, 500, 502, 503, 504].contains(status)
+				} else if let networkError = error as? URLError {
+					[.timedOut, .networkConnectionLost, .cannotConnectToHost].contains(networkError.code)
+				} else {
+					false
+				}
+				guard attempt < 2, transient, ["GET", "PUT"].contains(method) else { throw error }
+				try await Task.sleep(for: .seconds(attempt == 0 ? 1 : 3))
+			}
 		}
-		guard 200 ..< 300 ~= response.statusCode else {
-			throw BrowserSyncError.http(response.statusCode)
-		}
-		return try JSONDecoder().decode(Response.self, from: data)
+		throw BrowserSyncError.invalidResponse
 	}
 
 	private static func isAllowedLocalHTTP(_ url: URL) -> Bool {

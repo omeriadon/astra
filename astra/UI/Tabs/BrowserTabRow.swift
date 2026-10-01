@@ -162,14 +162,14 @@ struct BrowserTabRow: View {
 		guard let url = tab.currentURL else { return }
 		#if os(macOS)
 			NSPasteboard.general.clearContents()
-			NSPasteboard.general.setString(url.absoluteString, forType: .string)
+			NSPasteboard.general.setString(BrowserAddress.withoutCredentials(url).absoluteString, forType: .string)
 		#elseif os(iOS)
 			UIPasteboard.general.url = url
 		#endif
 	}
 }
 
-/// Favicons arrive via FaviconStore.shared.image inside TabIconView, which stays
+/// Favicons arrive via browser.session.favicons.image inside TabIconView, which stays
 /// independently subscribed: skipping unchanged rows here never blocks new icons.
 extension BrowserTabRow: Equatable {
 	static func == (lhs: BrowserTabRow, rhs: BrowserTabRow) -> Bool {
@@ -200,7 +200,7 @@ private struct TabIconView: View {
 			} icon: {
 				if let page = tab.internalPage {
 					Image(systemName: page.symbol)
-				} else if let favicon = FaviconStore.shared.image(
+				} else if let favicon = browser.session.favicons.image(
 					for: tab.currentURL,
 					in: tab.controller?.webViewIfLoaded
 				) {
@@ -334,7 +334,7 @@ private struct TabRowContextMenu: View {
 			Button("Hibernate Tab", systemImage: "moon.zzz") {
 				browser.hibernateTab(tab.id)
 			}
-			.disabled(tab.isHibernated)
+			.disabled(tab.isHibernated || !tab.canHibernate)
 			.accessibilityIdentifier("hibernate-tab-\(tab.id.uuidString)")
 
 			if isPinned {

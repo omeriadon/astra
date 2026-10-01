@@ -22,6 +22,23 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		self.settings = settings
 	}
 
+	nonisolated var hasValidStructure: Bool {
+		Set(tabs.map(\.id)).count == tabs.count
+			&& Set(bookmarks.map(\.id)).count == bookmarks.count
+			&& tabs.allSatisfy { tab in
+				tab.pageZoom.isFinite && (0.25 ... 5).contains(tab.pageZoom)
+					&& tab.restorationState == nil && tab.fileAccessBookmark == nil
+					&& (tab.history + [tab.url].compactMap(\.self) + tab.peeks.compactMap(\.url)).allSatisfy {
+						["http", "https"].contains($0.scheme?.lowercased() ?? "")
+					}
+			}
+			&& bookmarks.allSatisfy { ["http", "https"].contains($0.url.scheme?.lowercased() ?? "") }
+			&& (workspace.map { value in
+				Set(value.spaces.map(\.id)).count == value.spaces.count
+					&& value.spaces.allSatisfy { Set($0.pinnedFolders.map(\.id)).count == $0.pinnedFolders.count }
+			} ?? true)
+	}
+
 	private enum CodingKeys: String, CodingKey {
 		case version
 		case tabs

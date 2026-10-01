@@ -15,6 +15,9 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 	var peeks: [OpenPeek]
 	var closedSpaceID: UUID?
 	var closedNormalIndex: Int?
+	var fileAccessBookmark: Data?
+	var restorationState: Data?
+	var recordsNavigationHistory: Bool
 
 	nonisolated init(
 		id: UUID = UUID(),
@@ -30,7 +33,10 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		modifiedAt: Date = .now,
 		peeks: [OpenPeek] = [],
 		closedSpaceID: UUID? = nil,
-		closedNormalIndex: Int? = nil
+		closedNormalIndex: Int? = nil,
+		recordsNavigationHistory: Bool = true,
+		restorationState: Data? = nil,
+		fileAccessBookmark: Data? = nil
 	) {
 		self.id = id
 		self.internalPage = internalPage
@@ -46,6 +52,9 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		self.modifiedAt = modifiedAt
 		self.closedSpaceID = closedSpaceID
 		self.closedNormalIndex = closedNormalIndex
+		self.recordsNavigationHistory = recordsNavigationHistory
+		self.restorationState = restorationState
+		self.fileAccessBookmark = fileAccessBookmark
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -64,6 +73,9 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		case modifiedAt
 		case closedSpaceID
 		case closedNormalIndex
+		case recordsNavigationHistory
+		case restorationState
+		case fileAccessBookmark
 	}
 
 	nonisolated init(from decoder: Decoder) throws {
@@ -92,6 +104,9 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? .distantPast
 		closedSpaceID = try container.decodeIfPresent(UUID.self, forKey: .closedSpaceID)
 		closedNormalIndex = try container.decodeIfPresent(Int.self, forKey: .closedNormalIndex)
+		recordsNavigationHistory = try container.decodeIfPresent(Bool.self, forKey: .recordsNavigationHistory) ?? true
+		restorationState = try container.decodeIfPresent(Data.self, forKey: .restorationState)
+		fileAccessBookmark = try container.decodeIfPresent(Data.self, forKey: .fileAccessBookmark)
 	}
 
 	nonisolated func encode(to encoder: Encoder) throws {
@@ -110,6 +125,9 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		try container.encode(modifiedAt, forKey: .modifiedAt)
 		try container.encodeIfPresent(closedSpaceID, forKey: .closedSpaceID)
 		try container.encodeIfPresent(closedNormalIndex, forKey: .closedNormalIndex)
+		try container.encode(recordsNavigationHistory, forKey: .recordsNavigationHistory)
+		try container.encodeIfPresent(restorationState, forKey: .restorationState)
+		try container.encodeIfPresent(fileAccessBookmark, forKey: .fileAccessBookmark)
 	}
 
 	private nonisolated static func clampedIndex(_ index: Int, count: Int) -> Int {

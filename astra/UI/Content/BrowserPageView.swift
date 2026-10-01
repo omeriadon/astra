@@ -29,6 +29,11 @@ struct BrowserPageView: View {
 			}
 		}
 		.overlay(alignment: .topTrailing) {
+			if let controller = browser.selectedTab?.activeController, controller.showsFind {
+				BrowserFindBar(controller: controller)
+			}
+		}
+		.overlay(alignment: .topTrailing) {
 			if let toast = toastManager.toast {
 				BrowserToastView(toast: toast)
 					.padding(.top, 12)

@@ -20,8 +20,8 @@ final class BrowserPeek: Identifiable {
 			depth: depth,
 			sourceX: Double(source.x),
 			sourceY: Double(source.y),
-			url: controller.url,
-			history: controller.history,
+			url: controller.url.map(BrowserAddress.withoutCredentials),
+			history: controller.history.map(BrowserAddress.withoutCredentials),
 			historyIndex: controller.historyIndex,
 			pageZoom: controller.pageZoom,
 			scrollPosition: controller.scrollPosition
@@ -29,16 +29,18 @@ final class BrowserPeek: Identifiable {
 	}
 
 	init(
-		url: URL,
+		url: URL? = nil,
 		depth: Int,
 		source: UnitPoint,
 		parentZoom: Double,
-		zoomsOut: Bool
+		zoomsOut: Bool,
+		session: BrowserWebSession? = nil,
+		existingController: BrowserController? = nil
 	) {
 		id = UUID()
 		self.depth = depth
 		self.source = source
-		controller = BrowserController(initialURL: url, scrollPosition: .zero)
+		controller = existingController ?? BrowserController(initialURL: url, session: session, scrollPosition: .zero)
 		hasPresented = false
 		isPresented = false
 

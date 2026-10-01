@@ -9,16 +9,38 @@ import WebKit
 final class Browser {
 	let windowID = UUID()
 	let isMini: Bool
+	let session: BrowserWebSession
+
+	var isPrivate: Bool {
+		session.isPrivate
+	}
+
 	private(set) var tabs: [BrowserTab]
 	private(set) var selectedTabID: UUID
 	private(set) var workspace: BrowserWorkspace
 	private(set) var spaceSwitchDirection = 1
 	private(set) var recentlyUsedTabIDs: [UUID]
 	private(set) var bookmarks: [Bookmark]
+	private(set) var historyVisits: [BrowserVisit]
+	@ObservationIgnored
+	private var lastVisitedURL: [UUID: URL] = [:]
+	@ObservationIgnored
+	private var lastVisitID: [UUID: UUID] = [:]
+	@ObservationIgnored
+	private var lastVisitedDocument: [UUID: Int] = [:]
 	private(set) var closedHistoryTabs: [OpenTab]
 	private(set) var closedTabIDs: Set<UUID>
 	private(set) var deletedBookmarkIDs: Set<UUID>
 	private(set) var persistenceErrorDescription: String?
+
+	@ObservationIgnored
+	var navigationIntercept: ((URL) -> Bool)? {
+		didSet {
+			for tab in tabs {
+				configure(tab)
+			}
+		}
+	}
 
 	var isAboutToQuit: Bool = false
 	var addressFocusRequest = 0
@@ -66,6 +88,9 @@ final class Browser {
 	@ObservationIgnored
 	private var didFinishHydration = true
 
+	@ObservationIgnored
+	private var hydrationFailed = false
+
 	/// O(1) tab lookup for sidebar/history rows (avoids O(n²) scans).
 	var tabsByID: [UUID: BrowserTab] {
 		Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
@@ -88,16 +113,21 @@ final class Browser {
 	}
 
 	var favouriteTabs: [BrowserTab] {
+		guard !isPrivate else { return [] }
 		let lookup = tabsByID
 		return workspace.favouriteTabIDs.compactMap { lookup[$0] }
 	}
 
 	var pinnedTabs: [BrowserTab] {
+		guard !isPrivate else { return [] }
 		let lookup = tabsByID
 		return selectedSpace.pinnedTabIDs.compactMap { lookup[$0] }
 	}
 
 	var normalTabs: [BrowserTab] {
+		if isPrivate {
+			return tabs
+		}
 		let lookup = tabsByID
 		let pinnedIDs = Set(selectedSpace.pinnedTabIDs)
 		return selectedSpace.tabIDs.filter { !pinnedIDs.contains($0) }.compactMap { lookup[$0] }
@@ -108,6 +138,7 @@ final class Browser {
 	}
 
 	func createSpace() {
+		guard !isPrivate else { return }
 		let space = BrowserSpace()
 		spaceSwitchDirection = 1
 		workspace.spaces.append(space)
@@ -224,7 +255,7 @@ final class Browser {
 	}
 
 	func moveTab(_ id: UUID, to area: TabArea, in spaceID: UUID? = nil, before targetID: UUID? = nil) {
-		guard tabs.contains(where: { $0.id == id }) else { return }
+		guard !isPrivate, tabs.contains(where: { $0.id == id }) else { return }
 		let wasFavourite = workspace.favouriteTabIDs.contains(id)
 		workspace.favouriteTabIDs.removeAll { $0 == id }
 		for index in workspace.spaces.indices {
@@ -275,19 +306,21 @@ final class Browser {
 		selectedTab?.internalPage == nil ? selectedTabID : webTabs.first?.id ?? selectedTabID
 	}
 
-	init(isMini: Bool = false) {
+	init(isMini: Bool = false, isPrivate: Bool = false) {
 		self.isMini = isMini
-		if !isMini {
+		let session = isPrivate ? BrowserWebSession(isPrivate: true) : .shared
+		self.session = session
+		if !isMini, !isPrivate {
 			BrowserWindowRegistry.shared.activeBrowser?.flushPersistence()
 		}
 		// Synchronous placeholder only: disk decode happens off-main in
 		// hydrateFromDisk() so the first frame never waits on JSON.
-		let placeholder = BrowserTab()
+		let placeholder = BrowserTab(session: session)
 		let placeholderID = placeholder.id
 		var persistenceStore: BrowserPersistence?
 		var persistenceError: String?
 		do {
-			if !isMini {
+			if !isMini, !isPrivate {
 				persistenceStore = try BrowserPersistence()
 			}
 		} catch {
@@ -302,6 +335,7 @@ final class Browser {
 		)
 		recentlyUsedTabIDs = [placeholderID]
 		bookmarks = []
+		historyVisits = []
 		closedHistoryTabs = []
 		closedTabIDs = []
 		deletedBookmarkIDs = []
@@ -327,20 +361,45 @@ final class Browser {
 		var workspace: BrowserWorkspace?
 		var bookmarks: [Bookmark]
 		var closedTabs: [OpenTab]
+		var historyVisits: [BrowserVisit]?
 	}
 
 	private func hydrateFromDisk(placeholderID: UUID) {
 		guard let persistence else { return }
 		Task.detached(priority: .userInitiated) { [persistence] in
-			let loaded = HydratedState(
-				tabs: (try? persistence.loadOpenTabs()) ?? [],
-				snapshot: try? persistence.loadBrowserSnapshot(),
-				workspace: try? persistence.loadWorkspace(),
-				bookmarks: (try? persistence.loadBookmarks()) ?? [],
-				closedTabs: (try? persistence.loadClosedTabs()) ?? []
-			)
-			await MainActor.run { [weak self] in
-				self?.applyHydratedState(loaded, placeholderID: placeholderID)
+			do {
+				await BrowserRestorationStore.prepare()
+				let loaded: HydratedState = if let state = try persistence.loadPersistedState() {
+					HydratedState(
+						tabs: state.openTabs,
+						snapshot: state.snapshot,
+						workspace: state.workspace,
+						bookmarks: state.bookmarks,
+						closedTabs: state.closedTabs,
+						historyVisits: state.historyVisits
+					)
+				} else {
+					try HydratedState(
+						tabs: persistence.loadOpenTabs(),
+						snapshot: persistence.loadBrowserSnapshot(),
+						workspace: persistence.loadWorkspace(),
+						bookmarks: persistence.loadBookmarks(),
+						closedTabs: persistence.loadClosedTabs()
+					)
+				}
+				await MainActor.run { [weak self] in
+					for tab in self?.tabs ?? [] {
+						tab.invalidateStoredSnapshot()
+					}
+					self?.applyHydratedState(loaded, placeholderID: placeholderID)
+				}
+			} catch {
+				let message = error.localizedDescription
+				await MainActor.run { [weak self] in
+					self?.hydrationFailed = true
+					self?.didFinishHydration = true
+					self?.persistenceErrorDescription = message
+				}
 			}
 		}
 	}
@@ -368,7 +427,10 @@ final class Browser {
 				pageZoom: saved.pageZoom,
 				scrollPosition: saved.scrollPosition,
 				isHibernated: saved.isHibernated,
-				modifiedAt: saved.modifiedAt
+				modifiedAt: saved.modifiedAt,
+				recordsNavigationHistory: saved.recordsNavigationHistory,
+				restorationState: saved.restorationState,
+				fileAccessBookmark: saved.fileAccessBookmark
 			)
 		}
 		let newTabs = restoredTabs.isEmpty ? [BrowserTab()] : restoredTabs
@@ -381,7 +443,16 @@ final class Browser {
 			theme: Defaults[.browserTheme]
 		)
 		recentlyUsedTabIDs = [newSelectedTabID]
-		bookmarks = loaded.bookmarks
+		bookmarks = loaded.bookmarks.map { item in
+			var item = item
+			item.url = BrowserAddress.withoutCredentials(item.url)
+			return item
+		}
+		historyVisits = (loaded.historyVisits ?? Self.migratedHistory(loaded.tabs + loaded.closedTabs)).map { visit in
+			var visit = visit
+			visit.url = BrowserAddress.withoutCredentials(visit.url)
+			return visit
+		}
 		closedHistoryTabs = loaded.closedTabs
 		closedTabIDs = loaded.snapshot?.closedTabIDs ?? []
 		deletedBookmarkIDs = loaded.snapshot?.deletedBookmarkIDs ?? []
@@ -401,7 +472,7 @@ final class Browser {
 
 	@discardableResult
 	func addTab(inBackground: Bool = false) -> BrowserTab {
-		let tab = BrowserTab()
+		let tab = BrowserTab(session: session)
 		configure(tab)
 		tabs.append(tab)
 		if !inBackground {
@@ -420,7 +491,7 @@ final class Browser {
 	}
 
 	func adoptMiniTab(_ tab: BrowserTab) {
-		guard !tabs.contains(where: { $0.id == tab.id }) else { return }
+		guard session === tab.session, !tabs.contains(where: { $0.id == tab.id }) else { return }
 		configure(tab)
 		tabs.append(tab)
 		reconcileWorkspace()
@@ -434,11 +505,15 @@ final class Browser {
 	}
 
 	func openInternalPage(_ page: BrowserInternalPage, inNewTab: Bool = false) {
+		guard !isPrivate || page == .settings else { return }
+		if isPrivate {
+			settingsPage = .privacyAndSecurity
+		}
 		if !inNewTab, let existing = visibleTabs.first(where: { $0.internalPage == page }) {
 			selectTab(existing.id)
 			return
 		}
-		let tab = BrowserTab(internalPage: page)
+		let tab = BrowserTab(internalPage: page, session: session)
 		tabs.append(tab)
 		reconcileWorkspace()
 		selectTab(tab.id)
@@ -464,7 +539,8 @@ final class Browser {
 			openPeeks: saved.peeks,
 			pageZoom: saved.pageZoom,
 			scrollPosition: saved.scrollPosition,
-			isHibernated: inBackground
+			isHibernated: inBackground,
+			session: session
 		)
 		configure(tab)
 		if !inBackground {
@@ -502,7 +578,7 @@ final class Browser {
 
 	@discardableResult
 	func openHistoryURL(_ url: URL, inBackground: Bool) -> BrowserTab {
-		let tab = BrowserTab(initialURL: url)
+		let tab = BrowserTab(initialURL: url, session: session)
 		configure(tab)
 		if !inBackground {
 			tab.controller?.prepareWebView()
@@ -586,7 +662,7 @@ final class Browser {
 		      let url = tab.currentURL,
 		      !bookmarks.contains(where: { $0.url == url })
 		else { return }
-		bookmarks.append(Bookmark(name: tab.title, url: url))
+		bookmarks.append(Bookmark(name: tab.title, url: BrowserAddress.withoutCredentials(url)))
 		schedulePersistence()
 	}
 
@@ -623,7 +699,9 @@ final class Browser {
 			historyIndex: sourceSnapshot.historyIndex,
 			openPeeks: sourceSnapshot.peeks,
 			pageZoom: sourceSnapshot.pageZoom,
-			scrollPosition: sourceSnapshot.scrollPosition
+			scrollPosition: sourceSnapshot.scrollPosition,
+			session: session,
+			recordsNavigationHistory: sourceSnapshot.recordsNavigationHistory
 		)
 		configure(tab)
 		tabs.insert(tab, at: index + 1)
@@ -632,8 +710,21 @@ final class Browser {
 		return tab
 	}
 
-	func closeTab(_ id: UUID) {
+	func closeTab(_ id: UUID, confirmed: Bool = false) {
 		guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+		#if os(macOS)
+			let tab = tabs[index]
+			if !confirmed, tab.controller?.hasUnsavedChanges == true || tab.peeks.contains(where: \.controller.hasUnsavedChanges) {
+				Task { @MainActor [weak self] in
+					let alert = BrowserWebsiteUI.alert(title: "Close this tab?", message: "Changes you made may not be saved.", confirm: "Close Tab")
+					let window = tab.activeController?.webViewIfLoaded?.window
+					if await BrowserWebsiteUI.present(alert, in: window) == .alertFirstButtonReturn {
+						self?.closeTab(id, confirmed: true)
+					}
+				}
+				return
+			}
+		#endif
 		if workspace.favouriteTabIDs.contains(id) || workspace.spaces.contains(where: { $0.pinnedTabIDs.contains(id) }) {
 			hibernateTab(id)
 			if selectedTabID == id {
@@ -682,11 +773,20 @@ final class Browser {
 		schedulePersistence()
 	}
 
-	func hibernateTab(_ id: UUID) {
-		guard let tab = tabs.first(where: { $0.id == id }), !tab.isHibernated else { return }
-		tab.hibernate()
-		BrowserExtensionManager.shared.webViewDidChange(for: id, in: self)
-		schedulePersistence()
+	func hibernateTab(_ id: UUID, onlyIfBackground: Bool = false) {
+		guard let tab = tabs.first(where: { $0.id == id }), !tab.isHibernated, tab.canHibernate else { return }
+		Task { @MainActor [weak self, weak tab] in
+			guard let self, let tab else { return }
+			await tab.controller?.refreshActivity()
+			for peek in tab.peeks {
+				await peek.controller.refreshActivity()
+			}
+			guard tabs.contains(where: { $0 === tab }), tab.canHibernate,
+			      !onlyIfBackground || selectedTabID != id else { return }
+			tab.hibernate()
+			BrowserExtensionManager.shared.webViewDidChange(for: id, in: self)
+			schedulePersistence()
+		}
 	}
 
 	func promotePeek(in source: BrowserTab, id: UUID) {
@@ -728,8 +828,112 @@ final class Browser {
 		persist()
 	}
 
+	func flushAndWaitForPersistence() async {
+		flushPersistence()
+		await session.persistenceWriteTask?.value
+	}
+
+	private static func migratedHistory(_ tabs: [OpenTab]) -> [BrowserVisit] {
+		var seen = Set<URL>()
+		return tabs.sorted { $0.modifiedAt > $1.modifiedAt }.flatMap { tab in
+			(tab.history + (tab.url.map { [$0] } ?? [])).reversed().compactMap { url in
+				guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+				      seen.insert(url).inserted else { return nil }
+				return BrowserVisit(url: url, title: url == tab.url ? tab.pageTitle : url.host ?? url.absoluteString, visitedAt: tab.modifiedAt)
+			}
+		}
+	}
+
+	private func recordHistory(of tab: BrowserTab) {
+		guard !isPrivate, !isMini else { return }
+		for controller in [tab.controller].compactMap(\.self) + tab.peeks.map(\.controller) {
+			guard controller.canRecordVisit, let url = controller.committedURL,
+			      ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { continue }
+			let title = controller.webViewIfLoaded?.title ?? url.host ?? url.absoluteString
+			if lastVisitedURL[controller.id] == url, lastVisitedDocument[controller.id] == controller.navigationIdentifier {
+				if let id = lastVisitID[controller.id], let index = historyVisits.firstIndex(where: { $0.id == id }) {
+					historyVisits[index].title = title
+				}
+				continue
+			}
+			let visit = BrowserVisit(url: BrowserAddress.withoutCredentials(url), title: title)
+			lastVisitedURL[controller.id] = url
+			lastVisitedDocument[controller.id] = controller.navigationIdentifier
+			lastVisitID[controller.id] = visit.id
+			historyVisits.insert(visit, at: 0)
+		}
+	}
+
+	func applyHistoryRetention() {
+		guard !isPrivate else { return }
+		let retained = BrowserVisit.retained(historyVisits, days: Defaults[.historyRetentionDays])
+		guard retained != historyVisits else { return }
+		historyVisits = retained
+		schedulePersistence()
+	}
+
+	func clearHistory() {
+		guard !isPrivate, !isMini else { return }
+		let peers = BrowserWindowRegistry.shared.openBrowsers.filter {
+			$0 !== self && $0.session === session && !$0.isPrivate && !$0.isMini
+		}
+		for browser in [self] + peers {
+			browser.clearLocalHistory()
+		}
+		schedulePersistence()
+	}
+
+	private func clearLocalHistory() {
+		historyVisits.removeAll()
+		lastVisitID.removeAll()
+		closedHistoryTabs.removeAll()
+		for tab in tabs {
+			for controller in [tab.controller].compactMap(\.self) + tab.peeks.map(\.controller) {
+				lastVisitedURL[controller.id] = controller.committedURL
+				lastVisitedDocument[controller.id] = controller.navigationIdentifier
+			}
+			tab.clearRecordedHistory()
+		}
+		historyVisits.removeAll()
+	}
+
+	func removeHistory(_ ids: Set<UUID>) {
+		guard !isPrivate, !isMini else { return }
+		historyVisits.removeAll { ids.contains($0.id) }
+		for browser in BrowserWindowRegistry.shared.openBrowsers
+			where browser !== self && browser.session === session && !browser.isPrivate && !browser.isMini
+		{
+			browser.historyVisits.removeAll { ids.contains($0.id) }
+		}
+		schedulePersistence()
+	}
+
+	func importBookmarks(_ incoming: [Bookmark]) {
+		guard !isPrivate else { return }
+		var existing = Set(bookmarks.map(\.url))
+		for bookmark in incoming where ["http", "https", "file"].contains(bookmark.url.scheme?.lowercased() ?? "") {
+			guard existing.insert(bookmark.url).inserted else { continue }
+			bookmarks.append(Bookmark(name: bookmark.name, url: BrowserAddress.withoutCredentials(bookmark.url)))
+		}
+		schedulePersistence()
+	}
+
+	func importHistory(_ incoming: [BrowserVisit]) {
+		guard !isPrivate else { return }
+		var existing = Set(historyVisits.map(\.url))
+		for visit in incoming where ["http", "https"].contains(visit.url.scheme?.lowercased() ?? "") {
+			guard existing.insert(visit.url).inserted else { continue }
+			historyVisits.append(BrowserVisit(url: BrowserAddress.withoutCredentials(visit.url), title: visit.title, visitedAt: visit.visitedAt))
+		}
+		historyVisits.sort { $0.visitedAt > $1.visitedAt }
+		schedulePersistence()
+	}
+
 	private func attachPersistence(to tab: BrowserTab) {
-		tab.didChange = { [weak self] in
+		tab.didChange = { [weak self, weak tab] in
+			if let tab {
+				self?.recordHistory(of: tab)
+			}
 			self?.schedulePersistence()
 		}
 		tab.didScrollChange = { [weak self] in
@@ -740,6 +944,7 @@ final class Browser {
 	private func configure(_ tab: BrowserTab) {
 		attachPersistence(to: tab)
 		guard let controller = tab.controller else { return }
+		controller.navigationIntercept = navigationIntercept
 		controller.extensionStateDidChange = { [weak self] in
 			guard let self else { return }
 			BrowserExtensionManager.shared.sync(self)
@@ -747,6 +952,22 @@ final class Browser {
 		controller.extensionWebViewDidChange = { [weak self, id = tab.id] in
 			guard let self else { return }
 			BrowserExtensionManager.shared.webViewDidChange(for: id, in: self)
+		}
+		controller.popupRequested = { [weak self, weak tab, weak controller] configuration, source, inBackground in
+			guard let self, let tab, let controller else { return nil }
+			return createPopup(configuration: configuration, source: source, in: tab, depth: 1, parentZoom: controller.pageZoom, inBackground: inBackground)
+		}
+		controller.newTabRequested = { [weak self, weak controller] request, inBackground in
+			guard let self else { return }
+			if isMini {
+				controller?.navigate(request)
+			} else {
+				openNewTab(request, inBackground: inBackground)
+			}
+		}
+		controller.closeRequested = { [weak self, weak tab] in
+			guard let tab else { return }
+			self?.closeTab(tab.id)
 		}
 		controller.escapeRequested = { [weak tab] in
 			tab?.requestPeekDismissal()
@@ -757,7 +978,7 @@ final class Browser {
 				controller.load(url)
 				return
 			}
-			if Defaults[.peekLevel] == .none {
+			if isPrivate || Defaults[.peekLevel] == .none {
 				openNewTab(url)
 				return
 			}
@@ -793,13 +1014,25 @@ final class Browser {
 			depth: depth,
 			source: source,
 			parentZoom: parentZoom,
-			zoomsOut: Defaults[.zoomOutInPeeks]
+			zoomsOut: Defaults[.zoomOutInPeeks],
+			session: session
 		)
 		configure(peek, in: tab)
 		tab.addPeek(peek)
 	}
 
 	private func configure(_ peek: BrowserPeek, in tab: BrowserTab) {
+		peek.controller.navigationIntercept = navigationIntercept
+		peek.controller.popupRequested = { [weak self, weak tab, weak peek] configuration, source, inBackground in
+			guard let self, let tab, let peek else { return nil }
+			return createPopup(configuration: configuration, source: source, in: tab, depth: peek.depth + 1, parentZoom: peek.controller.pageZoom, inBackground: inBackground)
+		}
+		peek.controller.newTabRequested = { [weak self] request, inBackground in
+			self?.openNewTab(request, inBackground: inBackground)
+		}
+		peek.controller.closeRequested = { [weak tab, id = peek.id] in
+			tab?.dismissPeek(id)
+		}
 		peek.controller.escapeRequested = { [weak tab] in
 			tab?.requestPeekDismissal()
 		}
@@ -815,16 +1048,77 @@ final class Browser {
 		}
 	}
 
-	private func openNewTab(_ url: URL) {
-		let tab = addTab()
-		tab.controller?.load(url)
+	private func createPopup(
+		configuration: WKWebViewConfiguration,
+		source: UnitPoint,
+		in tab: BrowserTab,
+		depth: Int,
+		parentZoom: Double,
+		inBackground: Bool?
+	) -> WKWebView {
+		let popup = BrowserController(session: session, configuration: configuration)
+		#if os(macOS)
+			popup.previewSnapshotRefreshSuspended = inBackground == true
+		#endif
+		if inBackground == nil, !isPrivate, !isMini,
+		   depth <= Defaults[.peekLevel].maximumDepth,
+		   depth == tab.peeks.count + 1
+		{
+			let peek = BrowserPeek(
+				depth: depth,
+				source: source,
+				parentZoom: parentZoom,
+				zoomsOut: Defaults[.zoomOutInPeeks],
+				session: session,
+				existingController: popup
+			)
+			configure(peek, in: tab)
+			tab.addPeek(peek)
+		} else {
+			let popupTab = BrowserTab(existingController: popup, session: session)
+			configure(popupTab)
+			tabs.append(popupTab)
+			reconcileWorkspace()
+			if inBackground == true {
+				schedulePersistence(fullState: true)
+			} else {
+				selectTab(popupTab.id)
+			}
+		}
+		return popup.webView
 	}
 
-	private func removeTabs(_ ids: Set<UUID>, selecting selectedID: UUID) {
+	private func openNewTab(_ url: URL) {
+		openNewTab(URLRequest(url: url), inBackground: false)
+	}
+
+	private func openNewTab(_ request: URLRequest, inBackground: Bool) {
+		let tab = addTab(inBackground: inBackground)
+		#if os(macOS)
+			tab.controller?.previewSnapshotRefreshSuspended = inBackground
+		#endif
+		tab.controller?.navigate(request)
+		tab.controller?.prepareWebView()
+	}
+
+	private func removeTabs(_ ids: Set<UUID>, selecting selectedID: UUID, confirmed: Bool = false) {
 		let protectedIDs = Set(workspace.favouriteTabIDs + workspace.spaces.flatMap(\.pinnedTabIDs))
 		let ids = ids.subtracting(protectedIDs)
 		guard !ids.isEmpty else { return }
 		let removedTabs = tabs.filter { ids.contains($0.id) }
+		#if os(macOS)
+			if !confirmed, removedTabs.contains(where: { tab in
+				tab.controller?.hasUnsavedChanges == true || tab.peeks.contains { $0.controller.hasUnsavedChanges }
+			}) {
+				Task { @MainActor [weak self] in
+					let alert = BrowserWebsiteUI.alert(title: "Close these tabs?", message: "Some tabs contain changes that may not be saved.", confirm: "Close Tabs")
+					if await BrowserWebsiteUI.present(alert, in: NSApp.keyWindow) == .alertFirstButtonReturn {
+						self?.removeTabs(ids, selecting: selectedID, confirmed: true)
+					}
+				}
+				return
+			}
+		#endif
 		archiveHistory(of: removedTabs)
 		let closedWebIDs = Set(removedTabs.filter { $0.internalPage == nil }.map(\.id))
 		releaseAfterTabUpdate(removedTabs)
@@ -846,7 +1140,9 @@ final class Browser {
 		// ponytail: Give the tab UI time to update before WebKit teardown; use explicit lifecycle control if teardown still stalls.
 		Task { @MainActor in
 			try? await Task.sleep(for: .milliseconds(100))
-			withExtendedLifetime(removedTabs) {}
+			for tab in removedTabs {
+				tab.stopForClose()
+			}
 		}
 	}
 
@@ -869,7 +1165,10 @@ final class Browser {
 	func syncDocument(settings: [String: SyncedSetting]) -> BrowserSyncDocument {
 		reconcileWorkspace()
 		var syncedWorkspace = workspace
-		let webTabIDs = Set(webTabs.map(\.id))
+		let syncedTabs = webTabs.filter { tab in
+			tab.currentURL == nil || ["http", "https"].contains(tab.currentURL?.scheme?.lowercased() ?? "")
+		}
+		let webTabIDs = Set(syncedTabs.map(\.id))
 		syncedWorkspace.favouriteTabIDs.removeAll { !webTabIDs.contains($0) }
 		for index in syncedWorkspace.spaces.indices {
 			syncedWorkspace.spaces[index].tabIDs.removeAll { !webTabIDs.contains($0) }
@@ -881,9 +1180,17 @@ final class Browser {
 			}
 		}
 		return BrowserSyncDocument(
-			tabs: webTabs.map(\.openTab),
+			tabs: syncedTabs.map { tab in
+				var snapshot = tab.openTab
+				snapshot.history = snapshot.url.map { [$0] } ?? []
+				snapshot.historyIndex = 0
+				snapshot.restorationState = nil
+				snapshot.fileAccessBookmark = nil
+				snapshot.peeks = []
+				return snapshot
+			},
 			workspace: syncedWorkspace,
-			bookmarks: bookmarks,
+			bookmarks: bookmarks.filter { ["http", "https"].contains($0.url.scheme?.lowercased() ?? "") },
 			browser: BrowserSnapshot(
 				selectedTabID: persistedSelectedTabID,
 				closedTabIDs: closedTabIDs,
@@ -894,11 +1201,14 @@ final class Browser {
 	}
 
 	func applySyncDocument(_ document: BrowserSyncDocument) {
+		guard !isPrivate else { return }
 		let currentTabs = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
 		let changedTabs = document.tabs.compactMap { saved -> BrowserTab? in
 			let internalPage = saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:))
 			guard saved.internalPage == nil || internalPage != nil else { return nil }
-			if let current = currentTabs[saved.id], current.openTab == saved {
+			if let current = currentTabs[saved.id],
+			   current.openTab == saved || current.modifiedAt >= saved.modifiedAt || !current.canHibernate
+			{
 				return current
 			}
 			let tab = BrowserTab(
@@ -913,13 +1223,16 @@ final class Browser {
 				pageZoom: saved.pageZoom,
 				scrollPosition: saved.scrollPosition,
 				isHibernated: saved.isHibernated,
-				modifiedAt: saved.modifiedAt
+				modifiedAt: saved.modifiedAt,
+				recordsNavigationHistory: saved.recordsNavigationHistory,
+				restorationState: saved.restorationState,
+				fileAccessBookmark: saved.fileAccessBookmark
 			)
 			configure(tab)
 			return tab
 		}
 		if changedTabs.isEmpty {
-			let tab = BrowserTab()
+			let tab = BrowserTab(session: session)
 			configure(tab)
 			tabs = [tab] + tabs.filter { $0.internalPage != nil }
 		} else {
@@ -951,6 +1264,7 @@ final class Browser {
 	}
 
 	func receiveSharedState(from source: Browser) {
+		guard !isPrivate, !source.isPrivate else { return }
 		persistenceTask?.cancel()
 		persistenceTask = nil
 		let currentTabs = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
@@ -959,6 +1273,9 @@ final class Browser {
 			if let current = currentTabs[saved.id],
 			   current.openTab == saved || (saved.id == selectedTabID && current.controller != nil)
 			{
+				if !saved.recordsNavigationHistory, current.openTab.recordsNavigationHistory {
+					current.clearRecordedHistory()
+				}
 				return current
 			}
 			let tab = BrowserTab(openTab: saved)
@@ -980,6 +1297,7 @@ final class Browser {
 		}
 		bookmarks = source.bookmarks
 		closedHistoryTabs = source.closedHistoryTabs
+		historyVisits = source.historyVisits
 		closedTabIDs = source.closedTabIDs
 		deletedBookmarkIDs = source.deletedBookmarkIDs
 		if !tabs.contains(where: { $0.id == selectedTabID }) {
@@ -1041,6 +1359,7 @@ final class Browser {
 	}
 
 	private func schedulePersistence(fullState: Bool = true) {
+		guard !isPrivate else { return }
 		BrowserExtensionManager.shared.sync(self)
 		guard persistence != nil else { return }
 		if fullState {
@@ -1077,32 +1396,36 @@ final class Browser {
 	}
 
 	private func persist() {
+		guard !hydrationFailed else { return }
 		guard let persistence else { return }
 		guard didFinishHydration else {
 			pendingFullPersistence = true
 			return
 		}
 		reconcileWorkspace()
-		let isFull = pendingFullPersistence || pendingScrollPersistence
 		let isStructural = pendingFullPersistence
 		pendingFullPersistence = false
 		pendingScrollPersistence = false
+		historyVisits = BrowserVisit.retained(historyVisits, days: Defaults[.historyRetentionDays])
 		let state = BrowserPersistedState(
 			bookmarks: bookmarks,
-			openTabs: isFull ? tabs.map(\.openTab) : [],
-			closedTabs: isFull ? closedHistoryTabs : [],
+			openTabs: tabs.map(\.openTab),
+			closedTabs: closedHistoryTabs,
 			workspace: workspace,
 			snapshot: BrowserSnapshot(
 				selectedTabID: selectedTabID,
 				closedTabIDs: closedTabIDs,
 				deletedBookmarkIDs: deletedBookmarkIDs
-			)
+			),
+			historyVisits: historyVisits
 		)
 		// Encode + file IO off-main so Cmd+T / history-open stay instant.
 		// Scroll-only saves skip cross-window fan-out and sync: no structural change.
-		Task.detached(priority: .utility) { [persistence, state] in
+		let previousWrite = session.persistenceWriteTask
+		session.persistenceWriteTask = Task.detached(priority: .utility) { [persistence, state] in
+			await previousWrite?.value
 			do {
-				try persistence.savePersistedState(state, full: isFull)
+				try persistence.savePersistedState(state)
 				await MainActor.run { [weak self] in
 					guard let self else { return }
 					persistenceErrorDescription = nil

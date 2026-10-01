@@ -13,98 +13,92 @@ struct BrowserExtensionsSettingsView: View {
 	@Environment(\.scenePhase) private var scenePhase
 
 	var body: some View {
-		List {
-			Section("Chrome Extensions") {
-				Button("Browse Chrome Web Store", systemImage: "globe") {
-					if let url = URL(string: "https://chromewebstore.google.com/") {
-						browser.openHistoryURL(url, inBackground: false)
+		NavigationStack {
+			List {
+				Section("Chrome Extensions") {
+					Button("Browse Chrome Web Store", systemImage: "globe") {
+						if let url = URL(string: "https://chromewebstore.google.com/") {
+							browser.openHistoryURL(url, inBackground: false)
+						}
 					}
-				}
-				.accessibilityIdentifier("browse-chrome-web-store")
-				#if os(iOS)
-					Text("Open an extension listing, then touch and hold the address bar and choose Install Extension.")
-						.foregroundStyle(.secondary)
-				#else
+					.accessibilityIdentifier("browse-chrome-web-store")
 					Text("Open an extension listing, then use Install Extension beside the address bar.")
 						.foregroundStyle(.secondary)
-				#endif
-				extensionRows(source: .chrome)
-			}
-			Section("Safari Extensions") {
-				Button("Browse Safari Extensions in App Store", systemImage: "safari") {
-					if let url = URL(string: "macappstore://apps.apple.com/story/id1377753262") {
-						openURL(url)
+					extensionRows(source: .chrome)
+				}
+				Section("Safari Extensions") {
+					Button("Browse Safari Extensions in App Store", systemImage: "safari") {
+						if let url = URL(string: "macappstore://apps.apple.com/story/id1377753262") {
+							openURL(url)
+						}
 					}
-				}
-				.accessibilityIdentifier("browse-safari-app-store")
-				Button("Find Installed Safari Extensions", systemImage: "arrow.clockwise") {
-					Task { await extensions.refreshSafariExtensions() }
-				}
-				.accessibilityIdentifier("refresh-safari-extensions")
-				extensionRows(source: .safari)
-				ForEach(extensions.safariAppExtensions) { candidate in
-					Button("Install \(candidate.name)", systemImage: "plus.circle") {
-						Task { await extensions.installSafariExtension(candidate) }
+					.accessibilityIdentifier("browse-safari-app-store")
+					Button("Find Installed Safari Extensions", systemImage: "arrow.clockwise") {
+						Task { await extensions.refreshSafariExtensions() }
 					}
-					.accessibilityIdentifier("install-safari-\(candidate.id)")
+					.accessibilityIdentifier("refresh-safari-extensions")
+					extensionRows(source: .safari)
+					ForEach(extensions.safariAppExtensions) { candidate in
+						Button("Install \(candidate.name)", systemImage: "plus.circle") {
+							Task { await extensions.installSafariExtension(candidate) }
+						}
+						.accessibilityIdentifier("install-safari-\(candidate.id)")
+					}
+					Text("Get the extension’s app from the App Store, then install its Safari WebExtension here.")
+						.foregroundStyle(.secondary)
 				}
-				Text("Get the extension’s app from the App Store, then install its Safari WebExtension here.")
-					.foregroundStyle(.secondary)
+				Section {
+					Text("Reload open pages after enabling or disabling an extension.")
+						.foregroundStyle(.secondary)
+				}
 			}
-			Section {
-				Text("Reload open pages after enabling or disabling an extension.")
-					.foregroundStyle(.secondary)
+			.scrollContentBackground(.hidden)
+			.listStyle(.sidebar)
+		}
+		.task {
+			await extensions.prepare()
+			await extensions.refreshSafariExtensions()
+		}
+		.onChange(of: scenePhase) { _, phase in
+			if phase == .active {
+				Task { await extensions.refreshSafariExtensions() }
 			}
 		}
-		.scrollContentBackground(.hidden)
-		#if os(iOS)
-			.listStyle(.insetGrouped)
-		#else
-			.listStyle(.sidebar)
-		#endif
-			.task {
-				await extensions.prepare()
-				await extensions.refreshSafariExtensions()
-			}
-			.onChange(of: scenePhase) { _, phase in
-				if phase == .active {
-					Task { await extensions.refreshSafariExtensions() }
+		.fileImporter(isPresented: $showsImporter, allowedContentTypes: [.zip]) { result in
+			guard case let .success(url) = result else { return }
+			let source = importSource
+			Task {
+				do {
+					importedName = try await extensions.installArchive(from: url, source: source)
+					showsEnablePrompt = true
+				} catch {
+					importError = error.localizedDescription
 				}
 			}
-			.fileImporter(isPresented: $showsImporter, allowedContentTypes: [.zip]) { result in
-				guard case let .success(url) = result else { return }
-				let source = importSource
-				Task {
-					do {
-						importedName = try await extensions.installArchive(from: url, source: source)
-						showsEnablePrompt = true
-					} catch {
-						importError = error.localizedDescription
-					}
+		}
+		.confirmationDialog("Enable \(importedName.map(extensions.title(for:)) ?? "Extension")?", isPresented: $showsEnablePrompt) {
+			Button("Enable", systemImage: "checkmark", role: .confirm) {
+				if let importedName {
+					extensions.approveRequestedPermissions(for: importedName)
+					extensions.setEnabled(true, for: importedName)
 				}
 			}
-			.confirmationDialog("Enable \(importedName.map(extensions.title(for:)) ?? "Extension")?", isPresented: $showsEnablePrompt) {
-				Button("Enable", systemImage: "checkmark", role: .confirm) {
-					if let importedName {
-						extensions.setEnabled(true, for: importedName)
-					}
+			Button(role: .cancel) {}
+		} message: {
+			Text(importedName.map(extensions.permissionSummary(for:)) ?? "")
+		}
+		.alert("Extension Import Failed", isPresented: Binding(
+			get: { importError != nil },
+			set: {
+				if !$0 {
+					importError = nil
 				}
-				Button(role: .cancel) {}
-			} message: {
-				Text(importedName.map(extensions.permissionSummary(for:)) ?? "")
 			}
-			.alert("Extension Import Failed", isPresented: Binding(
-				get: { importError != nil },
-				set: {
-					if !$0 {
-						importError = nil
-					}
-				}
-			)) {
-				Button(role: .cancel) {}
-			} message: {
-				Text(importError ?? "Unknown error")
-			}
+		)) {
+			Button(role: .cancel) {}
+		} message: {
+			Text(importError ?? "Unknown error")
+		}
 	}
 
 	@ViewBuilder

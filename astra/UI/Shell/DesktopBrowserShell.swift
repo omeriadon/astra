@@ -11,7 +11,10 @@ struct DesktopBrowserShell: View {
 	}
 
 	@Default(.sidebarShown) private var sidebarShown
-	@State private var downloads = BrowserDownloadManager.shared
+	private var downloads: BrowserDownloadManager {
+		browser.session.downloads
+	}
+
 	@State private var showsDownloads = false
 	@State private var flight: DownloadFlight?
 	@State private var flightProgress = 0.0
@@ -296,11 +299,17 @@ private struct ShellSidebarColumn: View {
 			)
 			.frame(maxWidth: .infinity, alignment: .leading)
 			ZStack(alignment: .top) {
-				ShellSidebarListView(browser: browser, space: browser.selectedSpace, theme: theme)
-					.foregroundStyle(theme.foregroundColor)
-					.offset(x: showsDownloads ? BrowserChromeMetrics.expandedSidebarWidth : -swipeDirection * BrowserChromeMetrics.expandedSidebarWidth * swipeProgress)
+				Group {
+					if browser.isPrivate {
+						PrivateBrowserSidebar(browser: browser)
+					} else {
+						ShellSidebarListView(browser: browser, space: browser.selectedSpace, theme: theme)
+					}
+				}
+				.foregroundStyle(theme.foregroundColor)
+				.offset(x: showsDownloads ? BrowserChromeMetrics.expandedSidebarWidth : -swipeDirection * BrowserChromeMetrics.expandedSidebarWidth * swipeProgress)
 
-				if let swipeTargetID,
+				if !browser.isPrivate, let swipeTargetID,
 				   let target = browser.workspace.spaces.first(where: { $0.id == swipeTargetID }),
 				   !showsDownloads
 				{
@@ -316,6 +325,11 @@ private struct ShellSidebarColumn: View {
 			}
 			.clipped()
 			.frame(maxWidth: .infinity, maxHeight: .infinity)
+			.safeAreaInset(edge: .bottom, spacing: 0) {
+				BrowserMediaActivityView(browser: browser)
+					.padding(.horizontal, 8)
+					.padding(.bottom, 48)
+			}
 			.overlay(alignment: .bottom) {
 				ZStack(alignment: .bottom) {
 					HazeEffect(

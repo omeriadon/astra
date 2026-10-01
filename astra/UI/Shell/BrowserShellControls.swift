@@ -284,69 +284,71 @@ struct ShellExtensionControls: View {
 	@State private var extensions = BrowserExtensionManager.shared
 
 	var body: some View {
-		if let listing = browser.selectedTab?.activeController?.url,
-		   ChromeExtensionPackage.extensionID(from: listing) != nil
-		{
-			Button("Install Extension", systemImage: "square.and.arrow.down") {
-				Task { await extensions.installFromChromeStore(listing) }
+		if !browser.isPrivate {
+			if let listing = browser.selectedTab?.activeController?.url,
+			   ChromeExtensionPackage.extensionID(from: listing) != nil
+			{
+				Button("Install Extension", systemImage: "square.and.arrow.down") {
+					Task { await extensions.installFromChromeStore(listing) }
+				}
+				.disabled(extensions.isInstallingFromStore)
+				.accessibilityIdentifier("install-chrome-store-extension")
 			}
-			.disabled(extensions.isInstallingFromStore)
-			.accessibilityIdentifier("install-chrome-store-extension")
-		}
-		let _ = extensions.actionsRevision
-		ForEach(extensions.loadedNames().filter { extensions.isPinned($0) }, id: \.self) { name in
-			let action = extensions.action(for: name, in: browser)
-			Button {
-				extensions.performAction(name, in: browser)
+			let _ = extensions.actionsRevision
+			ForEach(extensions.loadedNames().filter { extensions.isPinned($0) }, id: \.self) { name in
+				let action = extensions.action(for: name, in: browser)
+				Button {
+					extensions.performAction(name, in: browser)
+				} label: {
+					#if os(macOS)
+						if let icon = action?.icon(for: CGSize(width: 18, height: 18)) {
+							Image(nsImage: icon)
+								.resizable()
+								.frame(width: 18, height: 18)
+						} else {
+							Label(action?.label ?? extensions.title(for: name), systemImage: "puzzlepiece.extension.fill")
+								.labelStyle(.iconOnly)
+						}
+					#else
+						if let icon = action?.icon(for: CGSize(width: 18, height: 18)) {
+							Image(uiImage: icon)
+								.resizable()
+								.frame(width: 18, height: 18)
+						} else {
+							Label(action?.label ?? extensions.title(for: name), systemImage: "puzzlepiece.extension.fill")
+								.labelStyle(.iconOnly)
+						}
+					#endif
+				}
+				.disabled(action?.isEnabled == false)
+				.controlSize(.regular)
+				.buttonSizing(.fitted)
+				.buttonStyle(.bordered)
+				.foregroundStyle(theme.foregroundColor)
+				.accessibilityLabel(action?.label ?? extensions.title(for: name))
+				.accessibilityIdentifier("extension-action-\(name)")
+			}
+
+			Menu {
+				ForEach(extensions.availableNames, id: \.self) { name in
+					extensionMenuItem(extensions.title(for: name), name: name)
+				}
+				Divider()
+				Button("Manage Extensions", systemImage: "gearshape") {
+					browser.settingsPage = .extensions
+					browser.openInternalPage(.settings)
+				}
 			} label: {
-				#if os(macOS)
-					if let icon = action?.icon(for: CGSize(width: 18, height: 18)) {
-						Image(nsImage: icon)
-							.resizable()
-							.frame(width: 18, height: 18)
-					} else {
-						Label(action?.label ?? extensions.title(for: name), systemImage: "puzzlepiece.extension.fill")
-							.labelStyle(.iconOnly)
-					}
-				#else
-					if let icon = action?.icon(for: CGSize(width: 18, height: 18)) {
-						Image(uiImage: icon)
-							.resizable()
-							.frame(width: 18, height: 18)
-					} else {
-						Label(action?.label ?? extensions.title(for: name), systemImage: "puzzlepiece.extension.fill")
-							.labelStyle(.iconOnly)
-					}
-				#endif
+				Label("Extensions", systemImage: "puzzlepiece.extension")
+					.labelStyle(.iconOnly)
 			}
-			.disabled(action?.isEnabled == false)
 			.controlSize(.regular)
 			.buttonSizing(.fitted)
 			.buttonStyle(.bordered)
 			.foregroundStyle(theme.foregroundColor)
-			.accessibilityLabel(action?.label ?? extensions.title(for: name))
-			.accessibilityIdentifier("extension-action-\(name)")
+			.accessibilityLabel("Extensions")
+			.accessibilityIdentifier("browser-extensions")
 		}
-
-		Menu {
-			ForEach(extensions.availableNames, id: \.self) { name in
-				extensionMenuItem(extensions.title(for: name), name: name)
-			}
-			Divider()
-			Button("Manage Extensions", systemImage: "gearshape") {
-				browser.settingsPage = .extensions
-				browser.openInternalPage(.settings)
-			}
-		} label: {
-			Label("Extensions", systemImage: "puzzlepiece.extension")
-				.labelStyle(.iconOnly)
-		}
-		.controlSize(.regular)
-		.buttonSizing(.fitted)
-		.buttonStyle(.bordered)
-		.foregroundStyle(theme.foregroundColor)
-		.accessibilityLabel("Extensions")
-		.accessibilityIdentifier("browser-extensions")
 	}
 
 	@ViewBuilder
@@ -469,27 +471,35 @@ struct ShellDownloadsBarView: View {
 				}
 			}
 
-			BrowserSpacesBar(browser: browser, onSwipeProgress: onSwipeProgress)
-				.frame(maxWidth: .infinity)
-
-			Button {
-				browser.createSpace()
-			} label: {
-				Image(systemName: "plus")
-					.frame(width: 25, height: 25)
-					.background {
-						if addSpaceHover {
-							RoundedRectangle(cornerRadius: 8)
-								.fill(Color.primary.gradient)
-								.opacity(0.3)
-						}
-					}
-					.contentShape(Rectangle())
+			if browser.isPrivate {
+				Label("Private", systemImage: "eye.slash")
+					.font(.caption)
+					.frame(maxWidth: .infinity)
+			} else {
+				BrowserSpacesBar(browser: browser, onSwipeProgress: onSwipeProgress)
+					.frame(maxWidth: .infinity)
 			}
-			.buttonStyle(.plain)
-			.accessibilityLabel("Add Space")
-			.accessibilityIdentifier("add-space")
-			.onHover { addSpaceHover = $0 }
+
+			if !browser.isPrivate {
+				Button {
+					browser.createSpace()
+				} label: {
+					Image(systemName: "plus")
+						.frame(width: 25, height: 25)
+						.background {
+							if addSpaceHover {
+								RoundedRectangle(cornerRadius: 8)
+									.fill(Color.primary.gradient)
+									.opacity(0.3)
+							}
+						}
+						.contentShape(Rectangle())
+				}
+				.buttonStyle(.plain)
+				.accessibilityLabel("Add Space")
+				.accessibilityIdentifier("add-space")
+				.onHover { addSpaceHover = $0 }
+			}
 		}
 		.padding([.horizontal, .bottom], 8)
 	}

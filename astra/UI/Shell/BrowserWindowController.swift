@@ -7,6 +7,7 @@
 		let browser: Browser
 		let window: NSWindow
 		var onClose: (() -> Void)?
+		private var allowsClosing = false
 
 		override convenience init() {
 			self.init(browser: Browser())
@@ -47,12 +48,14 @@
 			let contentHost = BrowserContentHostView(hostingView: hostingView)
 
 			super.init()
-			BrowserExtensionManager.shared.extensionWindow(for: browser).nativeWindow = window
+			if !browser.isPrivate {
+				BrowserExtensionManager.shared.extensionWindow(for: browser).nativeWindow = window
+			}
 
 			window.delegate = self
 			window.contentView = contentHost
 			window.contentMinSize = NSSize(width: 640, height: 480)
-			window.title = "astra"
+			window.title = browser.isPrivate ? "astra — Private Browsing" : "astra"
 			window.titleVisibility = .hidden
 			window.titlebarAppearsTransparent = true
 			window.titlebarSeparatorStyle = .none
@@ -71,9 +74,38 @@
 			BrowserWindowRegistry.shared.activate(browser)
 		}
 
+		func windowShouldClose(_ sender: NSWindow) -> Bool {
+			guard !allowsClosing else { return true }
+			Task { @MainActor in
+				if browser.tabs.contains(where: { tab in
+					tab.controller?.hasUnsavedChanges == true || tab.peeks.contains { $0.controller.hasUnsavedChanges }
+				}) {
+					let alert = BrowserWebsiteUI.alert(title: "Close this window?", message: "Some tabs contain changes that may not be saved.", confirm: "Close Window")
+					guard await BrowserWebsiteUI.present(alert, in: sender) == .alertFirstButtonReturn else { return }
+				}
+				await browser.flushAndWaitForPersistence()
+				if let error = browser.persistenceErrorDescription {
+					let alert = BrowserWebsiteUI.alert(title: "Close without saving?", message: error, confirm: "Close Without Saving")
+					guard await BrowserWebsiteUI.present(alert, in: sender) == .alertFirstButtonReturn else { return }
+				}
+				allowsClosing = true
+				sender.performClose(nil)
+			}
+			return false
+		}
+
 		func windowWillClose(_: Notification) {
 			BrowserExtensionManager.shared.closeWindow(for: browser)
+			BrowserWindowRegistry.shared.unregister(browser)
 			browser.flushPersistence()
+			for tab in browser.tabs {
+				tab.stopForClose()
+			}
+			if browser.isPrivate {
+				let session = browser.session
+				Task { await session.endPrivateSession() }
+			}
+			window.contentView = nil
 			onClose?()
 		}
 	}

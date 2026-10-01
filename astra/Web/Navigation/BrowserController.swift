@@ -11,7 +11,68 @@ import WebKit
 
 @MainActor
 @Observable
-final class BrowserController: NSObject {
+final class BrowserController: NSObject, Identifiable {
+	let id = UUID()
+	let session: BrowserWebSession
+	private let suppliedConfiguration: WKWebViewConfiguration?
+	private var pendingInteractionState: Data?
+	@ObservationIgnored
+	private var securityScopedFile: URL?
+	private(set) var fileAccessBookmark: Data?
+	private var pendingLocalFile: URL?
+	private(set) var liveHistoryPrefix: [URL]
+	@ObservationIgnored
+	private var mediaObservationTask: Task<Void, Never>?
+	private(set) var isPlayingMedia = false
+	private(set) var mediaTitle: String?
+	private(set) var mediaArtist: String?
+	private(set) var pausedFromBrowser = false
+	private(set) var committedURL: URL?
+	private(set) var hasOnlySecureContent = false
+	var showsFind = false
+	var findText = ""
+	private(set) var findHasMatch = true
+	@ObservationIgnored
+	private var findGeneration = 0
+	private(set) var hasUnsavedChanges = false
+	private(set) var cameraCaptureState: WKMediaCaptureState = .none
+	private(set) var microphoneCaptureState: WKMediaCaptureState = .none
+	var popupRequested: ((WKWebViewConfiguration, UnitPoint, Bool?) -> WKWebView?)?
+	var newTabRequested: ((URLRequest, Bool) -> Void)?
+	var closeRequested: (() -> Void)?
+	@ObservationIgnored
+	var navigationIntercept: ((URL) -> Bool)?
+
+	var isCapturing: Bool {
+		cameraCaptureState != .none || microphoneCaptureState != .none
+	}
+
+	var connectionDescription: String {
+		guard navigationFailure == nil else { return "Connection Failed" }
+		guard let committedURL else { return "No Page Loaded" }
+		if committedURL.isFileURL {
+			return "Local File"
+		}
+		if committedURL.scheme == "https" {
+			return hasOnlySecureContent ? "Connection Encrypted" : "Mixed Content"
+		}
+		return committedURL.scheme == "http" ? "Not Secure" : "Local Content"
+	}
+
+	var connectionSymbol: String {
+		guard navigationFailure == nil else { return "exclamationmark.shield" }
+		if committedURL?.scheme == "https", hasOnlySecureContent {
+			return "lock.shield"
+		}
+		return committedURL?.scheme == "http" ? "exclamationmark.triangle" : "info.circle"
+	}
+
+	var canHibernate: Bool {
+		!isPlayingMedia && !isCapturing && !hasUnsavedChanges && !isLoading
+			&& (createdWebView == nil || (createdWebView?.cameraCaptureState == WKMediaCaptureState.none
+					&& createdWebView?.microphoneCaptureState == WKMediaCaptureState.none))
+	}
+
 	private static var cachedSafariUserAgentSuffix: String?
 
 	private static func userAgentOverride(for url: URL?) -> String? {
@@ -176,10 +237,10 @@ final class BrowserController: NSObject {
 	func toggleZap() {
 		guard let webView = createdWebView, url != nil else { return }
 		if isZapping {
-			webView.evaluateJavaScript("window.__astraZap?.()")
+			webView.evaluateJavaScript("window.__astraZap?.()", in: nil, in: .defaultClient, completionHandler: nil)
 			isZapping = false
 		} else {
-			webView.evaluateJavaScript(Self.zapScript)
+			webView.evaluateJavaScript(Self.zapScript, in: nil, in: .defaultClient, completionHandler: nil)
 			isZapping = true
 		}
 	}
@@ -202,11 +263,11 @@ final class BrowserController: NSObject {
 	}
 
 	var canGoBack: Bool {
-		historyManager.canGoBack
+		createdWebView?.canGoBack ?? false
 	}
 
 	var canGoForward: Bool {
-		historyManager.canGoForward
+		createdWebView?.canGoForward ?? false
 	}
 
 	var url: URL?
@@ -246,6 +307,15 @@ final class BrowserController: NSObject {
 	private var observations: [NSKeyValueObservation] = []
 	@ObservationIgnored
 	private var navigationGeneration = 0
+
+	var navigationIdentifier: Int {
+		navigationGeneration
+	}
+
+	var canRecordVisit: Bool {
+		!awaitsNavigationCommit
+	}
+
 	@ObservationIgnored
 	private var hasDeclaredThemeColor = false
 	@ObservationIgnored
@@ -269,11 +339,23 @@ final class BrowserController: NSObject {
 
 	init(
 		initialURL: URL? = nil,
+		session: BrowserWebSession? = nil,
+		configuration: WKWebViewConfiguration? = nil,
 		history: [URL] = [],
 		historyIndex: Int = 0,
-		scrollPosition: BrowserScrollPosition = .zero
+		scrollPosition: BrowserScrollPosition = .zero,
+		restorationState: Data? = nil,
+		fileAccessBookmark: Data? = nil
 	) {
+		let session = session ?? .shared
 		let restoredHistory = BrowserHistory(entries: history, index: historyIndex, initialURL: initialURL)
+		self.session = session
+		self.fileAccessBookmark = fileAccessBookmark
+		if !session.isPrivate, let initialURL, let restorationState {
+			pendingInteractionState = BrowserRestorationStore.open(restorationState, for: initialURL)
+		}
+		suppliedConfiguration = configuration
+		liveHistoryPrefix = Array(restoredHistory.entries.prefix(restoredHistory.index))
 		historyManager = restoredHistory
 		url = restoredHistory.currentURL
 		self.scrollPosition = scrollPosition
@@ -285,8 +367,149 @@ final class BrowserController: NSObject {
 		#endif
 
 		if let url {
-			load(URLRequest(url: url))
+			#if os(macOS)
+				if url.isFileURL, let fileAccessBookmark {
+					var stale = false
+					if let resolved = try? URL(resolvingBookmarkData: fileAccessBookmark, options: [.withSecurityScope, .withoutUI], relativeTo: nil, bookmarkDataIsStale: &stale) {
+						securityScopedFile = resolved.startAccessingSecurityScopedResource() ? resolved : nil
+						pendingLocalFile = resolved
+						if resolved != url {
+							pendingInteractionState = nil
+							self.url = resolved
+							historyManager = BrowserHistory(initialURL: resolved)
+						}
+						if stale {
+							self.fileAccessBookmark = try? resolved.bookmarkData(options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess], includingResourceValuesForKeys: nil, relativeTo: nil)
+						}
+					}
+				}
+			#endif
+			load(URLRequest(url: self.url ?? url))
 		}
+	}
+
+	private static let activityScript = """
+	(() => {
+		const report = value => window.webkit.messageHandlers.pageActivityChanged.postMessage(value);
+		document.addEventListener('input', event => {
+			if (event.isTrusted && (event.target.matches('input:not([type="search"]), textarea, select') || event.target.closest('[contenteditable]'))) report('dirty');
+		}, true);
+		document.addEventListener('submit', () => report('submitted'), true);
+		document.addEventListener('playing', () => report('playing'), true);
+	})();
+	"""
+
+	private func startMediaObservation() {
+		mediaObservationTask = Task { @MainActor [weak self] in
+			while !Task.isCancelled {
+				guard self?.createdWebView != nil else { return }
+				await self?.refreshActivity()
+				guard !Task.isCancelled else { return }
+				do {
+					try await Task.sleep(for: .seconds(1))
+				} catch {
+					return
+				}
+			}
+		}
+	}
+
+	func refreshActivity() async {
+		guard let webView = createdWebView else { return }
+		let state = await webView.requestMediaPlaybackState()
+		isPlayingMedia = state == .playing
+		if state == .playing || state == .none {
+			pausedFromBrowser = false
+		}
+		if state == .playing {
+			let script = "({ title: navigator.mediaSession?.metadata?.title ?? '', artist: navigator.mediaSession?.metadata?.artist ?? '' })"
+			let documentID = navigationIdentifier
+			let metadata: [String: String]? = await withCheckedContinuation { continuation in
+				webView.evaluateJavaScript(script, in: nil, in: .defaultClient) { result in
+					continuation.resume(returning: (try? result.get()) as? [String: String])
+				}
+			}
+			if documentID == navigationIdentifier, let metadata {
+				mediaTitle = metadata["title"].flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
+				mediaArtist = metadata["artist"].flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
+			}
+		}
+		cameraCaptureState = webView.cameraCaptureState
+		microphoneCaptureState = webView.microphoneCaptureState
+	}
+
+	func findNext(backwards: Bool = false) {
+		guard let webView = createdWebView else { return }
+		findGeneration += 1
+		let generation = findGeneration
+		let configuration = WKFindConfiguration()
+		configuration.backwards = backwards
+		configuration.wraps = true
+		webView.find(findText, configuration: configuration) { [weak self] result in
+			guard let self, generation == findGeneration else { return }
+			findHasMatch = findText.isEmpty || result.matchFound
+		}
+	}
+
+	func dismissFind() {
+		showsFind = false
+		findText = ""
+		findNext()
+		#if os(macOS)
+			createdWebView?.window?.makeFirstResponder(createdWebView)
+		#endif
+	}
+
+	#if os(macOS)
+		func loadLocalFile(_ url: URL) {
+			guard url.isFileURL else { return }
+			securityScopedFile?.stopAccessingSecurityScopedResource()
+			securityScopedFile = url.startAccessingSecurityScopedResource() ? url : nil
+			fileAccessBookmark = try? url.bookmarkData(options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess], includingResourceValuesForKeys: nil, relativeTo: nil)
+			awaitsNavigationCommit = true
+			currentNavigation = webView.loadFileURL(url, allowingReadAccessTo: url)
+		}
+	#endif
+
+	func pauseMedia() {
+		pausedFromBrowser = true
+		createdWebView?.pauseAllMediaPlayback(completionHandler: { [weak self] in
+			self?.isPlayingMedia = false
+			self?.pausedFromBrowser = true
+		})
+	}
+
+	func stopCapture(capability: BrowserSitePermissions.Capability? = nil) {
+		if capability == nil || capability == .camera {
+			createdWebView?.setCameraCaptureState(.none, completionHandler: nil)
+			cameraCaptureState = .none
+		}
+		if capability == nil || capability == .microphone {
+			createdWebView?.setMicrophoneCaptureState(.none, completionHandler: nil)
+			microphoneCaptureState = .none
+		}
+	}
+
+	func stopForClose() {
+		navigationGeneration += 1
+		securityScopedFile?.stopAccessingSecurityScopedResource()
+		securityScopedFile = nil
+		mediaObservationTask?.cancel()
+		createdWebView?.stopLoading()
+		createdWebView?.setAllMediaPlaybackSuspended(true, completionHandler: nil)
+		stopCapture()
+	}
+
+	var encryptedInteractionState: Data? {
+		guard !session.isPrivate, canRecordVisit, let committedURL,
+		      let data = createdWebView?.interactionState as? Data else { return nil }
+		return BrowserRestorationStore.seal(data, for: BrowserAddress.withoutCredentials(committedURL))
+	}
+
+	func restoreInteractionState(_ state: Any, historyPrefix: [URL]) {
+		liveHistoryPrefix = historyPrefix
+		webView.interactionState = state
+		updateHistory()
 	}
 
 	func prepareWebView() {
@@ -294,46 +517,64 @@ final class BrowserController: NSObject {
 	}
 
 	private func makeWebView() -> WKWebView {
-		let configuration = WKWebViewConfiguration()
-		configuration.webExtensionController = BrowserExtensionManager.shared.controller
+		let configuration = suppliedConfiguration ?? WKWebViewConfiguration()
+		if suppliedConfiguration != nil {
+			configuration.userContentController = WKUserContentController()
+		}
+		configuration.websiteDataStore = session.dataStore
+		configuration.webExtensionController = session.isPrivate ? nil : BrowserExtensionManager.shared.controller
+		configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+		configuration.preferences.isElementFullscreenEnabled = true
+		configuration.preferences.isFraudulentWebsiteWarningEnabled = true
+		configuration.preferences.inactiveSchedulingPolicy = .suspend
+		configuration.mediaTypesRequiringUserActionForPlayback = .audio
+		configuration.allowsAirPlayForMediaPlayback = true
 		#if os(macOS)
-			configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
+			if configuration.preferences.responds(to: NSSelectorFromString("_setDeveloperExtrasEnabled:")) {
+				configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
+			}
 		#endif
 		if let suffix = Self.safariUserAgentSuffix() {
 			configuration.applicationNameForUserAgent = suffix
 		}
-		FaviconStore.shared.configureFaviconObservation(in: configuration.userContentController)
+		session.favicons.configureFaviconObservation(in: configuration.userContentController)
 		let webView = PeekSourceWebView(frame: .zero, configuration: configuration)
 		#if os(macOS)
 			webView.isInspectable = true
 			// WebKit's docked inspector resizes the web view outside SwiftUI's layout.
 			let inspectorAttachmentView = NSView(frame: .zero)
 			inspectorAttachmentView.isHidden = true
-			webView.setValue(inspectorAttachmentView, forKey: "inspectorAttachmentView")
+			if webView.responds(to: NSSelectorFromString("_setInspectorAttachmentView:")) {
+				webView.perform(NSSelectorFromString("_setInspectorAttachmentView:"), with: inspectorAttachmentView)
+			}
 		#endif
 		createdWebView = webView
 		let scrollHandler = WeakScriptMessageHandler(delegate: self)
 		webView.configuration.userContentController.add(
 			scrollHandler,
-			contentWorld: .page,
+			contentWorld: .defaultClient,
 			name: Self.scrollPositionMessageName
 		)
 		webView.configuration.userContentController.add(
 			scrollHandler,
-			contentWorld: .page,
+			contentWorld: .defaultClient,
 			name: Self.topEdgeMessageName
 		)
 		webView.configuration.userContentController.add(
 			scrollHandler,
-			contentWorld: .page,
+			contentWorld: .defaultClient,
 			name: Self.zapFinishedMessageName
+		)
+		webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "pageActivityChanged")
+		webView.configuration.userContentController.addUserScript(
+			WKUserScript(source: Self.activityScript, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient)
 		)
 		webView.configuration.userContentController.addUserScript(
 			WKUserScript(
 				source: Self.scrollPositionScript,
 				injectionTime: .atDocumentEnd,
 				forMainFrameOnly: true,
-				in: .page
+				in: .defaultClient
 			)
 		)
 		webView.configuration.userContentController.addUserScript(
@@ -341,7 +582,7 @@ final class BrowserController: NSObject {
 				source: Self.topEdgeScript,
 				injectionTime: .atDocumentEnd,
 				forMainFrameOnly: true,
-				in: .page
+				in: .defaultClient
 			)
 		)
 		webView.navigationDelegate = self
@@ -357,6 +598,9 @@ final class BrowserController: NSObject {
 		updateThemeColor(url == nil ? .black : webView.underPageBackgroundColor ?? .white)
 
 		observations = [
+			webView.observe(\.hasOnlySecureContent, options: [.initial, .new]) { [weak self] webView, _ in
+				MainActor.assumeIsolated { self?.hasOnlySecureContent = webView.hasOnlySecureContent }
+			},
 			webView.observe(\.isLoading, options: [.initial, .new]) { [weak self] webView, _ in
 				MainActor.assumeIsolated {
 					self?.isLoading = webView.isLoading
@@ -407,47 +651,74 @@ final class BrowserController: NSObject {
 				}
 			},
 		]
+		startMediaObservation()
 		isWebViewReady = true
 		extensionWebViewDidChange?()
 		// Start any deferred navigation immediately; WKWebView loads fine
 		// with a zero frame so we don't wait for first layout.
-		loadPendingRequest()
+		if let state = pendingInteractionState {
+			pendingInteractionState = nil
+			liveHistoryPrefix = []
+			webView.interactionState = state
+			if webView.backForwardList.currentItem != nil {
+				pendingRequest = nil
+				pendingLocalFile = nil
+				updateHistory()
+			} else {
+				loadPendingRequest()
+			}
+		} else {
+			loadPendingRequest()
+		}
 		return webView
 	}
 
 	deinit {
+		mediaObservationTask?.cancel()
 		#if os(macOS)
 			previewSnapshotRefreshTask?.cancel()
 		#endif
 	}
 
 	func load(_ url: URL) {
+		navigate(URLRequest(url: url))
+	}
+
+	func navigate(_ request: URLRequest) {
+		guard let url = request.url else { return }
 		createdWebView?.stopLoading()
 		(createdWebView as? PeekSourceWebView)?.consumeRecentClick()
 		historyManager.beginVisit()
 		self.url = url
 		scrollPosition = .zero
 		restoredScrollPosition = nil
-		load(URLRequest(url: url))
+		load(request)
 	}
 
 	func goBack() {
-		go(toHistoryIndex: historyIndex - 1)
+		guard let webView = createdWebView, webView.canGoBack else { return }
+		awaitsNavigationCommit = true
+		currentNavigation = webView.goBack()
 	}
 
 	func goForward() {
-		go(toHistoryIndex: historyIndex + 1)
+		guard let webView = createdWebView, webView.canGoForward else { return }
+		awaitsNavigationCommit = true
+		currentNavigation = webView.goForward()
 	}
 
 	func go(toHistoryIndex index: Int) {
-		guard let destination = historyManager.select(index) else { return }
-		createdWebView?.stopLoading()
-		(createdWebView as? PeekSourceWebView)?.consumeRecentClick()
-		url = destination
-		scrollPosition = .zero
-		restoredScrollPosition = nil
-		navigationDidChange?()
-		load(URLRequest(url: destination))
+		guard history.indices.contains(index), index != historyIndex else { return }
+		if let webView = createdWebView,
+		   let item = webView.backForwardList.item(at: index - historyIndex)
+		{
+			awaitsNavigationCommit = true
+			currentNavigation = webView.go(to: item)
+		} else {
+			// URL records from an earlier launch can be revisited; live navigation
+			// uses WebKit's entries so POST requests and page state stay intact.
+			load(history[index])
+		}
 	}
 
 	func reload() {
@@ -503,7 +774,7 @@ final class BrowserController: NSObject {
 	func loadFaviconIfMissing() {
 		guard let url, let webView = createdWebView else { return }
 		Task { @MainActor in
-			await FaviconStore.shared.loadFavicon(
+			await session.favicons.loadFavicon(
 				for: url,
 				from: webView,
 				onlyIfMissing: true
@@ -512,6 +783,10 @@ final class BrowserController: NSObject {
 	}
 
 	#if os(macOS)
+		func discardPreviewSnapshot() {
+			previewSnapshot = nil
+		}
+
 		func refreshPreviewSnapshot() async {
 			guard let image = await takeSnapshot() else { return }
 			previewSnapshot = image
@@ -521,7 +796,12 @@ final class BrowserController: NSObject {
 	private func updateHistory() {
 		guard let currentURL = createdWebView?.url else { return }
 		url = currentURL
-		historyManager.record(currentURL)
+		if let list = createdWebView?.backForwardList, let current = list.currentItem {
+			let entries = liveHistoryPrefix + list.backList.map(\.url) + [current.url] + list.forwardList.map(\.url)
+			historyManager = BrowserHistory(entries: entries, index: liveHistoryPrefix.count + list.backList.count)
+		} else {
+			historyManager.record(currentURL)
+		}
 		navigationDidChange?()
 	}
 
@@ -537,6 +817,14 @@ final class BrowserController: NSObject {
 	}
 
 	private func loadPendingRequest() {
+		#if os(macOS)
+			if let file = pendingLocalFile, let webView = createdWebView {
+				pendingLocalFile = nil
+				pendingRequest = nil
+				currentNavigation = webView.loadFileURL(file, allowingReadAccessTo: file)
+				return
+			}
+		#endif
 		guard let pendingRequest else { return }
 		load(pendingRequest)
 	}
@@ -610,24 +898,53 @@ extension BrowserController: WKNavigationDelegate {
 	func webView(
 		_ webView: WKWebView,
 		decidePolicyFor navigationAction: WKNavigationAction,
-		decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+		preferences: WKWebpagePreferences,
+		decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
 	) {
+		#if os(macOS)
+			preferences.globalPrivacyControlEnabled = Defaults[.globalPrivacyControl]
+			let host = navigationAction.request.url?.host?.lowercased() ?? ""
+			let isLocal = host == "localhost" || host.hasSuffix(".localhost") || host == "127.0.0.1" || host == "::1"
+			preferences.preferredHTTPSNavigationPolicy = Defaults[.tryHTTPSFirst] && !isLocal
+				&& navigationAction.request.httpMethod == "GET" ? .automaticFallbackToHTTP : .keepAsRequested
+		#endif
+		if navigationAction.targetFrame?.isMainFrame == true,
+		   let destination = navigationAction.request.url,
+		   navigationIntercept?(destination) == true
+		{
+			decisionHandler(.cancel, preferences)
+			return
+		}
 		if navigationAction.targetFrame?.isMainFrame == true {
 			webView.customUserAgent = Self.userAgentOverride(for: navigationAction.request.url)
 		}
-		if let url = navigationAction.request.url, handleMailtoLink(url) {
-			decisionHandler(.cancel)
+		if let url = navigationAction.request.url, handleExternalLink(url, in: webView) {
+			decisionHandler(.cancel, preferences)
 			return
 		}
 		if navigationAction.shouldPerformDownload {
 			prepareDownloadHandoff(in: webView)
-			decisionHandler(.download)
+			decisionHandler(.download, preferences)
 			return
 		}
 		isDownloadHandoff = false
 		pageURLBeforeDownload = nil
 		#if os(macOS)
-			let shiftPressed = navigationAction.modifierFlags.contains(.shift)
+			let tabInBackground = Self.linkTabInBackground(
+				navigationType: navigationAction.navigationType,
+				modifiers: navigationAction.modifierFlags,
+				buttonNumber: navigationAction.buttonNumber
+			)
+			if navigationAction.targetFrame != nil,
+			   navigationAction.sourceFrame.webView === webView,
+			   let tabInBackground, let newTabRequested
+			{
+				decisionHandler(.cancel, preferences)
+				(webView as? PeekSourceWebView)?.consumeRecentClick()
+				newTabRequested(navigationAction.request, tabInBackground)
+				return
+			}
+			let shiftPressed = navigationAction.modifierFlags.contains(.shift) && tabInBackground == nil
 		#else
 			let shiftPressed = (webView as? PeekSourceWebView)?.hasShiftClick == true
 		#endif
@@ -647,11 +964,11 @@ extension BrowserController: WKNavigationDelegate {
 						break
 				}
 			}
-			decisionHandler(.allow)
+			decisionHandler(.allow, preferences)
 			return
 		}
 		let source = newWindowSource(in: webView)
-		decisionHandler(.cancel)
+		decisionHandler(.cancel, preferences)
 		newWindowRequested(url, source)
 	}
 
@@ -673,7 +990,7 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webView(_ webView: WKWebView, navigationAction _: WKNavigationAction, didBecome download: WKDownload) {
-		BrowserDownloadManager.shared.start(
+		session.downloads.start(
 			download,
 			sourceURL: pageURLBeforeDownload ?? webView.url,
 			source: newWindowSource(in: webView)
@@ -683,7 +1000,7 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webView(_ webView: WKWebView, navigationResponse _: WKNavigationResponse, didBecome download: WKDownload) {
 		let source = pendingDownloadSource ?? newWindowSource(in: webView)
-		BrowserDownloadManager.shared.start(
+		session.downloads.start(
 			download,
 			sourceURL: pendingDownloadSiteURL ?? pageURLBeforeDownload ?? webView.url,
 			source: source
@@ -728,6 +1045,9 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
 		isZapping = false
+		mediaTitle = nil
+		mediaArtist = nil
+		pausedFromBrowser = false
 		currentNavigation = navigation
 		navigationFailure = nil
 		awaitsNavigationCommit = true
@@ -751,7 +1071,9 @@ extension BrowserController: WKNavigationDelegate {
 		navigationDidChange?()
 	}
 
-	func webView(_: WKWebView, didCommit navigation: WKNavigation!) {
+	func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+		committedURL = webView.url
+		hasUnsavedChanges = false
 		guard navigation === currentNavigation else { return }
 		isDownloadHandoff = false
 		pageURLBeforeDownload = nil
@@ -772,7 +1094,7 @@ extension BrowserController: WKNavigationDelegate {
 		let generation = navigationGeneration
 		if let url {
 			Task { @MainActor in
-				await FaviconStore.shared.loadFavicon(for: url, from: webView, onlyIfMissing: true)
+				await session.favicons.loadFavicon(for: url, from: webView, onlyIfMissing: true)
 			}
 		}
 		Task { @MainActor [weak self] in
@@ -795,6 +1117,19 @@ extension BrowserController: WKNavigationDelegate {
 
 extension BrowserController: WKScriptMessageHandler {
 	func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
+		if message.name == "pageActivityChanged" {
+			guard let activity = message.body as? String else { return }
+			switch activity {
+				case "dirty":
+					hasUnsavedChanges = true
+					scrollPositionDidChange?()
+				case "submitted":
+					scrollPositionDidChange?()
+				case "playing": isPlayingMedia = true
+				default: break
+			}
+			return
+		}
 		guard message.frameInfo.isMainFrame else { return }
 		if message.name == Self.zapFinishedMessageName {
 			isZapping = false
@@ -811,7 +1146,8 @@ extension BrowserController: WKScriptMessageHandler {
 		guard message.name == Self.scrollPositionMessageName,
 		      let position = message.body as? [String: Double],
 		      let x = position["x"],
-		      let y = position["y"]
+		      let y = position["y"],
+		      x.isFinite, y.isFinite
 		else { return }
 
 		let nextPosition = BrowserScrollPosition(x: x, y: y)
@@ -828,38 +1164,61 @@ extension BrowserController: WKScriptMessageHandler {
 extension BrowserController: WKUIDelegate {
 	func webView(
 		_ webView: WKWebView,
-		createWebViewWith _: WKWebViewConfiguration,
+		createWebViewWith configuration: WKWebViewConfiguration,
 		for navigationAction: WKNavigationAction,
 		windowFeatures _: WKWindowFeatures
 	) -> WKWebView? {
-		if let url = navigationAction.request.url, handleMailtoLink(url) {
+		if navigationAction.targetFrame == nil, let destination = navigationAction.request.url,
+		   navigationIntercept?(destination) == true
+		{
+			return nil
+		}
+		if let url = navigationAction.request.url, handleExternalLink(url, in: webView) {
 			return nil
 		}
 		if navigationAction.shouldPerformDownload {
 			let source = newWindowSource(in: webView)
 			let sourceURL = webView.url
 			webView.startDownload(using: navigationAction.request) { download in
-				BrowserDownloadManager.shared.start(download, sourceURL: sourceURL, source: source)
+				self.session.downloads.start(download, sourceURL: sourceURL, source: source)
 			}
 			return nil
 		}
-		guard navigationAction.targetFrame == nil,
-		      let url = navigationAction.request.url
-		else { return nil }
-
-		newWindowRequested?(url, newWindowSource(in: webView))
-		return nil
+		guard navigationAction.targetFrame == nil else { return nil }
+		#if os(macOS)
+			let inBackground = Self.linkTabInBackground(
+				navigationType: navigationAction.navigationType,
+				modifiers: navigationAction.modifierFlags,
+				buttonNumber: navigationAction.buttonNumber
+			)
+		#else
+			let inBackground: Bool? = nil
+		#endif
+		return popupRequested?(configuration, newWindowSource(in: webView), inBackground)
 	}
+
+	#if os(macOS)
+		static func linkTabInBackground(
+			navigationType: WKNavigationType,
+			modifiers: NSEvent.ModifierFlags,
+			buttonNumber: Int
+		) -> Bool? {
+			// WKNavigationAction uses WebKit's button mask: middle is 1 << 2.
+			guard navigationType == .linkActivated,
+			      modifiers.contains(.command) || buttonNumber == 1 << 2 else { return nil }
+			return !modifiers.contains(.shift)
+		}
+	#endif
 
 	private func newWindowSource(in webView: WKWebView) -> UnitPoint {
 		(webView as? PeekSourceWebView)?.consumeSource() ?? .center
 	}
 
-	private func handleMailtoLink(_ url: URL) -> Bool {
-		guard url.scheme?.lowercased() == "mailto" else { return false }
-
+	private func handleExternalLink(_ url: URL, in webView: WKWebView) -> Bool {
+		guard let scheme = url.scheme?.lowercased(),
+		      !["http", "https", "about", "data", "blob", "file"].contains(scheme) else { return false }
 		let addresses = URLComponents(url: url, resolvingAgainstBaseURL: false)?.path ?? ""
-		if Defaults[.copyMailtoAddresses], !addresses.isEmpty {
+		if scheme == "mailto", Defaults[.copyMailtoAddresses], !addresses.isEmpty {
 			#if os(macOS)
 				NSPasteboard.general.clearContents()
 				NSPasteboard.general.setString(addresses, forType: .string)
@@ -867,13 +1226,28 @@ extension BrowserController: WKUIDelegate {
 				UIPasteboard.general.string = addresses
 			#endif
 			ToastManager.shared.show(symbol: "doc.on.doc", message: "Email address copied")
-		} else {
-			#if os(macOS)
-				NSWorkspace.shared.open(url)
-			#elseif os(iOS)
-				UIApplication.shared.open(url)
-			#endif
+			return true
 		}
+		#if os(macOS)
+			guard NSWorkspace.shared.urlForApplication(toOpen: url) != nil else { return true }
+			let documentID = navigationIdentifier
+			Task { @MainActor in
+				let alert = BrowserWebsiteUI.alert(
+					title: "Open another application?",
+					message: "\(webView.url?.host ?? "This website") wants to open a \(scheme) link.",
+					confirm: "Open Application"
+				)
+				let response = await BrowserWebsiteUI.present(alert, in: webView.window) { [self, webView] in
+					navigationIdentifier == documentID && webView.window?.isVisible == true
+				}
+				if response == .alertFirstButtonReturn {
+					NSWorkspace.shared.open(url)
+				}
+			}
+		#elseif os(iOS)
+			guard scheme == "mailto" else { return false }
+			UIApplication.shared.open(url)
+		#endif
 		return true
 	}
 }

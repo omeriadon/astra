@@ -9,13 +9,12 @@ struct BrowserAccountSettingsView: View {
 	var body: some View {
 		List {
 			Section("Account & Sync") {
+				Text("Tabs, bookmarks, and selected settings are sent to your sync server over HTTPS. Browsing history stays on this Mac. Private windows are excluded. Sync data is not end-to-end encrypted.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
 				TextField("Sync Server URL", text: $syncServerURL)
 					.textContentType(.URL)
 					.autocorrectionDisabled()
-				#if os(iOS)
-					.textInputAutocapitalization(.never)
-					.keyboardType(.URL)
-				#endif
 					.disabled(sync.isSignedIn)
 					.accessibilityIdentifier("sync-server-url")
 					.id("Sync Server URL")
@@ -68,10 +67,6 @@ struct BrowserAccountSettingsView: View {
 			}
 		}
 		.scrollContentBackground(.hidden)
-		#if os(iOS)
-			.listStyle(.insetGrouped)
-		#else
-			.listStyle(.sidebar)
-		#endif
+		.listStyle(.sidebar)
 	}
 }

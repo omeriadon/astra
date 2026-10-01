@@ -24,11 +24,22 @@ struct BrowserRootView: View {
 
 	var body: some View {
 		shell
+			.overlay(alignment: .bottom) {
+				if let error = browser.persistenceErrorDescription {
+					Label(error, systemImage: "exclamationmark.triangle")
+						.font(.caption)
+						.padding(12)
+						.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+						.padding(12)
+						.accessibilityIdentifier("session-save-error")
+				}
+			}
 			.onAppear {
 				sync.attach(browser)
 			}
 			.onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
 				sync.settingsDidChange()
+				browser.applyHistoryRetention()
 			}
 			.onChange(of: scenePhase) { _, phase in
 				if phase != .active {

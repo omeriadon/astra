@@ -7,16 +7,23 @@
 
 #if os(macOS)
 	import AppKit
+	import AuthenticationServices
 	import Defaults
 	import Sparkle
 
 	@MainActor
-	final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+	final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation {
 		private var windows: [BrowserWindowController] = []
 		private var miniWindows: [MiniAstraWindowController] = []
 		private var lastQuitAttempt: Date?
+		private var memoryPressureSource: DispatchSourceMemoryPressure?
 
 		func applicationWillFinishLaunching(_: Notification) {
+			#if DEBUG
+				if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+					return
+				}
+			#endif
 			installMainMenu()
 			NotificationCenter.default.addObserver(
 				self,
@@ -28,21 +35,70 @@
 		}
 
 		func applicationDidFinishLaunching(_: Notification) {
+			#if DEBUG
+				if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+					return
+				}
+			#endif
+			let authentication = ASWebAuthenticationSessionWebBrowserSessionManager.shared
+			authentication.sessionHandler = BrowserAuthenticationSessionHandler.shared
 			Task { await BrowserExtensionManager.shared.prepare() }
 			UpdateManager.shared.start()
 			BrowserDownloadManager.shared.resumeAvailableDownloads()
 			BrowserController.prewarmSharedProcess()
-			if miniWindows.isEmpty {
+			let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+			source.setEventHandler {
+				Task { @MainActor in
+					for browser in BrowserWindowRegistry.shared.openBrowsers {
+						for tab in browser.tabs where tab.id != browser.selectedTabID {
+							tab.controller?.discardPreviewSnapshot()
+							for peek in tab.peeks {
+								peek.controller.discardPreviewSnapshot()
+							}
+						}
+					}
+				}
+			}
+			source.resume()
+			memoryPressureSource = source
+			if miniWindows.isEmpty, !authentication.wasLaunchedByAuthenticationServices {
 				openBrowserWindow()
 			}
 		}
 
 		func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-			guard BrowserDownloadManager.shared.activeProgress != nil else {
-				return .terminateNow
-			}
-
 			Task { @MainActor in
+				let hasChanges = windows.contains { controller in
+					controller.browser.tabs.contains { tab in
+						tab.controller?.hasUnsavedChanges == true || tab.peeks.contains { $0.controller.hasUnsavedChanges }
+					}
+				}
+				if hasChanges {
+					let alert = BrowserWebsiteUI.alert(title: "Quit Astra?", message: "Some tabs contain changes that may not be saved.", confirm: "Quit")
+					guard await BrowserWebsiteUI.present(alert, in: NSApp.keyWindow) == .alertFirstButtonReturn else {
+						sender.reply(toApplicationShouldTerminate: false)
+						return
+					}
+				}
+				for controller in windows {
+					await controller.browser.flushAndWaitForPersistence()
+				}
+				if let failure = windows.compactMap(\.browser.persistenceErrorDescription).first {
+					let alert = BrowserWebsiteUI.alert(title: "Quit without saving?", message: failure, confirm: "Quit Without Saving")
+					guard await BrowserWebsiteUI.present(alert, in: NSApp.keyWindow) == .alertFirstButtonReturn else {
+						sender.reply(toApplicationShouldTerminate: false)
+						return
+					}
+				}
+				for controller in windows {
+					for tab in controller.browser.tabs {
+						tab.stopForClose()
+					}
+					if controller.browser.isPrivate {
+						await controller.browser.session.endPrivateSession()
+					}
+				}
+				await BrowserAuthenticationSessionHandler.shared.cancelAll()
 				await BrowserDownloadManager.shared.pauseAllForQuit()
 				sender.reply(toApplicationShouldTerminate: true)
 			}
@@ -93,8 +149,8 @@
 		}
 
 		@discardableResult
-		func openBrowserWindow() -> BrowserWindowController {
-			let controller = BrowserWindowController()
+		func openBrowserWindow(isPrivate: Bool = false) -> BrowserWindowController {
+			let controller = BrowserWindowController(browser: Browser(isPrivate: isPrivate))
 			controller.onClose = { [weak self, weak controller] in
 				guard let self, let controller else { return }
 				windows.removeAll { $0 === controller }
@@ -107,7 +163,7 @@
 		}
 
 		private var activeBrowser: Browser? {
-			activeMiniWindow?.browser ?? BrowserWindowRegistry.shared.activeBrowser
+			BrowserAuthenticationSessionHandler.shared.activeBrowser ?? activeMiniWindow?.browser ?? BrowserWindowRegistry.shared.activeBrowser
 		}
 
 		private var activeMiniWindow: MiniAstraWindowController? {
@@ -152,10 +208,10 @@
 			let controller: BrowserWindowController
 
 			if let keyWindow = NSApp.keyWindow,
-			   let existing = windows.first(where: { $0.window === keyWindow })
+			   let existing = windows.first(where: { $0.window === keyWindow && !$0.browser.isPrivate })
 			{
 				controller = existing
-			} else if let existing = windows.first {
+			} else if let existing = windows.first(where: { !$0.browser.isPrivate }) {
 				controller = existing
 				existing.showWindow()
 			} else {
@@ -168,8 +224,12 @@
 
 		// MARK: - Browser actions
 
+		@objc private func newPrivateWindow(_: Any?) {
+			openBrowserWindow(isPrivate: true)
+		}
+
 		@objc private func newWindow(_: Any?) {
-			openBrowserWindow()
+			openBrowserWindow(isPrivate: activeBrowser?.isPrivate == true)
 		}
 
 		@objc private func newTab(_: Any?) {
@@ -186,6 +246,10 @@
 		}
 
 		@objc private func closeTab(_: Any?) {
+			if BrowserAuthenticationSessionHandler.shared.activeBrowser != nil {
+				NSApp.keyWindow?.performClose(nil)
+				return
+			}
 			if let mini = activeMiniWindow {
 				mini.window.performClose(nil)
 				return
@@ -286,6 +350,60 @@
 			}
 		}
 
+		@objc private func importBrowsingData(_: Any?) {
+			guard let browser = activeBrowser else { return }
+			BrowserDataTransfer.importData(into: browser, window: NSApp.keyWindow)
+		}
+
+		@objc private func exportBrowsingData(_: Any?) {
+			guard let browser = activeBrowser else { return }
+			BrowserDataTransfer.exportData(from: browser, window: NSApp.keyWindow)
+		}
+
+		@objc private func exportBookmarks(_: Any?) {
+			guard let browser = activeBrowser else { return }
+			BrowserDataTransfer.exportData(from: browser, window: NSApp.keyWindow, bookmarksOnly: true)
+		}
+
+		@objc private func openFile(_: Any?) {
+			let browser = activeBrowser ?? openBrowserWindow().browser
+			BrowserDesktopCommands.openFile(in: browser, window: NSApp.keyWindow)
+		}
+
+		@objc private func printPage(_: Any?) {
+			guard let controller = activeBrowser?.selectedTab?.activeController else { return }
+			BrowserDesktopCommands.printPage(controller, window: NSApp.keyWindow)
+		}
+
+		@objc private func savePDF(_: Any?) {
+			exportPage(.pdf)
+		}
+
+		@objc private func saveWebArchive(_: Any?) {
+			exportPage(.webArchive)
+		}
+
+		@objc private func saveSource(_: Any?) {
+			exportPage(.source)
+		}
+
+		private func exportPage(_ format: BrowserDesktopCommands.ExportFormat) {
+			guard let controller = activeBrowser?.selectedTab?.activeController else { return }
+			BrowserDesktopCommands.export(controller, format: format, window: NSApp.keyWindow)
+		}
+
+		@objc private func findInPage(_: Any?) {
+			activeBrowser?.selectedTab?.activeController?.showsFind = true
+		}
+
+		@objc private func findNext(_: Any?) {
+			activeBrowser?.selectedTab?.activeController?.findNext()
+		}
+
+		@objc private func findPrevious(_: Any?) {
+			activeBrowser?.selectedTab?.activeController?.findNext(backwards: true)
+		}
+
 		@objc private func goBack(_: Any?) {
 			activeBrowser?.selectedTab?.activeController?.goBack()
 		}
@@ -340,11 +458,31 @@
 		@objc private func copyURL(_: Any?) {
 			guard let url = activeBrowser?.selectedTab?.activeController?.url else { return }
 			NSPasteboard.general.clearContents()
-			NSPasteboard.general.setString(url.absoluteString, forType: .string)
+			NSPasteboard.general.setString(BrowserAddress.withoutCredentials(url).absoluteString, forType: .string)
 		}
 
 		@objc private func toggleFullScreen(_: Any?) {
 			NSApp.keyWindow?.toggleFullScreen(nil)
+		}
+
+		@objc private func copyDiagnostics(_: Any?) {
+			BrowserDiagnostics.copy(for: activeBrowser)
+		}
+
+		func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+			let pageActions: Set<Selector> = [
+				#selector(printPage(_:)), #selector(savePDF(_:)), #selector(saveWebArchive(_:)),
+				#selector(saveSource(_:)), #selector(findInPage(_:)), #selector(findNext(_:)),
+				#selector(findPrevious(_:)), #selector(toggleWebInspector(_:)),
+			]
+			let dataActions: Set<Selector> = [#selector(importBrowsingData(_:)), #selector(exportBrowsingData(_:)), #selector(exportBookmarks(_:))]
+			if let action = menuItem.action, pageActions.contains(action) {
+				return activeBrowser?.selectedTab?.activeController?.committedURL != nil
+			}
+			if let action = menuItem.action, dataActions.contains(action) {
+				return activeBrowser?.isPrivate == false && activeBrowser?.isMini == false
+			}
+			return true
 		}
 
 		// MARK: - Main menu
@@ -395,6 +533,9 @@
 			let fileMenu = NSMenu(title: "File")
 			mainMenu.addItem(menuRoot("File", submenu: fileMenu))
 			fileMenu.addItem(item("New Window", action: #selector(newWindow(_:)), key: "n"))
+			let privateWindowItem = item("New Private Window", action: #selector(newPrivateWindow(_:)), key: "n")
+			privateWindowItem.keyEquivalentModifierMask = [.command, .shift]
+			fileMenu.addItem(privateWindowItem)
 			fileMenu.addItem(item("New Tab", action: #selector(newTab(_:)), key: "t"))
 			fileMenu.addItem(item("New Mini Astra", action: #selector(newMiniAstra(_:))))
 			fileMenu.addItem(.separator())
@@ -411,6 +552,17 @@
 				key: "w",
 				modifiers: [.command, .shift]
 			))
+
+			fileMenu.addItem(.separator())
+			fileMenu.addItem(item("Open File…", action: #selector(openFile(_:)), key: "o"))
+			fileMenu.addItem(item("Save Page as Web Archive…", action: #selector(saveWebArchive(_:)), key: "s", modifiers: [.command, .shift]))
+			fileMenu.addItem(item("Export PDF…", action: #selector(savePDF(_:))))
+			fileMenu.addItem(item("Save Page Source…", action: #selector(saveSource(_:))))
+			fileMenu.addItem(item("Print…", action: #selector(printPage(_:)), key: "p"))
+			fileMenu.addItem(.separator())
+			fileMenu.addItem(item("Import Browsing Data…", action: #selector(importBrowsingData(_:))))
+			fileMenu.addItem(item("Export Browsing Data…", action: #selector(exportBrowsingData(_:))))
+			fileMenu.addItem(item("Export Bookmarks as HTML…", action: #selector(exportBookmarks(_:))))
 
 			let editMenu = NSMenu(title: "Edit")
 			mainMenu.addItem(menuRoot("Edit", submenu: editMenu))
@@ -429,6 +581,11 @@
 			editMenu.addItem(responderItem("Copy", action: NSSelectorFromString("copy:"), key: "c"))
 			editMenu.addItem(responderItem("Paste", action: NSSelectorFromString("paste:"), key: "v"))
 			editMenu.addItem(responderItem("Select All", action: NSSelectorFromString("selectAll:"), key: "a"))
+
+			editMenu.addItem(.separator())
+			editMenu.addItem(item("Find in Page…", action: #selector(findInPage(_:)), key: "f"))
+			editMenu.addItem(item("Find Next", action: #selector(findNext(_:)), key: "g"))
+			editMenu.addItem(item("Find Previous", action: #selector(findPrevious(_:)), key: "g", modifiers: [.command, .shift]))
 
 			let viewMenu = NSMenu(title: "View")
 			mainMenu.addItem(menuRoot("View", submenu: viewMenu))
@@ -495,6 +652,7 @@
 
 			let helpMenu = NSMenu(title: "Help")
 			mainMenu.addItem(menuRoot("Help", submenu: helpMenu))
+			helpMenu.addItem(item("Copy Diagnostics", action: #selector(copyDiagnostics(_:))))
 			NSApp.helpMenu = helpMenu
 
 			NSApp.mainMenu = mainMenu

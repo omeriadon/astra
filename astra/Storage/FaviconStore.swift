@@ -54,6 +54,9 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	private let persistence: BrowserPersistence?
 
 	@ObservationIgnored
+	private let networkSession: URLSession
+
+	@ObservationIgnored
 	private var cacheGeneration = 0
 	@ObservationIgnored
 	private var requestGenerations: [ObjectIdentifier: Int] = [:]
@@ -72,14 +75,19 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		favicons.isEmpty
 	}
 
-	override private init() {
+	override private convenience init() {
+		self.init(isPrivate: false)
+	}
+
+	init(isPrivate: Bool) {
 		let persistence: BrowserPersistence?
 		do {
-			persistence = try BrowserPersistence()
+			persistence = isPrivate ? nil : try BrowserPersistence()
 		} catch {
 			persistence = nil
 		}
 		self.persistence = persistence
+		networkSession = isPrivate ? URLSession(configuration: .ephemeral) : .shared
 		favicons = [:]
 		super.init()
 
@@ -168,7 +176,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		var request = URLRequest(url: iconURL)
 		request.cachePolicy = .reloadRevalidatingCacheData
 		request.timeoutInterval = 15
-		guard let (data, response) = try? await URLSession.shared.data(for: request),
+		guard let (data, response) = try? await networkSession.data(for: request),
 		      let response = response as? HTTPURLResponse,
 		      200 ..< 300 ~= response.statusCode,
 		      !data.isEmpty,

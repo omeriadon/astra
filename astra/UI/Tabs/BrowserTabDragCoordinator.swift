@@ -129,7 +129,7 @@
 			}
 
 			func updateTarget() {
-				guard let browser, let window, !bounds.isEmpty else {
+				guard let browser, !browser.isPrivate, let window, !bounds.isEmpty else {
 					BrowserTabDragCoordinator.shared.unregister(id)
 					return
 				}

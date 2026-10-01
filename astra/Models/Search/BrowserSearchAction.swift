@@ -11,7 +11,7 @@ struct BrowserSearchAction: Identifiable {
 	/// Add browser commands here. Settings destinations come from the settings catalogue.
 	@MainActor
 	static func catalogue(for browser: Browser) -> [Self] {
-		var actions = BrowserInternalPage.allCases.map { page in
+		var actions = BrowserInternalPage.allCases.filter { !browser.isPrivate || $0 == .settings }.map { page in
 			Self(
 				id: "page-\(page.persistenceID)",
 				title: "Open \(page.title)",
@@ -21,7 +21,7 @@ struct BrowserSearchAction: Identifiable {
 				perform: { browser.openInternalPage(page) }
 			)
 		}
-		for page in BrowserSettingsView.Page.allCases {
+		for page in BrowserSettingsView.Page.allCases where !browser.isPrivate || page == .privacyAndSecurity {
 			let definition = page.definition
 			for term in [definition.title] + definition.terms {
 				actions.append(Self(
@@ -60,6 +60,9 @@ struct BrowserSearchAction: Identifiable {
 				perform: { browser.createSpace() }
 			),
 		]
+		if browser.isPrivate {
+			actions.removeAll { $0.id == "new-space" || $0.id == "page-themeEditor" }
+		}
 		return actions
 	}
 }

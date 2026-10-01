@@ -65,7 +65,7 @@ private struct FavouriteIconView: View {
 
 	var body: some View {
 		Group {
-			if let favicon = FaviconStore.shared.image(for: tab.currentURL, in: tab.controller?.webViewIfLoaded) {
+			if let favicon = tab.session.favicons.image(for: tab.currentURL, in: tab.controller?.webViewIfLoaded) {
 				favicon.resizable().scaledToFit()
 			} else {
 				Image(systemName: tab.internalPage?.symbol ?? "globe")

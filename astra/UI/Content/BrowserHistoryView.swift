@@ -2,61 +2,31 @@ import SwiftUI
 
 struct BrowserHistoryView: View {
 	let browser: Browser
-	@State private var cachedHistory: [OpenTab]
-	@State private var cachedHistoryKey: HistoryCacheKey
-
-	init(browser: Browser) {
-		self.browser = browser
-		let history = Self.computeHistoryTabs(browser: browser)
-		_cachedHistory = State(initialValue: history)
-		_cachedHistoryKey = State(initialValue: Self.historyKey(browser: browser))
-	}
-
-	/// Every openTab mutation bumps modifiedAt to now (which always exceeds the
-	/// previous maximum), so counts + maxima capture all inputs to the compute.
-	private struct HistoryCacheKey: Equatable {
-		var tabCount: Int
-		var closedCount: Int
-		var latestTabModification: Double
-		var latestClosedModification: Double
-	}
-
-	private static func historyKey(browser: Browser) -> HistoryCacheKey {
-		HistoryCacheKey(
-			tabCount: browser.tabs.count,
-			closedCount: browser.closedHistoryTabs.count,
-			latestTabModification: browser.tabs.map(\.modifiedAt.timeIntervalSince1970).max() ?? 0,
-			latestClosedModification: browser.closedHistoryTabs.map(\.modifiedAt.timeIntervalSince1970).max() ?? 0
-		)
-	}
-
-	private static func computeHistoryTabs(browser: Browser) -> [OpenTab] {
-		// Filter live tabs by currentURL before copying full histories via openTab.
-		let live = browser.tabs.filter { $0.internalPage == nil && $0.currentURL != nil }
-			.map(\.openTab)
-			.filter { $0.url != nil }
-		return (live + browser.closedHistoryTabs.filter { $0.url != nil })
-			.sorted { $0.modifiedAt > $1.modifiedAt }
-	}
-
-	var body: some View {
-		HistoryListView(browser: browser, historyTabs: cachedHistory)
-			.onChange(of: Self.historyKey(browser: browser)) { _, _ in
-				cachedHistoryKey = Self.historyKey(browser: browser)
-				cachedHistory = Self.computeHistoryTabs(browser: browser)
-			}
-	}
-}
-
-private struct HistoryListView: View {
-	let browser: Browser
-	let historyTabs: [OpenTab]
+	@State private var searchText = ""
+	@State private var filteredVisits: [BrowserVisit] = []
+	@State private var confirmsClear = false
 
 	var body: some View {
 		List {
-			Section("Tabs") {
-				ForEach(historyTabs) { tab in
-					HistoryTabGroup(browser: browser, tab: tab)
+			Section("Visited Pages") {
+				ForEach(filteredVisits) { visit in
+					HistoryRow(
+						title: visit.title,
+						detail: visit.url.absoluteString,
+						url: visit.url,
+						symbol: "clock.arrow.circlepath",
+						identifier: "history-visit-\(visit.id)",
+						open: { browser.openHistoryURL(visit.url, inBackground: false) },
+						openInBackground: { browser.openHistoryURL(visit.url, inBackground: true) }
+					)
+					.contextMenu {
+						Button("Remove from History", systemImage: "trash", role: .destructive) {
+							browser.removeHistory([visit.id])
+						}
+					}
+				}
+				.onDelete { offsets in
+					browser.removeHistory(Set(offsets.map { filteredVisits[$0].id }))
 				}
 			}
 		}
@@ -66,61 +36,46 @@ private struct HistoryListView: View {
 		.listStyle(.sidebar)
 		#endif
 		.scrollContentBackground(.hidden)
-		#if os(macOS)
-			.safeAreaBar(edge: .top) {
-				Text("History")
-					.monospaced()
-					.font(.largeTitle.bold())
-					.lineLimit(1)
-					.minimumScaleFactor(0.7)
-					.contentTransition(.numericText())
-					.geometryGroup()
-					.environment(\.contentTransitionAddsDrawingGroup, true)
-					.frame(height: 42)
-					.frame(maxWidth: .infinity, alignment: .leading)
-					.padding(.horizontal, 24)
-					.padding(.top, 12)
-					.padding(.bottom, 12)
-			}
-		#endif
-			.overlay {
-				if historyTabs.isEmpty {
-					ContentUnavailableView("No History", systemImage: "clock.arrow.circlepath")
+		.safeAreaBar(edge: .top) {
+			VStack(alignment: .leading, spacing: 12) {
+				HStack {
+					Label("History", systemImage: "clock.arrow.circlepath")
+						.font(.title2.bold())
+					Spacer()
+					Button("Clear History", systemImage: "trash", role: .destructive) {
+						confirmsClear = true
+					}
+					.disabled(browser.historyVisits.isEmpty)
+					.accessibilityIdentifier("clear-browsing-history")
 				}
+				TextField("Search History", text: $searchText)
+					.textFieldStyle(.plain)
+					.accessibilityIdentifier("history-search")
 			}
+			.padding(.horizontal, 24)
+			.padding(.vertical, 14)
+		}
+		.onChange(of: browser.historyVisits, initial: true) { _, _ in updateVisits() }
+		.onChange(of: searchText) { _, _ in updateVisits() }
+		.confirmationDialog("Clear browsing history?", isPresented: $confirmsClear) {
+			Button("Clear History", systemImage: "trash", role: .destructive) {
+				browser.clearHistory()
+			}
+			Button(role: .cancel) {}
+		} message: {
+			Text("This removes visited-page records and recently closed tabs on this Mac. Your open pages and bookmarks are kept.")
+		}
+		.overlay {
+			if filteredVisits.isEmpty {
+				ContentUnavailableView("No History", systemImage: "clock.arrow.circlepath")
+			}
+		}
 	}
-}
 
-private struct HistoryTabGroup: View {
-	let browser: Browser
-	let tab: OpenTab
-	@State private var isExpanded = false
-
-	var body: some View {
-		DisclosureGroup(isExpanded: $isExpanded) {
-			ForEach(Array(tab.history.enumerated().reversed()), id: \.offset) { index, url in
-				HistoryRow(
-					title: url.host ?? url.absoluteString,
-					detail: url.absoluteString,
-					url: url,
-					symbol: index == tab.historyIndex ? "circle.fill" : "clock",
-					identifier: "history-visit-\(tab.id.uuidString)-\(index)",
-					open: { browser.openHistoryURL(url, inBackground: false) },
-					openInBackground: { browser.openHistoryURL(url, inBackground: true) }
-				)
-				.equatable()
-			}
-		} label: {
-			HistoryRow(
-				title: tab.customTitle ?? tab.pageTitle,
-				detail: tab.url?.absoluteString ?? "",
-				url: tab.url,
-				symbol: "rectangle.on.rectangle",
-				identifier: "history-tab-\(tab.id.uuidString)",
-				open: { browser.openHistoryTab(tab, inBackground: false) },
-				openInBackground: { browser.openHistoryTab(tab, inBackground: true) }
-			)
-			.equatable()
+	private func updateVisits() {
+		filteredVisits = browser.historyVisits.filter { visit in
+			searchText.isEmpty || visit.title.localizedCaseInsensitiveContains(searchText)
+				|| visit.url.absoluteString.localizedCaseInsensitiveContains(searchText)
 		}
 	}
 }

@@ -9,7 +9,7 @@
 		let window: NSPanel
 		var onClose: (() -> Void)?
 		var onPromote: ((BrowserTab) -> Void)?
-		private var openingPanel: NSPanel?
+		private var isOpening = false
 		private let openingOrigin: NSPoint
 
 		init(url: URL? = nil) {
@@ -60,7 +60,7 @@
 		}
 
 		func showWindow() {
-			guard openingPanel == nil else { return }
+			guard !isOpening else { return }
 			if window.isMiniaturized {
 				window.deminiaturize(nil)
 			}
@@ -68,17 +68,11 @@
 			   Defaults[.miniAstraWindowAnimation],
 			   !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 			{
-				openingPanel = MiniAstraOpeningAnimation.panel(for: window, from: openingOrigin) { [weak self] in
-					guard let self, let openingPanel else { return }
-					window.makeKeyAndOrderFront(nil)
-					window.orderFrontRegardless()
-					openingPanel.close()
-					self.openingPanel = nil
+				isOpening = true
+				MiniAstraOpeningAnimation.show(window, from: openingOrigin) { [weak self] in
+					self?.isOpening = false
 				}
-				if let openingPanel {
-					openingPanel.orderFrontRegardless()
-					return
-				}
+				return
 			}
 			window.makeKeyAndOrderFront(nil)
 			window.orderFrontRegardless()
@@ -93,8 +87,6 @@
 		}
 
 		func windowWillClose(_: Notification) {
-			openingPanel?.close()
-			openingPanel = nil
 			onClose?()
 		}
 	}

@@ -91,7 +91,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func extensionTab(for id: UUID, in browser: Browser) -> BrowserExtensionTab? {
-		guard browser.tab(withID: id)?.internalPage == nil else { return nil }
+		guard !browser.isPrivate, browser.tab(withID: id)?.internalPage == nil else { return nil }
 		if let existing = tabs[browser.windowID]?[id] {
 			return existing
 		}
@@ -101,6 +101,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func sync(_ browser: Browser) {
+		guard !browser.isPrivate else { return }
 		_ = extensionWindow(for: browser)
 		let ids = Set(browser.tabs.filter { $0.internalPage == nil }.map(\.id))
 		let previous = knownTabIDs[browser.windowID] ?? []
@@ -173,10 +174,12 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func focus(_ browser: Browser) {
+		guard !browser.isPrivate else { return }
 		controller.didFocusWindow(extensionWindow(for: browser))
 	}
 
 	func webViewDidChange(for id: UUID, in browser: Browser) {
+		guard !browser.isPrivate else { return }
 		sync(browser)
 		if let tab = extensionTab(for: id, in: browser) {
 			controller.didChangeTabProperties([.URL, .loading], for: tab)
@@ -351,11 +354,13 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func action(for name: String, in browser: Browser) -> WKWebExtension.Action? {
+		guard !browser.isPrivate else { return nil }
 		guard let context = contexts[name], context.isLoaded else { return nil }
 		return context.action(for: extensionTab(for: browser.selectedTabID, in: browser))
 	}
 
 	func performAction(_ name: String, in browser: Browser) {
+		guard !browser.isPrivate else { return }
 		guard let context = contexts[name], context.isLoaded else { return }
 		if !allowsAllSites(name), let url = browser.selectedTab?.currentURL,
 		   url.scheme == "https" || url.scheme == "http"
@@ -415,7 +420,10 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 				archive.stopAccessingSecurityScopedResource()
 			}
 		}
-		guard archive.pathExtension.lowercased() == "zip" else {
+		guard archive.pathExtension.lowercased() == "zip",
+		      let size = try archive.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+		      size <= 50_000_000
+		else {
 			throw NSError(domain: "astra.extensions", code: 6)
 		}
 		let checked = try await WKWebExtension(resourceBaseURL: archive)
@@ -526,7 +534,22 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		contexts[name]?.isLoaded == true
 	}
 
+	func approveRequestedPermissions(for name: String) {
+		UserDefaults.standard.set(permissionSummary(for: name), forKey: "extension.\(name).approvedPermissions")
+	}
+
 	func setEnabled(_ enabled: Bool, for name: String) {
+		if enabled, !bundledNames.contains(name),
+		   UserDefaults.standard.string(forKey: "extension.\(name).approvedPermissions") != permissionSummary(for: name),
+		   let context = contexts[name]
+		{
+			promptForAccess(to: permissionSummary(for: name), from: context) { [weak self] allowed in
+				if allowed {
+					self?.setEnabled(true, for: name)
+				}
+			}
+			return
+		}
 		UserDefaults.standard.set(enabled, forKey: "extension.\(name).enabled")
 		if enabled {
 			enabledNames.insert(name)
@@ -551,6 +574,12 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 
 	private func enable(_ name: String) throws {
 		guard let context = contexts[name], !context.isLoaded else { return }
+		guard bundledNames.contains(name)
+			|| UserDefaults.standard.string(forKey: "extension.\(name).approvedPermissions") == permissionSummary(for: name)
+		else {
+			throw NSError(domain: "astra.extensions", code: 10, userInfo: [NSLocalizedDescriptionKey: "Review this extension's permissions before enabling it."])
+		}
+		context.unsupportedAPIs = ["browser.runtime.connectNative", "browser.runtime.sendNativeMessage"]
 		for permission in context.webExtension.requestedPermissions {
 			context.setPermissionStatus(.grantedExplicitly, for: permission)
 		}
@@ -567,13 +596,13 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func webExtensionController(_: WKWebExtensionController, openWindowsFor _: WKWebExtensionContext) -> [any WKWebExtensionWindow] {
-		let browsers = BrowserWindowRegistry.shared.openBrowsers
+		let browsers = BrowserWindowRegistry.shared.openBrowsers.filter { !$0.isPrivate }
 		let focused = BrowserWindowRegistry.shared.activeBrowserID
 		return browsers.sorted { $0.windowID == focused && $1.windowID != focused }.map(extensionWindow(for:))
 	}
 
 	func webExtensionController(_: WKWebExtensionController, focusedWindowFor _: WKWebExtensionContext) -> (any WKWebExtensionWindow)? {
-		guard let browser = BrowserWindowRegistry.shared.activeBrowser else { return nil }
+		guard let browser = BrowserWindowRegistry.shared.activeBrowser, !browser.isPrivate else { return nil }
 		return extensionWindow(for: browser)
 	}
 
@@ -584,7 +613,8 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		completionHandler: ((any WKWebExtensionTab)?, Error?) -> Void
 	) {
 		guard let browser = (configuration.window as? BrowserExtensionWindow)?.browser
-			?? BrowserWindowRegistry.shared.activeBrowser
+			?? BrowserWindowRegistry.shared.activeBrowser,
+			!browser.isPrivate
 		else {
 			completionHandler(nil, NSError(domain: "astra.extensions", code: 2))
 			return
@@ -675,8 +705,16 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			alert.informativeText = details
 			alert.addButton(withTitle: "Allow")
 			alert.addButton(withTitle: "Deny")
-			alert.beginSheetModal(for: window) { response in
-				completion(response == .alertFirstButtonReturn)
+			Task { @MainActor in
+				let response = await BrowserWebsiteUI.present(alert, in: window)
+				let allowed = response == .alertFirstButtonReturn
+				if allowed,
+				   let name = contexts.first(where: { $0.value === context })?.key,
+				   details == permissionSummary(for: name)
+				{
+					UserDefaults.standard.set(details, forKey: "extension.\(name).approvedPermissions")
+				}
+				completion(allowed)
 			}
 		#elseif os(iOS)
 			guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow),

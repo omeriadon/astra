@@ -1,6 +1,13 @@
 import Foundation
 
 enum BrowserAddress {
+	nonisolated static func withoutCredentials(_ url: URL) -> URL {
+		guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+		components.user = nil
+		components.password = nil
+		return components.url ?? url
+	}
+
 	static func destination(for input: String) -> URL? {
 		let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
 		guard !text.isEmpty else { return nil }
@@ -29,7 +36,8 @@ enum BrowserAddress {
 	}
 
 	static func displayString(for url: URL?, style: AddressDisplayStyle, isEditing: Bool) -> String {
-		guard let url else { return "" }
+		guard let originalURL = url else { return "" }
+		let url = withoutCredentials(originalURL)
 		guard style == .simple, !isEditing else {
 			if style == .dimmed, !isEditing,
 			   let components = URLComponents(url: url, resolvingAgainstBaseURL: false),

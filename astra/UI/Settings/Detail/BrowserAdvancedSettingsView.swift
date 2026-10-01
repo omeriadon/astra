@@ -2,6 +2,7 @@ import Defaults
 import SwiftUI
 
 struct BrowserAdvancedSettingsView: View {
+	@Default(.searchSuggestionsEnabled) private var searchSuggestionsEnabled
 	@Default(.copyMailtoAddresses) private var copyMailtoAddresses
 	#if os(macOS)
 		@Default(.requireDoublePressToQuit) private var requireDoublePressToQuit
@@ -9,6 +10,14 @@ struct BrowserAdvancedSettingsView: View {
 
 	var body: some View {
 		List {
+			Section("Search") {
+				Toggle("Show Search Suggestions", isOn: $searchSuggestionsEnabled)
+					.accessibilityIdentifier("search-suggestions-enabled")
+				Text("Suggestions send what you type to the search provider. They are disabled in private windows.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+			}
+
 			Section("Links") {
 				Toggle("Copy email addresses from mailto links", isOn: $copyMailtoAddresses)
 					.accessibilityIdentifier("copy-mailto-addresses")
@@ -26,10 +35,6 @@ struct BrowserAdvancedSettingsView: View {
 			#endif
 		}
 		.scrollContentBackground(.hidden)
-		#if os(iOS)
-			.listStyle(.insetGrouped)
-		#else
-			.listStyle(.sidebar)
-		#endif
+		.listStyle(.sidebar)
 	}
 }

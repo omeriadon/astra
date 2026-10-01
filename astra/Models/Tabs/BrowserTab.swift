@@ -94,6 +94,7 @@ enum BrowserInternalPage: Equatable, CaseIterable {
 final class BrowserTab: Identifiable {
 	let id: UUID
 	let internalPage: BrowserInternalPage?
+	let session: BrowserWebSession
 	private(set) var pageTitle: String {
 		didSet { markModified() }
 	}
@@ -124,7 +125,13 @@ final class BrowserTab: Identifiable {
 	}
 
 	private(set) var peeks: [BrowserPeek]
+	@ObservationIgnored
+	private var storedInteractionState: Any?
+	private var storedRestorationState: Data?
+	private var storedFileAccessBookmark: Data?
+	private var storedHistoryPrefix: [URL] = []
 	private var storedURL: URL?
+	private var recordsNavigationHistory: Bool
 	private var storedHistory: [URL]
 	private var storedHistoryIndex: Int
 	private var storedPageZoom: Double
@@ -151,14 +158,17 @@ final class BrowserTab: Identifiable {
 			internalPage: internalPage?.persistenceID,
 			pageTitle: pageTitle,
 			customTitle: customTitle,
-			url: controller?.url ?? storedURL,
-			history: controller?.history ?? storedHistory,
-			historyIndex: controller?.historyIndex ?? storedHistoryIndex,
+			url: (controller?.url ?? storedURL).map(BrowserAddress.withoutCredentials),
+			history: recordsNavigationHistory ? (controller?.history ?? storedHistory).map(BrowserAddress.withoutCredentials) : currentURL.map { [BrowserAddress.withoutCredentials($0)] } ?? [],
+			historyIndex: recordsNavigationHistory ? (controller?.historyIndex ?? storedHistoryIndex) : 0,
 			pageZoom: controller?.pageZoom ?? storedPageZoom,
 			scrollPosition: controller?.scrollPosition ?? storedScrollPosition,
 			isHibernated: isHibernated,
 			modifiedAt: modifiedAt,
-			peeks: isHibernated ? storedPeeks : peeks.map(\.openPeek)
+			peeks: recordsNavigationHistory ? (isHibernated ? storedPeeks : peeks.map(\.openPeek)) : [],
+			recordsNavigationHistory: recordsNavigationHistory,
+			restorationState: recordsNavigationHistory && !session.isPrivate ? controller?.encryptedInteractionState ?? storedRestorationState : nil,
+			fileAccessBookmark: controller?.fileAccessBookmark ?? storedFileAccessBookmark
 		)
 		openTabCache = next
 		return next
@@ -177,14 +187,23 @@ final class BrowserTab: Identifiable {
 		scrollPosition: BrowserScrollPosition = .zero,
 		isHibernated: Bool = false,
 		modifiedAt: Date = .now,
-		existingController: BrowserController? = nil
+		existingController: BrowserController? = nil,
+		session: BrowserWebSession? = nil,
+		recordsNavigationHistory: Bool = true,
+		restorationState: Data? = nil,
+		fileAccessBookmark: Data? = nil
 	) {
+		let session = existingController?.session ?? session ?? .shared
 		self.id = id
 		self.internalPage = internalPage
+		self.session = existingController?.session ?? session
 		self.pageTitle = pageTitle
 		self.customTitle = customTitle
 		storedURL = initialURL
+		storedRestorationState = restorationState
+		storedFileAccessBookmark = fileAccessBookmark
 		storedHistory = history
+		self.recordsNavigationHistory = recordsNavigationHistory
 		storedHistoryIndex = historyIndex
 		storedPageZoom = pageZoom
 		storedScrollPosition = scrollPosition
@@ -196,9 +215,12 @@ final class BrowserTab: Identifiable {
 		} else {
 			existingController ?? BrowserController(
 				initialURL: initialURL,
+				session: session,
 				history: history,
 				historyIndex: historyIndex,
-				scrollPosition: scrollPosition
+				scrollPosition: scrollPosition,
+				restorationState: restorationState,
+				fileAccessBookmark: fileAccessBookmark
 			)
 		}
 		if existingController == nil {
@@ -223,23 +245,44 @@ final class BrowserTab: Identifiable {
 			pageZoom: saved.pageZoom,
 			scrollPosition: saved.scrollPosition,
 			isHibernated: saved.isHibernated,
-			modifiedAt: saved.modifiedAt
+			modifiedAt: saved.modifiedAt,
+			recordsNavigationHistory: saved.recordsNavigationHistory,
+			restorationState: saved.restorationState,
+			fileAccessBookmark: saved.fileAccessBookmark
 		)
+	}
+
+	var canHibernate: Bool {
+		controller?.canHibernate != false && peeks.allSatisfy(\.controller.canHibernate)
 	}
 
 	func hibernate() {
 		guard internalPage == nil else { return }
-		guard let controller else { return }
+		guard let controller, canHibernate else { return }
+		storedInteractionState = controller.webViewIfLoaded?.interactionState
+		storedRestorationState = controller.encryptedInteractionState
+		storedFileAccessBookmark = controller.fileAccessBookmark
+		storedHistoryPrefix = controller.liveHistoryPrefix
 		storedURL = controller.url
 		storedHistory = controller.history
 		storedHistoryIndex = controller.historyIndex
 		storedPageZoom = controller.pageZoom
 		storedScrollPosition = controller.scrollPosition
 		storedPeeks = peeks.map(\.openPeek)
-		controller.stopLoading()
+		for peek in peeks {
+			peek.controller.stopForClose()
+		}
+		controller.stopForClose()
 		self.controller = nil
 		peeks.removeAll()
 		markModified()
+	}
+
+	func stopForClose() {
+		controller?.stopForClose()
+		for peek in peeks {
+			peek.controller.stopForClose()
+		}
 	}
 
 	func wake() {
@@ -247,11 +290,18 @@ final class BrowserTab: Identifiable {
 		guard controller == nil else { return }
 		let controller = BrowserController(
 			initialURL: storedURL,
+			session: session,
 			history: storedHistory,
 			historyIndex: storedHistoryIndex,
-			scrollPosition: storedScrollPosition
+			scrollPosition: storedScrollPosition,
+			restorationState: storedRestorationState,
+			fileAccessBookmark: storedFileAccessBookmark
 		)
 		controller.pageZoom = storedPageZoom
+		if let storedInteractionState {
+			controller.restoreInteractionState(storedInteractionState, historyPrefix: storedHistoryPrefix)
+		}
+		storedInteractionState = nil
 		self.controller = controller
 		peeks = storedPeeks.map(BrowserPeek.init(openPeek:))
 		observeController()
@@ -269,12 +319,28 @@ final class BrowserTab: Identifiable {
 
 	func dismissPeek(_ id: UUID) {
 		guard let index = peeks.firstIndex(where: { $0.id == id }) else { return }
+		for peek in peeks[index...] {
+			peek.controller.stopForClose()
+		}
 		peeks.removeSubrange(index...)
 		markModified()
 	}
 
 	func requestPeekDismissal() {
 		peeks.last?.isDismissing = true
+	}
+
+	func invalidateStoredSnapshot() {
+		openTabCache = nil
+	}
+
+	func clearRecordedHistory() {
+		recordsNavigationHistory = false
+		storedRestorationState = nil
+		storedHistory = currentURL.map { [$0] } ?? []
+		storedHistoryIndex = 0
+		storedPeeks = []
+		markModified()
 	}
 
 	func rename(to title: String) {
