@@ -7,11 +7,11 @@
 
 #if os(macOS)
 	import AppKit
-	import AuthenticationServices
 	import Carbon
+	import WebKit
+	import AuthenticationServices
 	import Defaults
 	import Sparkle
-	import WebKit
 
 	@MainActor
 	final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation {
@@ -134,7 +134,7 @@
 			return true
 		}
 
-		@objc private func handleURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent _: NSAppleEventDescriptor) {
+		@objc private func handleURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
 			guard let value = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
 			      let url = URL(string: value) else { return }
 			application(NSApp, open: [url])
