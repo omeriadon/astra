@@ -12,7 +12,7 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 
 | Packet | Status | Reviewed commit / evidence |
 | --- | --- | --- |
-| [00-baseline](tasks/00-baseline.md) | in progress | — |
+| [00-baseline](tasks/00-baseline.md) | build verified; primary reviewed | `2a6932d8aab907302f252d58fcb4a8e22d848fe8`; stale test metadata removed, app builds |
 | [01-lifecycle](tasks/01-lifecycle.md) | queued | — |
 | [02-navigation-policy](tasks/02-navigation-policy.md) | queued | — |
 | [03-persistence-restoration](tasks/03-persistence-restoration.md) | queued | — |
