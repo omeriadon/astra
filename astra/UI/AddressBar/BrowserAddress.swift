@@ -2,10 +2,7 @@ import Foundation
 
 enum BrowserAddress {
 	nonisolated static func externalApplicationScheme(for url: URL) -> String? {
-		guard let scheme = url.scheme?.lowercased(),
-		      !["http", "https", "about", "data", "blob", "file", "javascript", "webkit-extension"].contains(scheme)
-		else { return nil }
-		return scheme
+		BrowserNavigationPolicy.externalApplicationScheme(for: url)
 	}
 
 	nonisolated static func withoutCredentials(_ url: URL) -> URL {
@@ -27,6 +24,14 @@ enum BrowserAddress {
 			      !host.contains(where: \.isWhitespace)
 			else { return searchURL(for: text) }
 			return components.url ?? searchURL(for: text)
+		}
+
+		if !text.contains(where: \.isWhitespace),
+		   let components = URLComponents(string: text),
+		   let url = components.url,
+		   externalApplicationScheme(for: url) != nil
+		{
+			return url
 		}
 
 		if !text.contains(where: \.isWhitespace),

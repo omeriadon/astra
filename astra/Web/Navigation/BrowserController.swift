@@ -47,6 +47,9 @@ final class BrowserController: NSObject, Identifiable {
 	@ObservationIgnored
 	private var isOpeningExternalApplication = false
 	@ObservationIgnored
+	// ponytail: controller-wide two-second throttle; per-origin limits if abuse becomes measurable.
+	private var lastExternalApplicationRequestTime: TimeInterval?
+	@ObservationIgnored
 	var navigationIntercept: ((URL) -> Bool)?
 
 	var isCapturing: Bool {
@@ -572,7 +575,9 @@ final class BrowserController: NSObject, Identifiable {
 		}
 		configuration.websiteDataStore = session.dataStore
 		configuration.webExtensionController = session.isPrivate ? nil : BrowserExtensionManager.shared.controller
-		configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+		if suppliedConfiguration == nil {
+			configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+		}
 		configuration.preferences.isElementFullscreenEnabled = true
 		configuration.preferences.isFraudulentWebsiteWarningEnabled = true
 		configuration.preferences.inactiveSchedulingPolicy = .suspend
@@ -733,6 +738,11 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func load(_ url: URL) {
+		if BrowserAddress.externalApplicationScheme(for: url) != nil,
+		   handleExternalLink(url, requestingOrigin: nil, requestingSite: "Astra address bar", in: webView)
+		{
+			return
+		}
 		navigate(URLRequest(url: url))
 	}
 
@@ -1291,7 +1301,12 @@ extension BrowserController: WKUIDelegate {
 		(webView as? PeekSourceWebView)?.consumeSource() ?? .center
 	}
 
-	private func handleExternalLink(_ url: URL, requestingOrigin: WKSecurityOrigin, in webView: WKWebView) -> Bool {
+	private func handleExternalLink(
+		_ url: URL,
+		requestingOrigin: WKSecurityOrigin?,
+		requestingSite: String? = nil,
+		in webView: WKWebView
+	) -> Bool {
 		guard let scheme = BrowserAddress.externalApplicationScheme(for: url) else { return false }
 		let addresses = URLComponents(url: url, resolvingAgainstBaseURL: false)?.path ?? ""
 		if scheme == "mailto", Defaults[.copyMailtoAddresses], !addresses.isEmpty {
@@ -1306,6 +1321,11 @@ extension BrowserController: WKUIDelegate {
 		}
 		#if os(macOS)
 			guard !isOpeningExternalApplication else { return true }
+			let now = ProcessInfo.processInfo.systemUptime
+			if let lastExternalApplicationRequestTime, now - lastExternalApplicationRequestTime < 2 {
+				return true
+			}
+			lastExternalApplicationRequestTime = now
 			guard let applicationURL = NSWorkspace.shared.urlForApplication(toOpen: url) else {
 				ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "No application is installed to open \(scheme) links")
 				return true
@@ -1316,24 +1336,27 @@ extension BrowserController: WKUIDelegate {
 			}
 			let applicationName = FileManager.default.displayName(atPath: applicationURL.path)
 			var origin = URLComponents()
-			origin.scheme = requestingOrigin.protocol
-			origin.host = requestingOrigin.host
-			origin.port = requestingOrigin.port > 0 ? requestingOrigin.port : nil
-			let requestingSite = origin.url.flatMap(BrowserSitePermissions.origin(for:)) ?? "This page"
+			origin.scheme = requestingOrigin?.protocol
+			origin.host = requestingOrigin?.host
+			origin.port = (requestingOrigin?.port ?? 0) > 0 ? requestingOrigin?.port : nil
+			let requestingSiteLabel = requestingSite
+				?? origin.url.flatMap(BrowserSitePermissions.origin(for:))
+				?? "This page"
 			let documentID = navigationIdentifier
 			isOpeningExternalApplication = true
 			Task { @MainActor in
 				defer { isOpeningExternalApplication = false }
 				let alert = BrowserWebsiteUI.alert(
 					title: "Open \(applicationName)?",
-					message: "\(requestingSite) wants to open a \(scheme) link in \(applicationName).",
+					message: "\(requestingSiteLabel) wants to open a \(scheme) link in \(applicationName).",
 					confirm: "Open Application"
 				)
 				let response = await BrowserWebsiteUI.present(alert, in: webView.window) { [self, webView] in
-					navigationIdentifier == documentID && webView.window?.isVisible == true
+					owns(webView) && navigationIdentifier == documentID && webView.window?.isVisible == true
 				}
 				guard owns(webView), navigationIdentifier == documentID,
 				      response == .alertFirstButtonReturn else { return }
+				lastExternalApplicationRequestTime = ProcessInfo.processInfo.systemUptime
 				let configuration = NSWorkspace.OpenConfiguration()
 				configuration.addsToRecentItems = false
 				do {
@@ -1343,8 +1366,22 @@ extension BrowserController: WKUIDelegate {
 				}
 			}
 		#elseif os(iOS)
-			guard scheme == "mailto" else { return false }
-			UIApplication.shared.open(url)
+			guard !isOpeningExternalApplication else { return true }
+			let now = ProcessInfo.processInfo.systemUptime
+			if let lastExternalApplicationRequestTime, now - lastExternalApplicationRequestTime < 2 {
+				return true
+			}
+			lastExternalApplicationRequestTime = now
+			isOpeningExternalApplication = true
+			UIApplication.shared.open(url) { [weak self] succeeded in
+				Task { @MainActor in
+					guard let self else { return }
+					self.isOpeningExternalApplication = false
+					if !succeeded {
+						ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "No application could open this link")
+					}
+				}
+			}
 		#endif
 		return true
 	}
