@@ -20,3 +20,13 @@ assert(BrowserNavigationFailure(error: NSError(domain: NSURLErrorDomain, code: N
 assert(BrowserNavigationFailure(error: NSError(domain: NSURLErrorDomain, code: NSURLErrorSecureConnectionFailed), url: url).kind == .secureConnectionFailed)
 assert(BrowserNavigationFailure(error: NSError(domain: NSURLErrorDomain, code: NSURLErrorHTTPTooManyRedirects), url: url).kind == .tooManyRedirects)
 assert(BrowserNavigationFailure(error: NSError(domain: NSURLErrorDomain, code: NSURLErrorUnsupportedURL), url: url).kind == .invalidAddress)
+
+var terminations = BrowserContentProcessTerminationTracker()
+let firstTermination = Date(timeIntervalSince1970: 1_000)
+assert(!terminations.record(url, at: firstTermination))
+terminations.navigationCommitted(at: url)
+assert(terminations.record(url, at: firstTermination.addingTimeInterval(1)))
+let otherURL = URL(string: "https://other.invalid")!
+terminations.navigationCommitted(at: otherURL)
+assert(!terminations.record(otherURL, at: firstTermination.addingTimeInterval(2)))
+assert(!terminations.record(url, at: firstTermination.addingTimeInterval(63)))

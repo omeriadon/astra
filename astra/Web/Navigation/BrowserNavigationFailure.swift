@@ -117,3 +117,27 @@ struct BrowserNavigationFailure {
 		}
 	}
 }
+
+struct BrowserContentProcessTerminationTracker {
+	private(set) var count = 0
+	private var url: URL?
+	private var lastTerminationAt: Date?
+
+	mutating func navigationCommitted(at nextURL: URL?) {
+		guard let nextURL, url != nextURL else { return }
+		count = 0
+		url = nil
+		lastTerminationAt = nil
+	}
+
+	mutating func record(_ nextURL: URL, at date: Date = .now) -> Bool {
+		// ponytail: fixed 60-second repeat window; tune from observed crash recovery data.
+		if url != nextURL || lastTerminationAt.map({ date.timeIntervalSince($0) > 60 }) ?? true {
+			count = 0
+		}
+		url = nextURL
+		lastTerminationAt = date
+		count += 1
+		return count > 1
+	}
+}

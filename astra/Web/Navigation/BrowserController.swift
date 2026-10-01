@@ -325,7 +325,7 @@ final class BrowserController: NSObject, Identifiable {
 	@ObservationIgnored
 	private var retriedAfterConnectivityReturn = false
 	@ObservationIgnored
-	private var consecutiveContentProcessTerminations = 0
+	private var contentProcessTerminations = BrowserContentProcessTerminationTracker()
 
 	var navigationIdentifier: Int {
 		navigationGeneration
@@ -527,6 +527,15 @@ final class BrowserController: NSObject, Identifiable {
 	func stopForClose() {
 		guard !isInvalidated else { return }
 		isInvalidated = true
+		if let connectivityObserver {
+			NotificationCenter.default.removeObserver(connectivityObserver)
+			self.connectivityObserver = nil
+		}
+		currentRequest = nil
+		failedRequest = nil
+		pendingRequest = nil
+		navigationFailure = nil
+		contentProcessTerminations = BrowserContentProcessTerminationTracker()
 		navigationGeneration += 1
 		findGeneration += 1
 		observations.forEach { $0.invalidate() }
@@ -901,6 +910,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	private func load(_ request: URLRequest, resetConnectivityRetry: Bool = true) {
+		guard !isInvalidated else { return }
 		awaitsNavigationCommit = true
 		currentRequest = request
 		failedRequest = nil
@@ -1020,10 +1030,6 @@ extension BrowserController: WKNavigationDelegate {
 			decisionHandler(.cancel, preferences)
 			return
 		}
-		if navigationAction.targetFrame?.isMainFrame == true {
-			currentRequest = navigationAction.request
-			webView.customUserAgent = Self.userAgentOverride(for: navigationAction.request.url)
-		}
 		if let url = navigationAction.request.url, handleExternalLink(url, requestingOrigin: navigationAction.sourceFrame.securityOrigin, in: webView) {
 			decisionHandler(.cancel, preferences)
 			return
@@ -1060,6 +1066,14 @@ extension BrowserController: WKNavigationDelegate {
 		      let newWindowRequested
 		else {
 			if navigationAction.targetFrame?.isMainFrame == true {
+				switch navigationAction.navigationType {
+					case .linkActivated, .formSubmitted, .formResubmitted, .backForward, .reload:
+						retriedAfterConnectivityReturn = false
+					default:
+						break
+				}
+				currentRequest = navigationAction.request
+				webView.customUserAgent = Self.userAgentOverride(for: navigationAction.request.url)
 				switch navigationAction.navigationType {
 					case .linkActivated, .formSubmitted, .formResubmitted:
 						pendingDownloadSource = (webView as? PeekSourceWebView)?.sourceIfRecent
@@ -1155,7 +1169,9 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	private func retryOfflineGETAfterConnectivityReturns() {
-		guard !retriedAfterConnectivityReturn,
+		guard !isInvalidated,
+		      createdWebView != nil,
+		      !retriedAfterConnectivityReturn,
 		      (navigationFailure?.kind == .offline || navigationFailure?.kind == .connectionLost),
 		      let request = failedRequest,
 		      BrowserNavigationFailure.canRetryAutomatically(request)
@@ -1167,8 +1183,7 @@ extension BrowserController: WKNavigationDelegate {
 	func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
 		guard owns(webView) else { return }
 		guard let url = webView.url ?? url else { return }
-		consecutiveContentProcessTerminations += 1
-		let kind: BrowserNavigationFailure.Kind = consecutiveContentProcessTerminations > 1
+		let kind: BrowserNavigationFailure.Kind = contentProcessTerminations.record(url)
 			? .repeatedWebContentTermination
 			: .webContentTerminated
 		navigationFailure = BrowserNavigationFailure(kind: kind, url: url)
@@ -1206,8 +1221,8 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
 		guard owns(webView), navigation === currentNavigation else { return }
-		consecutiveContentProcessTerminations = 0
 		committedURL = webView.url
+		contentProcessTerminations.navigationCommitted(at: webView.url)
 		hasUnsavedChanges = false
 		isDownloadHandoff = false
 		pageURLBeforeDownload = nil
