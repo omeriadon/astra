@@ -58,6 +58,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	private(set) var items: [BrowserDownload] = []
 	private(set) var selectedDownloadFolderName = ""
 	private(set) var latestStart: (id: UUID, source: UnitPoint)?
+	@ObservationIgnored private var downloadHydrationTask: Task<Void, Never>?
 
 	var activeProgress: Double? {
 		let active = items.filter { $0.status == .downloading }
@@ -100,7 +101,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 	private func hydrateItems() {
 		let url = storeURL
-		Task.detached(priority: .utility) {
+		downloadHydrationTask = Task.detached(priority: .utility) {
 			guard let data = try? Data(contentsOf: url) else {
 				if FileManager.default.fileExists(atPath: url.path) {
 					await MainActor.run { [weak self] in self?.preserveUnreadableDownloadCache() }
@@ -108,7 +109,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 					await MainActor.run { [weak self] in
 						guard let self else { return }
 						downloadCacheReadCompleted = true
-						if !items.isEmpty { persist() }
+						if !isClosing, !items.isEmpty { persist() }
 					}
 				}
 				return
@@ -138,9 +139,13 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				}
 				downloadCacheReadCompleted = true
 				restorationStarted = false
-				resumeAvailableDownloads()
+				if !isClosing {
+					resumeAvailableDownloads()
+				}
 				updateDockProgress()
-				persist()
+				if !isClosing {
+					persist()
+				}
 			}
 		}
 	}
@@ -484,7 +489,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	func resumeAvailableDownloads() {
-		guard !restorationStarted else { return }
+		guard !isClosing, !restorationStarted else { return }
 		restorationStarted = true
 		for item in items where item.status == .downloading && item.segments != nil {
 			if item.destinationIsFileScoped == true && item.fileAccessBookmark == nil {
@@ -552,6 +557,9 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 	func pauseAllForQuit() async {
 		isClosing = true
+		downloadPersistTask?.cancel()
+		downloadPersistTask = nil
+		await downloadHydrationTask?.value
 		for (key, download) in Array(downloads) {
 			guard let itemID = itemIDs[key] else { continue }
 			let data = await download.cancel()
@@ -1328,7 +1336,11 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	/// Encode + atomic write off-main; progress ticks arrive far more often
 	/// than durability requires. Quit path uses flushDownloads() instead.
 	private func persistSoon() {
-		guard privateDataStore == nil, downloadCacheReadCompleted, !downloadCacheIsUnreadable else { return }
+		guard privateDataStore == nil,
+		      downloadCacheReadCompleted,
+		      !downloadCacheIsUnreadable,
+		      !isClosing
+		else { return }
 		downloadPersistTask?.cancel()
 		let snapshot = items
 		let url = storeURL
