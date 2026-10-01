@@ -21,9 +21,28 @@ enum BrowserAddress {
 		{
 			guard !text.contains(where: \.isWhitespace),
 			      let host = components.host, !host.isEmpty,
-			      !host.contains(where: \.isWhitespace)
+			      !host.contains(where: \.isWhitespace),
+			      validPort(components.port)
 			else { return searchURL(for: text) }
 			return components.url ?? searchURL(for: text)
+		}
+
+		if !text.contains(where: \.isWhitespace),
+		   !hasExplicitAuthorityScheme(text),
+		   let components = URLComponents(string: "https://" + text),
+		   let host = components.host,
+		   host.contains(".") || host.lowercased() == "localhost",
+		   !host.contains(where: \.isWhitespace),
+		   components.user == nil,
+		   components.password == nil,
+		   validPort(components.port),
+		   let url = components.url
+		{
+			return url
+		}
+
+		if hasAmbiguousHostPort(text) {
+			return searchURL(for: text)
 		}
 
 		if !text.contains(where: \.isWhitespace),
@@ -34,17 +53,25 @@ enum BrowserAddress {
 			return url
 		}
 
-		if !text.contains(where: \.isWhitespace),
-		   let components = URLComponents(string: "https://" + text),
-		   let host = components.host,
-		   host.contains(".") || host.lowercased() == "localhost",
-		   !host.contains(where: \.isWhitespace),
-		   let url = components.url
-		{
-			return url
-		}
-
 		return searchURL(for: text)
+	}
+
+	private static func validPort(_ port: Int?) -> Bool {
+		guard let port else { return true }
+		return (1 ... 65535).contains(port)
+	}
+
+	private static func hasAmbiguousHostPort(_ text: String) -> Bool {
+		guard let colon = text.firstIndex(of: ":"),
+		      !hasExplicitAuthorityScheme(text)
+		else { return false }
+		let prefix = text[..<colon]
+		return prefix.contains(".") || prefix.lowercased() == "localhost"
+	}
+
+	private static func hasExplicitAuthorityScheme(_ text: String) -> Bool {
+		guard let colon = text.firstIndex(of: ":") else { return false }
+		return text[text.index(after: colon)...].hasPrefix("//")
 	}
 
 	static func displayString(for url: URL?, style: AddressDisplayStyle, isEditing: Bool) -> String {
