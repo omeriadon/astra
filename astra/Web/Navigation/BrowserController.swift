@@ -316,6 +316,16 @@ final class BrowserController: NSObject, Identifiable {
 	private var observations: [NSKeyValueObservation] = []
 	@ObservationIgnored
 	private var navigationGeneration = 0
+	@ObservationIgnored
+	private var connectivityObserver: NSObjectProtocol?
+	@ObservationIgnored
+	private var currentRequest: URLRequest?
+	@ObservationIgnored
+	private var failedRequest: URLRequest?
+	@ObservationIgnored
+	private var retriedAfterConnectivityReturn = false
+	@ObservationIgnored
+	private var consecutiveContentProcessTerminations = 0
 
 	var navigationIdentifier: Int {
 		navigationGeneration
@@ -370,6 +380,17 @@ final class BrowserController: NSObject, Identifiable {
 		self.scrollPosition = scrollPosition
 		restoredScrollPosition = scrollPosition == .zero ? nil : scrollPosition
 		super.init()
+		_ = BrowserNavigationConnectivity.shared
+		connectivityObserver = NotificationCenter.default.addObserver(
+			forName: BrowserNavigationConnectivity.didChangeNotification,
+			object: nil,
+			queue: .main
+		) { [weak self] notification in
+			guard notification.object as? Bool == true else { return }
+			Task { @MainActor [weak self] in
+				self?.retryOfflineGETAfterConnectivityReturns()
+			}
+		}
 		updateThemeColor(url == nil ? .black : .white)
 		#if os(macOS)
 			startPreviewSnapshotRefresh()
@@ -729,6 +750,9 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	deinit {
+		if let connectivityObserver {
+			NotificationCenter.default.removeObserver(connectivityObserver)
+		}
 		mediaObservationTask?.cancel()
 		faviconTask?.cancel()
 		observations.forEach { $0.invalidate() }
@@ -759,12 +783,14 @@ final class BrowserController: NSObject, Identifiable {
 
 	func goBack() {
 		guard let webView = createdWebView, webView.canGoBack else { return }
+		currentRequest = nil
 		awaitsNavigationCommit = true
 		currentNavigation = webView.goBack()
 	}
 
 	func goForward() {
 		guard let webView = createdWebView, webView.canGoForward else { return }
+		currentRequest = nil
 		awaitsNavigationCommit = true
 		currentNavigation = webView.goForward()
 	}
@@ -774,6 +800,7 @@ final class BrowserController: NSObject, Identifiable {
 		if let webView = createdWebView,
 		   let item = webView.backForwardList.item(at: index - historyIndex)
 		{
+			currentRequest = nil
 			awaitsNavigationCommit = true
 			currentNavigation = webView.go(to: item)
 		} else {
@@ -785,7 +812,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	func reload() {
 		if let navigationFailure {
-			load(URLRequest(url: navigationFailure.url))
+			load(failedRequest ?? URLRequest(url: navigationFailure.url))
 			return
 		}
 		if let createdWebView {
@@ -873,8 +900,13 @@ final class BrowserController: NSObject, Identifiable {
 		navigationDidChange?()
 	}
 
-	private func load(_ request: URLRequest) {
+	private func load(_ request: URLRequest, resetConnectivityRetry: Bool = true) {
 		awaitsNavigationCommit = true
+		currentRequest = request
+		failedRequest = nil
+		if resetConnectivityRetry {
+			retriedAfterConnectivityReturn = false
+		}
 		guard let webView = createdWebView else {
 			pendingRequest = request
 			return
@@ -989,6 +1021,7 @@ extension BrowserController: WKNavigationDelegate {
 			return
 		}
 		if navigationAction.targetFrame?.isMainFrame == true {
+			currentRequest = navigationAction.request
 			webView.customUserAgent = Self.userAgentOverride(for: navigationAction.request.url)
 		}
 		if let url = navigationAction.request.url, handleExternalLink(url, requestingOrigin: navigationAction.sourceFrame.securityOrigin, in: webView) {
@@ -1115,15 +1148,30 @@ extension BrowserController: WKNavigationDelegate {
 		pageURLBeforeDownload = nil
 		awaitsNavigationCommit = false
 		historyManager.cancelVisit()
+		failedRequest = currentRequest
 		if let failedURL = error.userInfo[NSURLErrorFailingURLErrorKey] as? URL ?? url {
 			navigationFailure = BrowserNavigationFailure(error: error, url: failedURL)
 		}
 	}
 
+	private func retryOfflineGETAfterConnectivityReturns() {
+		guard !retriedAfterConnectivityReturn,
+		      (navigationFailure?.kind == .offline || navigationFailure?.kind == .connectionLost),
+		      let request = failedRequest,
+		      BrowserNavigationFailure.canRetryAutomatically(request)
+		else { return }
+		retriedAfterConnectivityReturn = true
+		load(request, resetConnectivityRetry: false)
+	}
+
 	func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
 		guard owns(webView) else { return }
 		guard let url = webView.url ?? url else { return }
-		navigationFailure = BrowserNavigationFailure(kind: .webContentTerminated, url: url)
+		consecutiveContentProcessTerminations += 1
+		let kind: BrowserNavigationFailure.Kind = consecutiveContentProcessTerminations > 1
+			? .repeatedWebContentTermination
+			: .webContentTerminated
+		navigationFailure = BrowserNavigationFailure(kind: kind, url: url)
 	}
 
 	func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
@@ -1133,6 +1181,7 @@ extension BrowserController: WKNavigationDelegate {
 		mediaArtist = nil
 		pausedFromBrowser = false
 		currentNavigation = navigation
+		failedRequest = nil
 		navigationFailure = nil
 		awaitsNavigationCommit = true
 		navigationGeneration += 1
@@ -1157,6 +1206,7 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
 		guard owns(webView), navigation === currentNavigation else { return }
+		consecutiveContentProcessTerminations = 0
 		committedURL = webView.url
 		hasUnsavedChanges = false
 		isDownloadHandoff = false

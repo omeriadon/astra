@@ -28,6 +28,7 @@ struct BrowserNavigationFailure {
 			case NSURLErrorTimedOut:
 				kind = .timedOut
 			case NSURLErrorSecureConnectionFailed,
+			     NSURLErrorAppTransportSecurityRequiresSecureConnection,
 			     NSURLErrorServerCertificateHasBadDate,
 			     NSURLErrorServerCertificateUntrusted,
 			     NSURLErrorServerCertificateHasUnknownRoot,
@@ -47,6 +48,14 @@ struct BrowserNavigationFailure {
 		}
 	}
 
+	static func canRetryAutomatically(_ request: URLRequest?) -> Bool {
+		guard let request,
+		      request.httpBody == nil,
+		      request.httpBodyStream == nil
+		else { return false }
+		return ["GET", "HEAD"].contains((request.httpMethod ?? "GET").uppercased())
+	}
+
 	enum Kind: String, Hashable, CaseIterable {
 		case offline
 		case connectionLost
@@ -58,6 +67,7 @@ struct BrowserNavigationFailure {
 		case tooManyRedirects
 		case invalidResponse
 		case webContentTerminated
+		case repeatedWebContentTermination
 		case other
 
 		var title: LocalizedStringResource {
@@ -72,6 +82,7 @@ struct BrowserNavigationFailure {
 				case .tooManyRedirects: "Too Many Redirects"
 				case .invalidResponse: "Invalid Server Response"
 				case .webContentTerminated: "Page Stopped Working"
+				case .repeatedWebContentTermination: "Page Keeps Stopping"
 				case .other: "Cannot Open Page"
 			}
 		}
@@ -88,6 +99,7 @@ struct BrowserNavigationFailure {
 				case .tooManyRedirects: "This website redirected too many times."
 				case .invalidResponse: "The server sent a response that could not be read."
 				case .webContentTerminated: "This page closed unexpectedly. Try loading it again."
+				case .repeatedWebContentTermination: "This page stopped repeatedly. Close it and try again later."
 				case .other: "An error occurred while opening this page. Try again."
 			}
 		}
@@ -100,7 +112,7 @@ struct BrowserNavigationFailure {
 				case .secureConnectionFailed: "lock.shield"
 				case .invalidAddress: "link"
 				case .tooManyRedirects: "arrow.triangle.2.circlepath"
-				case .invalidResponse, .webContentTerminated, .other: "exclamationmark.triangle"
+				case .invalidResponse, .webContentTerminated, .repeatedWebContentTermination, .other: "exclamationmark.triangle"
 			}
 		}
 	}
