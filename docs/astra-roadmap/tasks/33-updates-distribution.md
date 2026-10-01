@@ -7,7 +7,7 @@ Read [the roadmap](../README.md) and [dispatch procedure](../dispatch.md). Imple
 
 ## Existing baseline
 
-Sparkle configuration and UpdateManager exist. The release document describes Developer ID signing, notarization and updater validation, but its historical workflow/scripts are absent from the current checkout. Prior Xcode integration rejected some entitlements; recheck current configuration before treating them as active blockers.
+Sparkle configuration, UpdateManager, and the committed release workflows exist. The workflows call `scripts/release/` helpers, which are absent from the current checkout. Prior Xcode integration rejected some entitlements; recheck current configuration before treating them as active blockers.
 
 ## Source entry points
 

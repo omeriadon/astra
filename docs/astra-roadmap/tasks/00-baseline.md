@@ -7,7 +7,7 @@ Read [the roadmap](../README.md) and [dispatch procedure](../dispatch.md). Imple
 
 ## Existing baseline
 
-Astra already has the main browser services, atomic snapshots, private sessions, native extension hosting and sync. The project references a test target, but its source and earlier fixture/release pipeline files are absent at final planning validation. Historical research includes findings that have since been addressed.
+Astra already has the main browser services, atomic snapshots, private sessions, native extension hosting and sync. The project references a test target, but its source, browser fixtures, and release helper scripts are absent at dispatch. The release workflow files remain. Historical research includes findings that have since been addressed.
 
 ## Source entry points
 

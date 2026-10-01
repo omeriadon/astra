@@ -1,6 +1,6 @@
 # Astra browser implementation roadmap
 
-Prepared 1 October 2026. Status: planning only. Contains 37 task packets. No implementation agents, branches, worktrees, commits, or releases have been created by this planning task.
+Prepared 1 October 2026. Execution authorized by the user: all 37 task packets, each in a separate worktree, implemented by gpt-6-luna and reviewed by the primary. See execution.md for progress and reviewed commits. The original checkout remains untouched; the user merges later.
 
 ## Goal and protected scope
 
@@ -12,7 +12,7 @@ WebKit and the OS remain responsible for rendering, JavaScript, the DOM, web sto
 
 ## Current source baseline
 
-This is a source-based inventory, not a runtime audit. Read the latest source at dispatch time. The earlier findings in [desktop browser infrastructure](../desktop-browser-infrastructure.md) predate substantial implementation; its **1 October implementation ledger** is the relevant historical baseline. The checkout changed during planning: test sources, browser fixtures and release workflow/scripts seen at initial inspection are absent at final validation, while the project still references the test target. Task 00 must reconcile that mismatch; this plan does not recreate those files or assume their removal was accidental.
+This is a source-based inventory, not a runtime audit. Read the latest source at dispatch time. The earlier findings in [desktop browser infrastructure](../desktop-browser-infrastructure.md) predate substantial implementation; its **1 October implementation ledger** is the relevant historical baseline. At task 00 entry, test sources, browser fixtures, and release helper scripts referenced by the committed release workflows were absent, while the project and shared scheme still referenced the test target. Task 00 reconciles the test target; it does not recreate deleted tests, fixtures, or release scripts.
 
 | Boundary | Existing source and behavior | Work still to establish |
 | --- | --- | --- |
@@ -51,7 +51,7 @@ Split delegate responsibilities only where an actual change requires a smaller o
 
 ## Work packages
 
-IDs, branch suffixes and packet filenames are stable. Every branch uses `astra/roadmap/<ID-slug>` and every worktree uses `../astra-worktrees/<ID-slug>`. The prerequisites below must be merged before starting a packet. A gate applies to the named optional part, not automatically to the whole packet.
+IDs, branch suffixes and packet filenames are stable. Every branch uses `astra/roadmap/<ID-slug>` and every worktree uses `../astra-worktrees/<ID-slug>`. The prerequisites below must be present as reviewed commits in a packet’s starting baseline. A gate applies to the named optional part, not automatically to the whole packet.
 
 | ID / packet | Priority | Prerequisites | Gate or limit |
 | --- | --- | --- | --- |
@@ -97,7 +97,7 @@ P0 means data loss, security boundaries, feasibility or release blockers. P1 mea
 
 ## Milestones and merge order
 
-Use numerical order as the default merge queue, with 24a immediately after 24. It satisfies the dependency graph and keeps shared files under one writer. Independent packets may start earlier only after all prerequisites have merged and the dispatcher confirms disjoint write ownership.
+Use numerical order as the default merge queue, with 24a immediately after 24. It satisfies the dependency graph and keeps shared files under one writer. Independent packets may start earlier only after all prerequisites have reviewed commits and the dispatcher confirms disjoint write ownership.
 
 | Milestone | Packets | Exit condition |
 | --- | --- | --- |
@@ -107,9 +107,9 @@ Use numerical order as the default merge queue, with 24a immediately after 24. I
 | Product/platform completion | 28–34 | Settings wired, current sync preserved/hardened, optional profiles/integrations decided, mobile parity addressed, release/performance limits recorded |
 | Integration | 35 | Selected scope reconciled, diagnostics/builds reviewed, privacy/data compatibility accounted for, remaining runtime gates enumerated |
 
-The existing repository constraint permits one implementation Luna agent, or two for genuinely independent scopes. It also normally requests direct implementation in this Browser project. This request establishes the worktree-based handoff plan; when these packets are later explicitly dispatched to subagents, each receives its own worktree. No agent starts merely because this roadmap exists. Use a primary Sol agent for analysis, architecture, review and final reporting; use `gpt-6-luna` with medium reasoning for these behavior-tracing packets. Low reasoning fits bounded mechanical follow-ups only.
+The existing repository constraint permits one implementation Luna agent, or two for genuinely independent scopes. It also normally requests direct implementation in this Browser project. This request establishes the worktree-based handoff plan; when these packets are later explicitly dispatched to subagents, each receives its own worktree. The user has now explicitly authorized dispatch of every packet, including optional product scopes. Provider credentials and unsupported public APIs remain concrete gates; authorization does not make them available. Use a primary Sol agent for analysis, architecture, review and final reporting; use `gpt-6-luna` with medium reasoning for these behavior-tracing packets. Low reasoning fits bounded mechanical follow-ups only.
 
-Suitable parallel candidates, subject to file reservations and merged prerequisites: 10 with 11; 13 with 15; 25 with 29. PiP runs after 24 and reserves its shared controller/media/menu files. These are candidates, not permission to edit shared files simultaneously.
+Suitable parallel candidates, subject to file reservations and reviewed prerequisite commits: 10 with 11; 13 with 15; 25 with 29. PiP runs after 24 and reserves its shared controller/media/menu files. These are candidates, not permission to edit shared files simultaneously.
 
 ## Coverage of the supplied checklist
 

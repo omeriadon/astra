@@ -1,6 +1,6 @@
 # Dispatch and worktree procedure
 
-This file is an execution handoff for later implementation. The current request creates documentation only. Nothing in the commands below has been executed by the planning task.
+The user has authorized execution of every packet with gpt-6-luna in separate worktrees. Task branches stack on reviewed prerequisite commits. No implementation branch is merged or pushed by agents; the original checkout remains unchanged for user-controlled integration.
 
 ## 1. Establish the baseline
 
@@ -8,11 +8,11 @@ The primary agent reads [the roadmap](README.md), the chosen packet, applicable 
 
 Use a committed baseline containing the intended current source and the roadmap. A worktree does not inherit uncommitted files from the main checkout. If necessary, the user or an explicitly authorized preparation step checkpoints the current implementation first. Do not silently stash, reset, discard, or include unrelated work. Record the exact baseline commit in the dispatch message; no baseline hash is invented in this plan.
 
-Task 00 establishes the baseline inventory/capability decisions. Each later task starts from a commit that already includes its prerequisites. The default integration base is the user's designated local integration branch. Preserve the existing branch conventions; `astra/roadmap/*` names only the new task branches.
+Task 00 establishes the baseline inventory/capability decisions. Each later task starts from a reviewed task commit that already includes its prerequisites. Stacked branches supply those dependencies without merging into the original checkout. The next reviewed task commit is the execution base; final integration belongs to the user. Preserve the existing branch conventions; `astra/roadmap/*` names only the new task branches.
 
 ## 2. Reserve ownership
 
-One implementation agent receives one task branch and worktree. Worktrees isolate working copies, not behavior or merge conflicts. Two agents may run only when their write sets are disjoint and dependencies are merged. Read access can overlap.
+One implementation agent receives one task branch and worktree. Worktrees isolate working copies, not behavior or merge conflicts. Two agents may run only when their write sets are disjoint and dependencies are present as reviewed commits. Read access can overlap.
 
 | Shared file/boundary | Tasks that may need it | Rule |
 | --- | --- | --- |
@@ -32,7 +32,7 @@ Paths in the table are relative to `astra/` unless explicitly identified otherwi
 
 ## 3. Create the task worktree
 
-Run from the repository root. Replace `task_id` and `baseline_commit` with the dispatched packet and the recorded commit. Create worktrees just before dispatch, not all against the original baseline: later packets need earlier interfaces and migrations.
+Run from the repository root. Replace `task_id` and `baseline_commit` with the dispatched packet and the recorded commit. Create worktrees just before dispatch, not all against the original baseline: later packets need earlier interfaces and migrations. Create each branch from the preceding reviewed commit; no merge command is needed during execution.
 
 ```sh
 task_id='01-lifecycle'
@@ -55,7 +55,7 @@ Implement task <ID-slug> from docs/astra-roadmap/tasks/<ID-slug>.md.
 Worktree: <absolute path>
 Branch: astra/roadmap/<ID-slug>
 Baseline commit: <exact commit>
-Prerequisites: <merged packet IDs and commits, or recorded gate decisions>
+Prerequisites: <reviewed packet IDs and commits, or recorded gate decisions>
 Selected scope: <baseline features plus explicitly selected optional features>
 Reserved write set: <packet files plus approved extra files>
 
