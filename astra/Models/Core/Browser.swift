@@ -1120,7 +1120,7 @@ final class Browser {
 	}
 
 	private func recordHistoryVisit(from controller: BrowserController, url: URL, title: String, navigationID: Int) {
-		guard !isPrivate, !isMini, controller.canRecordVisit,
+		guard !isPrivate, !isMini, ownsHistoryController(controller), controller.canRecordVisit,
 		      let safeURL = BrowserVisit.normalizedURL(url) else { return }
 		if BrowserVisit.matchesRecordedVisit(
 			url: safeURL,
@@ -1144,7 +1144,8 @@ final class Browser {
 	}
 
 	private func updateHistoryVisitTitle(from controller: BrowserController, url: URL, title: String, navigationID: Int) {
-		guard lastVisitedURL[controller.id] == url,
+		guard ownsHistoryController(controller),
+		      lastVisitedURL[controller.id] == url,
 		      lastVisitedDocument[controller.id] == navigationID,
 		      let id = lastVisitID[controller.id],
 		      let index = historyVisits.firstIndex(where: { $0.id == id }) else { return }
@@ -1152,6 +1153,13 @@ final class Browser {
 		visit.updateTitle(title, at: nextHistoryMutationDate(after: .now))
 		historyVisits[index] = visit
 		schedulePersistence()
+	}
+
+	private func ownsHistoryController(_ controller: BrowserController) -> Bool {
+		guard controller.session === session else { return false }
+		return tabs.contains { tab in
+			tab.controller === controller || tab.peeks.contains { $0.controller === controller }
+		}
 	}
 
 	private func nextHistoryMutationDate(after date: Date) -> Date {
