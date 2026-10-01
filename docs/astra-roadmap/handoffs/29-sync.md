@@ -4,7 +4,7 @@ Branch / worktree / baseline commit: `astra/roadmap/29-sync`; `/Users/omeriadon/
 
 Status: build verified.
 
-Commit(s), or explicit uncommitted state: `99b26b7` (`implement sync cache and conflict protection`) plus the local-only apply and shared-window follow-up checkpoint. Primary-owned README, contracts, execution ledger, and packet changes are included.
+Commit(s), or explicit uncommitted state: `99b26b7` (`implement sync cache and conflict protection`) and `c726905` (`preserve local sync state across applies`). Primary-owned README, contracts, execution ledger, and packet changes are included.
 
 Changed files and behavior:
 
