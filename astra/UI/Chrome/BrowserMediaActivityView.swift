@@ -61,19 +61,21 @@ private struct BrowserMediaActivityCard: View {
 						.accessibilityIdentifier("media-pause-\(controller.id)")
 				}
 				if controller.hasPausedMedia || controller.pausedFromBrowser {
-					Button("Try Resume Audio and Video", systemImage: "play.fill", action: controller.resumeMedia)
+					Button("Resume players", systemImage: "play.fill", action: controller.resumeMedia)
 						.labelStyle(.iconOnly)
 						.buttonStyle(.glass)
+						.accessibilityHint("Attempts to resume embedded players. Other page audio may continue or require interaction in the page.")
 						.accessibilityIdentifier("media-resume-\(controller.id)")
 				}
-				if controller.isPlayingMedia || controller.hasPausedMedia || controller.pausedFromBrowser {
+				if controller.isPlayingMedia || controller.hasPausedMedia || controller.pausedFromBrowser || controller.areMediaElementsMuted {
 					Button(
-						controller.areMediaElementsMuted ? "Unmute Main-Frame Audio and Video" : "Mute Main-Frame Audio and Video",
+						controller.areMediaElementsMuted ? "Unmute players" : "Mute players",
 						systemImage: controller.areMediaElementsMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
 						action: controller.toggleMediaElementsMuted
 					)
 					.labelStyle(.iconOnly)
 					.buttonStyle(.glass)
+					.accessibilityHint("Mutes embedded audio and video players. Other page audio may continue.")
 					.accessibilityIdentifier("media-mute-\(controller.id)")
 				}
 				if controller.isCapturing {
@@ -97,7 +99,7 @@ private struct BrowserMediaActivityCard: View {
 			return "Paused by Astra"
 		}
 		if controller.areMediaElementsMuted {
-			return "Main-frame HTML audio/video muted"
+			return "Players muted"
 		}
 		if controller.isPlayingMedia {
 			return controller.mediaArtist ?? "Playing media"

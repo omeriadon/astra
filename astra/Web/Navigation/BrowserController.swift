@@ -566,6 +566,13 @@ final class BrowserController: NSObject, Identifiable {
 			for (const media of document.querySelectorAll('audio, video')) mute(media);
 			const observer = new MutationObserver(records => {
 				for (const record of records) {
+					for (const node of record.removedNodes) {
+						if (!(node instanceof Element)) continue;
+						if (node.matches('audio, video') && (!node.isConnected || node.ownerDocument !== document)) elements.delete(node);
+						for (const media of node.querySelectorAll('audio, video')) {
+							if (!media.isConnected || media.ownerDocument !== document) elements.delete(media);
+						}
+					}
 					for (const node of record.addedNodes) {
 						if (!(node instanceof Element)) continue;
 						if (node.matches('audio, video')) mute(node);
