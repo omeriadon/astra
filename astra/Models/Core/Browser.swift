@@ -7,6 +7,7 @@ import WebKit
 @MainActor
 @Observable
 final class Browser {
+	private static var didApplyStartupBehavior = false
 	let windowID = UUID()
 	let isMini: Bool
 	let session: BrowserWebSession
@@ -38,6 +39,7 @@ final class Browser {
 	private(set) var historyClearedAt: Date
 	private(set) var selectedTabModifiedAt: Date
 	private(set) var persistenceErrorDescription: String?
+	private(set) var previousShutdownWasClean: Bool?
 
 	@ObservationIgnored
 	var navigationIntercept: ((URL) -> Bool)? {
@@ -88,6 +90,12 @@ final class Browser {
 
 	@ObservationIgnored
 	private var pendingScrollPersistence = false
+
+	@ObservationIgnored
+	private var startupPreservedState: BrowserPersistedState?
+
+	@ObservationIgnored
+	private var startupArchivedTabs: [OpenTab] = []
 
 	/// False until disk hydration completes; persistence calls before then only
 	/// stash flags so a placeholder window never saves or broadcasts itself.
@@ -406,29 +414,53 @@ final class Browser {
 		var bookmarks: [Bookmark]
 		var closedTabs: [OpenTab]
 		var historyVisits: [BrowserVisit]?
+		var persistedState: BrowserPersistedState
+		var previousShutdownWasClean: Bool?
 	}
 
 	private func hydrateFromDisk(placeholderID: UUID, placeholderModifiedAt: Date) {
 		guard let persistence else { return }
 		Task.detached(priority: .userInitiated) { [persistence] in
 			do {
+				let previousShutdownWasClean = try? persistence.loadShutdownMetadata()?.clean
+				try? persistence.saveShutdownMetadata(clean: false)
 				await BrowserRestorationStore.prepare()
-				let loaded: HydratedState = if let state = try persistence.loadPersistedState() {
-					HydratedState(
+				let loaded: HydratedState
+				if let state = try persistence.loadPersistedState() {
+					loaded = HydratedState(
 						tabs: state.openTabs,
 						snapshot: state.snapshot,
 						workspace: state.workspace,
 						bookmarks: state.bookmarks,
 						closedTabs: state.closedTabs,
-						historyVisits: state.historyVisits
+						historyVisits: state.historyVisits,
+						persistedState: state,
+						previousShutdownWasClean: previousShutdownWasClean
 					)
 				} else {
-					try HydratedState(
-						tabs: persistence.loadOpenTabs(),
-						snapshot: persistence.loadBrowserSnapshot(),
-						workspace: persistence.loadWorkspace(),
-						bookmarks: persistence.loadBookmarks(),
-						closedTabs: persistence.loadClosedTabs()
+					let tabs = try persistence.loadOpenTabs()
+					let snapshot = try persistence.loadBrowserSnapshot()
+					let workspace = try persistence.loadWorkspace()
+					let bookmarks = try persistence.loadBookmarks()
+					let closedTabs = try persistence.loadClosedTabs()
+					loaded = HydratedState(
+						tabs: tabs,
+						snapshot: snapshot,
+						workspace: workspace,
+						bookmarks: bookmarks,
+						closedTabs: closedTabs,
+						persistedState: BrowserPersistedState(
+							bookmarks: bookmarks,
+							openTabs: tabs,
+							closedTabs: closedTabs,
+							workspace: workspace ?? BrowserWorkspace.migrated(
+								tabs: tabs,
+								selectedTabID: snapshot?.selectedTabID ?? tabs.first?.id ?? UUID(),
+								theme: Defaults[.browserTheme]
+							),
+							snapshot: snapshot ?? BrowserSnapshot()
+						),
+						previousShutdownWasClean: previousShutdownWasClean
 					)
 				}
 				await MainActor.run { [weak self] in
@@ -451,7 +483,10 @@ final class Browser {
 	private func applyHydratedState(_ loaded: HydratedState, placeholderID: UUID, placeholderModifiedAt: Date) {
 		defer {
 			didFinishHydration = true
-			persist()
+			previousShutdownWasClean = loaded.previousShutdownWasClean
+			if startupPreservedState == nil {
+				persist()
+			}
 			BrowserSync.shared.hydrationDidFinish(self)
 		}
 		let placeholderIsUntouched = tabs.count == 1
@@ -459,6 +494,7 @@ final class Browser {
 			&& tabs.first?.modifiedAt == placeholderModifiedAt
 			&& tabs.first?.currentURL == nil
 		guard placeholderIsUntouched else {
+			Self.didApplyStartupBehavior = true
 			let cachedTabs = loaded.tabs
 			let cachedWorkspace = loaded.workspace ?? BrowserWorkspace.migrated(
 				tabs: cachedTabs,
@@ -496,6 +532,13 @@ final class Browser {
 			closedHistoryTabs = loaded.closedTabs
 			return
 		}
+		let startupBehavior: BrowserStartupBehavior
+		if !Self.didApplyStartupBehavior {
+			Self.didApplyStartupBehavior = true
+			startupBehavior = Defaults[.startupBehavior]
+		} else {
+			startupBehavior = .restore
+		}
 		let restoredTabs = loaded.tabs.compactMap { saved -> BrowserTab? in
 			let internalPage = saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:))
 			guard saved.internalPage == nil || internalPage != nil else { return nil }
@@ -517,12 +560,26 @@ final class Browser {
 				fileAccessBookmark: saved.fileAccessBookmark
 			)
 		}
-		let newTabs = restoredTabs.isEmpty ? [BrowserTab()] : restoredTabs
-		let newSelectedTabID = newTabs.first(where: { $0.id == loaded.snapshot?.selectedTabID })?.id ?? newTabs[0].id
+		let newTabs: [BrowserTab]
+		if startupBehavior == .restore {
+			newTabs = restoredTabs.isEmpty ? [BrowserTab()] : restoredTabs
+		} else {
+			let homepage = startupBehavior == .homepage ? Self.validHomepageURL(Defaults[.homepageURL]) : nil
+			newTabs = [BrowserTab(initialURL: homepage, session: session)]
+			startupPreservedState = loaded.persistedState
+			startupArchivedTabs = loaded.tabs
+		}
+		let newSelectedTabID = startupBehavior == .restore
+			? (newTabs.first(where: { $0.id == loaded.snapshot?.selectedTabID })?.id ?? newTabs[0].id)
+			: newTabs[0].id
 		tabs = newTabs
 		selectedTabID = newSelectedTabID
-		workspace = loaded.workspace ?? BrowserWorkspace.migrated(
+		workspace = startupBehavior == .restore ? (loaded.workspace ?? BrowserWorkspace.migrated(
 			tabs: loaded.tabs,
+			selectedTabID: newSelectedTabID,
+			theme: Defaults[.browserTheme]
+		)) : BrowserWorkspace.migrated(
+			tabs: newTabs.map(\.openTab),
 			selectedTabID: newSelectedTabID,
 			theme: Defaults[.browserTheme]
 		)
@@ -946,6 +1003,18 @@ final class Browser {
 	func flushAndWaitForPersistence() async {
 		flushPersistence()
 		await session.persistenceWriteTask?.value
+	}
+
+	func markCleanShutdown() async {
+		guard !isPrivate, let persistence else { return }
+		await session.persistenceWriteTask?.value
+		do {
+			try await Task.detached(priority: .utility) {
+				try persistence.saveShutdownMetadata(clean: true)
+			}.value
+		} catch {
+			persistenceErrorDescription = error.localizedDescription
+		}
 	}
 
 	private static func migratedHistory(_ tabs: [OpenTab]) -> [BrowserVisit] {
@@ -1556,6 +1625,13 @@ final class Browser {
 		BrowserExtensionManager.shared.sync(self)
 		guard persistence != nil else { return }
 		if fullState {
+			if startupPreservedState != nil {
+				closedHistoryTabs.insert(contentsOf: startupArchivedTabs.filter { saved in
+					!tabs.contains(where: { $0.id == saved.id })
+				}, at: 0)
+				startupPreservedState = nil
+				startupArchivedTabs = []
+			}
 			pendingFullPersistence = true
 		}
 		guard didFinishHydration else { return }
@@ -1566,6 +1642,17 @@ final class Browser {
 			guard !Task.isCancelled, let self else { return }
 			persist()
 		}
+	}
+
+	private static func validHomepageURL(_ value: String) -> URL? {
+		guard let components = URLComponents(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
+			  let scheme = components.scheme?.lowercased(),
+			  ["http", "https"].contains(scheme),
+			  components.host?.isEmpty == false,
+			  components.user == nil,
+			  components.password == nil
+		else { return nil }
+		return components.url
 	}
 
 	private func schedulePersistence() {
@@ -1596,6 +1683,14 @@ final class Browser {
 			return
 		}
 		reconcileWorkspace()
+		if let startupPreservedState {
+			let previousWrite = session.persistenceWriteTask
+			session.persistenceWriteTask = Task.detached(priority: .utility) { [persistence] in
+				await previousWrite?.value
+				try? persistence.savePersistedState(startupPreservedState)
+			}
+			return
+		}
 		let isStructural = pendingFullPersistence
 		pendingFullPersistence = false
 		pendingScrollPersistence = false
@@ -1616,7 +1711,12 @@ final class Browser {
 				deletedVisitsAt: deletedVisitsAt,
 				historyClearedAt: historyClearedAt
 			),
-			historyVisits: historyVisits
+			historyVisits: historyVisits,
+			windowRecords: [BrowserWindowRecord(
+				windowID: windowID,
+				tabIDs: tabs.map(\.id),
+				selectedTabID: selectedTabID
+			)]
 		)
 		// Encode + file IO off-main so Cmd+T / history-open stay instant.
 		// Scroll-only saves skip cross-window fan-out and sync: no structural change.

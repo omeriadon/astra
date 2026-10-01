@@ -111,6 +111,9 @@
 					}
 				}
 				for controller in windows {
+					await controller.browser.markCleanShutdown()
+				}
+				for controller in windows {
 					for tab in controller.browser.tabs {
 						tab.stopForClose()
 					}

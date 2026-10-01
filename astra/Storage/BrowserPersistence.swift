@@ -25,6 +25,31 @@ struct BrowserPersistedState: Codable, @unchecked Sendable {
 	var workspace: BrowserWorkspace
 	var snapshot: BrowserSnapshot
 	var historyVisits: [BrowserVisit]? = nil
+	var windowRecords: [BrowserWindowRecord]? = nil
+}
+
+struct BrowserWindowRecord: Codable, Equatable, Sendable {
+	var version: Int
+	var windowID: UUID
+	var tabIDs: [UUID]
+	var selectedTabID: UUID
+
+	init(windowID: UUID, tabIDs: [UUID], selectedTabID: UUID) {
+		version = 1
+		self.windowID = windowID
+		self.tabIDs = tabIDs
+		self.selectedTabID = selectedTabID
+	}
+}
+
+struct BrowserShutdownMetadata: Codable, Equatable, Sendable {
+	var version: Int
+	var clean: Bool
+	var updatedAt: Date
+
+	static func current(clean: Bool) -> Self {
+		Self(version: 1, clean: clean, updatedAt: .now)
+	}
 }
 
 enum BrowserPersistenceError: LocalizedError, Equatable {
@@ -49,7 +74,7 @@ final class BrowserPersistence: @unchecked Sendable {
 		let state: BrowserPersistedState
 	}
 
-	private nonisolated static let currentVersion = 2
+	private nonisolated static let currentVersion = 3
 
 	@MainActor
 	init() throws {
@@ -131,9 +156,25 @@ final class BrowserPersistence: @unchecked Sendable {
 	}
 
 	nonisolated func savePersistedState(_ state: BrowserPersistedState) throws {
+		let currentURL = directory.appendingPathComponent("browser-state.json")
+		if let currentData = try? Data(contentsOf: currentURL),
+		   (try? decodeSnapshot(currentData)) == nil,
+		   let header = try? JSONSerialization.jsonObject(with: currentData) as? [String: Any],
+		   let version = header["version"] as? Int,
+		   version > Self.currentVersion
+		{
+			throw BrowserPersistenceError.unsupportedVersion
+		}
+		var state = state
+		if let oldState = try? loadPersistedState() {
+			var records = Dictionary(uniqueKeysWithValues: (oldState.windowRecords ?? []).map { ($0.windowID, $0) })
+			for record in state.windowRecords ?? [] {
+				records[record.windowID] = record
+			}
+			state.windowRecords = records.values.sorted { $0.windowID.uuidString < $1.windowID.uuidString }
+		}
 		let data = try JSONEncoder().encode(Envelope(version: Self.currentVersion, state: state))
 		_ = try decodeSnapshot(data)
-		let currentURL = directory.appendingPathComponent("browser-state.json")
 		var historyWasRemoved = false
 		if FileManager.default.fileExists(atPath: currentURL.path),
 		   let previousData = try? Data(contentsOf: currentURL),
@@ -165,6 +206,14 @@ final class BrowserPersistence: @unchecked Sendable {
 				try FileManager.default.removeItem(at: legacyURL)
 			}
 		}
+	}
+
+	nonisolated func saveShutdownMetadata(clean: Bool) throws {
+		try write(BrowserShutdownMetadata.current(clean: clean), named: "browser-shutdown.json")
+	}
+
+	nonisolated func loadShutdownMetadata() throws -> BrowserShutdownMetadata? {
+		try read(BrowserShutdownMetadata.self, named: "browser-shutdown.json")
 	}
 
 	private nonisolated func decodeSnapshot(_ data: Data) throws -> BrowserPersistedState {

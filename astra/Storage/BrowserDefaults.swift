@@ -4,7 +4,17 @@ extension AddressDisplayStyle: Defaults.Serializable {}
 extension PeekLevel: Defaults.Serializable {}
 extension BrowserTheme: Defaults.Serializable {}
 
+enum BrowserStartupBehavior: String, CaseIterable {
+	case restore
+	case blank
+	case homepage
+}
+
+extension BrowserStartupBehavior: Defaults.Serializable {}
+
 extension Defaults.Keys {
+	static let startupBehavior = Key<BrowserStartupBehavior>("startupBehavior", default: .restore)
+	static let homepageURL = Key<String>("homepageURL", default: "https://www.google.com")
 	static let tryHTTPSFirst = Key<Bool>("tryHTTPSFirst", default: true)
 	static let globalPrivacyControl = Key<Bool>("globalPrivacyControl", default: true)
 	static let historyRetentionDays = Key<Int>("historyRetentionDays", default: 0)
@@ -36,6 +46,8 @@ extension Defaults.Keys {
 		"globalPrivacyControl",
 		"historyRetentionDays",
 		"searchSuggestionsEnabled",
+		"startupBehavior",
+		"homepageURL",
 	]
 
 	static let browserTheme = Key<BrowserTheme>(

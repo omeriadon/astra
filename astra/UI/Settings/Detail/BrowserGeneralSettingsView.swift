@@ -14,6 +14,8 @@ struct BrowserGeneralSettingsView: View {
 	@Default(.peekLevel) private var peekLevel
 	@Default(.zoomOutInPeeks) private var zoomOutInPeeks
 	@Default(.renameDownloadsWithAppleIntelligence) private var renameDownloadsWithAppleIntelligence
+	@Default(.startupBehavior) private var startupBehavior
+	@Default(.homepageURL) private var homepageURL
 
 	#if os(macOS)
 		@State private var isDefaultBrowser = false
@@ -69,6 +71,22 @@ struct BrowserGeneralSettingsView: View {
 				.accessibilityIdentifier("address-display-style-picker")
 				.id("Address Bar")
 			}
+
+			Section("Startup") {
+				Picker("When Astra opens", selection: $startupBehavior) {
+					Text("Restore previous session").tag(BrowserStartupBehavior.restore)
+					Text("Open a blank tab").tag(BrowserStartupBehavior.blank)
+					Text("Open homepage").tag(BrowserStartupBehavior.homepage)
+				}
+				.accessibilityIdentifier("startup-behavior-picker")
+
+				if startupBehavior == .homepage {
+					TextField("Homepage URL", text: $homepageURL)
+						.accessibilityLabel("Homepage URL")
+						.accessibilityIdentifier("homepage-url")
+				}
+			}
+			.id("Startup")
 
 			#if os(macOS)
 				Section("Mini Astra") {
