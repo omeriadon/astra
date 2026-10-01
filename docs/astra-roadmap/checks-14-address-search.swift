@@ -5,6 +5,11 @@ struct AddressSearchChecks {
 	static func main() {
 		let configuration = BrowserSearchConfiguration.default
 		precondition(BrowserSearchConfiguration.decode(configuration.encoded) == configuration)
+		precondition(configuration.encoded == configuration.encoded)
+		var escapedConfiguration = configuration
+		escapedConfiguration.customTemplate = String(repeating: "\u{1}", count: 2_048)
+		escapedConfiguration.keywordShortcuts = String(repeating: "\u{1}", count: 4_096)
+		precondition(BrowserSearchConfiguration.decode(escapedConfiguration.encoded) == escapedConfiguration)
 		checkAddress("https://example.com/path?a=1#section", expected: "https://example.com/path?a=1#section", configuration: configuration)
 		checkAddress("example.com:8443/path", expected: "https://example.com:8443/path", configuration: configuration)
 		checkAddress("localhost:8080/path", expected: "https://localhost:8080/path", configuration: configuration)
@@ -30,6 +35,12 @@ struct AddressSearchChecks {
 			isEditing: false,
 			configuration: configuration
 		)
+		let fullHighlight = BrowserAddress.primaryTextRanges(
+			for: searchURL,
+			displayedText: searchURL.absoluteString,
+			configuration: configuration
+		)
+		precondition(fullHighlight.first.map { String(searchURL.absoluteString[$0]) } == "C%2B%2B%20%26%20100%25%3Dx%20%23%20caf%C3%A9")
 		let highlighted = BrowserAddress.primaryTextRanges(
 			for: searchURL,
 			displayedText: dimmedSearch,
@@ -49,6 +60,28 @@ struct AddressSearchChecks {
 		precondition(custom.searchLabel(for: "q: \(query)", isPrivate: false) == "Search Custom")
 		precondition(custom.query(for: URL(string: "https://search.example/find?client=other&q=word")!) == nil)
 		precondition(custom.queryParameterName(for: URL(string: "https://search.example/find?client=other&q=word")!) == nil)
+		custom.customTemplate = "https://search.example/find?search%5Fterms={query}"
+		let encodedParameterURL = URL(string: "https://search.example/find?search%5Fterms=hello")!
+		precondition(custom.queryParameterName(for: encodedParameterURL) == "search_terms")
+		precondition(custom.query(for: encodedParameterURL) == "hello")
+		let encodedParameterDisplay = BrowserAddress.displayString(
+			for: encodedParameterURL,
+			style: .dimmed,
+			isEditing: false,
+			configuration: custom
+		)
+		let encodedParameterFullRange = BrowserAddress.primaryTextRanges(
+			for: encodedParameterURL,
+			displayedText: encodedParameterURL.absoluteString,
+			configuration: custom
+		).first
+		precondition(encodedParameterFullRange.map { String(encodedParameterURL.absoluteString[$0]) } == "hello")
+		let encodedParameterRange = BrowserAddress.primaryTextRanges(
+			for: encodedParameterURL,
+			displayedText: encodedParameterDisplay,
+			configuration: custom
+		).first
+		precondition(encodedParameterRange.map { String(encodedParameterDisplay[$0]) } == "hello")
 		custom.customTemplate = "http://search.example/?q={query}"
 		precondition(custom.searchURL(for: "never fallback") == nil)
 		precondition(BrowserSearchConfiguration.decode("invalid").searchURL(for: "never fallback") == nil)
@@ -61,6 +94,29 @@ struct AddressSearchChecks {
 		split.privateEngine = .google
 		split.privateSuggestionsEnabled = true
 		precondition(split.suggestionsProvider(isPrivate: true) == .google)
+
+		let suggestionURL = BrowserSearchSuggestions.suggestionURL(for: "C++", provider: .google)
+		precondition(URLComponents(url: suggestionURL!, resolvingAgainstBaseURL: false)?.percentEncodedQuery?.contains("C%2B%2B") == true)
+		precondition(BrowserSearchSuggestions.parsedSuggestions(
+			["café", ["café au lait", "café noir"]],
+			query: "café",
+			provider: .google
+		) == ["café au lait", "café noir"])
+		precondition(BrowserSearchSuggestions.parsedSuggestions(
+			["old query", ["stale"]],
+			query: "current query",
+			provider: .google
+		) == nil)
+		precondition(BrowserSearchSuggestions.parsedSuggestions(
+			[["phrase": "tea", "score": 1], ["phrase": "tea shop"]],
+			query: "tea",
+			provider: .duckDuckGo
+		) == ["tea", "tea shop"])
+		precondition(BrowserSearchSuggestions.parsedSuggestions(
+			["unexpected tuple", "shape"],
+			query: "tea",
+			provider: .duckDuckGo
+		) == [])
 
 		var shortcuts = configuration
 		shortcuts.keywordShortcuts = "w=https://en.wikipedia.org/w/index.php?search={query}"

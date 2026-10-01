@@ -32,7 +32,7 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 	}
 
 	static func decode(_ value: String) -> Self {
-		guard value.utf8.count <= 8_192,
+		guard value.utf8.count <= 40_960,
 		      let data = value.data(using: .utf8),
 		      let configuration = try? JSONDecoder().decode(Self.self, from: data)
 		else {
@@ -48,9 +48,13 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 	}
 
 	var encoded: String {
-		guard let data = try? JSONEncoder().encode(self),
+		let encoder = JSONEncoder()
+		encoder.outputFormatting = [.sortedKeys]
+		guard let data = try? encoder.encode(self),
 		      let value = String(data: data, encoding: .utf8)
-		else { return "{}" }
+		else {
+			return "{}"
+		}
 		return value
 	}
 
@@ -83,7 +87,9 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 	private func matchingQuery(in url: URL) -> (name: String, value: String)? {
 		guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
 		      components.user == nil, components.password == nil
-		else { return nil }
+		else {
+			return nil
+		}
 		if Self.isGoogleRegionalSearch(components),
 		   let item = components.percentEncodedQueryItems?.first(where: { $0.name == "q" }),
 		   let encodedValue = item.value,
@@ -102,14 +108,20 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 			      let actualItems = components.queryItems,
 			      let encodedItems = components.percentEncodedQueryItems,
 			      let marker = expectedItems.first(where: { $0.value == Self.marker })?.name,
-			      let encodedValue = encodedItems.first(where: { $0.name == marker })?.value,
+			      let encodedValue = encodedItems.first(where: {
+				($0.name.removingPercentEncoding ?? $0.name) == marker
+			      })?.value,
 			      let value = encodedValue.replacingOccurrences(of: "+", with: " ").removingPercentEncoding,
 			      !value.isEmpty
-			else { continue }
+			else {
+				continue
+			}
 			let staticItems = expectedItems.filter { $0.name != marker }
 			guard staticItems.allSatisfy({ expectedItem in
 				actualItems.contains(URLQueryItem(name: expectedItem.name, value: expectedItem.value))
-			}) else { continue }
+			}) else {
+				continue
+			}
 			return (marker, value)
 		}
 		return nil
@@ -122,10 +134,14 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 		      let host = components.host?.lowercased(),
 		      let query = components.queryItems?.first(where: { $0.name == "q" })?.value,
 		      !query.isEmpty
-		else { return false }
+		else {
+			return false
+		}
 		let normalizedHost = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
 		let labels = normalizedHost.split(separator: ".")
-		guard labels.first == "google" else { return false }
+		guard labels.first == "google" else {
+			return false
+		}
 		let region = Array(labels.dropFirst())
 		return region == ["com"]
 			|| region.count == 1 && region[0].count == 2
@@ -142,18 +158,24 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 	}
 
 	func suggestionsProvider(isPrivate: Bool) -> Engine? {
-		if isPrivate, !privateSuggestionsEnabled { return nil }
+		if isPrivate, !privateSuggestionsEnabled {
+			return nil
+		}
 		let selected = engine(isPrivate: isPrivate)
 		return selected == .google || selected == .duckDuckGo ? selected : nil
 	}
 
 	private var searchTemplates: [String] {
 		var templates = [Engine.google.template, Engine.duckDuckGo.template, Engine.bing.template, customTemplate]
-		guard keywordShortcuts.utf8.count <= 4_096 else { return templates }
+		guard keywordShortcuts.utf8.count <= 4_096 else {
+			return templates
+		}
 		for line in keywordShortcuts.split(whereSeparator: \.isNewline).prefix(20) {
 			guard let template = line.split(separator: "=", maxSplits: 1).last.map(String.init),
 			      Self.isValidTemplate(template)
-			else { continue }
+			else {
+				continue
+			}
 			templates.append(template)
 		}
 		return templates
@@ -161,8 +183,12 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 
 	private func shortcutDestination(for input: String) -> URL? {
 		let pieces = input.split(maxSplits: 1, whereSeparator: \.isWhitespace)
-		guard pieces.count == 2 else { return nil }
-		guard keywordShortcuts.utf8.count <= 4_096 else { return nil }
+		guard pieces.count == 2 else {
+			return nil
+		}
+		guard keywordShortcuts.utf8.count <= 4_096 else {
+			return nil
+		}
 		let keyword = String(pieces[0]).lowercased()
 		guard keyword.range(of: #"^[a-zA-Z][a-zA-Z0-9_-]{0,15}$"#, options: .regularExpression) != nil,
 		      let line = keywordShortcuts.split(whereSeparator: \.isNewline).prefix(20).first(where: {
@@ -170,7 +196,9 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 		}),
 		let template = line.split(separator: "=", maxSplits: 1).last.map(String.init),
 		Self.isValidTemplate(template)
-		else { return nil }
+		else {
+			return nil
+		}
 		return Self.url(for: String(pieces[1]), template: template)
 	}
 
@@ -180,7 +208,9 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 		guard isValidTemplate(template),
 		      var components = templateComponents(template),
 		      let items = components.queryItems
-		else { return nil }
+		else {
+			return nil
+		}
 		components.queryItems = items.map { item in
 			URLQueryItem(name: item.name, value: item.value == marker ? query : item.value)
 		}
@@ -197,12 +227,16 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 		      let host = components.host, !host.isEmpty,
 		      components.user == nil, components.password == nil,
 		      components.port.map({ (1 ... 65_535).contains($0) }) ?? true
-		else { return false }
+		else {
+			return false
+		}
 		return true
 	}
 
 	private static func templateComponents(_ template: String) -> URLComponents? {
-		guard template.components(separatedBy: "{query}").count == 2 else { return nil }
+		guard template.components(separatedBy: "{query}").count == 2 else {
+			return nil
+		}
 		return URLComponents(string: template.replacingOccurrences(of: "{query}", with: marker))
 	}
 

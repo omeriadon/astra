@@ -68,20 +68,28 @@ struct NewTabView: View {
 			guard request.suggestionsEnabled,
 			      let provider = searchConfiguration.suggestionsProvider(isPrivate: request.isPrivate),
 			      !request.query.isEmpty
-		else { return }
+			else {
+				return
+			}
 			do {
 				try await Task.sleep(for: .milliseconds(250))
-				guard !Task.isCancelled, searchSuggestionsEnabled else { return }
+				guard !Task.isCancelled,
+				      searchSuggestionsEnabled,
+				      suggestionRequest == request
+				else {
+					return
+				}
 				let suggestions = try await BrowserSearchSuggestions.fetch(
 					for: request.query,
 					provider: provider
 				)
 				try Task.checkCancellation()
-				guard searchSuggestionsEnabled,
-				      browser.newTabSearchText.trimmingCharacters(in: .whitespacesAndNewlines) == request.query,
-				      searchConfiguration.encoded == request.configuration,
-				      browser.isPrivate == request.isPrivate
-				else { return }
+				guard !Task.isCancelled,
+				      searchSuggestionsEnabled,
+				      suggestionRequest == request
+				else {
+					return
+				}
 				browser.newTabGoogleSuggestions = suggestions
 			} catch {
 				// Local suggestions and submitting the query remain available offline.

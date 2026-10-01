@@ -16,12 +16,14 @@ Changed files and behavior:
 - `astra/Storage/BrowserDefaults.swift`, `astra/UI/Settings/Detail/BrowserGeneralSettingsView.swift`: deterministic Google defaults, synced portable search configuration, normal/private engine pickers, HTTPS template editing/validation feedback, keyword shortcuts and private suggestions opt-in.
 - `docs/astra-roadmap/checks-14-address-search.swift`: no-network checks using the production address/configuration helpers.
 
-Acceptance cases satisfied, with evidence: Executed the helper check across explicit and scheme-less URLs, localhost, IPv4/IPv6 with ports, Unicode hosts/paths, wrappers, credential/restricted schemes, malformed custom configuration, built-in and custom providers, static query parameters, keyword shortcuts, Google regional results, private-provider policy, and query values containing `+ & = % #` plus Unicode. The checker asserts reserved plus signs are percent-encoded and decoded correctly.
+Acceptance cases satisfied, with evidence: Executed the helper check across explicit and scheme-less URLs, localhost, IPv4/IPv6 with ports, Unicode hosts/paths, wrappers, credential/restricted schemes, malformed custom configuration, built-in and custom providers, static and percent-encoded parameter names, keyword shortcuts, Google regional results, private-provider policy, and query values containing `+ & = % #` plus Unicode. It checks full and dimmed address highlighting, stable sorted JSON encoding, escaped control input within configured field bounds, provider-aware suggestion query encoding, and real Google/DuckDuckGo payload parsing for valid and malformed shapes.
 
 Checks run, scheme/destination/workspace and results:
 
 - `swiftc -o /tmp/astra-address-search-check \
   astra/Models/Search/BrowserSearchConfiguration.swift \
+  astra/Models/Search/BrowserSearchMatching.swift \
+  astra/Models/Search/BrowserSearchSuggestions.swift \
   astra/UI/AddressBar/BrowserAddress.swift \
   astra/UI/AddressBar/AddressDisplayStyle.swift \
   astra/Web/Navigation/BrowserNavigationPolicy.swift \
