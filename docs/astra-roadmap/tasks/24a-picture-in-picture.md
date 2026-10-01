@@ -1,6 +1,6 @@
 # 24a-picture-in-picture
 
-Priority: P1 required. Status: planned. Prerequisites: 17, 24.
+Priority: P1 required. Status: source reviewed; Mac build verified; runtime gates open. Prerequisites: 17, 24.
 Branch: `astra/roadmap/24a-picture-in-picture`. Worktree: `../astra-worktrees/24a-picture-in-picture`.
 
 Read [the roadmap](../README.md) and [dispatch procedure](../dispatch.md). Implement only this packet's selected scope, using its own worktree and reserved files. No implementation starts from this document alone.

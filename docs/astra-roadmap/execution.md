@@ -26,7 +26,7 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 | [11-favicons](tasks/11-favicons.md) | build verified; primary reviewed | 948f8fa; bounded fetch/decoding/cache and hydration guards |
 | [12-downloads](tasks/12-downloads.md) | queued | — |
 | [13-uploads-auth-challenges](tasks/13-uploads-auth-challenges.md) | queued | — |
-| [14-address-search-config](tasks/14-address-search-config.md) | independently reviewed; Mac build and final parser helper checks pass | separate branch source `f63f5b5`, review HEAD `9fa4963`; Mac build20.732s before final helper-only parser correction; combine once in next task worktree |
+| [14-address-search-config](tasks/14-address-search-config.md) | source reviewed; Mac build and final parser helper checks pass | integrated into cumulative24a through `a9ba5cb`; original branch remains intact |
 | [15-address-intelligence](tasks/15-address-intelligence.md) | queued | — |
 | [16-chrome-find-zoom](tasks/16-chrome-find-zoom.md) | queued | — |
 | [17-keyboard-menus](tasks/17-keyboard-menus.md) | queued | — |
@@ -36,8 +36,8 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 | [21-content-blocking](tasks/21-content-blocking.md) | queued | — |
 | [22-extensions](tasks/22-extensions.md) | queued | — |
 | [23-credentials-browser-auth](tasks/23-credentials-browser-auth.md) | queued | — |
-| [24-media](tasks/24-media.md) | build verified; primary reviewed | 7255d12; public native playback plus scoped player controls; PiP still pending24a |
-| [24a-picture-in-picture](tasks/24a-picture-in-picture.md) | queued | — |
+| [24-media](tasks/24-media.md) | build verified; primary reviewed | 7255d12; public native playback plus scoped player controls; browser PiP belongs to24a and remains runtime-gated |
+| [24a-picture-in-picture](tasks/24a-picture-in-picture.md) | source reviewed; Mac build verified | `0322585`; reviewed14 combined once through `a9ba5cb`; handoff `a5dbcc4`; runtime/provider/iOS gates remain |
 | [25-page-tools-context-drag](tasks/25-page-tools-context-drag.md) | queued | — |
 | [26-reader-translation-source](tasks/26-reader-translation-source.md) | queued | — |
 | [27-internal-urls](tasks/27-internal-urls.md) | queued | — |
@@ -58,8 +58,22 @@ Combined baseline: independent navigation, offline/failure and favicon checkpoin
 
 ## User-requested handoff
 
-The user requested finishing the active packet and producing a continuation file instead of starting more work in this context. Eleven packets are source-reviewed; twenty-six remain. Cumulative05 contains ten and independent14 remains on its own branch; combine it in the next task worktree. Read [CONTINUE.md](CONTINUE.md) for the authoritative resume point, worktree rules, remaining work and verification limits. The original checkout has advanced independently since the initial snapshot; do not overwrite or merge it without a new integration instruction.
+Historical handoff: packets05 and14 were reviewed, and the prior continuation pointed at PiP. That handoff is superseded by the resumed PiP close-out below. Read [CONTINUE.md](CONTINUE.md) for the current authoritative worktree and next packet. The original checkout has advanced independently since the initial snapshot; do not overwrite or merge it without a new integration instruction.
 
 ## Permissions/search close-out
 
-The user requested finishing up. Packets05 and14 are reviewed within their stated source/build limits. No PiP or other next packet was started. Read CONTINUE.md for the cumulative05 baseline, independent14 checkpoint sequence, and next PiP dispatch. Permission decisions are device-only; search configuration joins the existing timestamped portable setting cache. Original checkout and all worktrees remain intact.
+Historical close-out: packets05 and14 were reviewed within their stated source/build limits. At that point PiP had not started. Permission decisions are device-only; search configuration joins the existing timestamped portable setting cache. Original checkout and all worktrees remain intact.
+
+## Resumed PiP dispatch
+
+Task24a started in its own worktree from the latest cumulative05 checkpoint `1739188ecf8ac04049f53dacf0f1b9636c752ea1`. The five reviewed14 integration checkpoints were cherry-picked once, producing combined baseline `a9ba5cb`. Original14 remains intact. One gpt-6-luna implementation worker owns the PiP lifecycle/control files; primary owns review and serialized Xcode verification. A minimal existing menu command is scheduled ahead of17; this does not complete17. The original checkout remains untouched.
+
+## Added user scope: standalone website Dock apps
+
+During resumed24a work, the user explicitly selected standalone website Dock apps for31: any website, Mini Astra-style top-bar-only window, Command-S top-bar toggle, current-tab menu creation, dedicated settings management, and actual app/Dock installation. The detailed packet31 now includes those requirements. This records scope; implementation31 has not started.
+
+## PiP close-out
+
+Packet24a source was reviewed and its combined `astra` / `My Mac` Xcode MCP build passed in 8.871s with zero reported issues in the five changed Swift files. Bun production-script checks, Swift protection-policy checks, and the combined packet14 helper check passed. Implementation checkpoint `0322585358fe2567fb8ff47155187b3225939323`; reviewed handoff checkpoint `a5dbcc4c4f3a98bf30c339fdd53bf40d23f722c9`.
+
+This closes source/build review for the twelfth packet; twenty-five packets remain. PiP runtime acceptance is open: actual entry/exit and native controls, exact automatic return focus, iframe state, provider/DRM/user-activation limits, background/view-detachment behavior and iOS scene/audio behavior were not exercised. Playing or paused media is conservatively protected; browser controls/state inspect main-frame HTML video only. The minimal Navigation menu action was scheduled ahead of17; packet17 remains queued and incomplete. Standalone website Dock apps are required selected scope in packet31; implementation has not started.

@@ -4,12 +4,11 @@ This is the single handoff entry point for a new primary agent. The user request
 
 ## Start here
 
-- Working directory: `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/05-permissions`.
-- Branch: `astra/roadmap/05-permissions`.
-- Permission source checkpoint: `75905077e83a5df2ca97a1e69ed6838533e9680c`; handoff checkpoint: `f1315876d5bb04e1514b81d9f86c9174b516a7e1`. Use this branch's latest HEAD, including the primary close-out documentation, as the next baseline.
-- Cumulative source includes reviewed packets **00, 01, 02, 03, 04, 05, 06, 11, 24, 29**. **Do not reapply them.** Packet **14** is reviewed in its separate worktree and has NOT been combined here. Combine it exactly once in the next task worktree using the instructions below.
-- **Eleven packets are source-reviewed; twenty-six remain. PiP is required and NOT implemented.** Packet 24 covers playback/player controls, not PiP. Source review and Mac compilation do not resolve the runtime or capability gates.
-- No implementation agent is active. Existing agents have completed. Preserve every worktree/branch for the user's later integration.
+- Working directory: `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/24a-picture-in-picture`.
+- Branch: `astra/roadmap/24a-picture-in-picture`.
+- PiP implementation checkpoint: `0322585358fe2567fb8ff47155187b3225939323`; reviewed task handoff checkpoint: `a5dbcc4c4f3a98bf30c339fdd53bf40d23f722c9`. Use this worktree's documentation close-out checkpoint as the next baseline. It contains reviewed packets **00, 01, 02, 03, 04, 05, 06, 11, 14, 24, 24a, 29**. **Do not reapply them.** Reviewed14 was combined exactly once through baseline `a9ba5cbb38c82dd9c00c480593adaa1b565b37b7`.
+- **Twelve packets are source-reviewed; twenty-five remain.** PiP source and Mac build are reviewed; runtime/provider/iOS gates remain open. The exact limits are in [the PiP handoff](handoffs/24a-picture-in-picture.md).
+- Next packet: [07-tabs-spaces](tasks/07-tabs-spaces.md), from the final documentation checkpoint in this worktree. Preserve every worktree/branch for the user's later integration.
 
 Read [execution.md](execution.md), [README.md](README.md), [dispatch.md](dispatch.md), [contracts.md](contracts.md), and [capabilities.md](capabilities.md), then the selected next packet. Per-packet reports are under [handoffs/](handoffs/). The reports contain exact source changes/check commands and runtime limitations.
 
@@ -68,15 +67,15 @@ Evidence about the reported URL error: the exact prior production validation gua
 
 ## Next work
 
-The user asked to finish up. Packets05 and14 are closed out; no new packet was started. Original checkout, task branches and worktrees remain intact. No push or original-checkout integration occurred.
+Historical handoff before the resumed task: packets05 and14 were closed out, and no later packet had started. Original checkout, task branches and worktrees remain intact. No push or original-checkout integration occurred.
 
-Resume with required [24a-picture-in-picture](tasks/24a-picture-in-picture.md), after creating its worktree from the latest cumulative05 HEAD and combining reviewed14 there. Media24 is present. Existing menu infrastructure can supply a minimal PiP command before17's full audit; record this scheduling adjustment rather than declaring17 complete. Packet14 was brought forward because its reserved address/search/defaults/general-settings files were disjoint from05.
+Packet24a is source/build reviewed. It adds WebKit-owned main-frame HTML video PiP controls and conservative playback protection. The user-initiated browser action may still be rejected by WebKit/provider activation policy; native site controls remain available. Browser state/controls do not observe iframe PiP, so playing and paused media are conservatively retained/protected. Automatic focus from the system PiP return action is not established; users can explicitly select “Show Picture in Picture Tab.” Runtime PiP, provider/DRM, background/view-detachment and iOS scene/audio behavior remain pending. The minimal Navigation menu action was added ahead of17; it does not complete17.
 
 Permission05 follow-ups remain explicit: grants use the top-level document generation, not separate iframe document identity; native non-user-activated popups remain blocked before the delegate; per-origin autoplay is unavailable; download decisions are intentionally top-site scoped and first attempts are per controller. Native OS/capture/iframe/dialog behavior and iOS compilation remain unverified. Audit blank-tab external app prompts and copied-mailto ownership in08/17/32: a new-tab controller may have no mounted WebView/window. These limits are recorded work, not evidence that the affected runtime cases passed.
 
-Packet14's complete source is in `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/14-address-search-config`, branch `astra/roadmap/14-address-search-config`. Its five integration checkpoints, in order, are `23be171834f77b8cc0d556d3df2c53ac19e28d2e`, `cba6b412fd8ce1fba6a829a5422c238d009feb05`, `2a75812f82c6d387aa25421ae35241c321638482`, `f63f5b57487034b0a0be9bf53cbc6be6646b2654`, and `9fa4963eeb3469feaf0425cdd6a1015b7790ea17`. The last parser guard preserves dotted external schemes containing `://`; production-helper compilation/checks pass after that correction. The next required PiP build verifies the combined source. Suggestions are Google/DuckDuckGo only; Bing/custom search works without remote suggestions. Private suggestions require explicit opt-in and remain off by default.
+Packet14's complete source is in `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/14-address-search-config`, branch `astra/roadmap/14-address-search-config`. Its five integration checkpoints, in order, are `23be171834f77b8cc0d556d3df2c53ac19e28d2e`, `cba6b412fd8ce1fba6a829a5422c238d009feb05`, `2a75812f82c6d387aa25421ae35241c321638482`, `f63f5b57487034b0a0be9bf53cbc6be6646b2654`, and `9fa4963eeb3469feaf0425cdd6a1015b7790ea17`. They were combined once into this worktree; production-helper checks passed after the dotted-scheme parser guard. Suggestions are Google/DuckDuckGo only; Bing/custom search works without remote suggestions. Private suggestions require explicit opt-in and remain off by default.
 
-Default later queue follows the packet dependency graph. Shared Controller/Browser writes stay serialized. No implementation agent is active.
+Default later queue follows the packet dependency graph. Shared Controller/Browser writes stay serialized. Packet31 now has required selected scope for independent website Dock apps, as detailed in its task. Do not treat this scope as implemented.
 
 Remaining packets:
 
@@ -95,7 +94,6 @@ Remaining packets:
 - [21-content-blocking](tasks/21-content-blocking.md)
 - [22-extensions](tasks/22-extensions.md)
 - [23-credentials-browser-auth](tasks/23-credentials-browser-auth.md)
-- [24a-picture-in-picture](tasks/24a-picture-in-picture.md)
 - [25-page-tools-context-drag](tasks/25-page-tools-context-drag.md)
 - [26-reader-translation-source](tasks/26-reader-translation-source.md)
 - [27-internal-urls](tasks/27-internal-urls.md)
@@ -109,39 +107,28 @@ Remaining packets:
 
 These are unimplemented packets, not just verification items. User selected optional product scopes too. A genuine provider/credential/public-API barrier needs a precise gate report; do not use “optional” as blanket permission to skip implementation that is feasible.
 
-## Worktree dispatch
+## Next worktree dispatch
 
-Create the next worktree just before dispatch from the latest reviewed cumulative commit. Do not branch every task from the old original snapshot.
-
-```sh
-cd /Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/05-permissions
-baseline_commit=$(git rev-parse HEAD)
-task_id='24a-picture-in-picture'
-git worktree add -b "astra/roadmap/$task_id" "../$task_id" "$baseline_commit"
-```
-
-
-Before dispatch, check the new worktree is clean and combine14 exactly once there. No worktree has been created for24a yet.
+Create packet07's worktree just before dispatch from the latest reviewed cumulative commit, including the documentation close-out checkpoint. Do not branch from the old original snapshot.
 
 ```sh
 cd /Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/24a-picture-in-picture
-git status --short
-git -c core.hooksPath=/dev/null cherry-pick 23be171834f77b8cc0d556d3df2c53ac19e28d2e cba6b412fd8ce1fba6a829a5422c238d009feb05 2a75812f82c6d387aa25421ae35241c321638482 f63f5b57487034b0a0be9bf53cbc6be6646b2654 9fa4963eeb3469feaf0425cdd6a1015b7790ea17
+baseline_commit=$(git rev-parse HEAD)
+task_id='07-tabs-spaces'
+git worktree add -b "astra/roadmap/$task_id" "../$task_id" "$baseline_commit"
 ```
 
-Packet14 may have an additional documentation-only forwarding checkpoint after those five integration checkpoints. Exclude that forwarding checkpoint: it redirects CONTINUE.md/execution.md to05 and would overwrite or conflict with the cumulative handoff.
-
-Keep14's original branch/worktree intact. Record the combined checkpoint and inspect the actual result before dispatch. If24a already exists during a later resume, inspect its state instead of repeating creation or cherry-picks.
+Before dispatch, verify the new worktree is clean and inspect the task07 packet and source baseline. Packet14 is already included; do not cherry-pick it again. Keep original and task worktrees intact.
 
 Worker prompt: implement the selected packet plus user cache/timestamp contract; give absolute worktree, exact branch/base, prerequisites, reserved files, selected scope and verification. Use `gpt-6-luna`, medium reasoning and no inherited history (`fork_turns: "none"`), with complete task context. Worker writes `handoffs/<packet>.md`, checkpoints with disabled hooks, reports changed files/checks/real gates. Primary reviews actual diffs and regression cases before dependent work.
 
-Independent branches are combined by cherry-picking reviewed commits into a later **task worktree**, retaining all original task branches and leaving the original checkout untouched. Check staged/dirty files before combining; avoid applying another worker's staged edits. No original checkout merge is authorized. Current cumulative05 contains the ten listed baseline packets; the independently reviewed14 still needs combination in the next task worktree.
+Independent branches are combined by cherry-picking reviewed commits into a later **task worktree**, retaining all original task branches and leaving the original checkout untouched. Check staged/dirty files before combining; avoid applying another worker's staged edits. No original checkout merge is authorized. Current cumulative24a includes reviewed packet14 through baseline `a9ba5cb`; do not combine packet14 again.
 
 ## PiP implementation evidence and limits
 
 Prefer WebKit-owned web video; do not recreate arbitrary webpage media in an app-owned AVPlayer. Apple documents public HTML-video presentation controls: [Adding Picture in Picture to Safari media controls](https://developer.apple.com/documentation/webkitjs/adding_picture_in_picture_to_your_safari_media_controls). Capability-check `webkitSupportsPresentationMode`/`webkitSetPresentationMode` and standard PiP methods per eligible video. API presence is not a passing browser result; handle user-activation, iframe, DRM and provider failures honestly.
 
-Installed SDK inspection found `allowsPictureInPictureMediaPlayback` inside `#if TARGET_OS_IPHONE`; do not write it unguarded on macOS. Task24a needs eligibility/state, real browser controls, originating-tab restoration, preservation across switching/background, close/quit/hibernate protection and explicit macOS/iOS acceptance cases. Media controls currently affect main-frame HTML players only; WebAudio/audible/spatial state is unknown. Spatial HRTF, Atmos and AirPods fixed/head-tracked output remain distinct hardware tests, not implemented audio effects.
+Installed SDK inspection found `allowsPictureInPictureMediaPlayback` inside `#if TARGET_OS_IPHONE`; it remains guarded. Task24a now has eligibility/state controls, exact explicit source selection, lifecycle protection and macOS menu controls. Browser eligibility/state inspection is main-frame HTML video only; unknown iframe PiP is covered by protecting playing or paused media conservatively. WebAudio/audible/spatial state is unknown. Spatial HRTF, Atmos and AirPods fixed/head-tracked output remain distinct hardware tests, not implemented audio effects.
 
 ## Verification / environment
 
@@ -157,10 +144,11 @@ Installed SDK inspection found `allowsPictureInPictureMediaPlayback` inside `#if
 
 ## Close-out status
 
-Eleven packets are source-reviewed; twenty-six remain. Cumulative05 contains ten; independent14 must be combined in the next task worktree. All edits are isolated from the original checkout. The latest branch is the resume base, not a production release. Final reporting must distinguish source/compile evidence from runtime/provider/hardware gates and must not claim all37 are finished.
+Twelve packets are source-reviewed; twenty-five remain. This cumulative24a branch includes packet14 and the PiP source checkpoint. The current continuation checkpoint is the next resume base, not a production release. All edits are isolated from the original checkout. Final reporting must distinguish source/build evidence from runtime/provider/hardware gates and must not claim all37 are finished.
 
 ## Latest verification
 
 - Permission05: final Xcode MCP `astra` / `My Mac` build passed in5.913s; zero diagnostics in eight changed production files. Task workspace `workspace-3MHijM2I3R` was closed. Actual production model/policy check passes, including synchronous download reservations, temporary/private non-persistence, legacy migration and future/malformed-data preservation. See `handoffs/05-permissions.md`.
 - Search14: Xcode MCP `astra` / `My Mac` build passed in20.732s; zero diagnostics in eight changed Swift files. Task workspace `workspace-l7ivJ1QAez` was closed. Subsequent small dotted-scheme parser correction passed production-helper compilation/checks and source parsing; no ceremonial full rebuild was run. See its separate worktree's `handoffs/14-address-search-config.md` for exact commands.
 - No app launch, hosted tests, provider operation, real user-data edits, server changes, pushes, merges or worktree deletion occurred. Both implementation workers finished.
+- PiP source checks passed: `bun run checks/picture-in-picture-check.mjs`, the standalone Swift policy check, combined packet14 production-helper checks and the final `astra` / `My Mac` Xcode MCP build (8.871s, zero issues in five changed Swift files). Runtime fixtures were not launched; see [24a handoff](handoffs/24a-picture-in-picture.md).

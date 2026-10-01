@@ -89,7 +89,7 @@ IDs, branch suffixes and packet filenames are stable. Every branch uses `astra/r
 | [28-settings](tasks/28-settings.md) | P1 | 14, 18, 19, 21, 22, 24, 24a, 26, 27 | Show only supported and selected features |
 | [29-sync](tasks/29-sync.md) | P0 user priority | Reviewed 00/01 baseline | Endpoint validation, device cache and per-record timestamped sync including history; E2EE/provider gates remain |
 | [30-profiles](tasks/30-profiles.md) | P2 | 04, 18, 22, 28, 29 | Explicit profile product decision required |
-| [31-macos-automation-webapps](tasks/31-macos-automation-webapps.md) | P1 / P2 | 08, 17, 23, 27, 28 | PWA, Handoff, Spotlight and automation are optional |
+| [31-macos-automation-webapps](tasks/31-macos-automation-webapps.md) | P1 / P2 | 08, 17, 23, 27, 28 | Standalone website Dock apps are selected and required; Handoff, Spotlight and automation remain separately gated |
 | [32-ios-integration](tasks/32-ios-integration.md) | P1 follow-up | 17, 23, 24, 24a, 25, 28, 31 | Entitlements, background limits and scene behavior need platform checks |
 | [33-updates-distribution](tasks/33-updates-distribution.md) | P0 release | 28, 31, 32 | Signing, notarization and sandboxed update acceptance |
 | [34-diagnostics-performance](tasks/34-diagnostics-performance.md) | P1 | 06, 12, 22, 24, 24a, 29 | Measurement requires later runtime authorization |
@@ -165,3 +165,7 @@ Use [the dispatch and worktree procedure](dispatch.md) plus exactly one packet f
 ## Execution priority update
 
 The user reported sync URL errors and missing data and required local caching plus last-updated protection for every synchronized item. Task 29 runs before remaining foundation work and establishes the mandatory cache/merge contract consumed by subsequent packets. History sync is selected. See contracts.md and execution.md.
+
+## Selected standalone website Dock apps
+
+Packet31 includes the user-required ability to turn any ordinary website into a launchable standalone Dock app, using Mini Astra-style chrome with only a top bar and Command-S to toggle it. A current-tab menu command creates it; a dedicated settings page manages installations and Dock placement. This is required selected scope, including concrete app/Dock installation behavior, not merely a PWA manifest feature. See packet31 for acceptance cases and explicit signing/sandbox/permanent-pinning gates.
