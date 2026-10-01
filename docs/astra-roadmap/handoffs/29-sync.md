@@ -4,7 +4,7 @@ Branch / worktree / baseline commit: `astra/roadmap/29-sync`; `/Users/omeriadon/
 
 Status: build verified.
 
-Commit(s), or explicit uncommitted state: Uncommitted pending primary review. Primary-owned changes in README, contracts, execution ledger, and packets 07/09/10/28/30 are preserved in this worktree and included in the task checkpoint.
+Commit(s), or explicit uncommitted state: `99b26b7` (`implement sync cache and conflict protection`) plus the local-only apply and shared-window follow-up checkpoint. Primary-owned README, contracts, execution ledger, and packet changes are included.
 
 Changed files and behavior:
 
@@ -16,11 +16,16 @@ Changed files and behavior:
 - Portable settings now register the supported HTTPS-first, GPC, retention, and suggestions preferences alongside the prior portable set. Endpoint, token, session state, private windows, local file data, and device-only Mini Astra settings are excluded. Settings are observed independently of RootView lifetime and read from the persistent defaults domain.
 - Local session envelopes now write version 2, read versions 1 and 2, and reject future versions before decoding their state. Future snapshots remain untouched. Remote data is saved locally before sync reports success. Invalid property-list setting values, future timestamps, credential-bearing URLs, and unknown document versions are rejected before applying the remote merge.
 - Account and history-clear disclosure now states that history syncs and that clearing it propagates when sync is enabled. The sync payload is not end-to-end encrypted.
+- Outbound serialization uses the production `portableProjection()` helper. Sync application uses `preservingLocalOnlyData(from:)` to restore local file tabs/bookmarks and their favorite, space, pin, and folder membership per device. Local-only tab/bookmark tombstones are excluded from upload.
+- Same-session window publication now reduces complete local documents through the same timestamp merger, carries every deletion/history-clear clock, and reapplies the receiver's per-window selection. Closed-history records merge by modified date, then a stable JSON tie key; reopened and cleared records are removed.
+- `applySyncDocument` filters internal tabs by ID before reattaching unchanged local internal tabs and asserts resulting tab IDs are unique. For a newer record with the same URL, it updates metadata on the existing BrowserTab and keeps its native controller, history, scroll, peeks, restoration state, and local file access.
+- Same-session windows now merge complete local documents through the shared last-update merger. The receiving window keeps its own selection and merges deletion/history-clear clocks instead of copying stale source arrays.
+- A newer same-URL tab record updates title, custom title, and zoom on the retained BrowserTab/controller while keeping local history, scroll position, peeks, restoration data, and file access. OpenTab's pure metadata projection preserves these fields and applies a remote history-clear flag.
 
 Acceptance cases satisfied, with evidence:
 
 - Endpoint check exercises the production Foundation helper for the reported uppercase and omitted-scheme forms of `203.17.177.58:9644`, IPv6, whitespace, local debug HTTP, malformed URLs/ports, credentials, query strings, encoded host whitespace, and production HTTP.
-- Model check compiles and executes actual production Codable models and merger. It covers stale/new records, tied merges in both orders, idempotence, no-tombstone `.distantPast` records, legacy ID tombstones, timestamped restore-after-delete, history clear, bookmark/visit compatibility, settings conflicts, selected-tab conflicts, future timestamps, credential URLs, and local file/restoration fields.
+- Model check compiles and executes actual production Codable models and merger. It covers stale/new records, tied merges in both orders, idempotence, no-tombstone `.distantPast` records, legacy ID tombstones, timestamped restore-after-delete, history clear, bookmark/visit compatibility, settings conflicts/resets, selected-tab conflicts, future timestamps, credential URLs, stale-peer metadata propagation, local file/restoration preservation, outbound local-only exclusion, folder/favorite membership restoration, and same-URL navigation metadata projection. Internal-tab duplicate suppression is additionally guarded by an application assertion and Xcode build.
 - Persistence check uses a temporary directory to verify v2 writes, v1 reads, and byte-for-byte preservation of a future-version snapshot with an intentionally incompatible state shape.
 - Sync cache has no synthetic test that constructs the main-actor Browser/WebKit hydration race. Source inspection confirms sync readiness excludes failed hydration and the local fallback merges the complete persisted model before saving.
 
@@ -29,7 +34,7 @@ Checks run, scheme/destination/workspace and results:
 - `swiftc astra/Storage/SyncServerAddress.swift docs/astra-roadmap/checks-29-sync.swift -o /tmp/astra-sync-address-check && /tmp/astra-sync-address-check` — passed.
 - `swiftc astra/Storage/SyncServerAddress.swift astra/Models/Spaces/BrowserTheme.swift astra/Models/Tabs/BrowserScrollPosition.swift astra/Models/Tabs/OpenPeek.swift astra/Models/Tabs/OpenTab.swift astra/Models/Tabs/BrowserVisit.swift astra/Models/Library/Bookmark.swift astra/Models/Spaces/BrowserSpace.swift astra/Models/Spaces/BrowserWorkspace.swift astra/Models/Core/BrowserSnapshot.swift astra/Models/Core/BrowserSyncDocument.swift astra/Storage/BrowserPersistence.swift docs/astra-roadmap/checks-29-sync-models.swift -o /tmp/astra-sync-model-check && /tmp/astra-sync-model-check` — passed.
 - `git diff --check` — passed.
-- Xcode MCP built the `astra` scheme for `My Mac` from `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/29-sync/astra.xcodeproj`; the app build passed before the final localized auth-generation and setting tie-resolution edits. Xcode refreshed diagnostics for `Browser.swift`, `BrowserTab.swift`, `BrowserSync.swift`, and `BrowserSyncDocument.swift` after those edits; all reported no issues. No app launch or hosted tests were run.
+- Xcode MCP built the `astra` scheme for `My Mac` from `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/29-sync/astra.xcodeproj`; the follow-up build passed after shared-window merge, local-only projection, and unique internal-tab preservation changes. Xcode diagnostics reported no issues in `Browser.swift`, `BrowserTab.swift`, `BrowserSync.swift`, `BrowserSyncDocument.swift`, and `OpenTab.swift`. No app launch or hosted tests were run.
 
 Checks written but not executed: No hosted test target was restored or run. The two standalone Foundation check programs were compiled and executed.
 

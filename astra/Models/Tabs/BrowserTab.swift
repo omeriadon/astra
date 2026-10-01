@@ -96,11 +96,15 @@ final class BrowserTab: Identifiable {
 	let internalPage: BrowserInternalPage?
 	let session: BrowserWebSession
 	private(set) var pageTitle: String {
-		didSet { markModified() }
+		didSet {
+			if !isApplyingSynchronizedMetadata { markModified() }
+		}
 	}
 
 	private(set) var customTitle: String? {
-		didSet { markModified() }
+		didSet {
+			if !isApplyingSynchronizedMetadata { markModified() }
+		}
 	}
 
 	var title: String {
@@ -139,6 +143,7 @@ final class BrowserTab: Identifiable {
 	private var storedPeeks: [OpenPeek]
 	private(set) var modifiedAt: Date
 	private var restorationBaseline: OpenTab?
+	private var isApplyingSynchronizedMetadata = false
 
 	@ObservationIgnored
 	var didChange: (@MainActor () -> Void)?
@@ -338,6 +343,26 @@ final class BrowserTab: Identifiable {
 
 	func requestPeekDismissal() {
 		peeks.last?.isDismissing = true
+	}
+
+	func applySynchronizedMetadata(from remote: OpenTab) {
+		let updated = openTab.applyingSynchronizedMetadata(from: remote)
+		isApplyingSynchronizedMetadata = true
+		pageTitle = updated.pageTitle
+		customTitle = updated.customTitle
+		recordsNavigationHistory = updated.recordsNavigationHistory
+		storedPageZoom = updated.pageZoom
+		if !updated.recordsNavigationHistory {
+			storedHistory = currentURL.map { [$0] } ?? []
+			storedHistoryIndex = 0
+			storedRestorationState = nil
+			storedPeeks = []
+		}
+		controller?.pageZoom = updated.pageZoom
+		isApplyingSynchronizedMetadata = false
+		modifiedAt = updated.modifiedAt
+		openTabCache = nil
+		restorationBaseline = openTab
 	}
 
 	func invalidateStoredSnapshot() {

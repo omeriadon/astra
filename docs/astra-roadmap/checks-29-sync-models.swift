@@ -27,6 +27,28 @@ struct BrowserSyncModelCheck {
 		assert(oldDoc.merging(newDoc) == newDoc.merging(oldDoc))
 		assert(oldDoc.merging(newDoc).merging(newDoc) == oldDoc.merging(newDoc))
 
+		let staleVisit = BrowserVisit(id: UUID(), url: URL(string: "https://stale-visit.example")!, title: "Stale", visitedAt: now, modifiedAt: now)
+		let staleBookmark = Bookmark(id: UUID(), name: "Stale", url: URL(string: "https://stale-bookmark.example")!, modifiedAt: now)
+		let staleSpace = BrowserSpace(id: UUID(), name: "Stale", modifiedAt: now)
+		var currentMetadata = BrowserSnapshot(selectedTabID: tabID)
+		currentMetadata.closedTabIDs.insert(tabID)
+		currentMetadata.closedTabsAt[tabID] = now.addingTimeInterval(1)
+		currentMetadata.deletedBookmarkIDs.insert(staleBookmark.id)
+		currentMetadata.deletedBookmarksAt[staleBookmark.id] = now.addingTimeInterval(1)
+		currentMetadata.deletedSpacesAt[staleSpace.id] = now.addingTimeInterval(1)
+		currentMetadata.deletedVisitsAt[staleVisit.id] = now.addingTimeInterval(1)
+		currentMetadata.historyClearedAt = now.addingTimeInterval(2)
+		let currentWorkspace = BrowserWorkspace(spaces: [], favouriteTabIDs: [], selectedSpaceID: space.id, deletedSpaceIDs: [staleSpace.id], deletedSpacesAt: [staleSpace.id: now.addingTimeInterval(1)])
+		let currentPeer = BrowserSyncDocument(tabs: [], workspace: currentWorkspace, bookmarks: [], browser: currentMetadata, settings: [:])
+		let stalePeer = BrowserSyncDocument(tabs: [oldTab], workspace: BrowserWorkspace(spaces: [staleSpace], favouriteTabIDs: [], selectedSpaceID: staleSpace.id), bookmarks: [staleBookmark], history: [staleVisit], browser: emptySnapshot, settings: [:])
+		let protectedPeerMerge = currentPeer.merging(stalePeer)
+		assert(protectedPeerMerge.tabs.isEmpty && protectedPeerMerge.bookmarks.isEmpty && protectedPeerMerge.history.isEmpty)
+		assert(protectedPeerMerge.browser.closedTabsAt[tabID] == currentMetadata.closedTabsAt[tabID])
+		assert(protectedPeerMerge.browser.deletedBookmarksAt[staleBookmark.id] == currentMetadata.deletedBookmarksAt[staleBookmark.id])
+		assert(protectedPeerMerge.browser.deletedSpacesAt[staleSpace.id] == currentMetadata.deletedSpacesAt[staleSpace.id])
+		assert(protectedPeerMerge.browser.deletedVisitsAt[staleVisit.id] == currentMetadata.deletedVisitsAt[staleVisit.id])
+		assert(protectedPeerMerge.browser.historyClearedAt == currentMetadata.historyClearedAt)
+
 		let bootstrapWorkspace = BrowserWorkspace.migrated(tabs: [], selectedTabID: tabID, theme: BrowserTheme())
 		assert(bootstrapWorkspace.modifiedAt == .distantPast)
 		let remoteSpace = BrowserSpace(id: BrowserSpace.firstID, name: "Remote", modifiedAt: now)
@@ -51,12 +73,82 @@ struct BrowserSyncModelCheck {
 			restorationState: Data([1, 2, 3]),
 			fileAccessBookmark: Data([4, 5, 6])
 		)
-		let cachedFileDoc = BrowserSyncDocument(tabs: [localFileTab], workspace: oldDoc.workspace!, bookmarks: [], browser: emptySnapshot, settings: [:])
-		let mergedFileDoc = cachedFileDoc.merging(oldDoc)
-		let preservedFileTab = mergedFileDoc.tabs.first { $0.id == localFileTab.id }
+		var localWorkspace = oldDoc.workspace!
+		localWorkspace.favouriteTabIDs = [localFileTab.id, oldTab.id]
+		localWorkspace.spaces[0].tabIDs = [localFileTab.id, oldTab.id]
+		localWorkspace.spaces[0].pinnedTabIDs = [localFileTab.id]
+		localWorkspace.spaces[0].pinnedFolders = [PinnedTabFolder(name: "Local files", tabIDs: [localFileTab.id])]
+		let localFileBookmark = Bookmark(name: "Local file", url: URL(fileURLWithPath: "/tmp/bookmark.html"))
+		let webBookmark = Bookmark(name: "Web", url: URL(string: "https://web.example")!)
+		let localOnlyDocument = BrowserSyncDocument(
+			tabs: [localFileTab, oldTab],
+			workspace: localWorkspace,
+			bookmarks: [localFileBookmark, webBookmark],
+			browser: BrowserSnapshot(
+				selectedTabID: localFileTab.id,
+				selectedTabModifiedAt: now,
+				closedTabIDs: [localFileTab.id],
+				deletedBookmarkIDs: [localFileBookmark.id],
+				deletedBookmarksAt: [localFileBookmark.id: now],
+				closedTabsAt: [localFileTab.id: now]
+			),
+			settings: [:]
+		)
+		let outbound = localOnlyDocument.portableProjection()
+		assert(!outbound.tabs.contains(where: { $0.id == localFileTab.id }))
+		assert(outbound.tabs.contains(where: { $0.id == oldTab.id }))
+		assert(!outbound.bookmarks.contains(where: { $0.id == localFileBookmark.id }))
+		assert(outbound.bookmarks.contains(where: { $0.id == webBookmark.id }))
+		assert(!outbound.workspace!.favouriteTabIDs.contains(localFileTab.id))
+		assert(!outbound.browser.closedTabIDs.contains(localFileTab.id))
+		assert(!outbound.browser.deletedBookmarkIDs.contains(localFileBookmark.id))
+		assert(outbound.browser.closedTabsAt[localFileTab.id] == nil)
+		assert(outbound.browser.deletedBookmarksAt[localFileBookmark.id] == nil)
+		assert(!outbound.workspace!.spaces[0].tabIDs.contains(localFileTab.id))
+		assert(!outbound.workspace!.spaces[0].pinnedFolders.contains(where: { $0.id == localWorkspace.spaces[0].pinnedFolders[0].id }))
+
+		let applied = oldDoc.preservingLocalOnlyData(from: localOnlyDocument)
+		let preservedFileTab = applied.tabs.first { $0.id == localFileTab.id }
 		assert(preservedFileTab?.url?.isFileURL == true)
 		assert(preservedFileTab?.restorationState == Data([1, 2, 3]))
 		assert(preservedFileTab?.fileAccessBookmark == Data([4, 5, 6]))
+		assert(applied.bookmarks.contains(where: { $0.id == localFileBookmark.id }))
+		assert(applied.workspace!.favouriteTabIDs.contains(localFileTab.id))
+		assert(applied.workspace!.spaces[0].tabIDs.contains(localFileTab.id))
+		assert(applied.workspace!.spaces[0].pinnedTabIDs.contains(localFileTab.id))
+		assert(applied.workspace!.spaces[0].pinnedFolders[0].tabIDs.contains(localFileTab.id))
+		assert(applied.browser.selectedTabID == localFileTab.id)
+
+		let localNavigation = OpenTab(
+			id: tabID,
+			pageTitle: "Local page title",
+			customTitle: "Local custom title",
+			url: URL(string: "https://same.example")!,
+			history: [URL(string: "https://back.example")!, URL(string: "https://same.example")!],
+			historyIndex: 1,
+			pageZoom: 1.25,
+			scrollPosition: BrowserScrollPosition(x: 5, y: 80),
+			modifiedAt: now,
+			restorationState: Data([7, 8])
+		)
+		let remoteMetadata = OpenTab(
+			id: tabID,
+			pageTitle: "Remote title",
+			customTitle: "Remote custom title",
+			url: localNavigation.url,
+			history: [localNavigation.url!],
+			historyIndex: 0,
+			pageZoom: 1.5,
+			modifiedAt: now.addingTimeInterval(1)
+		)
+		let updatedSameURL = localNavigation.applyingSynchronizedMetadata(from: remoteMetadata)
+		assert(updatedSameURL.pageTitle == remoteMetadata.pageTitle)
+		assert(updatedSameURL.customTitle == remoteMetadata.customTitle)
+		assert(updatedSameURL.history == localNavigation.history)
+		assert(updatedSameURL.historyIndex == localNavigation.historyIndex)
+		assert(updatedSameURL.scrollPosition == localNavigation.scrollPosition)
+		assert(updatedSameURL.restorationState == localNavigation.restorationState)
+		assert(updatedSameURL.pageZoom == remoteMetadata.pageZoom)
 
 		let ancientTab = OpenTab(id: UUID(), url: URL(string: "https://legacy.example")!, modifiedAt: .distantPast)
 		let legacyLive = BrowserSyncDocument(tabs: [ancientTab], workspace: oldDoc.workspace!, bookmarks: [], browser: emptySnapshot, settings: [:])

@@ -1,6 +1,6 @@
 import Foundation
 
-struct BrowserScrollPosition: Codable, Equatable, Sendable {
+nonisolated struct BrowserScrollPosition: Codable, Equatable, Sendable {
 	var x: Double
 	var y: Double
 

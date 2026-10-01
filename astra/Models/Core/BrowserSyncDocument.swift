@@ -51,6 +51,155 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		try values.encode(settings, forKey: .settings)
 	}
 
+	nonisolated func portableProjection() -> Self {
+		var projected = self
+		let localOnlyTabIDs = Set(tabs.filter { !isPortableSyncTab($0) }.map(\.id))
+		let localOnlyBookmarkIDs = Set(bookmarks.filter { !isPortableSyncURL($0.url) }.map(\.id))
+		let portableTabs = tabs.filter { isPortableSyncTab($0) }
+		let portableTabIDs = Set(portableTabs.map(\.id))
+		projected.tabs = portableTabs.map { tab in
+			var tab = tab
+			tab.url = tab.url.map(credentialFreeSyncURL)
+			tab.history = tab.url.map { [$0] } ?? []
+			tab.historyIndex = 0
+			tab.restorationState = nil
+			tab.fileAccessBookmark = nil
+			tab.peeks = []
+			return tab
+		}
+		projected.bookmarks = bookmarks.filter { isPortableSyncURL($0.url) }.map { bookmark in
+			var bookmark = bookmark
+			bookmark.url = credentialFreeSyncURL(bookmark.url)
+			return bookmark
+		}
+		projected.history = history.filter { isPortableSyncURL($0.url) }.map { visit in
+			var visit = visit
+			visit.url = credentialFreeSyncURL(visit.url)
+			return visit
+		}
+		projected.browser.closedTabIDs.subtract(localOnlyTabIDs)
+		projected.browser.closedTabsAt = projected.browser.closedTabsAt.filter { !localOnlyTabIDs.contains($0.key) }
+		projected.browser.deletedBookmarkIDs.subtract(localOnlyBookmarkIDs)
+		projected.browser.deletedBookmarksAt = projected.browser.deletedBookmarksAt.filter { !localOnlyBookmarkIDs.contains($0.key) }
+		if var workspace = workspace {
+			workspace.favouriteTabIDs.removeAll { !portableTabIDs.contains($0) }
+			for index in workspace.spaces.indices {
+				let foldersWithMembers = Set(workspace.spaces[index].pinnedFolders.filter { !$0.tabIDs.isEmpty }.map(\.id))
+				workspace.spaces[index].tabIDs.removeAll { !portableTabIDs.contains($0) }
+				workspace.spaces[index].pinnedTabIDs.removeAll { !portableTabIDs.contains($0) }
+				for folderIndex in workspace.spaces[index].pinnedFolders.indices {
+					workspace.spaces[index].pinnedFolders[folderIndex].tabIDs.removeAll { !portableTabIDs.contains($0) }
+				}
+				workspace.spaces[index].pinnedFolders.removeAll { folder in
+					foldersWithMembers.contains(folder.id) && folder.tabIDs.isEmpty
+				}
+				if let selectedID = workspace.spaces[index].selectedTabID,
+					!portableTabIDs.contains(selectedID)
+				{
+					workspace.spaces[index].selectedTabID = workspace.spaces[index].tabIDs.first
+				}
+			}
+			let deletedSpaceDates = workspace.deletedSpacesAt
+			let deletedSpaceIDs = workspace.deletedSpaceIDs
+			workspace.spaces.removeAll { space in
+				isDeleted(space.id, modifiedAt: space.modifiedAt, dates: deletedSpaceDates, legacyIDs: deletedSpaceIDs)
+			}
+			projected.workspace = workspace
+		}
+		if !portableTabIDs.contains(projected.browser.selectedTabID) {
+			projected.browser.selectedTabID = projected.tabs.first?.id ?? BrowserSpace.firstID
+		}
+		return projected
+	}
+
+	nonisolated func preservingLocalOnlyData(from local: Self) -> Self {
+		var projected = self
+		let localTabs = local.tabs.filter { !isPortableSyncTab($0) && $0.internalPage == nil }
+		let localTabIDs = Set(localTabs.map(\.id))
+		var tabsByID = Dictionary(projected.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+		for tab in localTabs { tabsByID[tab.id] = tab }
+		projected.tabs = tabsByID.values.sorted { $0.id.uuidString < $1.id.uuidString }
+
+		var bookmarksByID = Dictionary(projected.bookmarks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+		for bookmark in local.bookmarks where !isPortableSyncURL(bookmark.url) {
+			bookmarksByID[bookmark.id] = bookmark
+		}
+		projected.bookmarks = bookmarksByID.values.sorted { $0.id.uuidString < $1.id.uuidString }
+
+		guard let localWorkspace = local.workspace else { return projected }
+		var target = projected.workspace ?? localWorkspace
+		let localFavouriteIDs = localWorkspace.favouriteTabIDs.filter(localTabIDs.contains)
+		target.favouriteTabIDs = appendUnique(target.favouriteTabIDs, localFavouriteIDs)
+		target.favouritesModifiedAt = max(target.favouritesModifiedAt, localWorkspace.favouritesModifiedAt)
+
+		for localSpace in localWorkspace.spaces {
+			let localMembers = localSpace.tabIDs.filter(localTabIDs.contains)
+			let localPinned = localSpace.pinnedTabIDs.filter(localTabIDs.contains)
+			let localFolders = localSpace.pinnedFolders.compactMap { folder -> PinnedTabFolder? in
+				let members = folder.tabIDs.filter(localTabIDs.contains)
+				guard !members.isEmpty else { return nil }
+				var folder = folder
+				folder.tabIDs = members
+				return folder
+			}
+			guard !localMembers.isEmpty || !localPinned.isEmpty || !localFolders.isEmpty else { continue }
+			guard !isDeleted(
+				localSpace.id,
+				modifiedAt: localSpace.modifiedAt,
+				dates: target.deletedSpacesAt,
+				legacyIDs: target.deletedSpaceIDs
+			) else { continue }
+
+			if let index = target.spaces.firstIndex(where: { $0.id == localSpace.id }) {
+				target.spaces[index].tabIDs = appendUnique(target.spaces[index].tabIDs, localMembers)
+				target.spaces[index].pinnedTabIDs = appendUnique(target.spaces[index].pinnedTabIDs, localPinned)
+				for localFolder in localFolders {
+					if let folderIndex = target.spaces[index].pinnedFolders.firstIndex(where: { $0.id == localFolder.id }) {
+						target.spaces[index].pinnedFolders[folderIndex].tabIDs = appendUnique(
+							target.spaces[index].pinnedFolders[folderIndex].tabIDs,
+							localFolder.tabIDs
+						)
+						target.spaces[index].pinnedFolders[folderIndex].modifiedAt = max(
+							target.spaces[index].pinnedFolders[folderIndex].modifiedAt,
+							localFolder.modifiedAt
+						)
+					} else if localFolder.modifiedAt > (target.spaces[index].deletedPinnedFoldersAt[localFolder.id] ?? .distantPast) {
+						target.spaces[index].pinnedFolders.append(localFolder)
+					}
+				}
+				target.spaces[index].modifiedAt = max(target.spaces[index].modifiedAt, localSpace.modifiedAt)
+				if let selected = localSpace.selectedTabID, localTabIDs.contains(selected), localSpace.modifiedAt >= target.spaces[index].modifiedAt {
+					target.spaces[index].selectedTabID = selected
+				}
+			} else {
+				var localOnlySpace = localSpace
+				localOnlySpace.tabIDs = localMembers
+				localOnlySpace.pinnedTabIDs = localPinned
+				localOnlySpace.pinnedFolders = localFolders
+				target.spaces.append(localOnlySpace)
+			}
+		}
+
+		let localSelectedSpaceHasLocalTab = localWorkspace.spaces.contains { space in
+			space.id == localWorkspace.selectedSpaceID
+				&& (space.tabIDs + space.pinnedTabIDs + space.pinnedFolders.flatMap(\.tabIDs)).contains(where: localTabIDs.contains)
+		}
+		if localSelectedSpaceHasLocalTab && localWorkspace.selectionModifiedAt >= target.selectionModifiedAt {
+			target.selectedSpaceID = localWorkspace.selectedSpaceID
+			target.selectionModifiedAt = localWorkspace.selectionModifiedAt
+		}
+		target.modifiedAt = max(target.modifiedAt, localWorkspace.modifiedAt)
+		projected.workspace = target
+
+		if localTabIDs.contains(local.browser.selectedTabID),
+			local.browser.selectedTabModifiedAt >= projected.browser.selectedTabModifiedAt
+		{
+			projected.browser.selectedTabID = local.browser.selectedTabID
+			projected.browser.selectedTabModifiedAt = local.browser.selectedTabModifiedAt
+		}
+		return projected
+	}
+
 	nonisolated var hasSupportedVersion: Bool { (1 ... 3).contains(version) }
 
 	nonisolated var hasValidStructure: Bool {
@@ -188,6 +337,32 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		return result
 	}
 
+}
+
+private nonisolated func appendUnique(_ existing: [UUID], _ incoming: [UUID]) -> [UUID] {
+	var seen = Set(existing)
+	return existing + incoming.filter { seen.insert($0).inserted }
+}
+
+private nonisolated func isPortableSyncTab(_ tab: OpenTab) -> Bool {
+	tab.internalPage == nil
+		&& tab.fileAccessBookmark == nil
+		&& (tab.url.map(isPortableSyncURL) ?? true)
+}
+
+private nonisolated func isPortableSyncURL(_ url: URL) -> Bool {
+	guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+		  ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+		  let host = components.host, !host.isEmpty,
+		  !host.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) }) else { return false }
+	return true
+}
+
+private nonisolated func credentialFreeSyncURL(_ url: URL) -> URL {
+	guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+	components.user = nil
+	components.password = nil
+	return components.url ?? url
 }
 
 private extension Date {

@@ -26,6 +26,21 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 			&& pageZoom == other.pageZoom
 			&& scrollPosition == other.scrollPosition
 	}
+	nonisolated func applyingSynchronizedMetadata(from remote: Self) -> Self {
+		var updated = self
+		updated.pageTitle = remote.pageTitle
+		updated.customTitle = remote.customTitle
+		updated.pageZoom = remote.pageZoom
+		updated.modifiedAt = remote.modifiedAt
+		updated.recordsNavigationHistory = remote.recordsNavigationHistory
+		if !remote.recordsNavigationHistory {
+			updated.history = updated.url.map { [$0] } ?? []
+			updated.historyIndex = 0
+			updated.peeks = []
+			updated.restorationState = nil
+		}
+		return updated
+	}
 
 	nonisolated init(
 		id: UUID = UUID(),
