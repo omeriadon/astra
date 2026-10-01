@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 nonisolated struct BrowserVisit: Codable, Identifiable, Equatable, Sendable {
@@ -21,11 +22,30 @@ nonisolated struct BrowserVisit: Codable, Identifiable, Equatable, Sendable {
 
 	nonisolated init(from decoder: Decoder) throws {
 		let values = try decoder.container(keyedBy: CodingKeys.self)
-		id = try values.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-		url = try values.decode(URL.self, forKey: .url)
-		title = try values.decode(String.self, forKey: .title)
-		visitedAt = try values.decodeIfPresent(Date.self, forKey: .visitedAt) ?? .distantPast
-		modifiedAt = try values.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? visitedAt
+		let decodedURL = try values.decode(URL.self, forKey: .url)
+		let decodedTitle = try values.decode(String.self, forKey: .title)
+		let decodedVisitedAt = try values.decodeIfPresent(Date.self, forKey: .visitedAt) ?? .distantPast
+		id = try values.decodeIfPresent(UUID.self, forKey: .id)
+			?? Self.legacyID(url: decodedURL, title: decodedTitle, visitedAt: decodedVisitedAt)
+		url = Self.normalizedURL(decodedURL) ?? decodedURL
+		title = decodedTitle
+		visitedAt = decodedVisitedAt
+		modifiedAt = try values.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? .distantPast
+	}
+
+	private static func legacyID(url: URL, title: String, visitedAt: Date) -> UUID {
+		let safeURL = normalizedURL(url)?.absoluteString ?? url.absoluteString
+		let identity = "\(safeURL)\u{1f}\(visitedAt.timeIntervalSince1970.bitPattern)\u{1f}\(title)"
+		var bytes = Array(SHA256.hash(data: Data(identity.utf8)).prefix(16))
+		bytes[6] = (bytes[6] & 0x0f) | 0x50
+		bytes[8] = (bytes[8] & 0x3f) | 0x80
+		let tuple: uuid_t = (
+			bytes[0], bytes[1], bytes[2], bytes[3],
+			bytes[4], bytes[5], bytes[6], bytes[7],
+			bytes[8], bytes[9], bytes[10], bytes[11],
+			bytes[12], bytes[13], bytes[14], bytes[15]
+		)
+		return UUID(uuid: tuple)
 	}
 
 	static func retained(_ visits: [Self], days: Int, now: Date = .now) -> [Self] {

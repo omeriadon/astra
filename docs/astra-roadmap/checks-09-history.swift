@@ -9,6 +9,12 @@ struct HistoryPolicyCheck {
 		let normalized = BrowserVisit.normalizedURL(firstURL)!
 		assert(normalized.user == nil && normalized.password == nil)
 		assert(BrowserVisit.normalizedURL(URL(string: "astra://settings")!) == nil)
+		let legacyData = Data(#"{"url":"https://user:secret@example.com/path","title":"Old","visitedAt":100}"#.utf8)
+		let legacyVisit = try! JSONDecoder().decode(BrowserVisit.self, from: legacyData)
+		let repeatedLegacyVisit = try! JSONDecoder().decode(BrowserVisit.self, from: legacyData)
+		assert(legacyVisit.id == repeatedLegacyVisit.id)
+		assert(legacyVisit.url.user == nil && legacyVisit.url.password == nil)
+		assert(legacyVisit.modifiedAt == .distantPast)
 
         let older = BrowserVisit(
 	id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
