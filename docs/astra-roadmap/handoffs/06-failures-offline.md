@@ -20,3 +20,5 @@ Pending runtime/hardware/provider cases: real offline-to-online transition; DNS/
 Migration, compatibility and private-data impact: none. Failed request data remains in controller memory only. Existing diagnostics expose failure kind without URL, headers, body, or page content. Normal/private session boundaries are unchanged.
 Capability gates / unresolved issues: runtime behavior of `NWPathMonitor` remains unverified. The iOS build is blocked by the unresolved Sparkle dependency reported above.
 Merge prerequisites / follow-up ownership: task 02 is present in baseline. Primary review remains pending.
+
+Primary review added early invalidation guards to the public load/navigate entry points as well as the shared request-loading boundary. This prevents a stale closed controller from reaching external-app handoff or recreating a view before the lower-level load guard. The existing macOS build predates these two guards; source inspection verifies they use the existing lifecycle flag, and the final combined build will compile them.

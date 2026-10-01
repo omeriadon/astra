@@ -771,6 +771,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func load(_ url: URL) {
+		guard !isInvalidated else { return }
 		if BrowserAddress.externalApplicationScheme(for: url) != nil,
 		   handleExternalLink(url, requestingOrigin: nil, requestingSite: "Astra address bar", in: webView)
 		{
@@ -780,6 +781,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func navigate(_ request: URLRequest) {
+		guard !isInvalidated else { return }
 		guard let url = request.url else { return }
 		createdWebView?.stopLoading()
 		(createdWebView as? PeekSourceWebView)?.consumeRecentClick()
