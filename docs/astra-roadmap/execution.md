@@ -14,7 +14,7 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 | --- | --- | --- |
 | [00-baseline](tasks/00-baseline.md) | build verified; primary reviewed | `2a6932d8aab907302f252d58fcb4a8e22d848fe8`; stale test metadata removed, app builds |
 | [01-lifecycle](tasks/01-lifecycle.md) | build verified; primary reviewed | `0c50cc8faf07ee9dca8ac8aef0fe6465b14b8f72`; safe promotion, cleanup and peek session reconstruction |
-| [02-navigation-policy](tasks/02-navigation-policy.md) | queued | — |
+| [02-navigation-policy](tasks/02-navigation-policy.md) | reviewed; build and pure parser checks pass | `1699f4728632432225c6f88f417681c8f8f8c57a`; hooks assigned05/32 |
 | [03-persistence-restoration](tasks/03-persistence-restoration.md) | queued | — |
 | [04-private-browsing](tasks/04-private-browsing.md) | queued | — |
 | [05-permissions](tasks/05-permissions.md) | queued | — |
