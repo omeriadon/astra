@@ -160,6 +160,10 @@ final class BrowserTab: Identifiable {
 
 	@ObservationIgnored
 	var didChange: (@MainActor () -> Void)?
+	@ObservationIgnored
+	var didRecordHistoryVisit: (@MainActor (BrowserController, URL, String, Int) -> Void)?
+	@ObservationIgnored
+	var didUpdateHistoryVisitTitle: (@MainActor (BrowserController, URL, String, Int) -> Void)?
 
 	/// Scroll-only updates (persisted on a slow debounce, no cross-window fan-out).
 	@ObservationIgnored
@@ -210,7 +214,8 @@ final class BrowserTab: Identifiable {
 		session: BrowserWebSession? = nil,
 		recordsNavigationHistory: Bool = true,
 		restorationState: Data? = nil,
-		fileAccessBookmark: Data? = nil
+		fileAccessBookmark: Data? = nil,
+		suppressInitialHistoryVisit: Bool = false
 	) {
 		let session = existingController?.session ?? session ?? .shared
 		self.id = id
@@ -239,7 +244,8 @@ final class BrowserTab: Identifiable {
 				historyIndex: historyIndex,
 				scrollPosition: scrollPosition,
 				restorationState: restorationState,
-				fileAccessBookmark: fileAccessBookmark
+				fileAccessBookmark: fileAccessBookmark,
+				suppressInitialHistoryVisit: suppressInitialHistoryVisit
 			)
 		}
 		if existingController == nil {
@@ -268,7 +274,8 @@ final class BrowserTab: Identifiable {
 			modifiedAt: saved.modifiedAt,
 			recordsNavigationHistory: saved.recordsNavigationHistory,
 			restorationState: saved.restorationState,
-			fileAccessBookmark: saved.fileAccessBookmark
+			fileAccessBookmark: saved.fileAccessBookmark,
+			suppressInitialHistoryVisit: true
 		)
 	}
 
@@ -316,7 +323,8 @@ final class BrowserTab: Identifiable {
 			historyIndex: storedHistoryIndex,
 			scrollPosition: storedScrollPosition,
 			restorationState: storedRestorationState,
-			fileAccessBookmark: storedFileAccessBookmark
+			fileAccessBookmark: storedFileAccessBookmark,
+			suppressInitialHistoryVisit: true
 		)
 		controller.pageZoom = storedPageZoom
 		if let storedInteractionState {
@@ -469,9 +477,18 @@ final class BrowserTab: Identifiable {
 		}
 		guard pageTitle != nextTitle else { return }
 		pageTitle = nextTitle
+		markModified()
 	}
 
 	private func observe(_ peek: BrowserPeek) {
+		peek.controller.historyVisitDidCommit = { [weak self, weak controller = peek.controller] url, title, navigationID in
+			guard let self, let controller else { return }
+			self.didRecordHistoryVisit?(controller, url, title, navigationID)
+		}
+		peek.controller.historyVisitTitleDidChange = { [weak self, weak controller = peek.controller] url, title, navigationID in
+			guard let self, let controller else { return }
+			self.didUpdateHistoryVisitTitle?(controller, url, title, navigationID)
+		}
 		peek.controller.navigationDidChange = { [weak self] in
 			self?.markNavigationModified()
 		}
@@ -481,13 +498,22 @@ final class BrowserTab: Identifiable {
 	}
 
 	private func observeController() {
-		controller?.navigationDidChange = { [weak self] in
+		guard let controller else { return }
+		controller.historyVisitDidCommit = { [weak self, weak controller] url, title, navigationID in
+			guard let self, let controller else { return }
+			self.didRecordHistoryVisit?(controller, url, title, navigationID)
+		}
+		controller.historyVisitTitleDidChange = { [weak self, weak controller] url, title, navigationID in
+			guard let self, let controller else { return }
+			self.didUpdateHistoryVisitTitle?(controller, url, title, navigationID)
+		}
+		controller.navigationDidChange = { [weak self] in
 			self?.markNavigationModified()
 		}
-		controller?.scrollPositionDidChange = { [weak self] in
+		controller.scrollPositionDidChange = { [weak self] in
 			self?.markModifiedForScroll()
 		}
-		controller?.titleDidChange = { [weak self] title in
+		controller.titleDidChange = { [weak self] title in
 			self?.updatePageTitle(title)
 		}
 	}

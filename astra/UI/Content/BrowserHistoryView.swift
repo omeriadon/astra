@@ -5,14 +5,18 @@ struct BrowserHistoryView: View {
 	@State private var searchText = ""
 	@State private var filteredVisits: [BrowserVisit] = []
 	@State private var confirmsClear = false
+	@State private var confirmsRangeDelete = false
+	@State private var rangeStart = Date.now
+	@State private var rangeEnd = Date.now
 
 	var body: some View {
+		let visitCountsByURL = Dictionary(grouping: browser.historyVisits, by: \.url).mapValues(\.count)
 		List {
 			Section("Visited Pages") {
 				ForEach(filteredVisits) { visit in
 					HistoryRow(
 						title: visit.title,
-						detail: visit.url.absoluteString,
+						detail: "\(visit.url.absoluteString) · \(visitCountsByURL[visit.url, default: 1]) visits",
 						url: visit.url,
 						symbol: "clock.arrow.circlepath",
 						identifier: "history-visit-\(visit.id)",
@@ -20,6 +24,9 @@ struct BrowserHistoryView: View {
 						openInBackground: { browser.openHistoryURL(visit.url, inBackground: true) }
 					)
 					.contextMenu {
+						Button("Remove This Page from History", systemImage: "trash", role: .destructive) {
+							browser.removeHistory(for: visit.url)
+						}
 						Button("Remove from History", systemImage: "trash", role: .destructive) {
 							browser.removeHistory([visit.id])
 						}
@@ -42,10 +49,22 @@ struct BrowserHistoryView: View {
 					Label("History", systemImage: "clock.arrow.circlepath")
 						.font(.title2.bold())
 					Spacer()
+					Menu {
+						Button("Last Hour", systemImage: "clock") { confirmDeleteRange(seconds: 3_600) }
+						Button("Last Day", systemImage: "calendar") { confirmDeleteRange(seconds: 86_400) }
+						Button("Last Week", systemImage: "calendar") { confirmDeleteRange(seconds: 604_800) }
+						Button("Last Month", systemImage: "calendar") { confirmDeleteRange(seconds: 2_592_000) }
+					} label: {
+						Label("Delete History by Time Range", systemImage: "calendar.badge.clock")
+					}
+					.labelStyle(.iconOnly)
+					.accessibilityLabel("Delete History by Time Range")
+					.accessibilityIdentifier("delete-history-range")
+					.disabled(browser.historyVisits.isEmpty)
 					Button("Clear History", systemImage: "trash", role: .destructive) {
 						confirmsClear = true
 					}
-					.disabled(browser.historyVisits.isEmpty)
+					.disabled(browser.historyVisits.isEmpty && browser.closedHistoryTabs.isEmpty)
 					.accessibilityIdentifier("clear-browsing-history")
 				}
 				TextField("Search History", text: $searchText)
@@ -65,6 +84,14 @@ struct BrowserHistoryView: View {
 		} message: {
 			Text("When sync is enabled, this removes browsing history from all synced devices. Recently closed tabs are cleared on this Mac. Open pages and bookmarks are kept.")
 		}
+		.confirmationDialog("Delete history from this time range?", isPresented: $confirmsRangeDelete) {
+			Button("Delete History", systemImage: "trash", role: .destructive) {
+				browser.removeHistory(from: rangeStart, until: rangeEnd)
+			}
+			Button(role: .cancel) {}
+		} message: {
+			Text("This removes visits from the selected period across normal windows and synced devices. Live pages remain open.")
+		}
 		.overlay {
 			if filteredVisits.isEmpty {
 				ContentUnavailableView("No History", systemImage: "clock.arrow.circlepath")
@@ -73,10 +100,13 @@ struct BrowserHistoryView: View {
 	}
 
 	private func updateVisits() {
-		filteredVisits = browser.historyVisits.filter { visit in
-			searchText.isEmpty || visit.title.localizedCaseInsensitiveContains(searchText)
-				|| visit.url.absoluteString.localizedCaseInsensitiveContains(searchText)
-		}
+		filteredVisits = BrowserVisit.matching(browser.recentHistoryVisits, query: searchText)
+	}
+
+	private func confirmDeleteRange(seconds: TimeInterval) {
+		rangeEnd = Date.now.addingTimeInterval(0.001)
+		rangeStart = rangeEnd.addingTimeInterval(-seconds)
+		confirmsRangeDelete = true
 	}
 }
 

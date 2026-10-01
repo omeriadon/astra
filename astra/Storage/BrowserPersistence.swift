@@ -204,6 +204,17 @@ final class BrowserPersistence: @unchecked Sendable {
 			let previous = try decodeSnapshot(previousData)
 			let incomingIDs = Set((state.historyVisits ?? []).map(\.id))
 			historyWasRemoved = (previous.historyVisits ?? []).contains { !incomingIDs.contains($0.id) }
+				|| previous.snapshot.historyClearedAt < state.snapshot.historyClearedAt
+				|| previous.closedTabs.contains { old in
+					!state.closedTabs.contains(where: { $0.id == old.id })
+				}
+				|| previous.openTabs.contains { old in
+					guard let updated = state.openTabs.first(where: { $0.id == old.id }) else { return false }
+					return old.history.contains { !updated.history.contains($0) }
+				}
+				|| previous.snapshot.deletedVisitsAt.contains { id, date in
+					state.snapshot.deletedVisitsAt[id].map { $0 > date } ?? false
+				}
 				|| previous.openTabs.contains { old in
 					old.recordsNavigationHistory && state.openTabs.first(where: { $0.id == old.id })?.recordsNavigationHistory == false
 				}

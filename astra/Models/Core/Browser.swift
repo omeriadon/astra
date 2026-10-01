@@ -106,6 +106,26 @@ final class Browser {
 		Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
 	}
 
+	var recentHistoryVisits: [BrowserVisit] {
+		historyVisits.sorted {
+			$0.visitedAt == $1.visitedAt
+				? $0.id.uuidString < $1.id.uuidString
+				: $0.visitedAt > $1.visitedAt
+		}
+	}
+
+	var frequentHistory: [BrowserVisitSummary] {
+		BrowserVisit.summaries(historyVisits).sorted {
+			if $0.visitCount != $1.visitCount {
+				return $0.visitCount > $1.visitCount
+			}
+			if $0.lastVisitedAt != $1.lastVisitedAt {
+				return $0.lastVisitedAt > $1.lastVisitedAt
+			}
+			return $0.url.absoluteString < $1.url.absoluteString
+		}
+	}
+
 	func tab(withID id: UUID) -> BrowserTab? {
 		tabs.first { $0.id == id }
 	}
@@ -514,6 +534,7 @@ final class Browser {
 		defer {
 			didFinishHydration = true
 			previousShutdownWasClean = loaded.previousShutdownWasClean
+			applyHistoryRetention()
 			persist()
 			BrowserSync.shared.hydrationDidFinish(self)
 		}
@@ -585,7 +606,8 @@ final class Browser {
 				modifiedAt: saved.modifiedAt,
 				recordsNavigationHistory: saved.recordsNavigationHistory,
 				restorationState: saved.restorationState,
-				fileAccessBookmark: saved.fileAccessBookmark
+				fileAccessBookmark: saved.fileAccessBookmark,
+				suppressInitialHistoryVisit: true
 			)
 		}
 		var newTabs: [BrowserTab]
@@ -612,11 +634,7 @@ final class Browser {
 			item.url = BrowserAddress.withoutCredentials(item.url)
 			return item
 		}
-		historyVisits = (loaded.historyVisits ?? Self.migratedHistory(loaded.tabs + loaded.closedTabs)).map { visit in
-			var visit = visit
-			visit.url = BrowserAddress.withoutCredentials(visit.url)
-			return visit
-		}
+		historyVisits = visibleHistoryVisits(loaded.historyVisits ?? Self.migratedHistory(loaded.tabs + loaded.closedTabs))
 		closedHistoryTabs = loaded.closedTabs
 		closedTabIDs = loaded.snapshot?.closedTabIDs ?? []
 		selectedTabModifiedAt = loaded.snapshot?.selectedTabModifiedAt ?? .distantPast
@@ -626,6 +644,7 @@ final class Browser {
 		deletedSpacesAt = loaded.snapshot?.deletedSpacesAt ?? [:]
 		deletedVisitsAt = loaded.snapshot?.deletedVisitsAt ?? [:]
 		historyClearedAt = loaded.snapshot?.historyClearedAt ?? .distantPast
+		historyVisits = visibleHistoryVisits(historyVisits)
 		persistenceErrorDescription = nil
 		reconcileWorkspace()
 		for tab in newTabs {
@@ -1088,31 +1107,62 @@ final class Browser {
 		var seen = Set<URL>()
 		return tabs.sorted { $0.modifiedAt > $1.modifiedAt }.flatMap { tab in
 			(tab.history + (tab.url.map { [$0] } ?? [])).reversed().compactMap { url in
-				guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
-				      seen.insert(url).inserted else { return nil }
-				return BrowserVisit(url: url, title: url == tab.url ? tab.pageTitle : url.host ?? url.absoluteString, visitedAt: tab.modifiedAt)
+				guard let safeURL = BrowserVisit.normalizedURL(url),
+				      seen.insert(safeURL).inserted else { return nil }
+				return BrowserVisit(
+					url: safeURL,
+					title: url == tab.url ? tab.pageTitle : safeURL.host ?? safeURL.absoluteString,
+					visitedAt: tab.modifiedAt,
+					modifiedAt: .distantPast
+				)
 			}
 		}
 	}
 
-	private func recordHistory(of tab: BrowserTab) {
-		guard !isPrivate, !isMini else { return }
-		for controller in [tab.controller].compactMap(\.self) + tab.peeks.map(\.controller) {
-			guard controller.canRecordVisit, let url = controller.committedURL,
-			      ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { continue }
-			let title = controller.webViewIfLoaded?.title ?? url.host ?? url.absoluteString
-			if lastVisitedURL[controller.id] == url, lastVisitedDocument[controller.id] == controller.navigationIdentifier {
-				if let id = lastVisitID[controller.id], let index = historyVisits.firstIndex(where: { $0.id == id }) {
-					historyVisits[index].title = title
-					historyVisits[index].modifiedAt = .now
-				}
-				continue
-			}
-			let visit = BrowserVisit(url: BrowserAddress.withoutCredentials(url), title: title)
-			lastVisitedURL[controller.id] = url
-			lastVisitedDocument[controller.id] = controller.navigationIdentifier
-			lastVisitID[controller.id] = visit.id
-			historyVisits.insert(visit, at: 0)
+	private func recordHistoryVisit(from controller: BrowserController, url: URL, title: String, navigationID: Int) {
+		guard !isPrivate, !isMini, controller.canRecordVisit,
+		      let safeURL = BrowserVisit.normalizedURL(url) else { return }
+		if lastVisitedURL[controller.id] == safeURL, lastVisitedDocument[controller.id] == navigationID {
+			updateHistoryVisitTitle(from: controller, url: safeURL, title: title, navigationID: navigationID)
+			return
+		}
+		let now = Date.now
+		let modifiedAt = nextHistoryMutationDate(after: now)
+		let visit = BrowserVisit(url: safeURL, title: title, visitedAt: now, modifiedAt: modifiedAt)
+		lastVisitedURL[controller.id] = safeURL
+		lastVisitedDocument[controller.id] = navigationID
+		lastVisitID[controller.id] = visit.id
+		historyVisits.insert(visit, at: 0)
+		applyHistoryRetention()
+		schedulePersistence()
+	}
+
+	private func updateHistoryVisitTitle(from controller: BrowserController, url: URL, title: String, navigationID: Int) {
+		guard lastVisitedURL[controller.id] == url,
+		      lastVisitedDocument[controller.id] == navigationID,
+		      let id = lastVisitID[controller.id],
+		      let index = historyVisits.firstIndex(where: { $0.id == id }) else { return }
+		var visit = historyVisits[index]
+		visit.updateTitle(title, at: nextHistoryMutationDate(after: .now))
+		historyVisits[index] = visit
+		schedulePersistence()
+	}
+
+	private func nextHistoryMutationDate(after date: Date) -> Date {
+		let latest = ([historyClearedAt] + Array(deletedVisitsAt.values) + historyVisits.map(\.modifiedAt)).max() ?? .distantPast
+		return date > latest ? date : latest.addingTimeInterval(0.001)
+	}
+
+	private func visibleHistoryVisits(_ visits: [BrowserVisit]) -> [BrowserVisit] {
+		var seenIDs = Set<UUID>()
+		visits.compactMap { source in
+			guard let url = BrowserVisit.normalizedURL(source.url),
+			      (historyClearedAt == .distantPast || source.modifiedAt > historyClearedAt),
+			      deletedVisitsAt[source.id].map({ source.modifiedAt > $0 }) ?? true,
+			      seenIDs.insert(source.id).inserted else { return nil }
+			var visit = source
+			visit.url = url
+			return visit
 		}
 	}
 
@@ -1121,11 +1171,7 @@ final class Browser {
 		let retained = BrowserVisit.retained(historyVisits, days: Defaults[.historyRetentionDays])
 		guard retained != historyVisits else { return }
 		let retainedIDs = Set(retained.map(\.id))
-		for visit in historyVisits where !retainedIDs.contains(visit.id) {
-			deletedVisitsAt[visit.id] = .now
-		}
-		historyVisits = retained
-		schedulePersistence()
+		removeHistory(Set(historyVisits.map(\.id)).subtracting(retainedIDs))
 	}
 
 	func clearHistory() {
@@ -1133,15 +1179,19 @@ final class Browser {
 		let peers = BrowserWindowRegistry.shared.openBrowsers.filter {
 			$0 !== self && $0.session === session && !$0.isPrivate && !$0.isMini
 		}
+		let latestPeerDate = peers.flatMap { browser in
+			[browser.historyClearedAt] + Array(browser.deletedVisitsAt.values) + browser.historyVisits.map(\.modifiedAt)
+		}.max() ?? .distantPast
+		let clearDate = max(nextHistoryMutationDate(after: .now), latestPeerDate.addingTimeInterval(0.001))
 		for browser in [self] + peers {
-			browser.clearLocalHistory()
+			browser.clearLocalHistory(at: clearDate)
 		}
 		schedulePersistence()
 	}
 
-	private func clearLocalHistory() {
+	private func clearLocalHistory(at date: Date) {
 		historyVisits.removeAll()
-		historyClearedAt = .now
+		historyClearedAt = date
 		deletedVisitsAt.removeAll()
 		lastVisitID.removeAll()
 		closedHistoryTabs.removeAll()
@@ -1157,19 +1207,58 @@ final class Browser {
 
 	func removeHistory(_ ids: Set<UUID>) {
 		guard !isPrivate, !isMini else { return }
-		historyVisits.removeAll { ids.contains($0.id) }
-		for id in ids {
-			deletedVisitsAt[id] = .now
+		let peers = BrowserWindowRegistry.shared.openBrowsers.filter {
+			$0 !== self && $0.session === session && !$0.isPrivate && !$0.isMini
 		}
-		for browser in BrowserWindowRegistry.shared.openBrowsers
-			where browser !== self && browser.session === session && !browser.isPrivate && !browser.isMini
-		{
-			browser.historyVisits.removeAll { ids.contains($0.id) }
-			for id in ids {
-				browser.deletedVisitsAt[id] = .now
-			}
+		let browsers = [self] + peers
+		let removedIDs = Set(browsers.flatMap { $0.historyVisits.map(\.id) }).intersection(ids)
+		guard !removedIDs.isEmpty else { return }
+		let latestPeerDate = peers.flatMap { browser in
+			[browser.historyClearedAt] + Array(browser.deletedVisitsAt.values)
+				+ browser.historyVisits.filter { removedIDs.contains($0.id) }.map(\.modifiedAt)
+		}.max() ?? .distantPast
+		let deletionDate = max(nextHistoryMutationDate(after: .now), latestPeerDate.addingTimeInterval(0.001))
+		for browser in browsers {
+			browser.removeHistoryLocally(removedIDs, at: deletionDate)
 		}
 		schedulePersistence()
+	}
+
+	func removeHistory(from start: Date?, until end: Date?) {
+		guard !isPrivate, !isMini else { return }
+		let peers = BrowserWindowRegistry.shared.openBrowsers.filter {
+			$0 !== self && $0.session === session && !$0.isPrivate && !$0.isMini
+		}
+		let ids = Set(([self] + peers).flatMap {
+			BrowserVisit.inRange($0.historyVisits, from: start, until: end).map(\.id)
+		})
+		removeHistory(ids)
+	}
+
+	func removeHistory(for url: URL) {
+		guard let safeURL = BrowserVisit.normalizedURL(url) else { return }
+		let peers = BrowserWindowRegistry.shared.openBrowsers.filter {
+			$0 !== self && $0.session === session && !$0.isPrivate && !$0.isMini
+		}
+		let ids = Set(([self] + peers).flatMap { browser in
+			browser.historyVisits.filter { $0.url == safeURL }.map(\.id)
+		})
+		removeHistory(ids)
+	}
+
+	private func removeHistoryLocally(_ ids: Set<UUID>, at date: Date) {
+		historyVisits.removeAll { ids.contains($0.id) }
+		for id in ids { deletedVisitsAt[id] = date }
+		removeHistoryVisitReferences(ids)
+		schedulePersistence()
+	}
+
+	private func removeHistoryVisitReferences(_ ids: Set<UUID>) {
+		for (controllerID, visitID) in Array(lastVisitID) where ids.contains(visitID) {
+			lastVisitID.removeValue(forKey: controllerID)
+			lastVisitedURL.removeValue(forKey: controllerID)
+			lastVisitedDocument.removeValue(forKey: controllerID)
+		}
 	}
 
 	func importBookmarks(_ incoming: [Bookmark]) {
@@ -1185,11 +1274,11 @@ final class Browser {
 	func importHistory(_ incoming: [BrowserVisit]) {
 		guard !isPrivate else { return }
 		var existing = Set(historyVisits.map(\.url))
-		for visit in incoming where ["http", "https"].contains(visit.url.scheme?.lowercased() ?? "") {
-			guard existing.insert(visit.url).inserted else { continue }
-			var visit = visit
-			visit.url = BrowserAddress.withoutCredentials(visit.url)
-			visit.modifiedAt = .now
+		var existingIDs = Set(historyVisits.map(\.id))
+		for source in incoming {
+			guard var visit = visibleHistoryVisits([source]).first else { continue }
+			guard existing.insert(visit.url).inserted, existingIDs.insert(visit.id).inserted else { continue }
+			visit.modifiedAt = nextHistoryMutationDate(after: .now)
 			historyVisits.append(visit)
 		}
 		historyVisits.sort { $0.visitedAt > $1.visitedAt }
@@ -1197,11 +1286,14 @@ final class Browser {
 	}
 
 	private func attachPersistence(to tab: BrowserTab) {
-		tab.didChange = { [weak self, weak tab] in
-			if let tab {
-				self?.recordHistory(of: tab)
-			}
+		tab.didChange = { [weak self] in
 			self?.schedulePersistence()
+		}
+		tab.didRecordHistoryVisit = { [weak self] controller, url, title, navigationID in
+			self?.recordHistoryVisit(from: controller, url: url, title: title, navigationID: navigationID)
+		}
+		tab.didUpdateHistoryVisitTitle = { [weak self] controller, url, title, navigationID in
+			self?.updateHistoryVisitTitle(from: controller, url: url, title: title, navigationID: navigationID)
 		}
 		tab.didScrollChange = { [weak self] in
 			self?.scheduleScrollPersistence()
@@ -1583,7 +1675,8 @@ final class Browser {
 				modifiedAt: saved.modifiedAt,
 				recordsNavigationHistory: saved.recordsNavigationHistory,
 				restorationState: saved.restorationState,
-				fileAccessBookmark: saved.fileAccessBookmark
+				fileAccessBookmark: saved.fileAccessBookmark,
+				suppressInitialHistoryVisit: true
 			)
 			configure(tab)
 			return tab
@@ -1612,7 +1705,7 @@ final class Browser {
 		deletedVisitsAt = document.browser.deletedVisitsAt
 		historyClearedAt = document.browser.historyClearedAt
 		bookmarks = document.bookmarks
-		historyVisits = document.history
+		historyVisits = visibleHistoryVisits(document.history)
 		workspace = document.workspace ?? BrowserWorkspace.migrated(
 			tabs: document.tabs,
 			selectedTabID: document.browser.selectedTabID,
@@ -1813,7 +1906,6 @@ final class Browser {
 		let isStructural = pendingFullPersistence
 		pendingFullPersistence = false
 		pendingScrollPersistence = false
-		historyVisits = BrowserVisit.retained(historyVisits, days: Defaults[.historyRetentionDays])
 		let state = BrowserPersistedState(
 			bookmarks: bookmarks,
 			openTabs: tabs.map(\.openTab),

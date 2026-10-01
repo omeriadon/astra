@@ -326,6 +326,10 @@ final class BrowserController: NSObject, Identifiable {
 	@ObservationIgnored
 	var navigationDidChange: (@MainActor () -> Void)?
 	@ObservationIgnored
+	var historyVisitDidCommit: (@MainActor (URL, String, Int) -> Void)?
+	@ObservationIgnored
+	var historyVisitTitleDidChange: (@MainActor (URL, String, Int) -> Void)?
+	@ObservationIgnored
 	var extensionStateDidChange: (@MainActor () -> Void)?
 	@ObservationIgnored
 	var extensionWebViewDidChange: (@MainActor () -> Void)?
@@ -344,6 +348,8 @@ final class BrowserController: NSObject, Identifiable {
 	private var observations: [NSKeyValueObservation] = []
 	@ObservationIgnored
 	private var navigationGeneration = 0
+	@ObservationIgnored
+	private var historyVisitPolicy: BrowserVisitPolicy
 	@ObservationIgnored
 	private var connectivityObserver: NSObjectProtocol?
 	@ObservationIgnored
@@ -392,12 +398,14 @@ final class BrowserController: NSObject, Identifiable {
 		historyIndex: Int = 0,
 		scrollPosition: BrowserScrollPosition = .zero,
 		restorationState: Data? = nil,
-		fileAccessBookmark: Data? = nil
+		fileAccessBookmark: Data? = nil,
+		suppressInitialHistoryVisit: Bool = false
 	) {
 		let session = session ?? .shared
 		let restoredHistory = BrowserHistory(entries: history, index: historyIndex, initialURL: initialURL)
 		self.session = session
 		self.fileAccessBookmark = fileAccessBookmark
+		historyVisitPolicy = BrowserVisitPolicy(suppressInitialVisit: suppressInitialHistoryVisit)
 		if !session.isPrivate, let initialURL, let restorationState {
 			pendingInteractionState = BrowserRestorationStore.open(restorationState, for: initialURL)
 		}
@@ -794,6 +802,8 @@ final class BrowserController: NSObject, Identifiable {
 		}
 		createdWebView?.configuration.userContentController.removeAllUserScripts()
 		navigationDidChange = nil
+		historyVisitDidCommit = nil
+		historyVisitTitleDidChange = nil
 		extensionStateDidChange = nil
 		extensionWebViewDidChange = nil
 		scrollPositionDidChange = nil
@@ -961,7 +971,12 @@ final class BrowserController: NSObject, Identifiable {
 			},
 			webView.observe(\.title, options: [.initial, .new]) { [weak self] webView, change in
 				MainActor.assumeIsolated {
-					self?.titleDidChange?(change.newValue ?? webView.title)
+					guard let self else { return }
+					let title = change.newValue ?? webView.title
+					self.titleDidChange?(title)
+					if let url = self.committedURL, self.canRecordVisit {
+						self.historyVisitTitleDidChange?(url, title ?? url.host ?? url.absoluteString, self.navigationIdentifier)
+					}
 				}
 			},
 			webView.observe(\.pageZoom, options: [.new]) { [weak self] webView, _ in
@@ -1018,6 +1033,7 @@ final class BrowserController: NSObject, Identifiable {
 	func navigate(_ request: URLRequest) {
 		guard !isInvalidated else { return }
 		guard let url = request.url else { return }
+		historyVisitPolicy.userInitiatedNavigation()
 		createdWebView?.stopLoading()
 		createdWebView?.closeAllMediaPresentations(completionHandler: nil)
 		(createdWebView as? PeekSourceWebView)?.consumeRecentClick()
@@ -1030,6 +1046,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	func goBack() {
 		guard let webView = createdWebView, webView.canGoBack else { return }
+		historyVisitPolicy.userInitiatedNavigation()
 		currentRequest = nil
 		awaitsNavigationCommit = true
 		currentNavigation = webView.goBack()
@@ -1037,6 +1054,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	func goForward() {
 		guard let webView = createdWebView, webView.canGoForward else { return }
+		historyVisitPolicy.userInitiatedNavigation()
 		currentRequest = nil
 		awaitsNavigationCommit = true
 		currentNavigation = webView.goForward()
@@ -1044,6 +1062,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	func go(toHistoryIndex index: Int) {
 		guard history.indices.contains(index), index != historyIndex else { return }
+		historyVisitPolicy.userInitiatedNavigation()
 		if let webView = createdWebView,
 		   let item = webView.backForwardList.item(at: index - historyIndex)
 		{
@@ -1058,6 +1077,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func reload() {
+		historyVisitPolicy.userInitiatedNavigation()
 		if let navigationFailure {
 			load(failedRequest ?? URLRequest(url: navigationFailure.url))
 			return
@@ -1080,6 +1100,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func reloadFromOrigin() {
+		historyVisitPolicy.userInitiatedNavigation()
 		if navigationFailure != nil {
 			reload()
 			return
@@ -1135,7 +1156,7 @@ final class BrowserController: NSObject, Identifiable {
 		}
 	#endif
 
-	private func updateHistory() {
+	private func updateHistory(reportSameDocumentVisit: Bool = true) {
 		guard let currentURL = createdWebView?.url else { return }
 		url = currentURL
 		if let list = createdWebView?.backForwardList, let current = list.currentItem {
@@ -1144,7 +1165,25 @@ final class BrowserController: NSObject, Identifiable {
 		} else {
 			historyManager.record(currentURL)
 		}
+		if reportSameDocumentVisit {
+			committedURL = currentURL
+			reportSameDocumentVisitIfNeeded(currentURL)
+		}
 		navigationDidChange?()
+	}
+
+	private func reportHistoryVisit(_ url: URL, force: Bool) {
+		let navigationID = navigationIdentifier
+		guard canRecordVisit else { return }
+		let shouldReport = force
+			? historyVisitPolicy.didCommit(url, navigationID: navigationID)
+			: historyVisitPolicy.didChangeSameDocument(to: url, navigationID: navigationID)
+		guard shouldReport else { return }
+		historyVisitDidCommit?(url, createdWebView?.title ?? url.host ?? url.absoluteString, navigationID)
+	}
+
+	private func reportSameDocumentVisitIfNeeded(_ url: URL) {
+		reportHistoryVisit(url, force: false)
 	}
 
 	private func load(_ request: URLRequest, resetConnectivityRetry: Bool = true) {
@@ -1321,6 +1360,12 @@ extension BrowserController: WKNavigationDelegate {
 		      let newWindowRequested
 		else {
 			if navigationAction.targetFrame?.isMainFrame == true {
+				switch navigationAction.navigationType {
+					case .linkActivated, .formSubmitted, .formResubmitted, .backForward, .reload:
+						historyVisitPolicy.userInitiatedNavigation()
+					default:
+						break
+				}
 				switch navigationAction.navigationType {
 					case .linkActivated, .formSubmitted, .formResubmitted, .backForward, .reload:
 						retriedAfterConnectivityReturn = false
@@ -1526,7 +1571,10 @@ extension BrowserController: WKNavigationDelegate {
 		pageURLBeforeDownload = nil
 		navigationFailure = nil
 		awaitsNavigationCommit = false
-		updateHistory()
+		updateHistory(reportSameDocumentVisit: false)
+		if let url = committedURL {
+			reportHistoryVisit(url, force: true)
+		}
 	}
 
 	func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
