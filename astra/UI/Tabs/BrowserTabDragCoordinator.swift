@@ -11,7 +11,7 @@
 		private(set) var activeTabID: UUID?
 		private(set) var screenPoint = CGPoint.zero
 		@ObservationIgnored private var targets: [UUID: Target] = [:]
-		@ObservationIgnored private var sourceBrowserID: UUID?
+		@ObservationIgnored private weak var sourceBrowser: Browser?
 
 		final class Target {
 			weak var browser: Browser?
@@ -42,8 +42,12 @@
 		}
 
 		func begin(_ id: UUID, from browser: Browser) {
+			guard !browser.isPrivate, !browser.isMini, browser.tab(withID: id) != nil else {
+				clearDrag()
+				return
+			}
 			activeTabID = id
-			sourceBrowserID = browser.windowID
+			sourceBrowser = browser
 			screenPoint = NSEvent.mouseLocation
 		}
 
@@ -60,29 +64,52 @@
 		}
 
 		func drop() {
-			guard let activeTabID else { return }
+			guard let activeTabID,
+			      let sourceBrowser,
+			      !sourceBrowser.isPrivate,
+			      !sourceBrowser.isMini,
+			      sourceBrowser.tab(withID: activeTabID) != nil
+			else {
+				clearDrag()
+				return
+			}
 			let point = NSEvent.mouseLocation
 			let target = targets.values
 				.filter {
 					$0.frame.contains(point)
-						&& (!$0.isWindowFallback || $0.browser?.windowID != sourceBrowserID)
+						&& (!$0.isWindowFallback || $0.browser?.windowID != sourceBrowser.windowID)
 				}
 				.min { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
-			if let target, let browser = target.browser {
+			if let target, let browser = target.browser,
+			   !browser.isPrivate,
+			   !browser.isMini,
+			   browser.session === sourceBrowser.session
+			{
+				if browser !== sourceBrowser {
+					browser.receiveSharedState(from: sourceBrowser)
+				}
+				guard browser.tab(withID: activeTabID) != nil else {
+					clearDrag()
+					return
+				}
 				browser.moveTab(
 					activeTabID,
 					to: target.area,
 					in: target.spaceID,
 					before: target.beforeTabID
 				)
+				browser.selectTab(activeTabID)
 				if browser.windowID != BrowserWindowRegistry.shared.activeBrowserID {
-					browser.selectTab(activeTabID)
 					target.window?.makeKeyAndOrderFront(nil)
 				}
 				browser.flushPersistence()
 			}
-			self.activeTabID = nil
-			sourceBrowserID = nil
+			clearDrag()
+		}
+
+		private func clearDrag() {
+			activeTabID = nil
+			sourceBrowser = nil
 		}
 	}
 
@@ -129,7 +156,7 @@
 			}
 
 			func updateTarget() {
-				guard let browser, !browser.isPrivate, let window, !bounds.isEmpty else {
+				guard let browser, !browser.isPrivate, !browser.isMini, let window, !bounds.isEmpty else {
 					BrowserTabDragCoordinator.shared.unregister(id)
 					return
 				}
