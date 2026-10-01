@@ -12,27 +12,38 @@ enum BrowserAddress {
 		return components.url ?? url
 	}
 
-	static func destination(for input: String) -> URL? {
-		let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+	static func destination(
+		for input: String,
+		configuration: BrowserSearchConfiguration = .default,
+		isPrivate: Bool = false
+	) -> URL? {
+		let text = unwrapped(input)
 		guard !text.isEmpty else { return nil }
 
 		if let components = URLComponents(string: text),
-		   let scheme = components.scheme?.lowercased(), ["http", "https"].contains(scheme)
+		   let scheme = components.scheme?.lowercased()
 		{
-			guard !text.contains(where: \.isWhitespace),
-			      let host = components.host, !host.isEmpty,
-			      !host.contains(where: \.isWhitespace),
-			      validPort(components.port)
-			else { return searchURL(for: text) }
-			return components.url ?? searchURL(for: text)
+			if ["http", "https"].contains(scheme) {
+				guard !text.contains(where: \.isWhitespace),
+				      let host = components.host, !host.isEmpty,
+				      !host.contains(where: \.isWhitespace),
+				      components.user == nil, components.password == nil,
+				      validPort(components.port)
+				else { return nil }
+				return components.url
+			}
+
+			if hasScheme(text), !hasAmbiguousHostPort(text) {
+				guard let url = components.url else { return nil }
+				return externalApplicationScheme(for: url) == nil ? nil : url
+			}
 		}
 
 		if !text.contains(where: \.isWhitespace),
-		   !hasExplicitAuthorityScheme(text),
 		   let components = URLComponents(string: "https://" + text),
 		   let host = components.host,
-		   host.contains(".") || host.lowercased() == "localhost",
-		   !host.contains(where: \.isWhitespace),
+		   (host.contains(".") || host.lowercased() == "localhost" || isIPAddress(host)),
+		   validHost(host),
 		   components.user == nil,
 		   components.password == nil,
 		   validPort(components.port),
@@ -41,80 +52,66 @@ enum BrowserAddress {
 			return url
 		}
 
-		if hasAmbiguousHostPort(text) {
-			return searchURL(for: text)
-		}
-
-		if !text.contains(where: \.isWhitespace),
-		   let components = URLComponents(string: text),
-		   let url = components.url,
-		   externalApplicationScheme(for: url) != nil
-		{
-			return url
-		}
-
-		return searchURL(for: text)
+		if hasAmbiguousHostPort(text) { return configuration.destination(for: text, isPrivate: isPrivate) }
+		return configuration.destination(for: text, isPrivate: isPrivate)
 	}
 
-	private static func validPort(_ port: Int?) -> Bool {
-		guard let port else { return true }
-		return (1 ... 65535).contains(port)
-	}
-
-	private static func hasAmbiguousHostPort(_ text: String) -> Bool {
-		guard let colon = text.firstIndex(of: ":"),
-		      !hasExplicitAuthorityScheme(text)
-		else { return false }
-		let prefix = text[..<colon]
-		return prefix.contains(".") || prefix.lowercased() == "localhost"
-	}
-
-	private static func hasExplicitAuthorityScheme(_ text: String) -> Bool {
-		guard let colon = text.firstIndex(of: ":") else { return false }
-		return text[text.index(after: colon)...].hasPrefix("//")
-	}
-
-	static func displayString(for url: URL?, style: AddressDisplayStyle, isEditing: Bool) -> String {
+	static func displayString(
+		for url: URL?,
+		style: AddressDisplayStyle,
+		isEditing: Bool,
+		configuration: BrowserSearchConfiguration = .default,
+		isPrivate: Bool = false
+	) -> String {
 		guard let originalURL = url else { return "" }
 		let url = withoutCredentials(originalURL)
 		guard style == .simple, !isEditing else {
 			if style == .dimmed, !isEditing,
 			   let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-			   let range = googleQueryValueRange(in: url.absoluteString, components: components),
-			   let query = googleSearchQuery(for: url)
+			   let query = configuration.query(for: url, isPrivate: isPrivate),
+			   let range = searchQueryValueRange(
+				in: url.absoluteString,
+				components: components,
+				parameterName: configuration.queryParameterName(for: url)
+			)
 			{
 				return url.absoluteString.replacingCharacters(in: range, with: query)
 			}
 			return url.absoluteString
 		}
-		if let query = googleSearchQuery(for: url) {
-			return query
-		}
+		if let query = configuration.query(for: url, isPrivate: isPrivate) { return query }
 		guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
 		      let host = hostWithoutWWW(for: components)
 		else { return url.absoluteString }
 		return host + components.percentEncodedPath
 	}
 
-	static func primaryTextRanges(for url: URL?, displayedText: String) -> [Range<String.Index>] {
-		guard let url else { return [] }
-		let text = url.absoluteString
-		guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-		      components.string == text,
+	static func primaryTextRanges(
+		for url: URL?,
+		displayedText: String,
+		configuration: BrowserSearchConfiguration = .default,
+		isPrivate: Bool = false
+	) -> [Range<String.Index>] {
+		guard let url,
+		      let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
 		      let hostRange = components.rangeOfHost
 		else { return [] }
-
-		if let query = googleSearchQuery(for: url) {
-			if displayedText == query {
-				return [displayedText.startIndex ..< displayedText.endIndex]
-			}
-			guard let range = googleQueryValueRange(in: text, components: components) else { return [] }
+		let text = url.absoluteString
+		if let query = configuration.query(for: url, isPrivate: isPrivate) {
+			if displayedText == query { return [displayedText.startIndex ..< displayedText.endIndex] }
+			guard let range = searchQueryValueRange(
+				in: text,
+				components: components,
+				parameterName: configuration.queryParameterName(for: url)
+			) else { return [] }
 			let startOffset = text[..<range.lowerBound].utf16.count
+			let endOffset = startOffset + query.utf16.count
+			guard endOffset <= displayedText.utf16.count else { return [] }
 			let start = String.Index(utf16Offset: startOffset, in: displayedText)
-			let end = String.Index(utf16Offset: startOffset + query.utf16.count, in: displayedText)
+			let end = String.Index(utf16Offset: endOffset, in: displayedText)
+			guard start <= end else { return [] }
 			return [start ..< end]
 		}
-
 		guard components.string == displayedText else { return [] }
 		let host = text[hostRange]
 		let visibleHostStart = host.lowercased().hasPrefix("www.")
@@ -122,38 +119,38 @@ enum BrowserAddress {
 			: hostRange.lowerBound
 		var ranges = [visibleHostStart ..< hostRange.upperBound]
 		if let pathRange = components.rangeOfPath, !pathRange.isEmpty {
-			let pathEnd = text[pathRange].last == "/"
-				? text.index(before: pathRange.upperBound)
-				: pathRange.upperBound
-			if pathRange.lowerBound < pathEnd {
-				ranges.append(pathRange.lowerBound ..< pathEnd)
-			}
+			let pathEnd = text[pathRange].last == "/" ? text.index(before: pathRange.upperBound) : pathRange.upperBound
+			if pathRange.lowerBound < pathEnd { ranges.append(pathRange.lowerBound ..< pathEnd) }
 		}
 		return ranges
 	}
 
-	static func isGoogleSearchURL(_ url: URL?) -> Bool {
+	static func isSearchURL(
+		_ url: URL?,
+		configuration: BrowserSearchConfiguration = .default,
+		isPrivate: Bool = false
+	) -> Bool {
 		guard let url else { return false }
-		return googleSearchQuery(for: url) != nil
+		return configuration.query(for: url, isPrivate: isPrivate) != nil
 	}
 
-	private static func hostWithoutWWW(for components: URLComponents) -> String? {
-		guard let host = components.host else { return nil }
-		return host.lowercased().hasPrefix("www.") ? String(host.dropFirst(4)) : host
-	}
-
-	private static func googleQueryValueRange(in text: String, components: URLComponents) -> Range<String.Index>? {
-		guard let queryRange = components.rangeOfQuery,
+	private static func searchQueryValueRange(
+		in text: String,
+		components: URLComponents,
+		parameterName: String?
+	) -> Range<String.Index>? {
+		guard let parameterName,
+		      let queryRange = components.rangeOfQuery,
 		      let items = components.percentEncodedQueryItems
 		else { return nil }
-
 		let query = text[queryRange]
 		var itemStart = query.startIndex
 		for item in items {
 			let itemEnd = query[itemStart...].firstIndex(of: "&") ?? query.endIndex
 			let itemRange = itemStart ..< itemEnd
-			let equals = query[itemRange].firstIndex(of: "=")
-			if item.name == "q", item.value.flatMap(decodedQuery) != nil, let equals {
+			if item.name == parameterName, item.value != nil,
+			   let equals = query[itemRange].firstIndex(of: "=")
+			{
 				return query.index(after: equals) ..< itemEnd
 			}
 			guard itemEnd < query.endIndex else { break }
@@ -162,41 +159,46 @@ enum BrowserAddress {
 		return nil
 	}
 
-	private static func googleSearchQuery(for url: URL) -> String? {
-		guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-		      let host = components.host?.lowercased(),
-		      isGoogleHost(host),
-		      components.path == "/search",
-		      let items = components.percentEncodedQueryItems
-		else { return nil }
-		for item in items where item.name == "q" {
-			if let query = item.value.flatMap(decodedQuery) {
-				return query
-			}
+	private static func unwrapped(_ input: String) -> String {
+		var value = input.trimmingCharacters(in: .whitespacesAndNewlines)
+		if value.count >= 2,
+		   let first = value.first, let last = value.last,
+		   (first == "<" && last == ">") || (first == "'" && last == "'") || (first == "\"" && last == "\"")
+		{
+			value.removeFirst()
+			value.removeLast()
+			value = value.trimmingCharacters(in: .whitespacesAndNewlines)
 		}
-		return nil
+		return value
 	}
 
-	private nonisolated static func decodedQuery(_ value: String) -> String? {
-		guard let query = value.replacingOccurrences(of: "+", with: " ").removingPercentEncoding,
-		      !query.isEmpty
-		else { return nil }
-		return query
+	private static func hasScheme(_ value: String) -> Bool {
+		value.range(of: #"^[A-Za-z][A-Za-z0-9+.-]*:"#, options: .regularExpression) != nil
 	}
 
-	private static func isGoogleHost(_ host: String) -> Bool {
+	private static func validPort(_ port: Int?) -> Bool {
+		guard let port else { return true }
+		return (1 ... 65_535).contains(port)
+	}
+
+	private static func hasAmbiguousHostPort(_ value: String) -> Bool {
+		guard let colon = value.firstIndex(of: ":") else { return false }
+		let prefix = value[..<colon]
+		return prefix.contains(".") || prefix.lowercased() == "localhost"
+	}
+
+	private static func validHost(_ host: String) -> Bool {
 		let labels = host.split(separator: ".")
-		guard let googleIndex = labels.lastIndex(of: "google"), googleIndex + 1 < labels.count else { return false }
-		let domainSuffix = labels[googleIndex...]
-		let region = Array(domainSuffix.dropFirst())
-		return region == ["com"]
-			|| region.count == 1 && region[0].count == 2
-			|| region.count == 2 && ["com", "co"].contains(region[0]) && region[1].count == 2
+		guard labels.count == 4, labels.allSatisfy({ $0.allSatisfy(\.isNumber) }) else { return true }
+		return labels.allSatisfy { UInt8($0) != nil }
 	}
 
-	private static func searchURL(for query: String) -> URL? {
-		var components = URLComponents(string: "https://www.google.com/search")
-		components?.queryItems = [URLQueryItem(name: "q", value: query)]
-		return components?.url
+	private static func isIPAddress(_ host: String) -> Bool {
+		(host.contains(":")) || host.split(separator: ".").count == 4
+	}
+
+	private static func hostWithoutWWW(for components: URLComponents) -> String? {
+		guard let host = components.host else { return nil }
+		return host.lowercased().hasPrefix("www.") ? String(host.dropFirst(4)) : host
 	}
 }

@@ -1,9 +1,14 @@
+import Defaults
 import Foundation
 
 extension Browser {
 	var isShowingNewTab: Bool {
 		guard let tab = selectedTab else { return false }
 		return tab.internalPage == nil && tab.currentURL == nil && !tab.isHibernated && tab.peeks.isEmpty
+	}
+
+	var browserSearchConfiguration: BrowserSearchConfiguration {
+		BrowserSearchConfiguration.decode(Defaults[.browserSearchConfiguration])
 	}
 
 	var newTabSearchResults: [BrowserSearchResult] {
@@ -16,11 +21,19 @@ extension Browser {
 			}
 		}
 		var results: [BrowserSearchResult] = []
-		if let destination = BrowserAddress.destination(for: query) {
-			let isSearch = BrowserAddress.isGoogleSearchURL(destination)
+		if let destination = BrowserAddress.destination(
+			for: query,
+			configuration: browserSearchConfiguration,
+			isPrivate: isPrivate
+		) {
+			let isSearch = BrowserAddress.isSearchURL(
+				destination,
+				configuration: browserSearchConfiguration,
+				isPrivate: isPrivate
+			)
 			results.append(BrowserSearchResult(
 				id: "typed", kind: .typed, title: query,
-				detail: isSearch ? "Search Google" : "Open Website",
+				detail: isSearch ? browserSearchConfiguration.searchLabel(for: query, isPrivate: isPrivate) : "Open Website",
 				symbol: isSearch ? "magnifyingglass" : "globe",
 				score: isSearch ? 0.8 : 1.1,
 				perform: { self.selectedTab?.activeController?.load(destination) }
@@ -38,10 +51,10 @@ extension Browser {
 		for (index, suggestion) in newTabGoogleSuggestions.enumerated()
 			where BrowserSearchMatching.normalized(suggestion) != BrowserSearchMatching.normalized(query)
 		{
-			guard let url = BrowserAddress.destination(for: suggestion) else { continue }
+			guard let url = browserSearchConfiguration.searchURL(for: suggestion, isPrivate: isPrivate) else { continue }
 			results.append(BrowserSearchResult(
 				id: "search-\(suggestion)", kind: .search, title: suggestion,
-				detail: "Google Suggestion", symbol: "magnifyingglass",
+				detail: "Search \(browserSearchConfiguration.engine(isPrivate: isPrivate).title)", symbol: "magnifyingglass",
 				score: 0.79 - Double(index) * 0.015,
 				perform: { self.selectedTab?.activeController?.load(url) }
 			))
