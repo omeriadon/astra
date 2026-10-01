@@ -19,12 +19,12 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 | [04-private-browsing](tasks/04-private-browsing.md) | build verified; primary reviewed | 49d35738; source close-out `1d89883d105266a1e30e3fa9ca5f50f35ea6ea54`; private session notifications isolated |
 | [05-permissions](tasks/05-permissions.md) | primary reviewed; Mac build verified; runtime/API gates open | `75905077`, handoff `f1315876`; scoped grants, prompt ownership, capture revocation, top-site multiple downloads; final Mac build5.913s |
 | [06-failures-offline](tasks/06-failures-offline.md) | build verified; primary reviewed | 42a1274; invalidation/retry guards and repeated-crash recovery; combined build passes |
-| [07-tabs-spaces](tasks/07-tabs-spaces.md) | queued | — |
+| [07-tabs-spaces](tasks/07-tabs-spaces.md) | source reviewed; Xcode app build gate open | source `03da6a0`, review handoff `de86f6c`; production workspace helper, source parsing and diff check pass; Xcode MCP transport closed before diagnostics/build |
 | [08-windows-os-restoration](tasks/08-windows-os-restoration.md) | queued | — |
 | [09-history](tasks/09-history.md) | queued | — |
 | [10-bookmarks-reading-list](tasks/10-bookmarks-reading-list.md) | queued | — |
 | [11-favicons](tasks/11-favicons.md) | build verified; primary reviewed | 948f8fa; bounded fetch/decoding/cache and hydration guards |
-| [12-downloads](tasks/12-downloads.md) | queued | — |
+| [12-downloads](tasks/12-downloads.md) | implementation in progress; review/build pending | independent worktree from `d6be8c0`; not yet included in this cumulative branch |
 | [13-uploads-auth-challenges](tasks/13-uploads-auth-challenges.md) | queued | — |
 | [14-address-search-config](tasks/14-address-search-config.md) | source reviewed; Mac build and final parser helper checks pass | integrated into cumulative24a through `a9ba5cb`; original branch remains intact |
 | [15-address-intelligence](tasks/15-address-intelligence.md) | queued | — |
@@ -77,3 +77,7 @@ During resumed24a work, the user explicitly selected standalone website Dock app
 Packet24a source was reviewed and its combined `astra` / `My Mac` Xcode MCP build passed in 8.871s with zero reported issues in the five changed Swift files. Bun production-script checks, Swift protection-policy checks, and the combined packet14 helper check passed. Implementation checkpoint `0322585358fe2567fb8ff47155187b3225939323`; reviewed handoff checkpoint `a5dbcc4c4f3a98bf30c339fdd53bf40d23f722c9`.
 
 This closes source/build review for the twelfth packet; twenty-five packets remain. PiP runtime acceptance is open: actual entry/exit and native controls, exact automatic return focus, iframe state, provider/DRM/user-activation limits, background/view-detachment behavior and iOS scene/audio behavior were not exercised. Playing or paused media is conservatively protected; browser controls/state inspect main-frame HTML video only. The minimal Navigation menu action was scheduled ahead of17; packet17 remains queued and incomplete. Standalone website Dock apps are required selected scope in packet31; implementation has not started.
+
+## Tabs/spaces and priority queue
+
+Packet07 source is primary reviewed at `03da6a0`; its handoff is `de86f6c`. The production workspace helper, source parsing and whitespace checks pass. Xcode MCP transport closed before diagnostics/build, so the Mac app compile gate remains open; no app/runtime check ran. Thirteen packets are source-reviewed in the cumulative branch; twenty-four remain. Packet12 is active in a separate worktree and has not been reviewed or integrated. Follow [priority-order.md](priority-order.md): resume packet07's app build when Xcode MCP transport is available, continue the already active packet12, then dispatch the ranked queue. Packet31 depends on08,17,23; packet28 also depends on31 so the final settings audit includes installed-site management. Packet27 remains the separate native internal-page/custom-scheme packet.

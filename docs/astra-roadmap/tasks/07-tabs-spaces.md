@@ -1,6 +1,6 @@
 # 07-tabs-spaces
 
-Priority: P1. Status: planned. Prerequisites: 03, 04.
+Priority: P1. Status: source reviewed; Xcode app build gate open; runtime acceptance pending. Prerequisites: 03, 04.
 Branch: `astra/roadmap/07-tabs-spaces`. Worktree: `../astra-worktrees/07-tabs-spaces`.
 
 Read [the roadmap](../README.md) and [dispatch procedure](../dispatch.md). Implement only this packet's selected scope, using its own worktree and reserved files. No implementation starts from this document alone.

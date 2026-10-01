@@ -1,6 +1,6 @@
 # 28-settings
 
-Priority: P1. Status: planned. Prerequisites: 14, 18, 19, 21, 22, 24, 24a, 26, 27.
+Priority: P1. Status: planned. Prerequisites: 14, 18, 19, 21, 22, 24, 24a, 26, 27, 31.
 Branch: `astra/roadmap/28-settings`. Worktree: `../astra-worktrees/28-settings`.
 
 Read [the roadmap](../README.md) and [dispatch procedure](../dispatch.md). Implement only this packet's selected scope, using its own worktree and reserved files. No implementation starts from this document alone.

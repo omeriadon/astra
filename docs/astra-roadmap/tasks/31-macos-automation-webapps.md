@@ -1,6 +1,6 @@
 # 31-macos-automation-webapps
 
-Priority: P1 integration; P2 additions. Status: planned. Prerequisites: 08, 17, 23, 27, 28.
+Priority: P1 integration; P2 additions. Status: planned. Prerequisites: 08, 17, 23.
 Branch: `astra/roadmap/31-macos-automation-webapps`. Worktree: `../astra-worktrees/31-macos-automation-webapps`.
 
 Read [the roadmap](../README.md) and [dispatch procedure](../dispatch.md). Implement only this packet's selected scope, using its own worktree and reserved files. No implementation starts from this document alone.
@@ -45,6 +45,7 @@ User request, recorded during packet24a: turn any website into its own standalon
 - Implement the concrete Dock-add path and report its actual platform mechanism. Distinguish creating/registering a launchable app, displaying its running Dock icon, and pinning it permanently. If persistent pinning has no suitable supported public API, retain a working system-assisted pinning flow and record the exact unmet automatic-pinning capability; do not imply that LaunchServices registration itself pins the app. Avoid private Dock APIs and silent Dock preference rewriting.
 - Installation artifacts, executable paths, bundle registrations and Dock position are device-only cached state. Persist update timestamps for editable registry metadata; decode and read do not invent freshness. Any metadata later selected for sync joins the existing timestamped merge/tombstone contract, while local executable paths and credentials remain excluded.
 - Define session/cookie ownership, external links, authentication, multiple app instances, relaunch, missing installation files and upgrade behavior. Preserve the browser’s existing session and security boundaries; do not invent a new profile system in this packet. Carry forward media/PiP teardown protection when reusing Mini Astra.
+- Use the existing settings routing for the required management page; packet28's later settings audit consumes and reconciles it. Use validated public website launch URLs and installation identities; packet27's optional custom `astra://` scheme is not required for LaunchServices app registration or launch.
 
 ## Acceptance criteria
 
@@ -62,7 +63,7 @@ The Browser project permits source inspection and Xcode MCP diagnostics/builds w
 
 ## Gates and exclusions
 
-Standalone website Dock apps are selected and required. App generation/signing, sandbox installation access, independent Dock identity and permanent pinning need precise API/configuration evidence. Automation, Handoff and Spotlight retain their selected scope and API/configuration gates; no legacy Touch Bar work unless explicitly selected.
+Standalone website Dock apps are selected and required. App generation/signing, sandbox installation access, independent Dock identity and permanent pinning need precise API/configuration evidence. Automation, Handoff and Spotlight retain their selected scope and API/configuration gates; no legacy Touch Bar work unless explicitly selected. Packet12 precedes this work in the execution queue so the standalone browser window uses the completed download path; it is not a LaunchServices dependency.
 
 Preserve unrelated architecture, formatting and user changes. No pushes, merges, repository-specific agent instructions or speculative dependencies.
 

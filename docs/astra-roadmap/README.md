@@ -64,7 +64,7 @@ IDs, branch suffixes and packet filenames are stable. Every branch uses `astra/r
 | [04-private-browsing](tasks/04-private-browsing.md) | P0 | 03 | Separate session per private window remains the default |
 | [05-permissions](tasks/05-permissions.md) | P0 | 04 | Web Push, clipboard, display capture and sensors require feasibility checks |
 | [06-failures-offline](tasks/06-failures-offline.md) | P0 | 02 | No automatic replay of non-idempotent requests |
-| [07-tabs-spaces](tasks/07-tabs-spaces.md) | P1 | 03, 04 | Cross-window transfer must preserve session boundaries |
+| [07-tabs-spaces](tasks/07-tabs-spaces.md) | P1 | 03, 04 | Tab/space organization and same-session normal-window transfers; app build gate remains open |
 | [08-windows-os-restoration](tasks/08-windows-os-restoration.md) | P1 | 07 | Preserve current shared normal-window behavior |
 | [09-history](tasks/09-history.md) | P1 | 03, 04 | User now requires timestamped history sync; consume task29 contract |
 | [10-bookmarks-reading-list](tasks/10-bookmarks-reading-list.md) | P1 / P2 | 03 | Reading list/offline snapshots are optional |
@@ -86,10 +86,10 @@ IDs, branch suffixes and packet filenames are stable. Every branch uses `astra/r
 | [25-page-tools-context-drag](tasks/25-page-tools-context-drag.md) | P1 | 12, 13, 16, 17 | Save-resource completeness is an optional commitment |
 | [26-reader-translation-source](tasks/26-reader-translation-source.md) | P2 | 16, 18, 25 | Reader/translation need capability/provider choices |
 | [27-internal-urls](tasks/27-internal-urls.md) | P1 / P2 | 02, 03, 17, 20 | Existing native pages remain usable without a custom scheme |
-| [28-settings](tasks/28-settings.md) | P1 | 14, 18, 19, 21, 22, 24, 24a, 26, 27 | Show only supported and selected features |
+| [28-settings](tasks/28-settings.md) | P1 | 14, 18, 19, 21, 22, 24, 24a, 26, 27, 31 | Show only supported and selected features; reconcile installed website-app management |
 | [29-sync](tasks/29-sync.md) | P0 user priority | Reviewed 00/01 baseline | Endpoint validation, device cache and per-record timestamped sync including history; E2EE/provider gates remain |
 | [30-profiles](tasks/30-profiles.md) | P2 | 04, 18, 22, 28, 29 | Explicit profile product decision required |
-| [31-macos-automation-webapps](tasks/31-macos-automation-webapps.md) | P1 / P2 | 08, 17, 23, 27, 28 | Standalone website Dock apps are selected and required; Handoff, Spotlight and automation remain separately gated |
+| [31-macos-automation-webapps](tasks/31-macos-automation-webapps.md) | P1 / P2 | 08, 17, 23 | Standalone website Dock apps are selected and required; Handoff, Spotlight and automation remain separately gated |
 | [32-ios-integration](tasks/32-ios-integration.md) | P1 follow-up | 17, 23, 24, 24a, 25, 28, 31 | Entitlements, background limits and scene behavior need platform checks |
 | [33-updates-distribution](tasks/33-updates-distribution.md) | P0 release | 28, 31, 32 | Signing, notarization and sandboxed update acceptance |
 | [34-diagnostics-performance](tasks/34-diagnostics-performance.md) | P1 | 06, 12, 22, 24, 24a, 29 | Measurement requires later runtime authorization |
@@ -99,7 +99,7 @@ P0 means data loss, security boundaries, feasibility or release blockers. P1 mea
 
 ## Milestones and merge order
 
-Use numerical order as the default merge queue, with 24a immediately after 24. It satisfies the dependency graph and keeps shared files under one writer. Independent packets may start earlier only after all prerequisites have reviewed commits and the dispatcher confirms disjoint write ownership.
+Use the user-selected [remaining packet priority order](priority-order.md) for the merge queue. It satisfies the dependency graph and keeps shared files under one writer. Independent packets may start earlier only after all prerequisites have reviewed commits and the dispatcher confirms disjoint write ownership.
 
 | Milestone | Packets | Exit condition |
 | --- | --- | --- |
