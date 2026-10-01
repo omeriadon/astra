@@ -9,6 +9,57 @@ struct Checks {
 		assert(!traversal.contains("?"))
 		assert(traversal.hasSuffix(".pdf"))
 
+		var projectedDownload = BrowserDownload(
+			id: UUID(),
+			createdAt: .now,
+			sourceURL: nil,
+			requestURL: nil,
+			originalName: "progress.bin",
+			fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("progress.bin"),
+			status: .downloading,
+			progress: 0.25,
+			renamedByAppleIntelligence: false,
+			resumeData: nil,
+			errorMessage: nil
+		)
+		projectedDownload.destinationURL = FileManager.default.temporaryDirectory.appendingPathComponent("chosen name.bin")
+		assert(projectedDownload.name == "chosen name.bin")
+		assert(projectedDownload.progressDetails == projectedDownload.progressLabel)
+		projectedDownload.throughput = 1_048_576
+		projectedDownload.estimatedTimeRemaining = 61
+		assert(projectedDownload.progressDetails.contains("/s"))
+		assert(projectedDownload.progressDetails.contains("remaining"))
+		projectedDownload.status = .failed
+		projectedDownload.requestMethod = "GET"
+		projectedDownload.retryURL = URL(string: "https://example.com/progress.bin")
+		assert(!projectedDownload.canRetry)
+		projectedDownload.requestHasBody = false
+		projectedDownload.requestHasAuthorization = false
+		assert(projectedDownload.canRetry)
+		projectedDownload.requestHasBody = true
+		assert(!projectedDownload.canRetry)
+		projectedDownload.requestHasBody = false
+		projectedDownload.requestHasAuthorization = true
+		assert(!projectedDownload.canRetry)
+
+		var credentialRequest = URLRequest(url: URL(string: "https://example.com")!)
+		assert(!BrowserDownload.requestMayCarryCredentials(credentialRequest))
+		credentialRequest.setValue("Basic dXNlcjpwYXNz", forHTTPHeaderField: "Proxy-Authorization")
+		assert(BrowserDownload.requestMayCarryCredentials(credentialRequest))
+		credentialRequest.setValue("session=private", forHTTPHeaderField: "Cookie")
+		assert(BrowserDownload.requestMayCarryCredentials(credentialRequest))
+
+		var bodyRequest = URLRequest(url: URL(string: "https://example.com")!)
+		bodyRequest.httpBody = Data([1])
+		assert(BrowserDownload.requestHasBody(bodyRequest))
+
+		var cancellingDownload = projectedDownload
+		cancellingDownload.status = .paused
+		cancellingDownload.resumeData = Data([1])
+		assert(cancellingDownload.canResume)
+		cancellingDownload.markCancellationPending()
+		assert(!cancellingDownload.canResume)
+
 		let longName = String(repeating: "🧭", count: 300) + ".pdf"
 		let boundedName = BrowserDownload.safeFilename(longName)
 		assert(boundedName.utf8.count <= 180)
@@ -45,7 +96,7 @@ struct Checks {
 			errorMessage: nil
 		)
 		var legacyRecord = try JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as! [String: Any]
-		for key in ["retryURL", "destinationURL", "destinationIsFileScoped", "requestHasBody", "requestHasAuthorization", "receivedBytes", "folderBookmark", "fileAccessBookmark"] {
+		for key in ["retryURL", "destinationURL", "destinationIsFileScoped", "requestHasBody", "requestHasAuthorization", "receivedBytes", "throughput", "estimatedTimeRemaining", "folderBookmark", "fileAccessBookmark"] {
 			legacyRecord[key] = nil
 		}
 		let legacyData = try JSONSerialization.data(withJSONObject: legacyRecord)

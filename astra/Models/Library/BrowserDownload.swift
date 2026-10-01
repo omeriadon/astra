@@ -56,13 +56,15 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 	var rangeValidator: String? = nil
 	var totalBytes: Int64? = nil
 	var receivedBytes: Int64? = nil
+	var throughput: Int? = nil
+	var estimatedTimeRemaining: TimeInterval? = nil
 	var folderBookmark: Data? = nil
 	var fileAccessBookmark: Data? = nil
 
 	var name: String {
 		status == .completed
 			? fileURL.lastPathComponent
-			: originalName
+			: destinationURL?.lastPathComponent ?? originalName
 	}
 
 	var progressLabel: String {
@@ -73,13 +75,34 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 		return received
 	}
 
+	var progressDetails: String {
+		var details = [progressLabel]
+		if let throughput, throughput > 0 {
+			let rate = ByteCountFormatter.string(fromByteCount: Int64(throughput), countStyle: .file)
+			details.append("\(rate)/s")
+		}
+		if let estimatedTimeRemaining, estimatedTimeRemaining.isFinite, estimatedTimeRemaining > 0 {
+			let formatter = DateComponentsFormatter()
+			formatter.allowedUnits = [.hour, .minute, .second]
+			formatter.unitsStyle = .abbreviated
+			formatter.maximumUnitCount = 2
+			if let remaining = formatter.string(from: estimatedTimeRemaining) {
+				details.append("\(remaining) remaining")
+			}
+		}
+		return details.joined(separator: " · ")
+	}
+
 	var statusSummary: String {
 		switch status {
 			case .downloading:
-				return progressLabel
+				return progressDetails
 			case .paused:
-				return "Paused · \(progressLabel)"
+				return "\(errorMessage ?? "Paused") · \(progressLabel)"
 			case .completed:
+				if destinationIsFileScoped == true, fileAccessBookmark == nil {
+					return "Downloaded · renewed access needed · \(progressLabel)"
+				}
 				return "Downloaded · \(progressLabel)"
 			case .failed:
 				let error = errorMessage ?? "Download failed."
@@ -91,9 +114,21 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 	var canRetry: Bool {
 		status == .failed
 			&& requestMethod?.uppercased() == "GET"
-			&& requestHasBody != true
-			&& requestHasAuthorization != true
+			&& requestHasBody == false
+			&& requestHasAuthorization == false
 			&& ["http", "https"].contains(retryURL?.scheme?.lowercased() ?? "")
+	}
+
+	var canResume: Bool {
+		status == .paused && resumeData != nil
+	}
+
+	mutating func markCancellationPending() {
+		status = .paused
+		resumeData = nil
+		errorMessage = "Canceling download."
+		throughput = nil
+		estimatedTimeRemaining = nil
 	}
 
 	static func safeFilename(_ suggestedName: String) -> String {
@@ -112,6 +147,18 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 		guard !safeStem.isEmpty else { return "Download" }
 		guard !safeExtension.isEmpty else { return safeStem }
 		return "\(safeStem).\(safeExtension)"
+	}
+
+	static func requestHasBody(_ request: URLRequest) -> Bool {
+		request.httpBody != nil || request.httpBodyStream != nil
+	}
+
+	static func requestMayCarryCredentials(_ request: URLRequest) -> Bool {
+		request.value(forHTTPHeaderField: "Authorization") != nil
+			|| request.value(forHTTPHeaderField: "Proxy-Authorization") != nil
+			|| request.value(forHTTPHeaderField: "Cookie") != nil
+			|| request.url?.user != nil
+			|| request.url?.password != nil
 	}
 
 	static func collisionFreeURL(

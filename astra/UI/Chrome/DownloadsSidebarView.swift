@@ -81,7 +81,7 @@ private struct DownloadRowView: View {
 						.opacity(0.65)
 				}
 				if item.status == .downloading {
-					Text(item.progressLabel)
+					Text(item.progressDetails)
 						.font(.caption.monospacedDigit())
 						.foregroundStyle(.secondary)
 					HStack(spacing: 2) {
@@ -125,15 +125,17 @@ private struct DownloadRowView: View {
 						manager.open(item.id)
 					}
 				#endif
-				Button("Quick Look", systemImage: "eye") {
-					previewURL = item.fileURL
+				if item.destinationIsFileScoped != true || item.fileAccessBookmark != nil {
+					Button("Quick Look", systemImage: "eye") {
+						previewURL = item.fileURL
+					}
 				}
 				if item.renamedByAppleIntelligence {
 					Button("Revert Name", systemImage: "arrow.uturn.backward") {
 						manager.revertName(item.id)
 					}
 				}
-			} else if item.status == .paused, item.resumeData != nil {
+			} else if item.canResume {
 				Button("Resume", systemImage: "arrow.clockwise") {
 					manager.resume(item.id)
 				}
@@ -159,7 +161,7 @@ private struct DownloadRowView: View {
 			}
 		}
 		.accessibilityElement(children: .combine)
-		.accessibilityLabel("\(item.name), \(item.sourceURL?.host ?? "unknown website"), \(item.status.rawValue)")
+		.accessibilityLabel("\(item.name), \(item.sourceURL?.host ?? "unknown website"), \(item.statusSummary)")
 		.accessibilityIdentifier("download-\(item.id.uuidString)")
 	}
 }
