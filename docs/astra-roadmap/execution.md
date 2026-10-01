@@ -5,7 +5,7 @@ User scope: execute all 37 packets, including PiP and optional feature scopes. C
 Implementation model: `gpt-6-luna`, medium reasoning; one active writer, up to two only for reserved disjoint scopes. Every packet has a dedicated worktree/branch. No pushes or merges.
 
 Original checkout: `/Users/omeriadon/Documents/Xcode_App_Library/browser`.
-Original HEAD: `8ba68083157ede8bca2cac8ea01712aebc02f86b`.
+Original snapshot HEAD: `8ba68083157ede8bca2cac8ea01712aebc02f86b`. The latest known original-checkout HEAD is recorded in CONTINUE.md; recheck before any later integration.
 Snapshot checkpoint: `051e62ed742a12ae7f25a4e4c4a39fe6eb9d1ffb` on `astra/roadmap/00-baseline`.
 
 The snapshot includes the existing uncommitted implementation and deletions. Its first commit triggered a formatting hook; a follow-up restored the exact source bytes. All later checkpoints bypass that formatting hook with `git -c core.hooksPath=/dev/null commit`.
@@ -52,7 +52,7 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 
 ## Sync priority override
 
-The user reported invalid HTTPS sync URL errors and missing settings, and required on-device caching and last-updated conflict protection for every synchronized record, explicitly including history, bookmarks, spaces and settings. Packet 29 runs next against existing reviewed implementations; remaining prerequisites will consume its upgraded persistence/merge contract. The original checkout remains unchanged.
+The user reported invalid HTTPS sync URL errors and missing settings, and required on-device caching and last-updated conflict protection for every synchronized record, explicitly including history, bookmarks, spaces and settings. Packet29 was prioritized and its source work completed before the remaining foundation packets. Later packets consume its reviewed persistence/merge contract; do not dispatch29 again. The original checkout remains unchanged.
 
 Combined baseline: independent navigation, offline/failure and favicon checkpoints were cherry-picked into task03 from the reviewed sync29 branch. Original checkout remains unchanged. Xcode MCP workspace workspace-VvsSm87feh, astra/My Mac, combined build passed in29.643s with no errors.
 
