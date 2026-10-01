@@ -4,9 +4,9 @@ Task / selected optional scope: baseline tab creation, duplication, close and re
 
 Branch / worktree / baseline commit: `astra/roadmap/07-tabs-spaces` / `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/07-tabs-spaces` / `d6be8c0f66d9aa5fbfcf270e6c2120ad7948dc05`.
 
-Status: source complete; app build gate open because the Xcode MCP transport closed before diagnostics or build could run. Source parsing and the focused production-model check passed.
+Status: source complete and primary source-reviewed; app build gate remains open because the Xcode MCP transport closed before diagnostics or build could run. Source parsing and the focused production-model check passed.
 
-Commit(s), or explicit uncommitted state: implementation and this handoff are ready for a hook-disabled checkpoint; not yet committed.
+Commit(s), or explicit uncommitted state: implementation source checkpoint `03da6a0a870011aeaaa3c3b12564b5d7427adfa3`.
 
 Changed files and behavior:
 
@@ -39,4 +39,4 @@ Migration, compatibility and private-data impact: no schema or persistence-forma
 
 Capability gates / unresolved issues: the standalone check does not compile `Browser.swift` or the macOS drag coordinator. The app build remains an explicit compile gate. No app launch, hosted test execution, runtime drag, cross-window controller test or private-session UI test was performed.
 
-Merge prerequisites / follow-up ownership: primary source review and a serialized Xcode MCP `astra` / `My Mac` build when the MCP transport is available. Preserve this worktree and branch; no push, merge or original-checkout edit occurred.
+Merge prerequisites / follow-up ownership: serialized Xcode MCP `astra` / `My Mac` build when the MCP transport is available. Preserve this worktree and branch; no push, merge or original-checkout edit occurred.
