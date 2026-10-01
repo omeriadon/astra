@@ -209,10 +209,14 @@ struct BrowserGeneralSettingsView: View {
 
 	private func bounded(_ value: String, maxBytes: Int) -> String {
 		var result = ""
+		var byteCount = 0
 		for character in value {
 			let next = String(character)
-			guard result.utf8.count + next.utf8.count <= maxBytes else { break }
+			guard byteCount + next.utf8.count <= maxBytes else {
+				break
+			}
 			result.append(character)
+			byteCount += next.utf8.count
 		}
 		return result
 	}
