@@ -16,7 +16,7 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 | [01-lifecycle](tasks/01-lifecycle.md) | build verified; primary reviewed | `0c50cc8faf07ee9dca8ac8aef0fe6465b14b8f72`; safe promotion, cleanup and peek session reconstruction |
 | [02-navigation-policy](tasks/02-navigation-policy.md) | reviewed; build and pure parser checks pass | `1699f4728632432225c6f88f417681c8f8f8c57a`; hooks assigned05/32 |
 | [03-persistence-restoration](tasks/03-persistence-restoration.md) | build verified; primary reviewed | 03a2b05; non-destructive startup, session marker, validated window records; refreshed Mac build25.27s passes |
-| [04-private-browsing](tasks/04-private-browsing.md) | queued | — |
+| [04-private-browsing](tasks/04-private-browsing.md) | build verified; primary reviewed | 49d35738; source close-out `1d89883d105266a1e30e3fa9ca5f50f35ea6ea54`; private session notifications isolated |
 | [05-permissions](tasks/05-permissions.md) | queued | — |
 | [06-failures-offline](tasks/06-failures-offline.md) | build verified; primary reviewed | 42a1274; invalidation/retry guards and repeated-crash recovery; combined build passes |
 | [07-tabs-spaces](tasks/07-tabs-spaces.md) | queued | — |
@@ -36,7 +36,7 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 | [21-content-blocking](tasks/21-content-blocking.md) | queued | — |
 | [22-extensions](tasks/22-extensions.md) | queued | — |
 | [23-credentials-browser-auth](tasks/23-credentials-browser-auth.md) | queued | — |
-| [24-media](tasks/24-media.md) | queued | — |
+| [24-media](tasks/24-media.md) | build verified; primary reviewed | 7255d12; public native playback plus scoped player controls; PiP still pending24a |
 | [24a-picture-in-picture](tasks/24a-picture-in-picture.md) | queued | — |
 | [25-page-tools-context-drag](tasks/25-page-tools-context-drag.md) | queued | — |
 | [26-reader-translation-source](tasks/26-reader-translation-source.md) | queued | — |
@@ -55,3 +55,7 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 The user reported invalid HTTPS sync URL errors and missing settings, and required on-device caching and last-updated conflict protection for every synchronized record, explicitly including history, bookmarks, spaces and settings. Packet 29 runs next against existing reviewed implementations; remaining prerequisites will consume its upgraded persistence/merge contract. The original checkout remains unchanged.
 
 Combined baseline: independent navigation, offline/failure and favicon checkpoints were cherry-picked into task03 from the reviewed sync29 branch. Original checkout remains unchanged. Xcode MCP workspace workspace-VvsSm87feh, astra/My Mac, combined build passed in29.643s with no errors.
+
+## User-requested handoff
+
+The user requested finishing the active packet and producing a continuation file instead of starting more work in this context. Nine packets are source-reviewed; twenty-eight remain. Read [CONTINUE.md](CONTINUE.md) for the authoritative resume point, worktree rules, remaining work and verification limits. The original checkout has advanced independently since the initial snapshot; do not overwrite or merge it without a new integration instruction.

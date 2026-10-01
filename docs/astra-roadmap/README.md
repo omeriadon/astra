@@ -1,3 +1,5 @@
+Current continuation entry point: [CONTINUE.md](CONTINUE.md). Read it before dispatching further work.
+
 # Astra browser implementation roadmap
 
 Prepared 1 October 2026. Execution authorized by the user: all 37 task packets, each in a separate worktree, implemented by gpt-6-luna and reviewed by the primary. See execution.md for progress and reviewed commits. The original checkout remains untouched; the user merges later.
