@@ -1,6 +1,6 @@
 # 14-address-search-config
 
-Priority: P1. Status: planned. Prerequisites: 04.
+Priority: P1. Status: source reviewed; Mac build verified before final parser guard; current helper checks pass; runtime gates remain. Prerequisites: 04.
 Branch: `astra/roadmap/14-address-search-config`. Worktree: `../astra-worktrees/14-address-search-config`.
 
 Read [the roadmap](../README.md) and [dispatch procedure](../dispatch.md). Implement only this packet's selected scope, using its own worktree and reserved files. No implementation starts from this document alone.

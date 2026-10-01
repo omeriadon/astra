@@ -46,7 +46,7 @@ Checks run, scheme/destination/workspace and results:
 - Closed only task workspace `workspace-l7ivJ1QAez`. No app launch or hosted tests.
 - The final explicit-authority parser guard was compiled in the current no-network `swiftc` helper check. No additional Xcode build was run; the primary reserved the IDE for packet05 and noted the downstream PiP build will verify integration.
 
-Checks written but not executed: None for the helper checks; the written check file was executed. No Xcode app-level checks were run.
+Checks written but not executed: None for the helper checks; the written check file was executed. No hosted app tests were run.
 
 Pending runtime/hardware/provider cases: actual address bar/settings interaction; live Google and DuckDuckGo suggestion response formats, cancellation and timeouts; no-network/offline behavior; explicit private-mode remote opt-in. No app or browser was launched.
 
@@ -55,3 +55,5 @@ Migration, compatibility and private-data impact: Missing setting uses the deter
 Capability gates / unresolved issues: Suggestions are implemented only for Google and DuckDuckGo. Bing and custom providers retain local search but do not fetch remote suggestions. Live provider acceptance is pending runtime checks. No server changes.
 
 Merge prerequisites / follow-up ownership: Packet14 was brought forward because its reserved files are disjoint from packet05's permissions-writer files; this does not mark packet17 complete. The final parser guard passed production-helper compilation and checks; downstream PiP Xcode build covers integration.
+
+Primary close-out: source and production-helper checks reviewed. The Mac build passed before the final small dotted-scheme parser correction; current production-helper compilation/checks pass after it. Independent14 remains separate from cumulative05. The user requested finishing up, so no integration or new packet was started. The authoritative next dispatch is in ../05-permissions/docs/astra-roadmap/CONTINUE.md relative to the worktree parent.
