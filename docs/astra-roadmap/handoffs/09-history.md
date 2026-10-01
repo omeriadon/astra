@@ -6,7 +6,7 @@ Branch / worktree / baseline commit: `astra/roadmap/09-history` / `/Users/omeria
 
 Status: source complete; app compiler gate remains open because the Xcode MCP transport is unavailable. No retry was made.
 
-Commit(s), or explicit uncommitted state: `e71df62` (`implement browser history visits`), `0066b8d` (`stabilize legacy history identity`), and `b509d54` (`fix history clear during navigation`). Handoff checkpoint: `ea037ce`, refreshed by the following close-out checkpoint.
+Commit(s), or explicit uncommitted state: `e71df62` (`implement browser history visits`), `0066b8d` (`stabilize legacy history identity`), `b509d54` (`fix history clear during navigation`), and `adbc902` (`guard history callbacks by browser ownership`). Handoff checkpoints: `ea037ce` and `6658238`; final handoff update follows.
 
 Changed files and behavior:
 
@@ -14,6 +14,7 @@ Changed files and behavior:
 - `BrowserTab` routes visit/title callbacks from the primary controller and peeks, including after wake. Actual page-title changes now stamp the tab modification date; a title callback does not create history by itself.
 - `BrowserVisit` validates HTTP(S) URLs with hosts, removes embedded credentials, supports title/URL matching, half-open time ranges, retention, title updates and per-URL count/latest-visit summaries. `Browser` exposes deterministic recent and frequent projections.
 - Individual, URL, range and all-history removal create timestamped tombstones or advance the existing clear marker. Removals propagate across open normal windows, remove last-visit references and update sync persistence. Retention uses the same tombstone path. Clear removes closed-tab suggestions while preserving live controllers.
+- History callbacks require the controller to remain owned by a live tab or peek in the same Browser session. Delayed teardown after close cannot add or update global history; valid background controllers still record visits.
 - Hydration, import and sync application filter visits against clear/tombstone clocks before any import freshness update. Legacy tab-history migration uses `.distantPast` modification time, so migration cannot defeat an existing clear marker.
 - Persistence replaces the backup with the deletion state when history, closed-tab suggestions, recorded tab-history entries, tombstones or the clear marker are removed.
 - The history page searches title and URL, shows visit counts, and offers entry, per-page, recent-range and all-history deletion.
@@ -22,7 +23,7 @@ Acceptance cases satisfied, with evidence:
 
 - Synthetic model check covers URL eligibility and credential removal, deterministic IDs and past freshness for ID/timestamp-deficient legacy JSON, URL/title search, half-open date boundaries, retention, per-URL count/title/last-visit summary, title freshness, initial restoration suppression, same-document deduplication, reload commits, user navigation after failed restoration, and a same-URL reload after clearing while an earlier reload is pending.
 - Temporary-store check writes a visit, deletes it with a tombstone, corrupts the primary snapshot, and verifies the backup does not restore it. A second case verifies the clear marker survives backup recovery when the visit array was already empty.
-- Source inspection confirms private windows cannot persist history, navigation delegates report committed WebView navigation, and title-only callbacks only update an existing controller-to-visit association.
+- Source inspection confirms private windows cannot persist history, navigation delegates report committed WebView navigation, title-only callbacks only update an existing controller-to-visit association, and closed/transferred controllers fail the live Browser ownership check.
 
 Checks run, scheme/destination/workspace and results:
 
