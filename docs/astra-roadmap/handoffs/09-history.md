@@ -6,7 +6,7 @@ Branch / worktree / baseline commit: `astra/roadmap/09-history` / `/Users/omeria
 
 Status: source complete; app compiler gate remains open because the Xcode MCP transport is unavailable. No retry was made.
 
-Commit(s), or explicit uncommitted state: `e71df62` (`implement browser history visits`); handoff checkpoint follows.
+Commit(s), or explicit uncommitted state: `e71df62` (`implement browser history visits`), `0066b8d` (`stabilize legacy history identity`), and `b509d54` (`fix history clear during navigation`). Handoff checkpoint: `ea037ce`, refreshed by the following close-out checkpoint.
 
 Changed files and behavior:
 
@@ -20,7 +20,7 @@ Changed files and behavior:
 
 Acceptance cases satisfied, with evidence:
 
-- Synthetic model check covers URL eligibility and credential removal, deterministic IDs and past freshness for ID/timestamp-deficient legacy JSON, URL/title search, half-open date boundaries, retention, per-URL count/title/last-visit summary, title freshness, initial restoration suppression, same-document deduplication, reload commits, and user navigation after failed restoration.
+- Synthetic model check covers URL eligibility and credential removal, deterministic IDs and past freshness for ID/timestamp-deficient legacy JSON, URL/title search, half-open date boundaries, retention, per-URL count/title/last-visit summary, title freshness, initial restoration suppression, same-document deduplication, reload commits, user navigation after failed restoration, and a same-URL reload after clearing while an earlier reload is pending.
 - Temporary-store check writes a visit, deletes it with a tombstone, corrupts the primary snapshot, and verifies the backup does not restore it. A second case verifies the clear marker survives backup recovery when the visit array was already empty.
 - Source inspection confirms private windows cannot persist history, navigation delegates report committed WebView navigation, and title-only callbacks only update an existing controller-to-visit association.
 
