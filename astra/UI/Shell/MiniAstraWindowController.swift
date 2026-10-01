@@ -10,6 +10,7 @@
 		var onClose: (() -> Void)?
 		var onPromote: ((BrowserTab) -> Void)?
 		private var isOpening = false
+		private var isPromoting = false
 		private let openingOrigin: NSPoint
 
 		init(url: URL? = nil) {
@@ -80,13 +81,40 @@
 
 		@objc func promote() {
 			guard let tab = browser.selectedTab, let onPromote else { return }
+			isPromoting = true
 			// Detach the hosted web view before the main window mounts the same controller.
 			window.contentView = nil
 			onPromote(tab)
 			window.close()
 		}
 
+		func windowShouldClose(_ sender: NSWindow) -> Bool {
+			let hasProtectedMedia = browser.tabs.contains { tab in
+				tab.controller?.requiresMediaTeardownConfirmation == true
+					|| tab.peeks.contains { $0.controller.requiresMediaTeardownConfirmation }
+			}
+			guard hasProtectedMedia, !isPromoting else { return true }
+			Task { @MainActor in
+				let alert = BrowserWebsiteUI.alert(
+					title: "Close Mini Astra?",
+					message: "Closing this window will stop media playback.",
+					confirm: "Close Window"
+				)
+				guard await BrowserWebsiteUI.present(alert, in: sender) == .alertFirstButtonReturn else { return }
+				for tab in browser.tabs {
+					tab.stopForClose()
+				}
+				sender.close()
+			}
+			return false
+		}
+
 		func windowWillClose(_: Notification) {
+			if !isPromoting {
+				for tab in browser.tabs {
+					tab.stopForClose()
+				}
+			}
 			onClose?()
 		}
 	}

@@ -77,10 +77,18 @@
 		func windowShouldClose(_ sender: NSWindow) -> Bool {
 			guard !allowsClosing else { return true }
 			Task { @MainActor in
-				if browser.tabs.contains(where: { tab in
+				let hasUnsavedChanges = browser.tabs.contains(where: { tab in
 					tab.controller?.hasUnsavedChanges == true || tab.peeks.contains { $0.controller.hasUnsavedChanges }
-				}) {
-					let alert = BrowserWebsiteUI.alert(title: "Close this window?", message: "Some tabs contain changes that may not be saved.", confirm: "Close Window")
+				})
+				let hasProtectedMedia = browser.tabs.contains(where: { tab in
+					tab.controller?.requiresMediaTeardownConfirmation == true
+						|| tab.peeks.contains { $0.controller.requiresMediaTeardownConfirmation }
+				})
+				if hasUnsavedChanges || hasProtectedMedia {
+				let message = hasUnsavedChanges && hasProtectedMedia
+					? "Some tabs contain unsaved changes or media playback that will stop."
+					: hasUnsavedChanges ? "Some tabs contain changes that may not be saved." : "Closing this window will stop media playback."
+					let alert = BrowserWebsiteUI.alert(title: "Close this window?", message: message, confirm: "Close Window")
 					guard await BrowserWebsiteUI.present(alert, in: sender) == .alertFirstButtonReturn else { return }
 				}
 				await browser.flushAndWaitForPersistence()

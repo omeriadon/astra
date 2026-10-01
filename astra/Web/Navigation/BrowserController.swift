@@ -35,6 +35,10 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var mediaArtist: String?
 	private(set) var pausedFromBrowser = false
 	private(set) var areMediaElementsMuted = false
+	private(set) var canEnterPictureInPicture = false
+	private(set) var isPictureInPictureActive = false
+	private(set) var isEnteringPictureInPicture = false
+	private(set) var pictureInPictureControlUnavailable = false
 	private(set) var committedURL: URL?
 	private(set) var hasOnlySecureContent = false
 	var showsFind = false
@@ -57,6 +61,7 @@ final class BrowserController: NSObject, Identifiable {
 	private var lastExternalApplicationRequestTime: TimeInterval?
 	@ObservationIgnored
 	var navigationIntercept: ((URL) -> Bool)?
+	var pictureInPictureRestoreRequested: (() -> Void)?
 
 	var isCapturing: Bool {
 		cameraCaptureState != .none || microphoneCaptureState != .none
@@ -83,9 +88,24 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	var canHibernate: Bool {
-		!isPlayingMedia && !isCapturing && !hasUnsavedChanges && !isLoading
+		!BrowserPictureInPicturePolicy.preventsDestructiveTeardown(
+			isActive: isPictureInPictureActive,
+			isEntering: isEnteringPictureInPicture,
+			isPlayingMedia: isPlayingMedia,
+			hasPausedMedia: hasPausedMedia
+		)
+			&& !isCapturing && !hasUnsavedChanges && !isLoading
 			&& (createdWebView == nil || (createdWebView?.cameraCaptureState == WKMediaCaptureState.none
 					&& createdWebView?.microphoneCaptureState == WKMediaCaptureState.none))
+	}
+
+	var requiresMediaTeardownConfirmation: Bool {
+		BrowserPictureInPicturePolicy.preventsDestructiveTeardown(
+			isActive: isPictureInPictureActive,
+			isEntering: isEnteringPictureInPicture,
+			isPlayingMedia: isPlayingMedia,
+			hasPausedMedia: hasPausedMedia
+		)
 	}
 
 	private static var cachedSafariUserAgentSuffix: String?
@@ -437,6 +457,27 @@ final class BrowserController: NSObject, Identifiable {
 	})();
 	"""
 
+	private static let pictureInPictureScript = """
+	(() => {
+		window.__astraSupportsPictureInPicture = video => !video.disablePictureInPicture && !video.ended && video.readyState >= 2 &&
+			video.videoWidth > 0 && video.videoHeight > 0 &&
+			(typeof video.webkitSupportsPresentationMode === 'function'
+				? typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode('picture-in-picture')
+				: document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function');
+		const report = () => {
+			const videos = [...document.querySelectorAll('video')];
+			window.webkit.messageHandlers.pictureInPictureChanged.postMessage({
+				active: Boolean(document.pictureInPictureElement) || videos.some(video => video.webkitPresentationMode === 'picture-in-picture'),
+				eligible: videos.some(window.__astraSupportsPictureInPicture)
+			});
+		};
+		for (const name of ['enterpictureinpicture', 'leavepictureinpicture', 'webkitpresentationmodechanged', 'loadedmetadata', 'play', 'pause', 'ended']) {
+			document.addEventListener(name, report, true);
+		}
+	report();
+	})();
+	"""
+
 	private func startMediaObservation() {
 		mediaObservationTask = Task { @MainActor [weak self] in
 			while !Task.isCancelled {
@@ -461,9 +502,13 @@ final class BrowserController: NSObject, Identifiable {
 		hasPausedMedia = state == .paused
 		cameraCaptureState = webView.cameraCaptureState
 		microphoneCaptureState = webView.microphoneCaptureState
+		await refreshPictureInPictureEligibility(in: webView, documentID: documentID)
+		guard owns(webView), documentID == navigationIdentifier else { return }
 		if state == .playing || state == .none {
 			pausedFromBrowser = false
 		}
+		webView.configuration.preferences.inactiveSchedulingPolicy =
+			isPictureInPictureActive || isEnteringPictureInPicture || isPlayingMedia || hasPausedMedia ? .none : .suspend
 		if state == .none {
 			mediaTitle = nil
 			mediaArtist = nil
@@ -479,6 +524,86 @@ final class BrowserController: NSObject, Identifiable {
 			mediaTitle = metadata?["title"].flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
 			mediaArtist = metadata?["artist"].flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
 		}
+	}
+
+	private func refreshPictureInPictureEligibility(in webView: WKWebView, documentID: Int) async {
+		let script = """
+		(() => {
+			const videos = [...document.querySelectorAll('video')];
+			const supports = window.__astraSupportsPictureInPicture;
+			return {
+				active: Boolean(document.pictureInPictureElement) || videos.some(video => video.webkitPresentationMode === 'picture-in-picture'),
+			eligible: typeof supports === 'function' && videos.some(supports)
+			};
+		})()
+		"""
+		let value: [String: Bool]? = await withCheckedContinuation { continuation in
+			webView.evaluateJavaScript(script, in: nil, in: .defaultClient) { result in
+				continuation.resume(returning: (try? result.get()) as? [String: Bool])
+			}
+		}
+		guard owns(webView), documentID == navigationIdentifier,
+		      let result = value
+		else { return }
+		canEnterPictureInPicture = result["eligible"] == true && !pictureInPictureControlUnavailable
+		if result["active"] == true {
+			setPictureInPictureActive(true)
+		} else if isPictureInPictureActive, !isEnteringPictureInPicture {
+			setPictureInPictureActive(false)
+		}
+	}
+
+	func enterPictureInPicture() {
+		guard canEnterPictureInPicture,
+		      !isPictureInPictureActive,
+		      !isEnteringPictureInPicture,
+		      let webView = createdWebView,
+		      owns(webView)
+		else { return }
+		isEnteringPictureInPicture = true
+		let documentID = navigationIdentifier
+		webView.callAsyncJavaScript("""
+		return (() => {
+			const supports = window.__astraSupportsPictureInPicture;
+			if (typeof supports !== 'function') return false;
+			const video = [...document.querySelectorAll('video')].find(supports);
+			if (!video) return false;
+			if (typeof video.webkitSetPresentationMode === 'function') {
+				video.webkitSetPresentationMode(video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
+				return new Promise(resolve => {
+					const finish = () => resolve(video.webkitPresentationMode === 'picture-in-picture');
+					video.addEventListener('enterpictureinpicture', finish, { once: true });
+					video.addEventListener('leavepictureinpicture', finish, { once: true });
+					setTimeout(finish, 2000);
+				});
+			}
+			return video.requestPictureInPicture().then(() => true).catch(() => false);
+		})()
+		""", arguments: [:], in: nil, in: .defaultClient) { [weak self, weak webView] result in
+			guard let self, let webView, owns(webView), documentID == navigationIdentifier else { return }
+			isEnteringPictureInPicture = false
+			if (try? result.get()) as? Bool == true {
+				setPictureInPictureActive(true)
+			} else {
+				pictureInPictureControlUnavailable = true
+				canEnterPictureInPicture = false
+				session.toastManager.show(
+					symbol: "pip",
+					message: "Use the video's own Picture in Picture control; a page gesture or provider support may be required."
+				)
+			}
+		}
+	}
+
+	func returnToPictureInPictureSource() {
+		guard isPictureInPictureActive || isEnteringPictureInPicture else { return }
+		pictureInPictureRestoreRequested?()
+	}
+
+	private func setPictureInPictureActive(_ active: Bool) {
+		guard isPictureInPictureActive != active else { return }
+		isPictureInPictureActive = active
+		createdWebView?.configuration.preferences.inactiveSchedulingPolicy = active ? .none : .suspend
 	}
 
 	func findNext(backwards: Bool = false) {
@@ -645,6 +770,7 @@ final class BrowserController: NSObject, Identifiable {
 		securityScopedFile = nil
 		mediaObservationTask?.cancel()
 		mediaObservationTask = nil
+		pictureInPictureControlUnavailable = false
 		faviconTask?.cancel()
 		faviconTask = nil
 		#if os(macOS)
@@ -655,6 +781,7 @@ final class BrowserController: NSObject, Identifiable {
 		createdWebView?.navigationDelegate = nil
 		createdWebView?.uiDelegate = nil
 		createdWebView?.stopLoading()
+		createdWebView?.closeAllMediaPresentations(completionHandler: nil)
 		createdWebView?.setAllMediaPlaybackSuspended(true, completionHandler: nil)
 		stopCapture()
 		(createdWebView as? PeekSourceWebView)?.onEscape = nil
@@ -662,7 +789,7 @@ final class BrowserController: NSObject, Identifiable {
 		(createdWebView as? PeekSourceWebView)?.onZoomIn = nil
 		(createdWebView as? PeekSourceWebView)?.onZoomOut = nil
 		(createdWebView as? PeekSourceWebView)?.onResetZoom = nil
-		for name in [Self.scrollPositionMessageName, Self.topEdgeMessageName, Self.zapFinishedMessageName, "pageActivityChanged", "faviconChanged"] {
+		for name in [Self.scrollPositionMessageName, Self.topEdgeMessageName, Self.zapFinishedMessageName, "pageActivityChanged", "pictureInPictureChanged", "faviconChanged"] {
 			createdWebView?.configuration.userContentController.removeScriptMessageHandler(forName: name, contentWorld: .defaultClient)
 		}
 		createdWebView?.configuration.userContentController.removeAllUserScripts()
@@ -714,6 +841,9 @@ final class BrowserController: NSObject, Identifiable {
 		configuration.preferences.inactiveSchedulingPolicy = .suspend
 		configuration.mediaTypesRequiringUserActionForPlayback = .all
 		configuration.allowsAirPlayForMediaPlayback = true
+		#if os(iOS)
+			configuration.allowsPictureInPictureMediaPlayback = true
+		#endif
 		#if os(macOS)
 			_ = AstraConfigureWebPushPreferences(configuration.preferences, !session.isPrivate && BrowserWebPushManager.shared.hasNativeSupport)
 			if configuration.preferences.responds(to: NSSelectorFromString("_setDeveloperExtrasEnabled:")) {
@@ -752,6 +882,10 @@ final class BrowserController: NSObject, Identifiable {
 			name: Self.zapFinishedMessageName
 		)
 		webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "pageActivityChanged")
+		webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "pictureInPictureChanged")
+		webView.configuration.userContentController.addUserScript(
+			WKUserScript(source: Self.pictureInPictureScript, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient)
+		)
 		webView.configuration.userContentController.addUserScript(
 			WKUserScript(source: Self.activityScript, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient)
 		)
@@ -885,6 +1019,7 @@ final class BrowserController: NSObject, Identifiable {
 		guard !isInvalidated else { return }
 		guard let url = request.url else { return }
 		createdWebView?.stopLoading()
+		createdWebView?.closeAllMediaPresentations(completionHandler: nil)
 		(createdWebView as? PeekSourceWebView)?.consumeRecentClick()
 		historyManager.beginVisit()
 		self.url = url
@@ -1324,6 +1459,10 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
 		guard owns(webView) else { return }
+		pictureInPictureControlUnavailable = false
+		canEnterPictureInPicture = false
+		isEnteringPictureInPicture = false
+		setPictureInPictureActive(false)
 		guard let url = webView.url ?? url else { return }
 		let kind: BrowserNavigationFailure.Kind = contentProcessTerminations.record(url)
 			? .repeatedWebContentTermination
@@ -1333,6 +1472,12 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
 		guard owns(webView) else { return }
+		if isPictureInPictureActive || isEnteringPictureInPicture {
+			webView.closeAllMediaPresentations(completionHandler: nil)
+		}
+		setPictureInPictureActive(false)
+		isEnteringPictureInPicture = false
+		canEnterPictureInPicture = false
 		isZapping = false
 		isPlayingMedia = false
 		mediaTitle = nil
@@ -1372,6 +1517,7 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
 		guard owns(webView), navigation === currentNavigation else { return }
+		pictureInPictureControlUnavailable = false
 		committedURL = webView.url
 		automaticDownloadPolicy.didCommitDocument()
 		contentProcessTerminations.navigationCommitted(at: webView.url)
@@ -1429,6 +1575,16 @@ extension BrowserController: WKScriptMessageHandler {
 					scrollPositionDidChange?()
 				case "playing": isPlayingMedia = true
 				default: break
+			}
+			return
+		}
+		if message.name == "pictureInPictureChanged", message.frameInfo.isMainFrame,
+		   let webView = createdWebView
+		{
+			let documentID = navigationIdentifier
+			Task { @MainActor [weak self, weak webView] in
+				guard let self, let webView, owns(webView), documentID == navigationIdentifier else { return }
+				await refreshPictureInPictureEligibility(in: webView, documentID: documentID)
 			}
 			return
 		}

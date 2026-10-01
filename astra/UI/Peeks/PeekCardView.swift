@@ -4,6 +4,7 @@ struct PeekCardView: View {
 	let peek: BrowserPeek
 	let viewportSize: CGSize
 	let isTopmost: Bool
+	let canPromote: Bool
 	let onDismiss: () -> Void
 	let onPromote: () -> Void
 	let onDismissCompleted: () -> Void
@@ -80,6 +81,7 @@ struct PeekCardView: View {
 				controlsAnimation: controlsAnimation,
 				controlsNamespace: controlsNamespace,
 				depth: peek.depth,
+				canPromote: canPromote,
 				onDismiss: dismiss,
 				onPromote: promote
 			)
@@ -208,6 +210,7 @@ private struct PeekControlsOverlay: View {
 	let controlsAnimation: Animation
 	let controlsNamespace: Namespace.ID
 	let depth: Int
+	let canPromote: Bool
 	let onDismiss: () -> Void
 	let onPromote: () -> Void
 
@@ -224,15 +227,17 @@ private struct PeekControlsOverlay: View {
 						controlsNamespace: controlsNamespace,
 						action: onDismiss
 					)
-					PeekControlButton(
-						title: "Open Peek in New Tab",
-						symbol: "arrow.up.left.and.arrow.down.right",
-						identifier: "promote-peek",
-						depth: depth,
-						controlSize: controlSize,
-						controlsNamespace: controlsNamespace,
-						action: onPromote
-					)
+					if canPromote {
+						PeekControlButton(
+							title: "Open Peek in New Tab",
+							symbol: "arrow.up.left.and.arrow.down.right",
+							identifier: "promote-peek",
+							depth: depth,
+							controlSize: controlSize,
+							controlsNamespace: controlsNamespace,
+							action: onPromote
+						)
+					}
 				}
 			}
 		}

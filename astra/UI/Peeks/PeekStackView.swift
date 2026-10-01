@@ -8,11 +8,15 @@ struct PeekStackView: View {
 		GeometryReader { proxy in
 			ZStack {
 				ForEach(tab.peeks) { peek in
+					let isTopmost = tab.activeController === peek.controller
+					let isVisible = tab.pictureInPictureReturnControllerID == nil || isTopmost
 					PeekLayerView(
 						tab: tab,
 						browser: browser,
 						peek: peek,
-						viewportSize: proxy.size
+						viewportSize: proxy.size,
+						isTopmost: isTopmost,
+						isVisible: isVisible
 					)
 				}
 			}
@@ -41,23 +45,26 @@ private struct PeekLayerView: View {
 	let browser: Browser
 	let peek: BrowserPeek
 	let viewportSize: CGSize
+	let isTopmost: Bool
+	let isVisible: Bool
 
 	var body: some View {
 		PeekInputShield(
-			isTopmost: peek.id == tab.peeks.last?.id,
+			isTopmost: isTopmost,
 			onDismiss: dismissTopPeek
 		)
 		.frame(width: viewportSize.width, height: viewportSize.height)
-		.opacity(peek.isPresented ? 1 : 0)
+		.opacity(peek.isPresented && isVisible ? 1 : 0)
 		.accessibilityLabel("Dismiss Peek")
 		.accessibilityIdentifier("dismiss-peek-\(peek.depth)")
 
 		PeekCardView(
 			peek: peek,
 			viewportSize: viewportSize,
-			isTopmost: peek.id == tab.peeks.last?.id,
+			isTopmost: isTopmost,
+			canPromote: peek.id == tab.peeks.last?.id,
 			onDismiss: {
-				guard tab.peeks.last?.id == peek.id else { return }
+				guard tab.activeController === peek.controller else { return }
 				dismissTopPeek()
 			},
 			onPromote: {
@@ -68,6 +75,9 @@ private struct PeekLayerView: View {
 			}
 		)
 		.id(peek.id)
+		.opacity(isVisible ? 1 : 0)
+		.accessibilityHidden(!isVisible || !isTopmost)
+		.allowsHitTesting(isVisible && isTopmost)
 	}
 
 	private func dismissTopPeek() {

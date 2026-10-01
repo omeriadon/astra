@@ -735,6 +735,7 @@ final class Browser {
 
 	func selectTab(_ id: UUID) {
 		guard let tab = tabs.first(where: { $0.id == id }) else { return }
+		tab.clearPictureInPictureReturnController()
 		if !workspace.favouriteTabIDs.contains(id),
 		   let ownerIndex = workspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })
 		{
@@ -852,11 +853,40 @@ final class Browser {
 
 	func closeTab(_ id: UUID, confirmed: Bool = false) {
 		guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+		#if os(iOS)
+			let tab = tabs[index]
+			let protectedController = ([tab.controller].compactMap { $0 } + tab.peeks.map(\.controller))
+				.first(where: \.requiresMediaTeardownConfirmation)
+			if !confirmed, let protectedController {
+				guard let webView = protectedController.webViewIfLoaded else { return }
+				Task { @MainActor [weak self] in
+					let result = await BrowserWebsiteUI.javascriptDialog(
+						title: "Close tab?",
+						message: "Closing this tab will stop its media playback.",
+						confirmTitle: "Close Tab",
+						cancelTitle: "Cancel",
+						in: webView
+					) { [weak self] in
+						self?.tabs.contains(where: { $0.id == id }) == true
+					}
+					if result.confirmed {
+						self?.closeTab(id, confirmed: true)
+					}
+				}
+				return
+			}
+		#endif
 		#if os(macOS)
 			let tab = tabs[index]
-			if !confirmed, tab.controller?.hasUnsavedChanges == true || tab.peeks.contains(where: \.controller.hasUnsavedChanges) {
+			let hasUnsavedChanges = tab.controller?.hasUnsavedChanges == true || tab.peeks.contains(where: \.controller.hasUnsavedChanges)
+			let hasProtectedMedia = tab.controller?.requiresMediaTeardownConfirmation == true
+				|| tab.peeks.contains(where: \.controller.requiresMediaTeardownConfirmation)
+			if !confirmed, hasUnsavedChanges || hasProtectedMedia {
 				Task { @MainActor [weak self] in
-					let alert = BrowserWebsiteUI.alert(title: "Close this tab?", message: "Changes you made may not be saved.", confirm: "Close Tab")
+					let message = hasUnsavedChanges && hasProtectedMedia
+						? "Changes may not be saved, and closing will stop media playback."
+						: hasUnsavedChanges ? "Changes you made may not be saved." : "Closing will stop media playback."
+					let alert = BrowserWebsiteUI.alert(title: "Close this tab?", message: message, confirm: "Close Tab")
 					let window = tab.activeController?.webViewIfLoaded?.window
 					if await BrowserWebsiteUI.present(alert, in: window) == .alertFirstButtonReturn {
 						self?.closeTab(id, confirmed: true)
@@ -1126,6 +1156,15 @@ final class Browser {
 	private func configure(_ tab: BrowserTab) {
 		attachPersistence(to: tab)
 		guard let controller = tab.controller else { return }
+		controller.pictureInPictureRestoreRequested = { [weak self, weak tab, weak controller] in
+			guard let self, let tab, let controller else { return }
+			selectTab(tab.id)
+			tab.showPictureInPictureController(controller)
+			#if os(macOS)
+				controller.webViewIfLoaded?.window?.makeKeyAndOrderFront(nil)
+				NSApp.activate(ignoringOtherApps: true)
+			#endif
+		}
 		controller.promptOwnership = { [weak self, weak tab, weak controller] webView in
 			guard let self, let tab, let controller,
 			      tabs.contains(where: { $0 === tab }),
@@ -1211,6 +1250,15 @@ final class Browser {
 	}
 
 	private func configure(_ peek: BrowserPeek, in tab: BrowserTab) {
+		peek.controller.pictureInPictureRestoreRequested = { [weak self, weak tab, weak controller = peek.controller] in
+			guard let self, let tab, let controller else { return }
+			selectTab(tab.id)
+			tab.showPictureInPictureController(controller)
+			#if os(macOS)
+				controller.webViewIfLoaded?.window?.makeKeyAndOrderFront(nil)
+				NSApp.activate(ignoringOtherApps: true)
+			#endif
+		}
 		peek.controller.promptOwnership = { [weak self, weak tab, weak controller = peek.controller] webView in
 			guard let self, let tab, let controller,
 			      tabs.contains(where: { $0 === tab }),
@@ -1302,12 +1350,47 @@ final class Browser {
 		let ids = ids.subtracting(protectedIDs)
 		guard !ids.isEmpty else { return }
 		let removedTabs = tabs.filter { ids.contains($0.id) }
-		#if os(macOS)
-			if !confirmed, removedTabs.contains(where: { tab in
-				tab.controller?.hasUnsavedChanges == true || tab.peeks.contains { $0.controller.hasUnsavedChanges }
-			}) {
+		#if os(iOS)
+			let controllers = removedTabs.flatMap { tab in
+				[tab.controller].compactMap { $0 } + tab.peeks.map(\.controller)
+			}
+			let protectedController = controllers.first(where: \.requiresMediaTeardownConfirmation)
+			if !confirmed, let protectedController, let webView = protectedController.webViewIfLoaded {
 				Task { @MainActor [weak self] in
-					let alert = BrowserWebsiteUI.alert(title: "Close these tabs?", message: "Some tabs contain changes that may not be saved.", confirm: "Close Tabs")
+					let result = await BrowserWebsiteUI.javascriptDialog(
+						title: "Close tabs?",
+						message: "Closing these tabs will stop media playback.",
+						confirmTitle: "Close Tabs",
+						cancelTitle: "Cancel",
+						in: webView
+					) { [weak self] in
+						self?.tabs.contains(where: { ids.contains($0.id) }) == true
+					}
+					if result.confirmed {
+						self?.removeTabs(ids, selecting: selectedID, confirmed: true)
+					}
+				}
+				return
+			}
+			if !confirmed && removedTabs.contains(where: { tab in
+				tab.controller?.requiresMediaTeardownConfirmation == true
+					|| tab.peeks.contains { $0.controller.requiresMediaTeardownConfirmation }
+			}) { return }
+		#endif
+		#if os(macOS)
+			let hasUnsavedChanges = removedTabs.contains { tab in
+				tab.controller?.hasUnsavedChanges == true || tab.peeks.contains { $0.controller.hasUnsavedChanges }
+			}
+			let hasProtectedMedia = removedTabs.contains { tab in
+				tab.controller?.requiresMediaTeardownConfirmation == true
+					|| tab.peeks.contains { $0.controller.requiresMediaTeardownConfirmation }
+			}
+			if !confirmed, hasUnsavedChanges || hasProtectedMedia {
+				Task { @MainActor [weak self] in
+					let message = hasUnsavedChanges && hasProtectedMedia
+						? "Some tabs contain unsaved changes or media playback that will stop."
+						: hasUnsavedChanges ? "Some tabs contain changes that may not be saved." : "Closing these tabs will stop media playback."
+					let alert = BrowserWebsiteUI.alert(title: "Close these tabs?", message: message, confirm: "Close Tabs")
 					if await BrowserWebsiteUI.present(alert, in: NSApp.keyWindow) == .alertFirstButtonReturn {
 						self?.removeTabs(ids, selecting: selectedID, confirmed: true)
 					}

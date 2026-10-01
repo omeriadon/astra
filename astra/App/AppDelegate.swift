@@ -21,6 +21,28 @@
 		private var wasLaunchedForWebPush = false
 		private var memoryPressureSource: DispatchSourceMemoryPressure?
 
+		private var pictureInPictureController: BrowserController? {
+			for browser in allBrowsers {
+				for tab in browser.tabs {
+					if let controller = tab.controller,
+					   controller.isPictureInPictureActive || controller.isEnteringPictureInPicture
+					{
+						return controller
+					}
+					if let controller = tab.peeks.map(\.controller).first(where: {
+						$0.isPictureInPictureActive || $0.isEnteringPictureInPicture
+					}) {
+						return controller
+					}
+				}
+			}
+			return nil
+		}
+
+		private var allBrowsers: [Browser] {
+			windows.map(\.browser) + miniWindows.map(\.browser)
+		}
+
 		func applicationWillFinishLaunching(_: Notification) {
 			#if DEBUG
 				if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
@@ -88,13 +110,22 @@
 
 		func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
 			Task { @MainActor in
-				let hasChanges = windows.contains { controller in
-					controller.browser.tabs.contains { tab in
+				let hasChanges = allBrowsers.contains { browser in
+					browser.tabs.contains { tab in
 						tab.controller?.hasUnsavedChanges == true || tab.peeks.contains { $0.controller.hasUnsavedChanges }
 					}
 				}
-				if hasChanges {
-					let alert = BrowserWebsiteUI.alert(title: "Quit Astra?", message: "Some tabs contain changes that may not be saved.", confirm: "Quit")
+				let hasProtectedMedia = allBrowsers.contains { browser in
+					browser.tabs.contains { tab in
+						tab.controller?.requiresMediaTeardownConfirmation == true
+							|| tab.peeks.contains { $0.controller.requiresMediaTeardownConfirmation }
+					}
+				}
+				if hasChanges || hasProtectedMedia {
+					let message = hasChanges && hasProtectedMedia
+						? "Some tabs contain changes that may not be saved, and closing will stop media playback."
+						: hasChanges ? "Some tabs contain changes that may not be saved." : "Quitting will stop media playback."
+					let alert = BrowserWebsiteUI.alert(title: "Quit Astra?", message: message, confirm: "Quit")
 					guard await BrowserWebsiteUI.present(alert, in: NSApp.keyWindow) == .alertFirstButtonReturn else {
 						sender.reply(toApplicationShouldTerminate: false)
 						return
@@ -103,22 +134,25 @@
 				for controller in windows {
 					await controller.browser.flushAndWaitForPersistence()
 				}
-				if let failure = windows.compactMap(\.browser.persistenceErrorDescription).first {
+				for controller in miniWindows {
+					await controller.browser.flushAndWaitForPersistence()
+				}
+				if let failure = allBrowsers.compactMap(\.persistenceErrorDescription).first {
 					let alert = BrowserWebsiteUI.alert(title: "Quit without saving?", message: failure, confirm: "Quit Without Saving")
 					guard await BrowserWebsiteUI.present(alert, in: NSApp.keyWindow) == .alertFirstButtonReturn else {
 						sender.reply(toApplicationShouldTerminate: false)
 						return
 					}
 				}
-				for controller in windows {
-					await controller.browser.markCleanShutdown()
+				for browser in allBrowsers where !browser.isMini {
+					await browser.markCleanShutdown()
 				}
-				for controller in windows {
-					for tab in controller.browser.tabs {
+				for browser in allBrowsers {
+					for tab in browser.tabs {
 						tab.stopForClose()
 					}
-					if controller.browser.isPrivate {
-						await controller.browser.session.endPrivateSession()
+					if browser.isPrivate {
+						await browser.session.endPrivateSession()
 					}
 				}
 				await BrowserAuthenticationSessionHandler.shared.cancelAll()
@@ -477,6 +511,14 @@
 			inspector.perform(NSSelectorFromString(action))
 		}
 
+		@objc private func enterPictureInPicture(_: Any?) {
+			activeBrowser?.selectedTab?.activeController?.enterPictureInPicture()
+		}
+
+		@objc private func showPictureInPictureTab(_: Any?) {
+			pictureInPictureController?.returnToPictureInPictureSource()
+		}
+
 		@objc private func addBookmark(_: Any?) {
 			activeBrowser?.bookmarkSelectedPage()
 		}
@@ -513,6 +555,15 @@
 			let dataActions: Set<Selector> = [#selector(importBrowsingData(_:)), #selector(exportBrowsingData(_:)), #selector(exportBookmarks(_:))]
 			if let action = menuItem.action, pageActions.contains(action) {
 				return activeBrowser?.selectedTab?.activeController?.committedURL != nil
+			}
+			if menuItem.action == #selector(enterPictureInPicture(_:)) {
+				guard let controller = activeBrowser?.selectedTab?.activeController else { return false }
+				return controller.canEnterPictureInPicture
+					&& !controller.isPictureInPictureActive
+					&& !controller.isEnteringPictureInPicture
+			}
+			if menuItem.action == #selector(showPictureInPictureTab(_:)) {
+				return pictureInPictureController != nil
 			}
 			if let action = menuItem.action, dataActions.contains(action) {
 				return activeBrowser?.isPrivate == false && activeBrowser?.isMini == false
@@ -648,6 +699,8 @@
 			navigationMenu.addItem(item("Open Location", action: #selector(openLocation(_:)), key: "l"))
 			navigationMenu.addItem(item("Back", action: #selector(goBack(_:)), key: "["))
 			navigationMenu.addItem(item("Forward", action: #selector(goForward(_:)), key: "]"))
+			navigationMenu.addItem(item("Enter Picture in Picture", action: #selector(enterPictureInPicture(_:))))
+			navigationMenu.addItem(item("Show Picture in Picture Tab", action: #selector(showPictureInPictureTab(_:))))
 			navigationMenu.addItem(.separator())
 			navigationMenu.addItem(item("Reload", action: #selector(reload(_:)), key: "r"))
 			navigationMenu.addItem(item(

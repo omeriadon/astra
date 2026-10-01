@@ -1,6 +1,10 @@
 import Foundation
 import Observation
 
+#if os(macOS)
+	import AppKit
+#endif
+
 // stop removing import webkit, it is used by `pageZoom`
 import WebKit
 
@@ -116,8 +120,17 @@ final class BrowserTab: Identifiable {
 	}
 
 	private(set) var controller: BrowserController?
+	private(set) var pictureInPictureReturnControllerID: UUID?
 	var activeController: BrowserController? {
-		peeks.last?.controller ?? controller
+		if let pictureInPictureReturnControllerID {
+			if controller?.id == pictureInPictureReturnControllerID {
+				return controller
+			}
+			if let peekController = peeks.first(where: { $0.controller.id == pictureInPictureReturnControllerID })?.controller {
+				return peekController
+			}
+		}
+		return peeks.last?.controller ?? controller
 	}
 
 	var isHibernated: Bool {
@@ -320,29 +333,88 @@ final class BrowserTab: Identifiable {
 	}
 
 	func addPeek(_ peek: BrowserPeek) {
+		pictureInPictureReturnControllerID = nil
 		observe(peek)
 		peeks.append(peek)
 		markModified()
 	}
 
-	func dismissPeek(_ id: UUID) {
+	func dismissPeek(_ id: UUID, confirmed: Bool = false) {
 		guard let index = peeks.firstIndex(where: { $0.id == id }) else { return }
+		let containsProtectedMedia = peeks[index...].contains(where: { $0.controller.requiresMediaTeardownConfirmation })
+		#if os(macOS)
+			if containsProtectedMedia, !confirmed {
+				Task { @MainActor [weak self] in
+					let alert = BrowserWebsiteUI.alert(
+						title: "Close Picture in Picture?",
+						message: "Closing this peek will stop its media playback.",
+						confirm: "Close Peek"
+					)
+					let window = self?.activeController?.webViewIfLoaded?.window
+					if await BrowserWebsiteUI.present(alert, in: window) == .alertFirstButtonReturn {
+						self?.dismissPeek(id, confirmed: true)
+					}
+				}
+				return
+			}
+		#else
+			if containsProtectedMedia, !confirmed,
+			   let webView = peeks[index...].first(where: { $0.controller.requiresMediaTeardownConfirmation })?.controller.webViewIfLoaded
+			{
+				Task { @MainActor [weak self] in
+					let result = await BrowserWebsiteUI.javascriptDialog(
+						title: "Close Peek?",
+						message: "Closing this peek will stop media playback.",
+						confirmTitle: "Close Peek",
+						cancelTitle: "Cancel",
+						in: webView
+					) { [weak self] in
+						self?.peeks.contains(where: { $0.id == id }) == true
+					}
+					if result.confirmed {
+						self?.dismissPeek(id, confirmed: true)
+					}
+				}
+				return
+			}
+			if containsProtectedMedia, !confirmed { return }
+		#endif
 		for peek in peeks[index...] {
 			peek.controller.stopForClose()
 		}
 		peeks.removeSubrange(index...)
+		pictureInPictureReturnControllerID = nil
 		markModified()
 	}
 
 	func takePeekForPromotion(_ id: UUID) -> BrowserPeek? {
 		guard peeks.last?.id == id else { return nil }
 		let peek = peeks.removeLast()
+		pictureInPictureReturnControllerID = nil
 		markModified()
 		return peek
 	}
 
+	func showPictureInPictureController(_ controller: BrowserController) {
+		guard self.controller === controller || peeks.contains(where: { $0.controller === controller }) else { return }
+		pictureInPictureReturnControllerID = controller.id
+	}
+
+	func clearPictureInPictureReturnController() {
+		pictureInPictureReturnControllerID = nil
+	}
+
 	func requestPeekDismissal() {
-		peeks.last?.isDismissing = true
+		if let controller, controller.id == pictureInPictureReturnControllerID {
+			clearPictureInPictureReturnController()
+			return
+		}
+		guard let peek = peeks.first(where: { $0.controller === activeController }) else { return }
+		if peek.controller.requiresMediaTeardownConfirmation {
+			dismissPeek(peek.id)
+			return
+		}
+		peek.isDismissing = true
 	}
 
 	func applySynchronizedMetadata(from remote: OpenTab) {

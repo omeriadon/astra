@@ -25,7 +25,10 @@ struct BrowserPageView: View {
 				.blur(radius: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser) ? 10 : 0)
 			#endif
 
-			if let tab = browser.selectedTab {
+			if let tab = browser.selectedTab,
+			   !tab.peeks.isEmpty,
+			   tab.activeController !== tab.controller
+			{
 				PeekStackView(tab: tab, browser: browser)
 					.id(tab.id)
 			}

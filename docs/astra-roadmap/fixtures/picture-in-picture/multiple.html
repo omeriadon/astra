@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>PiP multiple-video fixture</title>
+<button id="start">Start videos</button>
+<video controls playsinline width="320" height="180"></video>
+<video controls playsinline width="320" height="180"></video>
+<script>
+for (const [index, video] of [...document.querySelectorAll("video")].entries()) {
+	const canvas = document.createElement("canvas");
+	canvas.width = 320;
+	canvas.height = 180;
+	const context = canvas.getContext("2d");
+	let frame = index * 80;
+	function draw() {
+		context.fillStyle = index ? "#23395d" : "#14213d";
+		context.fillRect(0, 0, canvas.width, canvas.height);
+		context.fillStyle = index ? "#ee6c4d" : "#fca311";
+		context.fillRect((frame++ % 320), 60, 40, 40);
+		requestAnimationFrame(draw);
+	}
+	draw();
+	video.srcObject = canvas.captureStream(30);
+}
+document.querySelector("#start").addEventListener("click", () => {
+	for (const video of document.querySelectorAll("video")) video.play();
+});
+</script>

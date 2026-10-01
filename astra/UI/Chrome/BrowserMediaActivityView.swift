@@ -32,7 +32,7 @@ private struct BrowserMediaActivityCard: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	var body: some View {
-		if controller.isPlayingMedia || controller.hasPausedMedia || controller.isCapturing || controller.pausedFromBrowser || controller.areMediaElementsMuted {
+		if controller.isPlayingMedia || controller.hasPausedMedia || controller.isCapturing || controller.pausedFromBrowser || controller.areMediaElementsMuted || controller.canEnterPictureInPicture || controller.isPictureInPictureActive {
 			HStack(spacing: 8) {
 				Button(action: openTab) {
 					Label {
@@ -54,6 +54,19 @@ private struct BrowserMediaActivityCard: View {
 				.buttonStyle(.plain)
 				.accessibilityLabel("Open \(title)")
 				.accessibilityIdentifier("media-open-tab-\(controller.id)")
+				if controller.canEnterPictureInPicture && !controller.isPictureInPictureActive && !controller.isEnteringPictureInPicture {
+					Button("Enter Picture in Picture", systemImage: "pip", action: controller.enterPictureInPicture)
+						.labelStyle(.iconOnly)
+						.buttonStyle(.glass)
+						.accessibilityHint("Attempts browser entry. WebKit may require a gesture in the page or provider support.")
+						.accessibilityIdentifier("media-picture-in-picture-\(controller.id)")
+				}
+				if controller.isPictureInPictureActive || controller.isEnteringPictureInPicture {
+					Button("Show Picture in Picture Tab", systemImage: "arrow.uturn.backward", action: controller.returnToPictureInPictureSource)
+						.labelStyle(.iconOnly)
+						.buttonStyle(.glass)
+						.accessibilityIdentifier("media-return-picture-in-picture-\(controller.id)")
+				}
 				if controller.isPlayingMedia {
 					Button("Pause", systemImage: "pause.fill", action: controller.pauseMedia)
 						.labelStyle(.iconOnly)
@@ -92,6 +105,12 @@ private struct BrowserMediaActivityCard: View {
 	}
 
 	private var activityDescription: String {
+		if controller.pictureInPictureControlUnavailable {
+			return "Use the video's own Picture in Picture control"
+		}
+		if controller.isPictureInPictureActive || controller.isEnteringPictureInPicture {
+			return "Picture in Picture"
+		}
 		if controller.isCapturing {
 			return "Camera or microphone in use"
 		}
