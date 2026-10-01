@@ -13,7 +13,7 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 | Packet | Status | Reviewed commit / evidence |
 | --- | --- | --- |
 | [00-baseline](tasks/00-baseline.md) | build verified; primary reviewed | `2a6932d8aab907302f252d58fcb4a8e22d848fe8`; stale test metadata removed, app builds |
-| [01-lifecycle](tasks/01-lifecycle.md) | in progress | Dedicated worktree from reviewed baseline `d1210af` |
+| [01-lifecycle](tasks/01-lifecycle.md) | build verified; primary reviewed | `0c50cc8faf07ee9dca8ac8aef0fe6465b14b8f72`; safe promotion, cleanup and peek session reconstruction |
 | [02-navigation-policy](tasks/02-navigation-policy.md) | queued | — |
 | [03-persistence-restoration](tasks/03-persistence-restoration.md) | queued | — |
 | [04-private-browsing](tasks/04-private-browsing.md) | queued | — |
@@ -49,3 +49,7 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 | [33-updates-distribution](tasks/33-updates-distribution.md) | queued | — |
 | [34-diagnostics-performance](tasks/34-diagnostics-performance.md) | queued | — |
 | [35-accessibility-integration](tasks/35-accessibility-integration.md) | queued | — |
+
+## Sync priority override
+
+The user reported invalid HTTPS sync URL errors and missing settings, and required on-device caching and last-updated conflict protection for every synchronized record, explicitly including history, bookmarks, spaces and settings. Packet 29 runs next against existing reviewed implementations; remaining prerequisites will consume its upgraded persistence/merge contract. The original checkout remains unchanged.
