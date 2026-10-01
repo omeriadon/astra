@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 import Observation
 import SwiftUI
 import WebKit
@@ -18,6 +19,12 @@ import WebKit
 final class FaviconStore: NSObject, WKScriptMessageHandler {
 	static let shared = FaviconStore()
 	private static let messageHandlerName = "faviconChanged"
+	private static let maximumImageBytes = 1_000_000
+	private static let maximumImageDimension = 512
+	private static let maximumCacheEntries = 256
+	private static let maximumCacheBytes = 16_000_000
+	private static let maximumConcurrentRequests = 4
+	private static let refreshInterval: TimeInterval = 7 * 24 * 60 * 60
 	private static let observationScript = """
 	(() => {
 		const iconSelector = 'link[rel~="icon"]';
@@ -49,6 +56,8 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 
 	private(set) var favicons: [String: Data]
 	private var liveFavicons: [ObjectIdentifier: (cacheKey: String, data: Data)] = [:]
+	private var fetchedAt: [String: Date] = [:]
+	private var activeRequests: [ObjectIdentifier: UUID] = [:]
 
 	@ObservationIgnored
 	private let persistence: BrowserPersistence?
@@ -59,17 +68,11 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	@ObservationIgnored
 	private var cacheGeneration = 0
 	@ObservationIgnored
-	private var requestGenerations: [ObjectIdentifier: Int] = [:]
-	@ObservationIgnored
 	private var faviconSaveTask: Task<Void, Never>?
-	/// Decoded-once cache: row bodies call image() on every render, and
-	/// PlatformImage(data:) decode per row is what made selection lag with N tabs.
 	@ObservationIgnored
 	private var decodedImages: [String: PlatformImage] = [:]
 	@ObservationIgnored
 	private var liveImages: [ObjectIdentifier: (cacheKey: String, image: PlatformImage)] = [:]
-	@ObservationIgnored
-	private var inFlightFaviconKeys = Set<String>()
 
 	var isEmpty: Bool {
 		favicons.isEmpty
@@ -91,22 +94,32 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		favicons = [:]
 		super.init()
 
-		// Decode the base64 icon dict off-main; rows show placeholders until set.
 		if let persistence {
 			Task.detached(priority: .utility) { [persistence] in
 				guard let loaded = try? persistence.loadFavicons(), !loaded.isEmpty else { return }
 				await MainActor.run { [weak self] in
 					guard let self else { return }
-					for (key, data) in loaded where favicons[key] == nil {
+					var migrationRequired = false
+					for (storedKey, data) in loaded {
+						guard Self.isValidImage(data) else {
+							migrationRequired = true
+							continue
+						}
+						let key = FaviconKey.origin(for: URL(string: storedKey))
+							?? FaviconKey.origin(for: URL(string: "https://\(storedKey)"))
+						guard let key else {
+							migrationRequired = true
+							continue
+						}
+						migrationRequired = migrationRequired || key != storedKey || favicons[key] != nil
 						favicons[key] = data
+					}
+					if trimCache() || migrationRequired {
+						scheduleFaviconSave()
 					}
 				}
 			}
 		}
-
-		#if DEBUG
-			assert(Self.cacheKey(for: URL(string: "https://www.example.com/page")!) == "www.example.com")
-		#endif
 	}
 
 	func configureFaviconObservation(in contentController: WKUserContentController) {
@@ -126,7 +139,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	}
 
 	func image(for pageURL: URL?, in webView: WKWebView? = nil) -> Image? {
-		guard let key = Self.cacheKey(for: pageURL) else { return nil }
+		guard let key = FaviconKey.origin(for: pageURL) else { return nil }
 		if let webView {
 			let webViewID = ObjectIdentifier(webView)
 			if let live = liveFavicons[webViewID], live.cacheKey == key {
@@ -149,60 +162,109 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	}
 
 	func loadFavicon(for pageURL: URL, from webView: WKWebView, onlyIfMissing: Bool = false) async {
-		guard let key = Self.cacheKey(for: pageURL) else { return }
-		let webViewID = ObjectIdentifier(webView)
-		let hasLiveFavicon = liveFavicons[webViewID]?.cacheKey == key
-		if onlyIfMissing, hasLiveFavicon || favicons[key] != nil {
-			return
-		}
-		let generation = cacheGeneration
-		let requestGeneration = requestGenerations[webViewID, default: 0] + 1
-		requestGenerations[webViewID] = requestGeneration
-		let script = """
-		document.querySelector('link[rel~="icon"]')?.href
-			?? new URL('/favicon.ico', document.baseURI).href
-		"""
-		guard let address = try? await webView.evaluateJavaScript(script) as? String,
-		      let iconURL = URL(string: address),
-		      iconURL.scheme == "https" || iconURL.scheme == "http"
+		guard let key = FaviconKey.origin(for: pageURL),
+		      FaviconKey.origin(for: webView.url) == key
 		else { return }
 
-		// Simultaneous navigations to one host share a single fetch; losers
-		// read the cached result via favicons[key] on their next lookup.
-		guard !inFlightFaviconKeys.contains(key) else { return }
-		inFlightFaviconKeys.insert(key)
-		defer { inFlightFaviconKeys.remove(key) }
+		let webViewID = ObjectIdentifier(webView)
+		guard activeRequests[webViewID] != nil || activeRequests.count < Self.maximumConcurrentRequests else { return }
+		let requestID = UUID()
+		activeRequests[webViewID] = requestID
+		let generation = cacheGeneration
+		defer {
+			if activeRequests[webViewID] == requestID {
+				activeRequests[webViewID] = nil
+			}
+		}
+
+		let hasLiveFavicon = liveFavicons[webViewID]?.cacheKey == key
+		let isFresh = fetchedAt[key].map { Date().timeIntervalSince($0) < Self.refreshInterval } ?? false
+		if onlyIfMissing, (hasLiveFavicon || favicons[key] != nil), isFresh {
+			return
+		}
+		guard !Task.isCancelled else { return }
+
+		let script = """
+		(() => {
+			const icons = [...document.querySelectorAll('link[rel~="icon"]')];
+			icons.sort((a, b) => (Number(b.sizes?.[0]?.split('x')[0]) || 0)
+				- (Number(a.sizes?.[0]?.split('x')[0]) || 0));
+			return icons[0]?.href ?? new URL('/favicon.ico', document.baseURI).href;
+		})()
+		"""
+		guard let address = try? await webView.evaluateJavaScript(script) as? String,
+		      !Task.isCancelled,
+		      activeRequests[webViewID] == requestID,
+		      FaviconKey.origin(for: webView.url) == key,
+		      let iconURL = URL(string: address),
+		      FaviconKey.origin(for: iconURL) != nil
+		else { return }
 
 		var request = URLRequest(url: iconURL)
 		request.cachePolicy = .reloadRevalidatingCacheData
 		request.timeoutInterval = 15
-		guard let (data, response) = try? await networkSession.data(for: request),
+		guard let (bytes, response) = try? await networkSession.bytes(for: request),
 		      let response = response as? HTTPURLResponse,
 		      200 ..< 300 ~= response.statusCode,
-		      !data.isEmpty,
-		      data.count <= 1_000_000,
+		      response.expectedContentLength <= Int64(Self.maximumImageBytes) || response.expectedContentLength < 0
+		else { return }
+
+		var data = Data()
+		for try await byte in bytes {
+			guard !Task.isCancelled,
+			      activeRequests[webViewID] == requestID,
+			      generation == cacheGeneration,
+			      FaviconKey.origin(for: webView.url) == key,
+			      data.count < Self.maximumImageBytes
+			else { return }
+			data.append(byte)
+		}
+
+		guard !data.isEmpty,
+		      Self.isValidImage(data),
+		      !Task.isCancelled,
+		      activeRequests[webViewID] == requestID,
 		      generation == cacheGeneration,
-		      requestGenerations[webViewID] == requestGeneration,
+		      FaviconKey.origin(for: webView.url) == key,
 		      let platformImage = Self.makePlatformImage(data)
 		else { return }
 
 		liveFavicons[webViewID] = (key, data)
 		liveImages[webViewID] = (key, platformImage)
-		guard favicons[key] != data else { return }
-
+		fetchedAt[key] = .now
 		favicons[key] = data
 		decodedImages[key] = platformImage
+		trimCache()
 		scheduleFaviconSave()
 	}
 
 	func clear() {
 		cacheGeneration += 1
-		requestGenerations.removeAll()
+		activeRequests.removeAll()
 		liveFavicons.removeAll()
 		liveImages.removeAll()
 		decodedImages.removeAll()
+		fetchedAt.removeAll()
 		favicons.removeAll()
 		scheduleFaviconSave()
+	}
+
+	@discardableResult
+	private func trimCache() -> Bool {
+		var totalBytes = favicons.values.reduce(0) { $0 + $1.count }
+		guard favicons.count > Self.maximumCacheEntries || totalBytes > Self.maximumCacheBytes else { return false }
+		var removedEntry = false
+		let oldestFirst = favicons.keys.sorted {
+			(fetchedAt[$0] ?? .distantPast) < (fetchedAt[$1] ?? .distantPast)
+		}
+		for key in oldestFirst {
+			guard favicons.count > Self.maximumCacheEntries || totalBytes > Self.maximumCacheBytes else { break }
+			totalBytes -= favicons.removeValue(forKey: key)?.count ?? 0
+			fetchedAt[key] = nil
+			decodedImages[key] = nil
+			removedEntry = true
+		}
+		return removedEntry
 	}
 
 	private func scheduleFaviconSave() {
@@ -228,14 +290,28 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		}
 	}
 
-	private static func cacheKey(for url: URL?) -> String? {
-		guard let url,
-		      url.scheme == "https" || url.scheme == "http"
-		else { return nil }
-		return url.host?.lowercased()
+	private static func isValidImage(_ data: Data) -> Bool {
+		guard !data.isEmpty,
+		      data.count <= maximumImageBytes,
+		      let source = CGImageSourceCreateWithData(data as CFData, nil),
+		      CGImageSourceGetCount(source) > 0,
+		      CGImageSourceGetCount(source) <= 32
+		else { return false }
+		for index in 0 ..< CGImageSourceGetCount(source) {
+			guard let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any],
+			      let width = properties[kCGImagePropertyPixelWidth] as? Int,
+			      let height = properties[kCGImagePropertyPixelHeight] as? Int,
+			      width > 0,
+			      height > 0,
+			      width <= maximumImageDimension,
+			      height <= maximumImageDimension
+			else { return false }
+		}
+		return true
 	}
 
 	private static func makePlatformImage(_ data: Data) -> PlatformImage? {
+		guard isValidImage(data) else { return nil }
 		#if os(macOS)
 			NSImage(data: data)
 		#elseif os(iOS)
