@@ -19,6 +19,7 @@ extension Defaults.Keys {
 	static let globalPrivacyControl = Key<Bool>("globalPrivacyControl", default: true)
 	static let historyRetentionDays = Key<Int>("historyRetentionDays", default: 0)
 	static let searchSuggestionsEnabled = Key<Bool>("searchSuggestionsEnabled", default: true)
+	static let browserSearchConfiguration = Key<String>("browserSearchConfiguration", default: BrowserSearchConfiguration.default.encoded)
 	static let miniAstraEnabled = Key<Bool>("miniAstraEnabled", default: true)
 	static let miniAstraWindowAnimation = Key<Bool>("miniAstraWindowAnimation", default: true)
 	static let miniAstraShortcutEnabled = Key<Bool>("miniAstraShortcutEnabled", default: false)
@@ -46,6 +47,7 @@ extension Defaults.Keys {
 		"globalPrivacyControl",
 		"historyRetentionDays",
 		"searchSuggestionsEnabled",
+		"browserSearchConfiguration",
 		"startupBehavior",
 		"homepageURL",
 	]

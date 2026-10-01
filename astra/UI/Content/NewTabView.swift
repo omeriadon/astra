@@ -3,7 +3,13 @@ import SwiftUI
 
 struct NewTabView: View {
 	@Bindable var browser: Browser
+	@Default(.searchSuggestionsEnabled) private var searchSuggestionsEnabled
+	@Default(.browserSearchConfiguration) private var searchConfigurationValue
 	@FocusState private var isSearchFocused: Bool
+
+	private var searchConfiguration: BrowserSearchConfiguration {
+		BrowserSearchConfiguration.decode(searchConfigurationValue)
+	}
 
 	var body: some View {
 		let selectedResultID = browser.selectedNewTabSearchResult?.id
@@ -56,19 +62,41 @@ struct NewTabView: View {
 		.onChange(of: browser.addressFocusRequest) { _, _ in
 			isSearchFocused = true
 		}
-		.task(id: browser.newTabSearchText) {
-			let query = browser.newTabSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-			guard !browser.isPrivate, Defaults[.searchSuggestionsEnabled], !query.isEmpty else { return }
+		.task(id: suggestionRequest) {
+			let request = suggestionRequest
+			browser.newTabGoogleSuggestions = []
+			guard request.suggestionsEnabled,
+			      let provider = searchConfiguration.suggestionsProvider(isPrivate: request.isPrivate),
+			      !request.query.isEmpty
+		else { return }
 			do {
 				try await Task.sleep(for: .milliseconds(250))
-				let suggestions = try await BrowserSearchSuggestions.fetch(for: query)
+				guard !Task.isCancelled, searchSuggestionsEnabled else { return }
+				let suggestions = try await BrowserSearchSuggestions.fetch(
+					for: request.query,
+					provider: provider
+				)
 				try Task.checkCancellation()
-				guard browser.newTabSearchText.trimmingCharacters(in: .whitespacesAndNewlines) == query else { return }
+				guard searchSuggestionsEnabled,
+				      browser.newTabSearchText.trimmingCharacters(in: .whitespacesAndNewlines) == request.query,
+				      searchConfiguration.encoded == request.configuration,
+				      browser.isPrivate == request.isPrivate
+				else { return }
 				browser.newTabGoogleSuggestions = suggestions
 			} catch {
 				// Local suggestions and submitting the query remain available offline.
 			}
 		}
+	}
+
+	private var suggestionRequest: BrowserSearchSuggestionsRequest {
+		BrowserSearchSuggestionsRequest(
+			query: browser.newTabSearchText.trimmingCharacters(in: .whitespacesAndNewlines),
+			provider: searchConfiguration.suggestionsProvider(isPrivate: browser.isPrivate) ?? .custom,
+			isPrivate: browser.isPrivate,
+			configuration: searchConfiguration.encoded,
+			suggestionsEnabled: searchSuggestionsEnabled
+		)
 	}
 
 	private var searchHeader: some View {

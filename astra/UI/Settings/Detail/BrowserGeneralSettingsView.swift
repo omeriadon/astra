@@ -16,6 +16,7 @@ struct BrowserGeneralSettingsView: View {
 	@Default(.renameDownloadsWithAppleIntelligence) private var renameDownloadsWithAppleIntelligence
 	@Default(.startupBehavior) private var startupBehavior
 	@Default(.homepageURL) private var homepageURL
+	@Default(.browserSearchConfiguration) private var browserSearchConfigurationValue
 
 	#if os(macOS)
 		@State private var isDefaultBrowser = false
@@ -71,6 +72,50 @@ struct BrowserGeneralSettingsView: View {
 				.accessibilityIdentifier("address-display-style-picker")
 				.id("Address Bar")
 			}
+
+			Section("Search") {
+				Picker("Normal browsing", selection: engineBinding(isPrivate: false)) {
+					ForEach(BrowserSearchConfiguration.Engine.allCases) { engine in
+						Text(engine.title).tag(engine)
+					}
+				}
+				.accessibilityIdentifier("normal-search-engine-picker")
+
+				Picker("Private browsing", selection: engineBinding(isPrivate: true)) {
+					ForEach(BrowserSearchConfiguration.Engine.allCases) { engine in
+						Text(engine.title).tag(engine)
+					}
+				}
+				.accessibilityIdentifier("private-search-engine-picker")
+
+				if searchConfiguration.normalEngine == .custom || searchConfiguration.privateEngine == .custom {
+					TextField("HTTPS search template", text: customTemplateBinding)
+						.accessibilityLabel("Custom HTTPS search template")
+						.accessibilityIdentifier("custom-search-template")
+					if searchConfiguration.customTemplateIsValid {
+						Text("Use {query} as the search term. Only HTTPS templates are used.")
+							.font(.caption)
+							.foregroundStyle(.secondary)
+					} else {
+						Text("Enter a valid HTTPS URL with one {query} placeholder in its query.")
+							.font(.caption)
+							.foregroundStyle(.red)
+							.accessibilityIdentifier("custom-search-template-error")
+					}
+				}
+
+				TextField("Keyword shortcuts", text: keywordShortcutsBinding, axis: .vertical)
+					.lineLimit(1 ... 4)
+					.accessibilityLabel("Search keyword shortcuts")
+					.accessibilityIdentifier("search-keyword-shortcuts")
+				Text("One per line: keyword=https://example.com/search?q={query}")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+
+				Toggle("Allow search suggestions in Private Browsing", isOn: privateSuggestionsBinding)
+					.accessibilityIdentifier("private-search-suggestions-enabled")
+			}
+			.id("Search")
 
 			Section("Startup") {
 				Picker("When Astra opens", selection: $startupBehavior) {
@@ -160,6 +205,68 @@ struct BrowserGeneralSettingsView: View {
 		}
 		.scrollContentBackground(.hidden)
 		.listStyle(.sidebar)
+	}
+
+	private func bounded(_ value: String, maxBytes: Int) -> String {
+		var result = ""
+		for character in value {
+			let next = String(character)
+			guard result.utf8.count + next.utf8.count <= maxBytes else { break }
+			result.append(character)
+		}
+		return result
+	}
+
+	private var searchConfiguration: BrowserSearchConfiguration {
+		BrowserSearchConfiguration.decode(browserSearchConfigurationValue)
+	}
+
+	private func engineBinding(isPrivate: Bool) -> Binding<BrowserSearchConfiguration.Engine> {
+		Binding(
+			get: { searchConfiguration.engine(isPrivate: isPrivate) },
+			set: { engine in
+				var configuration = searchConfiguration
+				if isPrivate {
+					configuration.privateEngine = engine
+				} else {
+					configuration.normalEngine = engine
+				}
+				browserSearchConfigurationValue = configuration.encoded
+			}
+		)
+	}
+
+	private var customTemplateBinding: Binding<String> {
+		Binding(
+			get: { searchConfiguration.customTemplate },
+			set: { value in
+				var configuration = searchConfiguration
+				configuration.customTemplate = bounded(value, maxBytes: 2_048)
+				browserSearchConfigurationValue = configuration.encoded
+			}
+		)
+	}
+
+	private var keywordShortcutsBinding: Binding<String> {
+		Binding(
+			get: { searchConfiguration.keywordShortcuts },
+			set: { value in
+				var configuration = searchConfiguration
+				configuration.keywordShortcuts = bounded(value, maxBytes: 4_096)
+				browserSearchConfigurationValue = configuration.encoded
+			}
+		)
+	}
+
+	private var privateSuggestionsBinding: Binding<Bool> {
+		Binding(
+			get: { searchConfiguration.privateSuggestionsEnabled },
+			set: { value in
+				var configuration = searchConfiguration
+				configuration.privateSuggestionsEnabled = value
+				browserSearchConfigurationValue = configuration.encoded
+			}
+		)
 	}
 
 	#if os(macOS)

@@ -4,6 +4,11 @@ import SwiftUI
 struct BrowserAddressField: View {
 	let browser: Browser
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
+	@Default(.browserSearchConfiguration) private var searchConfigurationValue
+
+	private var searchConfiguration: BrowserSearchConfiguration {
+		BrowserSearchConfiguration.decode(searchConfigurationValue)
+	}
 	@State private var addressText = ""
 	@FocusState private var isFocused: Bool
 
@@ -11,8 +16,12 @@ struct BrowserAddressField: View {
 		addressDisplayStyle == .dimmed && !isFocused && !addressText.isEmpty
 	}
 
-	private var isGoogleSearch: Bool {
-		BrowserAddress.isGoogleSearchURL(browser.selectedTab?.activeController?.url)
+	private var isSearch: Bool {
+		BrowserAddress.isSearchURL(
+			browser.selectedTab?.activeController?.url,
+			configuration: searchConfiguration,
+			isPrivate: browser.isPrivate
+		)
 	}
 
 	var body: some View {
@@ -20,7 +29,7 @@ struct BrowserAddressField: View {
 			addressText: $addressText,
 			isFocused: $isFocused,
 			isDimmed: isDimmed,
-			isGoogleSearch: isGoogleSearch,
+			isSearch: isSearch,
 			dimmedAddressText: dimmedAddressText,
 			onSubmitAddress: submitAddress,
 			onEscape: {
@@ -55,11 +64,20 @@ struct BrowserAddressField: View {
 		}
 		.onChange(of: browser.selectedTab?.activeController?.url) { _, url in
 			guard !isFocused else { return }
-			let next = BrowserAddress.displayString(for: url, style: addressDisplayStyle, isEditing: false)
+			let next = BrowserAddress.displayString(
+				for: url,
+				style: addressDisplayStyle,
+				isEditing: false,
+				configuration: searchConfiguration,
+				isPrivate: browser.isPrivate
+			)
 			guard next != addressText else { return }
 			addressText = next
 		}
 		.onChange(of: addressDisplayStyle) { _, _ in
+			updateAddressFromURL()
+		}
+		.onChange(of: searchConfigurationValue) { _, _ in
 			updateAddressFromURL()
 		}
 		.onChange(of: isFocused) { _, focused in
@@ -70,7 +88,9 @@ struct BrowserAddressField: View {
 			addressText = BrowserAddress.displayString(
 				for: browser.selectedTab?.activeController?.url,
 				style: addressDisplayStyle,
-				isEditing: focused
+				isEditing: focused,
+				configuration: searchConfiguration,
+				isPrivate: browser.isPrivate
 			)
 		}
 		.onAppear {
@@ -85,7 +105,12 @@ struct BrowserAddressField: View {
 			text.foregroundColor = .primary
 			return text
 		}
-		for range in BrowserAddress.primaryTextRanges(for: url, displayedText: addressText) {
+		for range in BrowserAddress.primaryTextRanges(
+			for: url,
+			displayedText: addressText,
+			configuration: searchConfiguration,
+			isPrivate: browser.isPrivate
+		) {
 			guard let attributedRange = Range(range, in: text) else { continue }
 			text[attributedRange].foregroundColor = .primary
 		}
@@ -107,7 +132,9 @@ struct BrowserAddressField: View {
 		let next = BrowserAddress.displayString(
 			for: browser.selectedTab?.activeController?.url,
 			style: addressDisplayStyle,
-			isEditing: isFocused
+			isEditing: isFocused,
+			configuration: searchConfiguration,
+			isPrivate: browser.isPrivate
 		)
 		guard next != addressText else { return }
 		addressText = next
@@ -121,9 +148,19 @@ struct BrowserAddressField: View {
 			updateAddressFromURL()
 			return
 		}
-		guard let destination = BrowserAddress.destination(for: addressText) else { return }
+		guard let destination = BrowserAddress.destination(
+			for: addressText,
+			configuration: searchConfiguration,
+			isPrivate: browser.isPrivate
+		) else { return }
 		browser.selectedTab?.activeController?.load(destination)
-		addressText = BrowserAddress.displayString(for: destination, style: addressDisplayStyle, isEditing: false)
+		addressText = BrowserAddress.displayString(
+			for: destination,
+			style: addressDisplayStyle,
+			isEditing: false,
+			configuration: searchConfiguration,
+			isPrivate: browser.isPrivate
+		)
 		isFocused = false
 	}
 }
@@ -132,7 +169,7 @@ private struct AddressTextField: View {
 	@Binding var addressText: String
 	var isFocused: FocusState<Bool>.Binding
 	var isDimmed: Bool
-	var isGoogleSearch: Bool
+	var isSearch: Bool
 	var dimmedAddressText: AttributedString
 	var onSubmitAddress: () -> Void
 	var onEscape: () -> Void
@@ -144,7 +181,7 @@ private struct AddressTextField: View {
 			.fontDesign(.monospaced)
 			.lineLimit(1)
 			.foregroundStyle(isDimmed ? .clear : .primary)
-			.padding(.leading, isGoogleSearch ? 20 : 0)
+			.padding(.leading, isSearch ? 20 : 0)
 			.focused(isFocused)
 			.submitLabel(.go)
 			.onSubmit(onSubmitAddress)
@@ -160,7 +197,7 @@ private struct AddressTextField: View {
 			}
 			.overlay(alignment: .leading) {
 				DimmedAddressOverlay(
-					isGoogleSearch: isGoogleSearch,
+					isSearch: isSearch,
 					isDimmed: isDimmed,
 					dimmedAddressText: dimmedAddressText
 				)
@@ -171,13 +208,13 @@ private struct AddressTextField: View {
 }
 
 private struct DimmedAddressOverlay: View {
-	var isGoogleSearch: Bool
+	var isSearch: Bool
 	var isDimmed: Bool
 	var dimmedAddressText: AttributedString
 
 	var body: some View {
 		HStack(spacing: 6) {
-			if isGoogleSearch {
+			if isSearch {
 				Image(systemName: "magnifyingglass")
 					.accessibilityHidden(true)
 			}
