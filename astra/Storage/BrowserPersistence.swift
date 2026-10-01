@@ -52,6 +52,23 @@ struct BrowserShutdownMetadata: Codable, Equatable, Sendable {
 	}
 }
 
+nonisolated enum BrowserHomepage {
+	static func validURL(_ value: String) -> URL? {
+		guard let components = URLComponents(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
+			  let scheme = components.scheme?.lowercased(),
+			  ["http", "https"].contains(scheme),
+			  let host = components.host, !host.isEmpty,
+			  !host.unicodeScalars.contains(where: {
+				CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0)
+			  }),
+			  components.user == nil,
+			  components.password == nil,
+			  components.port.map({ (1 ... 65535).contains($0) }) ?? true
+		else { return nil }
+		return components.url
+	}
+}
+
 enum BrowserPersistenceError: LocalizedError, Equatable {
 	case unsupportedVersion
 	case invalidSnapshot
@@ -156,14 +173,17 @@ final class BrowserPersistence: @unchecked Sendable {
 	}
 
 	nonisolated func savePersistedState(_ state: BrowserPersistedState) throws {
-		let currentURL = directory.appendingPathComponent("browser-state.json")
-		if let currentData = try? Data(contentsOf: currentURL),
-		   (try? decodeSnapshot(currentData)) == nil,
-		   let header = try? JSONSerialization.jsonObject(with: currentData) as? [String: Any],
-		   let version = header["version"] as? Int,
-		   version > Self.currentVersion
-		{
-			throw BrowserPersistenceError.unsupportedVersion
+		try validateWindowRecords(state.windowRecords ?? [])
+		for name in ["browser-state.json", "browser-state.backup.json"] {
+			let url = directory.appendingPathComponent(name)
+			guard let currentData = try? Data(contentsOf: url) else { continue }
+			do {
+				_ = try decodeSnapshot(currentData)
+			} catch BrowserPersistenceError.unsupportedVersion {
+				throw BrowserPersistenceError.unsupportedVersion
+			} catch {
+				continue
+			}
 		}
 		var state = state
 		if let oldState = try? loadPersistedState() {
@@ -175,6 +195,7 @@ final class BrowserPersistence: @unchecked Sendable {
 		}
 		let data = try JSONEncoder().encode(Envelope(version: Self.currentVersion, state: state))
 		_ = try decodeSnapshot(data)
+		let currentURL = directory.appendingPathComponent("browser-state.json")
 		var historyWasRemoved = false
 		if FileManager.default.fileExists(atPath: currentURL.path),
 		   let previousData = try? Data(contentsOf: currentURL),
@@ -228,6 +249,7 @@ final class BrowserPersistence: @unchecked Sendable {
 		}
 		let envelope = try JSONDecoder().decode(Envelope.self, from: data)
 		let state = envelope.state
+		try validateWindowRecords(state.windowRecords ?? [])
 		guard Set(state.openTabs.map(\.id)).count == state.openTabs.count,
 		      Set(state.bookmarks.map(\.id)).count == state.bookmarks.count,
 		      Set(state.workspace.spaces.map(\.id)).count == state.workspace.spaces.count,
@@ -239,6 +261,22 @@ final class BrowserPersistence: @unchecked Sendable {
 			throw BrowserPersistenceError.invalidSnapshot
 		}
 		return state
+	}
+
+	private nonisolated func validateWindowRecords(_ records: [BrowserWindowRecord]) throws {
+		var windowIDs = Set<UUID>()
+		for record in records {
+			guard record.version <= 1 else {
+				throw BrowserPersistenceError.unsupportedVersion
+			}
+			guard record.version == 1,
+			      windowIDs.insert(record.windowID).inserted,
+			      Set(record.tabIDs).count == record.tabIDs.count,
+			      record.tabIDs.contains(record.selectedTabID)
+			else {
+				throw BrowserPersistenceError.invalidSnapshot
+			}
+		}
 	}
 
 	private nonisolated func read<Value: Decodable>(_ type: Value.Type, named fileName: String) throws -> Value? {

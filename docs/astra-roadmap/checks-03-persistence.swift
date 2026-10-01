@@ -23,6 +23,18 @@ struct BrowserPersistenceCheck {
 		let restored = try persistence.loadPersistedState()
 		assert(restored?.openTabs.map(\.id) == [tab.id])
 		assert(restored?.windowRecords?.first?.tabIDs == [tab.id])
+		for value in ["https://example.com", "http://localhost:8080/path"] {
+			assert(BrowserHomepage.validURL(value) != nil)
+		}
+		for value in [
+			"https://user:secret@example.com",
+			"https://exa%20mple.com",
+			"https://example.com:0",
+			"https://example.com:65536",
+			"https://example.com:abc",
+		] {
+			assert(BrowserHomepage.validURL(value) == nil)
+		}
 		let currentURL = directory.appendingPathComponent("browser-state.json")
 		let firstGeneration = try Data(contentsOf: currentURL)
 
@@ -42,6 +54,25 @@ struct BrowserPersistenceCheck {
 		try JSONSerialization.data(withJSONObject: legacy).write(to: currentURL)
 		let legacyState = try persistence.loadPersistedState()
 		assert(legacyState?.openTabs.first?.id == tab.id)
+		var duplicateRecordState = state
+		let duplicateRecord = BrowserWindowRecord(
+			windowID: state.windowRecords![0].windowID,
+			tabIDs: [tab.id],
+			selectedTabID: tab.id
+		)
+		duplicateRecordState.windowRecords = [state.windowRecords![0], duplicateRecord]
+		do {
+			try persistence.savePersistedState(duplicateRecordState)
+			assertionFailure("Duplicate window records were accepted")
+		} catch BrowserPersistenceError.invalidSnapshot {}
+		var futureRecordState = state
+		var futureRecord = state.windowRecords![0]
+		futureRecord.version = 2
+		futureRecordState.windowRecords = [futureRecord]
+		do {
+			try persistence.savePersistedState(futureRecordState)
+			assertionFailure("Future window record was accepted")
+		} catch BrowserPersistenceError.unsupportedVersion {}
 
 		let future = Data(#"{"version":99,"state":{"unknown":true}}"#.utf8)
 		try future.write(to: currentURL)
