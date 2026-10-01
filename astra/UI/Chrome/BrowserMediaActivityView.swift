@@ -32,7 +32,7 @@ private struct BrowserMediaActivityCard: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	var body: some View {
-		if controller.isPlayingMedia || controller.isCapturing || controller.pausedFromBrowser {
+		if controller.isPlayingMedia || controller.hasPausedMedia || controller.isCapturing || controller.pausedFromBrowser || controller.areMediaElementsMuted {
 			HStack(spacing: 8) {
 				Button(action: openTab) {
 					Label {
@@ -40,13 +40,13 @@ private struct BrowserMediaActivityCard: View {
 							Text(verbatim: controller.mediaTitle ?? title)
 								.font(.caption.weight(.semibold))
 								.lineLimit(1)
-							Text(controller.isCapturing ? "Camera or microphone in use" : controller.pausedFromBrowser ? "Paused — open the page to resume" : controller.mediaArtist ?? "Playing media")
+							Text(activityDescription)
 								.font(.caption2)
 								.foregroundStyle(.secondary)
 								.lineLimit(1)
 						}
 					} icon: {
-						Image(systemName: controller.isCapturing ? "mic.fill" : "waveform")
+						Image(systemName: controller.isCapturing ? "mic.fill" : controller.isPlayingMedia ? "waveform" : "pause.fill")
 							.symbolEffect(.variableColor, isActive: controller.isPlayingMedia && !reduceMotion)
 					}
 					.frame(maxWidth: .infinity, alignment: .leading)
@@ -60,6 +60,22 @@ private struct BrowserMediaActivityCard: View {
 						.buttonStyle(.glass)
 						.accessibilityIdentifier("media-pause-\(controller.id)")
 				}
+				if controller.hasPausedMedia || controller.pausedFromBrowser {
+					Button("Try Resume Audio and Video", systemImage: "play.fill", action: controller.resumeMedia)
+						.labelStyle(.iconOnly)
+						.buttonStyle(.glass)
+						.accessibilityIdentifier("media-resume-\(controller.id)")
+				}
+				if controller.isPlayingMedia || controller.hasPausedMedia || controller.pausedFromBrowser {
+					Button(
+						controller.areMediaElementsMuted ? "Unmute Main-Frame Audio and Video" : "Mute Main-Frame Audio and Video",
+						systemImage: controller.areMediaElementsMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+						action: controller.toggleMediaElementsMuted
+					)
+					.labelStyle(.iconOnly)
+					.buttonStyle(.glass)
+					.accessibilityIdentifier("media-mute-\(controller.id)")
+				}
 				if controller.isCapturing {
 					Button("Stop Camera and Microphone", systemImage: "mic.slash", action: { controller.stopCapture() })
 						.labelStyle(.iconOnly)
@@ -71,5 +87,21 @@ private struct BrowserMediaActivityCard: View {
 			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
 			.accessibilityIdentifier("media-activity-\(controller.id)")
 		}
+	}
+
+	private var activityDescription: String {
+		if controller.isCapturing {
+			return "Camera or microphone in use"
+		}
+		if controller.pausedFromBrowser {
+			return "Paused by Astra"
+		}
+		if controller.areMediaElementsMuted {
+			return "Main-frame HTML audio/video muted"
+		}
+		if controller.isPlayingMedia {
+			return controller.mediaArtist ?? "Playing media"
+		}
+		return "Paused media"
 	}
 }

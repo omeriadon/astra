@@ -28,9 +28,11 @@ final class BrowserController: NSObject, Identifiable {
 	@ObservationIgnored
 	private var isInvalidated = false
 	private(set) var isPlayingMedia = false
+	private(set) var hasPausedMedia = false
 	private(set) var mediaTitle: String?
 	private(set) var mediaArtist: String?
 	private(set) var pausedFromBrowser = false
+	private(set) var areMediaElementsMuted = false
 	private(set) var committedURL: URL?
 	private(set) var hasOnlySecureContent = false
 	var showsFind = false
@@ -450,23 +452,27 @@ final class BrowserController: NSObject, Identifiable {
 		let state = await webView.requestMediaPlaybackState()
 		guard owns(webView), documentID == navigationIdentifier else { return }
 		isPlayingMedia = state == .playing
+		hasPausedMedia = state == .paused
+		cameraCaptureState = webView.cameraCaptureState
+		microphoneCaptureState = webView.microphoneCaptureState
 		if state == .playing || state == .none {
 			pausedFromBrowser = false
 		}
-		if state == .playing {
+		if state == .none {
+			mediaTitle = nil
+			mediaArtist = nil
+		}
+		if state != .none {
 			let script = "({ title: navigator.mediaSession?.metadata?.title ?? '', artist: navigator.mediaSession?.metadata?.artist ?? '' })"
 			let metadata: [String: String]? = await withCheckedContinuation { continuation in
 				webView.evaluateJavaScript(script, in: nil, in: .defaultClient) { result in
 					continuation.resume(returning: (try? result.get()) as? [String: String])
 				}
 			}
-			if documentID == navigationIdentifier, let metadata {
-				mediaTitle = metadata["title"].flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
-				mediaArtist = metadata["artist"].flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
-			}
+			guard owns(webView), documentID == navigationIdentifier else { return }
+			mediaTitle = metadata?["title"].flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
+			mediaArtist = metadata?["artist"].flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
 		}
-		cameraCaptureState = webView.cameraCaptureState
-		microphoneCaptureState = webView.microphoneCaptureState
 	}
 
 	func findNext(backwards: Bool = false) {
@@ -511,6 +517,73 @@ final class BrowserController: NSObject, Identifiable {
 			self.isPlayingMedia = false
 			self.pausedFromBrowser = true
 		})
+	}
+
+	func resumeMedia() {
+		guard let webView = createdWebView, owns(webView) else { return }
+		let documentID = navigationIdentifier
+		let script = """
+		(() => {
+			for (const media of document.querySelectorAll('audio, video')) {
+				if (media.paused && !media.ended) media.play().catch(() => {});
+			}
+			return true;
+		})()
+		"""
+		webView.evaluateJavaScript(script, in: nil, in: .defaultClient) { [weak self, weak webView] _ in
+			guard let self, let webView, owns(webView), documentID == navigationIdentifier else { return }
+			Task { @MainActor [weak self] in
+				try? await Task.sleep(for: .milliseconds(250))
+				guard let self, owns(webView), documentID == navigationIdentifier else { return }
+				await refreshActivity()
+			}
+		}
+	}
+
+	func toggleMediaElementsMuted() {
+		guard let webView = createdWebView, owns(webView) else { return }
+		let documentID = navigationIdentifier
+		let shouldMute = !areMediaElementsMuted
+		let script = """
+		(() => {
+			const current = window.__astraMediaMute;
+			if (!\(shouldMute)) {
+				if (current) {
+					current.observer.disconnect();
+					for (const media of current.elements) media.muted = current.original.get(media);
+					delete window.__astraMediaMute;
+				}
+				return true;
+			}
+			if (current) return true;
+			const original = new WeakMap();
+			const elements = new Set();
+			const mute = media => {
+				if (!original.has(media)) original.set(media, media.muted);
+				elements.add(media);
+				media.muted = true;
+			};
+			for (const media of document.querySelectorAll('audio, video')) mute(media);
+			const observer = new MutationObserver(records => {
+				for (const record of records) {
+					for (const node of record.addedNodes) {
+						if (!(node instanceof Element)) continue;
+						if (node.matches('audio, video')) mute(node);
+						for (const media of node.querySelectorAll('audio, video')) mute(media);
+					}
+				}
+			});
+			observer.observe(document.documentElement, { childList: true, subtree: true });
+			window.__astraMediaMute = { original, elements, observer };
+			return true;
+		})()
+		"""
+		webView.evaluateJavaScript(script, in: nil, in: .defaultClient) { [weak self, weak webView] result in
+			guard let self, let webView, owns(webView), documentID == navigationIdentifier,
+			      (try? result.get()) as? Bool == true
+			else { return }
+			areMediaElementsMuted = shouldMute
+		}
 	}
 
 	func stopCapture(capability: BrowserSitePermissions.Capability? = nil) {
@@ -1194,9 +1267,12 @@ extension BrowserController: WKNavigationDelegate {
 	func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
 		guard owns(webView) else { return }
 		isZapping = false
+		isPlayingMedia = false
 		mediaTitle = nil
 		mediaArtist = nil
 		pausedFromBrowser = false
+		hasPausedMedia = false
+		areMediaElementsMuted = false
 		currentNavigation = navigation
 		failedRequest = nil
 		navigationFailure = nil
