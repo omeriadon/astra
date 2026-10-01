@@ -58,6 +58,23 @@ struct HistoryPolicyCheck {
 		assert(restoredPolicy.didChangeSameDocument(to: URL(string: "https://example.com/next")!, navigationID: 1))
 		assert(restoredPolicy.didCommit(normalized, navigationID: 2))
 		assert(!restoredPolicy.didChangeSameDocument(to: normalized, navigationID: 2))
+		let committedVisitID = UUID()
+		assert(BrowserVisit.matchesRecordedVisit(
+			url: normalized,
+			navigationID: 2,
+			lastURL: normalized,
+			lastNavigationID: 2,
+			visitID: committedVisitID
+		))
+		assert(!BrowserVisit.matchesRecordedVisit(
+			url: normalized,
+			navigationID: 3,
+			lastURL: normalized,
+			lastNavigationID: 3,
+			visitID: nil
+		))
+		var clearedReloadPolicy = BrowserVisitPolicy()
+		assert(clearedReloadPolicy.didCommit(normalized, navigationID: 3))
 		var failedRestorePolicy = BrowserVisitPolicy(suppressInitialVisit: true)
 		assert(!failedRestorePolicy.didCommit(URL(string: "file:///tmp/page.html")!, navigationID: 1))
 		assert(failedRestorePolicy.didCommit(normalized, navigationID: 2))

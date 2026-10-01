@@ -1122,7 +1122,13 @@ final class Browser {
 	private func recordHistoryVisit(from controller: BrowserController, url: URL, title: String, navigationID: Int) {
 		guard !isPrivate, !isMini, controller.canRecordVisit,
 		      let safeURL = BrowserVisit.normalizedURL(url) else { return }
-		if lastVisitedURL[controller.id] == safeURL, lastVisitedDocument[controller.id] == navigationID {
+		if BrowserVisit.matchesRecordedVisit(
+			url: safeURL,
+			navigationID: navigationID,
+			lastURL: lastVisitedURL[controller.id],
+			lastNavigationID: lastVisitedDocument[controller.id],
+			visitID: lastVisitID[controller.id]
+		) {
 			updateHistoryVisitTitle(from: controller, url: safeURL, title: title, navigationID: navigationID)
 			return
 		}
@@ -1194,12 +1200,10 @@ final class Browser {
 		historyClearedAt = date
 		deletedVisitsAt.removeAll()
 		lastVisitID.removeAll()
+		lastVisitedURL.removeAll()
+		lastVisitedDocument.removeAll()
 		closedHistoryTabs.removeAll()
 		for tab in tabs {
-			for controller in [tab.controller].compactMap(\.self) + tab.peeks.map(\.controller) {
-				lastVisitedURL[controller.id] = controller.committedURL
-				lastVisitedDocument[controller.id] = controller.navigationIdentifier
-			}
 			tab.clearRecordedHistory()
 		}
 		historyVisits.removeAll()

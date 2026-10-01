@@ -83,6 +83,16 @@ nonisolated struct BrowserVisit: Codable, Identifiable, Equatable, Sendable {
 		}
 	}
 
+	static func matchesRecordedVisit(
+		url: URL,
+		navigationID: Int,
+		lastURL: URL?,
+		lastNavigationID: Int?,
+		visitID: UUID?
+	) -> Bool {
+		visitID != nil && lastURL == url && lastNavigationID == navigationID
+	}
+
 	static func summaries(_ visits: [Self]) -> [BrowserVisitSummary] {
 		let groups = Dictionary(grouping: visits, by: \.url)
 		return groups.map { url, visits in
