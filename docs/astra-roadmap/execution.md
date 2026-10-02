@@ -30,8 +30,8 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 | [15-address-intelligence](tasks/15-address-intelligence.md) | primary reviewed; Mac build verified; native runtime gates open | `91501ab`, `fb98be7`, handoff `9a27de4`, primary `39e6530`; exact15 Mac build12.868s; cumulative15 includes reviewed10/16/17 |
 | [16-chrome-find-zoom](tasks/16-chrome-find-zoom.md) | primary reviewed; Mac build verified | d9aeeb5, Mac19.443s; combined once in10; native find/focus/iOS gates open |
 | [17-keyboard-menus](tasks/17-keyboard-menus.md) | primary reviewed; Mac build verified | 32f26ac, Mac13.075s; combined once in15; keyboard/public inspector/iOS gates open |
-| [18-site-data-preferences](tasks/18-site-data-preferences.md) | queued | — |
-| [19-start-page](tasks/19-start-page.md) | in progress; focused production checks pass; Mac build pending | source baseline `6a7771d`, pointer `ba47531`; start-page implementation and check are uncommitted |
+| [18-site-data-preferences](tasks/18-site-data-preferences.md) | independently reviewed; Mac build verified; runtime gates open | baseline `abffc0e`, model checkpoints `69288e6`/`aa53150`, implementation `6707966fe1ca406410c3783b288abee56490df99`; production sync-model check passes; exact `astra` / `My Mac` build7.528s, zero errors |
+| [19-start-page](tasks/19-start-page.md) | primary and independent readonly reviewed; Mac build verified; runtime gates open | source checkpoint `abffc0e`, docs checkpoint `cd98a0c`; focused production preference/history check passes; exact19 `astra` / `My Mac` build23.747s |
 | [20-security-reputation](tasks/20-security-reputation.md) | queued | — |
 | [21-content-blocking](tasks/21-content-blocking.md) | queued | — |
 | [22-extensions](tasks/22-extensions.md) | queued | — |
