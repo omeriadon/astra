@@ -36,7 +36,7 @@ extension Browser {
 				detail: isSearch ? browserSearchConfiguration.searchLabel(for: query, isPrivate: isPrivate) : "Open Website",
 				symbol: isSearch ? "magnifyingglass" : "globe",
 				score: isSearch ? 0.8 : 1.1,
-				perform: { self.selectedTab?.activeController?.load(destination) }
+				perform: { self.selectedTab?.activeController?.loadFromAddressBar(destination) }
 			))
 		}
 		for action in actions {

@@ -159,7 +159,7 @@ struct BrowserAddressField: View {
 			configuration: searchConfiguration,
 			isPrivate: browser.isPrivate
 		) else { return }
-		browser.selectedTab?.activeController?.load(destination)
+		browser.selectedTab?.activeController?.loadFromAddressBar(destination)
 		addressText = BrowserAddress.displayString(
 			for: destination,
 			style: addressDisplayStyle,
