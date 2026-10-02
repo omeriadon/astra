@@ -79,9 +79,11 @@ struct BrowserAddressField: View {
 			addressText = next
 		}
 		.onChange(of: addressDisplayStyle) { _, _ in
+			guard !isFocused else { return }
 			updateAddressFromURL()
 		}
 		.onChange(of: searchConfigurationValue) { _, _ in
+			guard !isFocused else { return }
 			updateAddressFromURL()
 		}
 		.onChange(of: isFocused) { _, focused in

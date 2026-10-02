@@ -297,6 +297,9 @@ final class BrowserController: NSObject, Identifiable {
 			if let createdWebView, Double(createdWebView.pageZoom) != pageZoom {
 				createdWebView.pageZoom = CGFloat(pageZoom)
 			}
+			if BrowserZoomPolicy.didChange(from: oldValue, to: pageZoom) {
+				zoomDidChange?()
+			}
 		}
 	}
 
@@ -337,6 +340,8 @@ final class BrowserController: NSObject, Identifiable {
 
 	@ObservationIgnored
 	var navigationDidChange: (@MainActor () -> Void)?
+	@ObservationIgnored
+	var zoomDidChange: (@MainActor () -> Void)?
 	@ObservationIgnored
 	var historyVisitDidCommit: (@MainActor (URL, String, Int) -> Void)?
 	@ObservationIgnored
@@ -627,7 +632,11 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func findNext(backwards: Bool = false) {
-		guard let webView = createdWebView, owns(webView) else { return }
+		guard BrowserFindGeneration.canSearch(awaitingNavigationCommit: awaitsNavigationCommit),
+		      navigationFailure == nil,
+		      let webView = createdWebView,
+		      owns(webView)
+		else { return }
 		let generation = findGeneration.advance()
 		let query = findText
 		let configuration = WKFindConfiguration()
@@ -826,6 +835,7 @@ final class BrowserController: NSObject, Identifiable {
 		}
 		createdWebView?.configuration.userContentController.removeAllUserScripts()
 		navigationDidChange = nil
+		zoomDidChange = nil
 		historyVisitDidCommit = nil
 		historyVisitTitleDidChange = nil
 		extensionStateDidChange = nil
@@ -1017,7 +1027,6 @@ final class BrowserController: NSObject, Identifiable {
 			webView.observe(\.pageZoom, options: [.new]) { [weak self] webView, _ in
 				MainActor.assumeIsolated {
 					self?.pageZoom = Double(webView.pageZoom)
-					self?.navigationDidChange?()
 				}
 			},
 		]
@@ -1644,6 +1653,9 @@ extension BrowserController: WKNavigationDelegate {
 	func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
 		guard owns(webView), navigation === currentNavigation else { return }
 		updateHistory()
+		if showsFind, !findText.isEmpty {
+			findNext()
+		}
 		if !hasDeclaredThemeColor,
 		   let pageBackgroundColor = webView.underPageBackgroundColor
 		{

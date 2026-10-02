@@ -493,6 +493,10 @@ final class BrowserTab: Identifiable {
 		peek.controller.navigationDidChange = { [weak self] in
 			self?.markNavigationModified()
 		}
+		peek.controller.zoomDidChange = { [weak self] in
+			guard let self, !self.isApplyingSynchronizedMetadata else { return }
+			self.markNavigationModified()
+		}
 		peek.controller.scrollPositionDidChange = { [weak self] in
 			self?.markModifiedForScroll()
 		}
@@ -510,6 +514,10 @@ final class BrowserTab: Identifiable {
 		}
 		controller.navigationDidChange = { [weak self] in
 			self?.markNavigationModified()
+		}
+		controller.zoomDidChange = { [weak self] in
+			guard let self, !self.isApplyingSynchronizedMetadata else { return }
+			self.markNavigationModified()
 		}
 		controller.scrollPositionDidChange = { [weak self] in
 			self?.markModifiedForScroll()
