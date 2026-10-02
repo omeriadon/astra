@@ -14,6 +14,9 @@ struct BrowserSettingsView: View {
 		case account
 		case privacyAndSecurity
 		case extensions
+		#if os(macOS)
+			case websiteApps
+		#endif
 		case advanced
 		case about
 		#if DEBUG
@@ -78,6 +81,16 @@ struct BrowserSettingsView: View {
 						identifier: "settings-extensions",
 						terms: ["Chrome", "Safari", "Web Store", "Dark Reader", "uBlock Origin Lite", "Import ZIP"]
 					)
+				#if os(macOS)
+					case .websiteApps:
+						Definition(
+							title: "Website Apps",
+							symbol: "macwindow.badge.plus",
+							section: .advanced,
+							identifier: "settings-website-apps",
+							terms: ["Dock", "Add Website to Dock", "Standalone", "Launch", "Reveal", "Keep in Dock", "Uninstall"]
+						)
+				#endif
 				case .advanced:
 					Definition(
 						title: "Advanced",
@@ -182,6 +195,10 @@ struct BrowserSettingsView: View {
 							BrowserAdvancedSettingsView()
 						case .extensions:
 							BrowserExtensionsSettingsView(browser: browser)
+						#if os(macOS)
+							case .websiteApps:
+								BrowserWebsiteAppsSettingsView()
+						#endif
 						case .about:
 							AboutView()
 						#if DEBUG
