@@ -20,12 +20,40 @@ private func persistenceDirectory() throws -> URL {
 /// One value snapshot is committed atomically, including tab organization and selection.
 struct BrowserPersistedState: Codable, @unchecked Sendable {
 	var bookmarks: [Bookmark]
+	var readingList: [ReadingListItem] = []
 	var openTabs: [OpenTab]
 	var closedTabs: [OpenTab]
 	var workspace: BrowserWorkspace
 	var snapshot: BrowserSnapshot
 	var historyVisits: [BrowserVisit]? = nil
 	var windowRecords: [BrowserWindowRecord]? = nil
+
+	private enum CodingKeys: String, CodingKey {
+		case bookmarks, readingList, openTabs, closedTabs, workspace, snapshot, historyVisits, windowRecords
+	}
+
+	init(bookmarks: [Bookmark], readingList: [ReadingListItem] = [], openTabs: [OpenTab], closedTabs: [OpenTab], workspace: BrowserWorkspace, snapshot: BrowserSnapshot, historyVisits: [BrowserVisit]? = nil, windowRecords: [BrowserWindowRecord]? = nil) {
+		self.bookmarks = bookmarks
+		self.readingList = readingList
+		self.openTabs = openTabs
+		self.closedTabs = closedTabs
+		self.workspace = workspace
+		self.snapshot = snapshot
+		self.historyVisits = historyVisits
+		self.windowRecords = windowRecords
+	}
+
+	init(from decoder: Decoder) throws {
+		let values = try decoder.container(keyedBy: CodingKeys.self)
+		bookmarks = try values.decode([Bookmark].self, forKey: .bookmarks)
+		readingList = try values.decodeIfPresent([ReadingListItem].self, forKey: .readingList) ?? []
+		openTabs = try values.decode([OpenTab].self, forKey: .openTabs)
+		closedTabs = try values.decode([OpenTab].self, forKey: .closedTabs)
+		workspace = try values.decode(BrowserWorkspace.self, forKey: .workspace)
+		snapshot = try values.decode(BrowserSnapshot.self, forKey: .snapshot)
+		historyVisits = try values.decodeIfPresent([BrowserVisit].self, forKey: .historyVisits)
+		windowRecords = try values.decodeIfPresent([BrowserWindowRecord].self, forKey: .windowRecords)
+	}
 }
 
 struct BrowserWindowRecord: Codable, Equatable, Sendable {
@@ -130,6 +158,7 @@ enum BrowserPersistenceError: LocalizedError, Equatable {
 
 final class BrowserPersistence: @unchecked Sendable {
 	private let directory: URL
+	private var readingArchiveDirectory: URL { directory.appendingPathComponent("reading-list", isDirectory: true) }
 
 	private nonisolated struct Envelope: Codable {
 		let version: Int
@@ -141,6 +170,47 @@ final class BrowserPersistence: @unchecked Sendable {
 	@MainActor
 	init() throws {
 		directory = try persistenceDirectory()
+	}
+
+	nonisolated func saveReadingArchive(_ data: Data, id: UUID, url: URL) throws {
+		guard !data.isEmpty, data.count <= 32 * 1024 * 1024 else { throw BrowserUserData.ImportError.tooLarge }
+		guard BrowserHomepage.validURL(url.absoluteString) != nil else { throw BrowserPersistenceError.invalidSnapshot }
+		let urlData = Data(url.absoluteString.utf8)
+		guard urlData.count <= 16_384 else { throw BrowserUserData.ImportError.tooLarge }
+		let folder = readingArchiveDirectory
+		try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+		let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+		let archives = files.filter { $0.pathExtension == "webarchive" }
+		let currentSize = files.reduce(Int64(0)) { total, file in
+			total + Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+		}
+		let destination = folder.appendingPathComponent(id.uuidString).appendingPathExtension("webarchive")
+		let previousSize = Int64((try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+		let metadataURL = destination.appendingPathExtension("url")
+		let previousMetadataSize = Int64((try? metadataURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+		guard archives.count < 50 || FileManager.default.fileExists(atPath: destination.path),
+		      currentSize - previousSize - previousMetadataSize + Int64(data.count + urlData.count) <= 256 * 1024 * 1024
+		else { throw BrowserUserData.ImportError.tooLarge }
+		try data.write(to: destination, options: .atomic)
+		try urlData.write(to: metadataURL, options: .atomic)
+	}
+
+	nonisolated func loadReadingArchive(id: UUID, url expectedURL: URL) throws -> Data? {
+		let url = readingArchiveDirectory.appendingPathComponent(id.uuidString).appendingPathExtension("webarchive")
+		let metadataURL = url.appendingPathExtension("url")
+		guard let storedURL = try? String(contentsOf: metadataURL, encoding: .utf8),
+		      storedURL == expectedURL.absoluteString,
+		      FileManager.default.fileExists(atPath: url.path) else { return nil }
+		let data = try Data(contentsOf: url)
+		guard data.count <= 32 * 1024 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
+		return data
+	}
+
+	nonisolated func removeReadingArchive(id: UUID) throws {
+		let url = readingArchiveDirectory.appendingPathComponent(id.uuidString).appendingPathExtension("webarchive")
+		for file in [url, url.appendingPathExtension("url")] where FileManager.default.fileExists(atPath: file.path) {
+			try FileManager.default.removeItem(at: file)
+		}
 	}
 
 	init(directory: URL) {
@@ -235,14 +305,15 @@ final class BrowserPersistence: @unchecked Sendable {
 		let data = try JSONEncoder().encode(Envelope(version: Self.currentVersion, state: state))
 		_ = try decodeSnapshot(data)
 		let currentURL = directory.appendingPathComponent("browser-state.json")
-		var historyWasRemoved = false
+		var privateDataWasRemoved = false
 		if FileManager.default.fileExists(atPath: currentURL.path),
 		   let previousData = try? Data(contentsOf: currentURL),
 		   (try? decodeSnapshot(previousData)) != nil
 		{
 			let previous = try decodeSnapshot(previousData)
 			let incomingIDs = Set((state.historyVisits ?? []).map(\.id))
-			historyWasRemoved = (previous.historyVisits ?? []).contains { !incomingIDs.contains($0.id) }
+			privateDataWasRemoved = (previous.historyVisits ?? []).contains { !incomingIDs.contains($0.id) }
+				|| previous.readingList.contains { old in !state.readingList.contains(where: { $0.id == old.id }) }
 				|| previous.snapshot.historyClearedAt < state.snapshot.historyClearedAt
 				|| previous.closedTabs.contains { old in
 					!state.closedTabs.contains(where: { $0.id == old.id })
@@ -268,7 +339,7 @@ final class BrowserPersistence: @unchecked Sendable {
 			)
 		}
 		try data.write(to: currentURL, options: .atomic)
-		if historyWasRemoved {
+		if privateDataWasRemoved {
 			try data.write(to: directory.appendingPathComponent("browser-state.backup.json"), options: .atomic)
 		}
 		for name in ["bookmarks.json", "favourites.json", "open-tabs.json", "closed-tabs.json", "workspace.json", "browser-snapshot.json"] {
@@ -301,7 +372,20 @@ final class BrowserPersistence: @unchecked Sendable {
 		let state = envelope.state
 		try validateWindowRecords(state.windowRecords ?? [])
 		guard Set(state.openTabs.map(\.id)).count == state.openTabs.count,
+		      state.bookmarks.count <= 100_000,
 		      Set(state.bookmarks.map(\.id)).count == state.bookmarks.count,
+		      state.bookmarks.allSatisfy({ bookmark in
+			      bookmark.name.utf8.count <= 16_384
+					&& bookmark.folder.utf8.count <= 4_096
+					&& (bookmark.order == Int.min || (0 ... 100_000).contains(bookmark.order))
+		      }),
+		      state.readingList.count <= 100_000,
+		      Set(state.readingList.map(\.id)).count == state.readingList.count,
+		      state.readingList.allSatisfy({ item in
+			      BrowserHomepage.validURL(item.url.absoluteString) != nil
+					&& item.url.absoluteString.utf8.count <= 16_384
+					&& item.title.utf8.count <= 16_384
+		      }),
 		      Set(state.workspace.spaces.map(\.id)).count == state.workspace.spaces.count,
 		      state.openTabs.allSatisfy({ $0.pageZoom.isFinite && (0.25 ... 5).contains($0.pageZoom) }),
 		      state.workspace.spaces.allSatisfy({ space in

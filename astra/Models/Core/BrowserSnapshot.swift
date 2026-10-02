@@ -7,6 +7,7 @@ struct BrowserSnapshot: Codable, Equatable, Sendable {
 	var deletedBookmarkIDs: Set<UUID>
 	// ponytail: retain tombstones indefinitely; add peer-watermark compaction if snapshot growth becomes material.
 	var deletedBookmarksAt: [UUID: Date]
+	var deletedReadingListAt: [UUID: Date]
 	var closedTabsAt: [UUID: Date]
 	var deletedSpacesAt: [UUID: Date]
 	var deletedVisitsAt: [UUID: Date]
@@ -18,6 +19,7 @@ struct BrowserSnapshot: Codable, Equatable, Sendable {
 		closedTabIDs: Set<UUID> = [],
 		deletedBookmarkIDs: Set<UUID> = [],
 		deletedBookmarksAt: [UUID: Date] = [:],
+		deletedReadingListAt: [UUID: Date] = [:],
 		closedTabsAt: [UUID: Date] = [:],
 		deletedSpacesAt: [UUID: Date] = [:],
 		deletedVisitsAt: [UUID: Date] = [:],
@@ -28,6 +30,7 @@ struct BrowserSnapshot: Codable, Equatable, Sendable {
 		self.closedTabIDs = closedTabIDs
 		self.deletedBookmarkIDs = deletedBookmarkIDs
 		self.deletedBookmarksAt = deletedBookmarksAt
+		self.deletedReadingListAt = deletedReadingListAt
 		self.closedTabsAt = closedTabsAt
 		self.deletedSpacesAt = deletedSpacesAt
 		self.deletedVisitsAt = deletedVisitsAt
@@ -39,7 +42,7 @@ struct BrowserSnapshot: Codable, Equatable, Sendable {
 		case selectedTabModifiedAt
 		case closedTabIDs
 		case deletedBookmarkIDs
-		case deletedBookmarksAt, closedTabsAt, deletedSpacesAt, deletedVisitsAt, historyClearedAt
+		case deletedBookmarksAt, deletedReadingListAt, closedTabsAt, deletedSpacesAt, deletedVisitsAt, historyClearedAt
 	}
 
 	nonisolated init(from decoder: Decoder) throws {
@@ -49,6 +52,7 @@ struct BrowserSnapshot: Codable, Equatable, Sendable {
 		closedTabIDs = try container.decodeIfPresent(Set<UUID>.self, forKey: .closedTabIDs) ?? []
 		deletedBookmarkIDs = try container.decodeIfPresent(Set<UUID>.self, forKey: .deletedBookmarkIDs) ?? []
 		deletedBookmarksAt = try container.decodeIfPresent([UUID: Date].self, forKey: .deletedBookmarksAt) ?? [:]
+		deletedReadingListAt = try container.decodeIfPresent([UUID: Date].self, forKey: .deletedReadingListAt) ?? [:]
 		closedTabsAt = try container.decodeIfPresent([UUID: Date].self, forKey: .closedTabsAt) ?? [:]
 		deletedSpacesAt = try container.decodeIfPresent([UUID: Date].self, forKey: .deletedSpacesAt) ?? [:]
 		deletedVisitsAt = try container.decodeIfPresent([UUID: Date].self, forKey: .deletedVisitsAt) ?? [:]
@@ -62,6 +66,7 @@ struct BrowserSnapshot: Codable, Equatable, Sendable {
 		try container.encode(closedTabIDs, forKey: .closedTabIDs)
 		try container.encode(deletedBookmarkIDs, forKey: .deletedBookmarkIDs)
 		try container.encode(deletedBookmarksAt, forKey: .deletedBookmarksAt)
+		try container.encode(deletedReadingListAt, forKey: .deletedReadingListAt)
 		try container.encode(closedTabsAt, forKey: .closedTabsAt)
 		try container.encode(deletedSpacesAt, forKey: .deletedSpacesAt)
 		try container.encode(deletedVisitsAt, forKey: .deletedVisitsAt)

@@ -5,6 +5,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 	var tabs: [OpenTab]
 	var workspace: BrowserWorkspace?
 	var bookmarks: [Bookmark]
+	var readingList: [ReadingListItem]
 	var history: [BrowserVisit]
 	var browser: BrowserSnapshot
 	var settings: [String: SyncedSetting]
@@ -13,6 +14,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		tabs: [OpenTab],
 		workspace: BrowserWorkspace,
 		bookmarks: [Bookmark],
+		readingList: [ReadingListItem] = [],
 		history: [BrowserVisit] = [],
 		browser: BrowserSnapshot,
 		settings: [String: SyncedSetting]
@@ -20,13 +22,14 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		self.tabs = tabs
 		self.workspace = workspace
 		self.bookmarks = bookmarks
+		self.readingList = readingList
 		self.history = history
 		self.browser = browser
 		self.settings = settings
 	}
 
 	private enum CodingKeys: String, CodingKey {
-		case version, tabs, workspace, bookmarks, history, browser, settings
+		case version, tabs, workspace, bookmarks, readingList, history, browser, settings
 	}
 
 	nonisolated init(from decoder: Decoder) throws {
@@ -34,7 +37,8 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		version = try values.decodeIfPresent(Int.self, forKey: .version) ?? 1
 		tabs = try values.decode([OpenTab].self, forKey: .tabs)
 		workspace = try values.decodeIfPresent(BrowserWorkspace.self, forKey: .workspace)
-		bookmarks = try values.decode([Bookmark].self, forKey: .bookmarks)
+		bookmarks = Bookmark.preservingLegacyOrder(try values.decode([Bookmark].self, forKey: .bookmarks))
+		readingList = try values.decodeIfPresent([ReadingListItem].self, forKey: .readingList) ?? []
 		history = try values.decodeIfPresent([BrowserVisit].self, forKey: .history) ?? []
 		browser = try values.decode(BrowserSnapshot.self, forKey: .browser)
 		settings = try values.decode([String: SyncedSetting].self, forKey: .settings)
@@ -46,6 +50,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		try values.encode(tabs, forKey: .tabs)
 		try values.encodeIfPresent(workspace, forKey: .workspace)
 		try values.encode(bookmarks, forKey: .bookmarks)
+		try values.encode(readingList, forKey: .readingList)
 		try values.encode(history, forKey: .history)
 		try values.encode(browser, forKey: .browser)
 		try values.encode(settings, forKey: .settings)
@@ -71,6 +76,11 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 			var bookmark = bookmark
 			bookmark.url = credentialFreeSyncURL(bookmark.url)
 			return bookmark
+		}
+		projected.readingList = readingList.filter { isPortableSyncURL($0.url) }.map { item in
+			var item = item
+			item.url = credentialFreeSyncURL(item.url)
+			return item
 		}
 		projected.history = history.filter { isPortableSyncURL($0.url) }.map { visit in
 			var visit = visit
@@ -124,7 +134,9 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		for bookmark in local.bookmarks where !isPortableSyncURL(bookmark.url) {
 			bookmarksByID[bookmark.id] = bookmark
 		}
-		projected.bookmarks = bookmarksByID.values.sorted { $0.id.uuidString < $1.id.uuidString }
+		projected.bookmarks = bookmarksByID.values.sorted {
+			$0.order == $1.order ? $0.id.uuidString < $1.id.uuidString : $0.order < $1.order
+		}
 
 		guard let localWorkspace = local.workspace else { return projected }
 		var target = projected.workspace ?? localWorkspace
@@ -213,12 +225,26 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 					&& (tab.history + [tab.url].compactMap(\.self) + tab.peeks.compactMap(\.url)).allSatisfy(isSafeSyncURL)
 					&& tab.modifiedAt.isSaneSyncTimestamp
 			}
-			&& bookmarks.allSatisfy { isSafeSyncURL($0.url) && $0.modifiedAt.isSaneSyncTimestamp }
+		&& bookmarks.allSatisfy { bookmark in
+			isSafeSyncURL(bookmark.url)
+				&& (bookmark.order == Int.min || (0 ... 100_000).contains(bookmark.order))
+				&& bookmark.name.utf8.count <= 16_384
+				&& bookmark.folder.utf8.count <= 4_096
+				&& bookmark.modifiedAt.isSaneSyncTimestamp
+		}
+			&& Set(readingList.map(\.id)).count == readingList.count
+			&& readingList.allSatisfy { item in
+				isSafeSyncURL(item.url)
+					&& item.url.absoluteString.utf8.count <= 16_384
+					&& item.title.utf8.count <= 16_384
+					&& item.modifiedAt.isSaneSyncTimestamp
+					&& item.addedAt.isSaneSyncTimestamp
+			}
 			&& history.allSatisfy { isSafeSyncURL($0.url) && $0.modifiedAt.isSaneSyncTimestamp && $0.visitedAt.isSaneSyncTimestamp }
 			&& settings.values.allSatisfy { $0.modifiedAt.isSaneSyncTimestamp && $0.hasValidPropertyListValue }
 			&& browser.selectedTabModifiedAt.isSaneSyncTimestamp
 			&& browser.historyClearedAt.isSaneSyncTimestamp
-			&& (Array(browser.closedTabsAt.values) + Array(browser.deletedBookmarksAt.values) + Array(browser.deletedSpacesAt.values) + Array(browser.deletedVisitsAt.values)).allSatisfy(\.isSaneSyncTimestamp)
+			&& (Array(browser.closedTabsAt.values) + Array(browser.deletedBookmarksAt.values) + Array(browser.deletedReadingListAt.values) + Array(browser.deletedSpacesAt.values) + Array(browser.deletedVisitsAt.values)).allSatisfy(\.isSaneSyncTimestamp)
 			&& (workspace.map { value in
 				Set(value.spaces.map(\.id)).count == value.spaces.count
 					&& value.spaces.allSatisfy { space in
@@ -241,6 +267,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		result.browser.deletedBookmarkIDs.formUnion(other.browser.deletedBookmarkIDs)
 		result.browser.closedTabsAt.merge(other.browser.closedTabsAt) { max($0, $1) }
 		result.browser.deletedBookmarksAt.merge(other.browser.deletedBookmarksAt) { max($0, $1) }
+		result.browser.deletedReadingListAt.merge(other.browser.deletedReadingListAt) { max($0, $1) }
 		result.browser.deletedSpacesAt.merge(other.browser.deletedSpacesAt) { max($0, $1) }
 		result.browser.deletedVisitsAt.merge(other.browser.deletedVisitsAt) { max($0, $1) }
 		result.browser.historyClearedAt = max(browser.historyClearedAt, other.browser.historyClearedAt)
@@ -264,6 +291,15 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		})
 		result.bookmarks = bookmarksByID.values.filter { item in
 			!isDeleted(item.id, modifiedAt: item.modifiedAt, dates: result.browser.deletedBookmarksAt, legacyIDs: result.browser.deletedBookmarkIDs)
+		}.sorted {
+			$0.order == $1.order ? $0.id.uuidString < $1.id.uuidString : $0.order < $1.order
+		}
+
+		let readingListByID = Dictionary((readingList + other.readingList).map { ($0.id, $0) }, uniquingKeysWith: { first, next in
+			preferred(first, first.modifiedAt, next, next.modifiedAt)
+		})
+		result.readingList = readingListByID.values.filter { item in
+			!isDeleted(item.id, modifiedAt: item.modifiedAt, dates: result.browser.deletedReadingListAt, legacyIDs: [])
 		}.sorted { $0.id.uuidString < $1.id.uuidString }
 
 		let visitsByID = Dictionary((history + other.history).map { ($0.id, $0) }, uniquingKeysWith: { first, next in
@@ -351,9 +387,11 @@ private nonisolated func isPortableSyncTab(_ tab: OpenTab) -> Bool {
 }
 
 private nonisolated func isPortableSyncURL(_ url: URL) -> Bool {
-	guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+	guard url.absoluteString.utf8.count <= 16_384,
+		  let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
 		  ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
 		  let host = components.host, !host.isEmpty,
+		  (components.port.map({ (1 ... 65_535).contains($0) }) ?? true),
 		  !host.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) }) else { return false }
 	return true
 }
@@ -370,15 +408,17 @@ private extension Date {
 		self == .distantPast
 			|| (timeIntervalSince1970.isFinite
 				&& timeIntervalSince1970 >= -2_208_988_800
-				&& timeIntervalSince1970 <= Date.now.timeIntervalSince1970 + 300)
+				&& timeIntervalSince1970 <= Date.now.timeIntervalSince1970 + 300.001)
 	}
 }
 
 private nonisolated func isSafeSyncURL(_ url: URL) -> Bool {
-	guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+	guard url.absoluteString.utf8.count <= 16_384,
+		  let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
 		  ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
 		  let host = components.host, !host.isEmpty,
 		  components.user == nil, components.password == nil,
+		  (components.port.map({ (1 ... 65_535).contains($0) }) ?? true),
 		  !host.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) })
 	else { return false }
 	return true

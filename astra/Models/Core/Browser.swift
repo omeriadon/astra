@@ -25,6 +25,7 @@ final class Browser {
 	private(set) var spaceSwitchDirection = 1
 	private(set) var recentlyUsedTabIDs: [UUID]
 	private(set) var bookmarks: [Bookmark]
+	private(set) var readingList: [ReadingListItem]
 	private(set) var historyVisits: [BrowserVisit]
 	@ObservationIgnored
 	private var lastVisitedURL: [UUID: URL] = [:]
@@ -37,6 +38,7 @@ final class Browser {
 	private(set) var deletedBookmarkIDs: Set<UUID>
 	private(set) var closedTabsAt: [UUID: Date]
 	private(set) var deletedBookmarksAt: [UUID: Date]
+	private(set) var deletedReadingListAt: [UUID: Date]
 	private(set) var deletedSpacesAt: [UUID: Date]
 	private(set) var deletedVisitsAt: [UUID: Date]
 	private(set) var historyClearedAt: Date
@@ -443,12 +445,14 @@ final class Browser {
 		)
 		recentlyUsedTabIDs = [placeholderID]
 		bookmarks = []
+		readingList = []
 		historyVisits = []
 		closedHistoryTabs = []
 		closedTabIDs = []
 		deletedBookmarkIDs = []
 		closedTabsAt = [:]
 		deletedBookmarksAt = [:]
+		deletedReadingListAt = [:]
 		deletedSpacesAt = [:]
 		deletedVisitsAt = [:]
 		historyClearedAt = .distantPast
@@ -474,6 +478,7 @@ final class Browser {
 		var snapshot: BrowserSnapshot?
 		var workspace: BrowserWorkspace?
 		var bookmarks: [Bookmark]
+		var readingList: [ReadingListItem]
 		var closedTabs: [OpenTab]
 		var historyVisits: [BrowserVisit]?
 		var previousShutdownWasClean: Bool?
@@ -500,7 +505,8 @@ final class Browser {
 						tabs: state.openTabs,
 						snapshot: state.snapshot,
 						workspace: state.workspace,
-						bookmarks: state.bookmarks,
+						bookmarks: Bookmark.preservingLegacyOrder(state.bookmarks),
+						readingList: state.readingList,
 						closedTabs: state.closedTabs,
 						historyVisits: state.historyVisits,
 						previousShutdownWasClean: previousShutdownWasClean,
@@ -516,7 +522,8 @@ final class Browser {
 						tabs: tabs,
 						snapshot: snapshot,
 						workspace: workspace,
-						bookmarks: bookmarks,
+						bookmarks: Bookmark.preservingLegacyOrder(bookmarks),
+						readingList: [],
 						closedTabs: closedTabs,
 						previousShutdownWasClean: previousShutdownWasClean,
 						windowRecords: []
@@ -564,6 +571,7 @@ final class Browser {
 				tabs: cachedTabs,
 				workspace: cachedWorkspace,
 				bookmarks: loaded.bookmarks,
+				readingList: loaded.readingList,
 				history: loaded.historyVisits ?? Self.migratedHistory(loaded.tabs + loaded.closedTabs),
 				browser: loaded.snapshot ?? BrowserSnapshot(),
 				settings: [:]
@@ -572,6 +580,7 @@ final class Browser {
 				tabs: tabs.map(\.openTab),
 				workspace: workspace,
 				bookmarks: bookmarks,
+				readingList: readingList,
 				history: historyVisits,
 				browser: BrowserSnapshot(
 					selectedTabID: selectedTabID,
@@ -579,6 +588,7 @@ final class Browser {
 					closedTabIDs: closedTabIDs,
 					deletedBookmarkIDs: deletedBookmarkIDs,
 					deletedBookmarksAt: deletedBookmarksAt,
+					deletedReadingListAt: deletedReadingListAt,
 					closedTabsAt: closedTabsAt,
 					deletedSpacesAt: deletedSpacesAt,
 					deletedVisitsAt: deletedVisitsAt,
@@ -655,6 +665,7 @@ final class Browser {
 			item.url = BrowserAddress.withoutCredentials(item.url)
 			return item
 		}
+		readingList = loaded.readingList
 		historyVisits = visibleHistoryVisits(loaded.historyVisits ?? Self.migratedHistory(loaded.tabs + loaded.closedTabs))
 		closedHistoryTabs = loaded.closedTabs
 		closedTabIDs = loaded.snapshot?.closedTabIDs ?? []
@@ -662,6 +673,7 @@ final class Browser {
 		deletedBookmarkIDs = loaded.snapshot?.deletedBookmarkIDs ?? []
 		closedTabsAt = loaded.snapshot?.closedTabsAt ?? [:]
 		deletedBookmarksAt = loaded.snapshot?.deletedBookmarksAt ?? [:]
+		deletedReadingListAt = loaded.snapshot?.deletedReadingListAt ?? [:]
 		deletedSpacesAt = loaded.snapshot?.deletedSpacesAt ?? [:]
 		deletedVisitsAt = loaded.snapshot?.deletedVisitsAt ?? [:]
 		historyClearedAt = loaded.snapshot?.historyClearedAt ?? .distantPast
@@ -881,10 +893,110 @@ final class Browser {
 	func bookmarkSelectedPage() {
 		guard let tab = selectedTab,
 		      let url = tab.currentURL,
+		      url.absoluteString.utf8.count <= 16_384,
+		      tab.title.utf8.count <= 16_384,
 		      !bookmarks.contains(where: { $0.url == url })
 		else { return }
 		bookmarks.append(Bookmark(name: tab.title, url: BrowserAddress.withoutCredentials(url)))
 		schedulePersistence()
+	}
+
+	func updateBookmark(_ id: UUID, name: String, folder: String, isFavorite: Bool, order: Int) {
+		guard let index = bookmarks.firstIndex(where: { $0.id == id }) else { return }
+		let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+		let folder = folder.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard name.utf8.count <= 16_384, folder.utf8.count <= 4_096 else { return }
+		guard bookmarks[index].name != name || bookmarks[index].folder != folder
+			|| bookmarks[index].isFavorite != isFavorite || bookmarks[index].order != order else { return }
+		bookmarks[index].name = name
+		bookmarks[index].folder = folder
+		bookmarks[index].isFavorite = isFavorite
+		bookmarks[index].order = order
+		bookmarks[index].modifiedAt = BrowserUserDataMutation.nextDate(after: bookmarks[index].modifiedAt, deletion: deletedBookmarksAt[id] ?? .distantPast)
+		schedulePersistence()
+	}
+
+	func reorderBookmarks(_ ids: [UUID]) {
+		for (order, id) in ids.enumerated() {
+			guard let index = bookmarks.firstIndex(where: { $0.id == id }), bookmarks[index].order != order else { continue }
+			bookmarks[index].order = order
+			bookmarks[index].modifiedAt = BrowserUserDataMutation.nextDate(after: bookmarks[index].modifiedAt, deletion: deletedBookmarksAt[id] ?? .distantPast)
+		}
+		schedulePersistence()
+	}
+
+	func addToReadingList(_ url: URL, title: String) {
+		guard !isPrivate, url.absoluteString.utf8.count <= 16_384, title.utf8.count <= 16_384,
+		      let safe = BrowserHomepage.validURL(url.absoluteString),
+		      !readingList.contains(where: { $0.url == safe }) else { return }
+		readingList.append(ReadingListItem(url: safe, title: title))
+		schedulePersistence()
+	}
+
+	func setReadingListRead(_ id: UUID, isRead: Bool) {
+		guard let index = readingList.firstIndex(where: { $0.id == id }), readingList[index].isRead != isRead else { return }
+		readingList[index].isRead = isRead
+		readingList[index].modifiedAt = BrowserUserDataMutation.nextDate(after: readingList[index].modifiedAt, deletion: deletedReadingListAt[id] ?? .distantPast)
+		schedulePersistence()
+	}
+
+	func removeReadingListItem(_ id: UUID) {
+		guard let item = readingList.first(where: { $0.id == id }) else { return }
+		readingList.removeAll { $0.id == id }
+		deletedReadingListAt[id] = BrowserUserDataMutation.nextDate(after: item.modifiedAt, deletion: deletedReadingListAt[id] ?? .distantPast)
+		if let persistence {
+			let previousWrite = session.persistenceWriteTask
+			session.persistenceWriteTask = Task.detached(priority: .utility) {
+				await previousWrite?.value
+				try? persistence.removeReadingArchive(id: id)
+			}
+		}
+		schedulePersistence()
+	}
+
+	func saveSelectedPageToReadingList() {
+		guard !isPrivate, let tab = selectedTab, let url = tab.currentURL,
+		      let item = readingList.first(where: { $0.url == url }),
+		      let controller = tab.controller else { return }
+		let documentID = controller.navigationIdentifier
+		let webView = controller.webView
+		guard !webView.isLoading else { return }
+		webView.createWebArchiveData { [weak self, weak tab] result in
+			guard let self, let tab, !isPrivate, selectedTab === tab,
+			      tab.controller === controller, controller.navigationIdentifier == documentID,
+			      tab.currentURL == url,
+			      readingList.contains(where: { $0.id == item.id && $0.url == item.url }),
+			      let persistence else { return }
+			guard case let .success(data) = result else { return }
+			let previousWrite = session.persistenceWriteTask
+			session.persistenceWriteTask = Task.detached(priority: .utility) {
+				await previousWrite?.value
+				try? persistence.saveReadingArchive(data, id: item.id, url: item.url)
+			}
+		}
+	}
+
+	func openReadingListItem(_ item: ReadingListItem, offline: Bool) {
+		guard !isPrivate else { return }
+		guard offline, let persistence else {
+			openHistoryURL(item.url, inBackground: false)
+			return
+		}
+		guard let tab = selectedTab, let controller = tab.controller else { return }
+		let documentID = controller.navigationIdentifier
+		Task.detached(priority: .userInitiated) { [weak self, weak tab, weak controller] in
+			let data = try? persistence.loadReadingArchive(id: item.id, url: item.url)
+			await MainActor.run {
+				guard let self, let tab, let controller, tabs.contains(where: { $0 === tab }),
+				      tab.controller === controller, controller.navigationIdentifier == documentID,
+				      readingList.contains(where: { $0.id == item.id }) else { return }
+				guard let data else {
+					ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "No offline copy is available")
+					return
+				}
+				controller.webView.load(data, mimeType: "application/x-webarchive", characterEncodingName: "UTF-8", baseURL: item.url)
+			}
+		}
 	}
 
 	func openBookmark(_ bookmark: Bookmark) {
@@ -905,7 +1017,7 @@ final class Browser {
 		bookmarks.removeAll { $0.id == id }
 		if let removed, ["http", "https"].contains(removed.url.scheme?.lowercased() ?? "") {
 			deletedBookmarkIDs.insert(id)
-			deletedBookmarksAt[id] = .now
+			deletedBookmarksAt[id] = BrowserUserDataMutation.nextDate(after: removed.modifiedAt, deletion: deletedBookmarksAt[id] ?? .distantPast)
 		}
 		schedulePersistence()
 	}
@@ -1306,12 +1418,47 @@ final class Browser {
 		}
 	}
 
-	func importBookmarks(_ incoming: [Bookmark]) {
+	func importBookmarks(_ incoming: [Bookmark], replacingDuplicates: Bool = false) {
 		guard !isPrivate else { return }
-		var existing = Set(bookmarks.map(\.url))
-		for bookmark in incoming where ["http", "https", "file"].contains(bookmark.url.scheme?.lowercased() ?? "") {
-			guard existing.insert(bookmark.url).inserted else { continue }
-			bookmarks.append(Bookmark(name: bookmark.name, url: BrowserAddress.withoutCredentials(bookmark.url), modifiedAt: bookmark.modifiedAt))
+		var indexes = Dictionary(bookmarks.enumerated().map { ($1.url, $0) }, uniquingKeysWith: { first, _ in first })
+		for bookmark in incoming where BrowserHomepage.validURL(bookmark.url.absoluteString) != nil
+			&& bookmark.url.absoluteString.utf8.count <= 16_384
+			&& bookmark.name.utf8.count <= 16_384
+			&& bookmark.folder.utf8.count <= 4_096
+			&& (bookmark.order == Int.min || (0 ... 100_000).contains(bookmark.order))
+		{
+			if let index = indexes[bookmark.url] {
+				guard replacingDuplicates else { continue }
+				let current = bookmarks[index]
+				guard current.name != bookmark.name || current.folder != bookmark.folder
+					|| current.isFavorite != bookmark.isFavorite || current.order != bookmark.order else { continue }
+				bookmarks[index] = Bookmark(id: current.id, name: bookmark.name, url: BrowserAddress.withoutCredentials(bookmark.url), modifiedAt: BrowserUserDataMutation.nextDate(after: current.modifiedAt, deletion: deletedBookmarksAt[current.id] ?? .distantPast), folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order == Int.min ? bookmarks.count : bookmark.order)
+			} else {
+				let imported = Bookmark(name: bookmark.name, url: BrowserAddress.withoutCredentials(bookmark.url), modifiedAt: bookmark.modifiedAt, folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order == Int.min ? bookmarks.count : bookmark.order)
+				indexes[bookmark.url] = bookmarks.count
+				bookmarks.append(imported)
+			}
+		}
+		schedulePersistence()
+	}
+
+	func importReadingList(_ incoming: [ReadingListItem], replacingDuplicates: Bool = false) {
+		guard !isPrivate else { return }
+		var indexes = Dictionary(readingList.enumerated().map { ($1.url, $0) }, uniquingKeysWith: { first, _ in first })
+		for item in incoming where BrowserHomepage.validURL(item.url.absoluteString) != nil
+			&& item.url.absoluteString.utf8.count <= 16_384
+			&& item.title.utf8.count <= 16_384
+		{
+			if let index = indexes[item.url] {
+				guard replacingDuplicates else { continue }
+				let current = readingList[index]
+				guard current.title != item.title || current.isRead != item.isRead else { continue }
+				readingList[index] = ReadingListItem(id: current.id, url: item.url, title: item.title, addedAt: item.addedAt, modifiedAt: BrowserUserDataMutation.nextDate(after: current.modifiedAt, deletion: deletedReadingListAt[current.id] ?? .distantPast), isRead: item.isRead)
+			} else {
+				let imported = ReadingListItem(url: item.url, title: item.title, addedAt: item.addedAt, modifiedAt: item.modifiedAt, isRead: item.isRead)
+				indexes[item.url] = readingList.count
+				readingList.append(imported)
+			}
 		}
 		schedulePersistence()
 	}
@@ -1665,6 +1812,7 @@ final class Browser {
 			tabs: tabs.map(\.openTab),
 			workspace: workspace,
 			bookmarks: bookmarks,
+			readingList: readingList,
 			history: historyVisits,
 			browser: BrowserSnapshot(
 				selectedTabID: persistedSelectedTabID,
@@ -1672,6 +1820,7 @@ final class Browser {
 				closedTabIDs: closedTabIDs,
 				deletedBookmarkIDs: deletedBookmarkIDs,
 				deletedBookmarksAt: deletedBookmarksAt,
+				deletedReadingListAt: deletedReadingListAt,
 				closedTabsAt: closedTabsAt,
 				deletedSpacesAt: deletedSpacesAt,
 				deletedVisitsAt: deletedVisitsAt,
@@ -1689,6 +1838,8 @@ final class Browser {
 			uniquingKeysWith: { _, latest in latest }
 		)
 		let document = incoming.preservingLocalOnlyData(from: localState)
+		let incomingReadingItems = Dictionary(document.readingList.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+		let removedReadingIDs = Set(readingList.filter { incomingReadingItems[$0.id]?.url != $0.url }.map(\.id))
 		let currentTabs = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
 		let changedTabs = document.tabs.compactMap { saved -> BrowserTab? in
 			let internalPage = saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:))
@@ -1746,6 +1897,15 @@ final class Browser {
 		deletedBookmarkIDs = document.browser.deletedBookmarkIDs
 		closedTabsAt = document.browser.closedTabsAt
 		deletedBookmarksAt = document.browser.deletedBookmarksAt
+		deletedReadingListAt = document.browser.deletedReadingListAt
+		readingList = document.readingList
+		if let persistence, !removedReadingIDs.isEmpty {
+			let previousWrite = session.persistenceWriteTask
+			session.persistenceWriteTask = Task.detached(priority: .utility) {
+				await previousWrite?.value
+				for id in removedReadingIDs { try? persistence.removeReadingArchive(id: id) }
+			}
+		}
 		deletedSpacesAt = document.browser.deletedSpacesAt
 		deletedVisitsAt = document.browser.deletedVisitsAt
 		historyClearedAt = document.browser.historyClearedAt
@@ -1953,6 +2113,7 @@ final class Browser {
 		pendingScrollPersistence = false
 		let state = BrowserPersistedState(
 			bookmarks: bookmarks,
+			readingList: readingList,
 			openTabs: tabs.map(\.openTab),
 			closedTabs: closedHistoryTabs,
 			workspace: workspace,
@@ -1962,6 +2123,7 @@ final class Browser {
 				closedTabIDs: closedTabIDs,
 				deletedBookmarkIDs: deletedBookmarkIDs,
 				deletedBookmarksAt: deletedBookmarksAt,
+				deletedReadingListAt: deletedReadingListAt,
 				closedTabsAt: closedTabsAt,
 				deletedSpacesAt: deletedSpacesAt,
 				deletedVisitsAt: deletedVisitsAt,
