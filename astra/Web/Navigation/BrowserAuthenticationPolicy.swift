@@ -84,15 +84,31 @@ enum BrowserAuthenticationPolicy {
 
 		let normalizedName = name.lowercased()
 		let browserManagedHeaders: Set<String> = [
+			"accept-charset",
+			"accept-encoding",
+			"access-control-request-headers",
+			"access-control-request-method",
 			"connection",
 			"content-length",
 			"cookie",
+			"cookie2",
+			"date",
+			"dnt",
+			"expect",
 			"host",
+			"keep-alive",
 			"origin",
+			"permissions-policy",
 			"proxy-authorization",
 			"referer",
+			"set-cookie",
+			"set-cookie2",
+			"te",
+			"trailer",
 			"transfer-encoding",
+			"upgrade",
 			"user-agent",
+			"via",
 		]
 		return !browserManagedHeaders.contains(normalizedName)
 			&& !normalizedName.hasPrefix("proxy-")
