@@ -2,8 +2,15 @@ import SwiftUI
 
 struct BrowserNavigationErrorView: View {
 	let kind: BrowserNavigationFailure.Kind
+	let failedURL: URL?
 	let refresh: () -> Void
 	@State private var isConnected: Bool?
+
+	init(kind: BrowserNavigationFailure.Kind, failedURL: URL? = nil, refresh: @escaping () -> Void) {
+		self.kind = kind
+		self.failedURL = failedURL
+		self.refresh = refresh
+	}
 
 	var body: some View {
 		ContentUnavailableView {
@@ -13,7 +20,16 @@ struct BrowserNavigationErrorView: View {
 				Image(systemName: kind.systemImage)
 			}
 		} description: {
-			Text(kind.description)
+			VStack(spacing: 6) {
+				Text(kind.description)
+				if let origin = failedURL.flatMap(BrowserSitePermissions.origin(for:)) {
+					Text("Failed destination: \(origin)")
+						.accessibilityIdentifier("failed-page-origin")
+				} else if failedURL?.isFileURL == true {
+					Text("Failed destination: Local file")
+						.accessibilityIdentifier("failed-page-origin")
+				}
+			}
 		} actions: {
 			Button("Refresh", systemImage: "arrow.clockwise", action: refresh)
 				.buttonStyle(.glassProminent)

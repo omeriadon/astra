@@ -26,14 +26,58 @@ private struct BrowserSiteInformationView: View {
 		List {
 			Section("Connection") {
 				Label(controller.connectionDescription, systemImage: controller.connectionSymbol)
-				if let url = controller.committedURL,
-				   let origin = BrowserSitePermissions.origin(for: url)
-				{
-					Text(verbatim: origin)
-						.textSelection(.enabled)
+				if let committedURL = controller.committedURL {
+					Label(
+						"Committed Page: \(controller.securityPresentation.committedState.title)",
+						systemImage: controller.securityPresentation.committedState.symbol
+					)
+					.accessibilityIdentifier("committed-page-security-state")
+					if let origin = BrowserSitePermissions.origin(for: committedURL) {
+						Text(verbatim: origin)
+							.textSelection(.enabled)
+							.accessibilityIdentifier("committed-page-origin")
+					} else if committedURL.isFileURL {
+						Text("Local file content")
+							.accessibilityIdentifier("committed-page-origin")
+					}
+				}
+				if let failure = controller.navigationFailure {
+					Label(failure.kind.title, systemImage: failure.kind.systemImage)
+						.accessibilityIdentifier("failed-navigation-state")
+					if let origin = controller.securityPresentation.failedOrigin {
+						Text("Failed destination: \(origin)")
+							.accessibilityIdentifier("failed-navigation-origin")
+					} else if failure.url.isFileURL {
+						Text("Failed destination: Local file")
+							.accessibilityIdentifier("failed-navigation-origin")
+					}
 				}
 				if controller.session.isPrivate {
 					Label("Private Browsing", systemImage: "eye.slash")
+				}
+			}
+			if let certificate = controller.securityPresentation.certificate {
+				Section("Certificate") {
+					LabeledContent("Subject") {
+						Text(verbatim: certificate.subject)
+							.textSelection(.enabled)
+					}
+					.accessibilityIdentifier("certificate-subject")
+					if let notValidBefore = certificate.notValidBefore {
+						LabeledContent("Valid From") {
+							Text(notValidBefore, format: .dateTime.year().month().day())
+						}
+						.accessibilityIdentifier("certificate-valid-from")
+					}
+					if let notValidAfter = certificate.notValidAfter {
+						LabeledContent("Valid Through") {
+							Text(notValidAfter, format: .dateTime.year().month().day())
+						}
+						.accessibilityIdentifier("certificate-valid-through")
+					}
+					Text("Certificate details are from the committed page's WebKit trust state.")
+						.font(.caption)
+						.foregroundStyle(.secondary)
 				}
 			}
 			if let url = controller.committedURL,
@@ -41,7 +85,33 @@ private struct BrowserSiteInformationView: View {
 			{
 				BrowserSitePreferenceControls(controller: controller, origin: origin)
 			}
-			Section("Website Permissions") {
+			Section("Active Access for Committed Page") {
+				LabeledContent(
+					"Camera",
+					value: BrowserActiveCaptureStatus.current(
+						isActive: controller.cameraCaptureState == .active,
+						isMuted: controller.cameraCaptureState == .muted,
+						sampledDocumentID: controller.mediaCaptureStateDocumentID,
+						committedDocumentID: controller.committedSecurityNavigationID
+					).title
+				)
+					.accessibilityIdentifier("active-camera-state")
+				LabeledContent(
+					"Microphone",
+					value: BrowserActiveCaptureStatus.current(
+						isActive: controller.microphoneCaptureState == .active,
+						isMuted: controller.microphoneCaptureState == .muted,
+						sampledDocumentID: controller.mediaCaptureStateDocumentID,
+						committedDocumentID: controller.committedSecurityNavigationID
+					).title
+				)
+					.accessibilityIdentifier("active-microphone-state")
+				LabeledContent("Location", value: "Activity unavailable")
+					.accessibilityIdentifier("active-location-state")
+				LabeledContent("Display Sharing", value: "Activity unavailable")
+					.accessibilityIdentifier("active-display-capture-state")
+			}
+			Section("Saved Website Permissions") {
 				if controller.session.permissions.isSavedDataReadOnly {
 					Text("Reset website permissions in Privacy and Security before saving changes.")
 						.font(.caption)

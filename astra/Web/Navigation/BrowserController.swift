@@ -57,7 +57,9 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var isEnteringPictureInPicture = false
 	private(set) var pictureInPictureControlUnavailable = false
 	private(set) var committedURL: URL?
-	private(set) var hasOnlySecureContent = false
+	private(set) var committedHasOnlySecureContent: Bool?
+	private(set) var committedCertificateSummary: BrowserServerCertificateSummary?
+	private(set) var committedSecurityNavigationID: Int?
 	var showsFind = false
 	var findText = "" {
 		didSet {
@@ -72,6 +74,7 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var hasUnsavedChanges = false
 	private(set) var cameraCaptureState: WKMediaCaptureState = .none
 	private(set) var microphoneCaptureState: WKMediaCaptureState = .none
+	private(set) var mediaCaptureStateDocumentID: Int?
 	var popupRequested: ((WKWebViewConfiguration, UnitPoint, Bool?) -> WKWebView?)?
 	var newTabRequested: ((URLRequest, Bool) -> Void)?
 	var closeRequested: (() -> Void)?
@@ -91,23 +94,22 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	var connectionDescription: String {
-		guard navigationFailure == nil else { return "Connection Failed" }
-		guard let committedURL else { return "No Page Loaded" }
-		if committedURL.isFileURL {
-			return "Local File"
-		}
-		if committedURL.scheme == "https" {
-			return hasOnlySecureContent ? "Connection Encrypted" : "Mixed Content"
-		}
-		return committedURL.scheme == "http" ? "Not Secure" : "Local Content"
+		securityPresentation.connectionState.title
 	}
 
 	var connectionSymbol: String {
-		guard navigationFailure == nil else { return "exclamationmark.shield" }
-		if committedURL?.scheme == "https", hasOnlySecureContent {
-			return "lock.shield"
-		}
-		return committedURL?.scheme == "http" ? "exclamationmark.triangle" : "info.circle"
+		securityPresentation.connectionState.symbol
+	}
+
+	var securityPresentation: BrowserSecurityPresentation {
+		BrowserSecurityPresentation(
+			committedURL: committedURL,
+			hasOnlySecureContent: committedHasOnlySecureContent,
+			isNavigating: awaitsNavigationCommit,
+			isFailure: navigationFailure != nil,
+			failedURL: navigationFailure?.url,
+			certificate: committedCertificateSummary
+		)
 	}
 
 	var canHibernate: Bool {
@@ -591,6 +593,7 @@ final class BrowserController: NSObject, Identifiable {
 		hasPausedMedia = state == .paused
 		cameraCaptureState = webView.cameraCaptureState
 		microphoneCaptureState = webView.microphoneCaptureState
+		mediaCaptureStateDocumentID = committedSecurityNavigationID
 		await refreshPictureInPictureEligibility(in: webView, documentID: documentID)
 		guard owns(webView), documentID == navigationIdentifier else { return }
 		if state == .playing || state == .none {
@@ -1059,7 +1062,16 @@ final class BrowserController: NSObject, Identifiable {
 
 		observations = [
 			webView.observe(\.hasOnlySecureContent, options: [.initial, .new]) { [weak self] webView, _ in
-				MainActor.assumeIsolated { self?.hasOnlySecureContent = webView.hasOnlySecureContent }
+				MainActor.assumeIsolated { [weak self, weak webView] in
+					guard let self, let webView, owns(webView) else { return }
+					refreshCommittedSecuritySnapshot()
+				}
+			},
+			webView.observe(\.serverTrust, options: [.initial, .new]) { [weak self] webView, _ in
+				MainActor.assumeIsolated { [weak self, weak webView] in
+					guard let self, let webView, owns(webView) else { return }
+					refreshCommittedSecuritySnapshot()
+				}
 			},
 			webView.observe(\.isLoading, options: [.initial, .new]) { [weak self] webView, _ in
 				MainActor.assumeIsolated {
@@ -1353,9 +1365,31 @@ final class BrowserController: NSObject, Identifiable {
 		}
 		if reportSameDocumentVisit {
 			committedURL = currentURL
+			committedSecurityNavigationID = navigationIdentifier
+			refreshCommittedSecuritySnapshot()
 			reportSameDocumentVisitIfNeeded(currentURL)
 		}
 		navigationDidChange?()
+	}
+
+	private func refreshCommittedSecuritySnapshot() {
+		guard let webView = createdWebView,
+		      owns(webView),
+		      BrowserSecurityPresentation.canRefreshCommittedSnapshot(
+				committedURL: committedURL,
+				webViewURL: webView.url,
+				committedDocumentID: committedSecurityNavigationID,
+				currentDocumentID: navigationIdentifier,
+				isNavigating: awaitsNavigationCommit,
+				isFailure: navigationFailure != nil
+			)
+		else { return }
+		guard let committedURL else { return }
+
+		committedHasOnlySecureContent = webView.hasOnlySecureContent
+		committedCertificateSummary = webView.serverTrust.flatMap {
+			BrowserServerCertificateSummary(trust: $0, committedURL: committedURL)
+		}
 	}
 
 	private func reportHistoryVisit(_ url: URL, force: Bool) {
@@ -1763,6 +1797,7 @@ extension BrowserController: WKNavigationDelegate {
 		releaseUploadAccess()
 		pictureInPictureControlUnavailable = false
 		committedURL = webView.url
+		committedSecurityNavigationID = navigationIdentifier
 		if let origin = committedURL.flatMap(BrowserSitePermissions.origin(for:)) {
 			let isRestoredOrigin = restoredPageZoomOrigin == origin
 			restoredPageZoomOrigin = nil
@@ -1781,6 +1816,7 @@ extension BrowserController: WKNavigationDelegate {
 		pageURLBeforeDownload = nil
 		navigationFailure = nil
 		awaitsNavigationCommit = false
+		refreshCommittedSecuritySnapshot()
 		updateHistory(reportSameDocumentVisit: false)
 		if let url = committedURL {
 			reportHistoryVisit(url, force: true)
