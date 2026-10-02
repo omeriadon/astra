@@ -2,6 +2,9 @@ import Defaults
 import Haze
 import SwiftUI
 import WebKit
+#if os(macOS)
+	import UniformTypeIdentifiers
+#endif
 
 extension Notification.Name {
 	static let showBrowserDownloads = Notification.Name("ShowBrowserDownloads")
@@ -381,6 +384,9 @@ private struct ShellContentColumn: View {
 	let windowWidth: CGFloat
 	@Binding var isTopBarRevealed: Bool
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	#if os(macOS)
+		@State private var isAddressDropTargeted = false
+	#endif
 
 	private var topBar: some View {
 		ShellTopBarView(
@@ -414,6 +420,17 @@ private struct ShellContentColumn: View {
 				.clipped()
 				.allowsHitTesting(topBarHeight > 0)
 				.accessibilityHidden(topBarHeight == 0)
+				#if os(macOS)
+				.onDrop(of: [UTType.url, UTType.plainText], isTargeted: $isAddressDropTargeted, perform: acceptAddressDrop)
+				.overlay {
+					if isAddressDropTargeted {
+						RoundedRectangle(cornerRadius: 10)
+							.stroke(theme.foregroundColor.opacity(0.7), lineWidth: 2)
+							.padding(.horizontal, 10)
+							.allowsHitTesting(false)
+					}
+				}
+				#endif
 
 			VStack(spacing: 0) {
 				Spacer(minLength: 0)
@@ -444,6 +461,49 @@ private struct ShellContentColumn: View {
 			isTopBarRevealed = false
 		}
 	}
+
+	#if os(macOS)
+	private func acceptAddressDrop(_ providers: [NSItemProvider]) -> Bool {
+		guard let provider = providers.first,
+		      let tabID = browser.selectedTabID,
+		      let controller = browser.selectedTab?.activeController
+		else { return false }
+		let type = provider.hasItemConformingToTypeIdentifier(UTType.url.identifier)
+			? UTType.url.identifier
+			: UTType.plainText.identifier
+		guard provider.hasItemConformingToTypeIdentifier(type) else { return false }
+		provider.loadItem(forTypeIdentifier: type, options: nil) { item, _ in
+			let text: String? = if let url = item as? URL {
+				url.absoluteString
+			} else if let data = item as? Data {
+				String(data: data, encoding: .utf8)
+			} else if let string = item as? String {
+				string
+			} else if let string = item as? NSString {
+				string as String
+			} else if let url = item as? NSURL {
+				url.absoluteString
+			} else {
+				nil
+			}
+			Task { @MainActor in
+				guard browser.selectedTabID == tabID,
+				      browser.selectedTab?.activeController === controller,
+				      let text,
+				      text.utf8.count <= 8_192,
+				      let destination = BrowserAddress.destination(
+					for: text,
+					configuration: browser.browserSearchConfiguration,
+					isPrivate: browser.isPrivate
+				      ),
+				      ["http", "https"].contains(destination.scheme?.lowercased() ?? "")
+				else { return }
+				controller.loadFromAddressBar(destination)
+			}
+		}
+		return true
+	}
+	#endif
 }
 
 private struct DownloadFlightOverlay: View {

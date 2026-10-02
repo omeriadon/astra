@@ -680,6 +680,13 @@
 			BrowserDesktopCommands.printPage(controller, window: NSApp.keyWindow)
 		}
 
+		@objc private func sharePage(_: Any?) {
+			guard let browser = activeBrowser,
+			      let controller = browser.selectedTab?.activeController
+			else { return }
+			BrowserDesktopCommands.sharePage(controller, in: browser, window: NSApp.keyWindow)
+		}
+
 		@objc private func savePDF(_: Any?) {
 			exportPage(.pdf)
 		}
@@ -693,8 +700,10 @@
 		}
 
 		private func exportPage(_ format: BrowserDesktopCommands.ExportFormat) {
-			guard let controller = activeBrowser?.selectedTab?.activeController else { return }
-			BrowserDesktopCommands.export(controller, format: format, window: NSApp.keyWindow)
+			guard let browser = activeBrowser,
+			      let controller = browser.selectedTab?.activeController
+			else { return }
+			BrowserDesktopCommands.export(controller, in: browser, format: format, window: NSApp.keyWindow)
 		}
 
 		@objc private func findInPage(_: Any?) {
@@ -776,7 +785,7 @@
 
 		func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
 			let pageActions: Set<Selector> = [
-				#selector(printPage(_:)), #selector(savePDF(_:)), #selector(saveWebArchive(_:)),
+				#selector(printPage(_:)), #selector(sharePage(_:)), #selector(savePDF(_:)), #selector(saveWebArchive(_:)),
 				#selector(saveSource(_:)), #selector(findInPage(_:)), #selector(findNext(_:)),
 				#selector(findPrevious(_:)),
 			]
@@ -945,6 +954,7 @@
 			fileMenu.addItem(item("Export PDF…", action: #selector(savePDF(_:))))
 			fileMenu.addItem(item("Save Page Source…", action: #selector(saveSource(_:))))
 			fileMenu.addItem(item("Print…", action: #selector(printPage(_:)), key: "p"))
+			fileMenu.addItem(item("Share Page…", action: #selector(sharePage(_:))))
 			fileMenu.addItem(.separator())
 			fileMenu.addItem(item("Import Browsing Data…", action: #selector(importBrowsingData(_:))))
 			fileMenu.addItem(item("Export Browsing Data…", action: #selector(exportBrowsingData(_:))))

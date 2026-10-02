@@ -5,6 +5,34 @@
 
 	@MainActor
 	enum BrowserDesktopCommands {
+		private struct ExportOwner {
+			weak var browser: Browser?
+			weak var controller: BrowserController?
+			weak var webView: WKWebView?
+			weak var window: NSWindow?
+			let tabID: UUID
+			let documentID: Int
+			let url: URL
+
+			func isCurrent() -> Bool {
+				guard let browser, let controller, let webView, let window else { return false }
+				return BrowserPageExportPolicy.ownsDocument(
+					capturedGeneration: documentID,
+					currentGeneration: controller.navigationIdentifier,
+					capturedURL: url,
+					currentURL: controller.committedURL,
+					ownsWebView: browser.selectedTabID == tabID
+						&& browser.selectedTab?.activeController === controller
+						&& browser.session === controller.session
+						&& controller.webViewIfLoaded === webView
+						&& controller.hasCurrentPageDocument,
+					ownsWindow: webView.window === window,
+					isCommitted: controller.committedURL != nil,
+					isLoading: controller.isLoading
+				)
+			}
+		}
+
 		enum ExportFormat {
 			case pdf
 			case webArchive
@@ -26,7 +54,12 @@
 		}
 
 		static func printPage(_ controller: BrowserController, window: NSWindow?) {
-			guard let webView = controller.webViewIfLoaded, let window else { return }
+			guard let webView = controller.webViewIfLoaded,
+			      controller.hasCurrentPageDocument,
+			      !controller.isLoading,
+			      let window,
+			      webView.window === window
+			else { return }
 			let operation = webView.printOperation(with: .shared)
 			operation.showsPrintPanel = true
 			operation.showsProgressPanel = true
@@ -40,10 +73,26 @@
 
 		static func export(
 			_ controller: BrowserController,
+			in browser: Browser,
 			format: ExportFormat,
 			window: NSWindow?
 		) {
-			guard let webView = controller.webViewIfLoaded, let window else { return }
+			guard let webView = controller.webViewIfLoaded,
+			      browser.selectedTab?.activeController === controller,
+			      let window,
+			      let url = controller.committedURL,
+			      !controller.isLoading
+			else { return }
+			let owner = ExportOwner(
+				browser: browser,
+				controller: controller,
+				webView: webView,
+				window: window,
+				tabID: browser.selectedTabID,
+				documentID: controller.navigationIdentifier,
+				url: url
+			)
+			guard owner.isCurrent() else { return }
 			let panel = NSSavePanel()
 			let title = BrowserDownloadManager.safeStem(webView.title ?? "Page")
 			switch format {
@@ -60,6 +109,9 @@
 			panel.beginSheetModal(for: window) { response in
 				guard response == .OK, let destination = panel.url else { return }
 				Task { @MainActor in
+					defer { destination.stopAccessingSecurityScopedResource() }
+					guard owner.isCurrent() else { return }
+					var createdDestination = false
 					do {
 						let data: Data
 						switch format {
@@ -75,19 +127,53 @@
 								let html = try await webView.evaluateJavaScript("document.documentElement.outerHTML") as? String ?? ""
 								data = Data(html.utf8)
 						}
-						let access = destination.startAccessingSecurityScopedResource()
-						defer {
-							if access {
-								destination.stopAccessingSecurityScopedResource()
-							}
-						}
-						try data.write(to: destination, options: .atomic)
-						try BrowserDownloadedFile.quarantine(destination, downloadURL: webView.url, sourceURL: webView.url)
+						guard owner.isCurrent(), !Task.isCancelled else { return }
+						try BrowserPageExportPolicy.writeExclusively(data, to: destination)
+						createdDestination = true
+						let attributionURL = BrowserAddress.withoutCredentials(url)
+						try BrowserDownloadedFile.quarantine(destination, downloadURL: attributionURL, sourceURL: attributionURL)
 					} catch {
+						if createdDestination {
+							try? FileManager.default.removeItem(at: destination)
+						}
+						guard owner.isCurrent() else { return }
 						controller.session.toastManager.show(symbol: "exclamationmark.triangle", message: "Could not save page: \(error.localizedDescription)")
 					}
 				}
 			}
 		}
+
+		static func sharePage(_ controller: BrowserController, in browser: Browser, window: NSWindow?) {
+			guard let webView = controller.webViewIfLoaded,
+			      browser.selectedTab?.activeController === controller,
+			      let window,
+			      let url = controller.committedURL,
+			      controller.hasCurrentPageDocument,
+			      !controller.isLoading
+			else { return }
+			let owner = ExportOwner(
+				browser: browser,
+				controller: controller,
+				webView: webView,
+				window: window,
+				tabID: browser.selectedTabID,
+				documentID: controller.navigationIdentifier,
+				url: url
+			)
+			guard owner.isCurrent() else { return }
+			let shareURL = BrowserAddress.withoutCredentials(url)
+			let title = webView.title ?? shareURL.absoluteString
+			Task { @MainActor in
+				let selectedText = try? await webView.evaluateJavaScript("window.getSelection().toString()") as? String
+				guard owner.isCurrent() else { return }
+				let items: [Any] = selectedText.flatMap { $0.isEmpty ? nil : $0 }.map { [$0, shareURL] } ?? [title, shareURL]
+				NSSharingServicePicker(items: items).show(
+					relativeTo: webView.bounds,
+					of: webView,
+					preferredEdge: .minY
+				)
+			}
+		}
+
 	}
 #endif

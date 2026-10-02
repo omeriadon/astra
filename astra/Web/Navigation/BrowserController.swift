@@ -403,6 +403,10 @@ final class BrowserController: NSObject, Identifiable {
 		!awaitsNavigationCommit
 	}
 
+	var hasCurrentPageDocument: Bool {
+		!isInvalidated && !awaitsNavigationCommit && committedURL != nil
+	}
+
 	@ObservationIgnored
 	private var hasDeclaredThemeColor = false
 	@ObservationIgnored
