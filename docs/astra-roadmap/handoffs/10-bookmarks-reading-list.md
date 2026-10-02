@@ -6,7 +6,7 @@ Branch / worktree / baseline commit: `astra/roadmap/10-bookmarks-reading-list`; 
 
 Status: source complete. Primary Xcode build and runtime acceptance remain pending.
 
-Commit(s): `51445d0` (`implement bookmarks and reading list`), plus the follow-up durability checkpoint. No push or merge.
+Commit(s): `51445d0` (`implement bookmarks and reading list`) and `f056fec` (`harden reading archive durability`). No push or merge.
 
 Changed files and behavior:
 
