@@ -5,12 +5,15 @@ struct BrowserAddressField: View {
 	let browser: Browser
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
 	@Default(.browserSearchConfiguration) private var searchConfigurationValue
+	@Default(.searchSuggestionsEnabled) private var searchSuggestionsEnabled
 
 	private var searchConfiguration: BrowserSearchConfiguration {
 		BrowserSearchConfiguration.decode(searchConfigurationValue)
 	}
 	@State private var addressText = ""
 	@State private var addressSelectionID: String?
+	@State private var addressRemoteSuggestions: [String] = []
+	@State private var addressSuggestionsRequest: BrowserSearchSuggestionsRequest?
 	@FocusState private var isFocused: Bool
 
 	private var isDimmed: Bool {
@@ -23,6 +26,24 @@ struct BrowserAddressField: View {
 			configuration: searchConfiguration,
 			isPrivate: browser.isPrivate
 		)
+	}
+
+	private var addressSuggestionRequest: BrowserSearchSuggestionsRequest {
+		let controller = browser.selectedTab?.activeController
+		let scope = "address:\(browser.windowID):\(browser.selectedTabID):\(controller?.id.uuidString ?? "none"):\(controller?.navigationIdentifier ?? -1)"
+		return BrowserSearchSuggestionsRequest(
+			query: addressText.trimmingCharacters(in: .whitespacesAndNewlines),
+			generation: browser.addressSearchGeneration,
+			scope: scope,
+			provider: searchConfiguration.suggestionsProvider(isPrivate: browser.isPrivate) ?? .custom,
+			isPrivate: browser.isPrivate,
+			configuration: searchConfiguration.encoded,
+			suggestionsEnabled: searchSuggestionsEnabled && isFocused && !browser.isShowingNewTab
+		)
+	}
+
+	private var currentAddressSuggestions: [String] {
+		addressSuggestionsRequest == addressSuggestionRequest ? addressRemoteSuggestions : []
 	}
 
 	var body: some View {
@@ -55,14 +76,7 @@ struct BrowserAddressField: View {
 			)
 			PasteButton(payloadType: String.self) { values in
 				guard let value = values.first,
-				      value.utf8.count <= 16_384,
-				      let destination = BrowserAddress.destination(
-						for: value,
-						configuration: searchConfiguration,
-						isPrivate: browser.isPrivate
-				      ),
-				      ["http", "https"].contains(destination.scheme?.lowercased() ?? ""),
-				      destination.host?.isEmpty == false
+				      let destination = BrowserSearchMatching.pastedHTTPURL(value)
 			else {
 					return
 				}
@@ -72,6 +86,17 @@ struct BrowserAddressField: View {
 			.labelStyle(.iconOnly)
 			.accessibilityLabel("Paste address")
 			.accessibilityIdentifier("paste-address")
+			if !browser.isPrivate,
+			   let url = browser.selectedTab?.activeController?.url,
+			   url.scheme?.lowercased() == "https"
+			{
+				Button {
+					browser.discoverSearchEngineFromAddressBar()
+				} label: {
+					Label("Discover Search Engine", systemImage: "magnifyingglass.circle")
+				}
+				.accessibilityIdentifier("discover-search-engine")
+			}
 		}
 		.overlay(alignment: .topLeading) {
 			if isFocused, !browser.isShowingNewTab, !addressText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -82,27 +107,26 @@ struct BrowserAddressField: View {
 		.confirmationDialog(
 			"Use this site's search engine?",
 			isPresented: Binding(
-				get: { browser.pendingSearchEngineTemplate != nil },
-				set: { if !$0 { browser.pendingSearchEngineTemplate = nil } }
+				get: { browser.pendingSearchEngineDiscovery != nil },
+				set: { if !$0 { browser.pendingSearchEngineDiscovery = nil } }
 			),
 			titleVisibility: .visible
 		) {
 			Button("Use as Search Engine", systemImage: "checkmark", role: .confirm) {
-				guard let template = browser.pendingSearchEngineTemplate else { return }
+				guard let template = browser.consumeSearchEngineDiscovery() else { return }
 				var configuration = searchConfiguration
 				configuration.customTemplate = template
 				configuration.normalEngine = .custom
 				searchConfigurationValue = configuration.encoded
-				browser.pendingSearchEngineTemplate = nil
 			}
 			.buttonStyle(.glassProminent)
+			.disabled(!browser.canAcceptSearchEngineDiscovery)
 			.accessibilityIdentifier("confirm-search-engine-discovery")
 			Button(role: .cancel) {
-				browser.pendingSearchEngineTemplate = nil
+				browser.pendingSearchEngineDiscovery = nil
 			}
-		}
-		.message {
-			if let template = browser.pendingSearchEngineTemplate {
+		} message: {
+			if let template = browser.pendingSearchEngineDiscovery?.template {
 				Text(template)
 			}
 		}
@@ -120,6 +144,7 @@ struct BrowserAddressField: View {
 			}
 		}
 		.onChange(of: browser.selectedTabID) { _, _ in
+			browser.discardStaleSearchEngineDiscovery()
 			updateForSelectedTab()
 		}
 		.onChange(of: browser.addressFocusRequest) { _, _ in
@@ -130,10 +155,12 @@ struct BrowserAddressField: View {
 			updateAddressFromURL()
 		}
 		.onChange(of: browser.selectedTab?.activeController?.id) { _, _ in
+			browser.discardStaleSearchEngineDiscovery()
 			guard !isFocused else { return }
 			updateAddressFromURL()
 		}
 		.onChange(of: browser.selectedTab?.activeController?.url) { _, url in
+			browser.discardStaleSearchEngineDiscovery()
 			guard !isFocused else { return }
 			let next = BrowserAddress.displayString(
 				for: url,
@@ -150,24 +177,68 @@ struct BrowserAddressField: View {
 			updateAddressFromURL()
 		}
 		.onChange(of: searchConfigurationValue) { _, _ in
+			browser.discardStaleSearchEngineDiscovery()
 			guard !isFocused else { return }
 			updateAddressFromURL()
 		}
 		.onChange(of: isFocused) { _, focused in
+			browser.addressFieldIsFocused = focused
 			if browser.isShowingNewTab {
 				addressText = browser.newTabSearchText
 				return
 			}
-			addressText = BrowserAddress.displayString(
+			let simpleAddress = BrowserAddress.displayString(
 				for: browser.selectedTab?.activeController?.url,
 				style: addressDisplayStyle,
-				isEditing: focused,
+				isEditing: false,
 				configuration: searchConfiguration,
 				isPrivate: browser.isPrivate
 			)
+			if focused {
+				if BrowserSearchMatching.shouldExpandAddressOnFocus(text: addressText, simpleAddress: simpleAddress) {
+					addressText = BrowserAddress.displayString(
+						for: browser.selectedTab?.activeController?.url,
+						style: addressDisplayStyle,
+						isEditing: true,
+						configuration: searchConfiguration,
+						isPrivate: browser.isPrivate
+					)
+				}
+				return
+			}
+			addressText = simpleAddress
 		}
 		.onAppear {
 			updateForSelectedTab()
+		}
+		.task(id: addressSuggestionRequest) {
+			let request = addressSuggestionRequest
+			addressRemoteSuggestions = []
+			addressSuggestionsRequest = nil
+			browser.addressSuggestionsRequest = request
+			guard isFocused,
+			      !browser.isShowingNewTab,
+			      request.suggestionsEnabled,
+			      let provider = searchConfiguration.suggestionsProvider(isPrivate: request.isPrivate),
+			      !request.query.isEmpty,
+			      let destination = BrowserAddress.destination(
+				for: request.query,
+				configuration: searchConfiguration,
+				isPrivate: browser.isPrivate
+			      ),
+			      BrowserAddress.isSearchURL(destination, configuration: searchConfiguration, isPrivate: browser.isPrivate)
+			else { return }
+			do {
+				try await Task.sleep(for: .milliseconds(250))
+				guard !Task.isCancelled, request == addressSuggestionRequest else { return }
+				let suggestions = try await BrowserSearchSuggestions.fetch(for: request.query, provider: provider)
+				try Task.checkCancellation()
+				guard !Task.isCancelled, request == addressSuggestionRequest else { return }
+				addressRemoteSuggestions = suggestions
+				addressSuggestionsRequest = request
+			} catch {
+				// Local address, bookmark, and history results remain available offline.
+			}
 		}
 	}
 
@@ -191,7 +262,12 @@ struct BrowserAddressField: View {
 	}
 
 	private var addressSuggestions: some View {
-		List(browser.searchResults(for: addressText, includeActions: false)) { result in
+		List(browser.searchResults(
+			for: addressText,
+			includeActions: false,
+			remoteSuggestions: currentAddressSuggestions,
+			remoteSuggestionRequest: addressSuggestionRequest
+		)) { result in
 			let query = addressText
 			let generation = browser.addressSearchGeneration
 			Button {

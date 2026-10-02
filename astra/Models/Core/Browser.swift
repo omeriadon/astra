@@ -65,7 +65,8 @@ final class Browser {
 			newTabSearchGeneration &+= 1
 			newTabSearchSelection = nil
 			newTabGoogleSuggestions = []
-			pendingSearchEngineTemplate = nil
+			pendingSearchEngineDiscovery = nil
+			searchEngineDiscoveryTask?.cancel()
 		}
 	}
 
@@ -75,12 +76,18 @@ final class Browser {
 		didSet {
 			if oldValue != addressSearchText {
 				addressSearchGeneration &+= 1
+				addressSuggestionsRequest = nil
+				pendingSearchEngineDiscovery = nil
+				searchEngineDiscoveryTask?.cancel()
 			}
 		}
 	}
 	var addressSearchGeneration = 0
+	var addressFieldIsFocused = false
 	var newTabGoogleSuggestions: [String] = []
-	var pendingSearchEngineTemplate: String?
+	var addressSuggestionsRequest: BrowserSearchSuggestionsRequest?
+	var pendingSearchEngineDiscovery: BrowserSearchEngineDiscovery?
+	@ObservationIgnored var searchEngineDiscoveryTask: Task<Void, Never>?
 	var sidebarShown: Bool {
 		get {
 			access(keyPath: \.sidebarShown)
@@ -843,6 +850,7 @@ final class Browser {
 
 	func selectTab(_ id: UUID) {
 		guard let tab = tabs.first(where: { $0.id == id }) else { return }
+		searchEngineDiscoveryTask?.cancel()
 		tab.clearPictureInPictureReturnController()
 		if !workspace.favouriteTabIDs.contains(id),
 		   let ownerIndex = workspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })

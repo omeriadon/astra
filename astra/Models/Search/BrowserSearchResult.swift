@@ -53,3 +53,44 @@ struct BrowserSearchResult: Identifiable {
 		}
 	}
 }
+
+struct BrowserSearchEngineDiscovery: Equatable {
+	let template: String
+	let tabID: UUID
+	let controllerID: UUID
+	let webViewID: ObjectIdentifier
+	let documentID: Int
+	let pageURL: URL
+	let query: String
+	let queryGeneration: Int
+	let configuration: String
+
+	func matches(
+		tabID: UUID,
+		controllerID: UUID,
+		webViewID: ObjectIdentifier,
+		documentID: Int,
+		pageURL: URL,
+		query: String,
+		queryGeneration: Int,
+		configuration: String
+	) -> Bool {
+		self.tabID == tabID
+			&& self.controllerID == controllerID
+			&& self.webViewID == webViewID
+			&& self.documentID == documentID
+			&& self.pageURL == pageURL
+			&& self.query == query
+			&& self.queryGeneration == queryGeneration
+			&& self.configuration == configuration
+	}
+}
+
+enum BrowserSearchEngineDiscoveryOutcome {
+	case found(String)
+	case notPublished
+	case blocked
+	case invalid
+	case cancelled
+	case failed
+}

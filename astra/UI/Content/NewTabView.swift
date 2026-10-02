@@ -120,6 +120,7 @@ struct NewTabView: View {
 		BrowserSearchSuggestionsRequest(
 			query: browser.newTabSearchText.trimmingCharacters(in: .whitespacesAndNewlines),
 			generation: browser.newTabSearchGeneration,
+			scope: "new-tab:\(browser.windowID):\(browser.selectedTabID)",
 			provider: searchConfiguration.suggestionsProvider(isPrivate: browser.isPrivate) ?? .custom,
 			isPrivate: browser.isPrivate,
 			configuration: searchConfiguration.encoded,

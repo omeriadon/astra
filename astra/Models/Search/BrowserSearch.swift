@@ -1,5 +1,6 @@
 import Defaults
 import Foundation
+import WebKit
 
 extension Browser {
 	var isShowingNewTab: Bool {
@@ -15,7 +16,12 @@ extension Browser {
 		searchResults(for: newTabSearchText, includeActions: true)
 	}
 
-	func searchResults(for rawQuery: String, includeActions: Bool) -> [BrowserSearchResult] {
+	func searchResults(
+		for rawQuery: String,
+		includeActions: Bool,
+		remoteSuggestions: [String]? = nil,
+		remoteSuggestionRequest: BrowserSearchSuggestionsRequest? = nil
+	) -> [BrowserSearchResult] {
 		let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
 		let generation = newTabSearchGeneration
 		let guardsNewTabQuery = includeActions
@@ -88,58 +94,21 @@ extension Browser {
 				}
 			}
 		}
-		if !isPrivate,
-		   let tab = selectedTab,
-		   let websiteURL = tab.activeController?.url,
-		   websiteURL.scheme?.lowercased() == "https"
-		{
-			let title = "Discover search engine from this site"
-			let score = BrowserSearchMatching.score(query, in: title)
-			if score > 0 {
-				results.append(BrowserSearchResult(
-					id: "discover-search-engine", kind: .action,
-					title: title, detail: "Checks this site's public OpenSearch metadata",
-					symbol: "magnifyingglass.circle", score: score + 0.02,
-					destination: nil,
-					perform: {
-						Task {
-							guard let template = try? await BrowserSearchSuggestions.discoverOpenSearchTemplate(for: websiteURL) else { return }
-							if includeActions {
-								guard self.newTabSearchGeneration == generation,
-								      self.newTabSearchText.trimmingCharacters(in: .whitespacesAndNewlines) == query
-								else { return }
-							} else {
-								guard self.addressSearchGeneration == addressGeneration,
-								      self.addressSearchText.trimmingCharacters(in: .whitespacesAndNewlines) == query
-								else { return }
-							}
-							guard self.browserSearchConfiguration.encoded == configuration.encoded,
-							      self.selectedTabID == tab.id,
-							      self.selectedTab?.activeController?.url == websiteURL
-							else { return }
-							self.pendingSearchEngineTemplate = template
-						}
-					}
-				))
-			}
-		}
-
 		results += historySearchResults(for: query)
 		results += bookmarkSearchResults(for: query)
 		results += openTabSearchResults(for: query)
-		if includeActions {
-			for (index, suggestion) in newTabGoogleSuggestions.enumerated()
-				where BrowserSearchMatching.normalized(suggestion) != BrowserSearchMatching.normalized(query)
-			{
-				guard let url = configuration.searchURL(for: suggestion, isPrivate: isPrivate) else { continue }
-				results.append(BrowserSearchResult(
-					id: "search-\(suggestion)", kind: .search, title: suggestion,
-					detail: "Search \(browserSearchConfiguration.engine(isPrivate: isPrivate).title)", symbol: "magnifyingglass",
-					score: 0.79 - Double(index) * 0.015,
-					destination: url.absoluteString,
-					perform: { self.selectedTab?.activeController?.load(url) }
-				))
-			}
+		let suggestions = remoteSuggestions ?? (includeActions ? newTabGoogleSuggestions : [])
+		for (index, suggestion) in suggestions.enumerated()
+			where BrowserSearchMatching.normalized(suggestion) != BrowserSearchMatching.normalized(query)
+		{
+			guard let url = configuration.searchURL(for: suggestion, isPrivate: isPrivate) else { continue }
+			results.append(BrowserSearchResult(
+				id: "search-\(suggestion)", kind: .search, title: suggestion,
+				detail: "Search \(configuration.engine(isPrivate: isPrivate).title)", symbol: "magnifyingglass",
+				score: 0.79 - Double(index) * 0.015,
+				destination: url.absoluteString,
+				perform: { self.selectedTab?.activeController?.load(url) }
+			))
 		}
 		let ranked = BrowserSearchResult.ranked(results)
 		return ranked.map { result in
@@ -151,6 +120,19 @@ extension Browser {
 					guard self.selectedTabID == selectedTabID,
 					      self.browserSearchConfiguration.encoded == configuration.encoded
 				else { return }
+				if result.kind == .search {
+					guard Defaults[.searchSuggestionsEnabled],
+					      self.browserSearchConfiguration.suggestionsProvider(isPrivate: self.isPrivate) != nil
+					else { return }
+					if includeActions {
+						guard self.newTabGoogleSuggestions.contains(result.title) else { return }
+					} else {
+						guard let remoteSuggestionRequest,
+						      self.addressSuggestionsRequest == remoteSuggestionRequest,
+						      self.ownsAddressSuggestionRequest(remoteSuggestionRequest)
+						else { return }
+					}
+				}
 					if includeActions {
 						guard self.newTabSearchGeneration == generation,
 						      self.newTabSearchText.trimmingCharacters(in: .whitespacesAndNewlines) == query
@@ -164,6 +146,122 @@ extension Browser {
 				}
 			)
 		}
+	}
+
+	private func ownsAddressSuggestionRequest(_ request: BrowserSearchSuggestionsRequest) -> Bool {
+		let controller = selectedTab?.activeController
+		let scope = "address:\(windowID):\(selectedTabID):\(controller?.id.uuidString ?? "none"):\(controller?.navigationIdentifier ?? -1)"
+		guard let provider = browserSearchConfiguration.suggestionsProvider(isPrivate: isPrivate) else { return false }
+		return request.query == addressSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+			&& request.generation == addressSearchGeneration
+			&& request.scope == scope
+			&& request.provider == provider
+			&& request.isPrivate == isPrivate
+			&& request.configuration == browserSearchConfiguration.encoded
+			&& request.suggestionsEnabled == Defaults[.searchSuggestionsEnabled]
+			&& request.suggestionsEnabled == addressFieldIsFocused
+			&& !isShowingNewTab
+	}
+
+	func discoverSearchEngineFromAddressBar() {
+		guard !isPrivate,
+		      let tab = selectedTab,
+		      let controller = tab.activeController,
+		      let webView = controller.webViewIfLoaded,
+		      let pageURL = controller.url,
+		      pageURL.scheme?.lowercased() == "https"
+		else { return }
+		let source = BrowserSearchEngineDiscovery(
+			template: "",
+			tabID: tab.id,
+			controllerID: controller.id,
+			webViewID: ObjectIdentifier(webView),
+			documentID: controller.navigationIdentifier,
+			pageURL: pageURL,
+			query: addressSearchText.trimmingCharacters(in: .whitespacesAndNewlines),
+			queryGeneration: addressSearchGeneration,
+			configuration: browserSearchConfiguration.encoded
+		)
+		searchEngineDiscoveryTask?.cancel()
+		searchEngineDiscoveryTask = Task {
+			do {
+				switch try await BrowserSearchSuggestions.discoverOpenSearchTemplate(in: webView) {
+					case let .found(template):
+						let pending = BrowserSearchEngineDiscovery(
+							template: template,
+							tabID: source.tabID,
+							controllerID: source.controllerID,
+							webViewID: source.webViewID,
+							documentID: source.documentID,
+							pageURL: source.pageURL,
+							query: source.query,
+							queryGeneration: source.queryGeneration,
+							configuration: source.configuration
+						)
+						guard self.isCurrentSearchEngineDiscovery(pending) else { return }
+						self.pendingSearchEngineDiscovery = pending
+					case .notPublished:
+						self.reportSearchEngineDiscoveryFailure(source, message: "This site does not publish search metadata")
+					case .blocked:
+						self.reportSearchEngineDiscoveryFailure(source, message: "Search metadata was blocked by HTTPS policy")
+					case .invalid:
+						self.reportSearchEngineDiscoveryFailure(source, message: "This site's search metadata is invalid")
+					case .failed:
+						self.reportSearchEngineDiscoveryFailure(source, message: "Could not fetch search metadata")
+					case .cancelled:
+						return
+				}
+			} catch {
+				guard !Task.isCancelled else { return }
+				self.reportSearchEngineDiscoveryFailure(source, message: "Could not fetch search metadata")
+			}
+		}
+	}
+
+	private func reportSearchEngineDiscoveryFailure(_ source: BrowserSearchEngineDiscovery, message: String) {
+		guard isCurrentSearchEngineDiscovery(source) else { return }
+		session.toastManager.show(symbol: "exclamationmark.triangle", message: message)
+	}
+
+	var canAcceptSearchEngineDiscovery: Bool {
+		guard let pending = pendingSearchEngineDiscovery else { return false }
+		return isCurrentSearchEngineDiscovery(pending)
+	}
+
+	func consumeSearchEngineDiscovery() -> String? {
+		defer { pendingSearchEngineDiscovery = nil }
+		guard let pending = pendingSearchEngineDiscovery,
+		      isCurrentSearchEngineDiscovery(pending)
+		else { return nil }
+		return pending.template
+	}
+
+	func discardStaleSearchEngineDiscovery() {
+		searchEngineDiscoveryTask?.cancel()
+		guard let pending = pendingSearchEngineDiscovery,
+		      !isCurrentSearchEngineDiscovery(pending)
+		else { return }
+		pendingSearchEngineDiscovery = nil
+	}
+
+	private func isCurrentSearchEngineDiscovery(_ pending: BrowserSearchEngineDiscovery) -> Bool {
+		guard !isPrivate,
+		      let controller = selectedTab?.activeController,
+		      let webView = controller.webViewIfLoaded,
+		      let pageURL = controller.url,
+		      webView.url == pageURL,
+		      pending.matches(
+			  tabID: selectedTabID,
+			  controllerID: controller.id,
+			  webViewID: ObjectIdentifier(webView),
+			  documentID: controller.navigationIdentifier,
+			  pageURL: pageURL,
+			  query: addressSearchText.trimmingCharacters(in: .whitespacesAndNewlines),
+			  queryGeneration: addressSearchGeneration,
+			  configuration: browserSearchConfiguration.encoded
+		      )
+		else { return false }
+		return true
 	}
 
 	private func actionResult(_ action: BrowserSearchAction, score: Double) -> BrowserSearchResult {
