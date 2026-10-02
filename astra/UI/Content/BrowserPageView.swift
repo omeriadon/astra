@@ -36,6 +36,7 @@ struct BrowserPageView: View {
 		.overlay(alignment: .topTrailing) {
 			if let controller = browser.selectedTab?.activeController, controller.showsFind {
 				BrowserFindBar(controller: controller)
+					.id(controller.id)
 			}
 		}
 		.overlay(alignment: .topTrailing) {
