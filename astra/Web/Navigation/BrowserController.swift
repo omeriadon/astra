@@ -1908,10 +1908,10 @@ extension BrowserController: WKUIDelegate {
 		if navigationAction.navigationType == .linkActivated,
 		   permission == nil || permission == .allowOnce || permission == .allowAlways
 		{
-			return popupRequested?(configuration, source, inBackground)
+			return createPopupWebView(configuration, source: source, inBackground: inBackground)
 		}
 		if permission == .allowAlways || permission == .allowOnce {
-			return popupRequested?(configuration, source, inBackground)
+			return createPopupWebView(configuration, source: source, inBackground: inBackground)
 		}
 		Task { @MainActor [weak self, weak webView] in
 			guard let self, let webView,
@@ -1921,6 +1921,20 @@ extension BrowserController: WKUIDelegate {
 			session.toastManager.show(symbol: "checkmark.circle", message: "Pop-ups allowed. Retry the page action.")
 		}
 		return nil
+	}
+
+	private func createPopupWebView(
+		_ configuration: WKWebViewConfiguration,
+		source: UnitPoint,
+		inBackground: Bool?
+	) -> WKWebView? {
+		guard let popup = popupRequested?(configuration, source, inBackground) else { return nil }
+		if isAuthenticationSessionBrowser,
+		   let controller = popup.navigationDelegate as? BrowserController
+		{
+			controller.isAuthenticationSessionBrowser = true
+		}
+		return popup
 	}
 
 	private static func securityOrigin(_ origin: WKSecurityOrigin) -> String? {

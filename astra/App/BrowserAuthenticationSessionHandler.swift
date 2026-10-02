@@ -35,38 +35,43 @@
 			let window = BrowserWindowController(browser: browser)
 			let id = request.uuid
 			let session = Session(generation: UUID(), request: request, window: window)
+			let generation = session.generation
+			let webSession = browser.session
 			sessions[id] = session
 			let controller = browser.selectedTab?.controller
 			controller?.isAuthenticationSessionBrowser = true
-			browser.navigationIntercept = { [weak self] url in
+			browser.navigationIntercept = { [weak self, weak request, weak window] url in
 				guard let self,
+				      let request,
+				      let window,
 				      let current = sessions[id],
 				      BrowserAuthenticationPolicy.isCurrentSession(
-					      generation: session.generation,
-					      currentGeneration: current.generation,
-					      sameRequest: current.request === request,
-					      sameWindow: current.window === window
+					  generation: generation,
+					  currentGeneration: current.generation,
+					  sameRequest: current.request === request,
+					  sameWindow: current.window === window
 				      ),
 				      request.callback?.matchesURL(url) == true else { return false }
 				sessions[id] = nil
 				request.complete(withCallbackURL: url)
-				closeAndCleanUp(session)
+				window.window.close()
+				cleanUpPrivateSession(webSession)
 				return true
 			}
-			window.onClose = { [weak self] in
+			window.onClose = { [weak self, weak window] in
 				guard let self else { return }
+				defer { cleanUpPrivateSession(webSession) }
 				if let current = sessions[id],
 				   BrowserAuthenticationPolicy.isCurrentSession(
-					   generation: session.generation,
+					   generation: generation,
 					   currentGeneration: current.generation,
-					   sameRequest: current.request === request,
+					   sameRequest: true,
 					   sameWindow: current.window === window
 				   )
 				{
 					sessions[id] = nil
-					request.cancelWithError(Self.cancellationError)
+					current.request.cancelWithError(Self.cancellationError)
 				}
-				cleanUpPrivateSession(session)
 			}
 			controller?.navigate(initialRequest)
 			window.showWindow()
@@ -91,12 +96,12 @@
 
 		private func closeAndCleanUp(_ session: Session) {
 			session.window.window.close()
-			cleanUpPrivateSession(session)
+			cleanUpPrivateSession(session.window.browser.session)
 		}
 
-		private func cleanUpPrivateSession(_ session: Session) {
-			guard session.window.browser.isPrivate else { return }
-			Task { await session.window.browser.session.endPrivateSession() }
+		private func cleanUpPrivateSession(_ session: BrowserWebSession) {
+			guard session.isPrivate else { return }
+			Task { await session.endPrivateSession() }
 		}
 
 		private static var cancellationError: NSError {
