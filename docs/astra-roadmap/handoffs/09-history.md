@@ -4,7 +4,7 @@ Task / selected optional scope: Baseline history recording, query and projection
 
 Branch / worktree / baseline commit: `astra/roadmap/09-history` / `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/09-history` / `b9df9763a1cd05b65dadb098dbce203e0201e2c7`.
 
-Status: source complete; app compiler gate remains open because the Xcode MCP transport is unavailable. No retry was made.
+Status: primary source-reviewed and Mac build verified on 2 October 2026; runtime and iOS gates remain open.
 
 Commit(s), or explicit uncommitted state: `e71df62` (`implement browser history visits`), `0066b8d` (`stabilize legacy history identity`), `b509d54` (`fix history clear during navigation`), and `adbc902` (`guard history callbacks by browser ownership`). Handoff checkpoints: `ea037ce` and `6658238`; final handoff update follows.
 
@@ -42,3 +42,7 @@ Migration, compatibility and private-data impact: No local envelope or sync docu
 Capability gates / unresolved issues: WebKit live/native navigation entries are intentionally retained in the active controller so deleted history remains usable for current back/forward navigation. Reopened or restored historical visit records remain filtered by tombstones/clear clocks. Build and runtime evidence are pending.
 
 Merge prerequisites / follow-up ownership: Packet13 can start from this reviewed controller callback contract: `historyVisitDidCommit(URL, title, navigationIdentifier)` for committed eligible visits; `historyVisitTitleDidChange(URL, title, navigationIdentifier)` updates only. Both closures are cleared with the controller. Upload/auth delegate behavior was not changed. Preserve packet29 tombstone, clear, cache and timestamp semantics.
+
+## Primary resume review — 2 October 2026
+
+Reviewed all six changed production files, visit callback ownership and restoration suppression, mutation/deletion clocks, filtering at hydration/import/sync, and backup replacement. Fixed a missing return in the shared visibleHistoryVisits helper exposed by app compilation. Xcode MCP workspace `workspace-dqePllQ8Lg`, exact 09 project, `astra` / `My Mac`: build passed in 12.414s after the fix, no errors. This also compiles the included packet07 source. Production history policy check reran successfully. Workspace closed. Existing persistence check evidence remains recorded; no app/runtime/iOS check was performed.

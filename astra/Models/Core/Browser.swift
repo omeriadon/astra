@@ -1169,7 +1169,7 @@ final class Browser {
 
 	private func visibleHistoryVisits(_ visits: [BrowserVisit]) -> [BrowserVisit] {
 		var seenIDs = Set<UUID>()
-		visits.compactMap { source in
+		return visits.compactMap { source in
 			guard let url = BrowserVisit.normalizedURL(source.url),
 			      (historyClearedAt == .distantPast || source.modifiedAt > historyClearedAt),
 			      deletedVisitsAt[source.id].map({ source.modifiedAt > $0 }) ?? true,
