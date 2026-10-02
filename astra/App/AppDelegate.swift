@@ -589,7 +589,7 @@
 				if !visits.isEmpty {
 					let separator = NSMenuItem.separator()
 					separator.tag = 17_017
-					let insertionIndex = (menu.indexOfItem(withAction: #selector(openHistory(_:))) + 1)
+					let insertionIndex = (menu.items.firstIndex { $0.action == #selector(openHistory(_:)) } ?? 0) + 1
 					menu.insertItem(separator, at: insertionIndex)
 					var nextIndex = insertionIndex + 1
 					for visit in visits {
