@@ -62,7 +62,10 @@
 				andEventID: AEEventID(kAEGetURL)
 			)
 			_ = BrowserWebSession.shared
-			BrowserWebPushManager.shared.openRequested = { [weak self] url in self?.openAfterStartupRestoration(url) }
+			let appDelegate: AppDelegate = self
+			BrowserWebPushManager.shared.openRequested = { [weak appDelegate] url in
+				appDelegate?.openAfterStartupRestoration(url)
+			}
 			NotificationCenter.default.addObserver(
 				self,
 				selector: #selector(newMiniAstra(_:)),
