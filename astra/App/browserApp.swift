@@ -16,25 +16,27 @@ extension Color {
 }
 
 #if os(macOS)
-	import AppKit
+	#if !ASTRA_WEBSITE_APP_HELPER
+		import AppKit
 
-	@main
-	enum browserApp {
-		@MainActor
-		static func main() {
-			let application = NSApplication.shared
-			let delegate = AppDelegate()
+		@main
+		enum browserApp {
+			@MainActor
+			static func main() {
+				let application = NSApplication.shared
+				let delegate = AppDelegate()
 
-			application.setActivationPolicy(.regular)
-			application.delegate = delegate
-			BrowserWebsiteAppMenuIntegration.shared.install()
-			application.run()
+				application.setActivationPolicy(.regular)
+				application.delegate = delegate
+				BrowserWebsiteAppMenuIntegration.shared.install()
+				application.run()
 
-			// NSApplication's delegate is not an ownership boundary we want to
-			// rely on. Keep it alive for the entire run loop explicitly.
-			_ = delegate
+				// NSApplication's delegate is not an ownership boundary we want to
+				// rely on. Keep it alive for the entire run loop explicitly.
+				_ = delegate
+			}
 		}
-	}
+	#endif
 #else
 	@main
 	struct browserApp: App {
