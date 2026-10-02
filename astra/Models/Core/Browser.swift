@@ -9,9 +9,11 @@ import WebKit
 final class Browser {
 	private static var didApplyStartupBehavior = false
 	private static var launchMetadataTask: Task<Bool?, Never>?
-	let windowID = UUID()
+	let windowID: UUID
 	let isMini: Bool
 	let session: BrowserWebSession
+	private let restorationRecord: BrowserWindowRecord?
+	private(set) var savedWindowFrame: BrowserWindowFrame?
 
 	var isPrivate: Bool {
 		session.isPrivate
@@ -97,6 +99,7 @@ final class Browser {
 	@ObservationIgnored
 	private var didFinishHydration = true
 	var isReadyForSync: Bool { didFinishHydration && !hydrationFailed && persistence != nil }
+	var isHydrationFinished: Bool { didFinishHydration }
 
 	@ObservationIgnored
 	private var hydrationFailed = false
@@ -407,8 +410,11 @@ final class Browser {
 		selectedTab?.internalPage == nil ? selectedTabID : webTabs.first?.id ?? selectedTabID
 	}
 
-	init(isMini: Bool = false, isPrivate: Bool = false) {
+	init(isMini: Bool = false, isPrivate: Bool = false, windowRecord: BrowserWindowRecord? = nil) {
+		windowID = windowRecord?.windowID ?? UUID()
 		self.isMini = isMini
+		restorationRecord = windowRecord
+		savedWindowFrame = windowRecord?.frame
 		let session = isPrivate ? BrowserWebSession(isPrivate: true) : .shared
 		self.session = session
 		if !isMini, !isPrivate {
@@ -471,6 +477,7 @@ final class Browser {
 		var closedTabs: [OpenTab]
 		var historyVisits: [BrowserVisit]?
 		var previousShutdownWasClean: Bool?
+		var windowRecords: [BrowserWindowRecord]
 	}
 
 	private func hydrateFromDisk(placeholderID: UUID, placeholderModifiedAt: Date) {
@@ -496,7 +503,8 @@ final class Browser {
 						bookmarks: state.bookmarks,
 						closedTabs: state.closedTabs,
 						historyVisits: state.historyVisits,
-						previousShutdownWasClean: previousShutdownWasClean
+						previousShutdownWasClean: previousShutdownWasClean,
+						windowRecords: state.windowRecords ?? []
 					)
 				} else {
 					let tabs = try persistence.loadOpenTabs()
@@ -510,7 +518,8 @@ final class Browser {
 						workspace: workspace,
 						bookmarks: bookmarks,
 						closedTabs: closedTabs,
-						previousShutdownWasClean: previousShutdownWasClean
+						previousShutdownWasClean: previousShutdownWasClean,
+						windowRecords: []
 					)
 				}
 				await MainActor.run { [weak self] in
@@ -543,6 +552,7 @@ final class Browser {
 			&& tabs.first?.modifiedAt == placeholderModifiedAt
 			&& tabs.first?.currentURL == nil
 		guard placeholderIsUntouched else {
+			let selectionBeforeHydration = selectedTabID
 			Self.didApplyStartupBehavior = true
 			let cachedTabs = loaded.tabs
 			let cachedWorkspace = loaded.workspace ?? BrowserWorkspace.migrated(
@@ -578,6 +588,12 @@ final class Browser {
 			)
 			let merged = current.merging(cached)
 			applySyncDocument(merged)
+			if selectionBeforeHydration == placeholderID,
+			   let record = loaded.windowRecords.first(where: { $0.windowID == windowID }) ?? restorationRecord,
+			   let selection = record.restoredSelection(availableTabIDs: Set(tabs.map(\.id)))
+			{
+				selectTab(selection)
+			}
 			closedHistoryTabs = loaded.closedTabs
 			return
 		}
@@ -618,9 +634,14 @@ final class Browser {
 			newTabs = restoredTabs
 			newTabs.append(BrowserTab(initialURL: homepage, session: session))
 		}
+		let savedWindow = loaded.windowRecords.first { $0.windowID == windowID } ?? restorationRecord
+		let restoredWindowSelection = savedWindow?.restoredSelection(availableTabIDs: Set(newTabs.map(\.id)))
 		let newSelectedTabID = startupBehavior == .restore
-			? (newTabs.first(where: { $0.id == loaded.snapshot?.selectedTabID })?.id ?? newTabs[0].id)
+			? (restoredWindowSelection ?? newTabs.first(where: { $0.id == loaded.snapshot?.selectedTabID })?.id ?? newTabs[0].id)
 			: newTabs[newTabs.count - 1].id
+		if savedWindowFrame == nil {
+			savedWindowFrame = savedWindow?.frame
+		}
 		tabs = newTabs
 		selectedTabID = newSelectedTabID
 		workspace = loaded.workspace ?? BrowserWorkspace.migrated(
@@ -1084,6 +1105,18 @@ final class Browser {
 		scrollPersistenceTask = nil
 		pendingFullPersistence = true
 		persist()
+	}
+
+	func updateWindowFrame(_ frame: BrowserWindowFrame) {
+		guard !isPrivate, !isMini, savedWindowFrame != frame else { return }
+		savedWindowFrame = frame
+		guard persistence != nil else { return }
+		persistenceTask?.cancel()
+		persistenceTask = Task { @MainActor [weak self] in
+			try? await Task.sleep(for: .milliseconds(600))
+			guard !Task.isCancelled else { return }
+			self?.persist()
+		}
 	}
 
 	func flushAndWaitForPersistence() async {
@@ -1935,11 +1968,7 @@ final class Browser {
 				historyClearedAt: historyClearedAt
 			),
 			historyVisits: historyVisits,
-			windowRecords: [BrowserWindowRecord(
-				windowID: windowID,
-				tabIDs: tabs.map(\.id),
-				selectedTabID: selectedTabID
-			)]
+			windowRecords: BrowserWindowRegistry.shared.recordsForPersistence
 		)
 		// Encode + file IO off-main so Cmd+T / history-open stay instant.
 		// Scroll-only saves skip cross-window fan-out and sync: no structural change.

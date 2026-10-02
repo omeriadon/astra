@@ -33,12 +33,57 @@ struct BrowserWindowRecord: Codable, Equatable, Sendable {
 	var windowID: UUID
 	var tabIDs: [UUID]
 	var selectedTabID: UUID
+	var frame: BrowserWindowFrame?
 
-	init(windowID: UUID, tabIDs: [UUID], selectedTabID: UUID) {
+	init(windowID: UUID, tabIDs: [UUID], selectedTabID: UUID, frame: BrowserWindowFrame? = nil) {
 		version = 1
 		self.windowID = windowID
 		self.tabIDs = tabIDs
 		self.selectedTabID = selectedTabID
+		self.frame = frame
+	}
+
+	func restoredSelection(availableTabIDs: Set<UUID>) -> UUID? {
+		guard let selected = tabIDs.first(where: { $0 == selectedTabID && availableTabIDs.contains($0) }) else {
+			return tabIDs.first(where: availableTabIDs.contains)
+		}
+		return selected
+	}
+}
+
+struct BrowserWindowFrame: Codable, Equatable, Sendable {
+	var x: Double
+	var y: Double
+	var width: Double
+	var height: Double
+
+	init(x: Double, y: Double, width: Double, height: Double) {
+		self.x = x
+		self.y = y
+		self.width = width
+		self.height = height
+	}
+
+	var isValid: Bool {
+		x.isFinite && y.isFinite
+			&& width.isFinite && height.isFinite
+			&& width > 0 && height > 0
+			&& abs(x) <= 1_000_000 && abs(y) <= 1_000_000
+			&& width <= 100_000 && height <= 100_000
+	}
+
+	func clamped(to visible: CGRect) -> Self {
+		let visibleWidth = visible.size.width
+		let visibleHeight = visible.size.height
+		guard visibleWidth > 0, visibleHeight > 0 else { return self }
+		let width = min(max(self.width, min(640, visibleWidth)), visibleWidth)
+		let height = min(max(self.height, min(480, visibleHeight)), visibleHeight)
+		return Self(
+			x: min(max(x, visible.origin.x), visible.origin.x + visibleWidth - width),
+			y: min(max(y, visible.origin.y), visible.origin.y + visibleHeight - height),
+			width: width,
+			height: height
+		)
 	}
 }
 
@@ -186,13 +231,7 @@ final class BrowserPersistence: @unchecked Sendable {
 			}
 		}
 		var state = state
-		if let oldState = try? loadPersistedState() {
-			var records = Dictionary(uniqueKeysWithValues: (oldState.windowRecords ?? []).map { ($0.windowID, $0) })
-			for record in state.windowRecords ?? [] {
-				records[record.windowID] = record
-			}
-			state.windowRecords = records.values.sorted { $0.windowID.uuidString < $1.windowID.uuidString }
-		}
+		state.windowRecords = (state.windowRecords ?? []).sorted { $0.windowID.uuidString < $1.windowID.uuidString }
 		let data = try JSONEncoder().encode(Envelope(version: Self.currentVersion, state: state))
 		_ = try decodeSnapshot(data)
 		let currentURL = directory.appendingPathComponent("browser-state.json")
@@ -283,7 +322,8 @@ final class BrowserPersistence: @unchecked Sendable {
 			guard record.version == 1,
 			      windowIDs.insert(record.windowID).inserted,
 			      Set(record.tabIDs).count == record.tabIDs.count,
-			      record.tabIDs.contains(record.selectedTabID)
+			      record.tabIDs.contains(record.selectedTabID),
+			      record.frame.map(\.isValid) ?? true
 			else {
 				throw BrowserPersistenceError.invalidSnapshot
 			}
