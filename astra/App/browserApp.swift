@@ -27,6 +27,7 @@ extension Color {
 
 			application.setActivationPolicy(.regular)
 			application.delegate = delegate
+			BrowserWebsiteAppMenuIntegration.shared.install()
 			application.run()
 
 			// NSApplication's delegate is not an ownership boundary we want to
