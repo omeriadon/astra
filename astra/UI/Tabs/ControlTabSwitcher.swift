@@ -14,6 +14,8 @@
 		@ObservationIgnored
 		private let browser: Browser
 		@ObservationIgnored
+		private weak var window: NSWindow?
+		@ObservationIgnored
 		private var eventMonitor: Any?
 		@ObservationIgnored
 		private var previewTask: Task<Void, Never>?
@@ -26,21 +28,28 @@
 			self.browser = browser
 		}
 
+		func setWindow(_ window: NSWindow?) {
+			self.window = window
+		}
+
 		func start() {
 			guard eventMonitor == nil else { return }
 			eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
 				let isKeyDown = event.type == .keyDown
 				let isTab = event.keyCode == 48
 				let isEscape = event.keyCode == 53
-				let isControlPressed = event.modifierFlags.contains(.control)
-				let isShiftPressed = event.modifierFlags.contains(.shift)
+				let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+				let isControlPressed = modifiers.contains(.control)
+				let isShiftPressed = modifiers.contains(.shift)
+				let hasDisallowedModifiers = modifiers.contains(.command) || modifiers.contains(.option)
 				let isHandled = MainActor.assumeIsolated {
 					self?.handle(
 						isKeyDown: isKeyDown,
 						isTab: isTab,
 						isEscape: isEscape,
 						isControlPressed: isControlPressed,
-						isShiftPressed: isShiftPressed
+						isShiftPressed: isShiftPressed,
+						hasDisallowedModifiers: hasDisallowedModifiers
 					) ?? false
 				}
 				return isHandled ? nil : event
@@ -90,15 +99,29 @@
 			isTab: Bool,
 			isEscape: Bool,
 			isControlPressed: Bool,
-			isShiftPressed: Bool
+			isShiftPressed: Bool,
+			hasDisallowedModifiers: Bool
 		) -> Bool {
+			guard window?.isKeyWindow == true else {
+				if !candidateIDs.isEmpty {
+					endSession()
+				}
+				return false
+			}
 			if isCancelledUntilControlRelease {
 				if !isControlPressed {
 					isCancelledUntilControlRelease = false
-				} else if isKeyDown, isTab {
+				} else if isKeyDown, isTab, !hasDisallowedModifiers {
 					return true
 				}
 			}
+			if !isKeyDown, !isControlPressed, !candidateIDs.isEmpty {
+				if let highlightedTabID {
+					browser.commitTabSwitch(to: highlightedTabID)
+				}
+				endSession()
+			}
+			guard !hasDisallowedModifiers else { return false }
 
 			if isKeyDown {
 				if isEscape, !candidateIDs.isEmpty {
@@ -127,13 +150,6 @@
 					candidateWindowAnchorID = highlightedTabID
 				}
 				return true
-			}
-
-			if !candidateIDs.isEmpty, !isControlPressed {
-				if let highlightedTabID {
-					browser.commitTabSwitch(to: highlightedTabID)
-				}
-				endSession()
 			}
 			return false
 		}

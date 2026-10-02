@@ -335,7 +335,9 @@
 		}
 
 		private var activeBrowser: Browser? {
-			BrowserAuthenticationSessionHandler.shared.activeBrowser ?? activeMiniWindow?.browser ?? BrowserWindowRegistry.shared.activeBrowser
+			guard let keyWindow = NSApp.keyWindow else { return nil }
+			return windows.first { $0.window === keyWindow }?.browser
+				?? miniWindows.first { $0.window === keyWindow }?.browser
 		}
 
 		private var activeMiniWindow: MiniAstraWindowController? {
@@ -420,10 +422,6 @@
 		}
 
 		@objc private func closeTab(_: Any?) {
-			if BrowserAuthenticationSessionHandler.shared.activeBrowser != nil {
-				NSApp.keyWindow?.performClose(nil)
-				return
-			}
 			if let mini = activeMiniWindow {
 				mini.window.performClose(nil)
 				return
@@ -447,21 +445,20 @@
 		}
 
 		@objc private func editSpace(_: Any?) {
-			let controller = mainWindow
-			controller.browser.openInternalPage(.themeEditor)
-			controller.showWindow()
+			activeBrowser?.openInternalPage(.themeEditor)
 		}
 
 		@objc private func openSettings(_: Any?) {
-			let controller = mainWindow
-			controller.browser.openInternalPage(.settings)
-			controller.showWindow()
+			activeBrowser?.openInternalPage(.settings)
 		}
 
 		@objc private func openHistory(_: Any?) {
-			let controller = mainWindow
-			controller.browser.openInternalPage(.history)
-			controller.showWindow()
+			activeBrowser?.openInternalPage(.history)
+		}
+
+		@objc private func showDownloads(_: Any?) {
+			guard let browser = activeBrowser, !browser.isMini else { return }
+			NotificationCenter.default.post(name: .showBrowserDownloads, object: browser.windowID)
 		}
 
 		@objc private func openBookmarks(_: Any?) {
@@ -476,6 +473,14 @@
 			browser.openBookmark(bookmark)
 		}
 
+		@objc private func openHistoryVisit(_ sender: NSMenuItem) {
+			guard let browser = activeBrowser,
+			      let id = sender.representedObject as? UUID,
+			      let visit = browser.historyVisits.first(where: { $0.id == id })
+			else { return }
+			browser.openHistoryURL(visit.url, inBackground: false)
+		}
+
 		#if DEBUG
 			@objc private func openDebugPage(_ sender: NSMenuItem) {
 				guard let id = sender.representedObject as? String,
@@ -487,26 +492,80 @@
 		#endif
 
 		func menuWillOpen(_ menu: NSMenu) {
-			guard menu.title == "Bookmarks" else { return }
-			menu.removeAllItems()
-			menu.addItem(item("Add Bookmark", action: #selector(addBookmark(_:)), key: "b"))
-			menu.addItem(item("Open Bookmarks", action: #selector(openBookmarks(_:))))
-			let bookmarks = activeBrowser?.bookmarks ?? []
-			if !bookmarks.isEmpty {
-				menu.addItem(.separator())
-				for bookmark in bookmarks {
-					let menuItem = item(bookmark.name, action: #selector(openSavedBookmark(_:)))
-					menuItem.representedObject = bookmark.id
-					menuItem.image = NSImage(systemSymbolName: "bookmark", accessibilityDescription: "Bookmark")
-					menu.addItem(menuItem)
+			if menu.title == "Bookmarks" {
+				menu.removeAllItems()
+				menu.addItem(item("Add Bookmark", action: #selector(addBookmark(_:)), key: "b"))
+				menu.addItem(item("Open Bookmarks", action: #selector(openBookmarks(_:))))
+				let bookmarks = activeBrowser?.isPrivate == true ? [] : activeBrowser?.bookmarks ?? []
+				if !bookmarks.isEmpty {
+					menu.addItem(.separator())
+					for bookmark in bookmarks {
+						let menuItem = item(bookmark.name, action: #selector(openSavedBookmark(_:)))
+						menuItem.representedObject = bookmark.id
+						menuItem.image = NSImage(systemSymbolName: "bookmark", accessibilityDescription: "Bookmark")
+						menu.addItem(menuItem)
+					}
 				}
+				return
+			}
+			if menu.title == "Navigation" {
+				menu.removeAllItems()
+				menu.addItem(item("History", action: #selector(openHistory(_:)), key: "y"))
+				let visits = activeBrowser.map { Array($0.recentHistoryVisits.prefix(10)) } ?? []
+				if !visits.isEmpty {
+					menu.addItem(.separator())
+					for visit in visits {
+						let title = visit.title.isEmpty ? (visit.url.host ?? visit.url.absoluteString) : visit.title
+						let menuItem = item(title, action: #selector(openHistoryVisit(_:)))
+						menuItem.representedObject = visit.id
+						menu.addItem(menuItem)
+					}
+				}
+				menu.addItem(.separator())
+				menu.addItem(item("Show Downloads", action: #selector(showDownloads(_:)), key: "l", modifiers: [.command, .option]))
+				menu.addItem(item("Open Location", action: #selector(openLocation(_:)), key: "l"))
+				menu.addItem(item("Back", action: #selector(goBack(_:)), key: "["))
+				menu.addItem(item("Forward", action: #selector(goForward(_:)), key: "]"))
+				menu.addItem(item("Enter Picture in Picture", action: #selector(enterPictureInPicture(_:))))
+				menu.addItem(item("Show Picture in Picture Tab", action: #selector(showPictureInPictureTab(_:))))
+				menu.addItem(.separator())
+				menu.addItem(item("Reload", action: #selector(reload(_:)), key: "r"))
+				menu.addItem(item("Force Reload", action: #selector(forceReload(_:)), key: "r", modifiers: [.command, .shift]))
+				menu.addItem(.separator())
+				menu.addItem(item("Zoom In", action: #selector(zoomIn(_:)), key: "="))
+				menu.addItem(item("Zoom Out", action: #selector(zoomOut(_:)), key: "-"))
+				menu.addItem(item("Actual Size", action: #selector(actualSize(_:)), key: "0"))
+				return
+			}
+			guard menu.title == "Window" else { return }
+			menu.removeAllItems()
+			menu.addItem(responderItem("Minimize", action: #selector(NSWindow.performMiniaturize(_:)), key: "m"))
+			menu.addItem(responderItem("Zoom", action: #selector(NSWindow.performZoom(_:))))
+			menu.addItem(.separator())
+			menu.addItem(item("Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), target: NSApp))
+			let browserWindows = windows.map { ($0.browser, $0.window) }
+			let miniWindows = miniWindows.map { ($0.browser, $0.window as NSWindow) }
+			for (index, entry) in (browserWindows + miniWindows).enumerated() {
+				let (browser, window) = entry
+				let title = browser.isMini ? "Mini Astra" : browser.isPrivate ? "Private Window" : "Astra Window"
+				let menuItem = item("\(title) \(index + 1)", action: #selector(activateWindow(_:)))
+				menuItem.representedObject = browser.windowID
+				menuItem.state = window === NSApp.keyWindow ? .on : .off
+				menu.addItem(menuItem)
+			}
+		}
+
+		@objc private func activateWindow(_ sender: NSMenuItem) {
+			guard let id = sender.representedObject as? UUID else { return }
+			if let controller = windows.first(where: { $0.browser.windowID == id }) {
+				controller.showWindow()
+			} else if let controller = miniWindows.first(where: { $0.browser.windowID == id }) {
+				controller.showWindow()
 			}
 		}
 
 		@objc private func showAbout(_: Any?) {
-			let controller = mainWindow
-			controller.showWindow()
-			let browser = controller.browser
+			let browser = activeBrowser ?? openBrowserWindow().browser
 			browser.settingsPage = .about
 			browser.openInternalPage(.settings)
 		}
@@ -606,16 +665,6 @@
 			activeBrowser?.selectedTab?.activeController?.resetZoom()
 		}
 
-		@objc private func toggleWebInspector(_: Any?) {
-			guard let webView = activeBrowser?.selectedTab?.activeController?.webViewIfLoaded,
-			      webView.responds(to: NSSelectorFromString("_inspector")),
-			      let inspector = webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject
-			else { return }
-
-			let action = inspector.value(forKey: "visible") as? Bool == true ? "hide" : "show"
-			inspector.perform(NSSelectorFromString(action))
-		}
-
 		@objc private func enterPictureInPicture(_: Any?) {
 			activeBrowser?.selectedTab?.activeController?.enterPictureInPicture()
 		}
@@ -655,11 +704,66 @@
 			let pageActions: Set<Selector> = [
 				#selector(printPage(_:)), #selector(savePDF(_:)), #selector(saveWebArchive(_:)),
 				#selector(saveSource(_:)), #selector(findInPage(_:)), #selector(findNext(_:)),
-				#selector(findPrevious(_:)), #selector(toggleWebInspector(_:)),
+				#selector(findPrevious(_:)),
 			]
 			let dataActions: Set<Selector> = [#selector(importBrowsingData(_:)), #selector(exportBrowsingData(_:)), #selector(exportBookmarks(_:))]
 			if let action = menuItem.action, pageActions.contains(action) {
-				return activeBrowser?.selectedTab?.activeController?.committedURL != nil
+				guard let controller = activeBrowser?.selectedTab?.activeController,
+				      activeBrowser?.selectedTab?.internalPage == nil,
+				      controller.committedURL != nil,
+				      controller.navigationFailure == nil,
+				      !controller.isLoading
+				else { return false }
+				return true
+			}
+			let browserActions: Set<Selector> = [
+				#selector(editSpace(_:)), #selector(openSettings(_:)), #selector(openHistory(_:)),
+				#selector(openBookmarks(_:)), #selector(openLocation(_:)), #selector(actualSize(_:)),
+				#selector(duplicateTab(_:)), #selector(copyURL(_:)),
+			]
+			if let action = menuItem.action, browserActions.contains(action) {
+				return activeBrowser != nil
+			}
+			if menuItem.action == #selector(toggleSidebar(_:)) {
+				return activeBrowser?.isMini == false
+			}
+			if menuItem.action == #selector(goBack(_:)) {
+				return activeBrowser?.selectedTab?.activeController?.canGoBack == true
+			}
+			if menuItem.action == #selector(goForward(_:)) {
+				return activeBrowser?.selectedTab?.activeController?.canGoForward == true
+			}
+			if menuItem.action == #selector(reload(_:)) || menuItem.action == #selector(forceReload(_:)) {
+				guard let controller = activeBrowser?.selectedTab?.activeController else { return false }
+				return controller.url != nil || controller.navigationFailure != nil
+			}
+			if menuItem.action == #selector(showDownloads(_:)) {
+				return activeBrowser?.isMini == false
+			}
+			if menuItem.action == #selector(reopenLastClosedTab(_:)) {
+				return activeBrowser != nil && activeBrowser?.isMini == false
+			}
+			if menuItem.action == #selector(addBookmark(_:)) {
+				return activeBrowser?.canBookmarkSelectedPage == true
+			}
+			if menuItem.action == #selector(openSavedBookmark(_:)) {
+				return activeBrowser?.isPrivate == false
+			}
+			if menuItem.action == #selector(openHistoryVisit(_:)) {
+				guard let browser = activeBrowser,
+				      let id = menuItem.representedObject as? UUID else { return false }
+				return browser.historyVisits.contains(where: { $0.id == id })
+			}
+			if menuItem.action == #selector(closeTab(_:)) {
+				return activeBrowser != nil || activeMiniWindow != nil
+			}
+			if menuItem.action == #selector(zoomIn(_:)) {
+				guard let zoom = activeBrowser?.selectedTab?.activeController?.pageZoom else { return false }
+				return zoom < BrowserZoomPolicy.range.upperBound
+			}
+			if menuItem.action == #selector(zoomOut(_:)) {
+				guard let zoom = activeBrowser?.selectedTab?.activeController?.pageZoom else { return false }
+				return zoom > BrowserZoomPolicy.range.lowerBound
 			}
 			if menuItem.action == #selector(enterPictureInPicture(_:)) {
 				guard let controller = activeBrowser?.selectedTab?.activeController else { return false }
@@ -784,13 +888,6 @@
 			viewMenu.addItem(item("Edit Space", action: #selector(editSpace(_:))))
 			viewMenu.addItem(.separator())
 			viewMenu.addItem(item(
-				"Web Inspector",
-				action: #selector(toggleWebInspector(_:)),
-				key: "i",
-				modifiers: [.command, .option]
-			))
-			viewMenu.addItem(.separator())
-			viewMenu.addItem(item(
 				"Enter Full Screen",
 				action: #selector(toggleFullScreen(_:)),
 				key: "f",
@@ -799,25 +896,7 @@
 
 			let navigationMenu = NSMenu(title: "Navigation")
 			mainMenu.addItem(menuRoot("Navigation", submenu: navigationMenu))
-			navigationMenu.addItem(item("History", action: #selector(openHistory(_:)), key: "y"))
-			navigationMenu.addItem(.separator())
-			navigationMenu.addItem(item("Open Location", action: #selector(openLocation(_:)), key: "l"))
-			navigationMenu.addItem(item("Back", action: #selector(goBack(_:)), key: "["))
-			navigationMenu.addItem(item("Forward", action: #selector(goForward(_:)), key: "]"))
-			navigationMenu.addItem(item("Enter Picture in Picture", action: #selector(enterPictureInPicture(_:))))
-			navigationMenu.addItem(item("Show Picture in Picture Tab", action: #selector(showPictureInPictureTab(_:))))
-			navigationMenu.addItem(.separator())
-			navigationMenu.addItem(item("Reload", action: #selector(reload(_:)), key: "r"))
-			navigationMenu.addItem(item(
-				"Force Reload",
-				action: #selector(forceReload(_:)),
-				key: "r",
-				modifiers: [.command, .shift]
-			))
-			navigationMenu.addItem(.separator())
-			navigationMenu.addItem(item("Zoom In", action: #selector(zoomIn(_:)), key: "="))
-			navigationMenu.addItem(item("Zoom Out", action: #selector(zoomOut(_:)), key: "-"))
-			navigationMenu.addItem(item("Actual Size", action: #selector(actualSize(_:)), key: "0"))
+			navigationMenu.delegate = self
 
 			let bookmarksMenu = NSMenu(title: "Bookmarks")
 			mainMenu.addItem(menuRoot("Bookmarks", submenu: bookmarksMenu))
@@ -837,6 +916,7 @@
 
 			let windowMenu = NSMenu(title: "Window")
 			mainMenu.addItem(menuRoot("Window", submenu: windowMenu))
+			windowMenu.delegate = self
 			windowMenu.addItem(responderItem("Minimize", action: #selector(NSWindow.performMiniaturize(_:)), key: "m"))
 			windowMenu.addItem(responderItem("Zoom", action: #selector(NSWindow.performZoom(_:))))
 			windowMenu.addItem(.separator())

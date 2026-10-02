@@ -58,6 +58,7 @@ struct BrowserRootView: View {
 			.background {
 				WindowFocusReader { window in
 					hostWindow = window
+					controlTabSwitcher.setWindow(window)
 					if window?.isKeyWindow == true {
 						BrowserWindowRegistry.shared.activate(browser)
 					}

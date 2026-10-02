@@ -901,9 +901,6 @@ final class BrowserController: NSObject, Identifiable {
 		#endif
 		#if os(macOS)
 			_ = AstraConfigureWebPushPreferences(configuration.preferences, !session.isPrivate && BrowserWebPushManager.shared.hasNativeSupport)
-			if configuration.preferences.responds(to: NSSelectorFromString("_setDeveloperExtrasEnabled:")) {
-				configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
-			}
 		#endif
 		if let suffix = Self.safariUserAgentSuffix() {
 			configuration.applicationNameForUserAgent = suffix
@@ -911,13 +908,7 @@ final class BrowserController: NSObject, Identifiable {
 		session.favicons.configureFaviconObservation(in: configuration.userContentController)
 		let webView = PeekSourceWebView(frame: .zero, configuration: configuration)
 		#if os(macOS)
-			webView.isInspectable = true
-			// WebKit's docked inspector resizes the web view outside SwiftUI's layout.
-			let inspectorAttachmentView = NSView(frame: .zero)
-			inspectorAttachmentView.isHidden = true
-			if webView.responds(to: NSSelectorFromString("_setInspectorAttachmentView:")) {
-				webView.perform(NSSelectorFromString("_setInspectorAttachmentView:"), with: inspectorAttachmentView)
-			}
+			webView.isInspectable = Defaults[.webInspectorEnabled]
 		#endif
 		createdWebView = webView
 		let scrollHandler = WeakScriptMessageHandler(delegate: self)
