@@ -10,6 +10,7 @@ struct BrowserAddressField: View {
 		BrowserSearchConfiguration.decode(searchConfigurationValue)
 	}
 	@State private var addressText = ""
+	@State private var addressSelectionID: String?
 	@FocusState private var isFocused: Bool
 
 	private var isDimmed: Bool {
@@ -25,26 +26,92 @@ struct BrowserAddressField: View {
 	}
 
 	var body: some View {
-		AddressTextField(
-			addressText: $addressText,
-			isFocused: $isFocused,
-			isDimmed: isDimmed,
-			isSearch: isSearch,
-			dimmedAddressText: dimmedAddressText,
-			onSubmitAddress: submitAddress,
-			onEscape: {
-				browser.newTabSearchSelection = "typed"
-				isFocused = false
-			},
-			onMoveSelection: { offset in
-				guard browser.isShowingNewTab else { return false }
-				browser.moveNewTabSearchSelection(by: offset)
-				return true
+		HStack(spacing: 6) {
+			AddressTextField(
+				addressText: $addressText,
+				isFocused: $isFocused,
+				isDimmed: isDimmed,
+				isSearch: isSearch,
+				dimmedAddressText: dimmedAddressText,
+				onSubmitAddress: submitAddress,
+				onCompleteAddress: completeAddress,
+				onEscape: {
+					if browser.isShowingNewTab {
+						browser.newTabSearchSelection = "typed"
+					} else {
+						addressSelectionID = nil
+					}
+					isFocused = false
+				},
+				onMoveSelection: { offset in
+					if browser.isShowingNewTab {
+						guard !browser.newTabSearchResults.isEmpty else { return false }
+						browser.moveNewTabSearchSelection(by: offset)
+						return true
+					} else {
+						return moveAddressSelection(by: offset)
+					}
+				}
+			)
+			PasteButton(payloadType: String.self) { values in
+				guard let value = values.first,
+				      value.utf8.count <= 16_384,
+				      let destination = BrowserAddress.destination(
+						for: value,
+						configuration: searchConfiguration,
+						isPrivate: browser.isPrivate
+				      ),
+				      ["http", "https"].contains(destination.scheme?.lowercased() ?? ""),
+				      destination.host?.isEmpty == false
+			else {
+					return
+				}
+				addressText = destination.absoluteString
+				isFocused = true
 			}
-		)
+			.labelStyle(.iconOnly)
+			.accessibilityLabel("Paste address")
+			.accessibilityIdentifier("paste-address")
+		}
+		.overlay(alignment: .topLeading) {
+			if isFocused, !browser.isShowingNewTab, !addressText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+				addressSuggestions
+					.offset(y: 38)
+			}
+		}
+		.confirmationDialog(
+			"Use this site's search engine?",
+			isPresented: Binding(
+				get: { browser.pendingSearchEngineTemplate != nil },
+				set: { if !$0 { browser.pendingSearchEngineTemplate = nil } }
+			),
+			titleVisibility: .visible
+		) {
+			Button("Use as Search Engine", systemImage: "checkmark", role: .confirm) {
+				guard let template = browser.pendingSearchEngineTemplate else { return }
+				var configuration = searchConfiguration
+				configuration.customTemplate = template
+				configuration.normalEngine = .custom
+				searchConfigurationValue = configuration.encoded
+				browser.pendingSearchEngineTemplate = nil
+			}
+			.buttonStyle(.glassProminent)
+			.accessibilityIdentifier("confirm-search-engine-discovery")
+			Button(role: .cancel) {
+				browser.pendingSearchEngineTemplate = nil
+			}
+		}
+		.message {
+			if let template = browser.pendingSearchEngineTemplate {
+				Text(template)
+			}
+		}
 		.onChange(of: addressText) { _, text in
+			addressSelectionID = nil
 			if browser.isShowingNewTab {
 				browser.newTabSearchText = text
+			} else {
+				browser.addressSearchText = text
 			}
 		}
 		.onChange(of: browser.newTabSearchText) { _, text in
@@ -123,6 +190,51 @@ struct BrowserAddressField: View {
 		return text
 	}
 
+	private var addressSuggestions: some View {
+		List(browser.searchResults(for: addressText, includeActions: false)) { result in
+			let query = addressText
+			let generation = browser.addressSearchGeneration
+			Button {
+				selectAddressSuggestion(result)
+			} label: {
+				Label {
+					VStack(alignment: .leading, spacing: 2) {
+						Text(verbatim: result.title).lineLimit(1)
+						Text(verbatim: result.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+					}
+				} icon: {
+					Image(systemName: result.symbol).frame(width: 20)
+				}
+			}
+			.buttonStyle(.plain)
+			.accessibilityLabel("\(result.title), \(result.detail)")
+			.accessibilityIdentifier("address-suggestion-\(result.id)")
+			.listRowBackground(Color.primary.opacity(addressSelectionID == result.id ? 0.12 : 0))
+			.contextMenu {
+				if result.kind == .history,
+				   let value = result.destination,
+				   let url = URL(string: value)
+				{
+					Button("Remove from History", systemImage: "trash", role: .destructive) {
+						browser.removeHistorySuggestion(
+							id: result.id,
+							url: url,
+							query: query,
+							generation: generation,
+							fromNewTab: false
+						)
+					}
+					.accessibilityIdentifier("remove-history-\(result.id)")
+				}
+			}
+		}
+		.listStyle(.sidebar)
+		.scrollContentBackground(.hidden)
+		.frame(maxWidth: 520, minHeight: 0, maxHeight: 260)
+		.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+		.shadow(radius: 12)
+	}
+
 	private func updateForSelectedTab() {
 		updateAddressFromURL()
 		if browser.selectedTab?.activeController?.url == nil {
@@ -142,6 +254,7 @@ struct BrowserAddressField: View {
 			configuration: searchConfiguration,
 			isPrivate: browser.isPrivate
 		)
+		browser.addressSearchText = next
 		guard next != addressText else { return }
 		addressText = next
 	}
@@ -152,6 +265,12 @@ struct BrowserAddressField: View {
 			browser.submitNewTabSearch()
 			isFocused = false
 			updateAddressFromURL()
+			return
+		}
+		if let selected = browser.searchResults(for: addressText, includeActions: false)
+			.first(where: { $0.id == addressSelectionID })
+		{
+			selectAddressSuggestion(selected)
 			return
 		}
 		guard let destination = BrowserAddress.destination(
@@ -169,6 +288,39 @@ struct BrowserAddressField: View {
 		)
 		isFocused = false
 	}
+
+	private func moveAddressSelection(by offset: Int) -> Bool {
+		let results = browser.searchResults(for: addressText, includeActions: false)
+		guard !results.isEmpty else { return false }
+		let index = results.firstIndex { $0.id == addressSelectionID }
+		let next = index.map { ($0 + offset + results.count) % results.count }
+			?? (offset > 0 ? 0 : results.count - 1)
+		addressSelectionID = results[next].id
+		return true
+	}
+
+	private func completeAddress() -> Bool {
+		let results = browser.searchResults(for: addressText, includeActions: false)
+		let query = BrowserSearchMatching.normalized(addressText)
+		guard let result = results.first(where: { result in
+			guard [.history, .bookmark, .openTab].contains(result.kind),
+			      let value = result.destination,
+			      let url = URL(string: value),
+			      let host = url.host
+			else { return false }
+			return BrowserSearchMatching.normalized(host).hasPrefix(query)
+		}) else { return false }
+		addressText = result.destination ?? addressText
+		isFocused = true
+		return true
+	}
+
+	private func selectAddressSuggestion(_ result: BrowserSearchResult) {
+		result.perform()
+		addressSelectionID = result.id
+		isFocused = false
+		updateAddressFromURL()
+	}
 }
 
 private struct AddressTextField: View {
@@ -178,6 +330,7 @@ private struct AddressTextField: View {
 	var isSearch: Bool
 	var dimmedAddressText: AttributedString
 	var onSubmitAddress: () -> Void
+	var onCompleteAddress: () -> Bool
 	var onEscape: () -> Void
 	var onMoveSelection: (Int) -> Bool
 
@@ -191,6 +344,9 @@ private struct AddressTextField: View {
 			.focused(isFocused)
 			.submitLabel(.go)
 			.onSubmit(onSubmitAddress)
+			.onKeyPress(.tab) {
+				onCompleteAddress() ? .handled : .ignored
+			}
 			.onKeyPress(.downArrow) {
 				onMoveSelection(1) ? .handled : .ignored
 			}

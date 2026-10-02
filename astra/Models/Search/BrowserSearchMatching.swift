@@ -1,6 +1,20 @@
 import Foundation
 
 enum BrowserSearchMatching {
+	static func openSearchTemplate(from data: Data) -> String? {
+		guard data.count <= 65_536 else { return nil }
+		let parser = XMLParser(data: data)
+		let delegate = OpenSearchTemplateParser()
+		parser.delegate = delegate
+		parser.shouldResolveExternalEntities = false
+		guard parser.parse(), delegate.isOpenSearchDocument, !delegate.sawDocumentType,
+		      let template = delegate.template
+		else { return nil }
+		var configuration = BrowserSearchConfiguration.default
+		configuration.customTemplate = template
+		return configuration.customTemplateIsValid ? template : nil
+	}
+
 	nonisolated static func normalized(_ text: String) -> String {
 		text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
 			.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -76,5 +90,37 @@ enum BrowserSearchMatching {
 			previous = current
 		}
 		return previous[rhs.count]
+	}
+}
+
+private final class OpenSearchTemplateParser: NSObject, XMLParserDelegate {
+	var template: String?
+	private(set) var isOpenSearchDocument = false
+	private(set) var sawDocumentType = false
+	private var sawRoot = false
+
+	func parser(_ parser: XMLParser, foundDOCTYPE name: String, publicID: String?, systemID: String?) {
+		sawDocumentType = true
+	}
+
+	func parser(
+		_ parser: XMLParser,
+		didStartElement elementName: String,
+		namespaceURI: String?,
+		qualifiedName qName: String?,
+		attributes: [String: String] = [:]
+	) {
+		if !sawRoot {
+			sawRoot = true
+			isOpenSearchDocument = elementName == "OpenSearchDescription"
+		}
+		guard isOpenSearchDocument else { return }
+		guard template == nil, elementName == "Url",
+		      attributes["method"]?.lowercased() == "get",
+		      ["text/html", "application/xhtml+xml"].contains(attributes["type"]?.lowercased() ?? ""),
+		      let value = attributes["template"], value.utf8.count <= 2_048,
+		      value.components(separatedBy: "{searchTerms}").count == 2
+		else { return }
+		template = value.replacingOccurrences(of: "{searchTerms}", with: "{query}")
 	}
 }

@@ -17,6 +17,8 @@ struct NewTabView: View {
 			List {
 				Section(browser.newTabSearchText.isEmpty ? "Browser Actions" : "Suggestions") {
 					ForEach(browser.newTabSearchResults) { result in
+						let query = browser.newTabSearchText
+						let generation = browser.newTabSearchGeneration
 						Button(action: result.perform) {
 							Label {
 								VStack(alignment: .leading, spacing: 2) {
@@ -40,6 +42,23 @@ struct NewTabView: View {
 						.accessibilityAddTraits(selectedResultID == result.id ? [.isSelected] : [])
 						.accessibilityIdentifier("new-tab-result-\(result.id)")
 						.id(result.id)
+						.contextMenu {
+							if result.kind == .history,
+							   let value = result.destination,
+							   let url = URL(string: value)
+							{
+								Button("Remove from History", systemImage: "trash", role: .destructive) {
+									browser.removeHistorySuggestion(
+										id: result.id,
+										url: url,
+										query: query,
+										generation: generation,
+										fromNewTab: true
+									)
+								}
+								.accessibilityIdentifier("remove-history-\(result.id)")
+							}
+						}
 					}
 				}
 			}
@@ -100,6 +119,7 @@ struct NewTabView: View {
 	private var suggestionRequest: BrowserSearchSuggestionsRequest {
 		BrowserSearchSuggestionsRequest(
 			query: browser.newTabSearchText.trimmingCharacters(in: .whitespacesAndNewlines),
+			generation: browser.newTabSearchGeneration,
 			provider: searchConfiguration.suggestionsProvider(isPrivate: browser.isPrivate) ?? .custom,
 			isPrivate: browser.isPrivate,
 			configuration: searchConfiguration.encoded,

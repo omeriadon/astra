@@ -2,6 +2,7 @@ import Foundation
 
 struct BrowserSearchSuggestionsRequest: Hashable {
 	let query: String
+	let generation: Int
 	let provider: BrowserSearchConfiguration.Engine
 	let isPrivate: Bool
 	let configuration: String
@@ -11,6 +12,7 @@ struct BrowserSearchSuggestionsRequest: Hashable {
 enum BrowserSearchSuggestions {
 	private static let session = URLSession(configuration: .ephemeral)
 	private static let responseLimit = 131_072
+	private static let openSearchLimit = 65_536
 
 	static func fetch(
 		for query: String,
@@ -49,6 +51,37 @@ enum BrowserSearchSuggestions {
 			!$0.isEmpty && $0.count <= 500
 				&& seen.insert(BrowserSearchMatching.normalized($0)).inserted
 		}.prefix(4))
+	}
+
+	static func discoverOpenSearchTemplate(for websiteURL: URL) async throws -> String? {
+		guard let website = URLComponents(url: websiteURL, resolvingAgainstBaseURL: false),
+		      website.scheme?.lowercased() == "https",
+		      let host = website.host, !host.isEmpty,
+		      website.user == nil, website.password == nil
+		else { return nil }
+		var endpoint = URLComponents()
+		endpoint.scheme = "https"
+		endpoint.host = host
+		endpoint.port = website.port
+		endpoint.path = "/opensearch.xml"
+		guard let url = endpoint.url else { return nil }
+		var request = URLRequest(url: url)
+		request.timeoutInterval = 3
+		let (bytes, response) = try await session.bytes(for: request)
+		defer { bytes.task.cancel() }
+		guard let response = response as? HTTPURLResponse,
+		      response.statusCode == 200,
+		      let finalURL = response.url,
+		      finalURL.scheme?.lowercased() == "https",
+		      finalURL.host?.lowercased() == host.lowercased()
+		else { return nil }
+		var data = Data()
+		for try await byte in bytes {
+			guard data.count < openSearchLimit else { return nil }
+			data.append(byte)
+		}
+		try Task.checkCancellation()
+		return BrowserSearchMatching.openSearchTemplate(from: data)
 	}
 
 	static func suggestionURL(for query: String, provider: BrowserSearchConfiguration.Engine) -> URL? {

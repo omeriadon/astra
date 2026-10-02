@@ -62,13 +62,25 @@ final class Browser {
 	var newTabSearchText = "" {
 		didSet {
 			guard oldValue != newTabSearchText else { return }
+			newTabSearchGeneration &+= 1
 			newTabSearchSelection = nil
 			newTabGoogleSuggestions = []
+			pendingSearchEngineTemplate = nil
 		}
 	}
 
 	var newTabSearchSelection: String?
+	var newTabSearchGeneration = 0
+	var addressSearchText = "" {
+		didSet {
+			if oldValue != addressSearchText {
+				addressSearchGeneration &+= 1
+			}
+		}
+	}
+	var addressSearchGeneration = 0
 	var newTabGoogleSuggestions: [String] = []
+	var pendingSearchEngineTemplate: String?
 	var sidebarShown: Bool {
 		get {
 			access(keyPath: \.sidebarShown)
