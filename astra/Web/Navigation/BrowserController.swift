@@ -1117,13 +1117,21 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func load(_ url: URL) {
+		load(url, isExplicitAddressRequest: false)
+	}
+
+	func loadFromAddressBar(_ url: URL) {
+		load(url, isExplicitAddressRequest: true)
+	}
+
+	private func load(_ url: URL, isExplicitAddressRequest: Bool) {
 		guard !isInvalidated else { return }
 		if BrowserAddress.externalApplicationScheme(for: url) != nil,
 		   handleExternalLink(
 			url,
 			requestingOrigin: nil,
-			requestingSite: "Astra address bar",
-			isExplicitAddressRequest: true,
+			requestingSite: isExplicitAddressRequest ? "Astra address bar" : nil,
+			isExplicitAddressRequest: isExplicitAddressRequest,
 			in: webView
 		   )
 		{

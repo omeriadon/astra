@@ -67,7 +67,7 @@
 				      let browser = activeBrowser,
 				      let keyWindow = NSApp.keyWindow,
 				      BrowserKeyboardMenuPolicy.canPromptForAddressAction(
-					      isFocusedBrowser: activeBrowser === browser,
+					      isFocusedBrowser: keyWindow.isKeyWindow && activeBrowser === browser,
 					      isSelectedController: browser.selectedTab?.activeController === controller,
 					      isSameSession: browser.session === controller.session,
 					      isCurrentWebView: controller.webViewIfLoaded === webView,
@@ -642,7 +642,7 @@
 		}
 
 		@objc private func openLocation(_: Any?) {
-			guard activeAuthenticationBrowser == nil, let browser = activeBrowser else { return }
+			guard let browser = activeBrowser else { return }
 			if browser.selectedTab?.internalPage != nil {
 				browser.addTab()
 			} else {
@@ -782,8 +782,7 @@
 			]
 			let dataActions: Set<Selector> = [#selector(importBrowsingData(_:)), #selector(exportBrowsingData(_:)), #selector(exportBookmarks(_:))]
 			if let action = menuItem.action, pageActions.contains(action) {
-				guard activeAuthenticationBrowser == nil,
-				      let controller = activeBrowser?.selectedTab?.activeController,
+				guard let controller = activeBrowser?.selectedTab?.activeController,
 				      activeBrowser?.selectedTab?.internalPage == nil,
 				      controller.committedURL != nil,
 				      controller.navigationFailure == nil,
@@ -793,7 +792,7 @@
 			}
 			let browserActions: Set<Selector> = [
 				#selector(editSpace(_:)), #selector(openHistory(_:)),
-				#selector(openBookmarks(_:)), #selector(openLocation(_:)),
+				#selector(openBookmarks(_:)),
 				#selector(duplicateTab(_:)),
 			]
 			if let action = menuItem.action, browserActions.contains(action) {
@@ -801,6 +800,9 @@
 			}
 			if menuItem.action == #selector(openSettings(_:)) {
 				return true
+			}
+			if menuItem.action == #selector(openLocation(_:)) {
+				return activeBrowser != nil
 			}
 			if menuItem.action == #selector(toggleSidebar(_:)) {
 				return activeBrowser?.isMini == false
