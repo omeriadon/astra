@@ -2,7 +2,7 @@
 
 Task / selected optional scope: destination folder and Ask Where to Save preferences; accessible byte progress with native Progress throughput/ETA projections when available; explicit retry/cancel actions; dangerous-file confirmation before opening known executable/package types.
 Branch / worktree / baseline commit: `astra/roadmap/12-downloads` / `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/12-downloads` / `d6be8c0f66d9aa5fbfcf270e6c2120ad7948dc05`.
-Status: source complete; Xcode app build gated by unavailable MCP transport; sandbox and WebKit runtime behavior pending.
+Status: primary source-reviewed and Mac build verified on 2 October 2026; sandbox and WebKit runtime behavior pending.
 Commit(s), or explicit uncommitted state: `ed08555` initial implementation checkpoint; `3e250df` focused review checkpoint; the current cache-hydration/quit checkpoint includes this handoff update. Primary review pending.
 
 Changed files and behavior:
@@ -36,3 +36,7 @@ Migration, compatibility and private-data impact: no cache format version bump. 
 Capability gates / unresolved issues: the changed app sources have not been Xcode type-checked or built because the MCP transport closed. Sandbox and security-scoped bookmark behavior must be verified in a signed app. If a completed file-scoped bookmark cannot be created, the quarantined output remains saved and the download row reports that Astra needs access renewed; the Open/Reveal actions also show a toast. Source checks do not establish WebKit resume, quarantine, security-scope, throughput/ETA availability, or alert behavior on device.
 
 Merge prerequisites / follow-up ownership: primary source review and an Xcode MCP app build are required before integration. No `BrowserController.swift` or shared roadmap contract edits were made.
+
+## Primary resume review — 2 October 2026
+
+Reviewed every changed production file, destination finalization/quarantine, native/segmented cancellation/retry paths, local cache hydration/writes and privacy boundaries. Review corrections checkpoint `1766a42` closes the production compiler error and the scoped-access, stale-operation and quit-write issues found in review. Xcode MCP exact12 project, workspace `workspace-JCOAkGHjKZ`, `astra` / `My Mac`: build passed10.097s, no errors. Worker production helper check passes, including body-stream rejection; source/runtime evidence remain distinct. No app launch, signed sandbox, native WebKit transfer or iOS check ran. Historical transport-gated statements above describe earlier attempts; Mac compilation and primary source review are now complete.
