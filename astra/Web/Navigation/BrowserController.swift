@@ -44,10 +44,16 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var committedURL: URL?
 	private(set) var hasOnlySecureContent = false
 	var showsFind = false
-	var findText = ""
-	private(set) var findHasMatch = true
+	var findText = "" {
+		didSet {
+			guard oldValue != findText else { return }
+			findGeneration.advance()
+			findHasMatch = nil
+		}
+	}
+	private(set) var findHasMatch: Bool?
 	@ObservationIgnored
-	private var findGeneration = 0
+	private var findGeneration = BrowserFindGeneration()
 	private(set) var hasUnsavedChanges = false
 	private(set) var cameraCaptureState: WKMediaCaptureState = .none
 	private(set) var microphoneCaptureState: WKMediaCaptureState = .none
@@ -284,6 +290,10 @@ final class BrowserController: NSObject, Identifiable {
 
 	var pageZoom = 1.0 {
 		didSet {
+			let boundedZoom = BrowserZoomPolicy.clamp(pageZoom)
+			if pageZoom != boundedZoom {
+				pageZoom = boundedZoom
+			}
 			if let createdWebView, Double(createdWebView.pageZoom) != pageZoom {
 				createdWebView.pageZoom = CGFloat(pageZoom)
 			}
@@ -618,15 +628,26 @@ final class BrowserController: NSObject, Identifiable {
 
 	func findNext(backwards: Bool = false) {
 		guard let webView = createdWebView, owns(webView) else { return }
-		findGeneration += 1
-		let generation = findGeneration
+		let generation = findGeneration.advance()
+		let query = findText
 		let configuration = WKFindConfiguration()
 		configuration.backwards = backwards
 		configuration.wraps = true
-		webView.find(findText, configuration: configuration) { [weak self] result in
-			guard let self, generation == findGeneration else { return }
-			findHasMatch = findText.isEmpty || result.matchFound
+		webView.find(query, configuration: configuration) { [weak self, weak webView] result in
+			guard let self,
+			      let webView,
+			      self.createdWebView === webView,
+			      self.owns(webView),
+			      self.findGeneration.accepts(generation),
+			      query == self.findText
+			else { return }
+			self.findHasMatch = query.isEmpty || result.matchFound
 		}
+	}
+
+	func invalidateFindResults() {
+		findGeneration.advance()
+		findHasMatch = nil
 	}
 
 	func dismissFind() {
@@ -773,7 +794,7 @@ final class BrowserController: NSObject, Identifiable {
 		contentProcessTerminations = BrowserContentProcessTerminationTracker()
 		session.permissions.removeTemporaryDecisions(controllerID: id)
 		navigationGeneration += 1
-		findGeneration += 1
+		findGeneration.advance()
 		observations.forEach { $0.invalidate() }
 		observations.removeAll()
 		securityScopedFile?.stopAccessingSecurityScopedResource()
@@ -1053,6 +1074,7 @@ final class BrowserController: NSObject, Identifiable {
 		(createdWebView as? PeekSourceWebView)?.consumeRecentClick()
 		historyManager.beginVisit()
 		self.url = url
+		invalidateFindResults()
 		scrollPosition = .zero
 		restoredScrollPosition = nil
 		load(request)
@@ -1060,6 +1082,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	func goBack() {
 		guard let webView = createdWebView, webView.canGoBack else { return }
+		invalidateFindResults()
 		historyVisitPolicy.userInitiatedNavigation()
 		currentRequest = nil
 		awaitsNavigationCommit = true
@@ -1068,6 +1091,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	func goForward() {
 		guard let webView = createdWebView, webView.canGoForward else { return }
+		invalidateFindResults()
 		historyVisitPolicy.userInitiatedNavigation()
 		currentRequest = nil
 		awaitsNavigationCommit = true
@@ -1109,7 +1133,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func resetZoom() {
-		pageZoom = 1
+		pageZoom = BrowserZoomPolicy.defaultZoom
 		session.toastManager.show(symbol: "1.magnifyingglass", message: "Zoom 100%")
 	}
 
@@ -1127,7 +1151,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func zoomIn() {
-		pageZoom = min(pageZoom + 0.1, 5)
+		pageZoom = BrowserZoomPolicy.clamp(pageZoom + 0.1)
 		session.toastManager.show(
 			symbol: "plus.magnifyingglass",
 			message: "Zoom \(Int(pageZoom * 100))%"
@@ -1135,7 +1159,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func zoomOut() {
-		pageZoom = max(pageZoom - 0.1, 0.25)
+		pageZoom = BrowserZoomPolicy.clamp(pageZoom - 0.1)
 		session.toastManager.show(
 			symbol: "minus.magnifyingglass",
 			message: "Zoom \(Int(pageZoom * 100))%"
@@ -1531,6 +1555,7 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
 		guard owns(webView) else { return }
+		invalidateFindResults()
 		if isPictureInPictureActive || isEnteringPictureInPicture {
 			webView.closeAllMediaPresentations(completionHandler: nil)
 		}

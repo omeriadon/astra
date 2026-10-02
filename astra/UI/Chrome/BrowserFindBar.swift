@@ -20,7 +20,7 @@ struct BrowserFindBar: View {
 					return .handled
 				}
 				.accessibilityIdentifier("find-in-page-field")
-			if !controller.findText.isEmpty, !controller.findHasMatch {
+			if !controller.findText.isEmpty, controller.findHasMatch == false {
 				Text("No matches")
 					.font(.caption)
 					.foregroundStyle(.secondary)
@@ -45,7 +45,11 @@ struct BrowserFindBar: View {
 		.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
 		.frame(maxWidth: 440)
 		.padding(12)
-		.onAppear { isFocused = true }
+		.onAppear {
+			isFocused = true
+			controller.findNext()
+		}
+		.onDisappear { controller.invalidateFindResults() }
 		.accessibilityIdentifier("find-in-page-bar")
 	}
 }

@@ -11,6 +11,7 @@ let addressDisplayStyleSpacing: CGFloat = 8
 struct BrowserGeneralSettingsView: View {
 	@Bindable private var updates = UpdateManager.shared
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
+	@Default(.defaultPageZoom) private var defaultPageZoom
 	@Default(.peekLevel) private var peekLevel
 	@Default(.zoomOutInPeeks) private var zoomOutInPeeks
 	@Default(.renameDownloadsWithAppleIntelligence) private var renameDownloadsWithAppleIntelligence
@@ -117,6 +118,24 @@ struct BrowserGeneralSettingsView: View {
 					.accessibilityIdentifier("private-search-suggestions-enabled")
 			}
 			.id("Search")
+
+			Section("Page Zoom") {
+				HStack {
+					Slider(value: $defaultPageZoom, in: 0.25 ... 5, step: 0.05)
+						.accessibilityLabel("Default page zoom")
+						.accessibilityIdentifier("default-page-zoom-slider")
+					Text(defaultPageZoom, format: .percent.precision(.fractionLength(0)))
+						.monospacedDigit()
+						.frame(minWidth: 48, alignment: .trailing)
+						.accessibilityIdentifier("default-page-zoom-value")
+				}
+
+				Button("Reset Default Zoom", systemImage: "1.magnifyingglass") {
+					defaultPageZoom = BrowserZoomPolicy.defaultZoom
+				}
+				.accessibilityIdentifier("default-page-zoom-reset")
+			}
+			.id("Page Zoom")
 
 			Section("Startup") {
 				Picker("When Astra opens", selection: $startupBehavior) {
