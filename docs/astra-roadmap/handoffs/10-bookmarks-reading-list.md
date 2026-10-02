@@ -6,7 +6,7 @@ Branch / worktree / baseline commit: `astra/roadmap/10-bookmarks-reading-list`; 
 
 Status: source complete. Primary Xcode build and runtime acceptance remain pending.
 
-Commit(s): `51445d0` (`implement bookmarks and reading list`), `f056fec` (`harden reading archive durability`), `8a38e42` (`add owned offline archive navigation`), and primary-owned `20b08ad` (`fix offline archive navigation state`). Final UI/model/build-correction checkpoint is pending.
+Commit(s): `51445d0` (`implement bookmarks and reading list`), `f056fec` (`harden reading archive durability`), `8a38e42` (`add owned offline archive navigation`), primary-owned `20b08ad` (`fix offline archive navigation state`), and `2cd04c0` (`connect bookmarks reading list flows`).
 
 Changed files and behavior:
 
