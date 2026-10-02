@@ -27,6 +27,14 @@ struct AddressSearchChecks {
 		precondition(BrowserAddress.destination(for: "example.com:notaport", configuration: configuration)?.host == "www.google.com")
 		precondition(BrowserAddress.destination(for: "javascript://alert", configuration: configuration) == nil)
 
+		checkAddress("omeriadon/astra", expected: "https://github.com/omeriadon/astra", configuration: configuration)
+		checkAddress("apple/swift", expected: "https://github.com/apple/swift", configuration: configuration)
+		checkAddress(".github/.github", expected: "https://www.google.com/search?q=.github%2F.github", configuration: configuration)
+		precondition(BrowserSearchConfiguration.githubRepositoryDestination(for: "owner/repo/extra") == nil)
+		precondition(BrowserSearchConfiguration.githubRepositoryDestination(for: "-owner/repo") == nil)
+		precondition(BrowserSearchConfiguration.githubRepositoryDestination(for: "owner/repo name") == nil)
+		precondition(configuration.searchLabel(for: "omeriadon/astra", isPrivate: false) == "Open GitHub Repository")
+
 		let query = "C++ & 100%=x # café"
 		guard let searchURL = configuration.searchURL(for: query) else { fatalError("missing default search URL") }
 		precondition(searchURL.absoluteString.contains("C%2B%2B"))
