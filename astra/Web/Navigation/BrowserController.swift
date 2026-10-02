@@ -389,6 +389,8 @@ final class BrowserController: NSObject, Identifiable {
 	@ObservationIgnored
 	private var failedRequest: URLRequest?
 	@ObservationIgnored
+	var isAuthenticationSessionBrowser = false
+	@ObservationIgnored
 	private var retriedAfterConnectivityReturn = false
 	@ObservationIgnored
 	private var contentProcessTerminations = BrowserContentProcessTerminationTracker()
@@ -1337,7 +1339,7 @@ final class BrowserController: NSObject, Identifiable {
 	private func load(_ request: URLRequest, resetConnectivityRetry: Bool = true) {
 		guard !isInvalidated else { return }
 		awaitsNavigationCommit = true
-		currentRequest = request
+		currentRequest = isAuthenticationSessionBrowser ? nil : request
 		failedRequest = nil
 		if resetConnectivityRetry {
 			retriedAfterConnectivityReturn = false
@@ -1448,7 +1450,11 @@ extension BrowserController: WKNavigationDelegate {
 			preferences.preferredHTTPSNavigationPolicy = Defaults[.tryHTTPSFirst] && !isLocal
 				&& navigationAction.request.httpMethod == "GET" ? .automaticFallbackToHTTP : .keepAsRequested
 		#endif
-		if navigationAction.targetFrame?.isMainFrame == true,
+		if BrowserAuthenticationPolicy.canInterceptCallback(
+			isSourceMainFrame: navigationAction.sourceFrame.isMainFrame,
+			targetsMainFrame: navigationAction.targetFrame?.isMainFrame == true,
+			isNewWindow: navigationAction.targetFrame == nil
+		),
 		   let destination = navigationAction.request.url,
 		   navigationIntercept?(destination) == true
 		{
@@ -1520,7 +1526,7 @@ extension BrowserController: WKNavigationDelegate {
 					default:
 						break
 				}
-				currentRequest = navigationAction.request
+				currentRequest = isAuthenticationSessionBrowser ? nil : navigationAction.request
 				webView.customUserAgent = Self.userAgentOverride(for: navigationAction.request.url)
 				switch navigationAction.navigationType {
 					case .linkActivated:
@@ -1632,7 +1638,7 @@ extension BrowserController: WKNavigationDelegate {
 		pageURLBeforeDownload = nil
 		awaitsNavigationCommit = false
 		historyManager.cancelVisit()
-		failedRequest = currentRequest
+		failedRequest = isAuthenticationSessionBrowser ? nil : currentRequest
 		if let failedURL = error.userInfo[NSURLErrorFailingURLErrorKey] as? URL ?? url {
 			navigationFailure = BrowserNavigationFailure(error: error, url: failedURL)
 		}
@@ -1640,6 +1646,7 @@ extension BrowserController: WKNavigationDelegate {
 
 	private func retryOfflineGETAfterConnectivityReturns() {
 		guard !isInvalidated,
+		      !isAuthenticationSessionBrowser,
 		      createdWebView != nil,
 		      !retriedAfterConnectivityReturn,
 		      (navigationFailure?.kind == .offline || navigationFailure?.kind == .connectionLost),
@@ -1828,7 +1835,12 @@ extension BrowserController: WKUIDelegate {
 		windowFeatures _: WKWindowFeatures
 	) -> WKWebView? {
 		guard owns(webView) else { return nil }
-		if navigationAction.targetFrame == nil, let destination = navigationAction.request.url,
+		if BrowserAuthenticationPolicy.canInterceptCallback(
+			isSourceMainFrame: navigationAction.sourceFrame.isMainFrame,
+			targetsMainFrame: navigationAction.targetFrame?.isMainFrame == true,
+			isNewWindow: navigationAction.targetFrame == nil
+		),
+		   let destination = navigationAction.request.url,
 		   navigationIntercept?(destination) == true
 		{
 			return nil
