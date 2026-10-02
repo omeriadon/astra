@@ -1,6 +1,6 @@
 # 20-security-reputation
 
-Priority: P0 baseline; P2 added provider. Status: planned. Prerequisites: 02, 05, 06, 18.
+Priority: P0 baseline; P2 added provider. Status: build verified. Prerequisites: 02, 05, 06, 18.
 Branch: `astra/roadmap/20-security-reputation`. Worktree: `../astra-worktrees/20-security-reputation`.
 
 Read [the roadmap](../README.md) and [dispatch procedure](../dispatch.md). Implement only this packet's selected scope, using its own worktree and reserved files. No implementation starts from this document alone.

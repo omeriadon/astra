@@ -32,7 +32,7 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 | [17-keyboard-menus](tasks/17-keyboard-menus.md) | primary reviewed; Mac build verified | 32f26ac, Mac13.075s; combined once in15; keyboard/public inspector/iOS gates open |
 | [18-site-data-preferences](tasks/18-site-data-preferences.md) | independently reviewed; Mac build verified; runtime gates open | baseline `abffc0e`, model checkpoints `69288e6`/`aa53150`, implementation `6707966fe1ca406410c3783b288abee56490df99`; production sync-model check passes; exact `astra` / `My Mac` build7.528s, zero errors |
 | [19-start-page](tasks/19-start-page.md) | primary and independent readonly reviewed; Mac build verified; runtime gates open | source checkpoint `abffc0e`, docs checkpoint `cd98a0c`; focused production preference/history check passes; exact19 `astra` / `My Mac` build23.747s |
-| [20-security-reputation](tasks/20-security-reputation.md) | queued | — |
+| [20-security-reputation](tasks/20-security-reputation.md) | independent review passed; Mac build verified; runtime/provider gates open | source checkpoint `97d2259`, handoff `final documentation checkpoint`; production security/capture check passes; Xcode MCP `astra` / `My Mac` build passes, errors[] |
 | [21-content-blocking](tasks/21-content-blocking.md) | queued | — |
 | [22-extensions](tasks/22-extensions.md) | queued | — |
 | [23-credentials-browser-auth](tasks/23-credentials-browser-auth.md) | primary reviewed; Mac build verified; signed/provider gates open | source `202d7ac`/`605ef85`/`c5dc24f`, reports `5cb4290`/`a912e6c`, primary `ea29d26`; Mac18.159s |
