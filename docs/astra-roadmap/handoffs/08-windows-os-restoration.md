@@ -4,7 +4,7 @@ Task / selected optional scope: baseline normal-window restoration, per-window t
 
 Branch / worktree / baseline commit: `astra/roadmap/08-windows-os-restoration` / `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/08-windows-os-restoration` / `b9ff0df`.
 
-Status: source complete; production geometry/persistence check and source parse passed; serialized Xcode build pending with primary.
+Status: primary source-reviewed; Mac build verified; native runtime and iOS gates open.
 
 Commit(s): `73acd54` (the authorized packet09 duplicate-history notification correction cherry-pick); packet08 implementation checkpoint pending.
 
@@ -40,3 +40,7 @@ Migration, compatibility and private-data impact: `windowRecords` were optional 
 Capability gates / unresolved issues: source/build evidence does not establish AppKit notification timing, display-coordinate behavior at differing scale factors, or OS logout restoration. Dock reopen retains only the most recently closed normal window for the current process; the record is intentionally transient. External URL launch ordering is deferred until asynchronous multi-window restoration completes and still needs runtime acceptance. Web Push remains unsupported as a public capability under the roadmap gate; this packet does not enable or expand it.
 
 Merge prerequisites / follow-up ownership: primary source review and serialized Xcode MCP `astra` / `My Mac` build. Preserve the listed multi-display, fullscreen, sleep/wake, close/reopen and PiP/capture runtime cases. No push or original-checkout integration occurred.
+
+## Primary review — 2 October 2026
+
+Reviewed all five changed production owners, startup/reopen selection, record replacement and pending restoration, geometry bounds/outer-frame conversion, close/quit single-flight and sleep/wake hooks. Corrected the Web Push callback mismatch without changing its experimental/private API contract. Final Xcode MCP exact08 project, workspace `workspace-j1VcLU8YkQ`, `astra` / `My Mac`: build passed12.916s, no errors. Production geometry/record/persistence check and parsing pass. No app launch, native display/window test, hosted test or iOS build. Source checkpoints `a855db9`, `a049248`, `4372ae2`; `73acd54` is a duplicate source-equivalent09 correction and must not be applied to branches already containing09 `a9e9477`.
