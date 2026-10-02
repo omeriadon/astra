@@ -11,9 +11,20 @@ import WebKit
 	import UIKit
 #endif
 
+#if os(macOS)
+	@MainActor
+	struct BrowserAddressPromptOwner {
+		let browser: Browser
+		let window: NSWindow
+	}
+#endif
+
 @MainActor
 @Observable
 final class BrowserController: NSObject, Identifiable {
+	#if os(macOS)
+		static var addressPromptOwner: ((BrowserController, WKWebView, Int) -> BrowserAddressPromptOwner?)?
+	#endif
 	let id = UUID()
 	let session: BrowserWebSession
 	private let suppliedConfiguration: WKWebViewConfiguration?
@@ -29,6 +40,10 @@ final class BrowserController: NSObject, Identifiable {
 	private var mediaObservationTask: Task<Void, Never>?
 	@ObservationIgnored
 	private var faviconTask: Task<Void, Never>?
+	#if os(macOS)
+		@ObservationIgnored
+		private var webInspectorObserver: NSObjectProtocol?
+	#endif
 	@ObservationIgnored
 	private var isInvalidated = false
 	private(set) var isPlayingMedia = false
@@ -444,6 +459,17 @@ final class BrowserController: NSObject, Identifiable {
 				self?.retryOfflineGETAfterConnectivityReturns()
 			}
 		}
+		#if os(macOS)
+			webInspectorObserver = NotificationCenter.default.addObserver(
+				forName: UserDefaults.didChangeNotification,
+				object: nil,
+				queue: .main
+			) { [weak self] _ in
+				Task { @MainActor [weak self] in
+					self?.updateWebInspectorAvailability(Defaults[.webInspectorEnabled])
+				}
+			}
+		#endif
 		updateThemeColor(url == nil ? .black : .white)
 		#if os(macOS)
 			startPreviewSnapshotRefresh()
@@ -788,6 +814,24 @@ final class BrowserController: NSObject, Identifiable {
 		#endif
 	}
 
+	#if os(macOS)
+		private func ownsExplicitAddressPrompt(
+			in webView: WKWebView,
+			documentID: Int,
+			owner: BrowserAddressPromptOwner
+		) -> Bool {
+			let windowStillOwnsPrompt = owner.window.isKeyWindow || owner.window.attachedSheet?.isKeyWindow == true
+			return BrowserKeyboardMenuPolicy.canPromptForAddressAction(
+				isFocusedBrowser: windowStillOwnsPrompt,
+				isSelectedController: owner.browser.selectedTab?.activeController === self,
+				isSameSession: owner.browser.session === session,
+				isCurrentWebView: webViewIfLoaded === webView && owns(webView),
+				isSameNavigation: navigationIdentifier == documentID && !isInvalidated,
+				webViewMatchesOwnerWindow: webView.window == nil || webView.window === owner.window
+			)
+		}
+	#endif
+
 	func stopForClose() {
 		guard !isInvalidated else { return }
 		isInvalidated = true
@@ -796,6 +840,12 @@ final class BrowserController: NSObject, Identifiable {
 			NotificationCenter.default.removeObserver(connectivityObserver)
 			self.connectivityObserver = nil
 		}
+		#if os(macOS)
+			if let webInspectorObserver {
+				NotificationCenter.default.removeObserver(webInspectorObserver)
+				self.webInspectorObserver = nil
+			}
+		#endif
 		currentRequest = nil
 		failedRequest = nil
 		pendingRequest = nil
@@ -880,6 +930,12 @@ final class BrowserController: NSObject, Identifiable {
 	func prepareWebView() {
 		_ = webView
 	}
+
+	#if os(macOS)
+		func updateWebInspectorAvailability(_ enabled: Bool) {
+			createdWebView?.isInspectable = enabled
+		}
+	#endif
 
 	private func makeWebView() -> WKWebView {
 		let configuration = suppliedConfiguration ?? WKWebViewConfiguration()
@@ -1047,6 +1103,11 @@ final class BrowserController: NSObject, Identifiable {
 		if let connectivityObserver {
 			NotificationCenter.default.removeObserver(connectivityObserver)
 		}
+		#if os(macOS)
+			if let webInspectorObserver {
+				NotificationCenter.default.removeObserver(webInspectorObserver)
+			}
+		#endif
 		mediaObservationTask?.cancel()
 		faviconTask?.cancel()
 		observations.forEach { $0.invalidate() }
@@ -1058,7 +1119,13 @@ final class BrowserController: NSObject, Identifiable {
 	func load(_ url: URL) {
 		guard !isInvalidated else { return }
 		if BrowserAddress.externalApplicationScheme(for: url) != nil,
-		   handleExternalLink(url, requestingOrigin: nil, requestingSite: "Astra address bar", in: webView)
+		   handleExternalLink(
+			url,
+			requestingOrigin: nil,
+			requestingSite: "Astra address bar",
+			isExplicitAddressRequest: true,
+			in: webView
+		   )
 		{
 			return
 		}
@@ -1830,10 +1897,26 @@ extension BrowserController: WKUIDelegate {
 		_ url: URL,
 		requestingOrigin: WKSecurityOrigin?,
 		requestingSite: String? = nil,
+		isExplicitAddressRequest: Bool = false,
 		in webView: WKWebView
 	) -> Bool {
 		guard let scheme = BrowserAddress.externalApplicationScheme(for: url) else { return false }
-		guard ownsPrompt(in: webView, documentID: navigationIdentifier) else { return true }
+		let documentID = navigationIdentifier
+		#if os(macOS)
+			let explicitOwner: BrowserAddressPromptOwner?
+			if isExplicitAddressRequest {
+				guard requestingOrigin == nil,
+			      let owner = Self.addressPromptOwner?(self, webView, documentID),
+			      ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: owner)
+				else { return true }
+				explicitOwner = owner
+			} else {
+				guard ownsPrompt(in: webView, documentID: documentID) else { return true }
+				explicitOwner = nil
+			}
+		#else
+			guard ownsPrompt(in: webView, documentID: documentID) else { return true }
+		#endif
 		let addresses = URLComponents(url: url, resolvingAgainstBaseURL: false)?.path ?? ""
 		if scheme == "mailto", Defaults[.copyMailtoAddresses], !addresses.isEmpty {
 			#if os(macOS)
@@ -1868,19 +1951,29 @@ extension BrowserController: WKUIDelegate {
 			let requestingSiteLabel = requestingSite
 				?? origin.url.flatMap(BrowserSitePermissions.origin(for:))
 				?? "This page"
-			let documentID = navigationIdentifier
 			isOpeningExternalApplication = true
 			Task { @MainActor in
 				defer { isOpeningExternalApplication = false }
+				let promptWindow: NSWindow
+				let promptOwnerIsCurrent: @MainActor () -> Bool
+				if let explicitOwner {
+					guard ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: explicitOwner) else { return }
+					promptWindow = explicitOwner.window
+					promptOwnerIsCurrent = { [self, webView] in
+						ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: explicitOwner)
+					}
+				} else {
+					guard let window = webView.window else { return }
+					promptWindow = window
+					promptOwnerIsCurrent = { [self, webView] in ownsPrompt(in: webView, documentID: documentID) }
+				}
 				let alert = BrowserWebsiteUI.alert(
 					title: "Open \(applicationName)?",
 					message: "\(requestingSiteLabel) wants to open a \(scheme) link in \(applicationName).",
 					confirm: "Open Application"
 				)
-				let response = await BrowserWebsiteUI.present(alert, in: webView.window) { [self, webView] in
-					ownsPrompt(in: webView, documentID: documentID)
-				}
-				guard ownsPrompt(in: webView, documentID: documentID),
+				let response = await BrowserWebsiteUI.present(alert, in: promptWindow, isCurrent: promptOwnerIsCurrent)
+				guard promptOwnerIsCurrent(),
 				      response == .alertFirstButtonReturn else { return }
 				lastExternalApplicationRequestTime = ProcessInfo.processInfo.systemUptime
 				let configuration = NSWorkspace.OpenConfiguration()

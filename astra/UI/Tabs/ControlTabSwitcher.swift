@@ -36,21 +36,34 @@
 			guard eventMonitor == nil else { return }
 			eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
 				let isKeyDown = event.type == .keyDown
-				let isTab = event.keyCode == 48
 				let isEscape = event.keyCode == 53
 				let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 				let isControlPressed = modifiers.contains(.control)
 				let isShiftPressed = modifiers.contains(.shift)
 				let hasDisallowedModifiers = modifiers.contains(.command) || modifiers.contains(.option)
 				let isHandled = MainActor.assumeIsolated {
-					self?.handle(
+					guard let self else { return false }
+					let isFocusedWindow = BrowserKeyboardMenuPolicy.ownsFocusedTarget(
+						isKeyWindow: window?.isKeyWindow == true,
+						matchesKeyWindow: window === NSApp.keyWindow
+					)
+					let hasMarkedText = (window?.firstResponder as? NSTextInputClient)?.hasMarkedText() == true
+					let ownsTabSwitch = BrowserKeyboardMenuPolicy.ownsTabSwitch(
+						isFocusedWindow: isFocusedWindow,
+						hasMarkedText: hasMarkedText,
 						isKeyDown: isKeyDown,
-						isTab: isTab,
+						keyCode: event.keyCode,
+						modifiers: modifiers
+					)
+					return handle(
+						isKeyDown: isKeyDown,
 						isEscape: isEscape,
 						isControlPressed: isControlPressed,
 						isShiftPressed: isShiftPressed,
-						hasDisallowedModifiers: hasDisallowedModifiers
-					) ?? false
+						hasDisallowedModifiers: hasDisallowedModifiers,
+						hasMarkedText: hasMarkedText,
+						ownsTabSwitch: ownsTabSwitch
+					)
 				}
 				return isHandled ? nil : event
 			}
@@ -96,22 +109,27 @@
 
 		private func handle(
 			isKeyDown: Bool,
-			isTab: Bool,
 			isEscape: Bool,
 			isControlPressed: Bool,
 			isShiftPressed: Bool,
-			hasDisallowedModifiers: Bool
+			hasDisallowedModifiers: Bool,
+			hasMarkedText: Bool,
+			ownsTabSwitch: Bool
 		) -> Bool {
-			guard window?.isKeyWindow == true else {
+			guard BrowserKeyboardMenuPolicy.ownsFocusedTarget(
+				isKeyWindow: window?.isKeyWindow == true,
+				matchesKeyWindow: window === NSApp.keyWindow
+			) else {
 				if !candidateIDs.isEmpty {
 					endSession()
 				}
 				return false
 			}
+			if isKeyDown, hasMarkedText { return false }
 			if isCancelledUntilControlRelease {
 				if !isControlPressed {
 					isCancelledUntilControlRelease = false
-				} else if isKeyDown, isTab, !hasDisallowedModifiers {
+				} else if ownsTabSwitch {
 					return true
 				}
 			}
@@ -129,7 +147,7 @@
 					endSession()
 					return true
 				}
-				guard isControlPressed, isTab else { return false }
+				guard ownsTabSwitch else { return false }
 				if candidateIDs.isEmpty {
 					sessionForward = !isShiftPressed
 					let order = browser.switchCandidates(forward: sessionForward)
