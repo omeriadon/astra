@@ -1107,7 +1107,7 @@ final class Browser {
 			tab.wake()
 			configure(tab)
 		}
-		tab.controller?.load(bookmark.url)
+		tab.activeController?.load(bookmark.url)
 	}
 
 	func removeBookmark(_ id: UUID) {

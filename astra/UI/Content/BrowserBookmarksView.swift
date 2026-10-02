@@ -52,31 +52,23 @@ struct BrowserBookmarksView: View {
 							Button("Open Offline Copy", systemImage: "arrow.down.circle") {
 								browser.openReadingListItem(item, offline: true)
 							}
+							.accessibilityIdentifier("reading-open-offline-\(item.id.uuidString)")
 							Button(item.isRead ? "Mark as Unread" : "Mark as Read", systemImage: item.isRead ? "circle" : "checkmark.circle") {
 								browser.setReadingListRead(item.id, isRead: !item.isRead)
 							}
+							.accessibilityIdentifier("reading-toggle-read-\(item.id.uuidString)")
 							Button("Remove from Reading List", systemImage: "trash", role: .destructive) {
 								browser.removeReadingListItem(item.id)
 							}
+							.accessibilityIdentifier("reading-remove-\(item.id.uuidString)")
 						}
 					}
 				}
 			} else {
 				ForEach(bookmarkFolders, id: \.self) { folder in
 					let items = bookmarkGroups[folder] ?? []
-					if searchText.isEmpty {
-						Section(folder.isEmpty ? "Bookmarks" : folder) {
-							bookmarkRows(items)
-						}
-						.onMove { offsets, destination in
-							var ids = items.map(\.id)
-							ids.move(fromOffsets: offsets, toOffset: destination)
-							browser.reorderBookmarks(ids)
-						}
-					} else {
-						Section(folder.isEmpty ? "Bookmarks" : folder) {
-							bookmarkRows(items)
-						}
+					Section(folder.isEmpty ? "Bookmarks" : folder) {
+						bookmarkRows(items)
 					}
 				}
 			}
@@ -146,6 +138,7 @@ struct BrowserBookmarksView: View {
 				open: { browser.openBookmark(bookmark) },
 				openInBackground: { browser.openHistoryURL(bookmark.url, inBackground: true) }
 			)
+			.moveDisabled(!searchText.isEmpty)
 			.matchedTransitionSource(id: "bookmark-edit-\(bookmark.id.uuidString)", in: transitions)
 			.contextMenu {
 				Button("Edit Bookmark", systemImage: "pencil") { editingBookmark = bookmark }
@@ -159,6 +152,12 @@ struct BrowserBookmarksView: View {
 				.accessibilityIdentifier("bookmark-add-reading-list-\(bookmark.id.uuidString)")
 				Button("Delete Bookmark", systemImage: "trash", role: .destructive) { browser.removeBookmark(bookmark.id) }
 			}
+		}
+		.onMove { offsets, destination in
+			guard searchText.isEmpty else { return }
+			var ids = items.map(\.id)
+			ids.move(fromOffsets: offsets, toOffset: destination)
+			browser.reorderBookmarks(ids)
 		}
 	}
 }
