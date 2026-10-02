@@ -9,18 +9,12 @@ enum BrowserZoomPolicy {
 		return min(max(zoom, range.lowerBound), range.upperBound)
 	}
 
-	static func didChange(from previous: Double, to current: Double) -> Bool {
-		previous != current
-	}
 }
 
 struct BrowserFindGeneration {
 	private(set) var value = 0
 
-	static func canSearch(awaitingNavigationCommit: Bool) -> Bool {
-		!awaitingNavigationCommit
-	}
-
+	@discardableResult
 	mutating func advance() -> Int {
 		value += 1
 		return value

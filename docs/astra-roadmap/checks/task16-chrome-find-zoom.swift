@@ -7,10 +7,6 @@ enum Task16ChromeFindZoomCheck {
 		assert(BrowserZoomPolicy.clamp(8) == 5)
 		assert(BrowserZoomPolicy.clamp(.infinity) == BrowserZoomPolicy.defaultZoom)
 		assert(BrowserZoomPolicy.clamp(.nan) == BrowserZoomPolicy.defaultZoom)
-		assert(!BrowserZoomPolicy.didChange(from: 1, to: 1))
-		assert(BrowserZoomPolicy.didChange(from: 1, to: 1.1))
-		assert(BrowserFindGeneration.canSearch(awaitingNavigationCommit: false))
-		assert(!BrowserFindGeneration.canSearch(awaitingNavigationCommit: true))
 
 		var findGeneration = BrowserFindGeneration()
 		let firstRequest = findGeneration.advance()

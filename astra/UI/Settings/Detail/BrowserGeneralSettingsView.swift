@@ -121,10 +121,17 @@ struct BrowserGeneralSettingsView: View {
 
 			Section("Page Zoom") {
 				HStack {
-					Slider(value: $defaultPageZoom, in: 0.25 ... 5, step: 0.05)
+					Slider(
+						value: Binding(
+							get: { BrowserZoomPolicy.clamp(defaultPageZoom) },
+							set: { defaultPageZoom = BrowserZoomPolicy.clamp($0) }
+						),
+						in: BrowserZoomPolicy.range,
+						step: 0.05
+					)
 						.accessibilityLabel("Default page zoom")
 						.accessibilityIdentifier("default-page-zoom-slider")
-					Text(defaultPageZoom, format: .percent.precision(.fractionLength(0)))
+					Text(BrowserZoomPolicy.clamp(defaultPageZoom), format: .percent.precision(.fractionLength(0)))
 						.monospacedDigit()
 						.frame(minWidth: 48, alignment: .trailing)
 						.accessibilityIdentifier("default-page-zoom-value")

@@ -4,16 +4,16 @@ Task / selected optional scope: `16-chrome-find-zoom`; native WebKit find and bo
 
 Branch / worktree / baseline commit: `astra/roadmap/16-chrome-find-zoom` / `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/16-chrome-find-zoom` / `6f3132c`.
 
-Status: source complete; primary Xcode review/build and runtime acceptance pending.
+Status: primary source-reviewed; Mac build verified; native runtime and iOS acceptance pending.
 
 Commit(s), or explicit uncommitted state: `2598935` (`implement browser find and page zoom`), `6187f1a` (`record browser chrome find zoom handoff`), and `1963887` (`fix chrome zoom freshness and find races`). The correction checkpoint includes the updated handoff and production check.
 
 Changed files and behavior:
 
 - `astra/Web/Navigation/BrowserController.swift` rejects delayed native find results after query, document generation, WebView, or controller ownership changes. It does not start find while navigation awaits commit; the current query is searched after the same live navigation finishes. Find state is unknown while pending and shows “No matches” only after WebKit reports no match. `WKFindResult` exposes only `matchFound`; Astra does not fabricate a total or current match number. Zoom writes are clamped at the controller boundary, including extension and WebKit paths, and menu/page controls share the same bounds. Only an actual zoom value change invokes `zoomDidChange`.
-- `astra/Web/Navigation/BrowserZoomPolicy.swift` provides finite 25%–500% zoom bounds, the 100% default, the production find-generation token, and the find-navigation admission check.
+- `astra/Web/Navigation/BrowserZoomPolicy.swift` provides finite 25%–500% zoom bounds, the 100% default, the production find-generation token, and the production find-generation token.
 - `astra/Models/Tabs/BrowserTab.swift` reads the portable default only when a tab has no explicitly restored zoom. Existing per-tab `OpenTab.pageZoom` restoration remains authoritative. The controller's dedicated zoom callback invalidates the cached open-tab snapshot and stamps actual edits for normal tabs and peeks. It suppresses sync-application callbacks; constructor and wake restoration happen before observation is attached, and unloaded tabs retain their stored value.
-- `astra/UI/Chrome/BrowserNavigationControls.swift` adds accessible zoom-out, reset/percentage and zoom-in controls to the selected active controller's existing navigation controls. `BrowserPageView.swift` and `BrowserLoadingBar.swift` already render against `activeController`, including peeks; their routing needed no edits.
+- `astra/UI/Chrome/BrowserNavigationControls.swift` adds accessible zoom-out, reset/percentage and zoom-in controls to the selected active controller's existing navigation controls. `BrowserLoadingBar.swift` already renders against `activeController`; the find overlay in BrowserPageView now has explicit controller identity.
 - `astra/UI/Chrome/BrowserFindBar.swift` refreshes native results when shown and invalidates pending results when its controller leaves the selected chrome. `BrowserPageView` keys the bar by controller identity so a switch resets focus and disposes the prior controller's view. Existing next, previous, close, Escape and no-match behavior remains native.
 - `astra/UI/AddressBar/BrowserAddressField.swift` refreshes for active-controller, display-style and search-configuration changes only when the field is not being edited. Loading/progress changes do not write its text, and selection changes do not replace in-progress text.
 - `astra/Storage/BrowserDefaults.swift`, `astra/UI/Settings/Detail/BrowserGeneralSettingsView.swift`, and `astra/UI/Settings/BrowserSettingsView.swift` add a 25%–500% default zoom slider, reset control and settings-search terms. `defaultPageZoom` is registered in the existing timestamped synced-settings mechanism.
@@ -30,7 +30,7 @@ Acceptance cases satisfied, with evidence:
 Checks run, scheme/destination/workspace and results:
 
 - `swiftc -frontend -parse` over every changed production Swift source and the task check — passed. This confirms parsing only, not Xcode type checking.
-- `swiftc astra/Web/Navigation/BrowserZoomPolicy.swift docs/astra-roadmap/checks/task16-chrome-find-zoom.swift -o /tmp/task16-chrome-find-zoom-check && /tmp/task16-chrome-find-zoom-check` — passed: `Task 16 chrome/find/zoom checks passed`; includes unchanged/changed zoom notification, find admission and stale-generation cases.
+- `swiftc astra/Web/Navigation/BrowserZoomPolicy.swift docs/astra-roadmap/checks/task16-chrome-find-zoom.swift -o /tmp/task16-chrome-find-zoom-check && /tmp/task16-chrome-find-zoom-check` — passed: `Task 16 chrome/find/zoom checks passed`; includes finite bounds and stale-generation cases; actual zoom-change and navigation-admission guards were source-reviewed.
 - `git diff --check` — passed after the correction.
 - No Xcode MCP workspace/build was opened; serialized Xcode verification belongs to the primary. No app or hosted test target was launched.
 
@@ -43,3 +43,7 @@ Migration, compatibility and private-data impact: no persistence or sync documen
 Capability gates / unresolved issues: public `WKFindResult` only reports whether any match exists, so count and current-index presentation remain unavailable. Xcode type checking, supported-device behavior and visual accessibility review remain pending.
 
 Merge prerequisites / follow-up ownership: primary source review and serialized Mac build. Task 18 can attach per-site rules at the existing `BrowserTab`/controller `pageZoom` owner; it must define precedence over the already-existing per-tab value and fresh-tab default. Preserve the count-unavailable limitation and explicit restored zoom precedence.
+
+## Primary review — 2 October 2026
+
+Reviewed all changed production files and every find/zoom caller, including extensions, peeks, awake/hibernated tabs and sync metadata application. Final correction uses direct value/admission guards, clamps invalid zoom preferences only at consumption (without stamping decoded metadata), and rounds accessible/toast percentages consistently. Production bounds/generation check reran successfully. Xcode MCP exact16 project, workspace `workspace-YxIMMIgMov`, `astra` / `My Mac`: build passed19.443s, no errors. No app launch, hosted test or native visual/keyboard/iOS acceptance. Native find count remains unavailable; runtime gates remain recorded.
