@@ -1785,6 +1785,16 @@ extension BrowserController: WKNavigationDelegate {
 		restorePageAfterDownloadHandoff()
 	}
 
+	func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+		guard owns(webView), navigation === currentNavigation, awaitsNavigationCommit else { return }
+		updateContentBlocking(
+			forNavigationDisposition: .redirect,
+			isMainFrame: true,
+			destinationURL: nil,
+			in: webView
+		)
+	}
+
 	func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
 		guard owns(webView) else { return }
 		refreshContentBlocking(for: committedURL ?? webView.url)

@@ -70,6 +70,12 @@ struct BrowserContentBlockingChecks {
 		}
 		precondition(BrowserContentBlockingRuleSource.originAfterNavigationDecision(
 			isMainFrame: true,
+			disposition: .redirect,
+			currentOrigin: currentOrigin,
+			destinationOrigin: nil
+		) == nil)
+		precondition(BrowserContentBlockingRuleSource.originAfterNavigationDecision(
+			isMainFrame: true,
 			disposition: .allow,
 			currentOrigin: currentOrigin,
 			destinationOrigin: destinationOrigin

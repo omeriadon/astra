@@ -121,6 +121,7 @@ nonisolated enum BrowserContentBlockingRuleSource {
 		currentOrigin: String?,
 		destinationOrigin: String?
 	) -> String? {
+		if disposition == .redirect { return nil }
 		guard isMainFrame, disposition == .allow else { return currentOrigin }
 		return destinationOrigin
 	}
@@ -129,5 +130,6 @@ nonisolated enum BrowserContentBlockingRuleSource {
 		case allow
 		case cancel
 		case download
+		case redirect
 	}
 }
