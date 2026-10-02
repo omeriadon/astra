@@ -374,6 +374,16 @@ private struct TabRowContextMenu: View {
 
 			Button("Copy URL", systemImage: "doc.on.doc", action: onCopyURL)
 				.disabled(tab.currentURL == nil)
+			Button("Add to Reading List", systemImage: "text.badge.plus") {
+				browser.addToReadingList(tabID: tab.id)
+			}
+			.disabled(!browser.canAddToReadingList(tabID: tab.id))
+			.accessibilityIdentifier("tab-add-reading-list-\(tab.id.uuidString)")
+			Button("Save Page Offline", systemImage: "arrow.down.circle") {
+				browser.saveReadingListSnapshot(tabID: tab.id)
+			}
+			.disabled(!browser.canSaveReadingListSnapshot(tabID: tab.id))
+			.accessibilityIdentifier("tab-save-offline-\(tab.id.uuidString)")
 
 			Divider()
 		}

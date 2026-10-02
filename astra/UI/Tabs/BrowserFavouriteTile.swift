@@ -56,6 +56,18 @@ struct BrowserFavouriteTile: View {
 			Button("Move to Normal Tabs", systemImage: "rectangle") {
 				browser.moveTab(tab.id, to: .normal)
 			}
+			if tab.internalPage == nil {
+				Button("Add to Reading List", systemImage: "text.badge.plus") {
+					browser.addToReadingList(tabID: tab.id)
+				}
+				.disabled(!browser.canAddToReadingList(tabID: tab.id))
+				.accessibilityIdentifier("favourite-add-reading-list-\(tab.id.uuidString)")
+				Button("Save Page Offline", systemImage: "arrow.down.circle") {
+					browser.saveReadingListSnapshot(tabID: tab.id)
+				}
+				.disabled(!browser.canSaveReadingListSnapshot(tabID: tab.id))
+				.accessibilityIdentifier("favourite-save-offline-\(tab.id.uuidString)")
+			}
 		}
 	}
 }

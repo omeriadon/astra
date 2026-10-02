@@ -886,19 +886,25 @@ final class Browser {
 	}
 
 	var canBookmarkSelectedPage: Bool {
-		guard let url = selectedTab?.currentURL else { return false }
+		guard let url = selectedPageBookmarkURL else { return false }
 		return !bookmarks.contains { $0.url == url }
 	}
 
 	func bookmarkSelectedPage() {
 		guard let tab = selectedTab,
-		      let url = tab.currentURL,
-		      url.absoluteString.utf8.count <= 16_384,
-		      tab.title.utf8.count <= 16_384,
+		      let url = selectedPageBookmarkURL,
 		      !bookmarks.contains(where: { $0.url == url })
 		else { return }
-		bookmarks.append(Bookmark(name: tab.title, url: BrowserAddress.withoutCredentials(url)))
+		let title = tab.activeController?.webViewIfLoaded?.title ?? tab.title
+		guard title.utf8.count <= 16_384 else { return }
+		bookmarks.append(Bookmark(name: title, url: url))
 		schedulePersistence()
+	}
+
+	private var selectedPageBookmarkURL: URL? {
+		guard let source = selectedTab?.activeController?.committedURL ?? selectedTab?.currentURL else { return nil }
+		let url = BrowserAddress.withoutCredentials(source)
+		return url.absoluteString.utf8.count <= 16_384 ? url : nil
 	}
 
 	func updateBookmark(_ id: UUID, name: String, folder: String, isFavorite: Bool, order: Int) {
@@ -917,8 +923,9 @@ final class Browser {
 	}
 
 	func reorderBookmarks(_ ids: [UUID]) {
+		let indexes = Dictionary(bookmarks.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
 		for (order, id) in ids.enumerated() {
-			guard let index = bookmarks.firstIndex(where: { $0.id == id }), bookmarks[index].order != order else { continue }
+			guard let index = indexes[id], bookmarks[index].order != order else { continue }
 			bookmarks[index].order = order
 			bookmarks[index].modifiedAt = BrowserUserDataMutation.nextDate(after: bookmarks[index].modifiedAt, deletion: deletedBookmarksAt[id] ?? .distantPast)
 		}
@@ -926,11 +933,43 @@ final class Browser {
 	}
 
 	func addToReadingList(_ url: URL, title: String) {
-		guard !isPrivate, url.absoluteString.utf8.count <= 16_384, title.utf8.count <= 16_384,
-		      let safe = BrowserHomepage.validURL(url.absoluteString),
-		      !readingList.contains(where: { $0.url == safe }) else { return }
+		guard title.utf8.count <= 16_384,
+		      canAddToReadingList(url),
+		      let safe = BrowserHomepage.validURL(url.absoluteString) else { return }
 		readingList.append(ReadingListItem(url: safe, title: title))
 		schedulePersistence()
+	}
+
+	func canAddToReadingList(_ url: URL) -> Bool {
+		guard !isPrivate, url.absoluteString.utf8.count <= 16_384,
+		      let safe = BrowserHomepage.validURL(url.absoluteString) else { return false }
+		return !readingList.contains(where: { $0.url == safe })
+	}
+
+	func addToReadingList(tabID: UUID) {
+		guard canAddToReadingList(tabID: tabID),
+		      let tab = tabs.first(where: { $0.id == tabID }),
+		      let controller = tab.activeController,
+		      controller.session === session, let url = controller.committedURL,
+		      controller.url == url else { return }
+		addToReadingList(url, title: controller.webViewIfLoaded?.title ?? tab.title)
+	}
+
+	func canAddToReadingList(tabID: UUID) -> Bool {
+		guard !isPrivate, !isMini,
+		      let tab = tabs.first(where: { $0.id == tabID }), tab.internalPage == nil,
+		      tab.session === session, let controller = tab.activeController,
+		      controller.session === session, let url = controller.committedURL,
+		      controller.url == url, controller.canRecordVisit else { return false }
+		return canAddToReadingList(url)
+	}
+
+	func canSaveReadingListSnapshot(tabID: UUID) -> Bool {
+		guard !isPrivate, !isMini,
+		      let tab = tabs.first(where: { $0.id == tabID }),
+		      let controller = tab.activeController,
+		      let item = readingList.first(where: { $0.url == controller.committedURL }) else { return false }
+		return ownsReadingListCapture(tab, controller: controller, item: item)
 	}
 
 	func setReadingListRead(_ id: UUID, isRead: Bool) {
@@ -954,29 +993,43 @@ final class Browser {
 		schedulePersistence()
 	}
 
-	func saveSelectedPageToReadingList() {
-		guard !isPrivate, let tab = selectedTab, let url = tab.currentURL,
+	func saveReadingListSnapshot(tabID: UUID) {
+		guard let tab = tabs.first(where: { $0.id == tabID }),
+		      let controller = tab.activeController,
+		      let url = controller.committedURL,
 		      let item = readingList.first(where: { $0.url == url }),
-		      let controller = tab.controller else { return }
+		      let webView = controller.webViewIfLoaded,
+		      canSaveReadingListSnapshot(tabID: tabID),
+		      let persistence else { return }
 		let documentID = controller.navigationIdentifier
-		let webView = controller.webView
-		guard !webView.isLoading else { return }
-		webView.createWebArchiveData { [weak self, weak tab] result in
-			guard let self, let tab, !isPrivate, selectedTab === tab,
-			      tab.controller === controller, controller.navigationIdentifier == documentID,
-			      tab.currentURL == url,
-			      readingList.contains(where: { $0.id == item.id && $0.url == item.url }),
-			      let persistence else { return }
-			guard case let .success(data) = result else { return }
-			let previousWrite = session.persistenceWriteTask
-			session.persistenceWriteTask = Task.detached(priority: .utility) { [weak self, weak tab, weak controller] in
+		webView.createWebArchiveData { [weak self, weak tab, weak controller] result in
+			guard let self, let tab, let controller,
+			      self.ownsReadingListCapture(tab, controller: controller, item: item),
+			      controller.navigationIdentifier == documentID else { return }
+			guard case let .success(data) = result else {
+				self.session.toastManager.show(symbol: "exclamationmark.triangle", message: "Could not capture this page for offline reading")
+				return
+			}
+			let previousWrite = self.session.persistenceWriteTask
+			self.session.persistenceWriteTask = Task.detached(priority: .utility) { [weak self, weak tab, weak controller] in
 				await previousWrite?.value
-				guard let generation = try? persistence.saveReadingArchive(data, id: item.id, url: item.url) else { return }
+				let generation: UUID
+				do {
+					generation = try persistence.saveReadingArchive(data, id: item.id, url: item.url)
+				} catch {
+					await MainActor.run {
+						guard let self, let tab, let controller,
+						      self.ownsReadingListCapture(tab, controller: controller, item: item),
+						      controller.navigationIdentifier == documentID else { return }
+						self.session.toastManager.show(symbol: "exclamationmark.triangle", message: "Offline copy could not be saved because storage is full or unavailable")
+					}
+					return
+				}
 				let stillCurrent = await MainActor.run {
-					guard let self, let tab, let controller, !isPrivate,
-					      selectedTab === tab, tab.controller === controller,
-					      controller.navigationIdentifier == documentID, tab.currentURL == url,
-					      readingList.contains(where: { $0.id == item.id && $0.url == item.url }) else { return false }
+					guard let self, let tab, let controller,
+					      self.ownsReadingListCapture(tab, controller: controller, item: item),
+					      controller.navigationIdentifier == documentID else { return false }
+					self.session.toastManager.show(symbol: "checkmark.circle", message: "Saved offline copy")
 					return true
 				}
 				if !stillCurrent {
@@ -987,28 +1040,61 @@ final class Browser {
 	}
 
 	func openReadingListItem(_ item: ReadingListItem, offline: Bool) {
-		guard !isPrivate else { return }
-		guard offline, let persistence else {
+		guard !isPrivate, !isMini else { return }
+		guard offline else {
 			openHistoryURL(item.url, inBackground: false)
 			return
 		}
-		guard let tab = selectedTab, let controller = tab.controller else { return }
-		let documentID = controller.navigationIdentifier
-		let startingURL = tab.currentURL
-		Task.detached(priority: .userInitiated) { [weak self, weak tab, weak controller] in
-			let data = try? persistence.loadReadingArchive(id: item.id, url: item.url)
+		guard isRegisteredNormalWindow, let persistence else { return }
+		let windowID = self.windowID
+		let sourceTabID = selectedTabID
+		Task.detached(priority: .userInitiated) { [weak self] in
+			let archive: Result<Data?, Error>
+			do {
+				archive = .success(try persistence.loadReadingArchive(id: item.id, url: item.url))
+			} catch {
+				archive = .failure(error)
+			}
 			await MainActor.run {
-				guard let self, let tab, let controller, selectedTab === tab,
-				      tab.controller === controller, controller.navigationIdentifier == documentID,
-				      tab.currentURL == startingURL,
-				      readingList.contains(where: { $0.id == item.id && $0.url == item.url }) else { return }
-				guard let data else {
-					ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "No offline copy is available")
-					return
+				guard let self, self.windowID == windowID, self.isRegisteredNormalWindow,
+				      self.selectedTabID == sourceTabID, !self.isPrivate,
+				      let currentItem = self.readingList.first(where: { $0.id == item.id }),
+				      ReadingListItem.admitsOfflineOpen(currentItem, id: item.id, url: item.url, isPrivate: self.isPrivate) else { return }
+				let data: Data
+				switch archive {
+					case let .success(value):
+						guard let value else {
+							self.session.toastManager.show(symbol: "exclamationmark.triangle", message: "No offline copy is available")
+							return
+						}
+						data = value
+					case .failure:
+						self.session.toastManager.show(symbol: "exclamationmark.triangle", message: "Could not read the offline copy")
+						return
 				}
-				controller.webView.load(data, mimeType: "application/x-webarchive", characterEncodingName: "UTF-8", baseURL: item.url)
+				let tab = self.addTab()
+				guard let controller = tab.activeController, tab.session === self.session,
+				      controller.session === self.session else { return }
+				controller.prepareWebView()
+				controller.loadWebArchive(data, baseURL: item.url)
 			}
 		}
+	}
+
+	private var isRegisteredNormalWindow: Bool {
+		!isPrivate && !isMini && BrowserWindowRegistry.shared.openBrowsers.contains { $0 === self }
+	}
+
+	private func ownsReadingListCapture(_ tab: BrowserTab, controller: BrowserController, item: ReadingListItem) -> Bool {
+		guard isRegisteredNormalWindow,
+		      tabs.contains(where: { $0 === tab }), tab.internalPage == nil,
+		      tab.session === session, tab.activeController === controller,
+		      controller.session === session, controller.committedURL == item.url,
+		      controller.url == item.url, controller.canRecordVisit,
+		      !controller.isLoading, controller.navigationFailure == nil,
+		      let webView = controller.webViewIfLoaded,
+		      controller.isWebViewReady, webView.url == item.url, !webView.isLoading else { return false }
+		return readingList.contains(where: { $0.id == item.id && $0.url == item.url })
 	}
 
 	func openBookmark(_ bookmark: Bookmark) {

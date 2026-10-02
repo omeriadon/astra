@@ -68,6 +68,16 @@ struct BookmarkReadingListCheck {
 		assert(decodedHTML.bookmarks.first?.name == bookmark.name)
 		assert(decodedHTML.bookmarks.first?.folder == folder)
 		assert(decodedHTML.bookmarks.first?.url == bookmark.url)
+		let emptyNetscape = BrowserUserData(bookmarks: [], history: []).encodedHTML()
+		let decodedEmpty = try BrowserUserData.decode(emptyNetscape, isHTML: true)
+		assert(decodedEmpty.bookmarks.isEmpty)
+		do {
+			_ = try BrowserUserData.decode(Data("<html><body>nothing</body></html>".utf8), isHTML: true)
+			assertionFailure("unrecognized empty HTML was accepted as bookmarks")
+		} catch BrowserUserData.ImportError.invalidFile {
+		} catch {
+			assertionFailure("unexpected empty HTML import error: \(error)")
+		}
 		let nestedHTML = Data(#"<DL><p><DT><H3>Group &amp; &#x42;</H3><DL><p><DT><A HREF="https://nested.example/&#x61;">N&#x61;me</A></DL><p><DT><A HREF="https://root.example">Root</A></DL>"#.utf8)
 		let nested = try BrowserUserData.decode(nestedHTML, isHTML: true).bookmarks
 		assert(nested[0].folder == "Group & B" && nested[0].name == "Name")
@@ -89,6 +99,12 @@ struct BookmarkReadingListCheck {
 		let workspace = BrowserWorkspace(spaces: [BrowserSpace(id: BrowserSpace.firstID)], favouriteTabIDs: [], selectedSpaceID: BrowserSpace.firstID)
 		let itemID = UUID()
 		let older = ReadingListItem(id: itemID, url: URL(string: "https://read.example")!, title: "Old", addedAt: timestamp, modifiedAt: timestamp)
+		assert(ReadingListItem.admitsOfflineOpen(older, id: itemID, url: older.url, isPrivate: false))
+		assert(!ReadingListItem.admitsOfflineOpen(older, id: itemID, url: URL(string: "https://other.example")!, isPrivate: false))
+		assert(!ReadingListItem.admitsOfflineOpen(older, id: itemID, url: older.url, isPrivate: true))
+		assert(!ReadingListItem.admitsOfflineOpen(older, id: UUID(), url: older.url, isPrivate: false))
+		assert(!ReadingListItem.admitsOfflineOpen(older, id: itemID, url: URL(string: "file:///tmp/page.html")!, isPrivate: false))
+		assert(!ReadingListItem.admitsOfflineOpen(older, id: itemID, url: URL(string: "https://user:secret@read.example")!, isPrivate: false))
 		let newer = ReadingListItem(id: itemID, url: older.url, title: "New", addedAt: timestamp, modifiedAt: timestamp.addingTimeInterval(1), isRead: true)
 		let olderBookmark = Bookmark(id: legacyID, name: "Old", url: bookmark.url, modifiedAt: timestamp, folder: "Old folder")
 		let newerBookmark = Bookmark(id: legacyID, name: "New", url: bookmark.url, modifiedAt: timestamp.addingTimeInterval(1), folder: "New folder", isFavorite: true, order: 4)

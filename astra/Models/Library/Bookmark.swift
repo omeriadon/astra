@@ -52,6 +52,21 @@ nonisolated struct ReadingListItem: Codable, Identifiable, Equatable, Sendable {
 	var modifiedAt: Date
 	var isRead: Bool
 
+	static func admitsOfflineOpen(_ candidate: Self?, id: UUID, url: URL, isPrivate: Bool) -> Bool {
+		guard !isPrivate, url.absoluteString.utf8.count <= 16_384,
+		      let candidate, candidate.id == id,
+		      candidate.url.absoluteString == url.absoluteString,
+		      let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+		      ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+		      let host = components.host, !host.isEmpty,
+		      components.user == nil, components.password == nil,
+		      !host.unicodeScalars.contains(where: {
+				CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0)
+			}),
+		      (components.port.map({ (1 ... 65_535).contains($0) }) ?? true) else { return false }
+		return true
+	}
+
 	init(id: UUID = UUID(), url: URL, title: String, addedAt: Date = .now, modifiedAt: Date = .now, isRead: Bool = false) {
 		self.id = id
 		self.url = url

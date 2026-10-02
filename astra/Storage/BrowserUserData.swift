@@ -135,7 +135,11 @@ nonisolated struct BrowserUserData: Codable {
 				guard bookmarks.count <= 100_000 else { throw ImportError.tooLarge }
 			}
 		}
-		guard !bookmarks.isEmpty, bookmarks.count == anchorCount else { throw ImportError.invalidFile }
+		let hasNetscapeHeader = html.range(of: "<!DOCTYPE NETSCAPE-Bookmark-file-1", options: .caseInsensitive) != nil
+		let hasBookmarkList = html.range(of: "<DL", options: .caseInsensitive) != nil
+			&& html.range(of: "</DL", options: .caseInsensitive) != nil
+		guard bookmarks.count == anchorCount,
+		      !bookmarks.isEmpty || (hasNetscapeHeader && hasBookmarkList) else { throw ImportError.invalidFile }
 		return bookmarks
 	}
 

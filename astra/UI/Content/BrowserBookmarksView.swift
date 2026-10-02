@@ -2,7 +2,9 @@ import SwiftUI
 
 struct BrowserBookmarksView: View {
 	let browser: Browser
-	@Environment(\.editMode) private var editMode
+	#if os(iOS)
+		@Environment(\.editMode) private var editMode
+	#endif
 	@Namespace private var transitions
 	@State private var searchText = ""
 	@State private var showingReadingList = false
@@ -12,18 +14,31 @@ struct BrowserBookmarksView: View {
 		browser.bookmarks
 			.filter { searchText.isEmpty || [$0.name, $0.url.absoluteString, $0.folder].contains { $0.localizedCaseInsensitiveContains(searchText) } }
 			.sorted {
-				if $0.isFavorite != $1.isFavorite { return $0.isFavorite }
 				if $0.folder != $1.folder { return $0.folder.localizedStandardCompare($1.folder) == .orderedAscending }
 				if $0.order != $1.order { return $0.order < $1.order }
 				return $0.name.localizedStandardCompare($1.name) == .orderedAscending
 			}
 	}
 
+	private var visibleReadingList: [ReadingListItem] {
+		browser.readingList
+			.filter { searchText.isEmpty || [$0.title, $0.url.absoluteString].contains { $0.localizedCaseInsensitiveContains(searchText) } }
+			.sorted {
+				$0.addedAt == $1.addedAt
+					? $0.id.uuidString < $1.id.uuidString
+					: $0.addedAt > $1.addedAt
+			}
+	}
+
 	var body: some View {
+		let bookmarkGroups = Dictionary(grouping: visibleBookmarks, by: \.folder)
+		let bookmarkFolders = bookmarkGroups.keys.sorted()
+		let bookmarkCount = bookmarkGroups.values.reduce(0) { $0 + $1.count }
+		let readingItems = visibleReadingList
 		List {
 			if showingReadingList {
 				Section("Reading List") {
-					ForEach(browser.readingList.sorted { $0.addedAt > $1.addedAt }) { item in
+					ForEach(readingItems) { item in
 						HistoryRow(
 							title: item.title,
 							detail: item.isRead ? "Read · \(item.url.absoluteString)" : item.url.absoluteString,
@@ -47,31 +62,20 @@ struct BrowserBookmarksView: View {
 					}
 				}
 			} else {
-				ForEach(Array(Dictionary(grouping: visibleBookmarks, by: \.folder).keys.sorted()), id: \.self) { folder in
-					Section(folder.isEmpty ? "Bookmarks" : folder) {
-						ForEach(visibleBookmarks.filter { $0.folder == folder }) { bookmark in
-							HistoryRow(
-								title: bookmark.name,
-								detail: bookmark.url.absoluteString,
-								url: bookmark.url,
-								symbol: bookmark.isFavorite ? "star.fill" : "bookmark",
-								identifier: "bookmark-\(bookmark.id.uuidString)",
-								open: { browser.openBookmark(bookmark) },
-								openInBackground: { browser.openHistoryURL(bookmark.url, inBackground: true) }
-							)
-							.matchedTransitionSource(id: "bookmark-edit-\(bookmark.id.uuidString)", in: transitions)
-							.contextMenu {
-								Button("Edit Bookmark", systemImage: "pencil") { editingBookmark = bookmark }
-								Button(bookmark.isFavorite ? "Remove from Favorites" : "Add to Favorites", systemImage: bookmark.isFavorite ? "star.slash" : "star") {
-									browser.updateBookmark(bookmark.id, name: bookmark.name, folder: bookmark.folder, isFavorite: !bookmark.isFavorite, order: bookmark.order)
-								}
-								Button("Delete Bookmark", systemImage: "trash", role: .destructive) { browser.removeBookmark(bookmark.id) }
-							}
+				ForEach(bookmarkFolders, id: \.self) { folder in
+					let items = bookmarkGroups[folder] ?? []
+					if searchText.isEmpty {
+						Section(folder.isEmpty ? "Bookmarks" : folder) {
+							bookmarkRows(items)
 						}
 						.onMove { offsets, destination in
-							var ids = visibleBookmarks.filter { $0.folder == folder }.map(\.id)
+							var ids = items.map(\.id)
 							ids.move(fromOffsets: offsets, toOffset: destination)
 							browser.reorderBookmarks(ids)
+						}
+					} else {
+						Section(folder.isEmpty ? "Bookmarks" : folder) {
+							bookmarkRows(items)
 						}
 					}
 				}
@@ -89,29 +93,23 @@ struct BrowserBookmarksView: View {
 					Label(showingReadingList ? "Reading List" : "Bookmarks", systemImage: showingReadingList ? "text.book.closed" : "bookmark")
 						.font(.title2.bold())
 					Spacer()
-					if !showingReadingList && searchText.isEmpty && visibleBookmarks.count > 1 {
+					#if os(iOS)
+					if !showingReadingList && searchText.isEmpty && bookmarkCount > 1 {
 						Button(editMode?.wrappedValue == .active ? "Done Reordering" : "Reorder Bookmarks", systemImage: editMode?.wrappedValue == .active ? "checkmark" : "arrow.up.arrow.down") {
 							withAnimation { editMode?.wrappedValue = editMode?.wrappedValue == .active ? .inactive : .active }
 						}
 						.accessibilityIdentifier("reorder-bookmarks")
 					}
+					#endif
 					Button(showingReadingList ? "Show Bookmarks" : "Show Reading List", systemImage: showingReadingList ? "bookmark" : "text.book.closed") {
 						showingReadingList.toggle()
 					}
 					.disabled(browser.isPrivate)
 					.accessibilityIdentifier("toggle-reading-list")
-					if showingReadingList {
-						Button("Save Current Page Offline", systemImage: "arrow.down.circle") { browser.saveSelectedPageToReadingList() }
-							.accessibilityIdentifier("save-reading-list-offline")
-							.disabled(browser.isPrivate || !browser.readingList.contains { $0.url == browser.selectedTab?.currentURL })
-					} else if !browser.isPrivate, let url = browser.selectedTab?.currentURL {
-						Button("Add Current Page to Reading List", systemImage: "text.badge.plus") { browser.addToReadingList(url, title: browser.selectedTab?.title ?? url.host ?? url.absoluteString) }
-							.accessibilityIdentifier("add-to-reading-list")
-					}
 				}
-				TextField("Search Bookmarks", text: $searchText)
+				TextField(showingReadingList ? "Search Reading List" : "Search Bookmarks", text: $searchText)
 					.textFieldStyle(.plain)
-					.accessibilityIdentifier("bookmark-search")
+					.accessibilityIdentifier(showingReadingList ? "reading-list-search" : "bookmark-search")
 			}
 			.padding(.horizontal, 24)
 			.padding(.vertical, 14)
@@ -120,14 +118,46 @@ struct BrowserBookmarksView: View {
 			BookmarkEditor(bookmark: bookmark) { name, folder, favorite in
 				browser.updateBookmark(bookmark.id, name: name, folder: folder, isFavorite: favorite, order: bookmark.order)
 			}
+			#if os(iOS)
 			.navigationTransition(.zoom(sourceID: "bookmark-edit-\(bookmark.id.uuidString)", in: transitions))
 			.presentationDetents([.fraction(0.6)])
+			#endif
 		}
 		.overlay {
-			if showingReadingList && browser.readingList.isEmpty {
+			if showingReadingList && readingItems.isEmpty && searchText.isEmpty {
 				ContentUnavailableView("No Reading List Items", systemImage: "text.book.closed")
-			} else if !showingReadingList && visibleBookmarks.isEmpty {
-				ContentUnavailableView("No Bookmarks", systemImage: "bookmark")
+			} else if showingReadingList && readingItems.isEmpty {
+				ContentUnavailableView("No Search Results", systemImage: "magnifyingglass")
+			} else if !showingReadingList && bookmarkCount == 0 {
+				ContentUnavailableView(searchText.isEmpty ? "No Bookmarks" : "No Search Results", systemImage: searchText.isEmpty ? "bookmark" : "magnifyingglass")
+			}
+		}
+	}
+
+	@ViewBuilder
+	private func bookmarkRows(_ items: [Bookmark]) -> some View {
+		ForEach(items) { bookmark in
+			HistoryRow(
+				title: bookmark.name,
+				detail: bookmark.url.absoluteString,
+				url: bookmark.url,
+				symbol: bookmark.isFavorite ? "star.fill" : "bookmark",
+				identifier: "bookmark-\(bookmark.id.uuidString)",
+				open: { browser.openBookmark(bookmark) },
+				openInBackground: { browser.openHistoryURL(bookmark.url, inBackground: true) }
+			)
+			.matchedTransitionSource(id: "bookmark-edit-\(bookmark.id.uuidString)", in: transitions)
+			.contextMenu {
+				Button("Edit Bookmark", systemImage: "pencil") { editingBookmark = bookmark }
+				Button(bookmark.isFavorite ? "Remove from Favorites" : "Add to Favorites", systemImage: bookmark.isFavorite ? "star.slash" : "star") {
+					browser.updateBookmark(bookmark.id, name: bookmark.name, folder: bookmark.folder, isFavorite: !bookmark.isFavorite, order: bookmark.order)
+				}
+				Button("Add to Reading List", systemImage: "text.badge.plus") {
+					browser.addToReadingList(bookmark.url, title: bookmark.name)
+				}
+				.disabled(!browser.canAddToReadingList(bookmark.url))
+				.accessibilityIdentifier("bookmark-add-reading-list-\(bookmark.id.uuidString)")
+				Button("Delete Bookmark", systemImage: "trash", role: .destructive) { browser.removeBookmark(bookmark.id) }
 			}
 		}
 	}
@@ -154,14 +184,20 @@ private struct BookmarkEditor: View {
 			List {
 				Section("Bookmark") {
 					TextField("Name", text: $name)
+						.accessibilityLabel("Bookmark name")
+						.accessibilityIdentifier("bookmark-name")
 					TextField("Folder", text: $folder)
+						.accessibilityLabel("Bookmark folder")
+						.accessibilityIdentifier("bookmark-folder")
 					Toggle("Favorite", isOn: $favorite)
+						.accessibilityIdentifier("bookmark-favorite")
 				}
 			}
 			.navigationTitle("Edit Bookmark")
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
 					Button(role: .cancel) { dismiss() }
+						.accessibilityLabel("Cancel editing bookmark")
 				}
 				ToolbarItem(placement: .confirmationAction) {
 					Button("Save", systemImage: "checkmark", role: .confirm) {
@@ -169,6 +205,7 @@ private struct BookmarkEditor: View {
 						dismiss()
 					}
 					.buttonStyle(.glassProminent)
+					.accessibilityLabel("Save bookmark changes")
 					.accessibilityIdentifier("save-bookmark")
 				}
 			}
