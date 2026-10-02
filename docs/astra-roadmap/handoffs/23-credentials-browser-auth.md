@@ -6,7 +6,7 @@ Branch / worktree / baseline commit: `astra/roadmap/23-credentials-browser-auth`
 
 Status: source complete; primary Xcode MCP diagnostics/build pending. Request-app and credential-provider runtime acceptance remains open.
 
-Commit(s), or explicit uncommitted state: `202d7ac` (`secure browser authentication callbacks`), `605ef85` (`tighten authentication header validation`); handoff documentation checkpoint follows.
+Commit(s), or explicit uncommitted state: `202d7ac` (`secure browser authentication callbacks`), `605ef85` (`tighten authentication header validation`), `c5dc24f` (`fix authentication session ownership`); handoff documentation checkpoint follows.
 
 Changed files and behavior:
 
