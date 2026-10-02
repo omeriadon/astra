@@ -7,6 +7,7 @@
 		static let shared = BrowserAuthenticationSessionHandler()
 
 		private struct Session {
+			let generation: UUID
 			let request: ASWebAuthenticationSessionRequest
 			let window: BrowserWindowController
 		}
@@ -18,44 +19,64 @@
 		}
 
 		func begin(_ request: ASWebAuthenticationSessionRequest) {
-			guard ["http", "https"].contains(request.url.scheme?.lowercased() ?? ""),
-			      request.callback != nil
-			else {
+			if let replaced = sessions.removeValue(forKey: request.uuid) {
+				replaced.request.cancelWithError(Self.cancellationError)
+				closeAndCleanUp(replaced)
+			}
+			guard request.callback != nil,
+			      let initialRequest = BrowserAuthenticationPolicy.initialRequest(
+				      url: request.url,
+				      headers: request.additionalHeaderFields
+			      ) else {
 				request.cancelWithError(Self.cancellationError)
 				return
 			}
-			cancel(request)
 			let browser = Browser(isMini: true, isPrivate: request.shouldUseEphemeralSession)
 			let window = BrowserWindowController(browser: browser)
 			let id = request.uuid
-			sessions[id] = Session(request: request, window: window)
+			let session = Session(generation: UUID(), request: request, window: window)
+			sessions[id] = session
+			let controller = browser.selectedTab?.controller
+			controller?.isAuthenticationSessionBrowser = true
 			browser.navigationIntercept = { [weak self] url in
-				guard let self, let session = sessions[id],
-				      session.request.callback?.matchesURL(url) == true else { return false }
+				guard let self,
+				      let current = sessions[id],
+				      BrowserAuthenticationPolicy.isCurrentSession(
+					      generation: session.generation,
+					      currentGeneration: current.generation,
+					      sameRequest: current.request === request,
+					      sameWindow: current.window === window
+				      ),
+				      request.callback?.matchesURL(url) == true else { return false }
 				sessions[id] = nil
-				session.request.complete(withCallbackURL: url)
-				session.window.window.close()
+				request.complete(withCallbackURL: url)
+				closeAndCleanUp(session)
 				return true
 			}
 			window.onClose = { [weak self] in
-				guard let session = self?.sessions.removeValue(forKey: id) else { return }
-				session.request.cancelWithError(Self.cancellationError)
+				guard let self else { return }
+				if let current = sessions[id],
+				   BrowserAuthenticationPolicy.isCurrentSession(
+					   generation: session.generation,
+					   currentGeneration: current.generation,
+					   sameRequest: current.request === request,
+					   sameWindow: current.window === window
+				   )
+				{
+					sessions[id] = nil
+					request.cancelWithError(Self.cancellationError)
+				}
+				cleanUpPrivateSession(session)
 			}
+			controller?.navigate(initialRequest)
 			window.showWindow()
 			NSApp.activate()
-			var initial = URLRequest(url: request.url)
-			let reservedHeaders = Set(["cookie", "host", "user-agent", "origin", "referer"])
-			for (name, value) in request.additionalHeaderFields ?? [:] {
-				guard !reservedHeaders.contains(name.lowercased()),
-				      initial.value(forHTTPHeaderField: name) == nil else { continue }
-				initial.setValue(value, forHTTPHeaderField: name)
-			}
-			browser.selectedTab?.controller?.navigate(initial)
 		}
 
 		func cancel(_ request: ASWebAuthenticationSessionRequest) {
-			guard let session = sessions.removeValue(forKey: request.uuid) else { return }
-			session.window.window.close()
+			guard let session = sessions[request.uuid], session.request === request else { return }
+			sessions[request.uuid] = nil
+			closeAndCleanUp(session)
 		}
 
 		func cancelAll() async {
@@ -64,10 +85,18 @@
 			for session in pending {
 				session.request.cancelWithError(Self.cancellationError)
 				session.window.window.close()
-				if session.window.browser.isPrivate {
-					await session.window.browser.session.endPrivateSession()
-				}
+				await session.window.browser.session.endPrivateSession()
 			}
+		}
+
+		private func closeAndCleanUp(_ session: Session) {
+			session.window.window.close()
+			cleanUpPrivateSession(session)
+		}
+
+		private func cleanUpPrivateSession(_ session: Session) {
+			guard session.window.browser.isPrivate else { return }
+			Task { await session.window.browser.session.endPrivateSession() }
 		}
 
 		private static var cancellationError: NSError {
