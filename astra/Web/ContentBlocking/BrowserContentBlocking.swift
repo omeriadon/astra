@@ -45,7 +45,6 @@ final class BrowserContentBlocking {
 			if let validated = try? BrowserContentBlockingRuleSource.validate(stored.data) {
 				source = validated
 			} else {
-				errorDescription = "Astra preserved a content-rule source it cannot validate. Replace it after reviewing the source."
 				errorDescription = "Astra preserved a content-rule source it cannot validate. Import a valid list to replace it."
 			}
 		}
@@ -228,23 +227,27 @@ final class BrowserContentBlocking {
 		guard !isBusy, !privateSessionIsEnding, !isReadOnly else { return }
 		isBusy = true
 		defer { finishOperation() }
-		do {
-			if let source, let store {
+
+		var cacheRemovalFailed = false
+		if let source, let store {
+			do {
 				try await store.removeContentRuleList(forIdentifier: source.identifier)
+			} catch {
+				cacheRemovalFailed = true
 			}
-			if !isPrivate {
-				defaults.removeObject(forKey: Self.defaultsKey)
-			}
-			source = nil
-			storedSource = nil
-			compiledRuleList = nil
-			sourceFileName = nil
-			updatedAt = nil
-			isEnabled = false
-			errorDescription = nil
-		} catch {
-			errorDescription = error.localizedDescription
 		}
+		if !isPrivate {
+			defaults.removeObject(forKey: Self.defaultsKey)
+		}
+		source = nil
+		storedSource = nil
+		compiledRuleList = nil
+		sourceFileName = nil
+		updatedAt = nil
+		isEnabled = false
+		errorDescription = cacheRemovalFailed
+			? "Imported rules were removed from Astra, but WebKit could not delete its compiled cache. The cached list is no longer active."
+			: nil
 	}
 
 	func endPrivateSession() async {
