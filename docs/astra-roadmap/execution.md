@@ -31,7 +31,7 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 | [16-chrome-find-zoom](tasks/16-chrome-find-zoom.md) | primary reviewed; Mac build verified | d9aeeb5, Mac19.443s; combined once in10; native find/focus/iOS gates open |
 | [17-keyboard-menus](tasks/17-keyboard-menus.md) | primary reviewed; Mac build verified | 32f26ac, Mac13.075s; combined once in15; keyboard/public inspector/iOS gates open |
 | [18-site-data-preferences](tasks/18-site-data-preferences.md) | queued | — |
-| [19-start-page](tasks/19-start-page.md) | in progress; focused production checks pass; Mac build pending | source baseline `6a7771d`, pointer `ba47531`; start-page implementation and check are uncommitted |
+| [19-start-page](tasks/19-start-page.md) | primary reviewed; Mac build verified; runtime gates open | checkpoint `abffc0e`; focused production preference/history check passes; exact19 `astra` / `My Mac` build passed in23.747s |
 | [20-security-reputation](tasks/20-security-reputation.md) | queued | — |
 | [21-content-blocking](tasks/21-content-blocking.md) | queued | — |
 | [22-extensions](tasks/22-extensions.md) | queued | — |
