@@ -87,7 +87,9 @@ enum BrowserAuthenticationPolicy {
 			  name.utf8.count <= 256,
 			  value.utf8.count <= 8_192,
 			  name.utf8.allSatisfy(isTokenByte),
-			  value.unicodeScalars.allSatisfy({ $0.value == 9 || (32...255).contains($0.value) })
+			  value.unicodeScalars.allSatisfy({
+				  $0.value == 9 || (32...126).contains($0.value) || (128...255).contains($0.value)
+			  })
 		else { return false }
 
 		let normalizedName = name.lowercased()

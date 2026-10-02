@@ -20,6 +20,7 @@ struct AuthenticationSessionPolicyCheck {
 		check(request?.value(forHTTPHeaderField: "X-Session-Context") == "opaque-value", "authorized custom initial headers are retained")
 		check(request?.value(forHTTPHeaderField: "Authorization") == "Bearer opaque-value", "authorized credential headers remain part of the initial request")
 		check(BrowserAuthenticationPolicy.initialRequest(url: url, headers: ["X-Test": "one\r\ntwo"]) == nil, "header line breaks are rejected")
+		check(BrowserAuthenticationPolicy.initialRequest(url: url, headers: ["X-Test": "one\u{007F}two"]) == nil, "HTTP DEL control character is rejected")
 		check(BrowserAuthenticationPolicy.initialRequest(url: url, headers: ["Bad Header": "value"]) == nil, "invalid header names are rejected")
 		check(BrowserAuthenticationPolicy.initialRequest(url: url, headers: ["Cookie": "secret=value"]) == nil, "browser-managed cookie header is rejected")
 		check(BrowserAuthenticationPolicy.initialRequest(url: url, headers: ["Set-Cookie": "secret=value"]) == nil, "response cookie headers cannot be sent as request fields")

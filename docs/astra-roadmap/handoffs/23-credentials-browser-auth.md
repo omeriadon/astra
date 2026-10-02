@@ -4,7 +4,7 @@ Task / selected optional scope: `23-credentials-browser-auth`; request-app authe
 
 Branch / worktree / baseline commit: `astra/roadmap/23-credentials-browser-auth` / `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/23-credentials-browser-auth` / `ff82e26202f2b5e2a7a186bebbcb2dc95cf33aa2`.
 
-Status: source complete; primary Xcode MCP diagnostics/build pending. Request-app and credential-provider runtime acceptance remains open.
+Status: primary source-reviewed; Mac build verified; Request-app and credential-provider runtime acceptance remains open.
 
 Commit(s), or explicit uncommitted state: `202d7ac` (`secure browser authentication callbacks`), `605ef85` (`tighten authentication header validation`), `c5dc24f` (`fix authentication session ownership`); handoff documentation checkpoint follows.
 
@@ -48,3 +48,7 @@ Migration, compatibility and private-data impact: no schema, Defaults, sync, pli
 Capability gates / unresolved issues: primary Mac Xcode MCP diagnostics/build are required. Real request-app launch, callback, header-redirect and cleanup behavior remains runtime-gated. The browser-wide passkey-access entitlement requires Apple account-holder approval and is intentionally absent; no approved provisioning profile was provided. System AutoFill/passkey/provider/strong-password behavior is documented by WebKit and must still be exercised on macOS and iOS.
 
 Merge prerequisites / follow-up ownership: primary source review and serialized Mac Xcode MCP build. Keep Apple-managed entitlement approval and all provider/device cases explicit. No project-file, entitlement, Info.plist or other worker-owned file was modified.
+
+## Primary review — 2 October 2026
+
+Reviewed all changed production files, native matcher/main-frame contract, request/window/generation ownership and retained closure graph, auth popup propagation, private cleanup and initial header/retry exclusion. Corrected DEL control-character acceptance and added a production regression case. Standalone policy check passes. Xcode MCP exact23 project, workspace `workspace-u6k4754xwJ`, `astra` / `My Mac`: build passed18.159s, no errors. No config/entitlement mutation, app launch, real credential inspection or provider ceremony. Signed arbitrary-RP browser capability, AutoFill/passkey/strong-password/provider and iOS acceptance remain open; public WebKit-path documentation does not establish signed runtime support.
