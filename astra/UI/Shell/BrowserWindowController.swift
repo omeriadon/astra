@@ -8,6 +8,7 @@
 		let window: NSWindow
 		var onClose: (() -> Void)?
 		private var allowsClosing = false
+		private var closeApprovalInFlight = false
 
 		override convenience init() {
 			self.init(browser: Browser())
@@ -16,28 +17,42 @@
 		init(browser: Browser) {
 			self.browser = browser
 
-			let visibleFrame = NSScreen.main?.visibleFrame
+			let savedScreenFrame = browser.savedWindowFrame.map {
+				NSRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height)
+			}
+			let targetScreen = savedScreenFrame.flatMap { saved in
+				NSScreen.screens.first { $0.frame.intersects(saved) }
+			} ?? NSScreen.main
+			let visibleFrame = targetScreen?.visibleFrame
 				?? NSRect(x: 0, y: 0, width: 1280, height: 800)
 			let initialSize = NSSize(
 				width: min(1280, visibleFrame.width * 0.86),
 				height: min(820, visibleFrame.height * 0.86)
 			)
-			let initialFrame = NSRect(
-				x: visibleFrame.midX - initialSize.width / 2,
-				y: visibleFrame.midY - initialSize.height / 2,
-				width: initialSize.width,
-				height: initialSize.height
-			)
+			let styleMask: NSWindow.StyleMask = [
+				.titled,
+				.closable,
+				.miniaturizable,
+				.resizable,
+				.fullSizeContentView,
+			]
+			let initialFrame: NSRect
+			if let savedFrame = browser.savedWindowFrame {
+				let clamped = savedFrame.clamped(to: visibleFrame)
+				let frame = NSRect(x: clamped.x, y: clamped.y, width: clamped.width, height: clamped.height)
+				initialFrame = NSWindow.contentRect(forFrameRect: frame, styleMask: styleMask)
+			} else {
+				initialFrame = NSRect(
+					x: visibleFrame.midX - initialSize.width / 2,
+					y: visibleFrame.midY - initialSize.height / 2,
+					width: initialSize.width,
+					height: initialSize.height
+				)
+			}
 
 			let window = NSWindow(
 				contentRect: initialFrame,
-				styleMask: [
-					.titled,
-					.closable,
-					.miniaturizable,
-					.resizable,
-					.fullSizeContentView,
-				],
+				styleMask: styleMask,
 				backing: .buffered,
 				defer: false
 			)
@@ -54,7 +69,7 @@
 
 			window.delegate = self
 			window.contentView = contentHost
-			window.contentMinSize = NSSize(width: 640, height: 480)
+			window.contentMinSize = NSSize(width: min(640, visibleFrame.width), height: min(480, visibleFrame.height))
 			window.title = browser.isPrivate ? "astra — Private Browsing" : "astra"
 			window.titleVisibility = .hidden
 			window.titlebarAppearsTransparent = true
@@ -64,6 +79,15 @@
 			window.tabbingMode = .disallowed
 			window.collectionBehavior.insert(.fullScreenPrimary)
 			window.isReleasedWhenClosed = false
+			if browser.savedWindowFrame == nil {
+				let frame = window.frame
+				browser.updateWindowFrame(BrowserWindowFrame(
+					x: frame.origin.x,
+					y: frame.origin.y,
+					width: frame.width,
+					height: frame.height
+				))
+			}
 		}
 
 		func showWindow() {
@@ -74,9 +98,35 @@
 			BrowserWindowRegistry.shared.activate(browser)
 		}
 
+		func windowDidMove(_: Notification) {
+			saveWindowFrame()
+		}
+
+		func windowDidEndLiveResize(_: Notification) {
+			saveWindowFrame()
+		}
+
+		func windowDidExitFullScreen(_: Notification) {
+			saveWindowFrame()
+		}
+
+		func saveWindowFrame() {
+			guard !window.styleMask.contains(.fullScreen) else { return }
+			let frame = window.frame
+			browser.updateWindowFrame(BrowserWindowFrame(
+				x: frame.origin.x,
+				y: frame.origin.y,
+				width: frame.width,
+				height: frame.height
+			))
+		}
+
 		func windowShouldClose(_ sender: NSWindow) -> Bool {
 			guard !allowsClosing else { return true }
+			guard !closeApprovalInFlight else { return false }
+			closeApprovalInFlight = true
 			Task { @MainActor in
+				defer { closeApprovalInFlight = false }
 				let hasUnsavedChanges = browser.tabs.contains(where: { tab in
 					tab.controller?.hasUnsavedChanges == true || tab.peeks.contains { $0.controller.hasUnsavedChanges }
 				})
@@ -91,6 +141,7 @@
 					let alert = BrowserWebsiteUI.alert(title: "Close this window?", message: message, confirm: "Close Window")
 					guard await BrowserWebsiteUI.present(alert, in: sender) == .alertFirstButtonReturn else { return }
 				}
+				saveWindowFrame()
 				await browser.flushAndWaitForPersistence()
 				if let error = browser.persistenceErrorDescription {
 					let alert = BrowserWebsiteUI.alert(title: "Close without saving?", message: error, confirm: "Close Without Saving")

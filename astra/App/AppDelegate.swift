@@ -18,7 +18,12 @@
 		private var windows: [BrowserWindowController] = []
 		private var miniWindows: [MiniAstraWindowController] = []
 		private var lastQuitAttempt: Date?
+		private var terminationApprovalInFlight = false
+		private var lastClosedNormalWindow: BrowserWindowRecord?
 		private var wasLaunchedForWebPush = false
+		private var startupWindowRestorationFinished = false
+		private var queuedStartupURLs: [URL] = []
+		private var shouldReopenAfterStartup = false
 		private var memoryPressureSource: DispatchSourceMemoryPressure?
 
 		private var pictureInPictureController: BrowserController? {
@@ -57,14 +62,41 @@
 				andEventID: AEEventID(kAEGetURL)
 			)
 			_ = BrowserWebSession.shared
-			BrowserWebPushManager.shared.openRequested = { [weak self] url in self?.open(url) }
+			BrowserWebPushManager.shared.openRequested = { [weak self] url in self?.openAfterStartupRestoration(url) }
 			NotificationCenter.default.addObserver(
 				self,
 				selector: #selector(newMiniAstra(_:)),
 				name: MiniAstraShortcut.notification,
 				object: nil
 			)
+			NSWorkspace.shared.notificationCenter.addObserver(
+				self,
+				selector: #selector(applicationWillSleep(_:)),
+				name: NSWorkspace.willSleepNotification,
+				object: NSWorkspace.shared
+			)
+			NSWorkspace.shared.notificationCenter.addObserver(
+				self,
+				selector: #selector(applicationDidWake(_:)),
+				name: NSWorkspace.didWakeNotification,
+				object: NSWorkspace.shared
+			)
 			MiniAstraShortcut.shared.update()
+		}
+
+		@objc private func applicationWillSleep(_: Notification) {
+			for controller in windows {
+				controller.saveWindowFrame()
+			}
+			for browser in allBrowsers where !browser.isPrivate && !browser.isMini {
+				browser.flushPersistence()
+			}
+		}
+
+		@objc private func applicationDidWake(_: Notification) {
+			guard let keyWindow = NSApp.keyWindow,
+			      let browser = windows.first(where: { $0.window === keyWindow })?.browser else { return }
+			BrowserWindowRegistry.shared.activate(browser)
 		}
 
 		func applicationDidFinishLaunching(_: Notification) {
@@ -97,9 +129,26 @@
 			BrowserWebPushManager.shared.drainPendingMessages()
 			Task { @MainActor [weak self] in
 				await Task.yield()
-				guard let self, windows.isEmpty, miniWindows.isEmpty, !wasLaunchedForWebPush,
-				      !authentication.wasLaunchedByAuthenticationServices else { return }
-				openBrowserWindow()
+				guard let self else { return }
+				defer { finishStartupWindowRestoration() }
+				guard !authentication.wasLaunchedByAuthenticationServices else { return }
+				let persistence = try? BrowserPersistence()
+				let records = await Task.detached(priority: .utility) {
+					(try? persistence?.loadPersistedState()?.windowRecords) ?? []
+				}.value
+				BrowserWindowRegistry.shared.beginWindowRestoration(records)
+				for record in records where !windows.contains(where: { $0.browser.windowID == record.windowID }) {
+					openBrowserWindow(restorationRecord: record)
+				}
+				if windows.isEmpty && !wasLaunchedForWebPush {
+					openBrowserWindow()
+				}
+				for controller in windows {
+					while !controller.browser.isHydrationFinished {
+						try? await Task.sleep(for: .milliseconds(25))
+					}
+				}
+				BrowserWindowRegistry.shared.finishWindowRestoration()
 			}
 		}
 
@@ -109,7 +158,10 @@
 		}
 
 		func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+			guard !terminationApprovalInFlight else { return .terminateLater }
+			terminationApprovalInFlight = true
 			Task { @MainActor in
+				defer { terminationApprovalInFlight = false }
 				let hasChanges = allBrowsers.contains { browser in
 					browser.tabs.contains { tab in
 						tab.controller?.hasUnsavedChanges == true || tab.peeks.contains { $0.controller.hasUnsavedChanges }
@@ -132,6 +184,7 @@
 					}
 				}
 				for controller in windows {
+					controller.saveWindowFrame()
 					await controller.browser.flushAndWaitForPersistence()
 				}
 				for controller in miniWindows {
@@ -167,8 +220,15 @@
 			hasVisibleWindows flag: Bool
 		) -> Bool {
 			if !flag {
+				guard startupWindowRestorationFinished else {
+					shouldReopenAfterStartup = true
+					return true
+				}
 				if let controller = windows.first {
 					controller.showWindow()
+				} else if let lastClosedNormalWindow {
+					self.lastClosedNormalWindow = nil
+					openBrowserWindow(restorationRecord: lastClosedNormalWindow)
 				} else {
 					openBrowserWindow()
 				}
@@ -188,11 +248,40 @@
 				BrowserWebPushManager.shared.drainPendingMessages()
 			}
 			for url in urls where ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
-				if Defaults[.miniAstraEnabled] {
-					openMiniAstra(url: url)
-				} else {
-					open(url)
+				openAfterStartupRestoration(url)
+			}
+		}
+
+		private func openAfterStartupRestoration(_ url: URL) {
+			guard startupWindowRestorationFinished else {
+				queuedStartupURLs.append(url)
+				return
+			}
+			if Defaults[.miniAstraEnabled] {
+				openMiniAstra(url: url)
+			} else {
+				open(url)
+			}
+		}
+
+		private func finishStartupWindowRestoration() {
+			BrowserWindowRegistry.shared.finishWindowRestoration()
+			startupWindowRestorationFinished = true
+			if shouldReopenAfterStartup {
+				shouldReopenAfterStartup = false
+				if let controller = windows.first {
+					controller.showWindow()
+				} else if let lastClosedNormalWindow {
+					self.lastClosedNormalWindow = nil
+					openBrowserWindow(restorationRecord: lastClosedNormalWindow)
+				} else if !wasLaunchedForWebPush {
+					openBrowserWindow()
 				}
+			}
+			let urls = queuedStartupURLs
+			queuedStartupURLs.removeAll()
+			for url in urls {
+				openAfterStartupRestoration(url)
 			}
 		}
 
@@ -216,10 +305,22 @@
 		}
 
 		@discardableResult
-		func openBrowserWindow(isPrivate: Bool = false) -> BrowserWindowController {
-			let controller = BrowserWindowController(browser: Browser(isPrivate: isPrivate))
+		func openBrowserWindow(
+			isPrivate: Bool = false,
+			restorationRecord: BrowserWindowRecord? = nil
+		) -> BrowserWindowController {
+			let record = isPrivate ? nil : restorationRecord
+			let controller = BrowserWindowController(browser: Browser(isPrivate: isPrivate, windowRecord: record))
 			controller.onClose = { [weak self, weak controller] in
 				guard let self, let controller else { return }
+				if !controller.browser.isPrivate {
+					lastClosedNormalWindow = BrowserWindowRecord(
+						windowID: controller.browser.windowID,
+						tabIDs: controller.browser.tabs.map(\.id),
+						selectedTabID: controller.browser.selectedTabID,
+						frame: controller.browser.savedWindowFrame
+					)
+				}
 				windows.removeAll { $0 === controller }
 			}
 

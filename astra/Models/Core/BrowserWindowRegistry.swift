@@ -10,6 +10,7 @@ final class BrowserWindowRegistry {
 	@ObservationIgnored private var browsers: [WeakBrowser] = []
 	@ObservationIgnored private var publishTask: Task<Void, Never>?
 	@ObservationIgnored private weak var pendingPublishSource: Browser?
+	@ObservationIgnored private var pendingRestorationRecords: [UUID: BrowserWindowRecord]?
 
 	var activeBrowser: Browser? {
 		browsers.first { $0.browser?.windowID == activeBrowserID }?.browser
@@ -20,6 +21,33 @@ final class BrowserWindowRegistry {
 		browsers.compactMap(\.browser)
 	}
 
+	var recordsForPersistence: [BrowserWindowRecord] {
+		let browsers = openBrowsers.filter { !$0.isPrivate && !$0.isMini }
+		let live = browsers.map { browser in
+			BrowserWindowRecord(
+				windowID: browser.windowID,
+				tabIDs: browser.tabs.map(\.id),
+				selectedTabID: browser.selectedTabID,
+				frame: browser.savedWindowFrame
+			)
+		}
+		guard let pendingRestorationRecords else { return live }
+		var records = Dictionary(uniqueKeysWithValues: pendingRestorationRecords.values.map { ($0.windowID, $0) })
+		for (browser, record) in zip(browsers, live) {
+			guard browser.isHydrationFinished || records[browser.windowID] == nil else { continue }
+			records[browser.windowID] = record
+		}
+		return Array(records.values)
+	}
+
+	func beginWindowRestoration(_ records: [BrowserWindowRecord]) {
+		pendingRestorationRecords = Dictionary(uniqueKeysWithValues: records.map { ($0.windowID, $0) })
+	}
+
+	func finishWindowRestoration() {
+		pendingRestorationRecords = nil
+	}
+
 	func register(_ browser: Browser) {
 		browsers.removeAll { $0.browser == nil }
 		browsers.append(WeakBrowser(browser))
@@ -28,6 +56,7 @@ final class BrowserWindowRegistry {
 
 	func unregister(_ browser: Browser) {
 		browsers.removeAll { $0.browser == nil || $0.browser === browser }
+		pendingRestorationRecords?.removeValue(forKey: browser.windowID)
 		if pendingPublishSource === browser {
 			publishTask?.cancel()
 			pendingPublishSource = nil
