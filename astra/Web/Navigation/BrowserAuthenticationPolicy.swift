@@ -2,6 +2,7 @@ import Foundation
 
 enum BrowserAuthenticationPolicy {
 	static let maximumFailures = 3
+	private static let maximumInitialURLBytes = 16_384
 	static let credentialMethods = [
 		NSURLAuthenticationMethodHTTPBasic,
 		NSURLAuthenticationMethodHTTPDigest,
@@ -36,9 +37,16 @@ enum BrowserAuthenticationPolicy {
 		headers: [String: String]?
 	) -> URLRequest? {
 		guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+			  url.absoluteString.utf8.count <= maximumInitialURLBytes,
 			  ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
 			  let host = components.host,
 			  !host.isEmpty,
+			  !host.unicodeScalars.contains(where: {
+				  CharacterSet.whitespacesAndNewlines.contains($0)
+					  || CharacterSet.controlCharacters.contains($0)
+			  }),
+			  components.port.map({ (1...65_535).contains($0) }) ?? true,
+			  !hasEmptyPort(url),
 			  components.user == nil,
 			  components.password == nil
 		else { return nil }
@@ -62,7 +70,7 @@ enum BrowserAuthenticationPolicy {
 		targetsMainFrame: Bool,
 		isNewWindow: Bool
 	) -> Bool {
-		isSourceMainFrame && (targetsMainFrame || isNewWindow)
+		targetsMainFrame || (isSourceMainFrame && isNewWindow)
 	}
 
 	static func isCurrentSession(
@@ -120,5 +128,11 @@ enum BrowserAuthenticationPolicy {
 			|| (97...122).contains(byte)
 			|| (48...57).contains(byte)
 			|| "!#$%&'*+-.^_`|~".utf8.contains(byte)
+	}
+
+	private static func hasEmptyPort(_ url: URL) -> Bool {
+		guard let authorityStart = url.absoluteString.range(of: "://")?.upperBound else { return true }
+		let authority = url.absoluteString[authorityStart...].prefix { !"/?#".contains($0) }
+		return authority.hasSuffix(":")
 	}
 }
