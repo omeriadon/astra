@@ -113,6 +113,7 @@
 			guard FileManager.default.fileExists(atPath: template.appendingPathComponent("Contents/MacOS").path) else {
 				throw RegistryError.templateInvalid
 			}
+			let signingEntitlements = try signingEntitlements(from: template)
 
 			let id = UUID()
 			let destination = appsURL.appendingPathComponent(
@@ -125,7 +126,7 @@
 				if let icon {
 					NSWorkspace.shared.setIcon(icon, forFile: destination.path)
 				}
-				try adHocSign(destination)
+				try adHocSign(destination, entitlements: signingEntitlements)
 				let now = Date.now
 				let installation = BrowserWebsiteAppInstallation(
 					id: id,
@@ -173,13 +174,14 @@
 			else { throw RegistryError.installationOutsideOwnedDirectory }
 			guard let name = BrowserWebsiteAppPolicy.validatedName(proposedName) else { throw RegistryError.invalidName }
 			let oldURL = installations[index].bundleURL
+			let signingEntitlements = try signingEntitlements(from: oldURL)
 			let newURL = appsURL.appendingPathComponent(BrowserWebsiteAppPolicy.bundleFilename(name: name, id: id), isDirectory: true)
 			if oldURL != newURL {
 				try FileManager.default.moveItem(at: oldURL, to: newURL)
 				installations[index].bundlePath = newURL.path
 			}
 			try writeBundleMetadata(id: id, name: name, launchURL: installations[index].launchURL, bundleURL: newURL)
-			try adHocSign(newURL)
+			try adHocSign(newURL, entitlements: signingEntitlements)
 			installations[index].name = name
 			installations[index].modifiedAt = .now
 			try persist()
@@ -189,7 +191,10 @@
 			guard let index = installations.firstIndex(where: { $0.id == id }), owns(installations[index].bundleURL) else {
 				throw RegistryError.installationOutsideOwnedDirectory
 			}
+			let bundleURL = installations[index].bundleURL
+			let signingEntitlements = try signingEntitlements(from: bundleURL)
 			NSWorkspace.shared.setIcon(icon, forFile: installations[index].bundlePath)
+			try adHocSign(bundleURL, entitlements: signingEntitlements)
 			installations[index].modifiedAt = .now
 			try persist()
 		}
@@ -220,17 +225,66 @@
 			try data.write(to: plistURL, options: .atomic)
 		}
 
-		private func adHocSign(_ bundleURL: URL) throws {
+		private func signingEntitlements(from bundleURL: URL) throws -> Data {
+			let process = Process()
+			let output = Pipe()
+			let error = Pipe()
+			process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+			process.arguments = ["-d", "--entitlements", ":-", bundleURL.path]
+			process.standardOutput = output
+			process.standardError = error
+			try process.run()
+			process.waitUntilExit()
+			let stdout = output.fileHandleForReading.readDataToEndOfFile()
+			let stderr = error.fileHandleForReading.readDataToEndOfFile()
+			guard process.terminationStatus == 0,
+			      let plist = entitlementPlist(in: stdout) ?? entitlementPlist(in: stderr),
+			      (try? PropertyListSerialization.propertyList(from: plist, options: [], format: nil)) is [String: Any]
+			else {
+				throw RegistryError.templateInvalid
+			}
+			return plist
+		}
+
+		private func entitlementPlist(in data: Data) -> Data? {
+			guard let text = String(data: data, encoding: .utf8),
+			      let start = text.range(of: "<?xml"),
+			      let end = text.range(of: "</plist>", options: .backwards)
+			else { return nil }
+			return String(text[start.lowerBound ..< end.upperBound]).data(using: .utf8)
+		}
+
+		private func adHocSign(_ bundleURL: URL, entitlements: Data) throws {
+			let entitlementsURL = rootURL.appendingPathComponent("signing-\(UUID().uuidString).plist")
+			try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+			try entitlements.write(to: entitlementsURL, options: [.atomic])
+			defer { try? FileManager.default.removeItem(at: entitlementsURL) }
+
 			let process = Process()
 			let pipe = Pipe()
 			process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-			process.arguments = ["--force", "--deep", "--sign", "-", bundleURL.path]
+			process.arguments = [
+				"--force", "--sign", "-", "--entitlements", entitlementsURL.path, bundleURL.path,
+			]
 			process.standardError = pipe
 			try process.run()
 			process.waitUntilExit()
 			guard process.terminationStatus == 0 else {
 				let data = pipe.fileHandleForReading.readDataToEndOfFile()
 				let message = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown codesign failure"
+				throw RegistryError.signingFailed(String(message.prefix(500)))
+			}
+
+			let verify = Process()
+			let verifyPipe = Pipe()
+			verify.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+			verify.arguments = ["--verify", "--strict", bundleURL.path]
+			verify.standardError = verifyPipe
+			try verify.run()
+			verify.waitUntilExit()
+			guard verify.terminationStatus == 0 else {
+				let data = verifyPipe.fileHandleForReading.readDataToEndOfFile()
+				let message = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "codesign verification failed"
 				throw RegistryError.signingFailed(String(message.prefix(500)))
 			}
 		}
