@@ -272,9 +272,14 @@ import WebKit
 				panel.beginSheetModal(for: window) { [weak self, weak window] response in
 					monitor?.cancel()
 					let current = self?.ownsPrompt(in: webView, documentID: documentID) == true && window?.isVisible == true
-					let urls = response == .OK && current ? panel.urls : nil
-					if let urls {
-						self?.retainUploadAccess(for: urls)
+					let selectedURLs = response == .OK ? panel.urls : []
+					let urls = current ? selectedURLs : nil
+					if current {
+						self?.retainPanelUploadAccess(for: selectedURLs)
+					} else {
+						for url in selectedURLs {
+							url.stopAccessingSecurityScopedResource()
+						}
 					}
 					finish(urls)
 				}
@@ -342,6 +347,10 @@ import WebKit
 			Task { @MainActor in
 				let response = await BrowserWebsiteUI.authenticate(challenge, in: webView.window) { [self] in
 					ownsPrompt(in: webView, documentID: documentID)
+				}
+				guard ownsPrompt(in: webView, documentID: documentID) else {
+					completionHandler(.cancelAuthenticationChallenge, nil)
+					return
 				}
 				completionHandler(response.0, response.1)
 			}

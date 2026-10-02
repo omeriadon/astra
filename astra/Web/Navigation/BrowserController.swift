@@ -818,10 +818,8 @@ final class BrowserController: NSObject, Identifiable {
 		escapeRequested = nil
 	}
 
-	func retainUploadAccess(for urls: [URL]) {
-		for url in urls where url.startAccessingSecurityScopedResource() {
-			uploadSecurityScopedFiles.append(url)
-		}
+	func retainPanelUploadAccess(for urls: [URL]) {
+		uploadSecurityScopedFiles.append(contentsOf: urls)
 	}
 
 	private func releaseUploadAccess() {
@@ -1552,7 +1550,6 @@ extension BrowserController: WKNavigationDelegate {
 		awaitsNavigationCommit = true
 		session.permissions.removeTemporaryDecisions(controllerID: id)
 		navigationGeneration += 1
-		releaseUploadAccess()
 		hasDeclaredThemeColor = false
 		hasTopEdgeContent = false
 		webView.underPageBackgroundColor = nil
@@ -1579,6 +1576,7 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
 		guard owns(webView), navigation === currentNavigation else { return }
+		releaseUploadAccess()
 		pictureInPictureControlUnavailable = false
 		committedURL = webView.url
 		automaticDownloadPolicy.didCommitDocument()
