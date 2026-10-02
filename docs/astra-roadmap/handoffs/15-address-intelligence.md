@@ -44,3 +44,7 @@ Migration, compatibility and private-data impact: no persistence or sync schema 
 Capability gates / unresolved issues: actual provider availability and redirect behavior need runtime verification. Discovery is explicit and reads only the page's public OpenSearch link metadata; metadata requests are bounded and credential-free. A fresh Xcode build remains pending after source corrections.
 
 Merge prerequisites / follow-up ownership: primary source review and serialized Mac Xcode MCP build. Preserve packet14's suggestion-provider and private-opt-in rules, packet17's address prompt ownership, and packet29's timestamped portable-settings behavior. No defaults key, project file, controller/delegate file, sync schema, hosted test target, or server code changed.
+
+## Primary review — 2 October 2026
+
+Reviewed all changed production files, actual loaded/new-tab/paste flows, query/private/provider identity and history/open-tab lookup, XML boundaries and published metadata discovery/secure redirects, and source identity revalidation at confirmation. Initial confirmation modifier build failure corrected in fb98be7. Exact15 project Xcode MCP workspace `workspace-nHAlqDrYr9`, `astra` / `My Mac`: final build passed12.868s, no errors. Production parser/paste/ranking/ownership check passes. Native focus/popup/PasteButton/OpenSearch/provider/iOS cases remain pending; no app or provider was run.
