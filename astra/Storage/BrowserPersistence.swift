@@ -159,10 +159,22 @@ enum BrowserPersistenceError: LocalizedError, Equatable {
 final class BrowserPersistence: @unchecked Sendable {
 	private let directory: URL
 	private var readingArchiveDirectory: URL { directory.appendingPathComponent("reading-list", isDirectory: true) }
+	private static let maxReadingArchiveBytes = 32 * 1024 * 1024
+	private static let maxReadingArchiveFileBytes = maxReadingArchiveBytes + 32 * 1024
+	private static let maxReadingArchiveCount = 50
+	private static let maxReadingArchiveTotalBytes = 256 * 1024 * 1024
+	// ponytail: one process-wide lock keeps the archive caps exact across windows; per-directory locks only if contention matters.
+	private nonisolated static let readingArchiveLock = NSLock()
 
 	private nonisolated struct Envelope: Codable {
 		let version: Int
 		let state: BrowserPersistedState
+	}
+
+	private nonisolated struct ReadingArchiveEnvelope: Codable {
+		let generation: UUID
+		let url: URL
+		let data: Data
 	}
 
 	private nonisolated static let currentVersion = 3
@@ -172,45 +184,72 @@ final class BrowserPersistence: @unchecked Sendable {
 		directory = try persistenceDirectory()
 	}
 
-	nonisolated func saveReadingArchive(_ data: Data, id: UUID, url: URL) throws {
-		guard !data.isEmpty, data.count <= 32 * 1024 * 1024 else { throw BrowserUserData.ImportError.tooLarge }
+	nonisolated func saveReadingArchive(_ data: Data, id: UUID, url: URL) throws -> UUID {
+		guard !data.isEmpty, data.count <= Self.maxReadingArchiveBytes else { throw BrowserUserData.ImportError.tooLarge }
 		guard BrowserHomepage.validURL(url.absoluteString) != nil else { throw BrowserPersistenceError.invalidSnapshot }
-		let urlData = Data(url.absoluteString.utf8)
-		guard urlData.count <= 16_384 else { throw BrowserUserData.ImportError.tooLarge }
+		guard url.absoluteString.utf8.count <= 16_384 else { throw BrowserUserData.ImportError.tooLarge }
+		Self.readingArchiveLock.lock()
+		defer { Self.readingArchiveLock.unlock() }
 		let folder = readingArchiveDirectory
 		try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-		let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+		let files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.fileSizeKey])
 		let archives = files.filter { $0.pathExtension == "webarchive" }
-		let currentSize = files.reduce(Int64(0)) { total, file in
-			total + Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-		}
 		let destination = folder.appendingPathComponent(id.uuidString).appendingPathExtension("webarchive")
-		let previousSize = Int64((try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-		let metadataURL = destination.appendingPathExtension("url")
-		let previousMetadataSize = Int64((try? metadataURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-		guard archives.count < 50 || FileManager.default.fileExists(atPath: destination.path),
-		      currentSize - previousSize - previousMetadataSize + Int64(data.count + urlData.count) <= 256 * 1024 * 1024
+		let isReplacing = archives.contains { $0.lastPathComponent == destination.lastPathComponent }
+		var currentSize = 0
+		var previousSize = 0
+		for file in archives {
+			guard let fileSize = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+				throw BrowserPersistenceError.invalidSnapshot
+			}
+			currentSize += fileSize
+			if file.lastPathComponent == destination.lastPathComponent {
+				previousSize = fileSize
+			}
+		}
+		let encoder = PropertyListEncoder()
+		encoder.outputFormat = .binary
+		let generation = UUID()
+		let envelope = try encoder.encode(ReadingArchiveEnvelope(generation: generation, url: url, data: data))
+		guard envelope.count <= Self.maxReadingArchiveFileBytes,
+		      archives.count < Self.maxReadingArchiveCount || isReplacing,
+		      currentSize - previousSize + envelope.count <= Self.maxReadingArchiveTotalBytes
 		else { throw BrowserUserData.ImportError.tooLarge }
-		try data.write(to: destination, options: .atomic)
-		try urlData.write(to: metadataURL, options: .atomic)
+		try envelope.write(to: destination, options: .atomic)
+		return generation
 	}
 
 	nonisolated func loadReadingArchive(id: UUID, url expectedURL: URL) throws -> Data? {
-		let url = readingArchiveDirectory.appendingPathComponent(id.uuidString).appendingPathExtension("webarchive")
-		let metadataURL = url.appendingPathExtension("url")
-		guard let storedURL = try? String(contentsOf: metadataURL, encoding: .utf8),
-		      storedURL == expectedURL.absoluteString,
-		      FileManager.default.fileExists(atPath: url.path) else { return nil }
-		let data = try Data(contentsOf: url)
-		guard data.count <= 32 * 1024 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
-		return data
+		Self.readingArchiveLock.lock()
+		defer { Self.readingArchiveLock.unlock() }
+		let folder = readingArchiveDirectory
+		let files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.fileSizeKey])
+		let archive = folder.appendingPathComponent(id.uuidString).appendingPathExtension("webarchive")
+		guard let file = files.first(where: { $0.lastPathComponent == archive.lastPathComponent }) else { return nil }
+		guard let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+		      size <= Self.maxReadingArchiveFileBytes else { throw BrowserPersistenceError.invalidSnapshot }
+		let encoded = try Data(contentsOf: file)
+		let envelope = try PropertyListDecoder().decode(ReadingArchiveEnvelope.self, from: encoded)
+		guard envelope.url.absoluteString == expectedURL.absoluteString else { return nil }
+		guard envelope.data.count <= Self.maxReadingArchiveBytes else { throw BrowserPersistenceError.invalidSnapshot }
+		return envelope.data
 	}
 
-	nonisolated func removeReadingArchive(id: UUID) throws {
-		let url = readingArchiveDirectory.appendingPathComponent(id.uuidString).appendingPathExtension("webarchive")
-		for file in [url, url.appendingPathExtension("url")] where FileManager.default.fileExists(atPath: file.path) {
-			try FileManager.default.removeItem(at: file)
+	nonisolated func removeReadingArchive(id: UUID, ifGeneration generation: UUID? = nil) throws {
+		Self.readingArchiveLock.lock()
+		defer { Self.readingArchiveLock.unlock() }
+		let folder = readingArchiveDirectory
+		let files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.fileSizeKey])
+		let archive = folder.appendingPathComponent(id.uuidString).appendingPathExtension("webarchive")
+		guard let file = files.first(where: { $0.lastPathComponent == archive.lastPathComponent }) else { return }
+		if let generation {
+			guard let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+			      size <= Self.maxReadingArchiveFileBytes else { throw BrowserPersistenceError.invalidSnapshot }
+			let encoded = try Data(contentsOf: file)
+			let envelope = try PropertyListDecoder().decode(ReadingArchiveEnvelope.self, from: encoded)
+			guard envelope.generation == generation else { return }
 		}
+		try FileManager.default.removeItem(at: file)
 	}
 
 	init(directory: URL) {

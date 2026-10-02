@@ -1,5 +1,36 @@
 import Foundation
 
+private final class ConcurrentArchiveResults: @unchecked Sendable {
+	private let lock = NSLock()
+	private var successfulSaves = 0
+	private var rejectedSaves = 0
+	private var unexpectedErrors = 0
+
+	func recordSuccess() {
+		lock.lock()
+		successfulSaves += 1
+		lock.unlock()
+	}
+
+	func recordRejection() {
+		lock.lock()
+		rejectedSaves += 1
+		lock.unlock()
+	}
+
+	func recordUnexpectedError() {
+		lock.lock()
+		unexpectedErrors += 1
+		lock.unlock()
+	}
+
+	var result: (successes: Int, rejections: Int, unexpectedErrors: Int) {
+		lock.lock()
+		defer { lock.unlock() }
+		return (successfulSaves, rejectedSaves, unexpectedErrors)
+	}
+}
+
 @main
 struct BookmarkReadingListCheck {
 	static func main() throws {
@@ -103,23 +134,87 @@ struct BookmarkReadingListCheck {
 		let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let persistence = BrowserPersistence(directory: directory)
+		let secondPersistence = BrowserPersistence(directory: directory)
 		let archiveID = UUID()
 		let archiveURL = URL(string: "https://archive.example/page")!
-		try persistence.saveReadingArchive(Data([1, 2, 3]), id: archiveID, url: archiveURL)
+		let firstGeneration = try persistence.saveReadingArchive(Data([1, 2, 3]), id: archiveID, url: archiveURL)
 		let loadedArchive = try persistence.loadReadingArchive(id: archiveID, url: archiveURL)
 		let mismatchedArchive = try persistence.loadReadingArchive(id: archiveID, url: URL(string: "https://changed.example")!)
 		assert(loadedArchive == Data([1, 2, 3]))
 		assert(mismatchedArchive == nil)
+		let replacementURL = URL(string: "https://archive.example/replacement")!
+		let replacementGeneration = try secondPersistence.saveReadingArchive(Data([4, 5, 6]), id: archiveID, url: replacementURL)
+		assert(replacementGeneration != firstGeneration)
+		let oldURLArchive = try persistence.loadReadingArchive(id: archiveID, url: archiveURL)
+		let replacementArchive = try persistence.loadReadingArchive(id: archiveID, url: replacementURL)
+		assert(oldURLArchive == nil)
+		assert(replacementArchive == Data([4, 5, 6]))
+		try persistence.removeReadingArchive(id: archiveID, ifGeneration: firstGeneration)
+		let afterStaleRemoval = try persistence.loadReadingArchive(id: archiveID, url: replacementURL)
+		assert(afterStaleRemoval == Data([4, 5, 6]))
+		do {
+			_ = try persistence.saveReadingArchive(Data(repeating: 0, count: 32 * 1024 * 1024 + 1), id: archiveID, url: archiveURL)
+			assertionFailure("oversized replacement was accepted")
+		} catch BrowserUserData.ImportError.tooLarge {
+		}
+		let afterFailedReplace = try persistence.loadReadingArchive(id: archiveID, url: replacementURL)
+		assert(afterFailedReplace == Data([4, 5, 6]))
 		try persistence.removeReadingArchive(id: archiveID)
 		let removedArchive = try persistence.loadReadingArchive(id: archiveID, url: archiveURL)
 		assert(removedArchive == nil)
-		for _ in 0 ..< 50 {
-			try persistence.saveReadingArchive(Data([1]), id: UUID(), url: archiveURL)
+		for _ in 0 ..< 49 {
+			_ = try persistence.saveReadingArchive(Data([1]), id: UUID(), url: archiveURL)
 		}
+		let results = ConcurrentArchiveResults()
+		let raceIDs = [UUID(), UUID()]
+		DispatchQueue.concurrentPerform(iterations: raceIDs.count) { index in
+			do {
+				_ = try (index == 0 ? persistence : secondPersistence).saveReadingArchive(Data([2]), id: raceIDs[index], url: archiveURL)
+				results.recordSuccess()
+			} catch BrowserUserData.ImportError.tooLarge {
+				results.recordRejection()
+			} catch {
+				results.recordUnexpectedError()
+			}
+		}
+		assert(results.result.successes == 1)
+		assert(results.result.rejections == 1)
+		assert(results.result.unexpectedErrors == 0)
+
+		let quotaDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+		defer { try? FileManager.default.removeItem(at: quotaDirectory) }
+		let quotaFolder = quotaDirectory.appendingPathComponent("reading-list", isDirectory: true)
+		try FileManager.default.createDirectory(at: quotaFolder, withIntermediateDirectories: true)
+		for _ in 0 ..< 7 {
+			let sparseFile = quotaFolder.appendingPathComponent(UUID().uuidString).appendingPathExtension("webarchive")
+			guard FileManager.default.createFile(atPath: sparseFile.path, contents: Data()) else {
+				throw BrowserPersistenceError.invalidSnapshot
+			}
+			let handle = try FileHandle(forWritingTo: sparseFile)
+			try handle.truncate(atOffset: 32 * 1024 * 1024)
+			try handle.close()
+		}
+		let quotaStore = BrowserPersistence(directory: quotaDirectory)
+		let quotaID = UUID()
+		let quotaURL = URL(string: "https://quota.example")!
+		_ = try quotaStore.saveReadingArchive(Data([9]), id: quotaID, url: quotaURL)
 		do {
-			try persistence.saveReadingArchive(Data([1]), id: UUID(), url: archiveURL)
-			assertionFailure("archive count limit was not enforced")
+			_ = try quotaStore.saveReadingArchive(Data(repeating: 0, count: 32 * 1024 * 1024), id: quotaID, url: quotaURL)
+			assertionFailure("total archive quota was not enforced")
 		} catch BrowserUserData.ImportError.tooLarge {
+		}
+		let quotaSnapshot = try quotaStore.loadReadingArchive(id: quotaID, url: quotaURL)
+		assert(quotaSnapshot == Data([9]))
+
+		let blockedDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+		defer { try? FileManager.default.removeItem(at: blockedDirectory) }
+		try FileManager.default.createDirectory(at: blockedDirectory, withIntermediateDirectories: true)
+		try Data([1]).write(to: blockedDirectory.appendingPathComponent("reading-list"))
+		let blockedPersistence = BrowserPersistence(directory: blockedDirectory)
+		do {
+			_ = try blockedPersistence.loadReadingArchive(id: UUID(), url: archiveURL)
+			assertionFailure("unreadable archive directory was treated as empty")
+		} catch {
 		}
 
 		let hostileHTML = Data(#"<DT><A HREF="javascript:alert(1)">bad</A>"#.utf8)
@@ -138,6 +233,14 @@ struct BookmarkReadingListCheck {
 		} catch BrowserUserData.ImportError.invalidFile {
 		} catch {
 			assertionFailure("unexpected JSON import error: \(error)")
+		}
+		let hostileHistoryJSON = Data("{\"version\":1,\"bookmarks\":[],\"history\":[{\"id\":\"\(legacyID.uuidString)\",\"url\":\"https://user:secret@history.example\",\"title\":\"private\"}]}".utf8)
+		do {
+			_ = try BrowserUserData.decode(hostileHistoryJSON, isHTML: false)
+			assertionFailure("credential-bearing history URL was accepted")
+		} catch BrowserUserData.ImportError.invalidFile {
+		} catch {
+			assertionFailure("unexpected history import error: \(error)")
 		}
 	}
 }

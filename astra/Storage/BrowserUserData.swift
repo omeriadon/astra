@@ -31,12 +31,22 @@ nonisolated struct BrowserUserData: Codable {
 			guard let html = String(data: data, encoding: .utf8) else { throw ImportError.invalidFile }
 			return try Self(bookmarks: decodeHTML(html), history: [])
 		}
+		guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+		      let rawHistory = root["history"] as? [[String: Any]],
+		      rawHistory.count <= 100_000,
+		      rawHistory.allSatisfy({ record in
+			      guard let address = record["url"] as? String,
+				        let url = URL(string: address),
+				        isPortableURL(url) else { return false }
+			      return true
+		      }) else { throw ImportError.invalidFile }
 		var document = try JSONDecoder().decode(Self.self, from: data)
 		guard document.version == 1,
 		      document.bookmarks.count <= 100_000,
 		      document.history.count <= 100_000,
 		      document.readingList.count <= 100_000,
 		      Set(document.bookmarks.map(\.id)).count == document.bookmarks.count,
+		      Set(document.history.map(\.id)).count == document.history.count,
 		      Set(document.readingList.map(\.id)).count == document.readingList.count else { throw ImportError.invalidFile }
 		guard document.bookmarks.allSatisfy({ bookmark in
 			isPortableURL(bookmark.url)
@@ -49,6 +59,11 @@ nonisolated struct BrowserUserData: Codable {
 				&& item.title.utf8.count <= 16_384
 				&& isSaneDate(item.addedAt)
 				&& isSaneDate(item.modifiedAt)
+		}), document.history.allSatisfy({ visit in
+			isPortableURL(visit.url)
+				&& visit.title.utf8.count <= 16_384
+				&& isSaneDate(visit.visitedAt)
+				&& isSaneDate(visit.modifiedAt)
 		}) else { throw ImportError.invalidFile }
 		document.bookmarks = Bookmark.preservingLegacyOrder(document.bookmarks)
 		return document

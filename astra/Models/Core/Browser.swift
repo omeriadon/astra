@@ -969,9 +969,19 @@ final class Browser {
 			      let persistence else { return }
 			guard case let .success(data) = result else { return }
 			let previousWrite = session.persistenceWriteTask
-			session.persistenceWriteTask = Task.detached(priority: .utility) {
+			session.persistenceWriteTask = Task.detached(priority: .utility) { [weak self, weak tab, weak controller] in
 				await previousWrite?.value
-				try? persistence.saveReadingArchive(data, id: item.id, url: item.url)
+				guard let generation = try? persistence.saveReadingArchive(data, id: item.id, url: item.url) else { return }
+				let stillCurrent = await MainActor.run {
+					guard let self, let tab, let controller, !isPrivate,
+					      selectedTab === tab, tab.controller === controller,
+					      controller.navigationIdentifier == documentID, tab.currentURL == url,
+					      readingList.contains(where: { $0.id == item.id && $0.url == item.url }) else { return false }
+					return true
+				}
+				if !stillCurrent {
+					try? persistence.removeReadingArchive(id: item.id, ifGeneration: generation)
+				}
 			}
 		}
 	}
@@ -984,12 +994,14 @@ final class Browser {
 		}
 		guard let tab = selectedTab, let controller = tab.controller else { return }
 		let documentID = controller.navigationIdentifier
+		let startingURL = tab.currentURL
 		Task.detached(priority: .userInitiated) { [weak self, weak tab, weak controller] in
 			let data = try? persistence.loadReadingArchive(id: item.id, url: item.url)
 			await MainActor.run {
-				guard let self, let tab, let controller, tabs.contains(where: { $0 === tab }),
+				guard let self, let tab, let controller, selectedTab === tab,
 				      tab.controller === controller, controller.navigationIdentifier == documentID,
-				      readingList.contains(where: { $0.id == item.id }) else { return }
+				      tab.currentURL == startingURL,
+				      readingList.contains(where: { $0.id == item.id && $0.url == item.url }) else { return }
 				guard let data else {
 					ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "No offline copy is available")
 					return
