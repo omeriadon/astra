@@ -1138,21 +1138,32 @@ final class BrowserController: NSObject, Identifiable {
 		historyVisitPolicy.userInitiatedNavigation()
 		createdWebView?.stopLoading()
 		createdWebView?.closeAllMediaPresentations(completionHandler: nil)
-		let webView = self.webView
-		historyManager.beginVisit()
-		url = safeURL
 		currentRequest = nil
 		pendingRequest = nil
 		failedRequest = nil
 		retriedAfterConnectivityReturn = true
+		navigationFailure = nil
+		awaitsNavigationCommit = true
+		invalidateFindResults()
+		currentNavigation = nil
+		historyManager.beginVisit()
+		url = safeURL
 		scrollPosition = .zero
 		restoredScrollPosition = nil
-		currentNavigation = webView.load(
+		let webView = self.webView
+		guard let navigation = webView.load(
 			data,
 			mimeType: "application/x-webarchive",
 			characterEncodingName: "UTF-8",
 			baseURL: safeURL
-		)
+		) else {
+			awaitsNavigationCommit = false
+			historyManager.cancelVisit()
+			navigationFailure = BrowserNavigationFailure(kind: .other, url: safeURL)
+			navigationDidChange?()
+			return
+		}
+		currentNavigation = navigation
 		navigationDidChange?()
 	}
 
