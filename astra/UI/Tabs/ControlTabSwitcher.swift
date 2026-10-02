@@ -44,10 +44,10 @@
 				let isHandled = MainActor.assumeIsolated {
 					guard let self else { return false }
 					let isFocusedWindow = BrowserKeyboardMenuPolicy.ownsFocusedTarget(
-						isKeyWindow: window?.isKeyWindow == true,
-						matchesKeyWindow: window === NSApp.keyWindow
+						isKeyWindow: self.window?.isKeyWindow == true,
+						matchesKeyWindow: self.window === NSApp.keyWindow
 					)
-					let hasMarkedText = (window?.firstResponder as? NSTextInputClient)?.hasMarkedText() == true
+					let hasMarkedText = (self.window?.firstResponder as? NSTextInputClient)?.hasMarkedText() == true
 					let ownsTabSwitch = BrowserKeyboardMenuPolicy.ownsTabSwitch(
 						isFocusedWindow: isFocusedWindow,
 						hasMarkedText: hasMarkedText,
@@ -55,7 +55,7 @@
 						keyCode: event.keyCode,
 						modifiers: modifiers
 					)
-					return handle(
+					return self.handle(
 						isKeyDown: isKeyDown,
 						isEscape: isEscape,
 						isControlPressed: isControlPressed,
