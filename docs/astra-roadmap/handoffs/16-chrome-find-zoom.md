@@ -6,7 +6,7 @@ Branch / worktree / baseline commit: `astra/roadmap/16-chrome-find-zoom` / `/Use
 
 Status: source complete; primary Xcode review/build and runtime acceptance pending.
 
-Commit(s), or explicit uncommitted state: source and handoff changes are ready for a primary checkpoint after review.
+Commit(s), or explicit uncommitted state: `2598935` (`implement browser find and page zoom`); source, check and handoff are committed.
 
 Changed files and behavior:
 
