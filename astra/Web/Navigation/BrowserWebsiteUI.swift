@@ -273,7 +273,7 @@ import WebKit
 					monitor?.cancel()
 					let current = self?.ownsPrompt(in: webView, documentID: documentID) == true && window?.isVisible == true
 					let selectedURLs = response == .OK ? panel.urls : []
-					let urls = current ? selectedURLs : nil
+					let urls = response == .OK && current ? selectedURLs : nil
 					if current {
 						self?.retainPanelUploadAccess(for: selectedURLs)
 					} else {
@@ -284,8 +284,7 @@ import WebKit
 					finish(urls)
 				}
 				while !Task.isCancelled {
-					guard let self, let window,
-					      ownsPrompt(in: webView, documentID: documentID),
+					guard ownsPrompt(in: webView, documentID: documentID),
 					      window.isVisible else {
 						panel.cancel(nil)
 						finish(nil)

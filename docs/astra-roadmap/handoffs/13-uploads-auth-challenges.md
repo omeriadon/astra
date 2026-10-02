@@ -4,9 +4,9 @@ Task / selected optional scope: Page-owned macOS file selection scopes; iOS nati
 
 Branch / worktree / baseline commit: `astra/roadmap/13-uploads-auth-challenges` / `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/13-uploads-auth-challenges` / `83b9352`.
 
-Status: source complete; build verification is pending the primary's serialized Xcode MCP check. Runtime, sandbox and iOS acceptance remain open.
+Status: primary source-reviewed; Mac build verified; runtime, sandbox and iOS acceptance remain open.
 
-Commit(s), or explicit uncommitted state: implementation is uncommitted. Primary requested a lowercase checkpoint using `git -c core.hooksPath=/dev/null commit` after source completion.
+Commit(s): implementation `96c969d`, upload-scope review correction `3035af0`, followed by the primary compiler/cancellation correction checkpoint.
 
 Changed files and behavior:
 
@@ -41,3 +41,7 @@ Migration, compatibility and private-data impact: no schema, Defaults, sync, cac
 Capability gates / unresolved issues: Apple's public [`WKUIDelegate` upload-panel documentation](https://developer.apple.com/documentation/webkit/wkuidelegate/webview(_:runopenpanelwith:initiatedbyframe:completionhandler:)) states that iOS uploads remain enabled by default without an override. Apple's [macOS sandbox standard user interactions guidance](https://developer.apple.com/documentation/security/accessing-files-from-the-macos-app-sandbox#Access-files-with-standard-user-interactions) says the system starts access for URLs selected in an open panel and the app stops it when finished; the code retains that grant without adding a second start. Actual signed sandbox behavior must still be checked. Public [`WKNavigationDelegate` challenge handling](https://developer.apple.com/documentation/webkit/wknavigationdelegate/webview(_:didreceive:completionhandler:)) exposes the challenge callback. Foundation exposes [`URLCredential` for a client identity](https://developer.apple.com/documentation/foundation/urlcredential/init(identity:certificates:persistence:)) and `NSURLAuthenticationMethodClientCertificate`, but this app has no identity-selection flow; no user keychain was inspected and no real provider was exercised. Therefore client-certificate challenges keep WebKit's default handling. Native server-trust validation remains default. Mac app type-check/build and iOS target build are pending primary Xcode MCP verification; source parsing does not establish platform availability/type-checking.
 
 Merge prerequisites / follow-up ownership: primary review and serialized Mac Xcode MCP build are required before integration. iOS build and all listed runtime cases remain separate acceptance gates. No project, entitlement or shared roadmap file was edited.
+
+## Primary review — 2 October 2026
+
+Reviewed all four production files, native iOS upload fallback, page-owned panel scope lifetime/cancellation, native trust/client-certificate fallback, shared auth retry policy and callback ownership. Corrected canceled panel output to nil and removed repeated optional bindings after the same controller/window were already unwrapped. Xcode MCP exact13 project, workspace `workspace-mKYWtxRgCT`, `astra` / `My Mac`: build passed8.535s, no errors. Production authentication policy check passed in the worker. Native upload/authentication, client-certificate provider, signed sandbox and iOS build gates remain open. No app, keychain inspection, hosted test or fixture server was run.
