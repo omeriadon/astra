@@ -47,7 +47,7 @@ private struct BrowserZoomControls: View {
 						.font(.caption2.monospacedDigit())
 				}
 			}
-			.accessibilityLabel("Reset Zoom, currently \(Int(controller.pageZoom * 100)) percent")
+			.accessibilityLabel("Reset Zoom, currently \(Int((controller.pageZoom * 100).rounded())) percent")
 			.accessibilityIdentifier("browser-zoom-reset")
 
 			Button("Zoom In", systemImage: "plus.magnifyingglass") {

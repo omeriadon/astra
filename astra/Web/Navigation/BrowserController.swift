@@ -297,7 +297,7 @@ final class BrowserController: NSObject, Identifiable {
 			if let createdWebView, Double(createdWebView.pageZoom) != pageZoom {
 				createdWebView.pageZoom = CGFloat(pageZoom)
 			}
-			if BrowserZoomPolicy.didChange(from: oldValue, to: pageZoom) {
+			if oldValue != pageZoom {
 				zoomDidChange?()
 			}
 		}
@@ -632,7 +632,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func findNext(backwards: Bool = false) {
-		guard BrowserFindGeneration.canSearch(awaitingNavigationCommit: awaitsNavigationCommit),
+		guard !awaitsNavigationCommit,
 		      navigationFailure == nil,
 		      let webView = createdWebView,
 		      owns(webView)
@@ -1163,7 +1163,7 @@ final class BrowserController: NSObject, Identifiable {
 		pageZoom = BrowserZoomPolicy.clamp(pageZoom + 0.1)
 		session.toastManager.show(
 			symbol: "plus.magnifyingglass",
-			message: "Zoom \(Int(pageZoom * 100))%"
+			message: "Zoom \(Int((pageZoom * 100).rounded()))%"
 		)
 	}
 
@@ -1171,7 +1171,7 @@ final class BrowserController: NSObject, Identifiable {
 		pageZoom = BrowserZoomPolicy.clamp(pageZoom - 0.1)
 		session.toastManager.show(
 			symbol: "minus.magnifyingglass",
-			message: "Zoom \(Int(pageZoom * 100))%"
+			message: "Zoom \(Int((pageZoom * 100).rounded()))%"
 		)
 	}
 
