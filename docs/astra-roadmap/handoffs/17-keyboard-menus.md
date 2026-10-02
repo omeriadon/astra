@@ -6,7 +6,7 @@ Branch / worktree / baseline commit: `astra/roadmap/17-keyboard-menus` / `/Users
 
 Status: source complete; Mac build pending primary serialized Xcode MCP verification; native keyboard/menu and Safari inspection runtime acceptance pending.
 
-Commit(s), or explicit uncommitted state: implementation checkpoint pending.
+Commit(s), or explicit uncommitted state: `8d069ce` (`implement focused keyboard menus`).
 
 Changed files and behavior:
 
