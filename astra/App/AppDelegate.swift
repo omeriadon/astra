@@ -525,6 +525,8 @@
 
 		@objc private func openSavedBookmark(_ sender: NSMenuItem) {
 			guard let browser = activeBrowser,
+			      activeAuthenticationBrowser == nil,
+			      !browser.isPrivate,
 			      let id = sender.representedObject as? UUID,
 			      let bookmark = browser.bookmarks.first(where: { $0.id == id })
 			else { return }
@@ -533,6 +535,7 @@
 
 		@objc private func openHistoryVisit(_ sender: NSMenuItem) {
 			guard let browser = activeBrowser,
+			      activeAuthenticationBrowser == nil,
 			      let id = sender.representedObject as? UUID,
 			      let visit = browser.historyVisits.first(where: { $0.id == id })
 			else { return }
@@ -840,6 +843,9 @@
 			}
 			if menuItem.action == #selector(closeTab(_:)) {
 				return activeBrowser != nil || activeMiniWindow != nil
+			}
+			if menuItem.action == #selector(closeWindow(_:)) || menuItem.action == #selector(toggleFullScreen(_:)) {
+				return NSApp.keyWindow != nil
 			}
 			if menuItem.action == #selector(zoomIn(_:)) {
 				return BrowserKeyboardMenuPolicy.canZoomIn(activeBrowser?.selectedTab?.activeController?.pageZoom)
