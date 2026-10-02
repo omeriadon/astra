@@ -3,6 +3,10 @@ import Haze
 import SwiftUI
 import WebKit
 
+extension Notification.Name {
+	static let showBrowserDownloads = Notification.Name("ShowBrowserDownloads")
+}
+
 struct DesktopBrowserShell: View {
 	@Bindable var browser: Browser
 	@Environment(\.colorScheme) private var colorScheme
@@ -181,6 +185,11 @@ struct DesktopBrowserShell: View {
 			completeSpaceThemeTransition(from: oldID, to: newID)
 		}
 		#if os(macOS)
+		.onReceive(NotificationCenter.default.publisher(for: .showBrowserDownloads)) { notification in
+			guard notification.object as? UUID == browser.windowID,
+			      hostWindow?.isKeyWindow == true else { return }
+			showsDownloads = true
+		}
 		.background {
 			WindowFocusReader { window in
 				hostWindow = window

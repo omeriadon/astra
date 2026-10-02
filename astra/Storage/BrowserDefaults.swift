@@ -23,6 +23,7 @@ extension Defaults.Keys {
 	static let miniAstraEnabled = Key<Bool>("miniAstraEnabled", default: true)
 	static let miniAstraWindowAnimation = Key<Bool>("miniAstraWindowAnimation", default: true)
 	static let miniAstraShortcutEnabled = Key<Bool>("miniAstraShortcutEnabled", default: false)
+	static let webInspectorEnabled = Key<Bool>("webInspectorEnabled", default: false)
 
 	static let sidebarShown = Key<Bool>(
 		"sidebarShown",
