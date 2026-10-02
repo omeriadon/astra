@@ -62,9 +62,8 @@
 				andEventID: AEEventID(kAEGetURL)
 			)
 			_ = BrowserWebSession.shared
-			let appDelegate: AppDelegate = self
-			BrowserWebPushManager.shared.openRequested = { [weak appDelegate] url in
-				appDelegate?.openAfterStartupRestoration(url)
+			BrowserWebPushManager.shared.openRequested = { [weak self] url in
+				self?.open(url)
 			}
 			NotificationCenter.default.addObserver(
 				self,
@@ -129,7 +128,6 @@
 			}
 			source.resume()
 			memoryPressureSource = source
-			BrowserWebPushManager.shared.drainPendingMessages()
 			Task { @MainActor [weak self] in
 				await Task.yield()
 				guard let self else { return }
@@ -248,7 +246,9 @@
 		func application(_: NSApplication, open urls: [URL]) {
 			if urls.contains(where: { $0.absoluteString == "x-webkit-app-launch://1" }) {
 				wasLaunchedForWebPush = true
-				BrowserWebPushManager.shared.drainPendingMessages()
+				if startupWindowRestorationFinished {
+					BrowserWebPushManager.shared.drainPendingMessages()
+				}
 			}
 			for url in urls where ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
 				openAfterStartupRestoration(url)
@@ -270,6 +270,7 @@
 		private func finishStartupWindowRestoration() {
 			BrowserWindowRegistry.shared.finishWindowRestoration()
 			startupWindowRestorationFinished = true
+			BrowserWebPushManager.shared.drainPendingMessages()
 			if shouldReopenAfterStartup {
 				shouldReopenAfterStartup = false
 				if let controller = windows.first {
