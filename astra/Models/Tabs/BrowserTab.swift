@@ -477,7 +477,6 @@ final class BrowserTab: Identifiable {
 		}
 		guard pageTitle != nextTitle else { return }
 		pageTitle = nextTitle
-		markModified()
 	}
 
 	private func observe(_ peek: BrowserPeek) {
