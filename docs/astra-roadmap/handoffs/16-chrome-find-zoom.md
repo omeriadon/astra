@@ -6,7 +6,7 @@ Branch / worktree / baseline commit: `astra/roadmap/16-chrome-find-zoom` / `/Use
 
 Status: source complete; primary Xcode review/build and runtime acceptance pending.
 
-Commit(s), or explicit uncommitted state: `2598935` (`implement browser find and page zoom`), `6187f1a` (`record browser chrome find zoom handoff`), plus the review-correction checkpoint recorded after primary review.
+Commit(s), or explicit uncommitted state: `2598935` (`implement browser find and page zoom`), `6187f1a` (`record browser chrome find zoom handoff`), and `1963887` (`fix chrome zoom freshness and find races`). The correction checkpoint includes the updated handoff and production check.
 
 Changed files and behavior:
 
@@ -31,7 +31,7 @@ Checks run, scheme/destination/workspace and results:
 
 - `swiftc -frontend -parse` over every changed production Swift source and the task check — passed. This confirms parsing only, not Xcode type checking.
 - `swiftc astra/Web/Navigation/BrowserZoomPolicy.swift docs/astra-roadmap/checks/task16-chrome-find-zoom.swift -o /tmp/task16-chrome-find-zoom-check && /tmp/task16-chrome-find-zoom-check` — passed: `Task 16 chrome/find/zoom checks passed`; includes unchanged/changed zoom notification, find admission and stale-generation cases.
-- `git diff --check` — passed before this correction checkpoint; rerun after final edits.
+- `git diff --check` — passed after the correction.
 - No Xcode MCP workspace/build was opened; serialized Xcode verification belongs to the primary. No app or hosted test target was launched.
 
 Checks written but not executed: no hosted UI/WebKit check. The task-owned production policy check above was executed.
