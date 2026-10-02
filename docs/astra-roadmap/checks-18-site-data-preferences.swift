@@ -7,6 +7,10 @@ struct BrowserSitePreferenceCheck {
 			for: URL(string: "HTTPS://User:Pass@EXAMPLE.com:443/path?q=1#part")!
 		)
 		assert(canonical == "https://example.com")
+		let compressedIPv6 = BrowserSiteOrigin.canonical(for: URL(string: "https://[2001:DB8::1]:443/a")!)
+		let expandedIPv6 = BrowserSiteOrigin.canonical(for: URL(string: "https://[2001:db8:0:0::1]/b")!)
+		assert(compressedIPv6 == "https://[2001:db8::1]")
+		assert(compressedIPv6 == expandedIPv6)
 		assert(BrowserSiteOrigin.canonical(for: URL(fileURLWithPath: "/tmp/page.html")) == nil)
 
 		let now = Date(timeIntervalSince1970: 1_800_000_000)

@@ -1,12 +1,27 @@
 import Foundation
+#if canImport(Darwin)
+	import Darwin
+#elseif canImport(Glibc)
+	import Glibc
+#endif
 
 enum BrowserSiteOrigin {
 	static func canonical(for url: URL) -> String? {
 		guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
 		      let scheme = parts.scheme?.lowercased(),
 		      ["https", "http"].contains(scheme),
-		      let host = parts.host?.lowercased(),
+		      var host = parts.host?.lowercased(),
 		      !host.isEmpty else { return nil }
+		if host.hasPrefix("["), host.hasSuffix("]"), !host.contains("%") {
+			let addressText = String(host.dropFirst().dropLast())
+			var address = in6_addr()
+			guard addressText.withCString({ inet_pton(AF_INET6, $0, &address) }) == 1 else { return nil }
+			var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+			guard buffer.withUnsafeMutableBufferPointer({
+				inet_ntop(AF_INET6, &address, $0.baseAddress, socklen_t($0.count))
+			}) != nil else { return nil }
+			host = "[\(String(cString: buffer).lowercased())]"
+		}
 		parts.scheme = scheme
 		parts.host = host
 		parts.user = nil
