@@ -12,6 +12,32 @@ nonisolated enum BrowserContentBlockingRuleSource {
 		let identifier: String
 	}
 
+	struct Stored: Codable, Sendable {
+		static let version = 1
+
+		var formatVersion = version
+		var fileName: String
+		var data: Data
+		var updatedAt: Date
+		var isEnabled: Bool
+
+		static func decodeSupported(_ data: Data) -> Self? {
+			guard let stored = try? JSONDecoder().decode(Self.self, from: data),
+			      stored.formatVersion == version,
+			      stored.data.count <= maximumBytes,
+			      !stored.fileName.isEmpty,
+			      stored.fileName.utf8.count <= 255,
+			      stored.updatedAt.timeIntervalSince1970.isFinite,
+			      canRewrite(data) else { return nil }
+			return stored
+		}
+
+		private static func canRewrite(_ data: Data) -> Bool {
+			guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+			return Set(object.keys).isSubset(of: ["formatVersion", "fileName", "data", "updatedAt", "isEnabled"])
+		}
+	}
+
 	enum ValidationError: Error {
 		case sourceTooLarge
 		case invalidJSON
@@ -61,6 +87,21 @@ nonisolated enum BrowserContentBlockingRuleSource {
 		)
 	}
 
+	static func readBounded(from url: URL) throws -> Data {
+		let handle = try FileHandle(forReadingFrom: url)
+		defer { try? handle.close() }
+		var data = Data()
+		while data.count <= maximumBytes {
+			let remaining = maximumBytes + 1 - data.count
+			guard remaining > 0 else { throw ValidationError.sourceTooLarge }
+			let chunk = try handle.read(upToCount: min(64 * 1024, remaining)) ?? Data()
+			guard !chunk.isEmpty else { break }
+			data.append(chunk)
+		}
+		guard data.count <= maximumBytes else { throw ValidationError.sourceTooLarge }
+		return data
+	}
+
 	static func lastGood(
 		current: Validated?,
 		candidate: Validated,
@@ -72,5 +113,21 @@ nonisolated enum BrowserContentBlockingRuleSource {
 
 	static func shouldApply(enabled: Bool, hasCompiledList: Bool, isSiteException: Bool) -> Bool {
 		enabled && hasCompiledList && !isSiteException
+	}
+
+	static func originAfterNavigationDecision(
+		isMainFrame: Bool,
+		disposition: NavigationDisposition,
+		currentOrigin: String?,
+		destinationOrigin: String?
+	) -> String? {
+		guard isMainFrame, disposition == .allow else { return currentOrigin }
+		return destinationOrigin
+	}
+
+	enum NavigationDisposition: Equatable, Sendable {
+		case allow
+		case cancel
+		case download
 	}
 }

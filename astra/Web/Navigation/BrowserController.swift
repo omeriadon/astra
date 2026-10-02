@@ -136,6 +136,7 @@ final class BrowserController: NSObject, Identifiable {
 	private static var cachedSafariUserAgentSuffix: String?
 	@ObservationIgnored
 	private var isApplyingSiteZoom = false
+	private var appliedContentRuleList: WKContentRuleList?
 
 	private static func compatibilityUserAgentOverride(for url: URL?) -> String? {
 		guard let url,
@@ -440,6 +441,7 @@ final class BrowserController: NSObject, Identifiable {
 	private var hasDeclaredThemeColor = false
 	@ObservationIgnored
 	private var pendingRequest: URLRequest?
+	private var pendingWebArchive: (data: Data, baseURL: URL)?
 	@ObservationIgnored
 	private var currentNavigation: WKNavigation?
 	@ObservationIgnored
@@ -742,7 +744,13 @@ final class BrowserController: NSObject, Identifiable {
 			securityScopedFile = url.startAccessingSecurityScopedResource() ? url : nil
 			fileAccessBookmark = try? url.bookmarkData(options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess], includingResourceValuesForKeys: nil, relativeTo: nil)
 			awaitsNavigationCommit = true
-			currentNavigation = webView.loadFileURL(url, allowingReadAccessTo: url)
+			pendingWebArchive = nil
+			pendingRequest = nil
+			pendingLocalFile = url
+			pendingInteractionState = nil
+			currentNavigation = nil
+			_ = webView
+			loadPendingRequest()
 		}
 	#endif
 
@@ -876,6 +884,7 @@ final class BrowserController: NSObject, Identifiable {
 	func stopForClose() {
 		guard !isInvalidated else { return }
 		isInvalidated = true
+		removeAppliedContentRuleList()
 		promptOwnership = nil
 		if let connectivityObserver {
 			NotificationCenter.default.removeObserver(connectivityObserver)
@@ -890,6 +899,7 @@ final class BrowserController: NSObject, Identifiable {
 		currentRequest = nil
 		failedRequest = nil
 		pendingRequest = nil
+		pendingWebArchive = nil
 		navigationFailure = nil
 		contentProcessTerminations = BrowserContentProcessTerminationTracker()
 		session.permissions.removeTemporaryDecisions(controllerID: id)
@@ -1130,23 +1140,58 @@ final class BrowserController: NSObject, Identifiable {
 		startMediaObservation()
 		isWebViewReady = true
 		extensionWebViewDidChange?()
-		// Start any deferred navigation immediately; WKWebView loads fine
-		// with a zero frame so we don't wait for first layout.
-		if let state = pendingInteractionState {
-			pendingInteractionState = nil
-			liveHistoryPrefix = []
-			webView.interactionState = state
-			if webView.backForwardList.currentItem != nil {
-				pendingRequest = nil
-				pendingLocalFile = nil
-				updateHistory()
-			} else {
-				loadPendingRequest()
-			}
-		} else {
-			loadPendingRequest()
-		}
+		// Start deferred navigation immediately once startup rule restoration is ready.
+		contentBlockingDidBecomeReady()
 		return webView
+	}
+
+	func contentBlockingDidBecomeReady() {
+		guard session.contentBlocking.isReadyForNavigation,
+		      let webView = createdWebView,
+		      owns(webView) else { return }
+		refreshContentBlocking()
+		loadPendingRequest()
+	}
+
+	func refreshContentBlocking(for requestedURL: URL? = nil) {
+		guard let webView = createdWebView, owns(webView) else { return }
+		let currentURL = requestedURL ?? committedURL ?? webView.url ?? url
+		let origin = currentURL.flatMap(BrowserSitePermissions.origin(for:))
+		refreshContentBlocking(forOrigin: origin)
+	}
+
+	private func refreshContentBlocking(forOrigin origin: String?) {
+		guard let webView = createdWebView, owns(webView) else { return }
+		let nextRuleList = session.contentBlocking.ruleList(for: origin, sitePreferences: session.sitePreferences)
+		guard appliedContentRuleList?.identifier != nextRuleList?.identifier else { return }
+		removeAppliedContentRuleList()
+		if let nextRuleList {
+			webView.configuration.userContentController.add(nextRuleList)
+			appliedContentRuleList = nextRuleList
+		}
+	}
+
+	private func removeAppliedContentRuleList() {
+		guard let appliedContentRuleList else { return }
+		createdWebView?.configuration.userContentController.remove(appliedContentRuleList)
+		self.appliedContentRuleList = nil
+	}
+
+	private func updateContentBlocking(
+		forNavigationDisposition disposition: BrowserContentBlockingRuleSource.NavigationDisposition,
+		isMainFrame: Bool,
+		destinationURL: URL?,
+		in webView: WKWebView
+	) {
+		let currentOrigin = (committedURL ?? webView.url).flatMap(BrowserSitePermissions.origin(for:))
+		let destinationOrigin = destinationURL.flatMap(BrowserSitePermissions.origin(for:))
+		let origin = BrowserContentBlockingRuleSource.originAfterNavigationDecision(
+			isMainFrame: isMainFrame,
+			disposition: disposition,
+			currentOrigin: currentOrigin,
+			destinationOrigin: destinationOrigin
+		)
+		refreshContentBlocking(forOrigin: origin)
 	}
 
 	deinit {
@@ -1198,6 +1243,8 @@ final class BrowserController: NSObject, Identifiable {
 		createdWebView?.closeAllMediaPresentations(completionHandler: nil)
 		currentRequest = nil
 		pendingRequest = nil
+		pendingLocalFile = nil
+		pendingInteractionState = nil
 		failedRequest = nil
 		retriedAfterConnectivityReturn = true
 		navigationFailure = nil
@@ -1208,21 +1255,9 @@ final class BrowserController: NSObject, Identifiable {
 		url = safeURL
 		scrollPosition = .zero
 		restoredScrollPosition = nil
-		let webView = self.webView
-		guard let navigation = webView.load(
-			data,
-			mimeType: "application/x-webarchive",
-			characterEncodingName: "UTF-8",
-			baseURL: safeURL
-		) else {
-			awaitsNavigationCommit = false
-			historyManager.cancelVisit()
-			navigationFailure = BrowserNavigationFailure(kind: .other, url: safeURL)
-			navigationDidChange?()
-			return
-		}
-		currentNavigation = navigation
-		navigationDidChange?()
+		pendingWebArchive = (data, safeURL)
+		_ = webView
+		loadPendingRequest()
 	}
 
 	func navigate(_ request: URLRequest) {
@@ -1290,6 +1325,8 @@ final class BrowserController: NSObject, Identifiable {
 	func stopLoading() {
 		createdWebView?.stopLoading()
 		pendingRequest = nil
+		pendingLocalFile = nil
+		pendingWebArchive = nil
 	}
 
 	func resetZoom() {
@@ -1408,11 +1445,17 @@ final class BrowserController: NSObject, Identifiable {
 
 	private func load(_ request: URLRequest, resetConnectivityRetry: Bool = true) {
 		guard !isInvalidated else { return }
+		pendingWebArchive = nil
+		pendingLocalFile = nil
 		awaitsNavigationCommit = true
 		currentRequest = isAuthenticationSessionBrowser ? nil : request
 		failedRequest = nil
 		if resetConnectivityRetry {
 			retriedAfterConnectivityReturn = false
+		}
+		guard session.contentBlocking.isReadyForNavigation else {
+			pendingRequest = request
+			return
 		}
 		guard let webView = createdWebView else {
 			pendingRequest = request
@@ -1424,6 +1467,35 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	private func loadPendingRequest() {
+		guard session.contentBlocking.isReadyForNavigation else { return }
+		if let state = pendingInteractionState, let webView = createdWebView {
+			pendingInteractionState = nil
+			liveHistoryPrefix = []
+			webView.interactionState = state
+			if webView.backForwardList.currentItem != nil {
+				pendingRequest = nil
+				pendingLocalFile = nil
+				updateHistory()
+			}
+		}
+		if let archive = pendingWebArchive, let webView = createdWebView {
+			pendingWebArchive = nil
+			guard let navigation = webView.load(
+				archive.data,
+				mimeType: "application/x-webarchive",
+				characterEncodingName: "UTF-8",
+				baseURL: archive.baseURL
+			) else {
+				awaitsNavigationCommit = false
+				historyManager.cancelVisit()
+				navigationFailure = BrowserNavigationFailure(kind: .other, url: archive.baseURL)
+				navigationDidChange?()
+				return
+			}
+			currentNavigation = navigation
+			navigationDidChange?()
+			return
+		}
 		#if os(macOS)
 			if let file = pendingLocalFile, let webView = createdWebView {
 				pendingLocalFile = nil
@@ -1620,6 +1692,12 @@ extension BrowserController: WKNavigationDelegate {
 				}
 			}
 			// WebKit's .allow path attempts eligible universal links and falls back to the website.
+			updateContentBlocking(
+				forNavigationDisposition: .allow,
+				isMainFrame: navigationAction.targetFrame?.isMainFrame == true,
+				destinationURL: navigationAction.request.url,
+				in: webView
+			)
 			decisionHandler(.allow, preferences)
 			return
 		}
@@ -1649,15 +1727,33 @@ extension BrowserController: WKNavigationDelegate {
 					}
 					let permission = await requestMultipleDownloadPermission(in: webView)
 					guard permission == .grant, ownsPrompt(in: webView, documentID: documentID) else {
+						updateContentBlocking(
+							forNavigationDisposition: .cancel,
+							isMainFrame: navigationResponse.isForMainFrame,
+							destinationURL: navigationResponse.response.url,
+							in: webView
+						)
 						decisionHandler(.cancel)
 						return
 					}
 					prepareDownloadHandoff(in: webView)
+					updateContentBlocking(
+						forNavigationDisposition: .download,
+						isMainFrame: navigationResponse.isForMainFrame,
+						destinationURL: navigationResponse.response.url,
+						in: webView
+					)
 					decisionHandler(.download)
 				}
 				return
 			}
 			prepareDownloadHandoff(in: webView)
+			updateContentBlocking(
+				forNavigationDisposition: .download,
+				isMainFrame: navigationResponse.isForMainFrame,
+				destinationURL: navigationResponse.response.url,
+				in: webView
+			)
 			decisionHandler(.download)
 		} else {
 			pendingDownloadSource = nil
@@ -1691,11 +1787,13 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
 		guard owns(webView) else { return }
+		refreshContentBlocking(for: committedURL ?? webView.url)
 		handleNavigationFailure(navigation, error: error)
 	}
 
 	func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
 		guard owns(webView) else { return }
+		refreshContentBlocking(for: committedURL ?? webView.url)
 		handleNavigationFailure(navigation, error: error)
 	}
 
@@ -1789,6 +1887,7 @@ extension BrowserController: WKNavigationDelegate {
 		awaitsNavigationCommit = false
 		navigationFailure = nil
 		url = pageURLBeforeDownload
+		refreshContentBlocking(for: committedURL ?? createdWebView?.url)
 		navigationDidChange?()
 	}
 
@@ -1797,6 +1896,7 @@ extension BrowserController: WKNavigationDelegate {
 		releaseUploadAccess()
 		pictureInPictureControlUnavailable = false
 		committedURL = webView.url
+		refreshContentBlocking(for: committedURL)
 		committedSecurityNavigationID = navigationIdentifier
 		if let origin = committedURL.flatMap(BrowserSitePermissions.origin(for:)) {
 			let isRestoredOrigin = restoredPageZoomOrigin == origin
@@ -1825,6 +1925,7 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
 		guard owns(webView), navigation === currentNavigation else { return }
+		refreshContentBlocking(for: webView.url)
 		updateHistory()
 		if showsFind, !findText.isEmpty {
 			findNext()

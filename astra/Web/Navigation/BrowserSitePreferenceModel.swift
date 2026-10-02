@@ -206,9 +206,10 @@ nonisolated struct BrowserSiteZoomDocument: Codable, Equatable, Sendable {
 struct BrowserLocalSitePreference: Codable, Equatable, Sendable {
 	var contentMode: String?
 	var customUserAgent: String?
+	var nativeContentBlockingDisabled: Bool? = nil
 
 	var isEmpty: Bool {
-		contentMode == nil && customUserAgent == nil
+		contentMode == nil && customUserAgent == nil && nativeContentBlockingDisabled != true
 	}
 }
 
@@ -266,7 +267,7 @@ struct BrowserLocalSitePreferencesDocument: Codable, Equatable, Sendable {
 		      Set(object.keys).isSubset(of: ["version", "entries"]),
 		      let entries = object["entries"] as? [String: [String: Any]] else { return false }
 		return entries.values.allSatisfy { entry in
-			Set(entry.keys).isSubset(of: ["contentMode", "customUserAgent"])
+			Set(entry.keys).isSubset(of: ["contentMode", "customUserAgent", "nativeContentBlockingDisabled"])
 		}
 	}
 }

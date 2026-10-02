@@ -13,6 +13,7 @@ final class BrowserWebSession {
 	let favicons: FaviconStore
 	let permissions: BrowserSitePermissions
 	let sitePreferences: BrowserSitePreferences
+	let contentBlocking: BrowserContentBlocking
 	var persistenceWriteTask: Task<Void, Never>?
 	private var cleanupTask: Task<Void, Never>?
 
@@ -31,6 +32,13 @@ final class BrowserWebSession {
 		favicons = isPrivate ? FaviconStore(isPrivate: true) : .shared
 		permissions = BrowserSitePermissions(isPrivate: isPrivate)
 		sitePreferences = isPrivate ? BrowserSitePreferences(isPrivate: true) : .shared
+		contentBlocking = isPrivate ? BrowserContentBlocking(isPrivate: true) : .shared
+		sitePreferences.didUpdateContentBlockingException = { [weak self] origin in
+			self?.refreshContentBlocking(for: origin)
+		}
+		contentBlocking.didUpdate = { [weak self] in
+			self?.refreshContentBlocking()
+		}
 		sitePreferences.didUpdateZoom = { [weak sitePreferences] origin, zoom in
 			guard let sitePreferences else { return }
 			let inheritedZoom = zoom ?? Defaults[.defaultPageZoom]
@@ -73,6 +81,9 @@ final class BrowserWebSession {
 			assert(dataStore.isPersistent != isPrivate)
 			assert(isPrivate ? toastManager !== ToastManager.shared : toastManager === ToastManager.shared)
 		#endif
+		if !isPrivate {
+			Task { await contentBlocking.prepare() }
+		}
 	}
 
 	func clearWebsiteData(since: Date = .distantPast) async {
@@ -86,6 +97,20 @@ final class BrowserWebSession {
 			modifiedSince: since
 		)
 		favicons.clear()
+	}
+
+	private func refreshContentBlocking(for origin: String? = nil) {
+		for browser in BrowserWindowRegistry.shared.openBrowsers where browser.session === self {
+			for tab in browser.tabs {
+				let controllers = [tab.controller].compactMap(\.self) + tab.peeks.map(\.controller)
+				for controller in controllers {
+					if let origin,
+					   controller.committedURL.flatMap(BrowserSitePermissions.origin(for:)) != origin,
+					   controller.url.flatMap(BrowserSitePermissions.origin(for:)) != origin { continue }
+					controller.contentBlockingDidBecomeReady()
+				}
+			}
+		}
 	}
 
 	func clearWebsiteData(for record: WKWebsiteDataRecord) async {
@@ -106,6 +131,7 @@ final class BrowserWebSession {
 			await downloads.endPrivateSession()
 			await clearWebsiteData()
 			permissions.reset()
+			await contentBlocking.endPrivateSession()
 		}
 		cleanupTask = task
 		await task.value

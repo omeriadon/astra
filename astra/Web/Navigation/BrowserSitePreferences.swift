@@ -43,6 +43,8 @@ final class BrowserSitePreferences {
 	private var defaultsObserver: NSObjectProtocol?
 	@ObservationIgnored
 	var didUpdateZoom: ((String, Double?) -> Void)?
+	@ObservationIgnored
+	var didUpdateContentBlockingException: ((String) -> Void)?
 
 	init(isPrivate: Bool, defaults: UserDefaults = .standard) {
 		self.isPrivate = isPrivate
@@ -118,8 +120,14 @@ final class BrowserSitePreferences {
 			}
 		}
 		if !isLocalDataReadOnly, !localDocument.entries.isEmpty {
+			let contentBlockingOrigins = localDocument.entries.compactMap { origin, preference in
+				preference.nativeContentBlockingDisabled == true ? origin : nil
+			}
 			localDocument.entries.removeAll()
 			persistLocalDocument()
+			for origin in contentBlockingOrigins.sorted() {
+				didUpdateContentBlockingException?(origin)
+			}
 		}
 	}
 
@@ -144,6 +152,19 @@ final class BrowserSitePreferences {
 		localDocument.entries[origin]?.customUserAgent
 	}
 
+	func disablesNativeContentBlocking(for origin: String) -> Bool {
+		localDocument.entries[origin]?.nativeContentBlockingDisabled == true
+	}
+
+	func setNativeContentBlockingDisabled(_ disabled: Bool, for origin: String) {
+		guard !isLocalDataReadOnly, let canonicalOrigin = Self.canonicalOrigin(origin) else { return }
+		guard disablesNativeContentBlocking(for: canonicalOrigin) != disabled else { return }
+		var preference = localDocument.entries[canonicalOrigin] ?? BrowserLocalSitePreference()
+		preference.nativeContentBlockingDisabled = disabled ? true : nil
+		setLocalPreference(preference, for: canonicalOrigin)
+		didUpdateContentBlockingException?(canonicalOrigin)
+	}
+
 	func setContentMode(_ mode: BrowserSiteContentMode, for origin: String) {
 		guard !isLocalDataReadOnly, let canonicalOrigin = Self.canonicalOrigin(origin) else { return }
 		var preference = localDocument.entries[canonicalOrigin] ?? BrowserLocalSitePreference()
@@ -164,8 +185,12 @@ final class BrowserSitePreferences {
 		guard !isLocalDataReadOnly,
 		      let canonicalOrigin = Self.canonicalOrigin(origin),
 		      localDocument.entries[canonicalOrigin] != nil else { return }
+		let resetsContentBlocking = disablesNativeContentBlocking(for: canonicalOrigin)
 		localDocument.entries[canonicalOrigin] = nil
 		persistLocalDocument()
+		if resetsContentBlocking {
+			didUpdateContentBlockingException?(canonicalOrigin)
+		}
 	}
 
 	private func setLocalPreference(_ preference: BrowserLocalSitePreference, for origin: String) {

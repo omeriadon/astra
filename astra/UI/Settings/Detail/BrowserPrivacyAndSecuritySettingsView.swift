@@ -31,6 +31,7 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 						.foregroundStyle(.secondary)
 				}
 			#endif
+			BrowserContentBlockingSettingsSection(session: session)
 			Section("Media Playback") {
 				Text("Audio and video require a click to play on every site.")
 					.foregroundStyle(.secondary)
