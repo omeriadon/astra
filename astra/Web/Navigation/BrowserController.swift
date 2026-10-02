@@ -1044,6 +1044,30 @@ final class BrowserController: NSObject, Identifiable {
 		navigate(URLRequest(url: url))
 	}
 
+	func loadWebArchive(_ data: Data, baseURL: URL) {
+		guard !isInvalidated,
+		      let safeURL = BrowserHomepage.validURL(baseURL.absoluteString) else { return }
+		historyVisitPolicy.userInitiatedNavigation()
+		createdWebView?.stopLoading()
+		createdWebView?.closeAllMediaPresentations(completionHandler: nil)
+		let webView = self.webView
+		historyManager.beginVisit()
+		url = safeURL
+		currentRequest = nil
+		pendingRequest = nil
+		failedRequest = nil
+		retriedAfterConnectivityReturn = true
+		scrollPosition = .zero
+		restoredScrollPosition = nil
+		currentNavigation = webView.load(
+			data,
+			mimeType: "application/x-webarchive",
+			characterEncodingName: "UTF-8",
+			baseURL: safeURL
+		)
+		navigationDidChange?()
+	}
+
 	func navigate(_ request: URLRequest) {
 		guard !isInvalidated else { return }
 		guard let url = request.url else { return }
