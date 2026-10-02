@@ -52,6 +52,9 @@ struct Checks {
 		var bodyRequest = URLRequest(url: URL(string: "https://example.com")!)
 		bodyRequest.httpBody = Data([1])
 		assert(BrowserDownload.requestHasBody(bodyRequest))
+		var streamedBodyRequest = URLRequest(url: URL(string: "https://example.com")!)
+		streamedBodyRequest.httpBodyStream = InputStream(data: Data([1]))
+		assert(BrowserDownload.requestHasBody(streamedBodyRequest))
 
 		var cancellingDownload = projectedDownload
 		cancellingDownload.status = .paused

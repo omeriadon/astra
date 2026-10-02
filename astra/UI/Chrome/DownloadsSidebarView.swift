@@ -5,6 +5,7 @@ struct DownloadsSidebarView: View {
 	let manager: BrowserDownloadManager
 	let theme: BrowserTheme
 	@State private var previewURL: URL?
+	@State private var scopedPreviewURL: URL?
 
 	var body: some View {
 		GeometryReader { geometry in
@@ -22,7 +23,8 @@ struct DownloadsSidebarView: View {
 							item: item,
 							manager: manager,
 							theme: theme,
-							previewURL: $previewURL
+							previewURL: $previewURL,
+							scopedPreviewURL: $scopedPreviewURL
 						)
 						.equatable()
 					}
@@ -47,6 +49,24 @@ struct DownloadsSidebarView: View {
 			}
 		}
 		.quickLookPreview($previewURL)
+		.onChange(of: previewURL) { previousURL, currentURL in
+			#if os(macOS)
+				if let previousURL, previousURL != currentURL {
+					if scopedPreviewURL == previousURL {
+						manager.endPreview(at: previousURL)
+						scopedPreviewURL = nil
+					}
+				}
+			#endif
+		}
+		.onDisappear {
+			#if os(macOS)
+				if let scopedPreviewURL {
+					manager.endPreview(at: scopedPreviewURL)
+					self.scopedPreviewURL = nil
+				}
+			#endif
+		}
 		.accessibilityIdentifier("downloads-list")
 	}
 }
@@ -63,6 +83,7 @@ private struct DownloadRowView: View {
 	let manager: BrowserDownloadManager
 	let theme: BrowserTheme
 	@Binding var previewURL: URL?
+	@Binding var scopedPreviewURL: URL?
 
 	var body: some View {
 		HStack(alignment: .top, spacing: 9) {
@@ -118,38 +139,53 @@ private struct DownloadRowView: View {
 				Button("Show in Folder", systemImage: "folder") {
 					manager.revealInFolder(item.id)
 				}
+				.accessibilityIdentifier("download-reveal-\(item.id.uuidString)")
 			#endif
 			if item.status == .completed {
 				#if os(macOS)
 					Button("Open", systemImage: "arrow.up.right.square") {
 						manager.open(item.id)
 					}
+					.accessibilityIdentifier("download-open-\(item.id.uuidString)")
 				#endif
 				if item.destinationIsFileScoped != true || item.fileAccessBookmark != nil {
 					Button("Quick Look", systemImage: "eye") {
+						guard previewURL != item.fileURL else { return }
+						#if os(macOS)
+							guard manager.beginPreview(item.id) else { return }
+							if let scopedPreviewURL {
+								manager.endPreview(at: scopedPreviewURL)
+							}
+							scopedPreviewURL = item.fileURL
+						#endif
 						previewURL = item.fileURL
 					}
+					.accessibilityIdentifier("download-preview-\(item.id.uuidString)")
 				}
 				if item.renamedByAppleIntelligence {
 					Button("Revert Name", systemImage: "arrow.uturn.backward") {
 						manager.revertName(item.id)
 					}
+					.accessibilityIdentifier("download-revert-name-\(item.id.uuidString)")
 				}
 			} else if item.canResume {
 				Button("Resume", systemImage: "arrow.clockwise") {
 					manager.resume(item.id)
 				}
+				.accessibilityIdentifier("download-resume-\(item.id.uuidString)")
 			} else if item.canRetry {
 				Button("Retry", systemImage: "arrow.clockwise") {
 					manager.retry(item.id)
 				}
 				.accessibilityLabel("Retry download")
+				.accessibilityIdentifier("download-retry-\(item.id.uuidString)")
 			}
 			if item.status == .downloading {
 				Button("Cancel Download", systemImage: "xmark.circle", role: .destructive) {
 					manager.delete(item.id)
 				}
 				.accessibilityLabel("Cancel download")
+				.accessibilityIdentifier("download-cancel-\(item.id.uuidString)")
 			} else {
 				Button(
 					item.status == .completed ? "Remove from Downloads" : "Delete",
@@ -158,6 +194,7 @@ private struct DownloadRowView: View {
 				) {
 					manager.delete(item.id)
 				}
+				.accessibilityIdentifier("download-remove-\(item.id.uuidString)")
 			}
 		}
 		.accessibilityElement(children: .combine)
@@ -190,5 +227,6 @@ extension DownloadRowView: Equatable {
 			&& lhs.manager === rhs.manager
 			&& lhs.theme == rhs.theme
 			&& lhs.previewURL == rhs.previewURL
+			&& lhs.scopedPreviewURL == rhs.scopedPreviewURL
 	}
 }

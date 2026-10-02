@@ -4,6 +4,7 @@ import Foundation
 final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 	private let progressThrottle = NSLock()
 	private nonisolated(unsafe) var lastProgressHop: [String: Date] = [:]
+	private var startTokens: [UUID: UUID] = [:]
 	private lazy var session: URLSession = {
 		let identifier = (Bundle.main.bundleIdentifier ?? "browser") + ".segmentedDownloads"
 		let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
@@ -17,9 +18,11 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		      let segments = item.segments,
 		      let validator = item.rangeValidator
 		else { return }
+		let token = UUID()
+		startTokens[item.id] = token
 		session.getAllTasks { [weak self] tasks in
 			Task { @MainActor [weak self] in
-				guard let self else { return }
+				guard let self, startTokens[item.id] == token else { return }
 				for (index, segment) in segments.enumerated() where !segment.completed {
 					let description = "\(item.id.uuidString):\(index)"
 					guard !tasks.contains(where: { $0.taskDescription == description }) else { continue }
@@ -37,10 +40,25 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 	}
 
 	func cancel(_ itemID: UUID) {
+		startTokens[itemID] = UUID()
 		session.getAllTasks { tasks in
 			for task in tasks where task.taskDescription?.hasPrefix(itemID.uuidString + ":") == true {
 				task.cancel()
 			}
+		}
+	}
+
+	func cancelAndWait(_ itemIDs: [UUID]) async {
+		for itemID in itemIDs {
+			startTokens[itemID] = UUID()
+		}
+		let tasks = await withCheckedContinuation { continuation in
+			session.getAllTasks { continuation.resume(returning: $0) }
+		}
+		let itemIDSet = Set(itemIDs)
+		for task in tasks {
+			guard let (itemID, _) = Self.identify(task), itemIDSet.contains(itemID) else { continue }
+			task.cancel()
 		}
 	}
 
