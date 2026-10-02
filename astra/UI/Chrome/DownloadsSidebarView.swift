@@ -197,6 +197,12 @@ private struct DownloadRowView: View {
 				.accessibilityIdentifier("download-remove-\(item.id.uuidString)")
 			}
 		}
+		#if os(macOS)
+		.onDrag {
+			manager.dragProvider(item.id) ?? NSItemProvider()
+		}
+		.accessibilityHint(item.status == .completed ? "Drag to copy the completed file" : "")
+		#endif
 		.accessibilityElement(children: .combine)
 		.accessibilityLabel("\(item.name), \(item.sourceURL?.host ?? "unknown website"), \(item.statusSummary)")
 		.accessibilityIdentifier("download-\(item.id.uuidString)")

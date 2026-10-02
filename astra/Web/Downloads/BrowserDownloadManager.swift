@@ -3,6 +3,7 @@ import Foundation
 import FoundationModels
 import Observation
 import SwiftUI
+import UniformTypeIdentifiers
 import WebKit
 
 #if os(macOS)
@@ -717,6 +718,92 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	#if os(macOS)
+	func dragProvider(_ itemID: UUID) -> NSItemProvider? {
+		guard let item = items.first(where: { $0.id == itemID && $0.status == .completed }),
+		      !deletingItems.contains(itemID),
+		      !(item.destinationIsFileScoped == true && item.fileAccessBookmark == nil)
+		else { return nil }
+		let expectedURL = item.fileURL
+		let expectedName = item.name
+		let type = UTType(filenameExtension: expectedURL.pathExtension) ?? .data
+		let lifetime = BrowserDownloadDragFile()
+		let provider = NSItemProvider()
+		provider.suggestedName = expectedName
+		provider.registerFileRepresentation(
+			forTypeIdentifier: type.identifier,
+			fileOptions: [],
+			visibility: .all
+		) { [weak self, lifetime] completionHandler in
+			let progress = Progress(totalUnitCount: 1)
+			Task { @MainActor [weak self, lifetime] in
+				guard let self else {
+					completionHandler(nil, false, CocoaError(.userCancelled))
+					progress.cancel()
+					return
+				}
+				do {
+					let file = try await prepareDragFile(
+						itemID,
+						expectedURL: expectedURL,
+						expectedName: expectedName,
+						lifetime: lifetime
+					)
+					completionHandler(file, false, nil)
+					progress.completedUnitCount = 1
+				} catch {
+					completionHandler(nil, false, error)
+					progress.cancel()
+				}
+			}
+			return progress
+		}
+		return provider
+	}
+
+	private func prepareDragFile(
+		_ itemID: UUID,
+		expectedURL: URL,
+		expectedName: String,
+		lifetime: BrowserDownloadDragFile
+	) async throws -> URL {
+		guard let item = items.first(where: {
+			$0.id == itemID
+				&& $0.status == .completed
+				&& $0.fileURL.standardizedFileURL == expectedURL.standardizedFileURL
+				&& $0.name == expectedName
+		}),
+		      !deletingItems.contains(itemID)
+		else { throw CocoaError(.fileNoSuchFile) }
+		let sourceURL = item.fileURL
+		let bookmark = item.fileAccessBookmark ?? item.folderBookmark
+		let fileBookmark = item.fileAccessBookmark != nil
+		let copy = try await Task.detached(priority: .userInitiated) {
+			try lifetime.copy(sourceURL, named: expectedName, bookmark: bookmark)
+		}.value
+		guard items.contains(where: {
+			$0.id == itemID
+				&& $0.status == .completed
+				&& $0.fileURL.standardizedFileURL == expectedURL.standardizedFileURL
+				&& $0.name == expectedName
+		}),
+		      !deletingItems.contains(itemID)
+		else {
+			lifetime.discard(copy.fileURL)
+			throw CocoaError(.fileNoSuchFile)
+		}
+		if let renewedBookmark = copy.renewedBookmark,
+		   let index = items.firstIndex(where: { $0.id == itemID })
+		{
+			if fileBookmark {
+				items[index].fileAccessBookmark = renewedBookmark
+			} else {
+				items[index].folderBookmark = renewedBookmark
+			}
+			persist()
+		}
+		return copy.fileURL
+	}
+
 	func beginPreview(_ itemID: UUID) -> Bool {
 		guard let item = items.first(where: { $0.id == itemID && $0.status == .completed }) else { return false }
 		let fileURL = item.fileURL.standardizedFileURL

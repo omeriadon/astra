@@ -465,9 +465,9 @@ private struct ShellContentColumn: View {
 	#if os(macOS)
 	private func acceptAddressDrop(_ providers: [NSItemProvider]) -> Bool {
 		guard let provider = providers.first,
-		      let tabID = browser.selectedTabID,
 		      let controller = browser.selectedTab?.activeController
 		else { return false }
+		let tabID = browser.selectedTabID
 		let type = provider.hasItemConformingToTypeIdentifier(UTType.url.identifier)
 			? UTType.url.identifier
 			: UTType.plainText.identifier

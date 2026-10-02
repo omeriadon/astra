@@ -1832,6 +1832,126 @@ extension BrowserController: WKScriptMessageHandler {
 }
 
 extension BrowserController: WKUIDelegate {
+	#if os(iOS)
+	func webView(
+		_ webView: WKWebView,
+		contextMenuConfigurationForElement elementInfo: WKContextMenuElementInfo,
+		completionHandler: @escaping @MainActor @Sendable (UIContextMenuConfiguration?) -> Void
+	) {
+		guard owns(webView), hasCurrentPageDocument, !isLoading else {
+			completionHandler(nil)
+			return
+		}
+		let documentID = navigationIdentifier
+		if let linkURL = safeContextLink(elementInfo.linkURL) {
+			completionHandler(contextMenuConfiguration(
+				for: webView,
+				documentID: documentID,
+				linkURL: linkURL,
+				selectedText: nil
+			))
+			return
+		}
+		webView.evaluateJavaScript("window.getSelection().toString()") { [weak self, weak webView] result, _ in
+			guard let self, let webView,
+			      owns(webView),
+			      hasCurrentPageDocument,
+			      !isLoading,
+			      navigationIdentifier == documentID
+			else {
+				completionHandler(nil)
+				return
+			}
+			let selectedText = (result as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+			completionHandler(contextMenuConfiguration(
+				for: webView,
+				documentID: documentID,
+				linkURL: nil,
+				selectedText: selectedText.flatMap { $0.utf8.count <= 8_192 && !$0.isEmpty ? $0 : nil }
+			))
+		}
+	}
+
+	private func safeContextLink(_ url: URL?) -> URL? {
+		guard let url,
+		      ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+		      let destination = BrowserAddress.destination(for: url.absoluteString),
+		      destination.scheme?.lowercased() == url.scheme?.lowercased()
+		else { return nil }
+		return destination
+	}
+
+	private func contextMenuConfiguration(
+		for webView: WKWebView,
+		documentID: Int,
+		linkURL: URL?,
+		selectedText: String?
+	) -> UIContextMenuConfiguration {
+		UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self, weak webView] suggestedActions in
+			guard let self, let webView else { return UIMenu(children: suggestedActions) }
+			var actions = suggestedActions
+			if let linkURL {
+				actions += [
+					UIAction(title: "Open Link", image: UIImage(systemName: "arrow.up.right.square")) { [weak self, weak webView] _ in
+						guard let self, let webView, ownsPrompt(in: webView, documentID: documentID) else { return }
+						load(linkURL)
+					},
+					UIAction(title: "Open Link in New Tab", image: UIImage(systemName: "plus.square.on.square")) { [weak self, weak webView] _ in
+						guard let self, let webView, ownsPrompt(in: webView, documentID: documentID) else { return }
+						newTabRequested?(URLRequest(url: linkURL), false)
+					},
+					UIAction(title: "Copy Link", image: UIImage(systemName: "doc.on.doc")) { [weak self, weak webView] _ in
+						guard let self, let webView, ownsPrompt(in: webView, documentID: documentID) else { return }
+						UIPasteboard.general.url = BrowserAddress.withoutCredentials(linkURL)
+					},
+					UIAction(title: "Download Link", image: UIImage(systemName: "arrow.down.to.line")) { [weak self, weak webView] _ in
+						guard let self, let webView else { return }
+						Task { @MainActor [weak self, weak webView] in
+							guard let self, let webView else { return }
+							await downloadContextLink(linkURL, in: webView, documentID: documentID)
+						}
+					},
+				]
+			} else if let selectedText {
+				actions.append(UIAction(title: "Search Selection", image: UIImage(systemName: "magnifyingglass")) { [weak self, weak webView] _ in
+					guard let self, let webView else { return }
+					Task { @MainActor [weak self, weak webView] in
+						guard let self, let webView,
+						      ownsPrompt(in: webView, documentID: documentID),
+						      let url = BrowserSearchConfiguration.decode(Defaults[.browserSearchConfiguration])
+						      .destination(for: selectedText, isPrivate: session.isPrivate)
+						else { return }
+						newTabRequested?(URLRequest(url: url), false)
+					}
+				})
+			}
+			return UIMenu(children: actions)
+		}
+	}
+
+	private func downloadContextLink(_ url: URL, in webView: WKWebView, documentID: Int) async {
+		guard ownsPrompt(in: webView, documentID: documentID) else { return }
+		if automaticDownloadPolicy.reserveAttempt() {
+			guard await requestMultipleDownloadPermission(in: webView) == .grant,
+			      ownsPrompt(in: webView, documentID: documentID)
+			else { return }
+		}
+		guard ownsPrompt(in: webView, documentID: documentID) else { return }
+		let sourceURL = committedURL ?? webView.url
+		webView.startDownload(using: URLRequest(url: url)) { [weak self, weak webView] download in
+			guard let self, let webView,
+			      ownsPrompt(in: webView, documentID: documentID)
+			else {
+				Task { @MainActor in
+					_ = await download.cancel()
+				}
+				return
+			}
+			session.downloads.start(download, sourceURL: sourceURL)
+		}
+	}
+	#endif
+
 	func webView(
 		_ webView: WKWebView,
 		createWebViewWith configuration: WKWebViewConfiguration,
