@@ -1,4 +1,5 @@
 import Defaults
+import Foundation
 
 extension AddressDisplayStyle: Defaults.Serializable {}
 extension PeekLevel: Defaults.Serializable {}
@@ -21,6 +22,7 @@ extension Defaults.Keys {
 	static let searchSuggestionsEnabled = Key<Bool>("searchSuggestionsEnabled", default: true)
 	static let browserSearchConfiguration = Key<String>("browserSearchConfiguration", default: BrowserSearchConfiguration.default.encoded)
 	static let startPagePreferences = Key<String>("startPagePreferences", default: BrowserStartPagePreferences.default.encoded)
+	static let siteZoomPreferences = Key<Data>(BrowserSiteZoomDocument.defaultsKey, default: Data())
 	static let miniAstraEnabled = Key<Bool>("miniAstraEnabled", default: true)
 	static let miniAstraWindowAnimation = Key<Bool>("miniAstraWindowAnimation", default: true)
 	static let miniAstraShortcutEnabled = Key<Bool>("miniAstraShortcutEnabled", default: false)
@@ -55,6 +57,7 @@ extension Defaults.Keys {
 		"downloadsAskWhereToSave",
 		"startupBehavior",
 		"homepageURL",
+		BrowserSiteZoomDocument.defaultsKey,
 	]
 
 	static let browserTheme = Key<BrowserTheme>(

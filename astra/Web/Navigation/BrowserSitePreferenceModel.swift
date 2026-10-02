@@ -5,7 +5,7 @@ import Foundation
 	import Glibc
 #endif
 
-enum BrowserSiteOrigin {
+nonisolated enum BrowserSiteOrigin {
 	static func canonical(for url: URL) -> String? {
 		guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
 		      let scheme = parts.scheme?.lowercased(),
@@ -63,13 +63,23 @@ enum BrowserWebsiteDataRange: String, CaseIterable, Identifiable {
 	}
 }
 
-struct BrowserSiteZoomEntry: Codable, Equatable, Sendable {
+nonisolated struct BrowserSiteZoomEntry: Codable, Equatable, Sendable {
 	let zoom: Double?
 	let modifiedAt: Date
+	private enum CodingKeys: String, CodingKey {
+		case zoom
+		case modifiedAt
+	}
 
 	init(zoom: Double?, modifiedAt: Date) {
 		self.zoom = zoom
 		self.modifiedAt = modifiedAt
+	}
+
+	init(from decoder: Decoder) throws {
+		let values = try decoder.container(keyedBy: CodingKeys.self)
+		zoom = try values.decodeIfPresent(Double.self, forKey: .zoom)
+		modifiedAt = try values.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? .distantPast
 	}
 
 	static func preferred(_ first: Self, _ second: Self) -> Self {
@@ -79,11 +89,16 @@ struct BrowserSiteZoomEntry: Codable, Equatable, Sendable {
 		if first.zoom == nil || second.zoom == nil {
 			return first.zoom == nil ? first : second
 		}
-		return first.zoom! >= second.zoom! ? first : second
+		if let firstZoom = first.zoom,
+		   let secondZoom = second.zoom
+		{
+			return firstZoom >= secondZoom ? first : second
+		}
+		return first
 	}
 }
 
-struct BrowserSiteZoomDocument: Codable, Equatable, Sendable {
+nonisolated struct BrowserSiteZoomDocument: Codable, Equatable, Sendable {
 	static let currentVersion = 1
 	static let defaultsKey = "siteZoomPreferences"
 
@@ -112,9 +127,16 @@ struct BrowserSiteZoomDocument: Codable, Equatable, Sendable {
 	var hasValidStructure: Bool {
 		entries.allSatisfy { origin, entry in
 			BrowserSiteOrigin.canonical(for: URL(string: origin) ?? URL(fileURLWithPath: "/")) == origin
-				&& entry.modifiedAt.timeIntervalSince1970.isFinite
+				&& Self.isSaneSyncTimestamp(entry.modifiedAt)
 				&& (entry.zoom.map { $0.isFinite && (0.25 ... 5).contains($0) } ?? true)
 		}
+	}
+
+	static func isSaneSyncTimestamp(_ date: Date) -> Bool {
+		date == .distantPast
+			|| (date.timeIntervalSince1970.isFinite
+				&& date.timeIntervalSince1970 >= -2_208_988_800
+				&& date.timeIntervalSince1970 <= Date.now.timeIntervalSince1970 + 300.001)
 	}
 
 	func merging(_ other: Self) -> Self {
@@ -148,6 +170,15 @@ struct BrowserSiteZoomDocument: Codable, Equatable, Sendable {
 			options: 0
 		      ) else { return nil }
 		return value
+	}
+
+	static func isPreservableSyncValue(_ value: Data?) -> Bool {
+		guard let value,
+		      value.count <= 16 * 1024 * 1024,
+		      let object = try? PropertyListSerialization.propertyList(from: value, format: nil) as? [String: Data],
+		      Set(object.keys) == ["value"],
+		      let document = object["value"] else { return false }
+		return document.count <= 16 * 1024 * 1024
 	}
 
 	private static func decodeSyncDocument(_ data: Data?) -> Self? {

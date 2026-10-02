@@ -173,22 +173,7 @@ final class BrowserSitePermissions {
 	}
 
 	static func origin(for url: URL) -> String? {
-		guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
-		      let scheme = parts.scheme?.lowercased(),
-		      ["https", "http"].contains(scheme),
-		      let host = parts.host?.lowercased(),
-		      !host.isEmpty else { return nil }
-		parts.scheme = scheme
-		parts.host = host
-		parts.user = nil
-		parts.password = nil
-		parts.path = ""
-		parts.query = nil
-		parts.fragment = nil
-		if parts.port == (scheme == "https" ? 443 : 80) {
-			parts.port = nil
-		}
-		return parts.string
+		BrowserSiteOrigin.canonical(for: url)
 	}
 
 	func decision(origin: String, topOrigin: String, capability: Capability) -> Bool? {

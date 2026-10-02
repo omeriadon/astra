@@ -132,12 +132,25 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	private static var cachedSafariUserAgentSuffix: String?
+	@ObservationIgnored
+	private var isApplyingSiteZoom = false
 
-	private static func userAgentOverride(for url: URL?) -> String? {
+	private static func compatibilityUserAgentOverride(for url: URL?) -> String? {
 		guard let url,
 		      url.host == "chromewebstore.google.com"
 		      || (url.host == "chrome.google.com" && url.path.hasPrefix("/webstore")) else { return nil }
+		// Keep this existing exception while the Chrome Web Store expects a Chromium user agent.
+		// Recheck it on each Chrome major and remove it if the store serves WebKit directly.
 		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+	}
+
+	private func userAgentOverride(for url: URL?) -> String? {
+		guard let url,
+		      let origin = BrowserSitePermissions.origin(for: url) else {
+			return nil
+		}
+		return session.sitePreferences.customUserAgent(for: origin)
+			?? Self.compatibilityUserAgentOverride(for: url)
 	}
 
 	/// Resolve once per launch, not once per tab (was NSWorkspace + Bundle plist per makeWebView).
@@ -314,8 +327,22 @@ final class BrowserController: NSObject, Identifiable {
 			}
 			if oldValue != pageZoom {
 				zoomDidChange?()
+				if !isApplyingSiteZoom,
+				   canApplySitePreferencesToCurrentPage,
+				   let origin = committedURL.flatMap(BrowserSitePermissions.origin(for:))
+				{
+					session.sitePreferences.setZoom(pageZoom, for: origin)
+				}
 			}
 		}
+	}
+
+	func applySiteZoom(_ zoom: Double) {
+		let boundedZoom = BrowserZoomPolicy.clamp(zoom)
+		guard pageZoom != boundedZoom else { return }
+		isApplyingSiteZoom = true
+		pageZoom = boundedZoom
+		isApplyingSiteZoom = false
 	}
 
 	private var historyManager: BrowserHistory
@@ -403,6 +430,10 @@ final class BrowserController: NSObject, Identifiable {
 		!awaitsNavigationCommit
 	}
 
+	var canApplySitePreferencesToCurrentPage: Bool {
+		!awaitsNavigationCommit && navigationFailure == nil && committedURL != nil
+	}
+
 	@ObservationIgnored
 	private var hasDeclaredThemeColor = false
 	@ObservationIgnored
@@ -411,6 +442,8 @@ final class BrowserController: NSObject, Identifiable {
 	private var currentNavigation: WKNavigation?
 	@ObservationIgnored
 	private var awaitsNavigationCommit = false
+	@ObservationIgnored
+	private var restoredPageZoomOrigin: String?
 	@ObservationIgnored
 	private var restoredScrollPosition: BrowserScrollPosition?
 	#if os(macOS)
@@ -438,6 +471,9 @@ final class BrowserController: NSObject, Identifiable {
 		let session = session ?? .shared
 		let restoredHistory = BrowserHistory(entries: history, index: historyIndex, initialURL: initialURL)
 		self.session = session
+		restoredPageZoomOrigin = suppressInitialHistoryVisit
+			? initialURL.flatMap(BrowserSitePermissions.origin(for:))
+			: nil
 		self.fileAccessBookmark = fileAccessBookmark
 		historyVisitPolicy = BrowserVisitPolicy(suppressInitialVisit: suppressInitialHistoryVisit)
 		if !session.isPrivate, let initialURL, let restorationState {
@@ -1349,7 +1385,7 @@ final class BrowserController: NSObject, Identifiable {
 			return
 		}
 		pendingRequest = nil
-		webView.customUserAgent = Self.userAgentOverride(for: request.url)
+		webView.customUserAgent = userAgentOverride(for: request.url)
 		currentNavigation = webView.load(request)
 	}
 
@@ -1443,6 +1479,12 @@ extension BrowserController: WKNavigationDelegate {
 			decisionHandler(.cancel, preferences)
 			return
 		}
+		if navigationAction.targetFrame?.isMainFrame == true,
+		   let origin = navigationAction.request.url.flatMap(BrowserSitePermissions.origin(for:)),
+		   let contentMode = session.sitePreferences.webKitContentMode(for: origin)
+		{
+			preferences.preferredContentMode = contentMode
+		}
 		#if os(macOS)
 			preferences.globalPrivacyControlEnabled = Defaults[.globalPrivacyControl]
 			let host = navigationAction.request.url?.host?.lowercased() ?? ""
@@ -1527,7 +1569,7 @@ extension BrowserController: WKNavigationDelegate {
 						break
 				}
 				currentRequest = isAuthenticationSessionBrowser ? nil : navigationAction.request
-				webView.customUserAgent = Self.userAgentOverride(for: navigationAction.request.url)
+				webView.customUserAgent = userAgentOverride(for: navigationAction.request.url)
 				switch navigationAction.navigationType {
 					case .linkActivated:
 						pendingDownloadSource = (webView as? PeekSourceWebView)?.sourceIfRecent
@@ -1721,6 +1763,17 @@ extension BrowserController: WKNavigationDelegate {
 		releaseUploadAccess()
 		pictureInPictureControlUnavailable = false
 		committedURL = webView.url
+		if let origin = committedURL.flatMap(BrowserSitePermissions.origin(for:)) {
+			let isRestoredOrigin = restoredPageZoomOrigin == origin
+			restoredPageZoomOrigin = nil
+			if let zoom = session.sitePreferences.zoom(for: origin) {
+				applySiteZoom(zoom)
+			} else if !isRestoredOrigin {
+				applySiteZoom(Defaults[.defaultPageZoom])
+			}
+		} else {
+			restoredPageZoomOrigin = nil
+		}
 		automaticDownloadPolicy.didCommitDocument()
 		contentProcessTerminations.navigationCommitted(at: webView.url)
 		hasUnsavedChanges = false

@@ -1,4 +1,5 @@
 import Foundation
+import Defaults
 import Observation
 import WebKit
 
@@ -11,6 +12,7 @@ final class BrowserWebSession {
 	let downloads: BrowserDownloadManager
 	let favicons: FaviconStore
 	let permissions: BrowserSitePermissions
+	let sitePreferences: BrowserSitePreferences
 	var persistenceWriteTask: Task<Void, Never>?
 	private var cleanupTask: Task<Void, Never>?
 
@@ -28,6 +30,21 @@ final class BrowserWebSession {
 			: .shared
 		favicons = isPrivate ? FaviconStore(isPrivate: true) : .shared
 		permissions = BrowserSitePermissions(isPrivate: isPrivate)
+		sitePreferences = isPrivate ? BrowserSitePreferences(isPrivate: true) : .shared
+		sitePreferences.didUpdateZoom = { [weak sitePreferences] origin, zoom in
+			guard let sitePreferences else { return }
+			let inheritedZoom = zoom ?? Defaults[.defaultPageZoom]
+			for browser in BrowserWindowRegistry.shared.openBrowsers where browser.session.sitePreferences === sitePreferences {
+				for tab in browser.tabs {
+					let controllers = [tab.controller].compactMap(\.self) + tab.peeks.map(\.controller)
+					for controller in controllers where controller.canApplySitePreferencesToCurrentPage
+						&& controller.committedURL.flatMap(BrowserSitePermissions.origin(for:)) == origin
+					{
+						controller.applySiteZoom(inheritedZoom)
+					}
+				}
+			}
+		}
 		permissions.didUpdate = { [weak permissions] entry in
 			guard let permissions,
 			      entry == nil || entry?.decision != .allowOnce else { return }
@@ -58,15 +75,23 @@ final class BrowserWebSession {
 		#endif
 	}
 
-	func clearWebsiteData() async {
+	func clearWebsiteData(since: Date = .distantPast) async {
 		#if os(macOS)
-			if !isPrivate {
+			if !isPrivate, since == .distantPast {
 				BrowserWebPushManager.shared.removeDeliveredNotifications()
 			}
 		#endif
 		await dataStore.removeData(
 			ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
-			modifiedSince: .distantPast
+			modifiedSince: since
+		)
+		favicons.clear()
+	}
+
+	func clearWebsiteData(for record: WKWebsiteDataRecord) async {
+		await dataStore.removeData(
+			ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+			for: [record]
 		)
 		favicons.clear()
 	}
