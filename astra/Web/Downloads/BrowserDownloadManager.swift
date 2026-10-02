@@ -371,6 +371,21 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				}
 				completionHandler(response.0, response.1)
 			}
+		#elseif os(iOS)
+			Task { @MainActor in
+				guard let webView = download.webView else {
+					completionHandler(.performDefaultHandling, nil)
+					return
+				}
+				let response = await BrowserWebsiteUI.authenticate(challenge, in: webView) { [self, download] in
+					downloads[ObjectIdentifier(download)] != nil
+				}
+				guard downloads[ObjectIdentifier(download)] != nil else {
+					completionHandler(.cancelAuthenticationChallenge, nil)
+					return
+				}
+				completionHandler(response.0, response.1)
+			}
 		#else
 			completionHandler(.performDefaultHandling, nil)
 		#endif

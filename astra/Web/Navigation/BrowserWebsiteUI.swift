@@ -94,16 +94,24 @@ import WebKit
 			in window: NSWindow?,
 			isCurrent: @escaping @MainActor () -> Bool = { true }
 		) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
-			let method = challenge.protectionSpace.authenticationMethod
-			guard [NSURLAuthenticationMethodHTTPBasic, NSURLAuthenticationMethodHTTPDigest, NSURLAuthenticationMethodDefault].contains(method) else {
-				return (.performDefaultHandling, nil)
-			}
-			guard challenge.previousFailureCount < 3 else {
-				return (.cancelAuthenticationChallenge, nil)
+			switch BrowserAuthenticationPolicy.decision(
+				method: challenge.protectionSpace.authenticationMethod,
+				previousFailureCount: challenge.previousFailureCount
+			) {
+				case .cancel:
+					return (.cancelAuthenticationChallenge, nil)
+				case .useDefaultHandling:
+					return (.performDefaultHandling, nil)
+				case .prompt:
+					break
 			}
 			let alert = alert(
-				title: "Sign in to \(challenge.protectionSpace.host)",
-				message: challenge.protectionSpace.protocol == "https"
+				title: BrowserAuthenticationPolicy.title(
+					host: challenge.protectionSpace.host,
+					port: challenge.protectionSpace.port,
+					realm: challenge.protectionSpace.realm
+				),
+				message: BrowserAuthenticationPolicy.isEncrypted(protocolName: challenge.protectionSpace.protocol)
 					? "This website requires a username and password."
 					: "This connection is not encrypted. Your credentials may be exposed.",
 				confirm: "Sign In"
@@ -223,7 +231,6 @@ import WebKit
 			completionHandler: @escaping ([URL]?) -> Void
 		) {
 			guard let window = webView.window,
-			      window.attachedSheet == nil,
 			      ownsPrompt(in: webView, documentID: navigationIdentifier) else {
 				completionHandler(nil)
 				return
@@ -234,12 +241,49 @@ import WebKit
 			panel.allowsMultipleSelection = parameters.allowsMultipleSelection
 			panel.canChooseDirectories = parameters.allowsDirectories
 			panel.canChooseFiles = true
-			let monitor = Task { @MainActor [weak self, weak window] in
+			var completed = false
+			var monitor: Task<Void, Never>?
+			let finish: ([URL]?) -> Void = { urls in
+				guard !completed else { return }
+				completed = true
+				completionHandler(urls)
+			}
+			monitor = Task { @MainActor [weak self, weak window] in
+				while let window, window.attachedSheet != nil {
+					guard let self, ownsPrompt(in: webView, documentID: documentID), window.isVisible else {
+						finish(nil)
+						return
+					}
+					do {
+						try await Task.sleep(for: .milliseconds(100))
+					} catch {
+						finish(nil)
+						return
+					}
+				}
+				guard let window else {
+					finish(nil)
+					return
+				}
+				guard let self, ownsPrompt(in: webView, documentID: documentID), window.isVisible else {
+					finish(nil)
+					return
+				}
+				panel.beginSheetModal(for: window) { [weak self, weak window] response in
+					monitor?.cancel()
+					let current = self?.ownsPrompt(in: webView, documentID: documentID) == true && window?.isVisible == true
+					let urls = response == .OK && current ? panel.urls : nil
+					if let urls {
+						self?.retainUploadAccess(for: urls)
+					}
+					finish(urls)
+				}
 				while !Task.isCancelled {
 					guard let self, let window,
 					      ownsPrompt(in: webView, documentID: documentID),
 					      window.isVisible else {
 						panel.cancel(nil)
+						finish(nil)
 						return
 					}
 					do {
@@ -248,11 +292,6 @@ import WebKit
 						return
 					}
 				}
-			}
-			panel.beginSheetModal(for: window) { [weak self, weak window] response in
-				monitor.cancel()
-				let isCurrent = self?.ownsPrompt(in: webView, documentID: documentID) == true && window?.isVisible == true
-				completionHandler(response == .OK && isCurrent ? panel.urls : nil)
 			}
 		}
 
@@ -307,18 +346,17 @@ import WebKit
 				completionHandler(response.0, response.1)
 			}
 		}
+
 	}
 #endif
 
 #if os(iOS)
-	import UniformTypeIdentifiers
 	import UIKit
 	import WebKit
 
 	@MainActor
 	enum BrowserWebsiteUI {
 		private static var presentations: [ObjectIdentifier: UUID] = [:]
-		private static var filePickers: [ObjectIdentifier: WebsiteDocumentPickerDelegate] = [:]
 
 		static func javascriptDialog(
 			title: String,
@@ -374,20 +412,29 @@ import WebKit
 			}
 		}
 
-		static func filePicker(
-			allowsMultipleSelection: Bool,
-			allowsDirectories: Bool,
+		static func authenticate(
+			_ challenge: URLAuthenticationChallenge,
 			in webView: WKWebView,
 			isCurrent: @escaping @MainActor () -> Bool
-		) async -> [URL]? {
-			guard let window = webView.window else { return nil }
+		) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+			switch BrowserAuthenticationPolicy.decision(
+				method: challenge.protectionSpace.authenticationMethod,
+				previousFailureCount: challenge.previousFailureCount
+			) {
+				case .cancel:
+					return (.cancelAuthenticationChallenge, nil)
+				case .useDefaultHandling:
+					return (.performDefaultHandling, nil)
+				case .prompt:
+					break
+			}
+			guard let window = webView.window else { return (.cancelAuthenticationChallenge, nil) }
 			let key = ObjectIdentifier(window)
 			while presentations[key] != nil || window.rootViewController?.presentedViewController != nil {
-				guard isCurrent(), !Task.isCancelled else { return nil }
+				guard isCurrent(), !Task.isCancelled else { return (.cancelAuthenticationChallenge, nil) }
 				try? await Task.sleep(for: .milliseconds(100))
 			}
-			guard isCurrent(), filePickers[key] == nil,
-			      let presenter = topViewController(in: window) else { return nil }
+			guard isCurrent(), let presenter = topViewController(in: window) else { return (.cancelAuthenticationChallenge, nil) }
 			let id = UUID()
 			presentations[key] = id
 			defer {
@@ -395,26 +442,52 @@ import WebKit
 					presentations[key] = nil
 				}
 			}
-			let types: [UTType] = allowsDirectories ? [.item] : [.data]
-			let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: false)
-			picker.allowsMultipleSelection = allowsMultipleSelection
-			let delegate = WebsiteDocumentPickerDelegate()
-			filePickers[key] = delegate
-			defer { filePickers[key] = nil }
+			let encrypted = BrowserAuthenticationPolicy.isEncrypted(protocolName: challenge.protectionSpace.protocol)
+			let message = encrypted
+				? "This website requires a username and password."
+				: "This connection is not encrypted. Your credentials may be exposed."
+			let alert = UIAlertController(
+				title: BrowserAuthenticationPolicy.title(
+					host: challenge.protectionSpace.host,
+					port: challenge.protectionSpace.port,
+					realm: challenge.protectionSpace.realm
+				),
+				message: message,
+				preferredStyle: .alert
+			)
+			alert.addTextField { field in
+				field.placeholder = "Username"
+				field.accessibilityLabel = "Username"
+			}
+			alert.addTextField { field in
+				field.placeholder = "Password"
+				field.isSecureTextEntry = true
+				field.accessibilityLabel = "Password"
+			}
 			return await withCheckedContinuation { continuation in
 				var completed = false
-				delegate.finish = { urls in
+				let finish: (Bool) -> Void = { accepted in
 					guard !completed else { return }
 					completed = true
-					continuation.resume(returning: isCurrent() ? urls : nil)
+					guard accepted, isCurrent(), let fields = alert.textFields else {
+						continuation.resume(returning: (.cancelAuthenticationChallenge, nil))
+						return
+					}
+					let credential = URLCredential(
+						user: fields[0].text ?? "",
+						password: fields[1].text ?? "",
+						persistence: .none
+					)
+					continuation.resume(returning: (.useCredential, credential))
 				}
-				picker.delegate = delegate
-				presenter.present(picker, animated: true)
+				alert.addAction(UIAlertAction(title: "Sign In", style: .default) { _ in finish(true) })
+				alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in finish(false) })
+				presenter.present(alert, animated: true)
 				Task { @MainActor in
 					while !completed {
-						guard isCurrent(), picker.presentingViewController != nil else {
-							picker.dismiss(animated: true)
-							delegate.finish?(nil)
+						guard isCurrent(), alert.presentingViewController != nil else {
+							alert.dismiss(animated: true)
+							finish(false)
 							return
 						}
 						try? await Task.sleep(for: .milliseconds(100))
@@ -474,19 +547,6 @@ import WebKit
 				controller = presented
 			}
 			return controller
-		}
-	}
-
-	@MainActor
-	private final class WebsiteDocumentPickerDelegate: NSObject, UIDocumentPickerDelegate {
-		var finish: (([URL]?) -> Void)?
-
-		func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-			finish?(urls)
-		}
-
-		func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-			finish?(nil)
 		}
 	}
 
@@ -554,24 +614,22 @@ import WebKit
 			}
 		}
 
-		@available(iOS 18.4, *)
 		func webView(
 			_ webView: WKWebView,
-			runOpenPanelWith parameters: WKOpenPanelParameters,
-			initiatedByFrame _: WKFrameInfo,
-			completionHandler: @escaping ([URL]?) -> Void
+			didReceive challenge: URLAuthenticationChallenge,
+			completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
 		) {
 			let documentID = navigationIdentifier
 			Task { @MainActor in
-				let urls = await BrowserWebsiteUI.filePicker(
-					allowsMultipleSelection: parameters.allowsMultipleSelection,
-					allowsDirectories: parameters.allowsDirectories,
-					in: webView
-				) { [weak self, weak webView] in
+				let response = await BrowserWebsiteUI.authenticate(challenge, in: webView) { [weak self, weak webView] in
 					guard let self, let webView else { return false }
 					return ownsPrompt(in: webView, documentID: documentID)
 				}
-				completionHandler(ownsPrompt(in: webView, documentID: documentID) ? urls : nil)
+				guard ownsPrompt(in: webView, documentID: documentID) else {
+					completionHandler(.cancelAuthenticationChallenge, nil)
+					return
+				}
+				completionHandler(response.0, response.1)
 			}
 		}
 

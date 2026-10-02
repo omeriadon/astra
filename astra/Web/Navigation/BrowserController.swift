@@ -20,6 +20,8 @@ final class BrowserController: NSObject, Identifiable {
 	private var pendingInteractionState: Data?
 	@ObservationIgnored
 	private var securityScopedFile: URL?
+	@ObservationIgnored
+	private var uploadSecurityScopedFiles: [URL] = []
 	private(set) var fileAccessBookmark: Data?
 	private var pendingLocalFile: URL?
 	private(set) var liveHistoryPrefix: [URL]
@@ -776,6 +778,7 @@ final class BrowserController: NSObject, Identifiable {
 		observations.removeAll()
 		securityScopedFile?.stopAccessingSecurityScopedResource()
 		securityScopedFile = nil
+		releaseUploadAccess()
 		mediaObservationTask?.cancel()
 		mediaObservationTask = nil
 		pictureInPictureControlUnavailable = false
@@ -813,6 +816,19 @@ final class BrowserController: NSObject, Identifiable {
 		closeRequested = nil
 		newWindowRequested = nil
 		escapeRequested = nil
+	}
+
+	func retainUploadAccess(for urls: [URL]) {
+		for url in urls where url.startAccessingSecurityScopedResource() {
+			uploadSecurityScopedFiles.append(url)
+		}
+	}
+
+	private func releaseUploadAccess() {
+		for url in uploadSecurityScopedFiles {
+			url.stopAccessingSecurityScopedResource()
+		}
+		uploadSecurityScopedFiles.removeAll()
 	}
 
 	private func owns(_ webView: WKWebView) -> Bool {
@@ -1536,6 +1552,7 @@ extension BrowserController: WKNavigationDelegate {
 		awaitsNavigationCommit = true
 		session.permissions.removeTemporaryDecisions(controllerID: id)
 		navigationGeneration += 1
+		releaseUploadAccess()
 		hasDeclaredThemeColor = false
 		hasTopEdgeContent = false
 		webView.underPageBackgroundColor = nil
