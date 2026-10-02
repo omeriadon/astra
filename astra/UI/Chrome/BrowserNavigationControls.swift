@@ -11,6 +11,7 @@ struct BrowserNavigationControls: View {
 			NavigationBackButton(controller: controller)
 			NavigationForwardButton(controller: controller)
 			NavigationReloadButton(controller: controller)
+			BrowserZoomControls(controller: controller)
 			Button("Zap Element", systemImage: "bolt.slash") {
 				controller.toggleZap()
 			}
@@ -23,6 +24,41 @@ struct BrowserNavigationControls: View {
 		.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
 		.id(controller.history)
 		.id(controller.historyIndex)
+	}
+}
+
+private struct BrowserZoomControls: View {
+	let controller: BrowserController
+
+	var body: some View {
+		HStack(spacing: 2) {
+			Button("Zoom Out", systemImage: "minus.magnifyingglass") {
+				controller.zoomOut()
+			}
+			.labelStyle(.iconOnly)
+			.accessibilityIdentifier("browser-zoom-out")
+
+			Button {
+				controller.resetZoom()
+			} label: {
+				VStack(spacing: 0) {
+					Image(systemName: "1.magnifyingglass")
+					Text(controller.pageZoom, format: .percent.precision(.fractionLength(0)))
+						.font(.caption2.monospacedDigit())
+				}
+			}
+			.accessibilityLabel("Reset Zoom, currently \(Int(controller.pageZoom * 100)) percent")
+			.accessibilityIdentifier("browser-zoom-reset")
+
+			Button("Zoom In", systemImage: "plus.magnifyingglass") {
+				controller.zoomIn()
+			}
+			.labelStyle(.iconOnly)
+			.accessibilityIdentifier("browser-zoom-in")
+		}
+		.buttonStyle(.glass)
+		.accessibilityElement(children: .contain)
+		.accessibilityIdentifier("browser-zoom-controls")
 	}
 }
 

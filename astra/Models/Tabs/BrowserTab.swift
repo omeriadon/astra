@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import Defaults
 
 #if os(macOS)
 	import AppKit
@@ -206,7 +207,7 @@ final class BrowserTab: Identifiable {
 		history: [URL] = [],
 		historyIndex: Int = 0,
 		openPeeks: [OpenPeek] = [],
-		pageZoom: Double = 1,
+		pageZoom: Double? = nil,
 		scrollPosition: BrowserScrollPosition = .zero,
 		isHibernated: Bool = false,
 		modifiedAt: Date = .now,
@@ -229,7 +230,8 @@ final class BrowserTab: Identifiable {
 		storedHistory = history
 		self.recordsNavigationHistory = recordsNavigationHistory
 		storedHistoryIndex = historyIndex
-		storedPageZoom = pageZoom
+		let initialPageZoom = BrowserZoomPolicy.clamp(pageZoom ?? Defaults[.defaultPageZoom])
+		storedPageZoom = initialPageZoom
 		storedScrollPosition = scrollPosition
 		storedPeeks = openPeeks
 		self.modifiedAt = modifiedAt
@@ -249,7 +251,7 @@ final class BrowserTab: Identifiable {
 			)
 		}
 		if existingController == nil {
-			controller?.pageZoom = pageZoom
+			controller?.pageZoom = initialPageZoom
 		}
 		observeController()
 		for peek in peeks {

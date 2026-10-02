@@ -62,6 +62,10 @@ struct BrowserAddressField: View {
 			isFocused = false
 			updateAddressFromURL()
 		}
+		.onChange(of: browser.selectedTab?.activeController?.id) { _, _ in
+			guard !isFocused else { return }
+			updateAddressFromURL()
+		}
 		.onChange(of: browser.selectedTab?.activeController?.url) { _, url in
 			guard !isFocused else { return }
 			let next = BrowserAddress.displayString(

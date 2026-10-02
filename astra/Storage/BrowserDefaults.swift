@@ -37,6 +37,7 @@ extension Defaults.Keys {
 	// Opt in portable browser preferences only; session, endpoint, credential, and device UI keys stay local.
 	static let syncedSettingNames: Set<String> = [
 		"addressDisplayStyle",
+		"defaultPageZoom",
 		"peekLevel",
 		"zoomOutInPeeks",
 		"renameDownloadsWithAppleIntelligence",
@@ -87,5 +88,9 @@ extension Defaults.Keys {
 	static let zoomOutInPeeks = Key<Bool>(
 		"zoomOutInPeeks",
 		default: true
+	)
+	static let defaultPageZoom = Key<Double>(
+		"defaultPageZoom",
+		default: 1
 	)
 }

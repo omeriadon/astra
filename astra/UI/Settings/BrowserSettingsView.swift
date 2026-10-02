@@ -44,7 +44,7 @@ struct BrowserSettingsView: View {
 						identifier: "settings-ui",
 						terms: [
 							"Default Browser", "Make Default Browser",
-							"Address Bar", "Peek", "Levels",
+							"Address Bar", "Page Zoom", "Default Page Zoom", "Reset Default Zoom", "Peek", "Levels",
 							"Mini Astra", "links", "cursor", "animation", "shortcut",
 							"Zoom out in Peeks", "Downloads", "Rename downloads with Apple Intelligence",
 							"Ask where to save each download", "Download folder", "Choose Folder",
