@@ -93,8 +93,30 @@
 				url: url
 			)
 			guard owner.isCurrent() else { return }
-			let panel = NSSavePanel()
 			let title = BrowserDownloadManager.safeStem(webView.title ?? "Page")
+
+			if format == .source {
+				Task { @MainActor in
+					do {
+						let source = try await webView.evaluateJavaScript("document.documentElement.outerHTML") as? String ?? ""
+						guard owner.isCurrent(), !Task.isCancelled else { return }
+						guard BrowserSourceDocumentPolicy.accepts(source) else {
+							controller.session.toastManager.show(
+								symbol: "exclamationmark.triangle",
+								message: "Source is empty or larger than 5 MB and cannot be displayed safely."
+							)
+							return
+						}
+						BrowserSourceViewer.show(source: source, title: title, sourceURL: url)
+					} catch {
+						guard owner.isCurrent() else { return }
+						controller.session.toastManager.show(symbol: "exclamationmark.triangle", message: "Could not read source: \(error.localizedDescription)")
+					}
+				}
+				return
+			}
+
+			let panel = NSSavePanel()
 			switch format {
 				case .pdf:
 					panel.allowedContentTypes = [.pdf]
@@ -103,8 +125,7 @@
 					panel.allowedContentTypes = [UTType(filenameExtension: "webarchive") ?? .data]
 					panel.nameFieldStringValue = title + ".webarchive"
 				case .source:
-					panel.allowedContentTypes = [.html]
-					panel.nameFieldStringValue = title + ".html"
+					return
 			}
 			panel.beginSheetModal(for: window) { response in
 				guard response == .OK, let destination = panel.url else { return }
@@ -124,8 +145,7 @@
 									}
 								}
 							case .source:
-								let html = try await webView.evaluateJavaScript("document.documentElement.outerHTML") as? String ?? ""
-								data = Data(html.utf8)
+								return
 						}
 						guard owner.isCurrent(), !Task.isCancelled else { return }
 						try BrowserPageExportPolicy.writeExclusively(data, to: destination)
