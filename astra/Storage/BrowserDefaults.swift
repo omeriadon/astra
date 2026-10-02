@@ -20,6 +20,7 @@ extension Defaults.Keys {
 	static let historyRetentionDays = Key<Int>("historyRetentionDays", default: 0)
 	static let searchSuggestionsEnabled = Key<Bool>("searchSuggestionsEnabled", default: true)
 	static let browserSearchConfiguration = Key<String>("browserSearchConfiguration", default: BrowserSearchConfiguration.default.encoded)
+	static let startPagePreferences = Key<String>("startPagePreferences", default: BrowserStartPagePreferences.default.encoded)
 	static let miniAstraEnabled = Key<Bool>("miniAstraEnabled", default: true)
 	static let miniAstraWindowAnimation = Key<Bool>("miniAstraWindowAnimation", default: true)
 	static let miniAstraShortcutEnabled = Key<Bool>("miniAstraShortcutEnabled", default: false)
@@ -50,6 +51,7 @@ extension Defaults.Keys {
 		"historyRetentionDays",
 		"searchSuggestionsEnabled",
 		"browserSearchConfiguration",
+		"startPagePreferences",
 		"downloadsAskWhereToSave",
 		"startupBehavior",
 		"homepageURL",

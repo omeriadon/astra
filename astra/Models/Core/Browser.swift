@@ -805,9 +805,15 @@ final class Browser {
 	}
 
 	func reopenLastClosedTab() {
-		guard !closedHistoryTabs.isEmpty else { return }
-		let saved = closedHistoryTabs.removeFirst()
-		let tab = openHistoryTab(saved, inBackground: false)
+		guard let saved = closedHistoryTabs.first else { return }
+		reopenClosedTab(saved.id, inBackground: false)
+	}
+
+	@discardableResult
+	func reopenClosedTab(_ id: UUID, inBackground: Bool) -> BrowserTab? {
+		guard let index = closedHistoryTabs.firstIndex(where: { $0.id == id }) else { return nil }
+		let saved = closedHistoryTabs.remove(at: index)
+		let tab = openHistoryTab(saved, inBackground: inBackground)
 		if let spaceID = saved.closedSpaceID,
 		   let normalIndex = saved.closedNormalIndex,
 		   let space = workspace.spaces.first(where: { $0.id == spaceID })
@@ -816,9 +822,12 @@ final class Browser {
 				!space.pinnedTabIDs.contains($0) && $0 != tab.id
 			}
 			let targetID = normalIDs.dropFirst(max(0, normalIndex)).first
-			moveTab(tab.id, to: .normal, in: spaceID, before: targetID)
+			if !isPrivate {
+				moveTab(tab.id, to: .normal, in: spaceID, before: targetID)
+			}
 		}
 		schedulePersistence()
+		return tab
 	}
 
 	@discardableResult
