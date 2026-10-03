@@ -2,9 +2,29 @@ import Foundation
 
 @MainActor
 final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
+	private static let blockedReplayHeaders: Set<String> = [
+		"accept-encoding",
+		"authorization",
+		"connection",
+		"content-length",
+		"cookie",
+		"cookie2",
+		"host",
+		"if-range",
+		"keep-alive",
+		"proxy-authorization",
+		"proxy-connection",
+		"range",
+		"te",
+		"trailer",
+		"transfer-encoding",
+		"upgrade",
+	]
+
 	private let progressThrottle = NSLock()
 	private nonisolated(unsafe) var lastProgressHop: [String: Date] = [:]
 	private var startTokens: [UUID: UUID] = [:]
+	private var replayHeaders: [UUID: [String: String]] = [:]
 	private lazy var session: URLSession = {
 		let identifier = (Bundle.main.bundleIdentifier ?? "browser") + ".segmentedDownloads"
 		let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
@@ -13,11 +33,14 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		return URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
 	}()
 
-	func start(_ item: BrowserDownload) {
+	func start(_ item: BrowserDownload, originalRequest: URLRequest? = nil) {
 		guard let url = item.requestURL,
 		      let segments = item.segments,
 		      let validator = item.rangeValidator
 		else { return }
+		if let originalRequest {
+			replayHeaders[item.id] = Self.safeReplayHeaders(originalRequest)
+		}
 		let token = UUID()
 		startTokens[item.id] = token
 		session.getAllTasks { [weak self] tasks in
@@ -27,6 +50,9 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 					let description = "\(item.id.uuidString):\(index)"
 					guard !tasks.contains(where: { $0.taskDescription == description }) else { continue }
 					var request = URLRequest(url: url)
+					for (field, value) in replayHeaders[item.id] ?? [:] {
+						request.setValue(value, forHTTPHeaderField: field)
+					}
 					request.cachePolicy = .reloadIgnoringLocalCacheData
 					request.setValue("bytes=\(segment.start)-\(segment.end)", forHTTPHeaderField: "Range")
 					request.setValue(validator, forHTTPHeaderField: "If-Range")
@@ -37,6 +63,15 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 				}
 			}
 		}
+	}
+
+	func fallbackRequest(for item: BrowserDownload) -> URLRequest? {
+		guard let url = item.requestURL else { return nil }
+		var request = URLRequest(url: url)
+		for (field, value) in replayHeaders[item.id] ?? [:] {
+			request.setValue(value, forHTTPHeaderField: field)
+		}
+		return request
 	}
 
 	func cancel(_ itemID: UUID) {
@@ -170,6 +205,13 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 			.appendingPathComponent(Bundle.main.bundleIdentifier ?? "browser", isDirectory: true)
 			.appendingPathComponent("download-parts", isDirectory: true)
 		return directory.appendingPathComponent("\(itemID.uuidString)-\(index).part")
+	}
+
+	private static func safeReplayHeaders(_ request: URLRequest) -> [String: String] {
+		guard !BrowserDownload.requestMayCarryCredentials(request) else { return [:] }
+		return (request.allHTTPHeaderFields ?? [:]).filter { field, _ in
+			!blockedReplayHeaders.contains(field.lowercased())
+		}
 	}
 
 	func removeParts(_ itemID: UUID, count: Int) {
