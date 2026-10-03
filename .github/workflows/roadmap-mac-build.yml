@@ -34,7 +34,7 @@ jobs:
       - name: Build Astra for macOS
         shell: bash
         run: |
-          set -euo pipefail
+          set -o pipefail
           xcodebuild build \
             -project astra.xcodeproj \
             -scheme astra \
@@ -42,4 +42,14 @@ jobs:
             -destination 'platform=macOS' \
             -derivedDataPath "$RUNNER_TEMP/AstraDerivedData" \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_REQUIRED=NO \
+            2>&1 | tee "$RUNNER_TEMP/astra-mac-build.log"
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astra-mac-build-log-${{ github.run_number }}
+          path: ${{ runner.temp }}/astra-mac-build.log
+          if-no-files-found: error
+          retention-days: 7
