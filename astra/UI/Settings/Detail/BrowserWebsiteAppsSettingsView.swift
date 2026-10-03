@@ -1,6 +1,7 @@
 #if os(macOS)
 	import AppKit
 	import SwiftUI
+	import UniformTypeIdentifiers
 
 	struct BrowserWebsiteAppsSettingsView: View {
 		@State private var registry = BrowserWebsiteAppRegistry.shared
