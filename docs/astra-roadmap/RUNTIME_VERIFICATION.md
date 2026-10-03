@@ -20,6 +20,8 @@ This checklist contains behavior that source review and CI compilation do not pr
 ## Navigation, failures and internal pages
 
 - [ ] Exercise address-bar navigation, redirects, back, forward, reload and stop on several real sites.
+- [ ] Exercise address suggestions, arrow/Return/Escape/Tab selection, explicit clipboard paste, GitHub repository shorthand and guarded history-suggestion deletion.
+- [ ] Discover a published OpenSearch engine, confirm or cancel the setting change, and verify tab/navigation/query changes invalidate stale discovery results.
 - [ ] Exercise offline failure, network restoration and retry; confirm non-idempotent requests are never replayed automatically.
 - [ ] Exercise web-content-process termination/recovery and repeated failure handling.
 - [ ] Open every supported `astra://` internal destination from user-facing entry points and confirm malformed/unknown internal URLs fail safely.
@@ -50,6 +52,8 @@ This checklist contains behavior that source review and CI compilation do not pr
 - [ ] Add/edit/delete bookmarks and reading-list/favourite state; relaunch and verify persistence.
 - [ ] Exercise website-data/preferences controls and confirm clearing/deleting acts on the intended scope only.
 - [ ] Exercise content-blocking settings and per-site behavior.
+- [ ] Change per-origin zoom, content mode and custom user agent; verify propagation, relaunch, synchronized zoom and device-only preferences.
+- [ ] Customize start-page module visibility/order and verify private-window content remains isolated.
 - [ ] Change representative portable and device-only settings and relaunch.
 - [ ] Use **Reset Browser Settings** and confirm browser preferences return to defaults while history, website data, bookmarks, downloads, extensions, credentials and account data remain intact.
 
@@ -60,6 +64,7 @@ This checklist contains behavior that source review and CI compilation do not pr
 - [ ] Open extension UI/popup/window surfaces that are supported.
 - [ ] Trigger or simulate an extension load failure and confirm Astra fails safely without exposing private browsing data.
 - [ ] Confirm extension/content-blocker state survives relaunch as designed.
+- [ ] Import, update, disable and remove a native JSON rule list; verify invalid updates preserve the last good list, redirects respect site exceptions, and private rules remain session-owned.
 
 ## Sync
 
@@ -93,6 +98,7 @@ This checklist contains behavior that source review and CI compilation do not pr
 
 - [ ] Create a website app, launch it independently and confirm its navigation scope.
 - [ ] Test duplicate creation/update/removal behavior.
+- [ ] Verify generated website apps retain helper entitlements after install, rename and icon updates, and that failed installation leaves no registry entry or partial bundle.
 - [ ] Confirm out-of-scope navigation returns to the browser or otherwise follows the documented policy.
 - [ ] Exercise Mini Astra/global shortcut behavior if enabled.
 - [ ] Confirm default-browser registration and opening web links from another macOS app.

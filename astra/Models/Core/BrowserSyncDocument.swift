@@ -241,7 +241,12 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 					&& item.addedAt.isSaneSyncTimestamp
 			}
 			&& history.allSatisfy { isSafeSyncURL($0.url) && $0.modifiedAt.isSaneSyncTimestamp && $0.visitedAt.isSaneSyncTimestamp }
-			&& settings.values.allSatisfy { $0.modifiedAt.isSaneSyncTimestamp && $0.hasValidPropertyListValue }
+		&& settings.values.allSatisfy { $0.modifiedAt.isSaneSyncTimestamp && $0.hasValidPropertyListValue }
+			&& (settings[BrowserSiteZoomDocument.defaultsKey].map {
+				$0.value == nil
+					|| BrowserSiteZoomDocument.mergeSyncValues($0.value, $0.value) != nil
+					|| BrowserSiteZoomDocument.isPreservableSyncValue($0.value)
+			} ?? true)
 			&& browser.selectedTabModifiedAt.isSaneSyncTimestamp
 			&& browser.historyClearedAt.isSaneSyncTimestamp
 			&& (Array(browser.closedTabsAt.values) + Array(browser.deletedBookmarksAt.values) + Array(browser.deletedReadingListAt.values) + Array(browser.deletedSpacesAt.values) + Array(browser.deletedVisitsAt.values)).allSatisfy(\.isSaneSyncTimestamp)
@@ -366,6 +371,17 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 			guard let incoming = other.settings[key] else { continue }
 			guard let current = result.settings[key] else {
 				result.settings[key] = incoming
+				continue
+			}
+			if key == BrowserSiteZoomDocument.defaultsKey {
+				if let value = BrowserSiteZoomDocument.mergeSyncValues(current.value, incoming.value) {
+					result.settings[key] = SyncedSetting(
+						value: value,
+						modifiedAt: max(current.modifiedAt, incoming.modifiedAt)
+					)
+				} else {
+					result.settings[key] = current
+				}
 				continue
 			}
 			result.settings[key] = preferred(incoming, incoming.modifiedAt, current, current.modifiedAt)

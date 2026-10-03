@@ -62,13 +62,32 @@ final class Browser {
 	var newTabSearchText = "" {
 		didSet {
 			guard oldValue != newTabSearchText else { return }
+			newTabSearchGeneration &+= 1
 			newTabSearchSelection = nil
 			newTabGoogleSuggestions = []
+			pendingSearchEngineDiscovery = nil
+			searchEngineDiscoveryTask?.cancel()
 		}
 	}
 
 	var newTabSearchSelection: String?
+	var newTabSearchGeneration = 0
+	var addressSearchText = "" {
+		didSet {
+			if oldValue != addressSearchText {
+				addressSearchGeneration &+= 1
+				addressSuggestionsRequest = nil
+				pendingSearchEngineDiscovery = nil
+				searchEngineDiscoveryTask?.cancel()
+			}
+		}
+	}
+	var addressSearchGeneration = 0
+	var addressFieldIsFocused = false
 	var newTabGoogleSuggestions: [String] = []
+	var addressSuggestionsRequest: BrowserSearchSuggestionsRequest?
+	var pendingSearchEngineDiscovery: BrowserSearchEngineDiscovery?
+	@ObservationIgnored var searchEngineDiscoveryTask: Task<Void, Never>?
 	var sidebarShown: Bool {
 		get {
 			access(keyPath: \.sidebarShown)
@@ -786,9 +805,15 @@ final class Browser {
 	}
 
 	func reopenLastClosedTab() {
-		guard !closedHistoryTabs.isEmpty else { return }
-		let saved = closedHistoryTabs.removeFirst()
-		let tab = openHistoryTab(saved, inBackground: false)
+		guard let saved = closedHistoryTabs.first else { return }
+		reopenClosedTab(saved.id, inBackground: false)
+	}
+
+	@discardableResult
+	func reopenClosedTab(_ id: UUID, inBackground: Bool) -> BrowserTab? {
+		guard let index = closedHistoryTabs.firstIndex(where: { $0.id == id }) else { return nil }
+		let saved = closedHistoryTabs.remove(at: index)
+		let tab = openHistoryTab(saved, inBackground: inBackground)
 		if let spaceID = saved.closedSpaceID,
 		   let normalIndex = saved.closedNormalIndex,
 		   let space = workspace.spaces.first(where: { $0.id == spaceID })
@@ -797,9 +822,12 @@ final class Browser {
 				!space.pinnedTabIDs.contains($0) && $0 != tab.id
 			}
 			let targetID = normalIDs.dropFirst(max(0, normalIndex)).first
-			moveTab(tab.id, to: .normal, in: spaceID, before: targetID)
+			if !isPrivate {
+				moveTab(tab.id, to: .normal, in: spaceID, before: targetID)
+			}
 		}
 		schedulePersistence()
+		return tab
 	}
 
 	@discardableResult
@@ -831,6 +859,7 @@ final class Browser {
 
 	func selectTab(_ id: UUID) {
 		guard let tab = tabs.first(where: { $0.id == id }) else { return }
+		searchEngineDiscoveryTask?.cancel()
 		tab.clearPictureInPictureReturnController()
 		if !workspace.favouriteTabIDs.contains(id),
 		   let ownerIndex = workspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })

@@ -101,7 +101,7 @@ private struct KeepAliveWebStack: View {
 			}
 
 			if let failure = selectedTab?.controller?.navigationFailure, selectedTab?.internalPage == nil {
-				BrowserNavigationErrorView(kind: failure.kind) {
+				BrowserNavigationErrorView(kind: failure.kind, failedURL: failure.url) {
 					selectedTab?.controller?.reload()
 				}
 			}

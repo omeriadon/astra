@@ -33,7 +33,7 @@
 		}
 
 		func start() {
-			guard eventMonitor == nil else { return }
+			guard !browser.isMini, eventMonitor == nil else { return }
 			eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
 				let isKeyDown = event.type == .keyDown
 				let isEscape = event.keyCode == 53

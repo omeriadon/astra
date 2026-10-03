@@ -1,7 +1,11 @@
 # 21-content-blocking
 
-Priority: P2. Status: planned. Prerequisites: 18, 20.
-Branch: `astra/roadmap/21-content-blocking`. Worktree: `../astra-worktrees/21-content-blocking`.
+Priority: P2. Status: active. Prerequisites: 18, 20.
+Branch: `astra/roadmap/21-content-blocking`. Worktree: `/Users/omeriadon/Documents/Xcode_App_Library/astra-worktrees/21-content-blocking`. Baseline: `6d0385273f0ff12076d15a39736f9efbbfe6e082`.
+
+Selected scope: Keep bundled uBlock Origin Lite as the default blocker. Add a separate opt-in native WebKit rule-list path for JSON files the user selects. Do not select a default feed, fetch remote sources, or bundle a third-party list. Expose only actual native-list state; do not report request counts. Normal rules and site exceptions remain device-local. Private rules are off by default, session-only as source/preferences, compiled into a UUID-owned temporary directory, and that directory is deleted when the private session ends. A crash-cleanup or disk-free guarantee is not established.
+
+WebKit API research: `WKContentRuleListStore` persists compiled rules to its configured filesystem directory. The default store supports last-good recovery in normal scope; a custom temporary store supports isolated private compilation with close-time directory cleanup. Rule lists attach to individual `WKUserContentController` instances and can be removed from a controller. Safari content-blocker rules match resource URLs, not a guaranteed top-level site exception; the implementation must apply per-site exceptions by disabling the app-owned list only in the affected WebView before main-frame navigation, then restore it on other origins. Remote maintained lists remain gated on provider choice, update/privacy behavior, and license review.
 
 Read [the roadmap](../README.md) and [dispatch procedure](../dispatch.md). Implement only this packet's selected scope, using its own worktree and reserved files. No implementation starts from this document alone.
 

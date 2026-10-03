@@ -1,6 +1,6 @@
 # 18-site-data-preferences
 
-Priority: P1. Status: planned. Prerequisites: 03, 04, 05, 09, 16.
+Priority: P1. Status: source complete, independently reviewed and Mac build verified; runtime gates remain open. Prerequisites: 03, 04, 05, 09, 16.
 Branch: `astra/roadmap/18-site-data-preferences`. Worktree: `../astra-worktrees/18-site-data-preferences`.
 
 Read [the roadmap](../README.md) and [dispatch procedure](../dispatch.md). Implement only this packet's selected scope, using its own worktree and reserved files. No implementation starts from this document alone.
@@ -46,6 +46,8 @@ The Browser project permits source inspection and Xcode MCP diagnostics/builds w
 ## Gates and exclusions
 
 Exact website-data granularity, privacy overrides and UA modes depend on APIs. Tracking stripping/fingerprinting/referrer changes are optional and require demonstrated compatibility.
+
+Selected implementation: time-range and grouped-record WebKit storage removal, wholesale owned favicon-cache clearing, synchronized per-origin zoom, device-only per-origin desktop/mobile and custom UA choices, and the existing per-origin popup permission flow. Per-origin autoplay remains unavailable through the current web-view configuration without replacing a live page. Reader/site appearance controls are not exposed by the current site UI. Content-blocking exceptions remain gated on packet21's blocker owner. Tracking-parameter stripping remains optional and unimplemented.
 
 Preserve unrelated architecture, formatting and user changes. No pushes, merges, repository-specific agent instructions or speculative dependencies.
 

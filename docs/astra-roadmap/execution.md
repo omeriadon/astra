@@ -19,26 +19,26 @@ The snapshot includes the existing uncommitted implementation and deletions. Its
 | [04-private-browsing](tasks/04-private-browsing.md) | build verified; primary reviewed | 49d35738; source close-out `1d89883d105266a1e30e3fa9ca5f50f35ea6ea54`; private session notifications isolated |
 | [05-permissions](tasks/05-permissions.md) | primary reviewed; Mac build verified; runtime/API gates open | `75905077`, handoff `f1315876`; scoped grants, prompt ownership, capture revocation, top-site multiple downloads; final Mac build5.913s |
 | [06-failures-offline](tasks/06-failures-offline.md) | build verified; primary reviewed | 42a1274; invalidation/retry guards and repeated-crash recovery; combined build passes |
-| [07-tabs-spaces](tasks/07-tabs-spaces.md) | source reviewed; Xcode app build gate open | source `03da6a0`, review handoff `de86f6c`; production workspace helper, source parsing and diff check pass; Xcode MCP transport closed before diagnostics/build |
-| [08-windows-os-restoration](tasks/08-windows-os-restoration.md) | queued | — |
-| [09-history](tasks/09-history.md) | queued | — |
-| [10-bookmarks-reading-list](tasks/10-bookmarks-reading-list.md) | queued | — |
+| [07-tabs-spaces](tasks/07-tabs-spaces.md) | source-reviewed; Mac compilation verified in cumulative09 | `b9df976` source; unchanged07 compiled in09 Mac build12.414s; runtime/iOS open |
+| [08-windows-os-restoration](tasks/08-windows-os-restoration.md) | primary reviewed; Mac build verified | `4372ae2`, report `2486cc1`; Mac build12.916s; native display/window lifecycle/iOS open |
+| [09-history](tasks/09-history.md) | primary source-reviewed; Mac build verified | `b9ff0df`; missing shared-filter return fixed, Mac build12.414s, policy check passes; runtime/iOS open |
+| [10-bookmarks-reading-list](tasks/10-bookmarks-reading-list.md) | primary reviewed; Mac build verified | finalc59f6eb, Mac8.037s; native archive/sandbox/iOS gates open |
 | [11-favicons](tasks/11-favicons.md) | build verified; primary reviewed | 948f8fa; bounded fetch/decoding/cache and hydration guards |
-| [12-downloads](tasks/12-downloads.md) | implementation in progress; review/build pending | independent worktree from `d6be8c0`; not yet included in this cumulative branch |
-| [13-uploads-auth-challenges](tasks/13-uploads-auth-challenges.md) | queued | — |
-| [14-address-search-config](tasks/14-address-search-config.md) | source reviewed; Mac build and final parser helper checks pass | integrated into cumulative24a through `a9ba5cb`; original branch remains intact |
-| [15-address-intelligence](tasks/15-address-intelligence.md) | queued | — |
-| [16-chrome-find-zoom](tasks/16-chrome-find-zoom.md) | queued | — |
-| [17-keyboard-menus](tasks/17-keyboard-menus.md) | queued | — |
-| [18-site-data-preferences](tasks/18-site-data-preferences.md) | queued | — |
-| [19-start-page](tasks/19-start-page.md) | queued | — |
-| [20-security-reputation](tasks/20-security-reputation.md) | queued | — |
+| [12-downloads](tasks/12-downloads.md) | primary source-reviewed; Mac build verified | corrections `1766a42`, review `647c3ea`; Mac build10.097s; sandbox/native transfer/iOS gates open |
+| [13-uploads-auth-challenges](tasks/13-uploads-auth-challenges.md) | primary reviewed; Mac build verified | `96c969d`, `3035af0`, primary `6f3132c`; Mac build8.535s; native/sandbox/client-certificate/iOS gates open |
+| [14-address-search-config](tasks/14-address-search-config.md) | reviewed; combined into24a and later cumulative branches | source `f63f5b5`, review `9fa4963`; latest cumulative Mac build23.51s; suggestion/provider runtime open |
+| [15-address-intelligence](tasks/15-address-intelligence.md) | primary reviewed; Mac build verified; native runtime gates open | `91501ab`, `fb98be7`, handoff `9a27de4`, primary `39e6530`; exact15 Mac build12.868s; cumulative15 includes reviewed10/16/17 |
+| [16-chrome-find-zoom](tasks/16-chrome-find-zoom.md) | primary reviewed; Mac build verified | d9aeeb5, Mac19.443s; combined once in10; native find/focus/iOS gates open |
+| [17-keyboard-menus](tasks/17-keyboard-menus.md) | primary reviewed; Mac build verified | 32f26ac, Mac13.075s; combined once in15; keyboard/public inspector/iOS gates open |
+| [18-site-data-preferences](tasks/18-site-data-preferences.md) | independently reviewed; Mac build verified; runtime gates open | baseline `abffc0e`, model checkpoints `69288e6`/`aa53150`, implementation `6707966fe1ca406410c3783b288abee56490df99`; production sync-model check passes; exact `astra` / `My Mac` build7.528s, zero errors |
+| [19-start-page](tasks/19-start-page.md) | primary and independent readonly reviewed; Mac build verified; runtime gates open | source checkpoint `abffc0e`, docs checkpoint `cd98a0c`; focused production preference/history check passes; exact19 `astra` / `My Mac` build23.747s |
+| [20-security-reputation](tasks/20-security-reputation.md) | independent review passed; Mac build verified; runtime/provider gates open | source checkpoint `97d2259`, handoff `final documentation checkpoint`; production security/capture check passes; Xcode MCP `astra` / `My Mac` build passes, errors[] |
 | [21-content-blocking](tasks/21-content-blocking.md) | queued | — |
 | [22-extensions](tasks/22-extensions.md) | queued | — |
-| [23-credentials-browser-auth](tasks/23-credentials-browser-auth.md) | queued | — |
-| [24-media](tasks/24-media.md) | build verified; primary reviewed | 7255d12; public native playback plus scoped player controls; browser PiP belongs to24a and remains runtime-gated |
-| [24a-picture-in-picture](tasks/24a-picture-in-picture.md) | source reviewed; Mac build verified | `0322585`; reviewed14 combined once through `a9ba5cb`; handoff `a5dbcc4`; runtime/provider/iOS gates remain |
-| [25-page-tools-context-drag](tasks/25-page-tools-context-drag.md) | queued | — |
+| [23-credentials-browser-auth](tasks/23-credentials-browser-auth.md) | primary reviewed; Mac build verified; signed/provider gates open | source `202d7ac`/`605ef85`/`c5dc24f`, reports `5cb4290`/`a912e6c`, primary `ea29d26`; Mac18.159s |
+| [24-media](tasks/24-media.md) | build verified; primary reviewed | 7255d12; public native playback plus scoped player controls; PiP still pending24a |
+| [24a-picture-in-picture](tasks/24a-picture-in-picture.md) | reviewed per later handoff; Mac build recorded; runtime/provider/iOS gates open | `d6be8c0` per resume audit, implementation `0322585`; recorded Mac build8.871s, not rerun here |
+| [25-page-tools-context-drag](tasks/25-page-tools-context-drag.md) | primary reviewed; Mac build verified; runtime/API gates open | dedicated25 from reviewed23 `ea29d26`; source `4b9cc5b`/`96cfe9f`, handoff `f35abd3`; exact Mac build11.248s, zero errors; iOS build stopped by existing Sparkle failure before task diagnostics |
 | [26-reader-translation-source](tasks/26-reader-translation-source.md) | queued | — |
 | [27-internal-urls](tasks/27-internal-urls.md) | queued | — |
 | [28-settings](tasks/28-settings.md) | queued | — |

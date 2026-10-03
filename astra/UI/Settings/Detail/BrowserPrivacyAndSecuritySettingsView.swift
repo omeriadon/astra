@@ -7,6 +7,9 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 	@State private var records: [WKWebsiteDataRecord] = []
 	@State private var isClearing = false
 	@State private var confirmsClear = false
+	@State private var confirmsSitePreferenceReset = false
+	@State private var websiteDataRange: BrowserWebsiteDataRange = .allTime
+	@State private var recordsRefreshID = UUID()
 	@Default(.historyRetentionDays) private var historyRetentionDays
 	@Default(.tryHTTPSFirst) private var tryHTTPSFirst
 	@Default(.globalPrivacyControl) private var globalPrivacyControl
@@ -28,6 +31,7 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 						.foregroundStyle(.secondary)
 				}
 			#endif
+			BrowserContentBlockingSettingsSection(session: session)
 			Section("Media Playback") {
 				Text("Audio and video require a click to play on every site.")
 					.foregroundStyle(.secondary)
@@ -42,26 +46,51 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 				}
 				.accessibilityIdentifier("history-retention")
 			}
+			Section("Site Preferences") {
+				Text("Sites without an override keep the tab's zoom, which starts from Default Page Zoom. Site zoom changes apply to matching open tabs. Desktop, mobile, and custom user-agent changes apply on the next navigation.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+				if session.sitePreferences.isZoomDataReadOnly || session.sitePreferences.isLocalDataReadOnly {
+					Text("Astra preserved saved preferences it cannot read and disabled changes to those preference types.")
+						.foregroundStyle(.secondary)
+				}
+				Button("Reset All Site Preferences", systemImage: "arrow.counterclockwise", role: .destructive) {
+					confirmsSitePreferenceReset = true
+				}
+				.disabled(!session.sitePreferences.hasPreferences || (session.sitePreferences.isZoomDataReadOnly && session.sitePreferences.isLocalDataReadOnly))
+				.accessibilityIdentifier("reset-all-site-preferences")
+			}
+			.id("Site Preferences")
 			Section("Website Data") {
 				Text(session.isPrivate
 					? "This window uses temporary website storage. Downloaded files are kept."
 					: "Spaces share cookies, logins, and website storage. WebKit manages HTTP caching automatically.")
 					.foregroundStyle(.secondary)
-				Button("Clear All Website Data", systemImage: "trash", role: .destructive) {
+				Picker("Time Range", selection: $websiteDataRange) {
+					ForEach(BrowserWebsiteDataRange.allCases) { range in
+						Text(range.title).tag(range)
+					}
+				}
+				.accessibilityIdentifier("website-data-range")
+				Button("Clear Website Data", systemImage: "trash", role: .destructive) {
 					confirmsClear = true
 				}
 				.disabled(isClearing)
-				.accessibilityIdentifier("clear-all-website-data")
-				.id("Clear All Website Data")
+				.accessibilityIdentifier("clear-website-data")
+				.id("Clear Website Data")
+				Text("WebKit selects website records by when a website last changed the record. It cannot promise exact per-cookie or per-origin time deletion. Each listed site is WebKit's grouped domain label, not an exact origin. Clearing website data also clears all saved Astra favicons. History and website permission choices remain separate.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
 				Button("Clear Cache", systemImage: "arrow.clockwise") {
 					Task {
+						guard !isClearing else { return }
 						isClearing = true
+						defer { isClearing = false }
 						await session.dataStore.removeData(
 							ofTypes: [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache, WKWebsiteDataTypeFetchCache],
 							modifiedSince: .distantPast
 						)
 						await refreshRecords()
-						isClearing = false
 					}
 				}
 				.disabled(isClearing)
@@ -77,10 +106,11 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 						Spacer()
 						Button("Remove Website Data", systemImage: "trash", role: .destructive) {
 							Task {
+								guard !isClearing else { return }
 								isClearing = true
-								await session.dataStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: [record])
+								defer { isClearing = false }
+								await session.clearWebsiteData(for: record)
 								await refreshRecords()
-								isClearing = false
 							}
 						}
 						.labelStyle(.iconOnly)
@@ -133,24 +163,50 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 		.scrollContentBackground(.hidden)
 		.listStyle(.sidebar)
 		.task { await refreshRecords() }
-		.confirmationDialog("Clear all website data?", isPresented: $confirmsClear) {
-			Button("Clear Website Data", systemImage: "trash", role: .destructive) {
-				Task {
-					isClearing = true
-					await session.clearWebsiteData()
-					await refreshRecords()
-					isClearing = false
-				}
+		.confirmationDialog("Clear website data for the selected range?", isPresented: $confirmsClear) {
+			Button("Clear Website Data", systemImage: "trash", role: .confirm) {
+				Task { await clearWebsiteData() }
 			}
+			.buttonStyle(.glassProminent)
 			Button(role: .cancel) {}
 		} message: {
-			Text("This removes cookies, cached content, and website storage, and signs you out of websites.")
+			Text(verbatim: clearWebsiteDataMessage)
+		}
+		.confirmationDialog("Reset all site preferences?", isPresented: $confirmsSitePreferenceReset) {
+			Button("Reset Site Preferences", systemImage: "arrow.counterclockwise", role: .confirm) {
+				session.sitePreferences.resetAll()
+			}
+			.buttonStyle(.glassProminent)
+			Button(role: .cancel) {}
+		} message: {
+			Text("Per-site zoom, desktop/mobile choices, and custom user agents will be removed. Matching open tabs return to Default Page Zoom. Website data, history, and permissions remain separate.")
 		}
 	}
 
+	private var clearWebsiteDataMessage: String {
+		let rangeDescription = switch websiteDataRange {
+			case .lastHour: "records changed during the last hour"
+			case .today: "records changed since the start of today"
+			case .allTime: "all website data records"
+		}
+		return "This removes \(rangeDescription), clears all saved Astra favicons, and signs you out where matching records are removed. History and website permission choices remain separate."
+	}
+
+	private func clearWebsiteData() async {
+		guard !isClearing else { return }
+		isClearing = true
+		defer { isClearing = false }
+		await session.clearWebsiteData(since: websiteDataRange.modifiedSince())
+		await refreshRecords()
+	}
+
 	private func refreshRecords() async {
-		records = await session.dataStore.dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
+		let refreshID = UUID()
+		recordsRefreshID = refreshID
+		let updatedRecords = await session.dataStore.dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
 			.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+		guard recordsRefreshID == refreshID else { return }
+		records = updatedRecords
 	}
 
 }
