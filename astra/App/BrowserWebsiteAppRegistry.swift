@@ -109,22 +109,40 @@
 			guard let templateURL = Bundle.main.url(forResource: "AstraWebsiteAppTemplate", withExtension: "app") else {
 				throw RegistryError.templateMissing
 			}
+			guard fileManager.fileExists(atPath: templateURL.appendingPathComponent("Contents/MacOS").path) else {
+				throw RegistryError.templateInvalid
+			}
 			let id = UUID()
 			let appURL = rootURL.appendingPathComponent(BrowserWebsiteAppPolicy.bundleFilename(name: name, id: id), isDirectory: true)
 			try fileManager.copyItem(at: templateURL, to: appURL)
-			try configureBundle(at: appURL, id: id, name: name, launchURL: url, icon: icon)
-			let now = Date()
-			let installation = BrowserWebsiteAppInstallation(id: id, name: name, launchURL: url, bundlePath: appURL.path, createdAt: now, modifiedAt: now)
-			installations.append(installation)
-			try save()
-			return installation
+			do {
+				try configureBundle(at: appURL, id: id, name: name, launchURL: url, icon: icon)
+				let now = Date()
+				let installation = BrowserWebsiteAppInstallation(
+					id: id,
+					name: name,
+					launchURL: url,
+					bundlePath: appURL.path,
+					createdAt: now,
+					modifiedAt: now
+				)
+				installations.append(installation)
+				try save()
+				return installation
+			} catch {
+				installations.removeAll { $0.id == id }
+				try? fileManager.removeItem(at: appURL)
+				throw error
+			}
 		}
 
 		func uninstall(_ id: UUID) throws {
 			guard let index = installations.firstIndex(where: { $0.id == id }) else { return }
 			let installation = installations[index]
 			guard isOwnedInstallation(installation.bundleURL) else { throw RegistryError.installationOutsideOwnedDirectory }
-			try fileManager.removeItem(at: installation.bundleURL)
+			if fileManager.fileExists(atPath: installation.bundlePath) {
+				_ = try fileManager.trashItem(at: installation.bundleURL, resultingItemURL: nil)
+			}
 			installations.remove(at: index)
 			try save()
 		}
@@ -136,9 +154,6 @@
 			guard isOwnedInstallation(old.bundleURL) else { throw RegistryError.installationOutsideOwnedDirectory }
 			let newURL = rootURL.appendingPathComponent(BrowserWebsiteAppPolicy.bundleFilename(name: name, id: id), isDirectory: true)
 			if old.bundleURL != newURL {
-				if fileManager.fileExists(atPath: newURL.path) {
-					try fileManager.removeItem(at: newURL)
-				}
 				try fileManager.moveItem(at: old.bundleURL, to: newURL)
 			}
 			try configureBundle(at: newURL, id: id, name: name, launchURL: old.launchURL, icon: nil)
@@ -158,8 +173,10 @@
 		}
 
 		func launch(_ id: UUID) throws {
-			guard let installation = installation(for: id) else { return }
-			guard isOwnedInstallation(installation.bundleURL) else { throw RegistryError.installationOutsideOwnedDirectory }
+			guard let installation = installation(for: id),
+			      isOwnedInstallation(installation.bundleURL),
+			      fileManager.fileExists(atPath: installation.bundlePath)
+			else { throw RegistryError.installationOutsideOwnedDirectory }
 			NSWorkspace.shared.openApplication(at: installation.bundleURL, configuration: .init())
 		}
 
@@ -170,31 +187,39 @@
 		}
 
 		func beginKeepInDockFlow(_ id: UUID) throws {
-			guard let installation = installation(for: id) else { return }
-			guard isOwnedInstallation(installation.bundleURL) else { throw RegistryError.installationOutsideOwnedDirectory }
-			NSWorkspace.shared.openApplication(at: installation.bundleURL, configuration: .init())
+			try launch(id)
+			try reveal(id)
 		}
 
 		private func load() {
 			guard let data = try? Data(contentsOf: registryURL),
+			      data.count <= 1_048_576,
 			      let decoded = try? JSONDecoder().decode([BrowserWebsiteAppInstallation].self, from: data)
 			else { return }
-			installations = decoded.filter { isOwnedInstallation($0.bundleURL) }
+			installations = decoded.filter {
+				isOwnedInstallation($0.bundleURL)
+					&& BrowserWebsiteAppPolicy.validatedName($0.name) != nil
+					&& BrowserWebsiteAppPolicy.validatedURL($0.launchURL) != nil
+			}
 		}
 
 		private func save() throws {
 			try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
-			let data = try JSONEncoder().encode(installations)
+			let encoder = JSONEncoder()
+			encoder.outputFormatting = [.sortedKeys]
+			let data = try encoder.encode(installations.sorted { $0.id.uuidString < $1.id.uuidString })
+			guard data.count <= 1_048_576 else { throw CocoaError(.fileWriteOutOfSpace) }
 			try data.write(to: registryURL, options: .atomic)
 		}
 
 		private func isOwnedInstallation(_ url: URL) -> Bool {
 			let rootPath = rootURL.standardizedFileURL.resolvingSymlinksInPath().path
 			let candidatePath = url.standardizedFileURL.resolvingSymlinksInPath().path
-			return candidatePath == rootPath || candidatePath.hasPrefix(rootPath + "/")
+			return candidatePath.hasPrefix(rootPath + "/")
 		}
 
 		private func configureBundle(at appURL: URL, id: UUID, name: String, launchURL: URL, icon: NSImage?) throws {
+			let entitlements = try signingEntitlements(from: appURL)
 			let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
 			let plistURL = contentsURL.appendingPathComponent("Info.plist", isDirectory: false)
 			guard var plist = NSDictionary(contentsOf: plistURL) as? [String: Any] else {
@@ -204,37 +229,77 @@
 			plist["CFBundleName"] = name
 			plist["CFBundleDisplayName"] = name
 			plist["AstraWebsiteAppURL"] = launchURL.absoluteString
+			let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+			try data.write(to: plistURL, options: .atomic)
 			if let icon {
-				let iconURL = contentsURL.appendingPathComponent("Resources", isDirectory: true).appendingPathComponent("AppIcon.icns", isDirectory: false)
-				try writeICNS(icon, to: iconURL)
-				plist["CFBundleIconFile"] = "AppIcon"
+				NSWorkspace.shared.setIcon(icon, forFile: appURL.path)
 			}
-			try (plist as NSDictionary).write(to: plistURL)
-			try signLocally(appURL)
+			try adHocSign(appURL, entitlements: entitlements)
 		}
 
-		private func writeICNS(_ image: NSImage, to url: URL) throws {
-			guard let tiff = image.tiffRepresentation,
-			      let bitmap = NSBitmapImageRep(data: tiff),
-			      let png = bitmap.representation(using: .png, properties: [:])
-			else { throw RegistryError.templateInvalid }
-			try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-			try png.write(to: url.deletingPathExtension().appendingPathExtension("png"), options: .atomic)
-		}
-
-		private func signLocally(_ appURL: URL) throws {
+		private func signingEntitlements(from bundleURL: URL) throws -> Data {
 			let process = Process()
+			let output = Pipe()
+			let error = Pipe()
 			process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-			process.arguments = ["--force", "--deep", "--sign", "-", appURL.path]
-			let errorPipe = Pipe()
-			process.standardError = errorPipe
+			process.arguments = ["-d", "--entitlements", ":-", bundleURL.path]
+			process.standardOutput = output
+			process.standardError = error
+			try process.run()
+			process.waitUntilExit()
+			let stdout = output.fileHandleForReading.readDataToEndOfFile()
+			let stderr = error.fileHandleForReading.readDataToEndOfFile()
+			guard process.terminationStatus == 0,
+			      let plist = entitlementPlist(in: stdout) ?? entitlementPlist(in: stderr),
+			      (try? PropertyListSerialization.propertyList(from: plist, options: [], format: nil)) is [String: Any]
+			else {
+				throw RegistryError.templateInvalid
+			}
+			return plist
+		}
+
+		private func entitlementPlist(in data: Data) -> Data? {
+			guard let text = String(data: data, encoding: .utf8),
+			      let start = text.range(of: "<?xml"),
+			      let end = text.range(of: "</plist>", options: .backwards)
+			else { return nil }
+			return String(text[start.lowerBound ..< end.upperBound]).data(using: .utf8)
+		}
+
+		private func adHocSign(_ bundleURL: URL, entitlements: Data) throws {
+			let entitlementsURL = rootURL.appendingPathComponent("signing-\(UUID().uuidString).plist")
+			try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+			try entitlements.write(to: entitlementsURL, options: [.atomic])
+			defer { try? FileManager.default.removeItem(at: entitlementsURL) }
+
+			let process = Process()
+			let pipe = Pipe()
+			process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+			process.arguments = [
+				"--force", "--sign", "-", "--entitlements", entitlementsURL.path, bundleURL.path,
+			]
+			process.standardError = pipe
 			try process.run()
 			process.waitUntilExit()
 			guard process.terminationStatus == 0 else {
-				let data = errorPipe.fileHandleForReading.readDataToEndOfFile()
-				let message = String(data: data, encoding: .utf8) ?? "codesign failed"
-				throw RegistryError.signingFailed(message.trimmingCharacters(in: .whitespacesAndNewlines))
+				let data = pipe.fileHandleForReading.readDataToEndOfFile()
+				let message = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown codesign failure"
+				throw RegistryError.signingFailed(String(message.prefix(500)))
+			}
+
+			let verify = Process()
+			let verifyPipe = Pipe()
+			verify.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+			verify.arguments = ["--verify", "--strict", bundleURL.path]
+			verify.standardError = verifyPipe
+			try verify.run()
+			verify.waitUntilExit()
+			guard verify.terminationStatus == 0 else {
+				let data = verifyPipe.fileHandleForReading.readDataToEndOfFile()
+				let message = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "codesign verification failed"
+				throw RegistryError.signingFailed(String(message.prefix(500)))
 			}
 		}
+
 	}
 #endif
