@@ -70,6 +70,9 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 
 	func destination(for input: String, isPrivate: Bool = false) -> URL? {
 		let query = input.trimmingCharacters(in: .whitespacesAndNewlines)
+		if let repository = Self.githubRepositoryDestination(for: query) {
+			return repository
+		}
 		if let shortcut = shortcutDestination(for: query) {
 			return shortcut
 		}
@@ -149,6 +152,9 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 	}
 
 	func searchLabel(for input: String, isPrivate: Bool) -> String {
+		if Self.githubRepositoryDestination(for: input) != nil {
+			return "Open GitHub Repository"
+		}
 		if let shortcutURL = shortcutDestination(for: input),
 		   let host = shortcutURL.host
 		{
@@ -200,6 +206,34 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 			return nil
 		}
 		return Self.url(for: String(pieces[1]), template: template)
+	}
+
+	nonisolated static func githubRepositoryDestination(for input: String) -> URL? {
+		let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard !text.contains(where: \.isWhitespace) else { return nil }
+		let pieces = text.split(separator: "/", omittingEmptySubsequences: false)
+		guard pieces.count == 2 else { return nil }
+		let owner = String(pieces[0])
+		let repository = String(pieces[1])
+		guard githubOwnerIsValid(owner), githubRepositoryIsValid(repository) else { return nil }
+		var components = URLComponents()
+		components.scheme = "https"
+		components.host = "github.com"
+		components.path = "/\(owner)/\(repository)"
+		return components.url
+	}
+
+	private nonisolated static func githubOwnerIsValid(_ value: String) -> Bool {
+		guard (1 ... 39).contains(value.count),
+		      value.first?.isLetter == true || value.first?.isNumber == true,
+		      value.last?.isLetter == true || value.last?.isNumber == true
+		else { return false }
+		return value.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" }
+	}
+
+	private nonisolated static func githubRepositoryIsValid(_ value: String) -> Bool {
+		guard (1 ... 100).contains(value.count), value != ".", value != ".." else { return false }
+		return value.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == "." }
 	}
 
 	private static let marker = "ASTRA_SEARCH_QUERY_MARKER"
