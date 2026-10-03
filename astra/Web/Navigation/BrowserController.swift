@@ -57,7 +57,9 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var isEnteringPictureInPicture = false
 	private(set) var pictureInPictureControlUnavailable = false
 	private(set) var committedURL: URL?
-	private(set) var hasOnlySecureContent = false
+	private(set) var committedHasOnlySecureContent: Bool?
+	private(set) var committedCertificateSummary: BrowserServerCertificateSummary?
+	private(set) var committedSecurityNavigationID: Int?
 	var showsFind = false
 	var findText = "" {
 		didSet {
@@ -72,6 +74,7 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var hasUnsavedChanges = false
 	private(set) var cameraCaptureState: WKMediaCaptureState = .none
 	private(set) var microphoneCaptureState: WKMediaCaptureState = .none
+	private(set) var mediaCaptureStateDocumentID: Int?
 	var popupRequested: ((WKWebViewConfiguration, UnitPoint, Bool?) -> WKWebView?)?
 	var newTabRequested: ((URLRequest, Bool) -> Void)?
 	var closeRequested: (() -> Void)?
@@ -91,23 +94,22 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	var connectionDescription: String {
-		guard navigationFailure == nil else { return "Connection Failed" }
-		guard let committedURL else { return "No Page Loaded" }
-		if committedURL.isFileURL {
-			return "Local File"
-		}
-		if committedURL.scheme == "https" {
-			return hasOnlySecureContent ? "Connection Encrypted" : "Mixed Content"
-		}
-		return committedURL.scheme == "http" ? "Not Secure" : "Local Content"
+		securityPresentation.connectionState.title
 	}
 
 	var connectionSymbol: String {
-		guard navigationFailure == nil else { return "exclamationmark.shield" }
-		if committedURL?.scheme == "https", hasOnlySecureContent {
-			return "lock.shield"
-		}
-		return committedURL?.scheme == "http" ? "exclamationmark.triangle" : "info.circle"
+		securityPresentation.connectionState.symbol
+	}
+
+	var securityPresentation: BrowserSecurityPresentation {
+		BrowserSecurityPresentation(
+			committedURL: committedURL,
+			hasOnlySecureContent: committedHasOnlySecureContent,
+			isNavigating: awaitsNavigationCommit,
+			isFailure: navigationFailure != nil,
+			failedURL: navigationFailure?.url,
+			certificate: committedCertificateSummary
+		)
 	}
 
 	var canHibernate: Bool {
@@ -132,12 +134,26 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	private static var cachedSafariUserAgentSuffix: String?
+	@ObservationIgnored
+	private var isApplyingSiteZoom = false
+	private var appliedContentRuleList: WKContentRuleList?
 
-	private static func userAgentOverride(for url: URL?) -> String? {
+	private static func compatibilityUserAgentOverride(for url: URL?) -> String? {
 		guard let url,
 		      url.host == "chromewebstore.google.com"
 		      || (url.host == "chrome.google.com" && url.path.hasPrefix("/webstore")) else { return nil }
+		// Keep this existing exception while the Chrome Web Store expects a Chromium user agent.
+		// Recheck it on each Chrome major and remove it if the store serves WebKit directly.
 		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+	}
+
+	private func userAgentOverride(for url: URL?) -> String? {
+		guard let url,
+		      let origin = BrowserSitePermissions.origin(for: url) else {
+			return nil
+		}
+		return session.sitePreferences.customUserAgent(for: origin)
+			?? Self.compatibilityUserAgentOverride(for: url)
 	}
 
 	/// Resolve once per launch, not once per tab (was NSWorkspace + Bundle plist per makeWebView).
@@ -314,8 +330,22 @@ final class BrowserController: NSObject, Identifiable {
 			}
 			if oldValue != pageZoom {
 				zoomDidChange?()
+				if !isApplyingSiteZoom,
+				   canApplySitePreferencesToCurrentPage,
+				   let origin = committedURL.flatMap(BrowserSitePermissions.origin(for:))
+				{
+					session.sitePreferences.setZoom(pageZoom, for: origin)
+				}
 			}
 		}
+	}
+
+	func applySiteZoom(_ zoom: Double) {
+		let boundedZoom = BrowserZoomPolicy.clamp(zoom)
+		guard pageZoom != boundedZoom else { return }
+		isApplyingSiteZoom = true
+		pageZoom = boundedZoom
+		isApplyingSiteZoom = false
 	}
 
 	private var historyManager: BrowserHistory
@@ -407,14 +437,21 @@ final class BrowserController: NSObject, Identifiable {
 		!isInvalidated && !awaitsNavigationCommit && committedURL != nil
 	}
 
+	var canApplySitePreferencesToCurrentPage: Bool {
+		hasCurrentPageDocument && navigationFailure == nil
+	}
+
 	@ObservationIgnored
 	private var hasDeclaredThemeColor = false
 	@ObservationIgnored
 	private var pendingRequest: URLRequest?
+	private var pendingWebArchive: (data: Data, baseURL: URL)?
 	@ObservationIgnored
 	private var currentNavigation: WKNavigation?
 	@ObservationIgnored
 	private var awaitsNavigationCommit = false
+	@ObservationIgnored
+	private var restoredPageZoomOrigin: String?
 	@ObservationIgnored
 	private var restoredScrollPosition: BrowserScrollPosition?
 	#if os(macOS)
@@ -442,6 +479,9 @@ final class BrowserController: NSObject, Identifiable {
 		let session = session ?? .shared
 		let restoredHistory = BrowserHistory(entries: history, index: historyIndex, initialURL: initialURL)
 		self.session = session
+		restoredPageZoomOrigin = suppressInitialHistoryVisit
+			? initialURL.flatMap(BrowserSitePermissions.origin(for:))
+			: nil
 		self.fileAccessBookmark = fileAccessBookmark
 		historyVisitPolicy = BrowserVisitPolicy(suppressInitialVisit: suppressInitialHistoryVisit)
 		if !session.isPrivate, let initialURL, let restorationState {
@@ -559,6 +599,7 @@ final class BrowserController: NSObject, Identifiable {
 		hasPausedMedia = state == .paused
 		cameraCaptureState = webView.cameraCaptureState
 		microphoneCaptureState = webView.microphoneCaptureState
+		mediaCaptureStateDocumentID = committedSecurityNavigationID
 		await refreshPictureInPictureEligibility(in: webView, documentID: documentID)
 		guard owns(webView), documentID == navigationIdentifier else { return }
 		if state == .playing || state == .none {
@@ -707,7 +748,13 @@ final class BrowserController: NSObject, Identifiable {
 			securityScopedFile = url.startAccessingSecurityScopedResource() ? url : nil
 			fileAccessBookmark = try? url.bookmarkData(options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess], includingResourceValuesForKeys: nil, relativeTo: nil)
 			awaitsNavigationCommit = true
-			currentNavigation = webView.loadFileURL(url, allowingReadAccessTo: url)
+			pendingWebArchive = nil
+			pendingRequest = nil
+			pendingLocalFile = url
+			pendingInteractionState = nil
+			currentNavigation = nil
+			_ = webView
+			loadPendingRequest()
 		}
 	#endif
 
@@ -841,6 +888,7 @@ final class BrowserController: NSObject, Identifiable {
 	func stopForClose() {
 		guard !isInvalidated else { return }
 		isInvalidated = true
+		removeAppliedContentRuleList()
 		promptOwnership = nil
 		if let connectivityObserver {
 			NotificationCenter.default.removeObserver(connectivityObserver)
@@ -855,6 +903,7 @@ final class BrowserController: NSObject, Identifiable {
 		currentRequest = nil
 		failedRequest = nil
 		pendingRequest = nil
+		pendingWebArchive = nil
 		navigationFailure = nil
 		contentProcessTerminations = BrowserContentProcessTerminationTracker()
 		session.permissions.removeTemporaryDecisions(controllerID: id)
@@ -1027,7 +1076,16 @@ final class BrowserController: NSObject, Identifiable {
 
 		observations = [
 			webView.observe(\.hasOnlySecureContent, options: [.initial, .new]) { [weak self] webView, _ in
-				MainActor.assumeIsolated { self?.hasOnlySecureContent = webView.hasOnlySecureContent }
+				MainActor.assumeIsolated { [weak self, weak webView] in
+					guard let self, let webView, owns(webView) else { return }
+					refreshCommittedSecuritySnapshot()
+				}
+			},
+			webView.observe(\.serverTrust, options: [.initial, .new]) { [weak self] webView, _ in
+				MainActor.assumeIsolated { [weak self, weak webView] in
+					guard let self, let webView, owns(webView) else { return }
+					refreshCommittedSecuritySnapshot()
+				}
 			},
 			webView.observe(\.isLoading, options: [.initial, .new]) { [weak self] webView, _ in
 				MainActor.assumeIsolated {
@@ -1086,23 +1144,58 @@ final class BrowserController: NSObject, Identifiable {
 		startMediaObservation()
 		isWebViewReady = true
 		extensionWebViewDidChange?()
-		// Start any deferred navigation immediately; WKWebView loads fine
-		// with a zero frame so we don't wait for first layout.
-		if let state = pendingInteractionState {
-			pendingInteractionState = nil
-			liveHistoryPrefix = []
-			webView.interactionState = state
-			if webView.backForwardList.currentItem != nil {
-				pendingRequest = nil
-				pendingLocalFile = nil
-				updateHistory()
-			} else {
-				loadPendingRequest()
-			}
-		} else {
-			loadPendingRequest()
-		}
+		// Start deferred navigation immediately once startup rule restoration is ready.
+		contentBlockingDidBecomeReady()
 		return webView
+	}
+
+	func contentBlockingDidBecomeReady() {
+		guard session.contentBlocking.isReadyForNavigation,
+		      let webView = createdWebView,
+		      owns(webView) else { return }
+		refreshContentBlocking()
+		loadPendingRequest()
+	}
+
+	func refreshContentBlocking(for requestedURL: URL? = nil) {
+		guard let webView = createdWebView, owns(webView) else { return }
+		let currentURL = requestedURL ?? committedURL ?? webView.url ?? url
+		let origin = currentURL.flatMap(BrowserSitePermissions.origin(for:))
+		refreshContentBlocking(forOrigin: origin)
+	}
+
+	private func refreshContentBlocking(forOrigin origin: String?) {
+		guard let webView = createdWebView, owns(webView) else { return }
+		let nextRuleList = session.contentBlocking.ruleList(for: origin, sitePreferences: session.sitePreferences)
+		guard appliedContentRuleList?.identifier != nextRuleList?.identifier else { return }
+		removeAppliedContentRuleList()
+		if let nextRuleList {
+			webView.configuration.userContentController.add(nextRuleList)
+			appliedContentRuleList = nextRuleList
+		}
+	}
+
+	private func removeAppliedContentRuleList() {
+		guard let appliedContentRuleList else { return }
+		createdWebView?.configuration.userContentController.remove(appliedContentRuleList)
+		self.appliedContentRuleList = nil
+	}
+
+	private func updateContentBlocking(
+		forNavigationDisposition disposition: BrowserContentBlockingRuleSource.NavigationDisposition,
+		isMainFrame: Bool,
+		destinationURL: URL?,
+		in webView: WKWebView
+	) {
+		let currentOrigin = (committedURL ?? webView.url).flatMap(BrowserSitePermissions.origin(for:))
+		let destinationOrigin = destinationURL.flatMap(BrowserSitePermissions.origin(for:))
+		let origin = BrowserContentBlockingRuleSource.originAfterNavigationDecision(
+			isMainFrame: isMainFrame,
+			disposition: disposition,
+			currentOrigin: currentOrigin,
+			destinationOrigin: destinationOrigin
+		)
+		refreshContentBlocking(forOrigin: origin)
 	}
 
 	deinit {
@@ -1154,6 +1247,8 @@ final class BrowserController: NSObject, Identifiable {
 		createdWebView?.closeAllMediaPresentations(completionHandler: nil)
 		currentRequest = nil
 		pendingRequest = nil
+		pendingLocalFile = nil
+		pendingInteractionState = nil
 		failedRequest = nil
 		retriedAfterConnectivityReturn = true
 		navigationFailure = nil
@@ -1164,21 +1259,9 @@ final class BrowserController: NSObject, Identifiable {
 		url = safeURL
 		scrollPosition = .zero
 		restoredScrollPosition = nil
-		let webView = self.webView
-		guard let navigation = webView.load(
-			data,
-			mimeType: "application/x-webarchive",
-			characterEncodingName: "UTF-8",
-			baseURL: safeURL
-		) else {
-			awaitsNavigationCommit = false
-			historyManager.cancelVisit()
-			navigationFailure = BrowserNavigationFailure(kind: .other, url: safeURL)
-			navigationDidChange?()
-			return
-		}
-		currentNavigation = navigation
-		navigationDidChange?()
+		pendingWebArchive = (data, safeURL)
+		_ = webView
+		loadPendingRequest()
 	}
 
 	func navigate(_ request: URLRequest) {
@@ -1246,6 +1329,8 @@ final class BrowserController: NSObject, Identifiable {
 	func stopLoading() {
 		createdWebView?.stopLoading()
 		pendingRequest = nil
+		pendingLocalFile = nil
+		pendingWebArchive = nil
 	}
 
 	func resetZoom() {
@@ -1321,9 +1406,31 @@ final class BrowserController: NSObject, Identifiable {
 		}
 		if reportSameDocumentVisit {
 			committedURL = currentURL
+			committedSecurityNavigationID = navigationIdentifier
+			refreshCommittedSecuritySnapshot()
 			reportSameDocumentVisitIfNeeded(currentURL)
 		}
 		navigationDidChange?()
+	}
+
+	private func refreshCommittedSecuritySnapshot() {
+		guard let webView = createdWebView,
+		      owns(webView),
+		      BrowserSecurityPresentation.canRefreshCommittedSnapshot(
+				committedURL: committedURL,
+				webViewURL: webView.url,
+				committedDocumentID: committedSecurityNavigationID,
+				currentDocumentID: navigationIdentifier,
+				isNavigating: awaitsNavigationCommit,
+				isFailure: navigationFailure != nil
+			)
+		else { return }
+		guard let committedURL else { return }
+
+		committedHasOnlySecureContent = webView.hasOnlySecureContent
+		committedCertificateSummary = webView.serverTrust.flatMap {
+			BrowserServerCertificateSummary(trust: $0, committedURL: committedURL)
+		}
 	}
 
 	private func reportHistoryVisit(_ url: URL, force: Bool) {
@@ -1342,22 +1449,57 @@ final class BrowserController: NSObject, Identifiable {
 
 	private func load(_ request: URLRequest, resetConnectivityRetry: Bool = true) {
 		guard !isInvalidated else { return }
+		pendingWebArchive = nil
+		pendingLocalFile = nil
 		awaitsNavigationCommit = true
 		currentRequest = isAuthenticationSessionBrowser ? nil : request
 		failedRequest = nil
 		if resetConnectivityRetry {
 			retriedAfterConnectivityReturn = false
 		}
+		guard session.contentBlocking.isReadyForNavigation else {
+			pendingRequest = request
+			return
+		}
 		guard let webView = createdWebView else {
 			pendingRequest = request
 			return
 		}
 		pendingRequest = nil
-		webView.customUserAgent = Self.userAgentOverride(for: request.url)
+		webView.customUserAgent = userAgentOverride(for: request.url)
 		currentNavigation = webView.load(request)
 	}
 
 	private func loadPendingRequest() {
+		guard session.contentBlocking.isReadyForNavigation else { return }
+		if let state = pendingInteractionState, let webView = createdWebView {
+			pendingInteractionState = nil
+			liveHistoryPrefix = []
+			webView.interactionState = state
+			if webView.backForwardList.currentItem != nil {
+				pendingRequest = nil
+				pendingLocalFile = nil
+				updateHistory()
+			}
+		}
+		if let archive = pendingWebArchive, let webView = createdWebView {
+			pendingWebArchive = nil
+			guard let navigation = webView.load(
+				archive.data,
+				mimeType: "application/x-webarchive",
+				characterEncodingName: "UTF-8",
+				baseURL: archive.baseURL
+			) else {
+				awaitsNavigationCommit = false
+				historyManager.cancelVisit()
+				navigationFailure = BrowserNavigationFailure(kind: .other, url: archive.baseURL)
+				navigationDidChange?()
+				return
+			}
+			currentNavigation = navigation
+			navigationDidChange?()
+			return
+		}
 		#if os(macOS)
 			if let file = pendingLocalFile, let webView = createdWebView {
 				pendingLocalFile = nil
@@ -1447,6 +1589,12 @@ extension BrowserController: WKNavigationDelegate {
 			decisionHandler(.cancel, preferences)
 			return
 		}
+		if navigationAction.targetFrame?.isMainFrame == true,
+		   let origin = navigationAction.request.url.flatMap(BrowserSitePermissions.origin(for:)),
+		   let contentMode = session.sitePreferences.webKitContentMode(for: origin)
+		{
+			preferences.preferredContentMode = contentMode
+		}
 		#if os(macOS)
 			preferences.globalPrivacyControlEnabled = Defaults[.globalPrivacyControl]
 			let host = navigationAction.request.url?.host?.lowercased() ?? ""
@@ -1531,7 +1679,7 @@ extension BrowserController: WKNavigationDelegate {
 						break
 				}
 				currentRequest = isAuthenticationSessionBrowser ? nil : navigationAction.request
-				webView.customUserAgent = Self.userAgentOverride(for: navigationAction.request.url)
+				webView.customUserAgent = userAgentOverride(for: navigationAction.request.url)
 				switch navigationAction.navigationType {
 					case .linkActivated:
 						pendingDownloadSource = (webView as? PeekSourceWebView)?.sourceIfRecent
@@ -1548,6 +1696,12 @@ extension BrowserController: WKNavigationDelegate {
 				}
 			}
 			// WebKit's .allow path attempts eligible universal links and falls back to the website.
+			updateContentBlocking(
+				forNavigationDisposition: .allow,
+				isMainFrame: navigationAction.targetFrame?.isMainFrame == true,
+				destinationURL: navigationAction.request.url,
+				in: webView
+			)
 			decisionHandler(.allow, preferences)
 			return
 		}
@@ -1577,15 +1731,33 @@ extension BrowserController: WKNavigationDelegate {
 					}
 					let permission = await requestMultipleDownloadPermission(in: webView)
 					guard permission == .grant, ownsPrompt(in: webView, documentID: documentID) else {
+						updateContentBlocking(
+							forNavigationDisposition: .cancel,
+							isMainFrame: navigationResponse.isForMainFrame,
+							destinationURL: navigationResponse.response.url,
+							in: webView
+						)
 						decisionHandler(.cancel)
 						return
 					}
 					prepareDownloadHandoff(in: webView)
+					updateContentBlocking(
+						forNavigationDisposition: .download,
+						isMainFrame: navigationResponse.isForMainFrame,
+						destinationURL: navigationResponse.response.url,
+						in: webView
+					)
 					decisionHandler(.download)
 				}
 				return
 			}
 			prepareDownloadHandoff(in: webView)
+			updateContentBlocking(
+				forNavigationDisposition: .download,
+				isMainFrame: navigationResponse.isForMainFrame,
+				destinationURL: navigationResponse.response.url,
+				in: webView
+			)
 			decisionHandler(.download)
 		} else {
 			pendingDownloadSource = nil
@@ -1617,13 +1789,25 @@ extension BrowserController: WKNavigationDelegate {
 		restorePageAfterDownloadHandoff()
 	}
 
+	func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+		guard owns(webView), navigation === currentNavigation, awaitsNavigationCommit else { return }
+		updateContentBlocking(
+			forNavigationDisposition: .redirect,
+			isMainFrame: true,
+			destinationURL: nil,
+			in: webView
+		)
+	}
+
 	func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
 		guard owns(webView) else { return }
+		refreshContentBlocking(for: committedURL ?? webView.url)
 		handleNavigationFailure(navigation, error: error)
 	}
 
 	func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
 		guard owns(webView) else { return }
+		refreshContentBlocking(for: committedURL ?? webView.url)
 		handleNavigationFailure(navigation, error: error)
 	}
 
@@ -1717,6 +1901,7 @@ extension BrowserController: WKNavigationDelegate {
 		awaitsNavigationCommit = false
 		navigationFailure = nil
 		url = pageURLBeforeDownload
+		refreshContentBlocking(for: committedURL ?? createdWebView?.url)
 		navigationDidChange?()
 	}
 
@@ -1725,6 +1910,19 @@ extension BrowserController: WKNavigationDelegate {
 		releaseUploadAccess()
 		pictureInPictureControlUnavailable = false
 		committedURL = webView.url
+		refreshContentBlocking(for: committedURL)
+		committedSecurityNavigationID = navigationIdentifier
+		if let origin = committedURL.flatMap(BrowserSitePermissions.origin(for:)) {
+			let isRestoredOrigin = restoredPageZoomOrigin == origin
+			restoredPageZoomOrigin = nil
+			if let zoom = session.sitePreferences.zoom(for: origin) {
+				applySiteZoom(zoom)
+			} else if !isRestoredOrigin {
+				applySiteZoom(Defaults[.defaultPageZoom])
+			}
+		} else {
+			restoredPageZoomOrigin = nil
+		}
 		automaticDownloadPolicy.didCommitDocument()
 		contentProcessTerminations.navigationCommitted(at: webView.url)
 		hasUnsavedChanges = false
@@ -1732,6 +1930,7 @@ extension BrowserController: WKNavigationDelegate {
 		pageURLBeforeDownload = nil
 		navigationFailure = nil
 		awaitsNavigationCommit = false
+		refreshCommittedSecuritySnapshot()
 		updateHistory(reportSameDocumentVisit: false)
 		if let url = committedURL {
 			reportHistoryVisit(url, force: true)
@@ -1740,6 +1939,7 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
 		guard owns(webView), navigation === currentNavigation else { return }
+		refreshContentBlocking(for: webView.url)
 		updateHistory()
 		if showsFind, !findText.isEmpty {
 			findNext()

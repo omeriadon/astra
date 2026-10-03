@@ -1,6 +1,6 @@
 # 19-start-page
 
-Priority: P1. Status: planned. Prerequisites: 07, 09, 10, 11, 15.
+Priority: P1. Status: in progress. Prerequisites: 07, 09, 10, 11, 15.
 Branch: `astra/roadmap/19-start-page`. Worktree: `../astra-worktrees/19-start-page`.
 
 Read [the roadmap](../README.md) and [dispatch procedure](../dispatch.md). Implement only this packet's selected scope, using its own worktree and reserved files. No implementation starts from this document alone.

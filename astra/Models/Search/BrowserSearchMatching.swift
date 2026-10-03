@@ -1,6 +1,89 @@
 import Foundation
 
 enum BrowserSearchMatching {
+	static func shouldExpandAddressOnFocus(text: String, simpleAddress: String) -> Bool {
+		text == simpleAddress
+	}
+
+	static func pastedHTTPURL(_ input: String) -> URL? {
+		var value = input.trimmingCharacters(in: .whitespacesAndNewlines)
+		if value.count > 2,
+		   let first = value.first, let last = value.last,
+		   (first == "<" && last == ">") || (first == "'" && last == "'") || (first == "\"" && last == "\"")
+		{
+			value.removeFirst()
+			value.removeLast()
+			value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+		}
+		guard value.utf8.count <= 16_384,
+		      !value.unicodeScalars.contains(where: {
+			CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0)
+		      })
+		else { return nil }
+		let hasHTTPScheme = value.range(of: #"^https?://"#, options: [.regularExpression, .caseInsensitive]) != nil
+		guard let components = URLComponents(string: hasHTTPScheme ? value : "https://\(value)"),
+		      ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+		      let host = components.host, !host.isEmpty,
+		      components.user == nil, components.password == nil,
+		      components.port.map({ (1 ... 65_535).contains($0) }) ?? true,
+		      let url = components.url
+		else { return nil }
+		let authorityStart = value.range(of: "://")?.upperBound ?? value.startIndex
+		let authority = value[authorityStart...].prefix { !"/?#".contains($0) }
+		guard validPastedAuthority(String(authority), port: components.port),
+		      !host.unicodeScalars.contains(where: {
+			CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0)
+		      })
+		else { return nil }
+		if !hasHTTPScheme {
+			let hostInput = value.split(separator: "/", maxSplits: 1).first.map(String.init) ?? ""
+			guard host.contains(".") || host.lowercased() == "localhost" || hostInput.hasPrefix("[") else {
+				return nil
+			}
+		}
+		return url
+	}
+
+	private static func validPastedAuthority(_ authority: String, port: Int?) -> Bool {
+		guard !authority.contains("@") else { return false }
+		if authority.hasPrefix("[") {
+			guard let closingBracket = authority.firstIndex(of: "]") else { return false }
+			let suffix = authority[authority.index(after: closingBracket)...]
+			if suffix.isEmpty { return port == nil }
+			guard suffix.first == ":" else { return false }
+			let value = suffix.dropFirst()
+			return !value.isEmpty && value.utf8.allSatisfy { (48 ... 57).contains($0) } && port != nil
+		}
+		guard let colon = authority.firstIndex(of: ":") else { return port == nil }
+		let value = authority[authority.index(after: colon)...]
+		guard !value.isEmpty,
+		      value.utf8.allSatisfy({ (48 ... 57).contains($0) }),
+		      authority[..<colon].firstIndex(of: ":") == nil
+		else { return false }
+		return port != nil
+	}
+
+	static func openSearchTemplate(from data: Data) -> String? {
+		guard data.count <= 65_536,
+		      let xml = String(data: data, encoding: .utf8)
+		else { return nil }
+		let declarations = xml.uppercased()
+		guard !declarations.contains("<!DOCTYPE"), !declarations.contains("<!ENTITY") else { return nil }
+		let parser = XMLParser(data: data)
+		let delegate = OpenSearchTemplateParser()
+		parser.delegate = delegate
+		parser.shouldProcessNamespaces = true
+		parser.externalEntityResolvingPolicy = .never
+		guard parser.parse(), delegate.isOpenSearchDocument,
+		      let template = delegate.template
+		else { return nil }
+		var configuration = BrowserSearchConfiguration.default
+		configuration.customTemplate = template
+		let remaining = template.replacingOccurrences(of: "{query}", with: "")
+		guard !remaining.contains("{"), !remaining.contains("}") else { return nil }
+		return configuration.customTemplateIsValid ? template : nil
+	}
+
 	nonisolated static func normalized(_ text: String) -> String {
 		text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
 			.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -76,5 +159,34 @@ enum BrowserSearchMatching {
 			previous = current
 		}
 		return previous[rhs.count]
+	}
+}
+
+private final class OpenSearchTemplateParser: NSObject, XMLParserDelegate {
+	var template: String?
+	private(set) var isOpenSearchDocument = false
+	private var sawRoot = false
+
+	func parser(
+		_ parser: XMLParser,
+		didStartElement elementName: String,
+		namespaceURI: String?,
+		qualifiedName qName: String?,
+		attributes: [String: String] = [:]
+	) {
+		if !sawRoot {
+			sawRoot = true
+			isOpenSearchDocument = elementName == "OpenSearchDescription"
+		}
+		guard isOpenSearchDocument else { return }
+		let method = attributes["method"]?.lowercased()
+		let type = attributes["type"]?.lowercased().split(separator: ";", maxSplits: 1).first.map(String.init)?.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard template == nil, elementName == "Url",
+		      (method == nil || method == "get"),
+		      ["text/html", "application/xhtml+xml"].contains(type ?? ""),
+		      let value = attributes["template"], value.utf8.count <= 2_048,
+		      value.components(separatedBy: "{searchTerms}").count == 2
+		else { return }
+		template = value.replacingOccurrences(of: "{searchTerms}", with: "{query}")
 	}
 }
