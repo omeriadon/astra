@@ -106,12 +106,6 @@
           "name": "Embed Website App Template",
           "bundle-base-path": "resources-directory",
         },
-        {
-          "kind": "copy",
-          "name": "Embed Watch Content",
-          "bundle-base-path": "build-products-directory",
-          "relative-path": "$(CONTENTS_FOLDER_PATH)/Watch",
-        },
       ],
       "package-product-members": [
         {
