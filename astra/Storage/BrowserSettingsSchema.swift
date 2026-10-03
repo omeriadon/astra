@@ -43,6 +43,8 @@ enum BrowserSettingsSchema {
 		Defaults[.historyRetentionDays] = 0
 		Defaults[.searchSuggestionsEnabled] = true
 		Defaults[.browserSearchConfiguration] = BrowserSearchConfiguration.default.encoded
+		Defaults[.startPagePreferences] = BrowserStartPagePreferences.default.encoded
+		Defaults[.siteZoomPreferences] = Data()
 		Defaults[.browserTheme] = BrowserTheme()
 		Defaults[.renameDownloadsWithAppleIntelligence] = true
 		Defaults[.downloadsAskWhereToSave] = false
