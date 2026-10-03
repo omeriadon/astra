@@ -49,6 +49,16 @@ struct Checks {
 		credentialRequest.setValue("session=private", forHTTPHeaderField: "Cookie")
 		assert(BrowserDownload.requestMayCarryCredentials(credentialRequest))
 
+		var semanticHeaderRequest = URLRequest(url: URL(string: "https://example.com/file.bin")!)
+		semanticHeaderRequest.setValue("https://example.com/page", forHTTPHeaderField: "Referer")
+		assert(BrowserDownload.requestMayCarryCredentials(semanticHeaderRequest))
+		semanticHeaderRequest = URLRequest(url: URL(string: "https://example.com/file.bin")!)
+		semanticHeaderRequest.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+		assert(BrowserDownload.requestMayCarryCredentials(semanticHeaderRequest))
+		semanticHeaderRequest = URLRequest(url: URL(string: "https://example.com/file.bin")!)
+		semanticHeaderRequest.setValue("signed-value", forHTTPHeaderField: "X-Download-Signature")
+		assert(BrowserDownload.requestMayCarryCredentials(semanticHeaderRequest))
+
 		var bodyRequest = URLRequest(url: URL(string: "https://example.com")!)
 		bodyRequest.httpBody = Data([1])
 		assert(BrowserDownload.requestHasBody(bodyRequest))

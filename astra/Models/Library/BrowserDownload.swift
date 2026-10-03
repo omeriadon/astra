@@ -153,12 +153,14 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 		request.httpBody != nil || request.httpBodyStream != nil
 	}
 
+	/// Segmented acceleration and fresh retry can only reproduce a plain GET.
+	/// Treat any explicit header as non-replayable so WebKit keeps ownership of
+	/// requests whose response may depend on Referer, Accept, signatures, or
+	/// other origin-specific request semantics.
 	static func requestMayCarryCredentials(_ request: URLRequest) -> Bool {
-		request.value(forHTTPHeaderField: "Authorization") != nil
-			|| request.value(forHTTPHeaderField: "Proxy-Authorization") != nil
-			|| request.value(forHTTPHeaderField: "Cookie") != nil
-			|| request.url?.user != nil
+		request.url?.user != nil
 			|| request.url?.password != nil
+			|| !(request.allHTTPHeaderFields ?? [:]).isEmpty
 	}
 
 	static func collisionFreeURL(
