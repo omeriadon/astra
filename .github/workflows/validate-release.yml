@@ -1,21 +1,26 @@
 name: Validate Release
 
 on:
-  pull_request:
+  push:
     branches:
-      - main
-    types: [opened, synchronize, reopened]
+      - 'release/**'
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: validate-release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate-release:
     name: Validate Release
     runs-on: xcode-27
+    timeout-minutes: 30
 
     steps:
-      - name: Check out pull request
+      - name: Check out release branch
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -33,7 +38,7 @@ jobs:
       - name: Parse and validate release metadata
         shell: bash
         env:
-          RELEASE_BRANCH: ${{ github.head_ref }}
+          RELEASE_BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
 

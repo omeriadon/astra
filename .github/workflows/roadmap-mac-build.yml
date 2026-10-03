@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - astra/roadmap/integration
+    paths:
+      - 'astra/**'
+      - 'astra.xcodeproj/**'
+      - 'Packages/**'
+      - '*.xcconfig'
 
 permissions:
   contents: read
@@ -16,6 +21,7 @@ jobs:
   mac-build:
     name: macOS Debug Build
     runs-on: xcode-27
+    timeout-minutes: 15
 
     steps:
       - name: Check out integration branch
