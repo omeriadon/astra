@@ -18,6 +18,7 @@ struct BrowserLoadingBar: View {
 			.accessibilityElement(children: .ignore)
 			.accessibilityLabel("Page loading progress")
 			.accessibilityValue(Text(displayedProgress, format: .percent))
+			.accessibilityAddTraits(.updatesFrequently)
 			.accessibilityHidden(!isVisible)
 			.onChange(of: isLoading, initial: true) { _, isLoading in
 				loadingDidChange(isLoading)

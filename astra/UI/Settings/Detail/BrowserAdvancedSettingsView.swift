@@ -4,6 +4,7 @@ import SwiftUI
 struct BrowserAdvancedSettingsView: View {
 	@Default(.searchSuggestionsEnabled) private var searchSuggestionsEnabled
 	@Default(.copyMailtoAddresses) private var copyMailtoAddresses
+	@State private var showingResetConfirmation = false
 	#if os(macOS)
 		@Default(.requireDoublePressToQuit) private var requireDoublePressToQuit
 	#endif
@@ -33,8 +34,30 @@ struct BrowserAdvancedSettingsView: View {
 				}
 				.id("Quit")
 			#endif
+
+			Section("Reset") {
+				Button("Reset Browser Settings", systemImage: "arrow.counterclockwise") {
+					showingResetConfirmation = true
+				}
+				.accessibilityIdentifier("reset-browser-settings")
+				Text("Restores browser preferences. History, website data, bookmarks, downloads, extensions, credentials and account data are not deleted.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+			}
 		}
 		.scrollContentBackground(.hidden)
 		.listStyle(.sidebar)
+		.confirmationDialog(
+			"Reset browser settings?",
+			isPresented: $showingResetConfirmation,
+			titleVisibility: .visible
+		) {
+			Button("Reset Settings", role: .destructive) {
+				BrowserSettingsSchema.resetBrowserSettings()
+			}
+			Button("Cancel", role: .cancel) {}
+		} message: {
+			Text("Browsing data and account data will remain unchanged.")
+		}
 	}
 }

@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 struct BrowserToast: Equatable {
 	let symbol: String
@@ -16,7 +17,9 @@ final class ToastManager {
 
 	func show(symbol: String, message: String) {
 		dismissalTask?.cancel()
-		toast = BrowserToast(symbol: symbol, message: message)
+		let boundedMessage = String(message.prefix(500))
+		toast = BrowserToast(symbol: symbol, message: boundedMessage)
+		AccessibilityNotification.Announcement(boundedMessage).post()
 		dismissalTask = Task { @MainActor [weak self] in
 			try? await Task.sleep(for: .seconds(1))
 			guard !Task.isCancelled else { return }
