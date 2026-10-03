@@ -11,7 +11,8 @@ struct BrowserExtensionChecks {
 
 		let payload = Data([0x50, 0x4B, 0x03, 0x04, 0x14, 0x00])
 		let package = Data("Cr24".utf8) + Data([3, 0, 0, 0, 0, 0, 0, 0]) + payload
-		precondition(try ChromeExtensionPackage.archive(from: package) == payload)
+		let archive = try ChromeExtensionPackage.archive(from: package)
+		precondition(archive == payload)
 
 		var wrongVersion = package
 		wrongVersion[4] = 2

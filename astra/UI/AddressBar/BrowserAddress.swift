@@ -238,6 +238,7 @@ enum BrowserAddress {
 	}
 
 	private static func validHost(_ host: String) -> Bool {
+		guard !host.hasPrefix(".") else { return false }
 		let labels = host.split(separator: ".")
 		guard labels.count == 4, labels.allSatisfy({ $0.allSatisfy(\.isNumber) }) else {
 			return true

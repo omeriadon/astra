@@ -29,7 +29,9 @@ struct AddressSearchChecks {
 
 		checkAddress("omeriadon/astra", expected: "https://github.com/omeriadon/astra", configuration: configuration)
 		checkAddress("apple/swift", expected: "https://github.com/apple/swift", configuration: configuration)
-		checkAddress(".github/.github", expected: "https://www.google.com/search?q=.github%2F.github", configuration: configuration)
+		let invalidRepository = BrowserAddress.destination(for: ".github/.github", configuration: configuration)!
+		precondition(invalidRepository.host == "www.google.com")
+		precondition(configuration.query(for: invalidRepository) == ".github/.github")
 		precondition(BrowserSearchConfiguration.githubRepositoryDestination(for: "owner/repo/extra") == nil)
 		precondition(BrowserSearchConfiguration.githubRepositoryDestination(for: "-owner/repo") == nil)
 		precondition(BrowserSearchConfiguration.githubRepositoryDestination(for: "owner/repo name") == nil)
