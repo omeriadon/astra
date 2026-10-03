@@ -14,6 +14,8 @@
 		@ObservationIgnored
 		private let browser: Browser
 		@ObservationIgnored
+		private weak var window: NSWindow?
+		@ObservationIgnored
 		private var eventMonitor: Any?
 		@ObservationIgnored
 		private var previewTask: Task<Void, Never>?
@@ -26,22 +28,42 @@
 			self.browser = browser
 		}
 
+		func setWindow(_ window: NSWindow?) {
+			self.window = window
+		}
+
 		func start() {
 			guard eventMonitor == nil else { return }
 			eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
 				let isKeyDown = event.type == .keyDown
-				let isTab = event.keyCode == 48
 				let isEscape = event.keyCode == 53
-				let isControlPressed = event.modifierFlags.contains(.control)
-				let isShiftPressed = event.modifierFlags.contains(.shift)
+				let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+				let isControlPressed = modifiers.contains(.control)
+				let isShiftPressed = modifiers.contains(.shift)
+				let hasDisallowedModifiers = modifiers.contains(.command) || modifiers.contains(.option)
 				let isHandled = MainActor.assumeIsolated {
-					self?.handle(
+					guard let self else { return false }
+					let isFocusedWindow = BrowserKeyboardMenuPolicy.ownsFocusedTarget(
+						isKeyWindow: self.window?.isKeyWindow == true,
+						matchesKeyWindow: self.window === NSApp.keyWindow
+					)
+					let hasMarkedText = (self.window?.firstResponder as? NSTextInputClient)?.hasMarkedText() == true
+					let ownsTabSwitch = BrowserKeyboardMenuPolicy.ownsTabSwitch(
+						isFocusedWindow: isFocusedWindow,
+						hasMarkedText: hasMarkedText,
 						isKeyDown: isKeyDown,
-						isTab: isTab,
+						keyCode: event.keyCode,
+						modifiers: modifiers
+					)
+					return self.handle(
+						isKeyDown: isKeyDown,
 						isEscape: isEscape,
 						isControlPressed: isControlPressed,
-						isShiftPressed: isShiftPressed
-					) ?? false
+						isShiftPressed: isShiftPressed,
+						hasDisallowedModifiers: hasDisallowedModifiers,
+						hasMarkedText: hasMarkedText,
+						ownsTabSwitch: ownsTabSwitch
+					)
 				}
 				return isHandled ? nil : event
 			}
@@ -59,7 +81,7 @@
 		}
 
 		func tabsDidChange() {
-			let validTabIDs = Set(browser.tabs.map(\.id))
+			let validTabIDs = Set(browser.visibleTabs.map(\.id))
 			candidateIDs.removeAll { !validTabIDs.contains($0) }
 			guard !candidateIDs.isEmpty else {
 				endSession()
@@ -87,18 +109,37 @@
 
 		private func handle(
 			isKeyDown: Bool,
-			isTab: Bool,
 			isEscape: Bool,
 			isControlPressed: Bool,
-			isShiftPressed: Bool
+			isShiftPressed: Bool,
+			hasDisallowedModifiers: Bool,
+			hasMarkedText: Bool,
+			ownsTabSwitch: Bool
 		) -> Bool {
+			guard BrowserKeyboardMenuPolicy.ownsFocusedTarget(
+				isKeyWindow: window?.isKeyWindow == true,
+				matchesKeyWindow: window === NSApp.keyWindow
+			) else {
+				if !candidateIDs.isEmpty {
+					endSession()
+				}
+				return false
+			}
+			if isKeyDown, hasMarkedText { return false }
 			if isCancelledUntilControlRelease {
 				if !isControlPressed {
 					isCancelledUntilControlRelease = false
-				} else if isKeyDown, isTab {
+				} else if ownsTabSwitch {
 					return true
 				}
 			}
+			if !isKeyDown, !isControlPressed, !candidateIDs.isEmpty {
+				if let highlightedTabID {
+					browser.commitTabSwitch(to: highlightedTabID)
+				}
+				endSession()
+			}
+			guard !hasDisallowedModifiers else { return false }
 
 			if isKeyDown {
 				if isEscape, !candidateIDs.isEmpty {
@@ -106,7 +147,7 @@
 					endSession()
 					return true
 				}
-				guard isControlPressed, isTab else { return false }
+				guard ownsTabSwitch else { return false }
 				if candidateIDs.isEmpty {
 					sessionForward = !isShiftPressed
 					let order = browser.switchCandidates(forward: sessionForward)
@@ -127,13 +168,6 @@
 					candidateWindowAnchorID = highlightedTabID
 				}
 				return true
-			}
-
-			if !candidateIDs.isEmpty, !isControlPressed {
-				if let highlightedTabID {
-					browser.commitTabSwitch(to: highlightedTabID)
-				}
-				endSession()
 			}
 			return false
 		}

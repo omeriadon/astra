@@ -18,27 +18,57 @@ extension Bundle {
 }
 
 struct AboutView: View {
+	#if os(macOS)
+		@Bindable private var updates = UpdateManager.shared
+	#endif
+	@State private var pointerLocation: CGPoint?
+
 	var body: some View {
-		HStack {
-			VStack {
+		ZStack {
+			BrowserUpdateArtwork(isAboutView: true, pointerLocation: pointerLocation)
+
+			HStack {
 				Spacer()
+				VStack(spacing: 30) {
+					Spacer()
 
-				Image("astra")
-					.resizable()
-					.aspectRatio(contentMode: .fit)
-					.frame(width: 200)
+					Image("astra")
+						.resizable()
+						.aspectRatio(contentMode: .fit)
+						.frame(width: 200)
+						.accessibilityHidden(true)
 
-				Text("astra")
+					Text("astra")
+						.font(.largeTitle)
+						.accessibilityAddTraits(.isHeader)
 
-				if let version = Bundle.main.releaseVersionNumber,
-				   let build = Bundle.main.buildNumber
-				{
-					Text("\(version) \(Text("(\(build))").foregroundStyle(.secondary))")
+					if let version = Bundle.main.releaseVersionNumber,
+					   let build = Bundle.main.buildNumber
+					{
+						Text("\(version) \(Text("(\(build))").foregroundStyle(.secondary))")
+							.accessibilityLabel("Version \(version), build \(build)")
+					}
+
+					#if os(macOS)
+						CheckForUpdatesView(updater: updates.updater)
+					#endif
+
+					Spacer()
 				}
-
 				Spacer()
 			}
 		}
+		.contentShape(Rectangle())
+		#if os(macOS)
+			.onContinuousHover { phase in
+				switch phase {
+					case let .active(location):
+						pointerLocation = location
+					case .ended:
+						pointerLocation = nil
+				}
+			}
+		#endif
 	}
 }
 

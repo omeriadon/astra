@@ -1,0 +1,23 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>PiP inline video fixture</title>
+<button id="start">Start video</button>
+<video id="video" controls playsinline width="480" height="270"></video>
+<script>
+const video = document.querySelector("video");
+const canvas = document.createElement("canvas");
+canvas.width = 480;
+canvas.height = 270;
+const context = canvas.getContext("2d");
+let frame = 0;
+function draw() {
+	context.fillStyle = "#14213d";
+	context.fillRect(0, 0, canvas.width, canvas.height);
+	context.fillStyle = "#fca311";
+	context.fillRect((frame++ % 480), 100, 60, 60);
+	requestAnimationFrame(draw);
+}
+draw();
+video.srcObject = canvas.captureStream(30);
+document.querySelector("#start").addEventListener("click", () => video.play());
+</script>

@@ -4,6 +4,11 @@ import SwiftUI
 struct BrowserAddressField: View {
 	let browser: Browser
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
+	@Default(.browserSearchConfiguration) private var searchConfigurationValue
+
+	private var searchConfiguration: BrowserSearchConfiguration {
+		BrowserSearchConfiguration.decode(searchConfigurationValue)
+	}
 	@State private var addressText = ""
 	@FocusState private var isFocused: Bool
 
@@ -11,73 +16,92 @@ struct BrowserAddressField: View {
 		addressDisplayStyle == .dimmed && !isFocused && !addressText.isEmpty
 	}
 
-	private var isGoogleSearch: Bool {
-		BrowserAddress.isGoogleSearchURL(browser.selectedTab?.activeController?.url)
+	private var isSearch: Bool {
+		BrowserAddress.isSearchURL(
+			browser.selectedTab?.activeController?.url,
+			configuration: searchConfiguration,
+			isPrivate: browser.isPrivate
+		)
 	}
 
 	var body: some View {
-		addressInput
-			.onChange(of: browser.selectedTabID) { _, _ in
-				updateForSelectedTab()
-			}
-			.onChange(of: browser.addressFocusRequest) { _, _ in
-				isFocused = true
-			}
-			.onChange(of: browser.selectedTab?.peeks.last?.id) { _, _ in
+		AddressTextField(
+			addressText: $addressText,
+			isFocused: $isFocused,
+			isDimmed: isDimmed,
+			isSearch: isSearch,
+			dimmedAddressText: dimmedAddressText,
+			onSubmitAddress: submitAddress,
+			onEscape: {
+				browser.newTabSearchSelection = "typed"
 				isFocused = false
-				updateAddressFromURL()
+			},
+			onMoveSelection: { offset in
+				guard browser.isShowingNewTab else { return false }
+				browser.moveNewTabSearchSelection(by: offset)
+				return true
 			}
-			.onChange(of: browser.selectedTab?.activeController?.url) { _, url in
-				guard !isFocused else { return }
-				addressText = BrowserAddress.displayString(for: url, style: addressDisplayStyle, isEditing: false)
+		)
+		.onChange(of: addressText) { _, text in
+			if browser.isShowingNewTab {
+				browser.newTabSearchText = text
 			}
-			.onChange(of: addressDisplayStyle) { _, _ in
-				updateAddressFromURL()
+		}
+		.onChange(of: browser.newTabSearchText) { _, text in
+			if browser.isShowingNewTab, addressText != text {
+				addressText = text
 			}
-			.onChange(of: isFocused) { _, focused in
-				addressText = BrowserAddress.displayString(
-					for: browser.selectedTab?.activeController?.url,
-					style: addressDisplayStyle,
-					isEditing: focused
-				)
+		}
+		.onChange(of: browser.selectedTabID) { _, _ in
+			updateForSelectedTab()
+		}
+		.onChange(of: browser.addressFocusRequest) { _, _ in
+			isFocused = true
+		}
+		.onChange(of: browser.selectedTab?.peeks.last?.id) { _, _ in
+			isFocused = false
+			updateAddressFromURL()
+		}
+		.onChange(of: browser.selectedTab?.activeController?.id) { _, _ in
+			guard !isFocused else { return }
+			updateAddressFromURL()
+		}
+		.onChange(of: browser.selectedTab?.activeController?.url) { _, url in
+			guard !isFocused else { return }
+			let next = BrowserAddress.displayString(
+				for: url,
+				style: addressDisplayStyle,
+				isEditing: false,
+				configuration: searchConfiguration,
+				isPrivate: browser.isPrivate
+			)
+			guard next != addressText else { return }
+			addressText = next
+		}
+		.onChange(of: addressDisplayStyle) { _, _ in
+			guard !isFocused else { return }
+			updateAddressFromURL()
+		}
+		.onChange(of: searchConfigurationValue) { _, _ in
+			guard !isFocused else { return }
+			updateAddressFromURL()
+		}
+		.onChange(of: isFocused) { _, focused in
+			if browser.isShowingNewTab {
+				addressText = browser.newTabSearchText
+				return
 			}
-			.onAppear {
-				updateForSelectedTab()
-			}
-	}
-
-	private var addressInput: some View {
-		TextField("Search or type a URL", text: $addressText)
-			.textFieldStyle(.plain)
-			.fontDesign(.monospaced)
-			.lineLimit(1)
-			.foregroundStyle(isDimmed ? .clear : .primary)
-			.padding(.leading, isGoogleSearch ? 20 : 0)
-			.focused($isFocused)
-			.submitLabel(.go)
-			.onSubmit(submitAddress)
-			.onKeyPress(.escape) {
-				isFocused = false
-				return .handled
-			}
-			.overlay(alignment: .leading) {
-				HStack(spacing: 6) {
-					if isGoogleSearch {
-						Image(systemName: "magnifyingglass")
-							.accessibilityHidden(true)
-					}
-					if isDimmed {
-						Text(dimmedAddressText)
-							.fontDesign(.monospaced)
-							.lineLimit(1)
-							.frame(maxWidth: .infinity, alignment: .leading)
-					}
-				}
-				.allowsHitTesting(false)
-				.accessibilityHidden(true)
-			}
-			.accessibilityLabel("Address")
-			.accessibilityIdentifier("browser-address")
+			addressText = BrowserAddress.displayString(
+				for: browser.selectedTab?.activeController?.url,
+				style: addressDisplayStyle,
+				isEditing: focused,
+				configuration: searchConfiguration,
+				isPrivate: browser.isPrivate
+			)
+		}
+		.onAppear {
+			updateForSelectedTab()
+		}
 	}
 
 	private var dimmedAddressText: AttributedString {
@@ -87,7 +111,12 @@ struct BrowserAddressField: View {
 			text.foregroundColor = .primary
 			return text
 		}
-		for range in BrowserAddress.primaryTextRanges(for: url, displayedText: addressText) {
+		for range in BrowserAddress.primaryTextRanges(
+			for: url,
+			displayedText: addressText,
+			configuration: searchConfiguration,
+			isPrivate: browser.isPrivate
+		) {
 			guard let attributedRange = Range(range, in: text) else { continue }
 			text[attributedRange].foregroundColor = .primary
 		}
@@ -102,17 +131,107 @@ struct BrowserAddressField: View {
 	}
 
 	private func updateAddressFromURL() {
-		addressText = BrowserAddress.displayString(
+		if browser.isShowingNewTab {
+			addressText = browser.newTabSearchText
+			return
+		}
+		let next = BrowserAddress.displayString(
 			for: browser.selectedTab?.activeController?.url,
 			style: addressDisplayStyle,
-			isEditing: isFocused
+			isEditing: isFocused,
+			configuration: searchConfiguration,
+			isPrivate: browser.isPrivate
 		)
+		guard next != addressText else { return }
+		addressText = next
 	}
 
 	private func submitAddress() {
-		guard let destination = BrowserAddress.destination(for: addressText) else { return }
-		browser.selectedTab?.activeController?.load(destination)
-		addressText = BrowserAddress.displayString(for: destination, style: addressDisplayStyle, isEditing: false)
+		if browser.isShowingNewTab {
+			browser.newTabSearchText = addressText
+			browser.submitNewTabSearch()
+			isFocused = false
+			updateAddressFromURL()
+			return
+		}
+		guard let destination = BrowserAddress.destination(
+			for: addressText,
+			configuration: searchConfiguration,
+			isPrivate: browser.isPrivate
+		) else { return }
+		browser.selectedTab?.activeController?.loadFromAddressBar(destination)
+		addressText = BrowserAddress.displayString(
+			for: destination,
+			style: addressDisplayStyle,
+			isEditing: false,
+			configuration: searchConfiguration,
+			isPrivate: browser.isPrivate
+		)
 		isFocused = false
+	}
+}
+
+private struct AddressTextField: View {
+	@Binding var addressText: String
+	var isFocused: FocusState<Bool>.Binding
+	var isDimmed: Bool
+	var isSearch: Bool
+	var dimmedAddressText: AttributedString
+	var onSubmitAddress: () -> Void
+	var onEscape: () -> Void
+	var onMoveSelection: (Int) -> Bool
+
+	var body: some View {
+		TextField("Search or type a URL", text: $addressText)
+			.textFieldStyle(.plain)
+			.fontDesign(.monospaced)
+			.lineLimit(1)
+			.foregroundStyle(isDimmed ? .clear : .primary)
+			.padding(.leading, isSearch ? 20 : 0)
+			.focused(isFocused)
+			.submitLabel(.go)
+			.onSubmit(onSubmitAddress)
+			.onKeyPress(.downArrow) {
+				onMoveSelection(1) ? .handled : .ignored
+			}
+			.onKeyPress(.upArrow) {
+				onMoveSelection(-1) ? .handled : .ignored
+			}
+			.onKeyPress(.escape) {
+				onEscape()
+				return .handled
+			}
+			.overlay(alignment: .leading) {
+				DimmedAddressOverlay(
+					isSearch: isSearch,
+					isDimmed: isDimmed,
+					dimmedAddressText: dimmedAddressText
+				)
+			}
+			.accessibilityLabel("Address")
+			.accessibilityIdentifier("browser-address")
+	}
+}
+
+private struct DimmedAddressOverlay: View {
+	var isSearch: Bool
+	var isDimmed: Bool
+	var dimmedAddressText: AttributedString
+
+	var body: some View {
+		HStack(spacing: 6) {
+			if isSearch {
+				Image(systemName: "magnifyingglass")
+					.accessibilityHidden(true)
+			}
+			if isDimmed {
+				Text(dimmedAddressText)
+					.fontDesign(.monospaced)
+					.lineLimit(1)
+					.frame(maxWidth: .infinity, alignment: .leading)
+			}
+		}
+		.allowsHitTesting(false)
+		.accessibilityHidden(true)
 	}
 }

@@ -1,13 +1,12 @@
-import Defaults
 import SwiftUI
 
 struct BrowserSettingsSidebarRow: View {
 	let title: String
 	let symbol: String
+	let theme: BrowserTheme
 	let isSelected: Bool
 	let identifier: String
 	let action: () -> Void
-	@Default(.browserTheme) private var theme
 	@State private var isHovered = false
 
 	var body: some View {

@@ -1,0 +1,61 @@
+name: Roadmap Mac Build
+
+on:
+  push:
+    branches:
+      - astra/roadmap/integration
+    paths:
+      - 'astra/**'
+      - 'astra.xcodeproj/**'
+      - 'Packages/**'
+      - '*.xcconfig'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: roadmap-mac-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mac-build:
+    name: macOS Debug Build
+    runs-on: xcode-27
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out integration branch
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 27.2 beta
+        shell: bash
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.2_beta.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Install Metal Toolchain
+        shell: bash
+        run: xcodebuild -downloadComponent MetalToolchain
+
+      - name: Build Astra for macOS
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project astra.xcodeproj \
+            -scheme astra \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/AstraDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            2>&1 | tee "$RUNNER_TEMP/astra-mac-build.log"
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astra-mac-build-log-${{ github.run_number }}
+          path: ${{ runner.temp }}/astra-mac-build.log
+          if-no-files-found: error
+          retention-days: 7

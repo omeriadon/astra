@@ -1,0 +1,160 @@
+import Foundation
+
+struct OpenTab: Codable, Identifiable, Equatable, Sendable {
+	var id: UUID
+	var internalPage: String?
+	var pageTitle: String
+	var customTitle: String?
+	var url: URL?
+	var history: [URL]
+	var historyIndex: Int
+	var pageZoom: Double
+	var scrollPosition: BrowserScrollPosition
+	var isHibernated: Bool
+	var modifiedAt: Date
+	var peeks: [OpenPeek]
+	var closedSpaceID: UUID?
+	var closedNormalIndex: Int?
+	var fileAccessBookmark: Data?
+	var restorationState: Data?
+	var recordsNavigationHistory: Bool
+
+	nonisolated func hasSameNavigationState(as other: Self) -> Bool {
+		url == other.url
+			&& history == other.history
+			&& historyIndex == other.historyIndex
+			&& pageZoom == other.pageZoom
+			&& scrollPosition == other.scrollPosition
+	}
+	nonisolated func applyingSynchronizedMetadata(from remote: Self) -> Self {
+		var updated = self
+		updated.pageTitle = remote.pageTitle
+		updated.customTitle = remote.customTitle
+		updated.pageZoom = remote.pageZoom
+		updated.modifiedAt = remote.modifiedAt
+		updated.recordsNavigationHistory = remote.recordsNavigationHistory
+		if !remote.recordsNavigationHistory {
+			updated.history = updated.url.map { [$0] } ?? []
+			updated.historyIndex = 0
+			updated.peeks = []
+			updated.restorationState = nil
+		}
+		return updated
+	}
+
+	nonisolated init(
+		id: UUID = UUID(),
+		internalPage: String? = nil,
+		pageTitle: String = "New Tab",
+		customTitle: String? = nil,
+		url: URL? = nil,
+		history: [URL] = [],
+		historyIndex: Int = 0,
+		pageZoom: Double = 1,
+		scrollPosition: BrowserScrollPosition = .zero,
+		isHibernated: Bool = false,
+		modifiedAt: Date = .now,
+		peeks: [OpenPeek] = [],
+		closedSpaceID: UUID? = nil,
+		closedNormalIndex: Int? = nil,
+		recordsNavigationHistory: Bool = true,
+		restorationState: Data? = nil,
+		fileAccessBookmark: Data? = nil
+	) {
+		self.id = id
+		self.internalPage = internalPage
+		self.pageTitle = pageTitle
+		self.customTitle = customTitle
+		self.url = url
+		self.history = history
+		self.historyIndex = Self.clampedIndex(historyIndex, count: history.count)
+		self.peeks = peeks
+		self.pageZoom = pageZoom
+		self.scrollPosition = scrollPosition
+		self.isHibernated = isHibernated
+		self.modifiedAt = modifiedAt
+		self.closedSpaceID = closedSpaceID
+		self.closedNormalIndex = closedNormalIndex
+		self.recordsNavigationHistory = recordsNavigationHistory
+		self.restorationState = restorationState
+		self.fileAccessBookmark = fileAccessBookmark
+	}
+
+	private enum CodingKeys: String, CodingKey {
+		case id
+		case internalPage
+		case title
+		case pageTitle
+		case customTitle
+		case url
+		case history
+		case historyIndex
+		case peeks
+		case pageZoom
+		case scrollPosition
+		case isHibernated
+		case modifiedAt
+		case closedSpaceID
+		case closedNormalIndex
+		case recordsNavigationHistory
+		case restorationState
+		case fileAccessBookmark
+	}
+
+	nonisolated init(from decoder: Decoder) throws {
+		let container = try decoder.container(keyedBy: CodingKeys.self)
+		id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+		internalPage = try container.decodeIfPresent(String.self, forKey: .internalPage)
+		let legacyTitle = try container.decodeIfPresent(String.self, forKey: .title)
+		pageTitle = try container.decodeIfPresent(String.self, forKey: .pageTitle) ?? "New Tab"
+		if container.contains(.customTitle) {
+			customTitle = try container.decodeIfPresent(String.self, forKey: .customTitle)
+		} else if let legacyTitle, !legacyTitle.isEmpty, legacyTitle != "New Tab" {
+			customTitle = legacyTitle
+		} else {
+			customTitle = nil
+		}
+		url = try container.decodeIfPresent(URL.self, forKey: .url)
+		history = try container.decodeIfPresent([URL].self, forKey: .history) ?? url.map { [$0] } ?? []
+		historyIndex = try Self.clampedIndex(
+			container.decodeIfPresent(Int.self, forKey: .historyIndex) ?? 0,
+			count: history.count
+		)
+		peeks = try container.decodeIfPresent([OpenPeek].self, forKey: .peeks) ?? []
+		pageZoom = try container.decodeIfPresent(Double.self, forKey: .pageZoom) ?? 1
+		scrollPosition = try container.decodeIfPresent(BrowserScrollPosition.self, forKey: .scrollPosition) ?? .zero
+		isHibernated = try container.decodeIfPresent(Bool.self, forKey: .isHibernated) ?? false
+		modifiedAt = try container.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? .distantPast
+		closedSpaceID = try container.decodeIfPresent(UUID.self, forKey: .closedSpaceID)
+		closedNormalIndex = try container.decodeIfPresent(Int.self, forKey: .closedNormalIndex)
+		recordsNavigationHistory = try container.decodeIfPresent(Bool.self, forKey: .recordsNavigationHistory) ?? true
+		restorationState = try container.decodeIfPresent(Data.self, forKey: .restorationState)
+		fileAccessBookmark = try container.decodeIfPresent(Data.self, forKey: .fileAccessBookmark)
+	}
+
+	nonisolated func encode(to encoder: Encoder) throws {
+		var container = encoder.container(keyedBy: CodingKeys.self)
+		try container.encode(id, forKey: .id)
+		try container.encodeIfPresent(internalPage, forKey: .internalPage)
+		try container.encode(pageTitle, forKey: .pageTitle)
+		try container.encodeIfPresent(customTitle, forKey: .customTitle)
+		try container.encodeIfPresent(url, forKey: .url)
+		try container.encode(history, forKey: .history)
+		try container.encode(historyIndex, forKey: .historyIndex)
+		try container.encode(peeks, forKey: .peeks)
+		try container.encode(pageZoom, forKey: .pageZoom)
+		try container.encode(scrollPosition, forKey: .scrollPosition)
+		try container.encode(isHibernated, forKey: .isHibernated)
+		try container.encode(modifiedAt, forKey: .modifiedAt)
+		try container.encodeIfPresent(closedSpaceID, forKey: .closedSpaceID)
+		try container.encodeIfPresent(closedNormalIndex, forKey: .closedNormalIndex)
+		try container.encode(recordsNavigationHistory, forKey: .recordsNavigationHistory)
+		try container.encodeIfPresent(restorationState, forKey: .restorationState)
+		try container.encodeIfPresent(fileAccessBookmark, forKey: .fileAccessBookmark)
+	}
+
+	private nonisolated static func clampedIndex(_ index: Int, count: Int) -> Int {
+		guard count > 0 else { return 0 }
+		return min(max(index, 0), count - 1)
+	}
+}

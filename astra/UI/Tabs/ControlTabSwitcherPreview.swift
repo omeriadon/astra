@@ -50,18 +50,11 @@
 			GeometryReader { geometry in
 				ZStack {
 					if switcher.isPreviewVisible {
-						HStack(spacing: spacing) {
-							ForEach(visibleCandidateIDs(fitting: geometry.size.width), id: \.self) { id in
-								if let tab = browser.tabs.first(where: { $0.id == id }) {
-									ControlTabSwitcherCandidateView(
-										tab: tab,
-										isSelected: switcher.highlightedTabID == id,
-										onHover: { switcher.highlight(id) },
-										action: { switcher.select(id) }
-									)
-								}
-							}
-						}
+						CandidateGridView(
+							browser: browser,
+							switcher: switcher,
+							candidateIDs: visibleCandidateIDs(fitting: geometry.size.width)
+						)
 						.padding(padding)
 						.glassEffect(.clear, in: RoundedRectangle(cornerRadius: 27))
 						.accessibilityIdentifier("control-tab-switcher-preview")
@@ -71,6 +64,28 @@
 				.task(id: switcher.candidateIDs) {
 					guard !switcher.candidateIDs.isEmpty else { return }
 					await refreshVisibleCandidates(fitting: geometry.size.width)
+				}
+			}
+		}
+	}
+
+	private struct CandidateGridView: View {
+		let browser: Browser
+		let switcher: ControlTabSwitcher
+		let candidateIDs: [UUID]
+		private let spacing: CGFloat = 12
+
+		var body: some View {
+			HStack(spacing: spacing) {
+				ForEach(candidateIDs, id: \.self) { id in
+					if let tab = browser.tabs.first(where: { $0.id == id }) {
+						ControlTabSwitcherCandidateView(
+							tab: tab,
+							isSelected: switcher.highlightedTabID == id,
+							onHover: { switcher.highlight(id) },
+							action: { switcher.select(id) }
+						)
+					}
 				}
 			}
 		}

@@ -90,6 +90,10 @@ public final class HazeEffectView<Provider: MaskProvider>: PlatformView {
         super.layout()
         renderFilter()
     }
+
+    override public func hitTest(_: NSPoint) -> NSView? {
+        nil
+    }
     #endif
 
     @available(*, unavailable)

@@ -5,7 +5,8 @@ struct BrowserToastView: View {
 
 	var body: some View {
 		Label(toast.message, systemImage: toast.symbol)
-			.lineLimit(1)
+			.lineLimit(3)
+			.fixedSize(horizontal: false, vertical: true)
 			.padding(.horizontal, 12)
 			.padding(.vertical, 8)
 			.background(.regularMaterial, in: Capsule())

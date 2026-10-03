@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: astra-release
+  cancel-in-progress: false
+
 jobs:
   publish:
     name: Publish Release
@@ -17,15 +21,18 @@ jobs:
 
     env:
       SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
     steps:
       - name: Parse release metadata
         id: meta
         shell: bash
+        env:
+          RELEASE_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
 
-          BRANCH="${{ github.event.pull_request.head.ref }}"
+          BRANCH="$RELEASE_BRANCH"
 
           if [[ ! "$BRANCH" =~ ^release/([0-9]+\.[0-9]+(\.[0-9]+)?)\+([0-9]+)$ ]]; then
             echo "::error::Release branches must be named release/<version>+<build>, for example release/0.1.1+2"
@@ -65,15 +72,17 @@ jobs:
         shell: bash
         run: xcodebuild -downloadComponent MetalToolchain
 
-      - name: Verify Sparkle signing secret
+      - name: Prepare temporary distribution credentials
         if: steps.meta.outputs.bootstrap != 'true'
         shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -z "${SPARKLE_PRIVATE_KEY:-}" ]]; then
-            echo "::error::SPARKLE_PRIVATE_KEY repository secret is missing"
-            exit 1
-          fi
+        env:
+          DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          DEVELOPER_ID_PROFILE_BASE64: ${{ secrets.DEVELOPER_ID_PROFILE_BASE64 }}
+          APPLE_NOTARY_KEY_BASE64: ${{ secrets.APPLE_NOTARY_KEY_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: python3 scripts/release/signing.py prepare
 
       - name: Build release archive
         if: steps.meta.outputs.bootstrap != 'true'
@@ -96,10 +105,20 @@ jobs:
             -clonedSourcePackagesDirPath "$PACKAGES" \
             MARKETING_VERSION="$VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
+            PROVISIONING_PROFILE_SPECIFIER="$SIGNING_PROFILE" \
+            ENABLE_HARDENED_RUNTIME=YES \
+            OTHER_CODE_SIGN_FLAGS="--timestamp --keychain $SIGNING_KEYCHAIN"
 
-          APP="$(find "$ARCHIVE/Products/Applications" -maxdepth 1 -name '*.app' -print -quit)"
+          EXPORT="$RUNNER_TEMP/astra-export"
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE" \
+            -exportPath "$EXPORT" \
+            -exportOptionsPlist "$EXPORT_OPTIONS"
+
+          APP="$(find "$EXPORT" -maxdepth 1 -name '*.app' -print -quit)"
 
           if [[ -z "$APP" || ! -d "$APP" ]]; then
             echo "::error::No .app was produced by the archive"
@@ -119,23 +138,26 @@ jobs:
             exit 1
           fi
 
-          codesign \
-            --force \
-            --deep \
-            --sign - \
-            --preserve-metadata=identifier,entitlements,flags,runtime \
-            "$APP"
-
-          codesign \
-            --force \
-            --sign - \
-            --entitlements astra/Special/astra.entitlements \
-            "$APP"
-
           codesign --deep --strict --verify "$APP"
+          python3 scripts/release/validate_artifact.py "$APP" --team-id "$APPLE_TEAM_ID"
 
           echo "APP_PATH=$APP" >> "$GITHUB_ENV"
           echo "PACKAGES_PATH=$PACKAGES" >> "$GITHUB_ENV"
+
+      - name: Notarize and staple application
+        if: steps.meta.outputs.bootstrap != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SUBMISSION="$RUNNER_TEMP/astra-notary.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$SUBMISSION"
+          xcrun notarytool submit "$SUBMISSION" \
+            --keychain-profile astra-release --keychain "$SIGNING_KEYCHAIN" \
+            --wait --timeout 30m --output-format json > "$RUNNER_TEMP/astra-notary.json"
+          python3 -c 'import json, sys; result = json.load(open(sys.argv[1])); sys.exit(0 if result.get("status") == "Accepted" else "Application notarization was not accepted")' "$RUNNER_TEMP/astra-notary.json"
+          xcrun stapler staple "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+          spctl --assess --type execute --verbose=2 "$APP_PATH"
 
       - name: Package ZIP and DMG
         if: steps.meta.outputs.bootstrap != 'true'
@@ -164,6 +186,15 @@ jobs:
             -ov \
             -format UDZO \
             "$DMG_PATH"
+
+          codesign --sign "$SIGNING_IDENTITY" --timestamp \
+            --keychain "$SIGNING_KEYCHAIN" "$DMG_PATH"
+          xcrun notarytool submit "$DMG_PATH" \
+            --keychain-profile astra-release --keychain "$SIGNING_KEYCHAIN" \
+            --wait --timeout 30m --output-format json > "$RUNNER_TEMP/astra-dmg-notary.json"
+          python3 -c 'import json, sys; result = json.load(open(sys.argv[1])); sys.exit(0 if result.get("status") == "Accepted" else "Disk image notarization was not accepted")' "$RUNNER_TEMP/astra-dmg-notary.json"
+          xcrun stapler staple "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
 
           echo "APPCAST_DIR=$APPCAST_DIR" >> "$GITHUB_ENV"
           echo "ZIP_PATH=$ZIP_PATH" >> "$GITHUB_ENV"
@@ -240,3 +271,11 @@ jobs:
             --target "$MERGE_SHA" \
             --title "Astra $VERSION (Build $BUILD)" \
             --generate-notes
+
+      - name: Remove temporary distribution credentials
+        if: always() && steps.meta.outputs.bootstrap != 'true'
+        shell: bash
+        run: |
+          if [[ -f scripts/release/signing.py ]]; then
+            python3 scripts/release/signing.py cleanup
+          fi

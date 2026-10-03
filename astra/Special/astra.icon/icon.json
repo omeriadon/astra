@@ -1,6 +1,5 @@
 {
   "features" : [
-    "refractivity",
     "specular-location"
   ],
   "fill" : {
@@ -11,7 +10,7 @@
   },
   "groups" : [
     {
-      "blur-material" : 0.03,
+      "blur-material" : 0.15,
       "layers" : [
         {
           "fill-specializations" : [
@@ -136,7 +135,7 @@
       "name" : "pane",
       "refractivity" : {
         "depth" : 0.0938671875,
-        "enabled" : true,
+        "enabled" : false,
         "strength" : 0.6015234375
       },
       "shadow" : {
@@ -145,8 +144,8 @@
       },
       "specular" : "outside",
       "translucency" : {
-        "enabled" : false,
-        "value" : 0.17
+        "enabled" : true,
+        "value" : 0.43
       }
     },
     {

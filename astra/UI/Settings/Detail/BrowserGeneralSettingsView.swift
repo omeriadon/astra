@@ -1,20 +1,70 @@
 import Defaults
+import Sparkle
 import SwiftUI
+
+#if os(macOS)
+	import AppKit
+#endif
 
 let addressDisplayStyleSpacing: CGFloat = 8
 
 struct BrowserGeneralSettingsView: View {
+	@Bindable private var updates = UpdateManager.shared
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
+	@Default(.defaultPageZoom) private var defaultPageZoom
 	@Default(.peekLevel) private var peekLevel
 	@Default(.zoomOutInPeeks) private var zoomOutInPeeks
 	@Default(.renameDownloadsWithAppleIntelligence) private var renameDownloadsWithAppleIntelligence
+	@Default(.downloadsAskWhereToSave) private var downloadsAskWhereToSave
+	@Default(.startupBehavior) private var startupBehavior
+	@Default(.homepageURL) private var homepageURL
+	@Default(.browserSearchConfiguration) private var browserSearchConfigurationValue
+
+	#if os(macOS)
+		@State private var isDefaultBrowser = false
+		@State private var isSettingDefaultBrowser = false
+		@State private var defaultBrowserError: String?
+		@Default(.miniAstraEnabled) private var miniAstraEnabled
+		@Default(.miniAstraWindowAnimation) private var miniAstraWindowAnimation
+		@Default(.miniAstraShortcutEnabled) private var miniAstraShortcutEnabled
+		@Default(.webInspectorEnabled) private var webInspectorEnabled
+	#endif
 
 	var body: some View {
 		List {
+			#if os(macOS)
+				Section("Default Browser") {
+					Text(isDefaultBrowser ? "Astra is your default browser." : "Open web links from other apps in Astra.")
+						.foregroundStyle(.secondary)
+						.accessibilityIdentifier("default-browser-status")
+
+					Button("Make Default Browser", systemImage: "globe", role: .confirm) {
+						Task { await makeDefaultBrowser() }
+					}
+					.buttonStyle(.glassProminent)
+					.disabled(isDefaultBrowser || isSettingDefaultBrowser)
+					.accessibilityLabel("Make Astra the default web browser")
+					.accessibilityIdentifier("make-default-browser")
+					.id("Make Default Browser")
+
+					if let defaultBrowserError {
+						Text(defaultBrowserError)
+							.foregroundStyle(.red)
+							.accessibilityIdentifier("default-browser-error")
+					}
+				}
+				.id("Default Browser")
+				.onAppear(perform: refreshDefaultBrowser)
+				.onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+					refreshDefaultBrowser()
+				}
+			#endif
+
 			Section("Address Bar") {
 				VStack(spacing: addressDisplayStyleSpacing) {
 					ForEach(AddressDisplayStyle.allCases) { style in
 						addressDisplayStyleOption(style: style)
+							.id(style.title)
 					}
 				}
 				.padding(5)
@@ -23,7 +73,131 @@ struct BrowserGeneralSettingsView: View {
 						.clipShape(RoundedRectangle(cornerRadius: 20))
 				}
 				.accessibilityIdentifier("address-display-style-picker")
+				.id("Address Bar")
 			}
+
+			Section("Search") {
+				Picker("Normal browsing", selection: engineBinding(isPrivate: false)) {
+					ForEach(BrowserSearchConfiguration.Engine.allCases) { engine in
+						Text(engine.title).tag(engine)
+					}
+				}
+				.accessibilityIdentifier("normal-search-engine-picker")
+
+				Picker("Private browsing", selection: engineBinding(isPrivate: true)) {
+					ForEach(BrowserSearchConfiguration.Engine.allCases) { engine in
+						Text(engine.title).tag(engine)
+					}
+				}
+				.accessibilityIdentifier("private-search-engine-picker")
+
+				if searchConfiguration.normalEngine == .custom || searchConfiguration.privateEngine == .custom {
+					TextField("HTTPS search template", text: customTemplateBinding)
+						.accessibilityLabel("Custom HTTPS search template")
+						.accessibilityIdentifier("custom-search-template")
+					if searchConfiguration.customTemplateIsValid {
+						Text("Use {query} as the search term. Only HTTPS templates are used.")
+							.font(.caption)
+							.foregroundStyle(.secondary)
+					} else {
+						Text("Enter a valid HTTPS URL with one {query} placeholder in its query.")
+							.font(.caption)
+							.foregroundStyle(.red)
+							.accessibilityIdentifier("custom-search-template-error")
+					}
+				}
+
+				TextField("Keyword shortcuts", text: keywordShortcutsBinding, axis: .vertical)
+					.lineLimit(1 ... 4)
+					.accessibilityLabel("Search keyword shortcuts")
+					.accessibilityIdentifier("search-keyword-shortcuts")
+				Text("One per line: keyword=https://example.com/search?q={query}")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+
+				Toggle("Allow search suggestions in Private Browsing", isOn: privateSuggestionsBinding)
+					.accessibilityIdentifier("private-search-suggestions-enabled")
+			}
+			.id("Search")
+
+			Section("Page Zoom") {
+				HStack {
+					Slider(
+						value: Binding(
+							get: { BrowserZoomPolicy.clamp(defaultPageZoom) },
+							set: { defaultPageZoom = BrowserZoomPolicy.clamp($0) }
+						),
+						in: BrowserZoomPolicy.range,
+						step: 0.05
+					)
+						.accessibilityLabel("Default page zoom")
+						.accessibilityIdentifier("default-page-zoom-slider")
+					Text(BrowserZoomPolicy.clamp(defaultPageZoom), format: .percent.precision(.fractionLength(0)))
+						.monospacedDigit()
+						.frame(minWidth: 48, alignment: .trailing)
+						.accessibilityIdentifier("default-page-zoom-value")
+				}
+
+				Button("Reset Default Zoom", systemImage: "1.magnifyingglass") {
+					defaultPageZoom = BrowserZoomPolicy.defaultZoom
+				}
+				.accessibilityIdentifier("default-page-zoom-reset")
+			}
+			.id("Page Zoom")
+
+			Section("Startup") {
+				Picker("When Astra opens", selection: $startupBehavior) {
+					Text("Restore previous session").tag(BrowserStartupBehavior.restore)
+					Text("Open a blank tab").tag(BrowserStartupBehavior.blank)
+					Text("Open homepage").tag(BrowserStartupBehavior.homepage)
+				}
+				.accessibilityIdentifier("startup-behavior-picker")
+
+				if startupBehavior == .homepage {
+					TextField("Homepage URL", text: $homepageURL)
+						.accessibilityLabel("Homepage URL")
+						.accessibilityIdentifier("homepage-url")
+				}
+			}
+			.id("Startup")
+
+			#if os(macOS)
+				Section("Mini Astra") {
+					Toggle("Open links from other apps in Mini Astra", isOn: $miniAstraEnabled)
+						.accessibilityIdentifier("mini-astra-enabled")
+
+					Toggle("Animate Mini Astra from the pointer", isOn: $miniAstraWindowAnimation)
+						.accessibilityIdentifier("mini-astra-window-animation")
+
+					if miniAstraWindowAnimation {
+						Text("Expands the window from the pointer position. Respects Reduce Motion.")
+							.font(.caption)
+							.foregroundStyle(.secondary)
+					}
+
+					Toggle("Enable global shortcut: ⌃⌥⌘N", isOn: $miniAstraShortcutEnabled)
+						.accessibilityLabel("Enable global Mini Astra shortcut: Control Option Command N")
+						.accessibilityIdentifier("mini-astra-shortcut-enabled")
+						.onChange(of: miniAstraShortcutEnabled) { _, _ in
+							MiniAstraShortcut.shared.update()
+						}
+					Text("Opens a blank Mini Astra window from any app while Astra is running.")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+					if MiniAstraShortcut.shared.registrationFailed {
+						Text("The shortcut could not be registered. Disable any conflicting shortcut, then enable it again.")
+							.foregroundStyle(.red)
+					}
+				}
+
+				Section("Developer") {
+					Toggle("Allow Web Inspector in Safari", isOn: $webInspectorEnabled)
+						.accessibilityIdentifier("web-inspector-enabled")
+					Text("Inspect pages from Safari’s Develop menu. This applies when each page is created; Astra has no public embedded inspector command.")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+				}
+			#endif
 
 			Section("Peek") {
 				Picker("Levels", selection: $peekLevel) {
@@ -33,30 +207,159 @@ struct BrowserGeneralSettingsView: View {
 					}
 				}
 				.accessibilityIdentifier("peek-level-picker")
+				.id("Levels")
 
 				if peekLevel != .none {
 					Toggle("Zoom out in Peeks", isOn: $zoomOutInPeeks)
 						.accessibilityIdentifier("zoom-out-in-peeks-toggle")
+						.id("Zoom out in Peeks")
 				}
 			}
-
-			Section("Website Data") {
-				Button(role: .destructive, action: FaviconStore.shared.clear) {
-					Label("Clear All Favicons", systemImage: "trash")
-				}
-				.disabled(FaviconStore.shared.isEmpty)
-				.accessibilityIdentifier("clear-all-favicons")
-			}
+			.id("Peek")
 
 			Section("Downloads") {
+				#if os(macOS)
+					Toggle("Ask where to save each download", isOn: $downloadsAskWhereToSave)
+						.accessibilityLabel("Ask where to save each download")
+						.accessibilityIdentifier("downloads-ask-where-to-save")
+
+					HStack {
+						Label("Download folder", systemImage: "folder")
+						Spacer()
+						Text(BrowserDownloadManager.shared.selectedDownloadFolderName)
+							.foregroundStyle(.secondary)
+							.lineLimit(1)
+							.accessibilityLabel("Current download folder")
+							.accessibilityIdentifier("downloads-current-folder")
+						Button("Choose Folder", systemImage: "folder.badge.plus") {
+							BrowserDownloadManager.shared.chooseDownloadFolder(in: NSApp.keyWindow)
+						}
+						.accessibilityLabel("Choose download folder")
+						.accessibilityIdentifier("downloads-choose-folder")
+					}
+				#endif
+
 				Toggle("Rename downloads with Apple Intelligence", isOn: $renameDownloadsWithAppleIntelligence)
 					.accessibilityLabel("Rename downloads with Apple Intelligence")
 					.accessibilityIdentifier("rename-downloads-with-apple-intelligence")
+					.id("Rename downloads with Apple Intelligence")
+
+				ZStack {}
 			}
+			.id("Downloads")
+
+			Section("Updates") {
+				Toggle("Automatically check for updates", isOn: $updates.automaticChecks)
+					.accessibilityIdentifier("automatically-check-for-updates")
+					.id("Automatically check for updates")
+
+				Toggle("Automatically install updates", isOn: $updates.automaticInstalls)
+					.disabled(!updates.automaticChecks || !updates.updater.allowsAutomaticUpdates)
+					.accessibilityIdentifier("automatically-install-updates")
+					.id("Automatically install updates")
+			}
+			.id("Updates")
 		}
 		.scrollContentBackground(.hidden)
 		.listStyle(.sidebar)
 	}
+
+	private func bounded(_ value: String, maxBytes: Int) -> String {
+		var result = ""
+		var byteCount = 0
+		for character in value {
+			let next = String(character)
+			guard byteCount + next.utf8.count <= maxBytes else {
+				break
+			}
+			result.append(character)
+			byteCount += next.utf8.count
+		}
+		return result
+	}
+
+	private var searchConfiguration: BrowserSearchConfiguration {
+		BrowserSearchConfiguration.decode(browserSearchConfigurationValue)
+	}
+
+	private func engineBinding(isPrivate: Bool) -> Binding<BrowserSearchConfiguration.Engine> {
+		Binding(
+			get: { searchConfiguration.engine(isPrivate: isPrivate) },
+			set: { engine in
+				var configuration = searchConfiguration
+				if isPrivate {
+					configuration.privateEngine = engine
+				} else {
+					configuration.normalEngine = engine
+				}
+				browserSearchConfigurationValue = configuration.encoded
+			}
+		)
+	}
+
+	private var customTemplateBinding: Binding<String> {
+		Binding(
+			get: { searchConfiguration.customTemplate },
+			set: { value in
+				var configuration = searchConfiguration
+				configuration.customTemplate = bounded(value, maxBytes: 2_048)
+				browserSearchConfigurationValue = configuration.encoded
+			}
+		)
+	}
+
+	private var keywordShortcutsBinding: Binding<String> {
+		Binding(
+			get: { searchConfiguration.keywordShortcuts },
+			set: { value in
+				var configuration = searchConfiguration
+				configuration.keywordShortcuts = bounded(value, maxBytes: 4_096)
+				browserSearchConfigurationValue = configuration.encoded
+			}
+		)
+	}
+
+	private var privateSuggestionsBinding: Binding<Bool> {
+		Binding(
+			get: { searchConfiguration.privateSuggestionsEnabled },
+			set: { value in
+				var configuration = searchConfiguration
+				configuration.privateSuggestionsEnabled = value
+				browserSearchConfigurationValue = configuration.encoded
+			}
+		)
+	}
+
+	#if os(macOS)
+		private func refreshDefaultBrowser() {
+			isDefaultBrowser = ["http", "https"].allSatisfy { scheme in
+				guard let url = URL(string: "\(scheme)://example.com"),
+				      let applicationURL = NSWorkspace.shared.urlForApplication(toOpen: url),
+				      let bundleIdentifier = Bundle.main.bundleIdentifier
+				else { return false }
+				return Bundle(url: applicationURL)?.bundleIdentifier == bundleIdentifier
+			}
+		}
+
+		private func makeDefaultBrowser() async {
+			isSettingDefaultBrowser = true
+			defaultBrowserError = nil
+			defer {
+				isSettingDefaultBrowser = false
+				refreshDefaultBrowser()
+			}
+			do {
+				for scheme in ["http", "https"] {
+					try await NSWorkspace.shared.setDefaultApplication(
+						at: Bundle.main.bundleURL,
+						toOpenURLsWithScheme: scheme
+					)
+				}
+			} catch {
+				defaultBrowserError = error.localizedDescription
+			}
+		}
+	#endif
 
 	private func addressDisplayStyleOption(style: AddressDisplayStyle) -> some View {
 		HStack {
