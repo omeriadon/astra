@@ -55,12 +55,14 @@ final class BrowserWindowRegistry {
 	}
 
 	func unregister(_ browser: Browser) {
-		browsers.removeAll { $0.browser == nil || $0.browser === browser }
-		pendingRestorationRecords?.removeValue(forKey: browser.windowID)
 		if pendingPublishSource === browser {
 			publishTask?.cancel()
+			publishTask = nil
 			pendingPublishSource = nil
+			publishNow(from: browser)
 		}
+		browsers.removeAll { $0.browser == nil || $0.browser === browser }
+		pendingRestorationRecords?.removeValue(forKey: browser.windowID)
 		if activeBrowserID == browser.windowID {
 			activeBrowserID = browsers.first?.browser?.windowID
 		}
@@ -105,6 +107,7 @@ final class BrowserWindowRegistry {
 			try? await Task.sleep(for: .milliseconds(500))
 			guard !Task.isCancelled, let self, let source = pendingPublishSource else { return }
 			pendingPublishSource = nil
+			publishTask = nil
 			publishNow(from: source)
 		}
 	}
