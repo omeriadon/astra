@@ -26,6 +26,42 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 	var customTemplate = "https://www.google.com/search?q={query}"
 	var keywordShortcuts = ""
 	var privateSuggestionsEnabled = false
+	var githubRepositoryShorthandEnabled = true
+
+	private enum CodingKeys: String, CodingKey {
+		case normalEngine
+		case privateEngine
+		case customTemplate
+		case keywordShortcuts
+		case privateSuggestionsEnabled
+		case githubRepositoryShorthandEnabled
+	}
+
+	init(
+		normalEngine: Engine = .google,
+		privateEngine: Engine = .google,
+		customTemplate: String = "https://www.google.com/search?q={query}",
+		keywordShortcuts: String = "",
+		privateSuggestionsEnabled: Bool = false,
+		githubRepositoryShorthandEnabled: Bool = true
+	) {
+		self.normalEngine = normalEngine
+		self.privateEngine = privateEngine
+		self.customTemplate = customTemplate
+		self.keywordShortcuts = keywordShortcuts
+		self.privateSuggestionsEnabled = privateSuggestionsEnabled
+		self.githubRepositoryShorthandEnabled = githubRepositoryShorthandEnabled
+	}
+
+	init(from decoder: Decoder) throws {
+		let values = try decoder.container(keyedBy: CodingKeys.self)
+		normalEngine = try values.decode(Engine.self, forKey: .normalEngine)
+		privateEngine = try values.decode(Engine.self, forKey: .privateEngine)
+		customTemplate = try values.decode(String.self, forKey: .customTemplate)
+		keywordShortcuts = try values.decode(String.self, forKey: .keywordShortcuts)
+		privateSuggestionsEnabled = try values.decode(Bool.self, forKey: .privateSuggestionsEnabled)
+		githubRepositoryShorthandEnabled = try values.decodeIfPresent(Bool.self, forKey: .githubRepositoryShorthandEnabled) ?? true
+	}
 
 	static let `default` = Self()
 
@@ -72,7 +108,7 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 
 	func destination(for input: String, isPrivate: Bool = false) -> URL? {
 		let query = input.trimmingCharacters(in: .whitespacesAndNewlines)
-		if let repository = Self.githubRepositoryDestination(for: query) {
+		if githubRepositoryShorthandEnabled, let repository = Self.githubRepositoryDestination(for: query) {
 			return repository
 		}
 		if let shortcut = shortcutDestination(for: query) {
@@ -154,7 +190,7 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 	}
 
 	func searchLabel(for input: String, isPrivate: Bool) -> String {
-		if Self.githubRepositoryDestination(for: input) != nil {
+		if githubRepositoryShorthandEnabled, Self.githubRepositoryDestination(for: input) != nil {
 			return "Open GitHub Repository"
 		}
 		if let shortcutURL = shortcutDestination(for: input),

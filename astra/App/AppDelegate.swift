@@ -461,10 +461,14 @@
 			} else {
 				openBrowserWindow().browser
 			}
-			browser.addTab()
+			browser.requestNewTab()
 		}
 
 		@objc private func closeTab(_: Any?) {
+			if let browser = activeBrowser, browser.showsQuickSearch {
+				browser.dismissQuickSearch()
+				return
+			}
 			if activeAuthenticationBrowser != nil {
 				NSApp.keyWindow?.performClose(nil)
 				return

@@ -10,6 +10,7 @@ let addressDisplayStyleSpacing: CGFloat = 8
 
 struct BrowserGeneralSettingsView: View {
 	@Bindable private var updates = UpdateManager.shared
+	@Default(.newTabStyle) private var newTabStyle
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
 	@Default(.defaultPageZoom) private var defaultPageZoom
 	@Default(.peekLevel) private var peekLevel
@@ -75,6 +76,39 @@ struct BrowserGeneralSettingsView: View {
 				.accessibilityIdentifier("address-display-style-picker")
 				.id("Address Bar")
 			}
+
+			Section("New Tab") {
+				VStack(spacing: addressDisplayStyleSpacing) {
+					ForEach(BrowserNewTabStyle.allCases) { style in
+						Button {
+							newTabStyle = style
+						} label: {
+							HStack(spacing: 12) {
+								Label(style.title, systemImage: style.symbol)
+									.frame(width: 140, alignment: .leading)
+								Text(style.description)
+									.font(.caption)
+									.frame(maxWidth: .infinity, alignment: .leading)
+							}
+							.padding(12)
+							.contentShape(RoundedRectangle(cornerRadius: 15))
+							.background(Color.primary.opacity(newTabStyle == style ? 0.2 : 0), in: RoundedRectangle(cornerRadius: 15))
+							.overlay {
+								RoundedRectangle(cornerRadius: 15)
+									.strokeBorder(.white.opacity(newTabStyle == style ? 0.6 : 0.3), lineWidth: 1)
+							}
+						}
+						.buttonStyle(.plain)
+						.accessibilityLabel(style.title)
+						.accessibilityValue(newTabStyle == style ? "Selected" : "Not selected")
+						.accessibilityIdentifier("new-tab-style-\(style.rawValue)")
+					}
+				}
+				.padding(5)
+				.background(Color.primary.opacity(0.1), in: RoundedRectangle(cornerRadius: 20))
+				.accessibilityIdentifier("new-tab-style-picker")
+			}
+			.id("New Tab")
 
 			Section("Search") {
 				Picker("Normal browsing", selection: engineBinding(isPrivate: false)) {

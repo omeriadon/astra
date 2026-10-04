@@ -20,6 +20,20 @@ struct BrowserContentView: View {
 				transaction.animation = nil
 				transaction.disablesAnimations = true
 			}
+			#if os(macOS)
+			.overlay(alignment: .bottomLeading) {
+				if !BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser),
+				   let controller = browser.selectedTab?.activeController,
+				   let url = controller.hoveredLinkURL
+				{
+					BrowserLinkPreview(url: url)
+						.frame(maxWidth: min(700, proxy.size.width * 0.75), alignment: .leading)
+						.frame(maxWidth: .infinity, alignment: controller.hoveredLinkUsesTrailingCorner ? .trailing : .leading)
+						.padding(8)
+						.allowsHitTesting(false)
+				}
+			}
+			#endif
 			.frame(width: proxy.size.width, height: proxy.size.height)
 			.background(browser.theme.contentShade(for: colorScheme))
 			.allowsHitTesting(selectedTab?.peeks.isEmpty == true || selectedTab?.activeController === selectedTab?.controller)

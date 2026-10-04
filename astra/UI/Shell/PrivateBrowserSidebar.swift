@@ -14,7 +14,7 @@ struct PrivateBrowserSidebar: View {
 					PrivateBrowserTabRow(tab: tab, browser: browser)
 				}
 				Button("New Tab", systemImage: "plus") {
-					browser.addTab()
+					browser.requestNewTab()
 				}
 				.buttonStyle(.plain)
 				.frame(maxWidth: .infinity, alignment: .leading)

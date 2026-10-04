@@ -3,6 +3,7 @@ import SwiftUI
 
 struct NewTabView: View {
 	@Bindable var browser: Browser
+	var isQuickSearch = false
 	@Default(.searchSuggestionsEnabled) private var searchSuggestionsEnabled
 	@Default(.browserSearchConfiguration) private var searchConfigurationValue
 	@Default(.startPagePreferences) private var startPagePreferencesValue
@@ -42,7 +43,7 @@ struct NewTabView: View {
 		let selectedResultID = browser.selectedNewTabSearchResult?.id
 		ScrollViewReader { proxy in
 			List {
-				if browser.newTabSearchText.isEmpty {
+				if browser.newTabSearchText.isEmpty, !isQuickSearch {
 					startPageModules
 					if !hasStartPageContent {
 						Section {
@@ -54,7 +55,9 @@ struct NewTabView: View {
 					ForEach(browser.newTabSearchResults) { result in
 						let query = browser.newTabSearchText
 						let generation = browser.newTabSearchGeneration
-						Button(action: result.perform) {
+						Button {
+							browser.performNewTabSearchResult(result)
+						} label: {
 							Label {
 								VStack(alignment: .leading, spacing: 2) {
 									Text(verbatim: result.title)
@@ -66,8 +69,8 @@ struct NewTabView: View {
 								}
 								.frame(maxWidth: .infinity, alignment: .leading)
 							} icon: {
-								Image(systemName: result.symbol)
-									.frame(width: 20)
+								BrowserSearchResultIcon(result: result)
+									.frame(width: 20, height: 20)
 							}
 							.contentShape(Rectangle())
 						}
@@ -110,6 +113,11 @@ struct NewTabView: View {
 		}
 		.frame(maxWidth: 680)
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
+		.task(id: browser.quickSearchFocusRequest) {
+			guard isQuickSearch else { return }
+			await Task.yield()
+			isSearchFocused = true
+		}
 		.task(id: browser.selectedTabID) {
 			isSearchFocused = true
 		}
@@ -262,22 +270,24 @@ struct NewTabView: View {
 
 	private var searchHeader: some View {
 		VStack(alignment: .leading, spacing: 14) {
-			HStack {
-				Text(browser.isPrivate ? "Private Browsing" : "astra")
-					.font(.largeTitle.bold())
-				Spacer()
-				Button {
-					showingPreferences = true
-				} label: {
-					Label("Customize Start Page", systemImage: "slider.horizontal.3")
+			if !isQuickSearch {
+				HStack {
+					Text(browser.isPrivate ? "Private Browsing" : "astra")
+						.font(.largeTitle.bold())
+					Spacer()
+					Button {
+						showingPreferences = true
+					} label: {
+						Label("Customize Start Page", systemImage: "slider.horizontal.3")
+					}
+					.labelStyle(.iconOnly)
+					.accessibilityLabel("Customize Start Page")
+					.accessibilityIdentifier("start-page-preferences")
+					.matchedTransitionSource(id: "start-page-preferences", in: transitions)
 				}
-				.labelStyle(.iconOnly)
-				.accessibilityLabel("Customize Start Page")
-				.accessibilityIdentifier("start-page-preferences")
-				.matchedTransitionSource(id: "start-page-preferences", in: transitions)
+				Text(browser.isPrivate ? "Tabs and website data are discarded when this window closes. Downloaded files are kept." : "Search the web, history, or browser actions")
+					.foregroundStyle(.secondary)
 			}
-			Text(browser.isPrivate ? "Tabs and website data are discarded when this window closes. Downloaded files are kept." : "Search the web, history, or browser actions")
-				.foregroundStyle(.secondary)
 			HStack(spacing: 10) {
 				Image(systemName: "magnifyingglass")
 					.accessibilityHidden(true)
@@ -302,7 +312,11 @@ struct NewTabView: View {
 						return .handled
 					}
 					.onKeyPress(.escape) {
-						browser.newTabSearchSelection = "typed"
+						if isQuickSearch {
+							browser.dismissQuickSearch()
+						} else {
+							browser.newTabSearchSelection = "typed"
+						}
 						return .handled
 					}
 					.accessibilityLabel("Search the web, history, or browser actions")
@@ -312,7 +326,7 @@ struct NewTabView: View {
 			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
 		}
 		.padding(.horizontal, 24)
-		.padding(.top, 32)
+		.padding(.top, isQuickSearch ? 16 : 32)
 		.padding(.bottom, 16)
 	}
 }

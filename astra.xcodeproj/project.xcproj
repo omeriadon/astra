@@ -51,8 +51,8 @@
       "kind": "folder",
       "path": "astra",
       "target-membership": [
-        "astra",
         "AstraWebsiteAppTemplate",
+        "astra",
       ],
       "membership-exceptions": [
         {
@@ -67,24 +67,12 @@
           ],
         },
       ],
-    },
-    {
+    }, {
       "kind": "group",
       "name": "Products",
       "children": [
         { "path": "<PRODUCTS>/astra.app", "id": "2A3CB8C8305FC07600584097", "type": "wrapper.application", "index": false },
-        {
-          "path": "<PRODUCTS>/AstraWebsiteAppTemplate.app",
-          "id": "2A3CB8CA305FC07600584097",
-          "type": "wrapper.application",
-          "index": false,
-          "target-membership": [
-            {
-              "build-phase": "astra/copy/Embed Website App Template",
-              "code-sign-on-copy": true,
-            },
-          ],
-        },
+        { "path": "<PRODUCTS>/AstraWebsiteAppTemplate.app", "id": "2A3CB8CA305FC07600584097", "type": "wrapper.application", "index": false, "target-membership": [ { "build-phase": "astra/copy/Embed Website App Template", "code-sign-on-copy": true } ] },
       ],
     },
   ],
@@ -198,8 +186,7 @@
         "TARGETED_DEVICE_FAMILY": "1,2",
         "XROS_DEPLOYMENT_TARGET": "27.2",
       },
-    },
-    {
+    }, {
       "name": "AstraWebsiteAppTemplate",
       "id": "2A3CB8C9305FC07600584097",
       "product": "Products/AstraWebsiteAppTemplate.app",

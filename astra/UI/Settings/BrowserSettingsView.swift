@@ -17,6 +17,7 @@ struct BrowserSettingsView: View {
 		#if os(macOS)
 			case websiteApps
 		#endif
+		case developer
 		case advanced
 		case about
 		#if DEBUG
@@ -47,7 +48,7 @@ struct BrowserSettingsView: View {
 						identifier: "settings-ui",
 						terms: [
 							"Default Browser", "Make Default Browser",
-							"Address Bar", "Page Zoom", "Default Page Zoom", "Reset Default Zoom", "Peek", "Levels",
+							"New Tab", "Sidebar Tab", "Spotlight Overlay", "Address Bar", "Page Zoom", "Default Page Zoom", "Reset Default Zoom", "Peek", "Levels",
 							"Mini Astra", "links", "cursor", "animation", "shortcut",
 							"Zoom out in Peeks", "Downloads", "Rename downloads with Apple Intelligence",
 							"Ask where to save each download", "Download folder", "Choose Folder",
@@ -91,6 +92,14 @@ struct BrowserSettingsView: View {
 							terms: ["Dock", "Add Website to Dock", "Standalone", "Launch", "Reveal", "Keep in Dock", "Uninstall"]
 						)
 				#endif
+				case .developer:
+					Definition(
+						title: "Developer",
+						symbol: "chevron.left.forwardslash.chevron.right",
+						section: .advanced,
+						identifier: "settings-developer",
+						terms: ["GitHub", "Repository", "Shorthand", "owner/repository"]
+					)
 				case .advanced:
 					Definition(
 						title: "Advanced",
@@ -191,6 +200,8 @@ struct BrowserSettingsView: View {
 							BrowserAccountSettingsView()
 						case .privacyAndSecurity:
 							BrowserPrivacyAndSecuritySettingsView(session: browser.session)
+						case .developer:
+							BrowserDeveloperSettingsView()
 						case .advanced:
 							BrowserAdvancedSettingsView()
 						case .extensions:

@@ -36,6 +36,7 @@ enum BrowserSettingsSchema {
 	/// Restore browser preferences without clearing browsing data, bookmarks,
 	/// downloads, extension packages, credentials, account identity, or cookies.
 	static func resetBrowserSettings() {
+		Defaults[.newTabStyle] = .page
 		Defaults[.startupBehavior] = .restore
 		Defaults[.homepageURL] = "https://www.google.com"
 		Defaults[.tryHTTPSFirst] = true

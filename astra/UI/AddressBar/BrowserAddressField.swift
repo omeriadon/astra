@@ -289,7 +289,7 @@ struct BrowserAddressField: View {
 						Text(verbatim: result.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
 					}
 				} icon: {
-					Image(systemName: result.symbol).frame(width: 20)
+					BrowserSearchResultIcon(result: result).frame(width: 20, height: 20)
 				}
 			}
 			.buttonStyle(.plain)

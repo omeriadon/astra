@@ -70,6 +70,8 @@ final class Browser {
 		}
 	}
 
+	var showsQuickSearch = false
+	var quickSearchFocusRequest = 0
 	var newTabSearchSelection: String?
 	var newTabSearchGeneration = 0
 	var addressSearchText = "" {
@@ -748,6 +750,23 @@ final class Browser {
 		BrowserExtensionManager.shared.sync(self)
 	}
 
+	func requestNewTab() {
+		if Defaults[.newTabStyle] == .overlay, !isMini {
+			newTabSearchText = ""
+			newTabSearchSelection = nil
+			showsQuickSearch = true
+			quickSearchFocusRequest += 1
+		} else {
+			addTab()
+		}
+	}
+
+	func dismissQuickSearch() {
+		showsQuickSearch = false
+		newTabSearchText = ""
+		newTabSearchSelection = nil
+	}
+
 	@discardableResult
 	func addTab(inBackground: Bool = false) -> BrowserTab {
 		let tab = BrowserTab(session: session)
@@ -896,6 +915,9 @@ final class Browser {
 
 	func selectTab(_ id: UUID) {
 		guard let tab = tabs.first(where: { $0.id == id }) else { return }
+		showsQuickSearch = false
+		selectedTab?.activeController?.clearHoveredLink()
+		tab.activeController?.clearHoveredLink()
 		searchEngineDiscoveryTask?.cancel()
 		tab.clearPictureInPictureReturnController()
 		if !workspace.favouriteTabIDs.contains(id),
@@ -1234,6 +1256,10 @@ final class Browser {
 	}
 
 	func closeTab(_ id: UUID, confirmed: Bool = false) {
+		if showsQuickSearch, id == selectedTabID, !confirmed {
+			dismissQuickSearch()
+			return
+		}
 		guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
 		#if os(iOS)
 			let tab = tabs[index]

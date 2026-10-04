@@ -233,3 +233,18 @@ Required runtime follow-up on this changed build:
 - [ ] Press Command-Q once in Mini Astra; verify its banner appears, expires, and a timely second press follows the existing quit confirmation/data-saving flow.
 
 No existing space, account, download or browsing-data reset was performed as part of these source changes.
+
+## Additional interface changes — link preview, GitHub and New Tab style
+
+These changes are source/build verified, not new runtime passes:
+
+- Hovered links display their destination at the page's bottom-left corner, moving to bottom-right when the pointer occupies the lower-left area. Reports are deduplicated and cleared on mouse leave, blur, scroll, navigation and tab changes. The preview does not accept clicks, strips URL credentials, and works through the shared content view in normal/private/Mini hosts.
+- GitHub repository shorthand suggestions use a bundled official GitHub favicon and explicitly display `Open GitHub repository · https://github.com/owner/repository` in both New Tab and loaded-address results. The icon is bundled so typing does not fetch favicons from GitHub.
+- Settings → Developer contains GitHub Repository Shorthand. It defaults on to retain existing behavior; disabled shorthand uses the selected search engine. The toggle is stored in the existing timestamped search configuration. Older saved configurations missing this field retain their other preferences and default the feature on.
+- Settings → General → New Tab offers Sidebar Tab (existing default) and Spotlight Overlay. The latter opens the existing search/results interface over the current page, without adding a tab until a website result is selected. Escape, outside click and Command-W dismiss the overlay without closing the underlying tab. Command-T/new-tab buttons use the selected mode. Mini Astra retains its separate-window command behavior. The style preference joins the existing portable allowlist and resets to Sidebar Tab with browser preference reset.
+
+Checks: `bun checks/link-hover-check.mjs` covers resolved URLs, no repeated reports for the same target, corner avoidance and clearing. The production address/search check covers GitHub enabled/disabled navigation, saved-state round trips and older configuration migration. Final Xcode MCP build (`astra` / `My Mac`) passed with zero errors in 67.08 seconds. Log: `/var/folders/s_/ms68q0zx137_d7r08rxtnp9w0000gq/T/ActionArtifacts/default/BuildProject/BuildProject-Log-20261004-202009.txt`.
+
+- [ ] Hover real-page links, nested elements, shadow DOM links and iframe links; verify destination, bottom-corner positioning, credential redaction, clearing, and no intercepted clicks.
+- [ ] Inspect GitHub shorthand branding/destination in both suggestion interfaces; toggle off/on in Developer and relaunch to verify persistence.
+- [ ] Compare both New Tab picker options; exercise Command-T, sidebar buttons, query typing, arrow/Return selection, Escape, outside click, Command-W, repeated Command-T, actions and existing-tab results. Verify a website choice creates exactly one new tab and cancellation leaves the current page unchanged.

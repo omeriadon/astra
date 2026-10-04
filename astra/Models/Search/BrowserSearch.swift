@@ -63,9 +63,12 @@ extension Browser {
 				configuration: configuration,
 				isPrivate: isPrivate
 			)
+			let isGitHubRepository = configuration.githubRepositoryShorthandEnabled
+				&& BrowserSearchConfiguration.githubRepositoryDestination(for: query) == destination
 			results.append(BrowserSearchResult(
 				id: "typed", kind: .typed, title: query,
-				detail: isSearch ? configuration.searchLabel(for: query, isPrivate: isPrivate) : "Open Website",
+				detail: isGitHubRepository ? "Open GitHub repository · \(destination.absoluteString)"
+					: isSearch ? configuration.searchLabel(for: query, isPrivate: isPrivate) : "Open Website",
 				symbol: isSearch ? "magnifyingglass" : "globe",
 				score: isSearch ? 0.8 : 1.1,
 				destination: destination.absoluteString,
@@ -79,7 +82,7 @@ extension Browser {
 						      self.addressSearchText.trimmingCharacters(in: .whitespacesAndNewlines) == query
 						else { return }
 					}
-					self.selectedTab?.activeController?.loadFromAddressBar(destination)
+					self.openSearchDestination(destination, fromAddressBar: true)
 				}
 			))
 		}
@@ -107,7 +110,7 @@ extension Browser {
 				detail: "Search \(configuration.engine(isPrivate: isPrivate).title)", symbol: "magnifyingglass",
 				score: 0.79 - Double(index) * 0.015,
 				destination: url.absoluteString,
-				perform: { self.selectedTab?.activeController?.load(url) }
+				perform: { self.openSearchDestination(url) }
 			))
 		}
 		let ranked = BrowserSearchResult.ranked(results)
@@ -296,7 +299,7 @@ extension Browser {
 				detail: "History · \(url.absoluteString)", symbol: "clock.arrow.circlepath",
 				score: match + min(Double(count), 20) * 0.002 + recency * 0.02,
 				destination: url.absoluteString,
-				perform: { self.selectedTab?.activeController?.load(url) }
+				perform: { self.openSearchDestination(url) }
 			)
 		}
 	}
@@ -313,7 +316,7 @@ extension Browser {
 				title: bookmark.name, detail: "Bookmark · \(bookmark.url.absoluteString)",
 				symbol: "bookmark", score: match + (bookmark.isFavorite ? 0.03 : 0),
 				destination: bookmark.url.absoluteString,
-				perform: { self.selectedTab?.activeController?.load(bookmark.url) }
+				perform: { self.openSearchDestination(bookmark.url) }
 			)
 		}
 	}
@@ -358,8 +361,24 @@ extension Browser {
 		newTabSearchSelection = results[next].id
 	}
 
+	func performNewTabSearchResult(_ result: BrowserSearchResult) {
+		result.perform()
+		showsQuickSearch = false
+	}
+
+	private func openSearchDestination(_ url: URL, fromAddressBar: Bool = false) {
+		let controller = showsQuickSearch ? addTab().controller : selectedTab?.activeController
+		if fromAddressBar {
+			controller?.loadFromAddressBar(url)
+		} else {
+			controller?.load(url)
+		}
+	}
+
 	func submitNewTabSearch() {
-		selectedNewTabSearchResult?.perform()
+		if let result = selectedNewTabSearchResult {
+			performNewTabSearchResult(result)
+		}
 		newTabSearchSelection = nil
 	}
 

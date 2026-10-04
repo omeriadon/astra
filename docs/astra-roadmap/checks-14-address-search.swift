@@ -37,6 +37,17 @@ struct AddressSearchChecks {
 		precondition(BrowserSearchConfiguration.githubRepositoryDestination(for: "owner/repo name") == nil)
 		precondition(configuration.searchLabel(for: "omeriadon/astra", isPrivate: false) == "Open GitHub Repository")
 
+		var disabledShorthand = configuration
+		disabledShorthand.githubRepositoryShorthandEnabled = false
+		let disabledDestination = BrowserAddress.destination(for: "omeriadon/astra", configuration: disabledShorthand)!
+		precondition(disabledDestination.host == "www.google.com")
+		precondition(disabledShorthand.query(for: disabledDestination) == "omeriadon/astra")
+		precondition(BrowserSearchConfiguration.decode(disabledShorthand.encoded) == disabledShorthand)
+		var legacy = try! JSONSerialization.jsonObject(with: Data(configuration.encoded.utf8)) as! [String: Any]
+		legacy.removeValue(forKey: "githubRepositoryShorthandEnabled")
+		let legacyData = try! JSONSerialization.data(withJSONObject: legacy)
+		precondition(BrowserSearchConfiguration.decode(String(decoding: legacyData, as: UTF8.self)) == configuration)
+
 		let query = "C++ & 100%=x # café"
 		guard let searchURL = configuration.searchURL(for: query) else { fatalError("missing default search URL") }
 		precondition(searchURL.absoluteString.contains("C%2B%2B"))

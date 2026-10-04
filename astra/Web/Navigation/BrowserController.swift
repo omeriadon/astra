@@ -63,6 +63,8 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var committedHasOnlySecureContent: Bool?
 	private(set) var committedCertificateSummary: BrowserServerCertificateSummary?
 	private(set) var committedSecurityNavigationID: Int?
+	private(set) var hoveredLinkURL: URL?
+	private(set) var hoveredLinkUsesTrailingCorner = false
 	var showsFind = false
 	var findText = "" {
 		didSet {
@@ -553,6 +555,39 @@ final class BrowserController: NSObject, Identifiable {
 		}
 	}
 
+	private static let linkHoverScript = """
+	(() => {
+		let previous = '', x = 0, y = 0;
+		const report = (link, clientX, clientY) => {
+			let href = '';
+			try { if (link) href = new URL(link.getAttribute('href'), link.baseURI).href; } catch {}
+			const trailing = clientX < innerWidth / 2 && clientY > innerHeight - 72;
+			const key = href + ':' + trailing;
+			if (key === previous) return;
+			previous = key;
+			window.webkit.messageHandlers.linkHoverChanged.postMessage({ href, trailing });
+		};
+		document.addEventListener('pointermove', event => {
+			x = event.clientX;
+			y = event.clientY;
+			const link = event.composedPath().find(node => node.matches?.('a[href], area[href]'));
+			report(link, x, y);
+		}, true);
+		document.addEventListener('mouseleave', () => report(null, 0, 0));
+		window.addEventListener('blur', () => report(null, 0, 0));
+		window.addEventListener('pagehide', () => report(null, 0, 0));
+		document.addEventListener('scroll', () => {
+			const link = document.elementFromPoint(x, y)?.closest('a[href], area[href]');
+			report(link, x, y);
+		}, true);
+	})();
+	"""
+
+	func clearHoveredLink() {
+		hoveredLinkURL = nil
+		hoveredLinkUsesTrailingCorner = false
+	}
+
 	private static let activityScript = """
 	(() => {
 		const report = value => window.webkit.messageHandlers.pageActivityChanged.postMessage(value);
@@ -979,6 +1014,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	func stopForClose() {
 		guard !isInvalidated else { return }
+		clearHoveredLink()
 		isInvalidated = true
 		removeAppliedContentRuleList()
 		promptOwnership = nil
@@ -1027,7 +1063,7 @@ final class BrowserController: NSObject, Identifiable {
 		(createdWebView as? PeekSourceWebView)?.onZoomIn = nil
 		(createdWebView as? PeekSourceWebView)?.onZoomOut = nil
 		(createdWebView as? PeekSourceWebView)?.onResetZoom = nil
-		for name in [Self.scrollPositionMessageName, Self.topEdgeMessageName, Self.zapFinishedMessageName, "pageActivityChanged", "pictureInPictureChanged", "faviconChanged"] {
+		for name in [Self.scrollPositionMessageName, Self.topEdgeMessageName, Self.zapFinishedMessageName, "pageActivityChanged", "pictureInPictureChanged", "linkHoverChanged", "faviconChanged"] {
 			createdWebView?.configuration.userContentController.removeScriptMessageHandler(forName: name, contentWorld: .defaultClient)
 		}
 		createdWebView?.configuration.userContentController.removeAllUserScripts()
@@ -1130,6 +1166,12 @@ final class BrowserController: NSObject, Identifiable {
 			contentWorld: .defaultClient,
 			name: Self.zapFinishedMessageName
 		)
+		#if os(macOS)
+			webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "linkHoverChanged")
+			webView.configuration.userContentController.addUserScript(
+				WKUserScript(source: Self.linkHoverScript, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient)
+			)
+		#endif
 		webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "pageActivityChanged")
 		webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "pictureInPictureChanged")
 		webView.configuration.userContentController.addUserScript(
@@ -1952,6 +1994,7 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
 		guard owns(webView) else { return }
+		clearHoveredLink()
 		invalidateFindResults()
 		if isPictureInPictureActive || isEnteringPictureInPicture {
 			webView.closeAllMediaPresentations(completionHandler: nil)
@@ -2070,6 +2113,19 @@ extension BrowserController: WKNavigationDelegate {
 extension BrowserController: WKScriptMessageHandler {
 	func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
 		guard !isInvalidated else { return }
+		if message.name == "linkHoverChanged" {
+			guard !awaitsNavigationCommit, let webView = message.webView,
+			      owns(webView), !webView.isHidden,
+			      let value = message.body as? [String: Any],
+			      let href = value["href"] as? String else { return }
+			guard !href.isEmpty, href.utf8.count <= 16384, let url = URL(string: href) else {
+				clearHoveredLink()
+				return
+			}
+			hoveredLinkURL = BrowserAddress.withoutCredentials(url)
+			hoveredLinkUsesTrailingCorner = value["trailing"] as? Bool == true
+			return
+		}
 		if message.name == "pageActivityChanged" {
 			guard let activity = message.body as? String else { return }
 			switch activity {
