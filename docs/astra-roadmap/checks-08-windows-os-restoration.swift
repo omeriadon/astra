@@ -1,43 +1,5 @@
 import Foundation
 
-struct Bookmark: Codable, Sendable {
-	var id = UUID()
-	var url = URL(string: "https://example.com")!
-}
-
-struct OpenTab: Codable, Sendable {
-	var id = UUID()
-	var url: URL? = URL(string: "https://example.com")
-	var history: [URL] = []
-	var pageZoom = 1.0
-	var modifiedAt = Date()
-	var recordsNavigationHistory = true
-}
-
-struct BrowserSpace: Codable, Sendable {
-	struct Folder: Codable, Sendable {
-		var id = UUID()
-	}
-
-	var id = UUID()
-	var pinnedFolders: [Folder] = []
-}
-
-struct BrowserWorkspace: Codable, Sendable {
-	var spaces: [BrowserSpace] = [BrowserSpace()]
-}
-
-struct BrowserSnapshot: Codable, Sendable {
-	var selectedTabID = UUID()
-	var historyClearedAt = Date.distantPast
-	var deletedVisitsAt: [UUID: Date] = [:]
-}
-
-struct BrowserVisit: Codable, Sendable {
-	var id = UUID()
-	var url = URL(string: "https://example.com")!
-}
-
 @main
 struct BrowserWindowRestorationCheck {
 	static func main() throws {
@@ -61,11 +23,12 @@ struct BrowserWindowRestorationCheck {
 
 		let persistence = BrowserPersistence(directory: directory)
 		let tab = OpenTab()
+		let space = BrowserSpace(id: BrowserSpace.firstID)
 		var state = BrowserPersistedState(
 			bookmarks: [],
 			openTabs: [tab],
 			closedTabs: [],
-			workspace: BrowserWorkspace(),
+			workspace: BrowserWorkspace(spaces: [space], favouriteTabIDs: [], selectedSpaceID: space.id),
 			snapshot: BrowserSnapshot(selectedTabID: tab.id),
 			windowRecords: [BrowserWindowRecord(windowID: record.windowID, tabIDs: [tab.id], selectedTabID: tab.id, frame: restored)]
 		)

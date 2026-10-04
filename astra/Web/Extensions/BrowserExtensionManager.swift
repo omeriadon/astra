@@ -19,7 +19,14 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 
 	let controller = WKWebExtensionController()
 	private let bundledNames = ["darkreader-chrome-mv3", "ublock-origin-lite-safari"]
-	private(set) var loadErrors: [String: String] = [:]
+	private(set) var loadErrors: [String: String] = [:] {
+		didSet {
+			if loadErrors.contains(where: { oldValue[$0.key] != $0.value }) {
+				BrowserDiagnosticEventStore.shared.record(.extensionFailure, code: "extension.load", isPrivate: false)
+			}
+		}
+	}
+
 	private(set) var enabledNames: Set<String> = []
 	private(set) var installedNames: [String] = []
 	private(set) var safariNames: Set<String> = []

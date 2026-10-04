@@ -289,7 +289,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 					   downloads[downloadID] != nil,
 					   let liveIndex = items.firstIndex(where: { $0.id == itemID && $0.status == .downloading })
 					{
-						items[liveIndex].status = .failed
+						markFailed(at: liveIndex)
 						items[liveIndex].resumeData = nil
 						items[liveIndex].throughput = nil
 						items[liveIndex].estimatedTimeRemaining = nil
@@ -348,7 +348,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 					return
 				}
 				showToast(symbol: "exclamationmark.triangle", message: "Download failed: \(error.localizedDescription)")
-				items[liveIndex].status = .failed
+				markFailed(at: liveIndex)
 				items[liveIndex].errorMessage = error.localizedDescription
 				completionHandler(nil)
 				finish(download)
@@ -454,7 +454,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 					await self?.renameWithAppleIntelligence(itemID, fileURL: committedURL)
 				}
 			} catch {
-				items[index].status = .failed
+				markFailed(at: index)
 				items[index].errorMessage = error.localizedDescription
 				items[index].throughput = nil
 				items[index].estimatedTimeRemaining = nil
@@ -465,6 +465,11 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		persist()
 	}
 
+	private func markFailed(at index: Int) {
+		items[index].status = .failed
+		BrowserDiagnosticEventStore.shared.record(.downloadFailure, code: "download.failed", isPrivate: privateDataStore != nil)
+	}
+
 	func download(_ download: WKDownload, didFailWithError error: any Error, resumeData: Data?) {
 		guard downloads[ObjectIdentifier(download)] != nil else { return }
 		if !isClosing {
@@ -473,6 +478,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			{
 				items[index].resumeData = resumeData
 				items[index].status = resumeData == nil ? .failed : .paused
+				BrowserDiagnosticEventStore.shared.record(.downloadFailure, code: "download.transfer", isPrivate: privateDataStore != nil)
 				items[index].errorMessage = error.localizedDescription
 				items[index].throughput = nil
 				items[index].estimatedTimeRemaining = nil
@@ -521,7 +527,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			resume(item.id)
 		}
 		for index in items.indices where items[index].status == .paused && items[index].resumeData == nil {
-			items[index].status = .failed
+			markFailed(at: index)
 			items[index].errorMessage = "This download has no resume data."
 			try? FileManager.default.removeItem(at: items[index].fileURL)
 		}
@@ -595,7 +601,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			if let previousURL = previousTemporaryURLs.removeValue(forKey: itemID) {
 				try? FileManager.default.removeItem(at: previousURL)
 			}
-			items[index].status = .failed
+			markFailed(at: index)
 			items[index].segments = nil
 			items[index].rangeValidator = nil
 			items[index].totalBytes = nil
@@ -1134,7 +1140,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		items[index].estimatedTimeRemaining = nil
 		items[index].progress = 0
 		guard let url = items[index].requestURL else {
-			items[index].status = .failed
+			markFailed(at: index)
 			items[index].errorMessage = "The download could not be restarted."
 			persist()
 			return

@@ -2,6 +2,7 @@ import Foundation
 
 @main
 struct DiagnosticChecks {
+	@MainActor
 	static func main() {
 		precondition(BrowserDiagnosticReport.sanitizedCode("network.offline") == "network.offline")
 		precondition(BrowserDiagnosticReport.sanitizedCode("web-content_terminated") == "web-content_terminated")
@@ -31,6 +32,19 @@ struct DiagnosticChecks {
 		for forbidden in ["http://", "https://", "?token=", "password", "pageContent", "formValue"] {
 			precondition(!text.contains(forbidden))
 		}
+		let store = BrowserDiagnosticEventStore()
+		store.record(.navigationFailure, code: "private.offline", isPrivate: true)
+		store.record(.downloadFailure, code: "https://private.example/?token=secret", isPrivate: false)
+		precondition(store.snapshot().isEmpty)
+		for index in 0 ..< 100 {
+			store.record(.navigationFailure, code: "failure-\(index)", isPrivate: false)
+		}
+		let events = store.snapshot()
+		precondition(events.count == BrowserDiagnosticReport.maximumEvents)
+		precondition(events.first?.code == "failure-36")
+		precondition(events.last?.code == "failure-99")
+		store.record(.extensionFailure, code: "private.extension", isPrivate: true)
+		precondition(store.snapshot() == events)
 		print("diagnostic checks passed")
 	}
 }

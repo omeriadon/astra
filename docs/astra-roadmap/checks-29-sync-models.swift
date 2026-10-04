@@ -236,7 +236,8 @@ struct BrowserSyncModelCheck {
 		assert(!futureFormat.hasSupportedVersion)
 
 		let legacyVisit = try JSONDecoder().decode(BrowserVisit.self, from: Data("{\"id\":\"\(visitID.uuidString)\",\"url\":\"https://history.example\",\"title\":\"Page\",\"visitedAt\":0}".utf8))
-		assert(legacyVisit.modifiedAt == legacyVisit.visitedAt)
+		// Packet09 keeps missing update timestamps older than clear/tombstone clocks.
+		assert(legacyVisit.modifiedAt == .distantPast)
 		let relaunched = try JSONDecoder().decode(BrowserSyncDocument.self, from: JSONEncoder().encode(decoded))
 		assert(relaunched == decoded)
 
@@ -255,7 +256,7 @@ struct BrowserSyncModelCheck {
 		try persistence.savePersistedState(persisted)
 		let stateURL = directory.appendingPathComponent("browser-state.json")
 		var envelope = try JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as! [String: Any]
-		assert(envelope["version"] as? Int == 2)
+		assert(envelope["version"] as? Int == 3)
 		envelope["version"] = 1
 		try JSONSerialization.data(withJSONObject: envelope).write(to: stateURL)
 		let migratedState = try persistence.loadPersistedState()

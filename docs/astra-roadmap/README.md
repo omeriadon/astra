@@ -1,4 +1,4 @@
-Current continuation entry point: [CONTINUE.md](CONTINUE.md). Read it before dispatching further work.
+Current integration evidence: [MERGE_AUDIT.md](MERGE_AUDIT.md). Manual acceptance remains in [RUNTIME_VERIFICATION.md](RUNTIME_VERIFICATION.md). The execution ledger below describes historical packet work, not current runtime certification.
 
 # Astra browser implementation roadmap
 

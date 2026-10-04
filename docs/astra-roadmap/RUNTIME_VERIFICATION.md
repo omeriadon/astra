@@ -282,3 +282,11 @@ These remain runtime checks; package tests and compilation do not prove them com
 The restored helper's original macOS platform, capability and Hardened Runtime settings were checked and restored. Xcode MCP built `astra` / `My Mac` successfully with zero errors in 8.599 seconds; log: `/var/folders/s_/ms68q0zx137_d7r08rxtnp9w0000gq/T/ActionArtifacts/default/BuildProject/BuildProject-Log-20261004-220431.txt`. The helper bundle check and temporary production installer check passed against this rebuilt artifact. Release validation now contains a missing-helper regression check, but that workflow edit has not run on GitHub.
 
 No additional runtime checklist item is marked complete by this audit. Additional private-extension, reader/translation and alternate website-app/intent source remains preserved on local branches; it is not all present in main.
+
+## Full roadmap integration follow-up
+
+The [full packet audit](MERGE_AUDIT.md#full-packet-audit--subsequent-pass) now covers all 37 roadmap definitions, current feature entry points, handoff commit/patch provenance and shared-service/project wiring. Thirty-three standalone production/helper checks passed, along with five production JavaScript checks. Original offline/window/favicon/download commits have exact cherry-picked patch equivalents in main.
+
+Missing diagnostic event writers were connected for navigation, WebContent, downloads and extension load failures using bounded categories/fixed codes and a central private-event exclusion. Authentication navigation is excluded. Application crash collection is still unimplemented. Internal settings-route mappings/rejection were reconciled, and memory-pressure cleanup now also drops inactive-window mirror images. Older navigation/sync checks were updated to the already-integrated strict input, schema3 and legacy timestamp contracts; the restoration check now uses real production models.
+
+Xcode MCP build: `astra` / `My Mac`, success, zero errors, 48.967 seconds; log: `/var/folders/s_/ms68q0zx137_d7r08rxtnp9w0000gq/T/ActionArtifacts/default/BuildProject/BuildProject-Log-20261004-221423.txt`. Built release metadata rules, helper bundle/signature and temporary installer checks passed. No new runtime checks or GitHub CI passes are claimed. No app operation, user-data modification, commit or push occurred in this pass.

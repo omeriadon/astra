@@ -382,7 +382,17 @@ final class BrowserController: NSObject, Identifiable {
 	var url: URL?
 	private(set) var isLoading = false
 	private(set) var estimatedProgress = 0.0
-	private(set) var navigationFailure: BrowserNavigationFailure?
+	private(set) var navigationFailure: BrowserNavigationFailure? {
+		didSet {
+			guard let failure = navigationFailure, !isAuthenticationSessionBrowser else { return }
+			let category: BrowserDiagnosticReport.Event.Category = switch failure.kind {
+				case .webContentTerminated, .repeatedWebContentTermination: .webContentTermination
+				default: .navigationFailure
+			}
+			BrowserDiagnosticEventStore.shared.record(category, code: failure.kind.rawValue, isPrivate: session.isPrivate)
+		}
+	}
+
 	private(set) var scrollPosition: BrowserScrollPosition
 	private(set) var hasTopEdgeContent = false
 	private(set) var themeColor: Color?
@@ -1522,6 +1532,7 @@ final class BrowserController: NSObject, Identifiable {
 	#if os(macOS)
 		func discardPreviewSnapshot() {
 			previewSnapshot = nil
+			windowMirrorSnapshot = nil
 		}
 
 		@discardableResult
