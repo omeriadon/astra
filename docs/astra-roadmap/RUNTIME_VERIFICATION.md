@@ -259,3 +259,26 @@ Checks: `bun checks/link-hover-check.mjs` covers resolved URLs, no repeated repo
 Source checks cover Start Page projection/preferences and production registry ownership transfer/close. Runtime verification of the visible sheet, restored animation behavior and mirror freshness remains pending on the changed build.
 
 Final verification for this clarification: Xcode MCP's BuildProject request timed out, but GetBuildLog confirmed the build had finished successfully with zero reported errors (`buildIsRunning: false`). Build log: `/var/folders/s_/ms68q0zx137_d7r08rxtnp9w0000gq/T/ActionArtifacts/default/GetBuildLog/D9B6DFE5-69FE-424B-A491-1F8D41F23B10.txt`.
+
+## Dock app repair and recorded window handoff — 4 October
+
+The Dock failure had concrete source/package causes: the helper target was missing from the current project, the embed phase had no helper product, the installer wrote a launch-URL key different from the helper's reader, and Finder custom-icon metadata caused `codesign` to reject the generated bundle. The macOS helper target/dependency/embedding were restored using the existing implementation and entitlements. Both URL keys are now written for compatibility. Website favicons become standard signed `.icns` resources instead of Finder resource forks. Add Website to Dock now creates the app and requests its launch/reveal; permanent pinning remains the macOS Options → Keep in Dock action.
+
+The production installer check uses the built Astra resource bundle with a private temporary installation directory. Install, URL metadata, persistence/reload, rename and icon-update signing passed. The bundled helper executable and Sparkle framework were present, and its original signature passed strict verification. No generated website app was launched by the check, and existing installations were not modified.
+
+The 6.196667-second window-switch recording shows transient blank material, incorrect blurred presentation during transfer, and repeated page reflow. Native WebView hosts now require a real window, nonempty bounds and the correct captured window owner before mounting or updating. The native owner is assigned before SwiftUI observes the owner-map change. A rendered-image curtain covers reparenting until the snapshot/paint completes (bounded wait), and ownership-change rendering does not inherit animations. Peek hosts carry the original window ID as well, preventing stale updates from reclaiming the view.
+
+Final Xcode MCP build: `astra` / `My Mac`, success, zero errors, 43.194 seconds. Log: `/var/folders/s_/ms68q0zx137_d7r08rxtnp9w0000gq/T/ActionArtifacts/default/BuildProject/BuildProject-Log-20261004-213942.txt`.
+
+- [ ] Create a real website app with a favicon, launch it from Dock, verify its initial URL and independent window, then rename/change its icon and relaunch.
+- [ ] Repeat the recorded rapid window switching at different window sizes; verify no blank frame, double-blurred active presentation, repeated zero-size reflow, or stale host reclaiming the view.
+
+These remain runtime checks; package tests and compilation do not prove them complete.
+
+## Merge audit follow-up — 4 October
+
+[MERGE_AUDIT.md](MERGE_AUDIT.md) records the surviving local roadmap refs, patch-equivalent work and substantive unincorporated alternatives. The Dock helper target was present in PR11 and removed in a subsequent local commit. The launch-key mismatch and Finder-icon signing defect were already present in the merged implementation.
+
+The restored helper's original macOS platform, capability and Hardened Runtime settings were checked and restored. Xcode MCP built `astra` / `My Mac` successfully with zero errors in 8.599 seconds; log: `/var/folders/s_/ms68q0zx137_d7r08rxtnp9w0000gq/T/ActionArtifacts/default/BuildProject/BuildProject-Log-20261004-220431.txt`. The helper bundle check and temporary production installer check passed against this rebuilt artifact. Release validation now contains a missing-helper regression check, but that workflow edit has not run on GitHub.
+
+No additional runtime checklist item is marked complete by this audit. Additional private-extension, reader/translation and alternate website-app/intent source remains preserved on local branches; it is not all present in main.

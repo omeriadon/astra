@@ -37,6 +37,7 @@ struct BrowserPageView: View {
 					.id(tab.id)
 			}
 		}
+		.animation(nil, value: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
 		.allowsHitTesting(!BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
 		.overlay(alignment: .topTrailing) {
 			if let controller = browser.selectedTab?.activeController, controller.showsFind {

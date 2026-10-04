@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PeekCardView: View {
 	let peek: BrowserPeek
+	var windowID: UUID?
 	let viewportSize: CGSize
 	let isTopmost: Bool
 	let canPromote: Bool
@@ -58,6 +59,7 @@ struct PeekCardView: View {
 			if peek.controller.isWebViewReady {
 				PeekWebContent(
 					controller: peek.controller,
+					windowID: windowID,
 					cornerRadius: cornerRadius,
 					showsWebContent: showsWebContent
 				)
@@ -178,11 +180,12 @@ struct PeekCardView: View {
 
 private struct PeekWebContent: View {
 	let controller: BrowserController
+	let windowID: UUID?
 	let cornerRadius: CGFloat
 	let showsWebContent: Bool
 
 	var body: some View {
-		BrowserWebView(controller: controller)
+		BrowserWebView(controller: controller, windowID: windowID)
 			.clipShape(.rect(cornerRadius: cornerRadius))
 			.opacity(showsWebContent ? 1 : 0)
 	}

@@ -68,7 +68,9 @@ jobs:
           fi
 
       - name: Check distribution validation rules
-        run: python3 scripts/release/validate_artifact.py --self-test
+        run: |
+          python3 scripts/release/validate_artifact.py --self-test
+          python3 checks/website-app-bundle-check.py --self-test
 
       - name: Check unsigned release archive
         shell: bash
@@ -109,5 +111,7 @@ jobs:
             echo "::error::Built app build is $ACTUAL_BUILD, expected $BUILD"
             exit 1
           fi
+
+          python3 checks/website-app-bundle-check.py "$APP"
 
           echo "Compiled unsigned Astra $ACTUAL_VERSION (build $ACTUAL_BUILD). Production signing and notarization are checked after merge."

@@ -60,6 +60,7 @@ private struct PeekLayerView: View {
 
 		PeekCardView(
 			peek: peek,
+			windowID: browser.windowID,
 			viewportSize: viewportSize,
 			isTopmost: isTopmost,
 			canPromote: peek.id == tab.peeks.last?.id,

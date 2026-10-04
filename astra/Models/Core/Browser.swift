@@ -1689,6 +1689,13 @@ final class Browser {
 		}
 	}
 
+	func prepareSelectedTabDisplayOwner() {
+		selectedTab?.controller?.displayWindowID = windowID
+		for peek in selectedTab?.peeks ?? [] {
+			peek.controller.displayWindowID = windowID
+		}
+	}
+
 	func configureSelectedTab() {
 		if let tab = selectedTab {
 			configure(tab)
@@ -1705,6 +1712,7 @@ final class Browser {
 		guard BrowserWindowRegistry.shared.ownsTab(tab.id, in: self) else { return }
 		attachPersistence(to: tab)
 		guard let controller = tab.controller else { return }
+		controller.displayWindowID = windowID
 		controller.pictureInPictureRestoreRequested = { [weak self, weak tab, weak controller] in
 			guard let self, let tab, let controller else { return }
 			selectTab(tab.id)
@@ -1799,6 +1807,7 @@ final class Browser {
 	}
 
 	private func configure(_ peek: BrowserPeek, in tab: BrowserTab) {
+		peek.controller.displayWindowID = windowID
 		peek.controller.pictureInPictureRestoreRequested = { [weak self, weak tab, weak controller = peek.controller] in
 			guard let self, let tab, let controller else { return }
 			selectTab(tab.id)

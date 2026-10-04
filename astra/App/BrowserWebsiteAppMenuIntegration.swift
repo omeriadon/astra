@@ -59,8 +59,10 @@
 						return
 					}
 					do {
-						_ = try BrowserWebsiteAppRegistry.shared.install(name: field.stringValue, url: candidate.url, icon: candidate.icon)
-						candidate.browser.session.toastManager.show(symbol: "checkmark", message: "Website app created. Open Website Apps settings to launch or keep it in the Dock.")
+						let registry = BrowserWebsiteAppRegistry.shared
+						let installation = try registry.install(name: field.stringValue, url: candidate.url, icon: candidate.icon)
+						try registry.beginKeepInDockFlow(installation.id)
+						candidate.browser.session.toastManager.show(symbol: "checkmark", message: "Website app created. Use Options → Keep in Dock on its Dock icon to pin it.")
 					} catch {
 						candidate.browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error.localizedDescription)
 					}

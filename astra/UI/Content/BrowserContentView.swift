@@ -22,6 +22,7 @@ struct BrowserContentView: View, Animatable {
 					.zIndex(1)
 			}
 			.animation(nil, value: browser.selectedTabID)
+			.animation(nil, value: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
 			#if os(macOS)
 				.overlay(alignment: .bottomLeading) {
 					if !BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser),
@@ -120,6 +121,7 @@ private struct KeepAliveWebStack: View {
 			ForEach(keepAliveControllers()) { controller in
 				BrowserWebView(
 					controller: controller,
+					windowID: browser.windowID,
 					isVisible: controller === selectedTab?.controller && selectedTab?.internalPage == nil,
 					obscuredInsets: controller === selectedTab?.controller ? insets.obscured : EdgeInsets(),
 					minimumViewportInsets: insets.minimum,

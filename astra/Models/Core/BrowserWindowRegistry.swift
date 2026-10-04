@@ -110,6 +110,7 @@ final class BrowserWindowRegistry {
 	func claimSelectedTab(in browser: Browser) {
 		guard !browser.isPrivate, !browser.isMini,
 		      activeBrowserID == browser.windowID else { return }
+		browser.prepareSelectedTabDisplayOwner()
 		tabOwners[browser.selectedTabID] = browser.windowID
 		browser.configureSelectedTab()
 		Task { @MainActor [weak self] in

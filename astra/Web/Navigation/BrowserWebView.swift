@@ -3,6 +3,7 @@ import WebKit
 
 struct BrowserWebView {
 	let controller: BrowserController
+	var windowID: UUID?
 	var isVisible = true
 
 	/// UI currently covering the webpage.
@@ -52,49 +53,89 @@ struct BrowserWebView {
 #elseif os(macOS)
 
 	extension BrowserWebView: NSViewRepresentable {
-		final class Coordinator {
-			var insets: [EdgeInsets]?
+		func makeNSView(context _: Context) -> BrowserWebViewHost {
+			BrowserWebViewHost(specification: self)
 		}
 
-		func makeCoordinator() -> Coordinator {
-			Coordinator()
+		func updateNSView(_ host: BrowserWebViewHost, context _: Context) {
+			host.specification = self
+			host.mountIfReady()
 		}
 
-		func makeNSView(context: Context) -> NSView {
-			let host = NSView()
-			host.autoresizesSubviews = true
-			mount(in: host, coordinator: context.coordinator)
-			return host
+		static func dismantleNSView(_ host: BrowserWebViewHost, coordinator _: ()) {
+			host.handoffTask?.cancel()
+		}
+	}
+
+	final class BrowserWebViewHost: NSView {
+		var specification: BrowserWebView
+		var handoffTask: Task<Void, Never>?
+		private let curtain = NSImageView()
+		private var insets: [EdgeInsets]?
+
+		init(specification: BrowserWebView) {
+			self.specification = specification
+			super.init(frame: .zero)
+			curtain.imageScaling = .scaleProportionallyUpOrDown
+			curtain.autoresizingMask = [.width, .height]
+			curtain.setAccessibilityHidden(true)
+			addSubview(curtain)
 		}
 
-		func updateNSView(_ host: NSView, context: Context) {
-			mount(in: host, coordinator: context.coordinator)
+		@available(*, unavailable)
+		required init?(coder _: NSCoder) {
+			fatalError("init(coder:) is unavailable")
 		}
 
-		private func mount(in host: NSView, coordinator: Coordinator) {
+		override func layout() {
+			super.layout()
+			mountIfReady()
+		}
+
+		override func viewDidMoveToWindow() {
+			super.viewDidMoveToWindow()
+			mountIfReady()
+		}
+
+		func mountIfReady() {
+			guard window != nil, !bounds.isEmpty,
+			      specification.windowID == nil || specification.controller.displayWindowID == specification.windowID else { return }
+			let controller = specification.controller
 			let webView = controller.webView
-			if webView.superview !== host {
+			if webView.superview !== self {
+				handoffTask?.cancel()
+				curtain.frame = bounds
+				curtain.image = controller.windowMirrorSnapshot ?? controller.previewSnapshot
+				curtain.isHidden = !specification.isVisible || curtain.image == nil
 				webView.removeFromSuperview()
-				webView.frame = host.bounds
+				webView.frame = bounds
 				webView.autoresizingMask = [.width, .height]
-				host.addSubview(webView)
+				addSubview(webView, positioned: .below, relativeTo: curtain)
+				handoffTask = Task { @MainActor [weak self, weak webView] in
+					let deadline = ContinuousClock.now + .seconds(1)
+					while !Task.isCancelled, ContinuousClock.now < deadline {
+						if await controller.refreshWindowMirrorSnapshot() {
+							break
+						}
+						do {
+							try await Task.sleep(for: .milliseconds(20))
+						} catch {
+							return
+						}
+					}
+					guard !Task.isCancelled, let self, let webView, webView.superview === self,
+					      specification.windowID == nil || specification.windowID == controller.displayWindowID else { return }
+					curtain.isHidden = true
+				}
 			}
-			webView.isHidden = !isVisible
-			webView.setAccessibilityHidden(!isVisible)
-			let insets = [obscuredInsets, minimumViewportInsets, maximumViewportInsets]
-			if coordinator.insets != insets {
-				configure(webView)
-				coordinator.insets = insets
+			webView.isHidden = !specification.isVisible
+			webView.setAccessibilityHidden(!specification.isVisible)
+			let nextInsets = [specification.obscuredInsets, specification.minimumViewportInsets, specification.maximumViewportInsets]
+			if insets != nextInsets {
+				webView.obscuredContentInsets = specification.obscuredInsets.nsInsets
+				webView.setMinimumViewportInset(specification.minimumViewportInsets.nsInsets, maximumViewportInset: specification.maximumViewportInsets.nsInsets)
+				insets = nextInsets
 			}
-		}
-
-		private func configure(_ webView: WKWebView) {
-			webView.obscuredContentInsets = obscuredInsets.nsInsets
-
-			webView.setMinimumViewportInset(
-				minimumViewportInsets.nsInsets,
-				maximumViewportInset: maximumViewportInsets.nsInsets
-			)
 		}
 	}
 

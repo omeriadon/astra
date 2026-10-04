@@ -47,6 +47,8 @@ final class BrowserController: NSObject, Identifiable {
 		private var webInspectorObserver: NSObjectProtocol?
 	#endif
 	@ObservationIgnored
+	var displayWindowID: UUID?
+	@ObservationIgnored
 	private var isInvalidated = false
 	private(set) var isPlayingMedia = false
 	private var hasActiveVideoPlayback = false
@@ -1522,12 +1524,14 @@ final class BrowserController: NSObject, Identifiable {
 			previewSnapshot = nil
 		}
 
-		func refreshWindowMirrorSnapshot() async {
-			guard let webView = createdWebView, owns(webView), !webView.isHidden else { return }
+		@discardableResult
+		func refreshWindowMirrorSnapshot() async -> Bool {
+			guard let webView = createdWebView, owns(webView), !webView.isHidden else { return false }
 			let generation = navigationGeneration
 			guard let image = await takeSnapshot(snapshotWidth: min(1024, webView.bounds.width)),
-			      owns(webView), generation == navigationGeneration else { return }
+			      owns(webView), generation == navigationGeneration else { return false }
 			windowMirrorSnapshot = image
+			return true
 		}
 
 		func refreshPreviewSnapshot() async {

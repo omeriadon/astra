@@ -1,6 +1,7 @@
 #if os(macOS)
 	import AppKit
 	import Foundation
+	import ImageIO
 	import Observation
 
 	struct BrowserWebsiteAppInstallation: Codable, Equatable, Identifiable {
@@ -85,14 +86,20 @@
 
 		private let fileManager: FileManager
 		private let rootURL: URL
+		private let resourceBundle: Bundle
 		private let registryURL: URL
 		private(set) var installations: [BrowserWebsiteAppInstallation] = []
 
-		init(fileManager: FileManager = .default) {
+		init(
+			fileManager: FileManager = .default,
+			rootDirectory: URL? = nil,
+			resourceBundle: Bundle = .main
+		) {
 			self.fileManager = fileManager
+			self.resourceBundle = resourceBundle
 			let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
 				?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-			let rootURL = applicationSupport
+			let rootURL = rootDirectory ?? applicationSupport
 				.appendingPathComponent("Astra", isDirectory: true)
 				.appendingPathComponent("Website Apps", isDirectory: true)
 			self.rootURL = rootURL
@@ -108,7 +115,7 @@
 		func install(name: String, url: URL, icon: NSImage?) throws -> BrowserWebsiteAppInstallation {
 			guard let name = BrowserWebsiteAppPolicy.validatedName(name) else { throw RegistryError.invalidName }
 			guard let url = BrowserWebsiteAppPolicy.validatedURL(url) else { throw RegistryError.invalidURL }
-			guard let templateURL = Bundle.main.url(forResource: "AstraWebsiteAppTemplate", withExtension: "app") else {
+			guard let templateURL = resourceBundle.url(forResource: "AstraWebsiteAppTemplate", withExtension: "app") else {
 				throw RegistryError.templateMissing
 			}
 			guard fileManager.fileExists(atPath: templateURL.appendingPathComponent("Contents/MacOS").path) else {
@@ -230,13 +237,44 @@
 			plist["CFBundleIdentifier"] = BrowserWebsiteAppPolicy.bundleIdentifier(for: id)
 			plist["CFBundleName"] = name
 			plist["CFBundleDisplayName"] = name
+			plist["AstraWebsiteAppLaunchURL"] = launchURL.absoluteString
 			plist["AstraWebsiteAppURL"] = launchURL.absoluteString
+			if let icon {
+				let iconURL = contentsURL.appendingPathComponent("Resources/WebsiteIcon.icns")
+				try writeIcon(icon, to: iconURL)
+				plist["CFBundleIconFile"] = "WebsiteIcon"
+				plist.removeValue(forKey: "CFBundleIconName")
+			}
 			let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
 			try data.write(to: plistURL, options: .atomic)
-			if let icon {
-				NSWorkspace.shared.setIcon(icon, forFile: appURL.path)
-			}
 			try adHocSign(appURL, entitlements: entitlements)
+		}
+
+		private func writeIcon(_ image: NSImage, to url: URL) throws {
+			guard let bitmap = NSBitmapImageRep(
+				bitmapDataPlanes: nil,
+				pixelsWide: 256,
+				pixelsHigh: 256,
+				bitsPerSample: 8,
+				samplesPerPixel: 4,
+				hasAlpha: true,
+				isPlanar: false,
+				colorSpaceName: .deviceRGB,
+				bytesPerRow: 0,
+				bitsPerPixel: 0
+			), let context = NSGraphicsContext(bitmapImageRep: bitmap) else { throw RegistryError.templateInvalid }
+			NSGraphicsContext.saveGraphicsState()
+			NSGraphicsContext.current = context
+			image.draw(in: NSRect(x: 0, y: 0, width: 256, height: 256), from: .zero, operation: .copy, fraction: 1)
+			NSGraphicsContext.restoreGraphicsState()
+			try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+			guard let cgImage = bitmap.cgImage,
+			      let destination = CGImageDestinationCreateWithURL(url as CFURL, "com.apple.icns" as CFString, 1, nil)
+			else {
+				throw RegistryError.templateInvalid
+			}
+			CGImageDestinationAddImage(destination, cgImage, nil)
+			guard CGImageDestinationFinalize(destination) else { throw RegistryError.templateInvalid }
 		}
 
 		private func signingEntitlements(from bundleURL: URL) throws -> Data {

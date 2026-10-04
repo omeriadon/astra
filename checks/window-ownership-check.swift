@@ -48,6 +48,7 @@ final class Browser {
 		tabs.first { $0.id == id }
 	}
 
+	func prepareSelectedTabDisplayOwner() {}
 	func configureSelectedTab() {}
 	func configureOwnedTabs() {}
 	func selectTab(_ id: UUID) {
