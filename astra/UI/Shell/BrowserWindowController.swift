@@ -67,7 +67,6 @@
 				BrowserExtensionManager.shared.extensionWindow(for: browser).nativeWindow = window
 			}
 
-			window.animationBehavior = .none
 			window.delegate = self
 			window.contentView = contentHost
 			window.contentMinSize = NSSize(width: min(640, visibleFrame.width), height: min(480, visibleFrame.height))

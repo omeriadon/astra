@@ -393,6 +393,7 @@ final class BrowserController: NSObject, Identifiable {
 	private var pageURLBeforeDownload: URL?
 	#if os(macOS)
 		private(set) var previewSnapshot: NSImage?
+		private(set) var windowMirrorSnapshot: NSImage?
 	#endif
 
 	@ObservationIgnored
@@ -1051,6 +1052,7 @@ final class BrowserController: NSObject, Identifiable {
 			previewSnapshotRefreshTask?.cancel()
 			previewSnapshotRefreshTask = nil
 			previewSnapshot = nil
+			windowMirrorSnapshot = nil
 		#endif
 		createdWebView?.navigationDelegate = nil
 		createdWebView?.uiDelegate = nil
@@ -1520,6 +1522,14 @@ final class BrowserController: NSObject, Identifiable {
 			previewSnapshot = nil
 		}
 
+		func refreshWindowMirrorSnapshot() async {
+			guard let webView = createdWebView, owns(webView), !webView.isHidden else { return }
+			let generation = navigationGeneration
+			guard let image = await takeSnapshot(snapshotWidth: min(1024, webView.bounds.width)),
+			      owns(webView), generation == navigationGeneration else { return }
+			windowMirrorSnapshot = image
+		}
+
 		func refreshPreviewSnapshot() async {
 			guard let webView = createdWebView, owns(webView) else { return }
 			let generation = navigationGeneration
@@ -1668,7 +1678,7 @@ final class BrowserController: NSObject, Identifiable {
 		themeColorIsLight = red + green + blue > 1.5
 	}
 
-	private func takeSnapshot() async -> SnapshotImage? {
+	private func takeSnapshot(snapshotWidth: CGFloat = 180) async -> SnapshotImage? {
 		guard !isInvalidated, url != nil, let webView = createdWebView, !webView.bounds.isEmpty else { return nil }
 		#if os(macOS)
 			guard !isRefreshingPreviewSnapshot else { return nil }
@@ -1678,7 +1688,7 @@ final class BrowserController: NSObject, Identifiable {
 
 		let configuration = WKSnapshotConfiguration()
 		configuration.rect = webView.bounds
-		configuration.snapshotWidth = 180
+		configuration.snapshotWidth = NSNumber(value: Double(snapshotWidth))
 		return try? await webView.takeSnapshot(configuration: configuration)
 	}
 

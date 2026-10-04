@@ -30,6 +30,7 @@ struct DesktopBrowserShell: View {
 	@State private var transitionFromTheme: BrowserTheme?
 	@State private var transitionToTheme: BrowserTheme?
 	@State private var themeBlend = 0.0
+	@State private var themeTransitionGeneration = 0
 	@State private var swipeTargetID: UUID?
 	@State private var swipeProgress = 0.0
 	@State private var swipeDirection: CGFloat = 1
@@ -112,12 +113,32 @@ struct DesktopBrowserShell: View {
 		themeBlend = progress
 	}
 
-	private func completeSpaceThemeTransition(from _: UUID, to _: UUID) {
+	private func completeSpaceThemeTransition(from oldID: UUID, to newID: UUID) {
+		if swipeTargetID == newID, swipeProgress >= 0.99 {
+			swipeTargetID = nil
+			swipeProgress = 0
+			transitionFromTheme = nil
+			transitionToTheme = nil
+			themeBlend = 0
+			return
+		}
 		swipeTargetID = nil
 		swipeProgress = 0
-		transitionFromTheme = nil
-		transitionToTheme = nil
+		let oldTheme = browser.workspace.spaces.first(where: { $0.id == oldID })?.theme ?? theme
+		transitionFromTheme = oldTheme
+		transitionToTheme = theme
 		themeBlend = 0
+		themeTransitionGeneration += 1
+		let generation = themeTransitionGeneration
+		withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24), completionCriteria: .logicallyComplete) {
+			themeBlend = 1
+		} completion: {
+			guard generation == themeTransitionGeneration,
+			      browser.workspace.selectedSpaceID == newID else { return }
+			transitionFromTheme = nil
+			transitionToTheme = nil
+			themeBlend = 0
+		}
 	}
 
 	var body: some View {
@@ -416,13 +437,11 @@ private struct ShellContentColumn: View {
 				BrowserPageView(browser: browser, cornerRadius: contentCornerRadius)
 					.padding(.top, sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 					.padding([.bottom, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
-					.transaction { transaction in
-						transaction.animation = nil
-					}
+					.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: sidebarShown)
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
 		}
-		.animation(nil, value: topBarHeight)
+		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: topBarHeight)
 		.animation(nil, value: browser.selectedTabID)
 		.onContinuousHover { phase in
 			switch phase {

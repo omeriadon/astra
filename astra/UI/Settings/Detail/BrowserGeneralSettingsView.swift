@@ -28,7 +28,6 @@ struct BrowserGeneralSettingsView: View {
 		@Default(.miniAstraEnabled) private var miniAstraEnabled
 		@Default(.miniAstraWindowAnimation) private var miniAstraWindowAnimation
 		@Default(.miniAstraShortcutEnabled) private var miniAstraShortcutEnabled
-		@Default(.webInspectorEnabled) private var webInspectorEnabled
 	#endif
 
 	var body: some View {
@@ -224,13 +223,6 @@ struct BrowserGeneralSettingsView: View {
 					}
 				}
 
-				Section("Developer") {
-					Toggle("Allow Web Inspector in Safari", isOn: $webInspectorEnabled)
-						.accessibilityIdentifier("web-inspector-enabled")
-					Text("Inspect pages from Safari’s Develop menu. This applies when each page is created; Astra has no public embedded inspector command.")
-						.font(.caption)
-						.foregroundStyle(.secondary)
-				}
 			#endif
 
 			Section("Peek") {

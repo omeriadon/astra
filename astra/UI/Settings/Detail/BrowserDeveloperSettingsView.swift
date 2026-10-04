@@ -3,6 +3,9 @@ import SwiftUI
 
 struct BrowserDeveloperSettingsView: View {
 	@Default(.browserSearchConfiguration) private var searchConfigurationValue
+	#if os(macOS)
+		@Default(.webInspectorEnabled) private var webInspectorEnabled
+	#endif
 
 	private var githubShorthandEnabled: Binding<Bool> {
 		Binding {
@@ -16,6 +19,16 @@ struct BrowserDeveloperSettingsView: View {
 
 	var body: some View {
 		List {
+			#if os(macOS)
+				Section("Web Inspector") {
+					Toggle("Allow Web Inspector in Safari", isOn: $webInspectorEnabled)
+						.accessibilityLabel("Allow Web Inspector in Safari")
+						.accessibilityIdentifier("web-inspector-enabled")
+					Text("Inspect pages from Safari’s Develop menu. This applies when each page is created; Astra has no public embedded inspector command.")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+				}
+			#endif
 			Section("GitHub") {
 				Toggle("GitHub Repository Shorthand", isOn: githubShorthandEnabled)
 					.accessibilityLabel("GitHub repository shorthand")

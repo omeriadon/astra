@@ -98,7 +98,7 @@ struct BrowserSettingsView: View {
 						symbol: "chevron.left.forwardslash.chevron.right",
 						section: .advanced,
 						identifier: "settings-developer",
-						terms: ["GitHub", "Repository", "Shorthand", "owner/repository"]
+						terms: ["GitHub", "Repository", "Shorthand", "owner/repository", "Web Inspector", "Safari", "Develop menu"]
 					)
 				case .advanced:
 					Definition(

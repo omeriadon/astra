@@ -425,6 +425,8 @@ private struct StartPagePreferencesView: View {
 					}
 				}
 			}
+			.listStyle(.sidebar)
+			.scrollContentBackground(.hidden)
 			.navigationTitle("Start Page")
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
@@ -434,6 +436,9 @@ private struct StartPagePreferencesView: View {
 				}
 			}
 		}
+		#if os(macOS)
+		.frame(width: 520, height: 360)
+		#endif
 	}
 
 	private func visibilityBinding(for module: BrowserStartPagePreferences.Module) -> Binding<Bool> {

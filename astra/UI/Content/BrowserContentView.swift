@@ -2,10 +2,15 @@ import Defaults
 import Haze
 import SwiftUI
 
-struct BrowserContentView: View {
+struct BrowserContentView: View, Animatable {
 	let browser: Browser
 	var insets = BrowserViewportInsets()
 	@Environment(\.colorScheme) private var colorScheme
+
+	var animatableData: CGFloat {
+		get { insets.obscured.top }
+		set { insets.obscured.top = newValue }
+	}
 
 	var body: some View {
 		GeometryReader { proxy in
@@ -16,44 +21,35 @@ struct BrowserContentView: View {
 				content
 					.zIndex(1)
 			}
-			.transaction { transaction in
-				transaction.animation = nil
-				transaction.disablesAnimations = true
-			}
+			.animation(nil, value: browser.selectedTabID)
 			#if os(macOS)
-			.overlay(alignment: .bottomLeading) {
-				if !BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser),
-				   let controller = browser.selectedTab?.activeController,
-				   let url = controller.hoveredLinkURL
-				{
-					BrowserLinkPreview(url: url)
-						.frame(maxWidth: min(700, proxy.size.width * 0.75), alignment: .leading)
-						.frame(maxWidth: .infinity, alignment: controller.hoveredLinkUsesTrailingCorner ? .trailing : .leading)
-						.padding(8)
-						.allowsHitTesting(false)
+				.overlay(alignment: .bottomLeading) {
+					if !BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser),
+					   let controller = browser.selectedTab?.activeController,
+					   let url = controller.hoveredLinkURL
+					{
+						BrowserLinkPreview(url: url)
+							.frame(maxWidth: min(700, proxy.size.width * 0.75), alignment: .leading)
+							.frame(maxWidth: .infinity, alignment: controller.hoveredLinkUsesTrailingCorner ? .trailing : .leading)
+							.padding(8)
+							.allowsHitTesting(false)
+					}
 				}
-			}
 			#endif
-			.frame(width: proxy.size.width, height: proxy.size.height)
-			.background(browser.theme.contentShade(for: colorScheme))
-			.allowsHitTesting(selectedTab?.peeks.isEmpty == true || selectedTab?.activeController === selectedTab?.controller)
-			.accessibilityHidden(!(selectedTab?.peeks.isEmpty == true || selectedTab?.activeController === selectedTab?.controller))
+				.frame(width: proxy.size.width, height: proxy.size.height)
+				.background(browser.theme.contentShade(for: colorScheme))
+				.allowsHitTesting(selectedTab?.peeks.isEmpty == true || selectedTab?.activeController === selectedTab?.controller)
+				.accessibilityHidden(!(selectedTab?.peeks.isEmpty == true || selectedTab?.activeController === selectedTab?.controller))
 		}
 	}
 
 	@ViewBuilder
 	private var content: some View {
 		#if os(macOS)
-			if let tab = browser.selectedTab, BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser) {
-				if let snapshot = tab.activeController?.previewSnapshot {
-					Image(nsImage: snapshot)
-						.resizable()
-						.scaledToFit()
-						.accessibilityHidden(true)
-				} else {
-					ContentUnavailableView("Open in Another Window", systemImage: "macwindow.on.rectangle")
-						.accessibilityIdentifier("tab-open-in-another-window")
-				}
+			if let controller = browser.selectedTab?.activeController, controller.url != nil,
+			   BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
+			{
+				BrowserTabMirrorView(controller: controller)
 			} else {
 				selectedContent
 			}

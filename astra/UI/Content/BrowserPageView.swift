@@ -23,7 +23,7 @@ struct BrowserPageView: View {
 		ZStack(alignment: .top) {
 			BrowserContentView(browser: browser, insets: insets)
 			#if os(macOS)
-				.opacity(BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser) ? 0.35 : 1)
+				.blur(radius: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser) ? 10 : 0)
 				.allowsHitTesting(!BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
 				.accessibilityHidden(BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
 			#endif
