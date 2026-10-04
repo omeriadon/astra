@@ -10,6 +10,7 @@ struct BrowserAddressField: View {
 	private var searchConfiguration: BrowserSearchConfiguration {
 		BrowserSearchConfiguration.decode(searchConfigurationValue)
 	}
+
 	@State private var addressText = ""
 	@State private var addressSelectionID: String?
 	@State private var addressRemoteSuggestions: [String] = []
@@ -77,7 +78,7 @@ struct BrowserAddressField: View {
 			PasteButton(payloadType: String.self) { values in
 				guard let value = values.first,
 				      let destination = BrowserSearchMatching.pastedHTTPURL(value)
-			else {
+				else {
 					return
 				}
 				addressText = destination.absoluteString
@@ -108,7 +109,11 @@ struct BrowserAddressField: View {
 			"Use this site's search engine?",
 			isPresented: Binding(
 				get: { browser.pendingSearchEngineDiscovery != nil },
-				set: { if !$0 { browser.pendingSearchEngineDiscovery = nil } }
+				set: {
+					if !$0 {
+						browser.pendingSearchEngineDiscovery = nil
+					}
+				}
 			),
 			titleVisibility: .visible
 		) {
@@ -146,6 +151,11 @@ struct BrowserAddressField: View {
 		.onChange(of: browser.selectedTabID) { _, _ in
 			browser.discardStaleSearchEngineDiscovery()
 			updateForSelectedTab()
+		}
+		.onChange(of: browser.selectedTab?.activeController?.showsFind) { _, showsFind in
+			if showsFind == true {
+				isFocused = false
+			}
 		}
 		.onChange(of: browser.addressFocusRequest) { _, _ in
 			isFocused = true
@@ -222,9 +232,9 @@ struct BrowserAddressField: View {
 			      let provider = searchConfiguration.suggestionsProvider(isPrivate: request.isPrivate),
 			      !request.query.isEmpty,
 			      let destination = BrowserAddress.destination(
-				for: request.query,
-				configuration: searchConfiguration,
-				isPrivate: browser.isPrivate
+			      	for: request.query,
+			      	configuration: searchConfiguration,
+			      	isPrivate: browser.isPrivate
 			      ),
 			      BrowserAddress.isSearchURL(destination, configuration: searchConfiguration, isPrivate: browser.isPrivate)
 			else { return }

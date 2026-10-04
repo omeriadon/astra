@@ -41,7 +41,6 @@
 			.listStyle(.sidebar)
 		}
 
-		@ViewBuilder
 		private func websiteAppRow(_ installation: BrowserWebsiteAppInstallation) -> some View {
 			VStack(alignment: .leading, spacing: 8) {
 				HStack {

@@ -1,5 +1,5 @@
-import CoreGraphics
 import AVFoundation
+import CoreGraphics
 import CoreLocation
 import Defaults
 import Observation
@@ -39,6 +39,8 @@ final class BrowserController: NSObject, Identifiable {
 	@ObservationIgnored
 	private var mediaObservationTask: Task<Void, Never>?
 	@ObservationIgnored
+	private var isRefreshingActivity = false
+	@ObservationIgnored
 	private var faviconTask: Task<Void, Never>?
 	#if os(macOS)
 		@ObservationIgnored
@@ -47,6 +49,7 @@ final class BrowserController: NSObject, Identifiable {
 	@ObservationIgnored
 	private var isInvalidated = false
 	private(set) var isPlayingMedia = false
+	private var hasActiveVideoPlayback = false
 	private(set) var hasPausedMedia = false
 	private(set) var mediaTitle: String?
 	private(set) var mediaArtist: String?
@@ -66,9 +69,15 @@ final class BrowserController: NSObject, Identifiable {
 			guard oldValue != findText else { return }
 			findGeneration.advance()
 			findHasMatch = nil
+			findMatchCount = 0
+			findMatchIndex = 0
 		}
 	}
+
 	private(set) var findHasMatch: Bool?
+	private(set) var findMatchCount = 0
+	private(set) var findMatchIndex = 0
+	var findFocusRequest = 0
 	@ObservationIgnored
 	private var findGeneration = BrowserFindGeneration()
 	private(set) var hasUnsavedChanges = false
@@ -116,7 +125,7 @@ final class BrowserController: NSObject, Identifiable {
 		!BrowserPictureInPicturePolicy.preventsDestructiveTeardown(
 			isActive: isPictureInPictureActive,
 			isEntering: isEnteringPictureInPicture,
-			isPlayingMedia: isPlayingMedia,
+			isPlayingMedia: isPlayingMedia || hasActiveVideoPlayback,
 			hasPausedMedia: hasPausedMedia
 		)
 			&& !isCapturing && !hasUnsavedChanges && !isLoading
@@ -128,7 +137,7 @@ final class BrowserController: NSObject, Identifiable {
 		BrowserPictureInPicturePolicy.preventsDestructiveTeardown(
 			isActive: isPictureInPictureActive,
 			isEntering: isEnteringPictureInPicture,
-			isPlayingMedia: isPlayingMedia,
+			isPlayingMedia: isPlayingMedia || hasActiveVideoPlayback,
 			hasPausedMedia: hasPausedMedia
 		)
 	}
@@ -149,7 +158,8 @@ final class BrowserController: NSObject, Identifiable {
 
 	private func userAgentOverride(for url: URL?) -> String? {
 		guard let url,
-		      let origin = BrowserSitePermissions.origin(for: url) else {
+		      let origin = BrowserSitePermissions.origin(for: url)
+		else {
 			return nil
 		}
 		return session.sitePreferences.customUserAgent(for: origin)
@@ -550,7 +560,9 @@ final class BrowserController: NSObject, Identifiable {
 			if (event.isTrusted && (event.target.matches('input:not([type="search"]), textarea, select') || event.target.closest('[contenteditable]'))) report('dirty');
 		}, true);
 		document.addEventListener('submit', () => report('submitted'), true);
-		document.addEventListener('playing', () => report('playing'), true);
+		for (const event of ['playing', 'pause', 'ended', 'emptied', 'volumechange', 'loadeddata']) {
+			document.addEventListener(event, () => report('media-changed'), true);
+		}
 	})();
 	"""
 
@@ -568,7 +580,7 @@ final class BrowserController: NSObject, Identifiable {
 				eligible: videos.some(window.__astraSupportsPictureInPicture)
 			});
 		};
-		for (const name of ['enterpictureinpicture', 'leavepictureinpicture', 'webkitpresentationmodechanged', 'loadedmetadata', 'play', 'pause', 'ended']) {
+		for (const name of ['enterpictureinpicture', 'leavepictureinpicture', 'webkitpresentationmodechanged', 'loadedmetadata', 'loadeddata', 'canplay', 'resize', 'play', 'pause', 'ended']) {
 			document.addEventListener(name, report, true);
 		}
 	report();
@@ -591,44 +603,52 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func refreshActivity() async {
-		guard let webView = createdWebView else { return }
+		guard !isInvalidated, !isRefreshingActivity, let webView = createdWebView else { return }
+		isRefreshingActivity = true
+		defer { isRefreshingActivity = false }
 		let documentID = navigationIdentifier
-		let state = await webView.requestMediaPlaybackState()
-		guard owns(webView), documentID == navigationIdentifier else { return }
-		isPlayingMedia = state == .playing
-		hasPausedMedia = state == .paused
+		let script = """
+		(() => {
+			const media = [...document.querySelectorAll('audio, video')];
+			const audible = element => !element.muted && element.volume > 0 &&
+				(element.tagName === 'AUDIO' || element.webkitAudioDecodedByteCount > 0 || element.audioTracks?.length > 0);
+			return {
+				videoPlaying: media.some(element => element.tagName === 'VIDEO' && !element.paused && !element.ended && element.readyState >= 2 && element.videoWidth > 0 && element.videoHeight > 0),
+				playing: media.some(element => audible(element) && !element.paused && !element.ended && element.readyState >= 2),
+				paused: media.some(element => audible(element) && element.paused && !element.ended && element.currentTime > 0),
+				title: navigator.mediaSession?.metadata?.title ?? '',
+				artist: navigator.mediaSession?.metadata?.artist ?? ''
+			};
+		})()
+		"""
+		let value = try? await webView.evaluateJavaScript(script, in: nil, in: .defaultClient)
+		guard owns(webView), documentID == navigationIdentifier,
+		      let state = value as? [String: Any] else { return }
+		isPlayingMedia = state["playing"] as? Bool == true
+		hasActiveVideoPlayback = state["videoPlaying"] as? Bool == true
+		hasPausedMedia = state["paused"] as? Bool == true
 		cameraCaptureState = webView.cameraCaptureState
 		microphoneCaptureState = webView.microphoneCaptureState
 		mediaCaptureStateDocumentID = committedSecurityNavigationID
-		await refreshPictureInPictureEligibility(in: webView, documentID: documentID)
-		guard owns(webView), documentID == navigationIdentifier else { return }
-		if state == .playing || state == .none {
+		if isPlayingMedia || !hasPausedMedia {
 			pausedFromBrowser = false
 		}
-		webView.configuration.preferences.inactiveSchedulingPolicy =
-			isPictureInPictureActive || isEnteringPictureInPicture || isPlayingMedia || hasPausedMedia ? .none : .suspend
-		if state == .none {
-			mediaTitle = nil
-			mediaArtist = nil
-		}
-		if state != .none {
-			let script = "({ title: navigator.mediaSession?.metadata?.title ?? '', artist: navigator.mediaSession?.metadata?.artist ?? '' })"
-			let metadata: [String: String]? = await withCheckedContinuation { continuation in
-				webView.evaluateJavaScript(script, in: nil, in: .defaultClient) { result in
-					continuation.resume(returning: (try? result.get()) as? [String: String])
-				}
-			}
-			guard owns(webView), documentID == navigationIdentifier else { return }
-			mediaTitle = metadata?["title"].flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
-			mediaArtist = metadata?["artist"].flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
-		}
+		mediaTitle = (state["title"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
+		mediaArtist = (state["artist"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
+		await refreshPictureInPictureEligibility(in: webView, documentID: documentID)
+		guard owns(webView), documentID == navigationIdentifier else { return }
+		webView.configuration.preferences.inactiveSchedulingPolicy = isPictureInPictureActive || isEnteringPictureInPicture || isPlayingMedia || hasActiveVideoPlayback ? .none : .throttle
 	}
 
 	private func refreshPictureInPictureEligibility(in webView: WKWebView, documentID: Int) async {
 		let script = """
 		(() => {
 			const videos = [...document.querySelectorAll('video')];
-			const supports = window.__astraSupportsPictureInPicture;
+			const supports = video => !video.disablePictureInPicture && !video.ended && video.readyState >= 2 &&
+				video.videoWidth > 0 && video.videoHeight > 0 &&
+				(typeof video.webkitSupportsPresentationMode === 'function'
+				? typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode('picture-in-picture')
+				: document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function');
 			return {
 				active: Boolean(document.pictureInPictureElement) || videos.some(video => video.webkitPresentationMode === 'picture-in-picture'),
 			eligible: typeof supports === 'function' && videos.some(supports)
@@ -643,7 +663,7 @@ final class BrowserController: NSObject, Identifiable {
 		guard owns(webView), documentID == navigationIdentifier,
 		      let result = value
 		else { return }
-		canEnterPictureInPicture = result["eligible"] == true && !pictureInPictureControlUnavailable
+		canEnterPictureInPicture = result["eligible"] == true
 		if result["active"] == true {
 			setPictureInPictureActive(true)
 		} else if isPictureInPictureActive, !isEnteringPictureInPicture {
@@ -662,7 +682,11 @@ final class BrowserController: NSObject, Identifiable {
 		let documentID = navigationIdentifier
 		webView.callAsyncJavaScript("""
 		return (() => {
-			const supports = window.__astraSupportsPictureInPicture;
+			const supports = video => !video.disablePictureInPicture && !video.ended && video.readyState >= 2 &&
+				video.videoWidth > 0 && video.videoHeight > 0 &&
+				(typeof video.webkitSupportsPresentationMode === 'function'
+				? typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode('picture-in-picture')
+				: document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function');
 			if (typeof supports !== 'function') return false;
 			const video = [...document.querySelectorAll('video')].find(supports);
 			if (!video) return false;
@@ -701,35 +725,103 @@ final class BrowserController: NSObject, Identifiable {
 	private func setPictureInPictureActive(_ active: Bool) {
 		guard isPictureInPictureActive != active else { return }
 		isPictureInPictureActive = active
-		createdWebView?.configuration.preferences.inactiveSchedulingPolicy = active ? .none : .suspend
+		if active {
+			pictureInPictureControlUnavailable = false
+		}
+		createdWebView?.configuration.preferences.inactiveSchedulingPolicy = active ? .none : .throttle
+	}
+
+	private static let findScript = #"""
+	const selection = window.getSelection();
+	if (!query) {
+		window.__astraFindState = null;
+		selection?.removeAllRanges();
+		globalThis.CSS?.highlights?.delete('astra-find');
+		return { count: 0, index: 0 };
+	}
+	const nodes = [], offsets = [];
+	let text = '';
+	const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+	for (let node; node = walker.nextNode();) {
+		const parent = node.parentElement;
+		if (!parent || parent.closest('script, style, noscript, input, textarea, select, [hidden]') || !parent.getClientRects().length) continue;
+		nodes.push(node);
+		offsets.push(text.length);
+		text += node.textContent;
+	}
+	const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const matches = [];
+	let first = 0, last = 0;
+	for (const match of text.matchAll(new RegExp(escaped, 'giu'))) {
+		const start = match.index, end = start + match[0].length;
+		while (first + 1 < nodes.length && offsets[first + 1] <= start) first++;
+		last = Math.max(last, first);
+		while (last + 1 < nodes.length && offsets[last + 1] < end) last++;
+		const range = document.createRange();
+		range.setStart(nodes[first], start - offsets[first]);
+		range.setEnd(nodes[last], end - offsets[last]);
+		matches.push(range);
+	}
+	const previous = window.__astraFindState;
+	const sameQuery = previous?.query === query;
+	let index = sameQuery ? previous.index + (backwards ? -1 : 1) : (backwards ? matches.length - 1 : 0);
+	index = matches.length ? (index + matches.length) % matches.length : -1;
+	window.__astraFindState = { query, index };
+	selection?.removeAllRanges();
+	if (globalThis.CSS?.highlights && typeof Highlight === 'function') {
+		CSS.highlights.set('astra-find', new Highlight(...matches));
+		if (!document.getElementById('astra-find-style')) {
+			const style = document.createElement('style');
+			style.id = 'astra-find-style';
+			style.textContent = '::highlight(astra-find) { background-color: #ffe066; color: #000; }';
+			document.head.append(style);
+		}
+	}
+	if (index >= 0) {
+		selection?.addRange(matches[index]);
+		const rect = matches[index].getBoundingClientRect();
+		if (rect.top < 0 || rect.bottom > innerHeight) window.scrollBy(0, rect.top - innerHeight / 2);
+	}
+	return { count: matches.length, index: index + 1 };
+	"""#
+
+	func presentFind() {
+		showsFind = true
+		findFocusRequest += 1
 	}
 
 	func findNext(backwards: Bool = false) {
 		guard !awaitsNavigationCommit,
 		      navigationFailure == nil,
 		      let webView = createdWebView,
-		      owns(webView)
-		else { return }
+		      owns(webView) else { return }
 		let generation = findGeneration.advance()
 		let query = findText
-		let configuration = WKFindConfiguration()
-		configuration.backwards = backwards
-		configuration.wraps = true
-		webView.find(query, configuration: configuration) { [weak self, weak webView] result in
-			guard let self,
-			      let webView,
-			      self.createdWebView === webView,
-			      self.owns(webView),
-			      self.findGeneration.accepts(generation),
-			      query == self.findText
-			else { return }
-			self.findHasMatch = query.isEmpty || result.matchFound
+		webView.callAsyncJavaScript(Self.findScript, arguments: ["query": query, "backwards": backwards], in: nil, in: .defaultClient) { [weak self, weak webView] result in
+			guard let self, let webView,
+			      owns(webView), findGeneration.accepts(generation), query == findText else { return }
+			guard let matches = (try? result.get()) as? [String: Int] else {
+				// PDF and other non-HTML documents still use WebKit's native search.
+				let configuration = WKFindConfiguration()
+				configuration.backwards = backwards
+				configuration.wraps = true
+				webView.find(query, configuration: configuration) { [weak self] result in
+					guard let self, findGeneration.accepts(generation) else { return }
+					findHasMatch = query.isEmpty || result.matchFound
+				}
+				return
+			}
+			findMatchCount = matches["count"] ?? 0
+			findMatchIndex = matches["index"] ?? 0
+			findHasMatch = query.isEmpty || findMatchCount > 0
 		}
 	}
 
 	func invalidateFindResults() {
 		findGeneration.advance()
 		findHasMatch = nil
+		findMatchCount = 0
+		findMatchIndex = 0
 	}
 
 	func dismissFind() {
@@ -764,8 +856,8 @@ final class BrowserController: NSObject, Identifiable {
 		pausedFromBrowser = true
 		webView.pauseAllMediaPlayback(completionHandler: { [weak self, weak webView] in
 			guard let self, let webView, owns(webView), documentID == navigationIdentifier else { return }
-			self.isPlayingMedia = false
-			self.pausedFromBrowser = true
+			isPlayingMedia = false
+			pausedFromBrowser = true
 		})
 	}
 
@@ -1004,7 +1096,7 @@ final class BrowserController: NSObject, Identifiable {
 		}
 		configuration.preferences.isElementFullscreenEnabled = true
 		configuration.preferences.isFraudulentWebsiteWarningEnabled = true
-		configuration.preferences.inactiveSchedulingPolicy = .suspend
+		configuration.preferences.inactiveSchedulingPolicy = .throttle
 		configuration.mediaTypesRequiringUserActionForPlayback = .all
 		configuration.allowsAirPlayForMediaPlayback = true
 		#if os(iOS)
@@ -1227,11 +1319,11 @@ final class BrowserController: NSObject, Identifiable {
 		guard !isInvalidated else { return }
 		if BrowserAddress.externalApplicationScheme(for: url) != nil,
 		   handleExternalLink(
-			url,
-			requestingOrigin: nil,
-			requestingSite: isExplicitAddressRequest ? "Astra address bar" : nil,
-			isExplicitAddressRequest: isExplicitAddressRequest,
-			in: webView
+		   	url,
+		   	requestingOrigin: nil,
+		   	requestingSite: isExplicitAddressRequest ? "Astra address bar" : nil,
+		   	isExplicitAddressRequest: isExplicitAddressRequest,
+		   	in: webView
 		   )
 		{
 			return
@@ -1417,13 +1509,13 @@ final class BrowserController: NSObject, Identifiable {
 		guard let webView = createdWebView,
 		      owns(webView),
 		      BrowserSecurityPresentation.canRefreshCommittedSnapshot(
-				committedURL: committedURL,
-				webViewURL: webView.url,
-				committedDocumentID: committedSecurityNavigationID,
-				currentDocumentID: navigationIdentifier,
-				isNavigating: awaitsNavigationCommit,
-				isFailure: navigationFailure != nil
-			)
+		      	committedURL: committedURL,
+		      	webViewURL: webView.url,
+		      	committedDocumentID: committedSecurityNavigationID,
+		      	currentDocumentID: navigationIdentifier,
+		      	isNavigating: awaitsNavigationCommit,
+		      	isFailure: navigationFailure != nil
+		      )
 		else { return }
 		guard let committedURL else { return }
 
@@ -1607,8 +1699,8 @@ extension BrowserController: WKNavigationDelegate {
 			targetsMainFrame: navigationAction.targetFrame?.isMainFrame == true,
 			isNewWindow: navigationAction.targetFrame == nil
 		),
-		   let destination = navigationAction.request.url,
-		   navigationIntercept?(destination) == true
+			let destination = navigationAction.request.url,
+			navigationIntercept?(destination) == true
 		{
 			decisionHandler(.cancel, preferences)
 			return
@@ -1837,7 +1929,7 @@ extension BrowserController: WKNavigationDelegate {
 		      !isAuthenticationSessionBrowser,
 		      createdWebView != nil,
 		      !retriedAfterConnectivityReturn,
-		      (navigationFailure?.kind == .offline || navigationFailure?.kind == .connectionLost),
+		      navigationFailure?.kind == .offline || navigationFailure?.kind == .connectionLost,
 		      let request = failedRequest,
 		      BrowserNavigationFailure.canRetryAutomatically(request)
 		else { return }
@@ -1869,6 +1961,7 @@ extension BrowserController: WKNavigationDelegate {
 		canEnterPictureInPicture = false
 		isZapping = false
 		isPlayingMedia = false
+		hasActiveVideoPlayback = false
 		mediaTitle = nil
 		mediaArtist = nil
 		pausedFromBrowser = false
@@ -1985,7 +2078,10 @@ extension BrowserController: WKScriptMessageHandler {
 					scrollPositionDidChange?()
 				case "submitted":
 					scrollPositionDidChange?()
-				case "playing": isPlayingMedia = true
+				case "media-changed":
+					Task { @MainActor [weak self] in
+						await self?.refreshActivity()
+					}
 				default: break
 			}
 			return
@@ -2033,123 +2129,123 @@ extension BrowserController: WKScriptMessageHandler {
 
 extension BrowserController: WKUIDelegate {
 	#if os(iOS)
-	func webView(
-		_ webView: WKWebView,
-		contextMenuConfigurationForElement elementInfo: WKContextMenuElementInfo,
-		completionHandler: @escaping @MainActor @Sendable (UIContextMenuConfiguration?) -> Void
-	) {
-		guard owns(webView), hasCurrentPageDocument, !isLoading else {
-			completionHandler(nil)
-			return
-		}
-		let documentID = navigationIdentifier
-		if let linkURL = safeContextLink(elementInfo.linkURL) {
-			completionHandler(contextMenuConfiguration(
-				for: webView,
-				documentID: documentID,
-				linkURL: linkURL,
-				selectedText: nil
-			))
-			return
-		}
-		webView.evaluateJavaScript("window.getSelection().toString()") { [weak self, weak webView] result, _ in
-			guard let self, let webView,
-			      owns(webView),
-			      hasCurrentPageDocument,
-			      !isLoading,
-			      navigationIdentifier == documentID
-			else {
+		func webView(
+			_ webView: WKWebView,
+			contextMenuConfigurationForElement elementInfo: WKContextMenuElementInfo,
+			completionHandler: @escaping @MainActor @Sendable (UIContextMenuConfiguration?) -> Void
+		) {
+			guard owns(webView), hasCurrentPageDocument, !isLoading else {
 				completionHandler(nil)
 				return
 			}
-			let selectedText = (result as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-			completionHandler(contextMenuConfiguration(
-				for: webView,
-				documentID: documentID,
-				linkURL: nil,
-				selectedText: selectedText.flatMap { $0.utf8.count <= 8_192 && !$0.isEmpty ? $0 : nil }
-			))
-		}
-	}
-
-	private func safeContextLink(_ url: URL?) -> URL? {
-		guard let url,
-		      ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
-		      let destination = BrowserAddress.destination(for: url.absoluteString),
-		      destination.scheme?.lowercased() == url.scheme?.lowercased()
-		else { return nil }
-		return destination
-	}
-
-	private func contextMenuConfiguration(
-		for webView: WKWebView,
-		documentID: Int,
-		linkURL: URL?,
-		selectedText: String?
-	) -> UIContextMenuConfiguration {
-		UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self, weak webView] suggestedActions in
-			guard let self, let webView else { return UIMenu(children: suggestedActions) }
-			var actions = suggestedActions
-			if let linkURL {
-				actions += [
-					UIAction(title: "Open Link", image: UIImage(systemName: "arrow.up.right.square")) { [weak self, weak webView] _ in
-						guard let self, let webView, ownsPrompt(in: webView, documentID: documentID) else { return }
-						load(linkURL)
-					},
-					UIAction(title: "Open Link in New Tab", image: UIImage(systemName: "plus.square.on.square")) { [weak self, weak webView] _ in
-						guard let self, let webView, ownsPrompt(in: webView, documentID: documentID) else { return }
-						newTabRequested?(URLRequest(url: linkURL), false)
-					},
-					UIAction(title: "Copy Link", image: UIImage(systemName: "doc.on.doc")) { [weak self, weak webView] _ in
-						guard let self, let webView, ownsPrompt(in: webView, documentID: documentID) else { return }
-						UIPasteboard.general.url = BrowserAddress.withoutCredentials(linkURL)
-					},
-					UIAction(title: "Download Link", image: UIImage(systemName: "arrow.down.to.line")) { [weak self, weak webView] _ in
-						guard let self, let webView else { return }
-						Task { @MainActor [weak self, weak webView] in
-							guard let self, let webView else { return }
-							await downloadContextLink(linkURL, in: webView, documentID: documentID)
-						}
-					},
-				]
-			} else if let selectedText {
-				actions.append(UIAction(title: "Search Selection", image: UIImage(systemName: "magnifyingglass")) { [weak self, weak webView] _ in
-					guard let self, let webView else { return }
-					Task { @MainActor [weak self, weak webView] in
-						guard let self, let webView,
-						      ownsPrompt(in: webView, documentID: documentID),
-						      let url = BrowserSearchConfiguration.decode(Defaults[.browserSearchConfiguration])
-						      .destination(for: selectedText, isPrivate: session.isPrivate)
-						else { return }
-						newTabRequested?(URLRequest(url: url), false)
-					}
-				})
-			}
-			return UIMenu(children: actions)
-		}
-	}
-
-	private func downloadContextLink(_ url: URL, in webView: WKWebView, documentID: Int) async {
-		guard ownsPrompt(in: webView, documentID: documentID) else { return }
-		if automaticDownloadPolicy.reserveAttempt() {
-			guard await requestMultipleDownloadPermission(in: webView) == .grant,
-			      ownsPrompt(in: webView, documentID: documentID)
-			else { return }
-		}
-		guard ownsPrompt(in: webView, documentID: documentID) else { return }
-		let sourceURL = committedURL ?? webView.url
-		webView.startDownload(using: URLRequest(url: url)) { [weak self, weak webView] download in
-			guard let self, let webView,
-			      ownsPrompt(in: webView, documentID: documentID)
-			else {
-				Task { @MainActor in
-					_ = await download.cancel()
-				}
+			let documentID = navigationIdentifier
+			if let linkURL = safeContextLink(elementInfo.linkURL) {
+				completionHandler(contextMenuConfiguration(
+					for: webView,
+					documentID: documentID,
+					linkURL: linkURL,
+					selectedText: nil
+				))
 				return
 			}
-			session.downloads.start(download, sourceURL: sourceURL)
+			webView.evaluateJavaScript("window.getSelection().toString()") { [weak self, weak webView] result, _ in
+				guard let self, let webView,
+				      owns(webView),
+				      hasCurrentPageDocument,
+				      !isLoading,
+				      navigationIdentifier == documentID
+				else {
+					completionHandler(nil)
+					return
+				}
+				let selectedText = (result as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+				completionHandler(contextMenuConfiguration(
+					for: webView,
+					documentID: documentID,
+					linkURL: nil,
+					selectedText: selectedText.flatMap { $0.utf8.count <= 8192 && !$0.isEmpty ? $0 : nil }
+				))
+			}
 		}
-	}
+
+		private func safeContextLink(_ url: URL?) -> URL? {
+			guard let url,
+			      ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+			      let destination = BrowserAddress.destination(for: url.absoluteString),
+			      destination.scheme?.lowercased() == url.scheme?.lowercased()
+			else { return nil }
+			return destination
+		}
+
+		private func contextMenuConfiguration(
+			for webView: WKWebView,
+			documentID: Int,
+			linkURL: URL?,
+			selectedText: String?
+		) -> UIContextMenuConfiguration {
+			UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self, weak webView] suggestedActions in
+				guard let self, let webView else { return UIMenu(children: suggestedActions) }
+				var actions = suggestedActions
+				if let linkURL {
+					actions += [
+						UIAction(title: "Open Link", image: UIImage(systemName: "arrow.up.right.square")) { [weak self, weak webView] _ in
+							guard let self, let webView, ownsPrompt(in: webView, documentID: documentID) else { return }
+							load(linkURL)
+						},
+						UIAction(title: "Open Link in New Tab", image: UIImage(systemName: "plus.square.on.square")) { [weak self, weak webView] _ in
+							guard let self, let webView, ownsPrompt(in: webView, documentID: documentID) else { return }
+							newTabRequested?(URLRequest(url: linkURL), false)
+						},
+						UIAction(title: "Copy Link", image: UIImage(systemName: "doc.on.doc")) { [weak self, weak webView] _ in
+							guard let self, let webView, ownsPrompt(in: webView, documentID: documentID) else { return }
+							UIPasteboard.general.url = BrowserAddress.withoutCredentials(linkURL)
+						},
+						UIAction(title: "Download Link", image: UIImage(systemName: "arrow.down.to.line")) { [weak self, weak webView] _ in
+							guard let self, let webView else { return }
+							Task { @MainActor [weak self, weak webView] in
+								guard let self, let webView else { return }
+								await downloadContextLink(linkURL, in: webView, documentID: documentID)
+							}
+						},
+					]
+				} else if let selectedText {
+					actions.append(UIAction(title: "Search Selection", image: UIImage(systemName: "magnifyingglass")) { [weak self, weak webView] _ in
+						guard let self, let webView else { return }
+						Task { @MainActor [weak self, weak webView] in
+							guard let self, let webView,
+							      ownsPrompt(in: webView, documentID: documentID),
+							      let url = BrowserSearchConfiguration.decode(Defaults[.browserSearchConfiguration])
+							      .destination(for: selectedText, isPrivate: session.isPrivate)
+							else { return }
+							newTabRequested?(URLRequest(url: url), false)
+						}
+					})
+				}
+				return UIMenu(children: actions)
+			}
+		}
+
+		private func downloadContextLink(_ url: URL, in webView: WKWebView, documentID: Int) async {
+			guard ownsPrompt(in: webView, documentID: documentID) else { return }
+			if automaticDownloadPolicy.reserveAttempt() {
+				guard await requestMultipleDownloadPermission(in: webView) == .grant,
+				      ownsPrompt(in: webView, documentID: documentID)
+				else { return }
+			}
+			guard ownsPrompt(in: webView, documentID: documentID) else { return }
+			let sourceURL = committedURL ?? webView.url
+			webView.startDownload(using: URLRequest(url: url)) { [weak self, weak webView] download in
+				guard let self, let webView,
+				      ownsPrompt(in: webView, documentID: documentID)
+				else {
+					Task { @MainActor in
+						_ = await download.cancel()
+					}
+					return
+				}
+				session.downloads.start(download, sourceURL: sourceURL)
+			}
+		}
 	#endif
 
 	func webView(
@@ -2164,8 +2260,8 @@ extension BrowserController: WKUIDelegate {
 			targetsMainFrame: navigationAction.targetFrame?.isMainFrame == true,
 			isNewWindow: navigationAction.targetFrame == nil
 		),
-		   let destination = navigationAction.request.url,
-		   navigationIntercept?(destination) == true
+			let destination = navigationAction.request.url,
+			navigationIntercept?(destination) == true
 		{
 			return nil
 		}
@@ -2299,8 +2395,8 @@ extension BrowserController: WKUIDelegate {
 			let explicitOwner: BrowserAddressPromptOwner?
 			if isExplicitAddressRequest {
 				guard requestingOrigin == nil,
-			      let owner = Self.addressPromptOwner?(self, webView, documentID),
-			      ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: owner)
+				      let owner = Self.addressPromptOwner?(self, webView, documentID),
+				      ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: owner)
 				else { return true }
 				explicitOwner = owner
 			} else {

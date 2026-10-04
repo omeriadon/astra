@@ -7,8 +7,8 @@ struct BrowserSecurityPresentationCheck {
 		let certificate = BrowserServerCertificateSummary(
 			origin: "https://example.test",
 			subject: "example.test",
-		notValidBefore: nil,
-		notValidAfter: .now
+			notValidBefore: nil,
+			notValidAfter: .now
 		)
 		let secure = BrowserSecurityPresentation(
 			committedURL: committedURL,

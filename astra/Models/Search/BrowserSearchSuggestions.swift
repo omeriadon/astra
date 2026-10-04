@@ -14,7 +14,7 @@ struct BrowserSearchSuggestionsRequest: Hashable {
 enum BrowserSearchSuggestions {
 	private static let session = URLSession(configuration: .ephemeral)
 	private static let responseLimit = 131_072
-	private static let openSearchLimit = 65_536
+	private static let openSearchLimit = 65536
 
 	static func fetch(
 		for query: String,
@@ -74,7 +74,7 @@ enum BrowserSearchSuggestions {
 		let scriptResult = try await webView.evaluateJavaScript(script)
 		guard !Task.isCancelled else { return .cancelled }
 		guard let href = scriptResult as? String else { return .notPublished }
-		guard href.utf8.count <= 2_048,
+		guard href.utf8.count <= 2048,
 		      let metadataURL = URL(string: href, relativeTo: pageURL)?.absoluteURL,
 		      let metadata = URLComponents(url: metadataURL, resolvingAgainstBaseURL: false),
 		      metadata.scheme?.lowercased() == "https",
@@ -159,9 +159,9 @@ enum BrowserSearchSuggestions {
 
 private final class OpenSearchRedirectPolicy: NSObject, URLSessionTaskDelegate {
 	func urlSession(
-		_ session: URLSession,
-		task: URLSessionTask,
-		willPerformHTTPRedirection response: HTTPURLResponse,
+		_: URLSession,
+		task _: URLSessionTask,
+		willPerformHTTPRedirection _: HTTPURLResponse,
 		newRequest request: URLRequest,
 		completionHandler: @escaping (URLRequest?) -> Void
 	) {

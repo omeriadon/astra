@@ -123,6 +123,6 @@ private struct BrowserMediaActivityCard: View {
 		if controller.isPlayingMedia {
 			return controller.mediaArtist ?? "Playing media"
 		}
-		return "Paused media"
+		return controller.hasPausedMedia ? "Paused media" : "Picture in Picture available"
 	}
 }

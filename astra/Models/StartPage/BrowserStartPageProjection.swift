@@ -7,7 +7,7 @@ nonisolated enum BrowserStartPageProjection {
 			$0.visitedAt == $1.visitedAt
 				? $0.id.uuidString < $1.id.uuidString
 				: $0.visitedAt > $1.visitedAt
-		}.prefix(limit).map { $0 }
+		}.prefix(limit).map(\.self)
 	}
 
 	static func frequent(_ visits: [BrowserVisit], isPrivate: Bool, limit: Int = 8) -> [BrowserVisitSummary] {
@@ -20,6 +20,6 @@ nonisolated enum BrowserStartPageProjection {
 				return $0.lastVisitedAt > $1.lastVisitedAt
 			}
 			return $0.url.absoluteString < $1.url.absoluteString
-		}.prefix(limit).map { $0 }
+		}.prefix(limit).map(\.self)
 	}
 }

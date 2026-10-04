@@ -130,8 +130,8 @@ struct BrowserGeneralSettingsView: View {
 						in: BrowserZoomPolicy.range,
 						step: 0.05
 					)
-						.accessibilityLabel("Default page zoom")
-						.accessibilityIdentifier("default-page-zoom-slider")
+					.accessibilityLabel("Default page zoom")
+					.accessibilityIdentifier("default-page-zoom-slider")
 					Text(BrowserZoomPolicy.clamp(defaultPageZoom), format: .percent.precision(.fractionLength(0)))
 						.monospacedDigit()
 						.frame(minWidth: 48, alignment: .trailing)
@@ -302,7 +302,7 @@ struct BrowserGeneralSettingsView: View {
 			get: { searchConfiguration.customTemplate },
 			set: { value in
 				var configuration = searchConfiguration
-				configuration.customTemplate = bounded(value, maxBytes: 2_048)
+				configuration.customTemplate = bounded(value, maxBytes: 2048)
 				browserSearchConfigurationValue = configuration.encoded
 			}
 		)
@@ -313,7 +313,7 @@ struct BrowserGeneralSettingsView: View {
 			get: { searchConfiguration.keywordShortcuts },
 			set: { value in
 				var configuration = searchConfiguration
-				configuration.keywordShortcuts = bounded(value, maxBytes: 4_096)
+				configuration.keywordShortcuts = bounded(value, maxBytes: 4096)
 				browserSearchConfigurationValue = configuration.encoded
 			}
 		)

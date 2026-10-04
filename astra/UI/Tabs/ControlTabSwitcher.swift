@@ -125,7 +125,9 @@
 				}
 				return false
 			}
-			if isKeyDown, hasMarkedText { return false }
+			if isKeyDown, hasMarkedText {
+				return false
+			}
 			if isCancelledUntilControlRelease {
 				if !isControlPressed {
 					isCancelledUntilControlRelease = false

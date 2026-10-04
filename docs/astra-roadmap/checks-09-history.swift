@@ -16,39 +16,39 @@ struct HistoryPolicyCheck {
 		assert(legacyVisit.url.user == nil && legacyVisit.url.password == nil)
 		assert(legacyVisit.modifiedAt == .distantPast)
 
-        let older = BrowserVisit(
-	id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
-	url: normalized,
-	title: "Old title",
-	visitedAt: earlier,
-	modifiedAt: earlier
-)
-        let newer = BrowserVisit(
-	id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
-	url: normalized,
-	title: "Current title",
-	visitedAt: now,
-	modifiedAt: now
-)
-        let other = BrowserVisit(
-	url: URL(string: "https://other.example/")!,
-	title: "Other",
-	visitedAt: now,
-	modifiedAt: now
-)
+		let older = BrowserVisit(
+			id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+			url: normalized,
+			title: "Old title",
+			visitedAt: earlier,
+			modifiedAt: earlier
+		)
+		let newer = BrowserVisit(
+			id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+			url: normalized,
+			title: "Current title",
+			visitedAt: now,
+			modifiedAt: now
+		)
+		let other = BrowserVisit(
+			url: URL(string: "https://other.example/")!,
+			title: "Other",
+			visitedAt: now,
+			modifiedAt: now
+		)
 
-        assert(BrowserVisit.matching([older, newer, other], query: "current").map(\.id) == [newer.id])
-        assert(BrowserVisit.inRange([older, newer, other], from: earlier, until: now).map(\.id) == [older.id])
+		assert(BrowserVisit.matching([older, newer, other], query: "current").map(\.id) == [newer.id])
+		assert(BrowserVisit.inRange([older, newer, other], from: earlier, until: now).map(\.id) == [older.id])
 		let summary = BrowserVisit.summaries([older, newer, other]).first { $0.url == normalized }
-        assert(summary?.visitCount == 2)
-        assert(summary?.title == "Current title")
+		assert(summary?.visitCount == 2)
+		assert(summary?.title == "Current title")
 		assert(summary?.lastVisitedAt == now)
 		assert(BrowserVisit.retained([older, newer], days: 1, now: now) == [older, newer])
 		assert(BrowserVisit.retained([older, newer], days: 0, now: now) == [older, newer])
 
-        var updated = older
-        updated.updateTitle("Old title", at: now)
-        assert(updated.modifiedAt == earlier)
+		var updated = older
+		updated.updateTitle("Old title", at: now)
+		assert(updated.modifiedAt == earlier)
 		updated.updateTitle("Renamed", at: now)
 		assert(updated.modifiedAt == now)
 
@@ -82,6 +82,6 @@ struct HistoryPolicyCheck {
 		userReplacedFailedRestorePolicy.userInitiatedNavigation()
 		assert(userReplacedFailedRestorePolicy.didCommit(normalized, navigationID: 1))
 
-        print("09 history policy checks passed")
+		print("09 history policy checks passed")
 	}
 }

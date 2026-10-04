@@ -231,7 +231,8 @@ import WebKit
 			completionHandler: @escaping ([URL]?) -> Void
 		) {
 			guard let window = webView.window,
-			      ownsPrompt(in: webView, documentID: navigationIdentifier) else {
+			      ownsPrompt(in: webView, documentID: navigationIdentifier)
+			else {
 				completionHandler(nil)
 				return
 			}
@@ -285,7 +286,8 @@ import WebKit
 				}
 				while !Task.isCancelled {
 					guard ownsPrompt(in: webView, documentID: documentID),
-					      window.isVisible else {
+					      window.isVisible
+					else {
 						panel.cancel(nil)
 						finish(nil)
 						return
@@ -316,7 +318,7 @@ import WebKit
 					return
 			}
 			Task { @MainActor in
-			let decision = await requestPermission(capabilities, origin: origin, in: webView)
+				let decision = await requestPermission(capabilities, origin: origin, in: webView)
 				decisionHandler(decision)
 			}
 		}
@@ -328,7 +330,7 @@ import WebKit
 			decisionHandler: @escaping (WKPermissionDecision) -> Void
 		) {
 			Task { @MainActor in
-			let decision = await requestPermission([.location], origin: origin, in: webView)
+				let decision = await requestPermission([.location], origin: origin, in: webView)
 				decisionHandler(decision)
 			}
 		}
@@ -354,7 +356,6 @@ import WebKit
 				completionHandler(response.0, response.1)
 			}
 		}
-
 	}
 #endif
 
@@ -645,7 +646,7 @@ import WebKit
 			_ webView: WKWebView,
 			requestMediaCapturePermissionFor origin: WKSecurityOrigin,
 			initiatedByFrame _: WKFrameInfo,
-			 type: WKMediaCaptureType,
+			type: WKMediaCaptureType,
 			decisionHandler: @escaping (WKPermissionDecision) -> Void
 		) {
 			let capabilities: [BrowserSitePermissions.Capability]
@@ -658,7 +659,7 @@ import WebKit
 					return
 			}
 			Task { @MainActor in
-				decisionHandler(await requestPermission(capabilities, origin: origin, in: webView))
+				await decisionHandler(requestPermission(capabilities, origin: origin, in: webView))
 			}
 		}
 
@@ -669,7 +670,7 @@ import WebKit
 			decisionHandler: @escaping (WKPermissionDecision) -> Void
 		) {
 			Task { @MainActor in
-				decisionHandler(await requestPermission([.location], origin: origin, in: webView))
+				await decisionHandler(requestPermission([.location], origin: origin, in: webView))
 			}
 		}
 
@@ -681,7 +682,7 @@ import WebKit
 			decisionHandler: @escaping (WKPermissionDecision) -> Void
 		) {
 			Task { @MainActor in
-				decisionHandler(await requestPermission([.motion], origin: origin, in: webView))
+				await decisionHandler(requestPermission([.motion], origin: origin, in: webView))
 			}
 		}
 	}
@@ -745,20 +746,23 @@ extension BrowserController {
 				documentID: documentID
 			)
 		}
-		if decisions.contains(.deny) { return .deny }
-		if decisions.allSatisfy({ $0 == .allowOnce || $0 == .allowAlways }) { return .grant }
+		if decisions.contains(.deny) {
+			return .deny
+		}
+		if decisions.allSatisfy({ $0 == .allowOnce || $0 == .allowAlways }) {
+			return .grant
+		}
 		let pendingCapabilities = zip(capabilities, decisions).compactMap { capability, decision in
 			decision == nil ? capability : nil
 		}
 		let requested = pendingCapabilities.map(\.title).joined(separator: " and ").lowercased()
 		let title = "Allow \(originID) to access \(requested)?"
-		let message: String
-		if pendingCapabilities.contains(.popups) {
-			message = "Allow pop-ups, then retry the page action. This request comes from \(topOrigin)."
+		let message = if pendingCapabilities.contains(.popups) {
+			"Allow pop-ups, then retry the page action. This request comes from \(topOrigin)."
 		} else if originID == topOrigin {
-			message = "You can change this permission in Privacy and Security settings."
+			"You can change this permission in Privacy and Security settings."
 		} else {
-			message = "This request comes from content embedded in \(topOrigin)."
+			"This request comes from content embedded in \(topOrigin)."
 		}
 		let choice = await BrowserWebsiteUI.permissionPrompt(title: title, message: message, in: webView) { [weak self, weak webView] in
 			guard let self, let webView else { return false }
@@ -791,15 +795,21 @@ extension BrowserController {
 	private func operatingSystemAllows(_ capabilities: [BrowserSitePermissions.Capability]) -> Bool {
 		if capabilities.contains(.camera) {
 			let status = AVCaptureDevice.authorizationStatus(for: .video)
-			if status == .denied || status == .restricted { return false }
+			if status == .denied || status == .restricted {
+				return false
+			}
 		}
 		if capabilities.contains(.microphone) {
 			let status = AVCaptureDevice.authorizationStatus(for: .audio)
-			if status == .denied || status == .restricted { return false }
+			if status == .denied || status == .restricted {
+				return false
+			}
 		}
 		if capabilities.contains(.location) {
 			let status = CLLocationManager().authorizationStatus
-			if status == .denied || status == .restricted { return false }
+			if status == .denied || status == .restricted {
+				return false
+			}
 		}
 		return true
 	}

@@ -30,7 +30,6 @@ struct DesktopBrowserShell: View {
 	@State private var transitionFromTheme: BrowserTheme?
 	@State private var transitionToTheme: BrowserTheme?
 	@State private var themeBlend = 0.0
-	@State private var themeTransitionGeneration = 0
 	@State private var swipeTargetID: UUID?
 	@State private var swipeProgress = 0.0
 	@State private var swipeDirection: CGFloat = 1
@@ -113,33 +112,12 @@ struct DesktopBrowserShell: View {
 		themeBlend = progress
 	}
 
-	private func completeSpaceThemeTransition(from oldID: UUID, to newID: UUID) {
-		if swipeTargetID == newID, swipeProgress >= 0.99 {
-			swipeTargetID = nil
-			swipeProgress = 0
-			transitionFromTheme = nil
-			transitionToTheme = nil
-			themeBlend = 0
-			return
-		}
+	private func completeSpaceThemeTransition(from _: UUID, to _: UUID) {
 		swipeTargetID = nil
 		swipeProgress = 0
-		let oldTheme = browser.workspace.spaces.first(where: { $0.id == oldID })?.theme ?? theme
-		transitionFromTheme = oldTheme
-		transitionToTheme = theme
+		transitionFromTheme = nil
+		transitionToTheme = nil
 		themeBlend = 0
-		themeTransitionGeneration += 1
-		let generation = themeTransitionGeneration
-		withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24), completionCriteria: .logicallyComplete) {
-			themeBlend = 1
-		} completion: {
-			guard generation == themeTransitionGeneration,
-			      browser.workspace.selectedSpaceID == newID
-			else { return }
-			transitionFromTheme = nil
-			transitionToTheme = nil
-			themeBlend = 0
-		}
 	}
 
 	var body: some View {
@@ -420,7 +398,7 @@ private struct ShellContentColumn: View {
 				.clipped()
 				.allowsHitTesting(topBarHeight > 0)
 				.accessibilityHidden(topBarHeight == 0)
-				#if os(macOS)
+			#if os(macOS)
 				.onDrop(of: [UTType.url, UTType.plainText], isTargeted: $isAddressDropTargeted, perform: acceptAddressDrop)
 				.overlay {
 					if isAddressDropTargeted {
@@ -430,21 +408,21 @@ private struct ShellContentColumn: View {
 							.allowsHitTesting(false)
 					}
 				}
-				#endif
+			#endif
 
 			VStack(spacing: 0) {
 				Spacer(minLength: 0)
 					.frame(height: topBarHeight)
 				BrowserPageView(browser: browser, cornerRadius: contentCornerRadius)
-					.animation(.smooth(duration: 0.3)) { view in
-						view
-							.padding(.top, sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
-							.padding([.bottom, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
+					.padding(.top, sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
+					.padding([.bottom, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
+					.transaction { transaction in
+						transaction.animation = nil
 					}
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
 		}
-		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: topBarHeight)
+		.animation(nil, value: topBarHeight)
 		.animation(nil, value: browser.selectedTabID)
 		.onContinuousHover { phase in
 			switch phase {
@@ -463,46 +441,46 @@ private struct ShellContentColumn: View {
 	}
 
 	#if os(macOS)
-	private func acceptAddressDrop(_ providers: [NSItemProvider]) -> Bool {
-		guard let provider = providers.first,
-		      let controller = browser.selectedTab?.activeController
-		else { return false }
-		let tabID = browser.selectedTabID
-		let type = provider.hasItemConformingToTypeIdentifier(UTType.url.identifier)
-			? UTType.url.identifier
-			: UTType.plainText.identifier
-		guard provider.hasItemConformingToTypeIdentifier(type) else { return false }
-		provider.loadItem(forTypeIdentifier: type, options: nil) { item, _ in
-			let text: String? = if let url = item as? URL {
-				url.absoluteString
-			} else if let data = item as? Data {
-				String(data: data, encoding: .utf8)
-			} else if let string = item as? String {
-				string
-			} else if let string = item as? NSString {
-				string as String
-			} else if let url = item as? NSURL {
-				url.absoluteString
-			} else {
-				nil
+		private func acceptAddressDrop(_ providers: [NSItemProvider]) -> Bool {
+			guard let provider = providers.first,
+			      let controller = browser.selectedTab?.activeController
+			else { return false }
+			let tabID = browser.selectedTabID
+			let type = provider.hasItemConformingToTypeIdentifier(UTType.url.identifier)
+				? UTType.url.identifier
+				: UTType.plainText.identifier
+			guard provider.hasItemConformingToTypeIdentifier(type) else { return false }
+			provider.loadItem(forTypeIdentifier: type, options: nil) { item, _ in
+				let text: String? = if let url = item as? URL {
+					url.absoluteString
+				} else if let data = item as? Data {
+					String(data: data, encoding: .utf8)
+				} else if let string = item as? String {
+					string
+				} else if let string = item as? NSString {
+					string as String
+				} else if let url = item as? NSURL {
+					url.absoluteString
+				} else {
+					nil
+				}
+				Task { @MainActor in
+					guard browser.selectedTabID == tabID,
+					      browser.selectedTab?.activeController === controller,
+					      let text,
+					      text.utf8.count <= 8192,
+					      let destination = BrowserAddress.destination(
+					      	for: text,
+					      	configuration: browser.browserSearchConfiguration,
+					      	isPrivate: browser.isPrivate
+					      ),
+					      ["http", "https"].contains(destination.scheme?.lowercased() ?? "")
+					else { return }
+					controller.loadFromAddressBar(destination)
+				}
 			}
-			Task { @MainActor in
-				guard browser.selectedTabID == tabID,
-				      browser.selectedTab?.activeController === controller,
-				      let text,
-				      text.utf8.count <= 8_192,
-				      let destination = BrowserAddress.destination(
-					for: text,
-					configuration: browser.browserSearchConfiguration,
-					isPrivate: browser.isPrivate
-				      ),
-				      ["http", "https"].contains(destination.scheme?.lowercased() ?? "")
-				else { return }
-				controller.loadFromAddressBar(destination)
-			}
+			return true
 		}
-		return true
-	}
 	#endif
 }
 

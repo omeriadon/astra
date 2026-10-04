@@ -8,7 +8,9 @@ enum BrowserSiteContentMode: String, CaseIterable, Identifiable {
 	case desktop
 	case mobile
 
-	var id: Self { self }
+	var id: Self {
+		self
+	}
 
 	var title: String {
 		switch self {

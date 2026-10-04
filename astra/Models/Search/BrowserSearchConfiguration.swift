@@ -7,7 +7,9 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 		case bing
 		case custom
 
-		var id: String { rawValue }
+		var id: String {
+			rawValue
+		}
 
 		var title: String {
 			switch self {
@@ -32,7 +34,7 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 	}
 
 	static func decode(_ value: String) -> Self {
-		guard value.utf8.count <= 40_960,
+		guard value.utf8.count <= 40960,
 		      let data = value.data(using: .utf8),
 		      let configuration = try? JSONDecoder().decode(Self.self, from: data)
 		else {
@@ -112,7 +114,7 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 			      let encodedItems = components.percentEncodedQueryItems,
 			      let marker = expectedItems.first(where: { $0.value == Self.marker })?.name,
 			      let encodedValue = encodedItems.first(where: {
-				($0.name.removingPercentEncoding ?? $0.name) == marker
+			      	($0.name.removingPercentEncoding ?? $0.name) == marker
 			      })?.value,
 			      let value = encodedValue.replacingOccurrences(of: "+", with: " ").removingPercentEncoding,
 			      !value.isEmpty
@@ -173,7 +175,7 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 
 	private var searchTemplates: [String] {
 		var templates = [Engine.google.template, Engine.duckDuckGo.template, Engine.bing.template, customTemplate]
-		guard keywordShortcuts.utf8.count <= 4_096 else {
+		guard keywordShortcuts.utf8.count <= 4096 else {
 			return templates
 		}
 		for line in keywordShortcuts.split(whereSeparator: \.isNewline).prefix(20) {
@@ -192,16 +194,16 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 		guard pieces.count == 2 else {
 			return nil
 		}
-		guard keywordShortcuts.utf8.count <= 4_096 else {
+		guard keywordShortcuts.utf8.count <= 4096 else {
 			return nil
 		}
 		let keyword = String(pieces[0]).lowercased()
 		guard keyword.range(of: #"^[a-zA-Z][a-zA-Z0-9_-]{0,15}$"#, options: .regularExpression) != nil,
 		      let line = keywordShortcuts.split(whereSeparator: \.isNewline).prefix(20).first(where: {
-			$0.split(separator: "=", maxSplits: 1).first?.lowercased() == keyword
-		}),
-		let template = line.split(separator: "=", maxSplits: 1).last.map(String.init),
-		Self.isValidTemplate(template)
+		      	$0.split(separator: "=", maxSplits: 1).first?.lowercased() == keyword
+		      }),
+		      let template = line.split(separator: "=", maxSplits: 1).last.map(String.init),
+		      Self.isValidTemplate(template)
 		else {
 			return nil
 		}
@@ -253,14 +255,14 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 	}
 
 	private static func isValidTemplate(_ value: String) -> Bool {
-		guard value.utf8.count <= 2_048,
+		guard value.utf8.count <= 2048,
 		      value.components(separatedBy: "{query}").count == 2,
 		      let components = templateComponents(value),
 		      components.queryItems?.contains(where: { $0.value == marker }) == true,
 		      components.scheme?.lowercased() == "https",
 		      let host = components.host, !host.isEmpty,
 		      components.user == nil, components.password == nil,
-		      components.port.map({ (1 ... 65_535).contains($0) }) ?? true
+		      components.port.map({ (1 ... 65535).contains($0) }) ?? true
 		else {
 			return false
 		}
@@ -273,7 +275,6 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 		}
 		return URLComponents(string: template.replacingOccurrences(of: "{query}", with: marker))
 	}
-
 }
 
 private extension BrowserSearchConfiguration.Engine {

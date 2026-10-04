@@ -38,7 +38,8 @@
 
 		static func copy(for browser: Browser?) {
 			guard let data = report(for: browser).encoded(),
-			      let text = String(data: data, encoding: .utf8) else {
+			      let text = String(data: data, encoding: .utf8)
+			else {
 				(browser?.session.toastManager ?? ToastManager.shared).show(
 					symbol: "exclamationmark.triangle",
 					message: "Diagnostics exceeded the safe export limit"

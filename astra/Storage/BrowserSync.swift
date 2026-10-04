@@ -75,7 +75,7 @@ final class BrowserSync {
 			guard let token = try? BrowserSessionStore.load() else { return }
 			await MainActor.run { [weak self] in
 				guard let self, sessionToken == nil,
-					  SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
+				      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
 				else { return }
 				sessionToken = token
 				isSignedIn = true
@@ -157,7 +157,8 @@ final class BrowserSync {
 				bearer: nil
 			)
 			guard authGeneration == signInGeneration,
-				currentServerAddress?.absoluteString == signInAddress.absoluteString else {
+			      currentServerAddress?.absoluteString == signInAddress.absoluteString
+			else {
 				throw BrowserSyncError.serverChanged
 			}
 			try BrowserSessionStore.save(response.token)
@@ -189,8 +190,8 @@ final class BrowserSync {
 
 	func syncNow() async {
 		guard let browser, browser.isReadyForSync,
-			  let sessionToken,
-			  SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
+		      let sessionToken,
+		      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
 		else { return }
 		guard !isSyncing else {
 			syncRequestedWhileBusy = true
@@ -214,8 +215,8 @@ final class BrowserSync {
 				bearer: sessionToken
 			)
 			guard self.sessionToken == sessionToken,
-				authGeneration == syncGeneration,
-				SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
+			      authGeneration == syncGeneration,
+			      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 			let local = browser.syncDocument(settings: settingSnapshot())
 			// Decode + merge off-main; docs are Sendable values.
 			let merged = try await Task.detached(priority: .utility) {
@@ -230,8 +231,8 @@ final class BrowserSync {
 				return documents.reduce(local) { $0.merging($1) }
 			}.value
 			guard self.sessionToken == sessionToken,
-				authGeneration == syncGeneration,
-				SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
+			      authGeneration == syncGeneration,
+			      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 			settingsDidChange()
 			let currentBrowsers = BrowserWindowRegistry.shared.openBrowsers.filter {
 				!$0.isPrivate && !$0.isMini && $0.session === browser.session
@@ -250,8 +251,8 @@ final class BrowserSync {
 					await target.flushAndWaitForPersistence()
 				}
 				guard self.sessionToken == sessionToken,
-					authGeneration == syncGeneration,
-					SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
+				      authGeneration == syncGeneration,
+				      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 			}
 
 			let outgoing = currentBrowsers.reduce(browser.syncDocument(settings: settingSnapshot())) { partial, peer in
@@ -271,12 +272,12 @@ final class BrowserSync {
 				return payload
 			}.value
 			guard self.sessionToken == sessionToken,
-				authGeneration == syncGeneration,
-				SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
+			      authGeneration == syncGeneration,
+			      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 			if let payload = pushPayload {
 				guard self.sessionToken == sessionToken,
-					authGeneration == syncGeneration,
-					SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
+				      authGeneration == syncGeneration,
+				      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 				let _: ServerSnapshot = try await request(
 					path: "v1/sync",
 					method: "PUT",
@@ -284,8 +285,8 @@ final class BrowserSync {
 					bearer: sessionToken
 				)
 				guard self.sessionToken == sessionToken,
-					authGeneration == syncGeneration,
-					SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
+				      authGeneration == syncGeneration,
+				      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 			}
 			lastSync = .now
 			errorDescription = nil
@@ -306,13 +307,13 @@ final class BrowserSync {
 	}
 
 	private func applySettings(_ settings: [String: SyncedSetting]) throws {
-		var updates: [(String, Any? , Date)] = []
+		var updates: [(String, Any?, Date)] = []
 		for key in Defaults.Keys.syncedSettingNames {
 			guard let setting = settings[key],
 			      setting.shouldApply(
-					over: knownSettings[key],
-					newerThan: settingVersions[key] ?? .distantPast
-				)
+			      	over: knownSettings[key],
+			      	newerThan: settingVersions[key] ?? .distantPast
+			      )
 			else { continue }
 			if let data = setting.value {
 				let object = try PropertyListSerialization.propertyList(from: data, format: nil)

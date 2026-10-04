@@ -26,7 +26,7 @@ struct AuthenticationSessionPolicyCheck {
 		check(BrowserAuthenticationPolicy.initialRequest(url: url, headers: ["Set-Cookie": "secret=value"]) == nil, "response cookie headers cannot be sent as request fields")
 		check(BrowserAuthenticationPolicy.initialRequest(url: url, headers: ["X-Test": "one", "x-test": "two"]) == nil, "case-insensitive duplicate fields are rejected")
 		check(BrowserAuthenticationPolicy.initialRequest(url: url, headers: ["Sec-Fetch-Site": "cross-site"]) == nil, "browser security headers cannot be overridden")
-		check(BrowserAuthenticationPolicy.initialRequest(url: url, headers: ["X-Test": String(repeating: "a", count: 8_193)]) == nil, "oversized header is rejected")
+		check(BrowserAuthenticationPolicy.initialRequest(url: url, headers: ["X-Test": String(repeating: "a", count: 8193)]) == nil, "oversized header is rejected")
 		check(BrowserAuthenticationPolicy.initialRequest(url: URL(string: "https://user:password@example.test")!, headers: nil) == nil, "URL user information is rejected")
 		check(BrowserAuthenticationPolicy.initialRequest(url: URL(string: "file:///tmp/login")!, headers: nil) == nil, "non-web authentication URLs are rejected")
 		check(BrowserAuthenticationPolicy.initialRequest(url: URL(string: "https://example.test:0/login")!, headers: nil) == nil, "invalid ports are rejected")
@@ -34,7 +34,7 @@ struct AuthenticationSessionPolicyCheck {
 		check(BrowserAuthenticationPolicy.initialRequest(url: URL(string: "https://example.test:/login")!, headers: nil) == nil, "empty ports are rejected")
 		check(BrowserAuthenticationPolicy.initialRequest(url: URL(string: "https://bad%20host.test/login")!, headers: nil) == nil, "whitespace hosts are rejected")
 		check(BrowserAuthenticationPolicy.initialRequest(url: URL(string: "https://exa%01mple.test/login")!, headers: nil) == nil, "control characters in hosts are rejected")
-		check(BrowserAuthenticationPolicy.initialRequest(url: URL(string: "https://example.test/\(String(repeating: "a", count: 16_384))")!, headers: nil) == nil, "oversized authentication URLs are rejected")
+		check(BrowserAuthenticationPolicy.initialRequest(url: URL(string: "https://example.test/\(String(repeating: "a", count: 16384))")!, headers: nil) == nil, "oversized authentication URLs are rejected")
 
 		check(BrowserAuthenticationPolicy.canInterceptCallback(isSourceMainFrame: true, targetsMainFrame: true, isNewWindow: false), "main-frame callback navigation is eligible")
 		check(BrowserAuthenticationPolicy.canInterceptCallback(isSourceMainFrame: true, targetsMainFrame: false, isNewWindow: true), "main-frame callback popup is eligible")

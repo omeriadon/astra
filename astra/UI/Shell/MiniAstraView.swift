@@ -25,6 +25,7 @@
 			.background {
 				BrowserThemeBackground(theme: browser.theme)
 			}
+			.modifier(BrowserQuitFeedback(browser: browser))
 			.ignoresSafeArea()
 			.accessibilityIdentifier("mini-astra-window")
 		}

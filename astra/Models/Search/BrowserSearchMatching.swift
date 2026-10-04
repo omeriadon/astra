@@ -15,9 +15,9 @@ enum BrowserSearchMatching {
 			value.removeLast()
 			value = value.trimmingCharacters(in: .whitespacesAndNewlines)
 		}
-		guard value.utf8.count <= 16_384,
+		guard value.utf8.count <= 16384,
 		      !value.unicodeScalars.contains(where: {
-			CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0)
+		      	CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0)
 		      })
 		else { return nil }
 		let hasHTTPScheme = value.range(of: #"^https?://"#, options: [.regularExpression, .caseInsensitive]) != nil
@@ -25,14 +25,14 @@ enum BrowserSearchMatching {
 		      ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
 		      let host = components.host, !host.isEmpty,
 		      components.user == nil, components.password == nil,
-		      components.port.map({ (1 ... 65_535).contains($0) }) ?? true,
+		      components.port.map({ (1 ... 65535).contains($0) }) ?? true,
 		      let url = components.url
 		else { return nil }
 		let authorityStart = value.range(of: "://")?.upperBound ?? value.startIndex
 		let authority = value[authorityStart...].prefix { !"/?#".contains($0) }
 		guard validPastedAuthority(String(authority), port: components.port),
 		      !host.unicodeScalars.contains(where: {
-			CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0)
+		      	CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0)
 		      })
 		else { return nil }
 		if !hasHTTPScheme {
@@ -49,7 +49,9 @@ enum BrowserSearchMatching {
 		if authority.hasPrefix("[") {
 			guard let closingBracket = authority.firstIndex(of: "]") else { return false }
 			let suffix = authority[authority.index(after: closingBracket)...]
-			if suffix.isEmpty { return port == nil }
+			if suffix.isEmpty {
+				return port == nil
+			}
 			guard suffix.first == ":" else { return false }
 			let value = suffix.dropFirst()
 			return !value.isEmpty && value.utf8.allSatisfy { (48 ... 57).contains($0) } && port != nil
@@ -64,7 +66,7 @@ enum BrowserSearchMatching {
 	}
 
 	static func openSearchTemplate(from data: Data) -> String? {
-		guard data.count <= 65_536,
+		guard data.count <= 65536,
 		      let xml = String(data: data, encoding: .utf8)
 		else { return nil }
 		let declarations = xml.uppercased()
@@ -168,10 +170,10 @@ private final class OpenSearchTemplateParser: NSObject, XMLParserDelegate {
 	private var sawRoot = false
 
 	func parser(
-		_ parser: XMLParser,
+		_: XMLParser,
 		didStartElement elementName: String,
-		namespaceURI: String?,
-		qualifiedName qName: String?,
+		namespaceURI _: String?,
+		qualifiedName _: String?,
 		attributes: [String: String] = [:]
 	) {
 		if !sawRoot {
@@ -182,9 +184,9 @@ private final class OpenSearchTemplateParser: NSObject, XMLParserDelegate {
 		let method = attributes["method"]?.lowercased()
 		let type = attributes["type"]?.lowercased().split(separator: ";", maxSplits: 1).first.map(String.init)?.trimmingCharacters(in: .whitespacesAndNewlines)
 		guard template == nil, elementName == "Url",
-		      (method == nil || method == "get"),
+		      method == nil || method == "get",
 		      ["text/html", "application/xhtml+xml"].contains(type ?? ""),
-		      let value = attributes["template"], value.utf8.count <= 2_048,
+		      let value = attributes["template"], value.utf8.count <= 2048,
 		      value.components(separatedBy: "{searchTerms}").count == 2
 		else { return }
 		template = value.replacingOccurrences(of: "{searchTerms}", with: "{query}")

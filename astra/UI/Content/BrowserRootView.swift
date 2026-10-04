@@ -8,7 +8,6 @@ struct BrowserRootView: View {
 	#if os(macOS)
 		@State private var controlTabSwitcher: ControlTabSwitcher
 		@State private var hostWindow: NSWindow?
-		@State private var quitExpiry: Date = .distantPast
 	#endif
 
 	init(browser: Binding<Browser>) {
@@ -83,25 +82,7 @@ struct BrowserRootView: View {
 			.onDisappear {
 				controlTabSwitcher.stop()
 			}
-			.blur(radius: browser.isAboutToQuit ? 5 : 0)
-			.overlay(alignment: .center) {
-				if Date.now < quitExpiry {
-					QuitBannerOverlay(quitExpiry: quitExpiry)
-				}
-			}
-			.onChange(of: browser.isAboutToQuit) { _, newValue in
-				if newValue {
-					quitExpiry = .now.addingTimeInterval(1)
-				}
-			}
-			.task(id: quitExpiry) {
-				guard quitExpiry > .now else { return }
-				try? await Task.sleep(until: .now + .seconds(quitExpiry.timeIntervalSinceNow))
-				guard !Task.isCancelled, Date.now >= quitExpiry else { return }
-				browser.isAboutToQuit = false
-				quitExpiry = .distantPast
-			}
-			.animation(.snappy(duration: 0.2), value: Date.now < quitExpiry)
+			.modifier(BrowserQuitFeedback(browser: browser))
 		#endif
 	}
 
@@ -122,6 +103,34 @@ struct BrowserRootView: View {
 }
 
 #if os(macOS)
+	struct BrowserQuitFeedback: ViewModifier {
+		let browser: Browser
+		@State private var quitExpiry: Date = .distantPast
+
+		func body(content: Content) -> some View {
+			content
+				.blur(radius: browser.isAboutToQuit ? 5 : 0)
+				.overlay(alignment: .center) {
+					if Date.now < quitExpiry {
+						QuitBannerOverlay(quitExpiry: quitExpiry)
+					}
+				}
+				.onChange(of: browser.isAboutToQuit) { _, newValue in
+					if newValue {
+						quitExpiry = .now.addingTimeInterval(1)
+					}
+				}
+				.task(id: quitExpiry) {
+					guard quitExpiry > .now else { return }
+					try? await Task.sleep(until: .now + .seconds(quitExpiry.timeIntervalSinceNow))
+					guard !Task.isCancelled, Date.now >= quitExpiry else { return }
+					browser.isAboutToQuit = false
+					quitExpiry = .distantPast
+				}
+				.animation(.snappy(duration: 0.2), value: Date.now < quitExpiry)
+		}
+	}
+
 	private struct QuitBannerOverlay: View {
 		let quitExpiry: Date
 

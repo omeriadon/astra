@@ -2,15 +2,10 @@ import Defaults
 import Haze
 import SwiftUI
 
-struct BrowserContentView: View, Animatable {
+struct BrowserContentView: View {
 	let browser: Browser
 	var insets = BrowserViewportInsets()
 	@Environment(\.colorScheme) private var colorScheme
-
-	var animatableData: CGFloat {
-		get { insets.obscured.top }
-		set { insets.obscured.top = newValue }
-	}
 
 	var body: some View {
 		GeometryReader { proxy in
@@ -21,6 +16,10 @@ struct BrowserContentView: View, Animatable {
 				content
 					.zIndex(1)
 			}
+			.transaction { transaction in
+				transaction.animation = nil
+				transaction.disablesAnimations = true
+			}
 			.frame(width: proxy.size.width, height: proxy.size.height)
 			.background(browser.theme.contentShade(for: colorScheme))
 			.allowsHitTesting(selectedTab?.peeks.isEmpty == true || selectedTab?.activeController === selectedTab?.controller)
@@ -30,6 +29,27 @@ struct BrowserContentView: View, Animatable {
 
 	@ViewBuilder
 	private var content: some View {
+		#if os(macOS)
+			if let tab = browser.selectedTab, BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser) {
+				if let snapshot = tab.activeController?.previewSnapshot {
+					Image(nsImage: snapshot)
+						.resizable()
+						.scaledToFit()
+						.accessibilityHidden(true)
+				} else {
+					ContentUnavailableView("Open in Another Window", systemImage: "macwindow.on.rectangle")
+						.accessibilityIdentifier("tab-open-in-another-window")
+				}
+			} else {
+				selectedContent
+			}
+		#else
+			selectedContent
+		#endif
+	}
+
+	@ViewBuilder
+	private var selectedContent: some View {
 		if let tab = browser.selectedTab, tab.internalPage != nil {
 			InternalPageHost(browser: browser)
 		} else if let tab = browser.selectedTab, tab.controller?.url != nil {
@@ -90,6 +110,7 @@ private struct KeepAliveWebStack: View {
 			ForEach(keepAliveControllers()) { controller in
 				BrowserWebView(
 					controller: controller,
+					isVisible: controller === selectedTab?.controller && selectedTab?.internalPage == nil,
 					obscuredInsets: controller === selectedTab?.controller ? insets.obscured : EdgeInsets(),
 					minimumViewportInsets: insets.minimum,
 					maximumViewportInsets: insets.maximum
@@ -123,13 +144,16 @@ private struct KeepAliveWebStack: View {
 			guard let controller, controller.url != nil, seen.insert(controller.id).inserted else { return }
 			result.append(controller)
 		}
-		append(selectedTab?.controller)
+		if let selectedTab, BrowserWindowRegistry.shared.ownsTab(selectedTab.id, in: browser) {
+			append(selectedTab.controller)
+		}
 		for id in browser.recentlyUsedTabIDs where result.count < 4 {
-			guard let tab = browser.tab(withID: id), tab.internalPage == nil else { continue }
+			guard let tab = browser.tab(withID: id), tab.internalPage == nil,
+			      BrowserWindowRegistry.shared.ownsTab(tab.id, in: browser) else { continue }
 			append(tab.controller)
 		}
 		// ponytail: retain all playing or paused media while iframe PiP state is unobservable; narrow this when WebKit exposes a frame-aware callback.
-		for tab in browser.tabs {
+		for tab in browser.tabs where BrowserWindowRegistry.shared.ownsTab(tab.id, in: browser) {
 			append(tab.controller?.requiresMediaTeardownConfirmation == true ? tab.controller : nil)
 			for peek in tab.id == selectedTab?.id ? [] : tab.peeks {
 				if peek.controller.requiresMediaTeardownConfirmation {

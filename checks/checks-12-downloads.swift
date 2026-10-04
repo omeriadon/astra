@@ -121,23 +121,23 @@ struct Checks {
 		assert(restored.folderBookmark == nil)
 
 		#if os(macOS)
-		let quarantinedSource = directory.appendingPathComponent("stage.bin")
-		let quarantinedCopy = directory.appendingPathComponent("final.bin")
-		try Data([3, 4, 5]).write(to: quarantinedSource)
-		try BrowserDownloadedFile.quarantine(
-			quarantinedSource,
-			downloadURL: URL(string: "https://example.com/file.bin"),
-			sourceURL: URL(string: "https://example.com")
-		)
-		try FileManager.default.copyItem(at: quarantinedSource, to: quarantinedCopy)
-		try BrowserDownloadedFile.quarantine(
-			quarantinedCopy,
-			downloadURL: URL(string: "https://example.com/file.bin"),
-			sourceURL: URL(string: "https://example.com")
-		)
-		var quarantineProperties: AnyObject?
-		try (quarantinedCopy as NSURL).getResourceValue(&quarantineProperties, forKey: .quarantinePropertiesKey)
-		assert(quarantineProperties is [String: Any])
+			let quarantinedSource = directory.appendingPathComponent("stage.bin")
+			let quarantinedCopy = directory.appendingPathComponent("final.bin")
+			try Data([3, 4, 5]).write(to: quarantinedSource)
+			try BrowserDownloadedFile.quarantine(
+				quarantinedSource,
+				downloadURL: URL(string: "https://example.com/file.bin"),
+				sourceURL: URL(string: "https://example.com")
+			)
+			try FileManager.default.copyItem(at: quarantinedSource, to: quarantinedCopy)
+			try BrowserDownloadedFile.quarantine(
+				quarantinedCopy,
+				downloadURL: URL(string: "https://example.com/file.bin"),
+				sourceURL: URL(string: "https://example.com")
+			)
+			var quarantineProperties: AnyObject?
+			try (quarantinedCopy as NSURL).getResourceValue(&quarantineProperties, forKey: .quarantinePropertiesKey)
+			assert(quarantineProperties is [String: Any])
 		#endif
 	}
 }

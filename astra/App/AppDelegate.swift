@@ -7,11 +7,11 @@
 
 #if os(macOS)
 	import AppKit
-	import Carbon
-	import WebKit
 	import AuthenticationServices
+	import Carbon
 	import Defaults
 	import Sparkle
+	import WebKit
 
 	@MainActor
 	final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation {
@@ -67,12 +67,12 @@
 				      let browser = activeBrowser,
 				      let keyWindow = NSApp.keyWindow,
 				      BrowserKeyboardMenuPolicy.canPromptForAddressAction(
-					      isFocusedBrowser: keyWindow.isKeyWindow && activeBrowser === browser,
-					      isSelectedController: browser.selectedTab?.activeController === controller,
-					      isSameSession: browser.session === controller.session,
-					      isCurrentWebView: controller.webViewIfLoaded === webView,
-					      isSameNavigation: controller.navigationIdentifier == documentID,
-					      webViewMatchesOwnerWindow: webView.window == nil || webView.window === keyWindow
+				      	isFocusedBrowser: keyWindow.isKeyWindow && activeBrowser === browser,
+				      	isSelectedController: browser.selectedTab?.activeController === controller,
+				      	isSameSession: browser.session === controller.session,
+				      	isCurrentWebView: controller.webViewIfLoaded === webView,
+				      	isSameNavigation: controller.navigationIdentifier == documentID,
+				      	webViewMatchesOwnerWindow: webView.window == nil || webView.window === keyWindow
 				      )
 				else { return nil }
 				return BrowserAddressPromptOwner(browser: browser, window: keyWindow)
@@ -156,7 +156,7 @@
 				for record in records where !windows.contains(where: { $0.browser.windowID == record.windowID }) {
 					openBrowserWindow(restorationRecord: record)
 				}
-				if windows.isEmpty && !wasLaunchedForWebPush {
+				if windows.isEmpty, !wasLaunchedForWebPush {
 					openBrowserWindow()
 				}
 				for controller in windows {
@@ -218,7 +218,7 @@
 				}
 				for browser in allBrowsers {
 					for tab in browser.tabs {
-						tab.stopForClose()
+						tab.stopForClose(force: true)
 					}
 					if browser.isPrivate {
 						await browser.session.endPrivateSession()
@@ -252,7 +252,7 @@
 			return true
 		}
 
-		@objc private func handleURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
+		@objc private func handleURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent _: NSAppleEventDescriptor) {
 			guard let value = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
 			      let url = URL(string: value) else { return }
 			application(NSApp, open: [url])
@@ -319,7 +319,7 @@
 				self.lastQuitAttempt = nil
 			} else {
 				lastQuitAttempt = now
-				BrowserWindowRegistry.shared.activeBrowser?.isAboutToQuit = true
+				activeBrowser?.isAboutToQuit = true
 			}
 		}
 
@@ -497,11 +497,10 @@
 		}
 
 		@objc private func openSettings(_: Any?) {
-			let browser: Browser
-			if activeAuthenticationBrowser == nil, let focusedBrowserWindow {
-				browser = focusedBrowserWindow.browser
+			let browser: Browser = if activeAuthenticationBrowser == nil, let focusedBrowserWindow {
+				focusedBrowserWindow.browser
 			} else {
-				browser = openBrowserWindow().browser
+				openBrowserWindow().browser
 			}
 			browser.openInternalPage(.settings)
 		}
@@ -547,11 +546,10 @@
 				guard let id = sender.representedObject as? String,
 				      let page = BrowserInternalPage(persistenceID: id)
 				else { return }
-				let browser: Browser
-				if activeAuthenticationBrowser == nil {
-					browser = activeBrowser ?? openBrowserWindow().browser
+				let browser: Browser = if activeAuthenticationBrowser == nil {
+					activeBrowser ?? openBrowserWindow().browser
 				} else {
-					browser = openBrowserWindow().browser
+					openBrowserWindow().browser
 				}
 				browser.openInternalPage(page, inNewTab: true)
 			}
@@ -559,7 +557,7 @@
 
 		func menuWillOpen(_ menu: NSMenu) {
 			if menu.title == "Bookmarks" {
-				for item in menu.items where item.tag == 17_018 {
+				for item in menu.items where item.tag == 17018 {
 					menu.removeItem(item)
 				}
 				let bookmarks = activeAuthenticationBrowser == nil && activeBrowser?.isPrivate != true
@@ -567,20 +565,20 @@
 					: []
 				if !bookmarks.isEmpty {
 					let separator = NSMenuItem.separator()
-					separator.tag = 17_018
+					separator.tag = 17018
 					menu.addItem(separator)
 					for bookmark in bookmarks {
 						let menuItem = item(bookmark.name, action: #selector(openSavedBookmark(_:)))
 						menuItem.representedObject = bookmark.id
 						menuItem.image = NSImage(systemSymbolName: "bookmark", accessibilityDescription: "Bookmark")
-						menuItem.tag = 17_018
+						menuItem.tag = 17018
 						menu.addItem(menuItem)
 					}
 				}
 				return
 			}
 			if menu.title == "Navigation" {
-				for item in menu.items where item.tag == 17_017 {
+				for item in menu.items where item.tag == 17017 {
 					menu.removeItem(item)
 				}
 				let visits = activeAuthenticationBrowser == nil
@@ -588,7 +586,7 @@
 					: []
 				if !visits.isEmpty {
 					let separator = NSMenuItem.separator()
-					separator.tag = 17_017
+					separator.tag = 17017
 					let insertionIndex = (menu.items.firstIndex { $0.action == #selector(openHistory(_:)) } ?? 0) + 1
 					menu.insertItem(separator, at: insertionIndex)
 					var nextIndex = insertionIndex + 1
@@ -596,7 +594,7 @@
 						let title = visit.title.isEmpty ? (visit.url.host ?? visit.url.absoluteString) : visit.title
 						let menuItem = item(title, action: #selector(openHistoryVisit(_:)))
 						menuItem.representedObject = visit.id
-						menuItem.tag = 17_017
+						menuItem.tag = 17017
 						menu.insertItem(menuItem, at: nextIndex)
 						nextIndex += 1
 					}
@@ -604,7 +602,7 @@
 				return
 			}
 			guard menu.title == "Window" else { return }
-			for item in menu.items where item.tag == 17_019 {
+			for item in menu.items where item.tag == 17019 {
 				menu.removeItem(item)
 			}
 			let browserWindows = windows.map { ($0.browser, $0.window) }
@@ -615,7 +613,7 @@
 				let menuItem = item("\(title) \(index + 1)", action: #selector(activateWindow(_:)))
 				menuItem.representedObject = browser.windowID
 				menuItem.state = window === NSApp.keyWindow ? .on : .off
-				menuItem.tag = 17_019
+				menuItem.tag = 17019
 				menu.addItem(menuItem)
 			}
 		}
@@ -630,11 +628,10 @@
 		}
 
 		@objc private func showAbout(_: Any?) {
-			let browser: Browser
-			if activeAuthenticationBrowser == nil, let focusedBrowserWindow {
-				browser = focusedBrowserWindow.browser
+			let browser: Browser = if activeAuthenticationBrowser == nil, let focusedBrowserWindow {
+				focusedBrowserWindow.browser
 			} else {
-				browser = openBrowserWindow().browser
+				openBrowserWindow().browser
 			}
 			browser.settingsPage = .about
 			browser.openInternalPage(.settings)
@@ -669,11 +666,10 @@
 		}
 
 		@objc private func openFile(_: Any?) {
-			let browser: Browser
-			if activeAuthenticationBrowser == nil {
-				browser = activeBrowser ?? openBrowserWindow().browser
+			let browser: Browser = if activeAuthenticationBrowser == nil {
+				activeBrowser ?? openBrowserWindow().browser
 			} else {
-				browser = openBrowserWindow().browser
+				openBrowserWindow().browser
 			}
 			BrowserDesktopCommands.openFile(in: browser, window: NSApp.keyWindow)
 		}
@@ -710,7 +706,7 @@
 		}
 
 		@objc private func findInPage(_: Any?) {
-			activeBrowser?.selectedTab?.activeController?.showsFind = true
+			activeBrowser?.selectedTab?.activeController?.presentFind()
 		}
 
 		@objc private func findNext(_: Any?) {
@@ -872,7 +868,7 @@
 			}
 			if menuItem.action == #selector(enterPictureInPicture(_:)) {
 				guard activeAuthenticationBrowser == nil,
-			      let controller = activeBrowser?.selectedTab?.activeController else { return false }
+				      let controller = activeBrowser?.selectedTab?.activeController else { return false }
 				return controller.canEnterPictureInPicture
 					&& !controller.isPictureInPictureActive
 					&& !controller.isEnteringPictureInPicture

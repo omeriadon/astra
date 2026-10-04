@@ -26,6 +26,7 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 			&& pageZoom == other.pageZoom
 			&& scrollPosition == other.scrollPosition
 	}
+
 	nonisolated func applyingSynchronizedMetadata(from remote: Self) -> Self {
 		var updated = self
 		updated.pageTitle = remote.pageTitle

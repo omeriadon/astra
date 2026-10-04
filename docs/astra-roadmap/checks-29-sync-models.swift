@@ -3,7 +3,7 @@ import Foundation
 @main
 struct BrowserSyncModelCheck {
 	static func main() throws {
-		let now = Date(timeIntervalSince1970: 10_000)
+		let now = Date(timeIntervalSince1970: 10000)
 		let tabID = UUID()
 		let oldTab = OpenTab(id: tabID, url: URL(string: "https://old.example")!, modifiedAt: now)
 		let newTab = OpenTab(id: tabID, url: URL(string: "https://new.example")!, modifiedAt: now.addingTimeInterval(1))

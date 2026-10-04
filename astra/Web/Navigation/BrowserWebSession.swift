@@ -1,5 +1,5 @@
-import Foundation
 import Defaults
+import Foundation
 import Observation
 import WebKit
 
@@ -106,7 +106,10 @@ final class BrowserWebSession {
 				for controller in controllers {
 					if let origin,
 					   controller.committedURL.flatMap(BrowserSitePermissions.origin(for:)) != origin,
-					   controller.url.flatMap(BrowserSitePermissions.origin(for:)) != origin { continue }
+					   controller.url.flatMap(BrowserSitePermissions.origin(for:)) != origin
+					{
+						continue
+					}
 					controller.contentBlockingDidBecomeReady()
 				}
 			}

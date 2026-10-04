@@ -1,4 +1,4 @@
-struct BrowserPictureInPicturePolicy {
+enum BrowserPictureInPicturePolicy {
 	static func preventsDestructiveTeardown(
 		isActive: Bool,
 		isEntering: Bool,

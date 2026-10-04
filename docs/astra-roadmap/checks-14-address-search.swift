@@ -7,8 +7,8 @@ struct AddressSearchChecks {
 		precondition(BrowserSearchConfiguration.decode(configuration.encoded) == configuration)
 		precondition(configuration.encoded == configuration.encoded)
 		var escapedConfiguration = configuration
-		escapedConfiguration.customTemplate = String(repeating: "\u{1}", count: 2_048)
-		escapedConfiguration.keywordShortcuts = String(repeating: "\u{1}", count: 4_096)
+		escapedConfiguration.customTemplate = String(repeating: "\u{1}", count: 2048)
+		escapedConfiguration.keywordShortcuts = String(repeating: "\u{1}", count: 4096)
 		precondition(BrowserSearchConfiguration.decode(escapedConfiguration.encoded) == escapedConfiguration)
 		checkAddress("https://example.com/path?a=1#section", expected: "https://example.com/path?a=1#section", configuration: configuration)
 		checkAddress("example.com:8443/path", expected: "https://example.com:8443/path", configuration: configuration)

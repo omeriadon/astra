@@ -8,7 +8,6 @@ enum BrowserZoomPolicy {
 		guard zoom.isFinite else { return defaultZoom }
 		return min(max(zoom, range.lowerBound), range.upperBound)
 	}
-
 }
 
 struct BrowserFindGeneration {

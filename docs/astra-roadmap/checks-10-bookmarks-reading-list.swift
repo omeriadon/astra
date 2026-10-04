@@ -95,7 +95,7 @@ struct BookmarkReadingListCheck {
 			assertionFailure("unexpected malformed import error: \(error)")
 		}
 
-		let timestamp = Date(timeIntervalSince1970: 10_000)
+		let timestamp = Date(timeIntervalSince1970: 10000)
 		let workspace = BrowserWorkspace(spaces: [BrowserSpace(id: BrowserSpace.firstID)], favouriteTabIDs: [], selectedSpaceID: BrowserSpace.firstID)
 		let itemID = UUID()
 		let older = ReadingListItem(id: itemID, url: URL(string: "https://read.example")!, title: "Old", addedAt: timestamp, modifiedAt: timestamp)
@@ -171,8 +171,7 @@ struct BookmarkReadingListCheck {
 		do {
 			_ = try persistence.saveReadingArchive(Data(repeating: 0, count: 32 * 1024 * 1024 + 1), id: archiveID, url: archiveURL)
 			assertionFailure("oversized replacement was accepted")
-		} catch BrowserUserData.ImportError.tooLarge {
-		}
+		} catch BrowserUserData.ImportError.tooLarge {}
 		let afterFailedReplace = try persistence.loadReadingArchive(id: archiveID, url: replacementURL)
 		assert(afterFailedReplace == Data([4, 5, 6]))
 		try persistence.removeReadingArchive(id: archiveID)
@@ -217,8 +216,7 @@ struct BookmarkReadingListCheck {
 		do {
 			_ = try quotaStore.saveReadingArchive(Data(repeating: 0, count: 32 * 1024 * 1024), id: quotaID, url: quotaURL)
 			assertionFailure("total archive quota was not enforced")
-		} catch BrowserUserData.ImportError.tooLarge {
-		}
+		} catch BrowserUserData.ImportError.tooLarge {}
 		let quotaSnapshot = try quotaStore.loadReadingArchive(id: quotaID, url: quotaURL)
 		assert(quotaSnapshot == Data([9]))
 
@@ -230,8 +228,7 @@ struct BookmarkReadingListCheck {
 		do {
 			_ = try blockedPersistence.loadReadingArchive(id: UUID(), url: archiveURL)
 			assertionFailure("unreadable archive directory was treated as empty")
-		} catch {
-		}
+		} catch {}
 
 		let hostileHTML = Data(#"<DT><A HREF="javascript:alert(1)">bad</A>"#.utf8)
 		do {

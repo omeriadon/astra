@@ -3,6 +3,7 @@ import WebKit
 
 struct BrowserWebView {
 	let controller: BrowserController
+	var isVisible = true
 
 	/// UI currently covering the webpage.
 	var obscuredInsets = EdgeInsets()
@@ -51,14 +52,40 @@ struct BrowserWebView {
 #elseif os(macOS)
 
 	extension BrowserWebView: NSViewRepresentable {
-		func makeNSView(context _: Context) -> WKWebView {
-			let webView = controller.webView
-			configure(webView)
-			return webView
+		final class Coordinator {
+			var insets: [EdgeInsets]?
 		}
 
-		func updateNSView(_: WKWebView, context _: Context) {
-			configure(controller.webView)
+		func makeCoordinator() -> Coordinator {
+			Coordinator()
+		}
+
+		func makeNSView(context: Context) -> NSView {
+			let host = NSView()
+			host.autoresizesSubviews = true
+			mount(in: host, coordinator: context.coordinator)
+			return host
+		}
+
+		func updateNSView(_ host: NSView, context: Context) {
+			mount(in: host, coordinator: context.coordinator)
+		}
+
+		private func mount(in host: NSView, coordinator: Coordinator) {
+			let webView = controller.webView
+			if webView.superview !== host {
+				webView.removeFromSuperview()
+				webView.frame = host.bounds
+				webView.autoresizingMask = [.width, .height]
+				host.addSubview(webView)
+			}
+			webView.isHidden = !isVisible
+			webView.setAccessibilityHidden(!isVisible)
+			let insets = [obscuredInsets, minimumViewportInsets, maximumViewportInsets]
+			if coordinator.insets != insets {
+				configure(webView)
+				coordinator.insets = insets
+			}
 		}
 
 		private func configure(_ webView: WKWebView) {

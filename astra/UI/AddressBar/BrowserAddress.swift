@@ -50,7 +50,7 @@ enum BrowserAddress {
 		if !text.contains(where: \.isWhitespace),
 		   let components = URLComponents(string: "https://" + text),
 		   let host = components.host,
-		   (host.contains(".") || host.lowercased() == "localhost" || isIPAddress(host)),
+		   host.contains(".") || host.lowercased() == "localhost" || isIPAddress(host),
 		   validHost(host),
 		   components.user == nil,
 		   components.password == nil,
@@ -79,10 +79,10 @@ enum BrowserAddress {
 			   let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
 			   let query = configuration.query(for: url, isPrivate: isPrivate),
 			   let range = searchQueryValueRange(
-				in: url.absoluteString,
-				components: components,
-				parameterName: configuration.queryParameterName(for: url)
-			)
+			   	in: url.absoluteString,
+			   	components: components,
+			   	parameterName: configuration.queryParameterName(for: url)
+			   )
 			{
 				return url.absoluteString.replacingCharacters(in: range, with: query)
 			}
@@ -222,7 +222,7 @@ enum BrowserAddress {
 		guard let port else {
 			return true
 		}
-		return (1 ... 65_535).contains(port)
+		return (1 ... 65535).contains(port)
 	}
 
 	private static func hasAmbiguousHostPort(_ value: String) -> Bool {

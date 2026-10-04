@@ -11,12 +11,14 @@
 		let createdAt: Date
 		var modifiedAt: Date
 
-		var bundleURL: URL { URL(fileURLWithPath: bundlePath, isDirectory: true) }
+		var bundleURL: URL {
+			URL(fileURLWithPath: bundlePath, isDirectory: true)
+		}
 	}
 
 	nonisolated enum BrowserWebsiteAppPolicy {
 		static let maximumNameBytes = 160
-		static let maximumURLBytes = 8_192
+		static let maximumURLBytes = 8192
 
 		static func validatedURL(_ url: URL) -> URL? {
 			guard url.absoluteString.utf8.count <= maximumURLBytes,
@@ -24,7 +26,7 @@
 			      ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
 			      let host = components.host, !host.isEmpty,
 			      components.user == nil, components.password == nil,
-			      components.port.map({ (1 ... 65_535).contains($0) }) ?? true
+			      components.port.map({ (1 ... 65535).contains($0) }) ?? true
 			else { return nil }
 			return components.url
 		}
@@ -94,7 +96,7 @@
 				.appendingPathComponent("Astra", isDirectory: true)
 				.appendingPathComponent("Website Apps", isDirectory: true)
 			self.rootURL = rootURL
-			self.registryURL = rootURL.appendingPathComponent("registry.json", isDirectory: false)
+			registryURL = rootURL.appendingPathComponent("registry.json", isDirectory: false)
 			try? fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
 			load()
 		}
@@ -300,6 +302,5 @@
 				throw RegistryError.signingFailed(String(message.prefix(500)))
 			}
 		}
-
 	}
 #endif

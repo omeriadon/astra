@@ -26,6 +26,18 @@ struct BrowserFindBar: View {
 					.foregroundStyle(.secondary)
 					.accessibilityIdentifier("find-in-page-no-match")
 			}
+			if !controller.findText.isEmpty, controller.findMatchCount > 0 {
+				Text("\(controller.findMatchIndex) of \(controller.findMatchCount)")
+					.monospacedDigit()
+					.font(.caption)
+					.accessibilityLabel("Match \(controller.findMatchIndex) of \(controller.findMatchCount)")
+					.accessibilityIdentifier("find-in-page-match-count")
+			}
+			if !controller.findText.isEmpty, controller.findHasMatch == true, controller.findMatchCount == 0 {
+				Text("Match found")
+					.font(.caption)
+					.accessibilityIdentifier("find-in-page-native-match")
+			}
 			Button("Previous Match", systemImage: "chevron.up") {
 				controller.findNext(backwards: true)
 			}
@@ -48,6 +60,10 @@ struct BrowserFindBar: View {
 		.onAppear {
 			isFocused = true
 			controller.findNext()
+		}
+		.task(id: controller.findFocusRequest) {
+			await Task.yield()
+			isFocused = true
 		}
 		.onDisappear { controller.invalidateFindResults() }
 		.accessibilityIdentifier("find-in-page-bar")

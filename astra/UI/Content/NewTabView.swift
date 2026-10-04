@@ -63,7 +63,7 @@ struct NewTabView: View {
 										.font(.caption)
 										.foregroundStyle(.secondary)
 										.lineLimit(1)
-							}
+								}
 								.frame(maxWidth: .infinity, alignment: .leading)
 							} icon: {
 								Image(systemName: result.symbol)
@@ -180,7 +180,7 @@ struct NewTabView: View {
 							}
 						}
 					case .frequent:
-						if !browser.isPrivate && !frequentVisits.isEmpty {
+						if !browser.isPrivate, !frequentVisits.isEmpty {
 							Section("Frequently Visited") {
 								ForEach(frequentVisits, id: \.url) { visit in
 									StartPageVisitRow(
@@ -195,7 +195,7 @@ struct NewTabView: View {
 							}
 						}
 					case .recent:
-						if !browser.isPrivate && !recentVisits.isEmpty {
+						if !browser.isPrivate, !recentVisits.isEmpty {
 							Section("Recently Visited") {
 								ForEach(recentVisits) { visit in
 									StartPageVisitRow(
@@ -232,7 +232,7 @@ struct NewTabView: View {
 										}
 									}
 									.buttonStyle(.plain)
-										.accessibilityLabel("Reopen \(tab.customTitle ?? tab.pageTitle)")
+									.accessibilityLabel("Reopen \(tab.customTitle ?? tab.pageTitle)")
 									.accessibilityIdentifier("start-page-closed-\(tab.id.uuidString)")
 									.contextMenu {
 										Button("Reopen in Background", systemImage: "plus.square.on.square") {
@@ -242,7 +242,7 @@ struct NewTabView: View {
 									}
 								}
 							}
-					}
+						}
 				}
 			}
 		}
@@ -285,11 +285,11 @@ struct NewTabView: View {
 					.focused($isSearchFocused)
 					.textFieldStyle(.plain)
 				#if os(macOS)
-						.fontDesign(.monospaced)
+					.fontDesign(.monospaced)
 				#elseif os(iOS)
-						.textInputAutocapitalization(.never)
-						.autocorrectionDisabled()
-						.keyboardType(.webSearch)
+					.textInputAutocapitalization(.never)
+					.autocorrectionDisabled()
+					.keyboardType(.webSearch)
 				#endif
 					.submitLabel(.go)
 					.onSubmit { browser.submitNewTabSearch() }
@@ -382,7 +382,7 @@ private struct StartPagePreferencesView: View {
 			List {
 				if containsUnsupportedValue {
 					Section {
-								Label("These saved settings are unsupported or unreadable and cannot be edited here.", systemImage: "exclamationmark.triangle")
+						Label("These saved settings are unsupported or unreadable and cannot be edited here.", systemImage: "exclamationmark.triangle")
 							.foregroundStyle(.secondary)
 					}
 				}

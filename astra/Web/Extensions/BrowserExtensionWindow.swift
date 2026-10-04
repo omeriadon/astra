@@ -17,7 +17,7 @@ final class BrowserExtensionWindow: NSObject, WKWebExtensionWindow {
 
 	func tabs(for _: WKWebExtensionContext) -> [any WKWebExtensionTab] {
 		guard let browser else { return [] }
-		return browser.tabs.filter { $0.internalPage == nil }.compactMap {
+		return browser.tabs.filter { $0.internalPage == nil && BrowserWindowRegistry.shared.ownsTab($0.id, in: browser) }.compactMap {
 			BrowserExtensionManager.shared.extensionTab(for: $0.id, in: browser)
 		}
 	}

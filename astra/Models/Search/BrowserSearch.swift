@@ -26,7 +26,7 @@ extension Browser {
 		let generation = newTabSearchGeneration
 		let guardsNewTabQuery = includeActions
 		let addressGeneration = addressSearchGeneration
-		let selectedTabID = self.selectedTabID
+		let selectedTabID = selectedTabID
 		let configuration = browserSearchConfiguration
 		let actions = BrowserSearchAction.catalogue(for: self)
 		if query.isEmpty {
@@ -119,20 +119,20 @@ extension Browser {
 				perform: {
 					guard self.selectedTabID == selectedTabID,
 					      self.browserSearchConfiguration.encoded == configuration.encoded
-				else { return }
-				if result.kind == .search {
-					guard Defaults[.searchSuggestionsEnabled],
-					      self.browserSearchConfiguration.suggestionsProvider(isPrivate: self.isPrivate) != nil
 					else { return }
-					if includeActions {
-						guard self.newTabGoogleSuggestions.contains(result.title) else { return }
-					} else {
-						guard let remoteSuggestionRequest,
-						      self.addressSuggestionsRequest == remoteSuggestionRequest,
-						      self.ownsAddressSuggestionRequest(remoteSuggestionRequest)
+					if result.kind == .search {
+						guard Defaults[.searchSuggestionsEnabled],
+						      self.browserSearchConfiguration.suggestionsProvider(isPrivate: self.isPrivate) != nil
 						else { return }
+						if includeActions {
+							guard self.newTabGoogleSuggestions.contains(result.title) else { return }
+						} else {
+							guard let remoteSuggestionRequest,
+							      self.addressSuggestionsRequest == remoteSuggestionRequest,
+							      self.ownsAddressSuggestionRequest(remoteSuggestionRequest)
+							else { return }
+						}
 					}
-				}
 					if includeActions {
 						guard self.newTabSearchGeneration == generation,
 						      self.newTabSearchText.trimmingCharacters(in: .whitespacesAndNewlines) == query
@@ -251,14 +251,14 @@ extension Browser {
 		      let pageURL = controller.url,
 		      webView.url == pageURL,
 		      pending.matches(
-			  tabID: selectedTabID,
-			  controllerID: controller.id,
-			  webViewID: ObjectIdentifier(webView),
-			  documentID: controller.navigationIdentifier,
-			  pageURL: pageURL,
-			  query: addressSearchText.trimmingCharacters(in: .whitespacesAndNewlines),
-			  queryGeneration: addressSearchGeneration,
-			  configuration: browserSearchConfiguration.encoded
+		      	tabID: selectedTabID,
+		      	controllerID: controller.id,
+		      	webViewID: ObjectIdentifier(webView),
+		      	documentID: controller.navigationIdentifier,
+		      	pageURL: pageURL,
+		      	query: addressSearchText.trimmingCharacters(in: .whitespacesAndNewlines),
+		      	queryGeneration: addressSearchGeneration,
+		      	configuration: browserSearchConfiguration.encoded
 		      )
 		else { return false }
 		return true
@@ -289,7 +289,7 @@ extension Browser {
 				BrowserSearchMatching.score(query, in: url.absoluteString)
 			)
 			guard match > 0 else { return nil }
-			let age = max(0, newestVisit.timeIntervalSince(visit.visitedAt) / 86_400)
+			let age = max(0, newestVisit.timeIntervalSince(visit.visitedAt) / 86400)
 			let recency = 1 / (1 + age / 365)
 			return BrowserSearchResult(
 				id: "history-\(visit.id)", kind: .history, title: visit.title,
@@ -375,7 +375,7 @@ extension Browser {
 		guard currentGeneration == generation,
 		      currentQuery.trimmingCharacters(in: .whitespacesAndNewlines) == query,
 		      searchResults(for: query, includeActions: fromNewTab).contains(where: {
-			$0.id == id && $0.kind == .history && $0.destination == url.absoluteString
+		      	$0.id == id && $0.kind == .history && $0.destination == url.absoluteString
 		      })
 		else { return }
 		removeHistory(for: url)

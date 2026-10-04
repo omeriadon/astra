@@ -99,7 +99,7 @@ final class BrowserSitePermissions {
 			if let decision = try container.decodeIfPresent(Decision.self, forKey: .decision) {
 				self.decision = decision
 			} else {
-				self.decision = try container.decode(Bool.self, forKey: .allowed) ? .allowAlways : .deny
+				decision = try container.decode(Bool.self, forKey: .allowed) ? .allowAlways : .deny
 			}
 		}
 
@@ -128,6 +128,7 @@ final class BrowserSitePermissions {
 			[.camera, .microphone, .location, .popups, .automaticDownloads]
 		#endif
 	}
+
 	private let isPrivate: Bool
 	private let defaults: UserDefaults
 	private var canReplaceSavedData = true
@@ -137,9 +138,11 @@ final class BrowserSitePermissions {
 	var hasDecisions: Bool {
 		!entries.isEmpty || !temporaryDecisions.isEmpty || hasUnrecognizedSavedData
 	}
+
 	var isSavedDataReadOnly: Bool {
 		hasUnrecognizedSavedData
 	}
+
 	@ObservationIgnored
 	var didChange: (() -> Void)?
 	@ObservationIgnored
@@ -293,7 +296,7 @@ final class BrowserSitePermissions {
 
 	private static func canRewrite(_ data: Data) -> Bool {
 		guard let entries = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return false }
-		let knownKeys: Set<String> = ["origin", "topOrigin", "capability", "allowed", "decision"]
+		let knownKeys: Set = ["origin", "topOrigin", "capability", "allowed", "decision"]
 		let capabilities = Set(Capability.allCases.map(\.rawValue))
 		let decisions = Set(Decision.allCases.map(\.rawValue))
 		return entries.allSatisfy { entry in

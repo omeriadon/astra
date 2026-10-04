@@ -50,8 +50,8 @@ struct BrowserHistoryView: View {
 						.font(.title2.bold())
 					Spacer()
 					Menu {
-						Button("Last Hour", systemImage: "clock") { confirmDeleteRange(seconds: 3_600) }
-						Button("Last Day", systemImage: "calendar") { confirmDeleteRange(seconds: 86_400) }
+						Button("Last Hour", systemImage: "clock") { confirmDeleteRange(seconds: 3600) }
+						Button("Last Day", systemImage: "calendar") { confirmDeleteRange(seconds: 86400) }
 						Button("Last Week", systemImage: "calendar") { confirmDeleteRange(seconds: 604_800) }
 						Button("Last Month", systemImage: "calendar") { confirmDeleteRange(seconds: 2_592_000) }
 					} label: {

@@ -91,7 +91,8 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func extensionTab(for id: UUID, in browser: Browser) -> BrowserExtensionTab? {
-		guard !browser.isPrivate, browser.tab(withID: id)?.internalPage == nil else { return nil }
+		guard !browser.isPrivate, BrowserWindowRegistry.shared.ownsTab(id, in: browser),
+		      browser.tab(withID: id)?.internalPage == nil else { return nil }
 		if let existing = tabs[browser.windowID]?[id] {
 			return existing
 		}
@@ -103,7 +104,9 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	func sync(_ browser: Browser) {
 		guard !browser.isPrivate else { return }
 		_ = extensionWindow(for: browser)
-		let ids = Set(browser.tabs.filter { $0.internalPage == nil }.map(\.id))
+		let ids = Set(browser.tabs.filter {
+			$0.internalPage == nil && BrowserWindowRegistry.shared.ownsTab($0.id, in: browser)
+		}.map(\.id))
 		let previous = knownTabIDs[browser.windowID] ?? []
 		for id in ids.subtracting(previous) {
 			if let tab = extensionTab(for: id, in: browser) {

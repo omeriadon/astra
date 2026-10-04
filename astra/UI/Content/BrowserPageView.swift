@@ -7,6 +7,7 @@ struct BrowserPageView: View {
 	private var toastManager: ToastManager {
 		browser.session.toastManager
 	}
+
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	private var isLocalhost: Bool {
@@ -22,10 +23,13 @@ struct BrowserPageView: View {
 		ZStack(alignment: .top) {
 			BrowserContentView(browser: browser, insets: insets)
 			#if os(macOS)
-				.blur(radius: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser) ? 10 : 0)
+				.opacity(BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser) ? 0.35 : 1)
+				.allowsHitTesting(!BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
+				.accessibilityHidden(BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
 			#endif
 
 			if let tab = browser.selectedTab,
+			   !BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser),
 			   !tab.peeks.isEmpty,
 			   tab.activeController !== tab.controller
 			{
@@ -33,6 +37,7 @@ struct BrowserPageView: View {
 					.id(tab.id)
 			}
 		}
+		.allowsHitTesting(!BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
 		.overlay(alignment: .topTrailing) {
 			if let controller = browser.selectedTab?.activeController, controller.showsFind {
 				BrowserFindBar(controller: controller)
@@ -48,6 +53,7 @@ struct BrowserPageView: View {
 			}
 		}
 		.animation(.easeOut(duration: 0.1), value: toastManager.toast != nil)
+		.allowsHitTesting(!BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
 		.clipShape(RoundedRectangle(cornerRadius: cornerRadius))
 		.overlay {
 			if isLocalhost {

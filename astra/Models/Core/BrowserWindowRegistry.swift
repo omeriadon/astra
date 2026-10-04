@@ -7,6 +7,7 @@ final class BrowserWindowRegistry {
 	static let shared = BrowserWindowRegistry()
 
 	private(set) var activeBrowserID: UUID?
+	private var tabOwners: [UUID: UUID] = [:]
 	@ObservationIgnored private var browsers: [WeakBrowser] = []
 	@ObservationIgnored private var publishTask: Task<Void, Never>?
 	@ObservationIgnored private weak var pendingPublishSource: Browser?
@@ -62,6 +63,10 @@ final class BrowserWindowRegistry {
 			publishNow(from: browser)
 		}
 		browsers.removeAll { $0.browser == nil || $0.browser === browser }
+		tabOwners = tabOwners.filter { $0.value != browser.windowID }
+		for remaining in openBrowsers {
+			remaining.configureOwnedTabs()
+		}
 		pendingRestorationRecords?.removeValue(forKey: browser.windowID)
 		if activeBrowserID == browser.windowID {
 			activeBrowserID = browsers.first?.browser?.windowID
@@ -76,6 +81,7 @@ final class BrowserWindowRegistry {
 			return
 		}
 		activeBrowserID = browser.windowID
+		claimSelectedTab(in: browser)
 		BrowserExtensionManager.shared.focus(browser)
 		if browser.selectedTab?.isHibernated == true {
 			browser.selectTab(browser.selectedTabID)
@@ -85,9 +91,49 @@ final class BrowserWindowRegistry {
 		}
 	}
 
+	func sharedTab(withID id: UUID, for browser: Browser) -> BrowserTab? {
+		guard !browser.isPrivate, !browser.isMini else { return nil }
+		return openBrowsers.first {
+			$0 !== browser && !$0.isPrivate && !$0.isMini && $0.session === browser.session && $0.tab(withID: id) != nil
+		}?.tab(withID: id)
+	}
+
+	func ownsTab(_ id: UUID, in browser: Browser) -> Bool {
+		guard !browser.isPrivate, !browser.isMini else { return true }
+		if let owner = tabOwners[id], openBrowsers.contains(where: { $0.windowID == owner && $0.tab(withID: id) != nil }) {
+			return owner == browser.windowID
+		}
+		return openBrowsers.first { !$0.isPrivate && !$0.isMini && $0.tab(withID: id) != nil }?.windowID == browser.windowID
+			|| !openBrowsers.contains { !$0.isPrivate && !$0.isMini && $0.tab(withID: id) != nil }
+	}
+
+	func claimSelectedTab(in browser: Browser) {
+		guard !browser.isPrivate, !browser.isMini,
+		      activeBrowserID == browser.windowID else { return }
+		tabOwners[browser.selectedTabID] = browser.windowID
+		browser.configureSelectedTab()
+		Task { @MainActor [weak self] in
+			await Task.yield()
+			guard let self else { return }
+			for window in openBrowsers {
+				BrowserExtensionManager.shared.sync(window)
+			}
+		}
+	}
+
 	func hasActiveDuplicate(of browser: Browser) -> Bool {
-		guard let activeBrowser, activeBrowser !== browser else { return false }
-		return activeBrowser.selectedTabID == browser.selectedTabID
+		!ownsTab(browser.selectedTabID, in: browser)
+	}
+
+	func isOpenInAnotherWindow(_ id: UUID, than browser: Browser) -> Bool {
+		guard !browser.isPrivate, !browser.isMini else { return false }
+		return openBrowsers.contains {
+			$0 !== browser && !$0.isPrivate && !$0.isMini && $0.selectedTabID == id && ownsTab(id, in: $0)
+		}
+	}
+
+	func isReferenced(_ tab: BrowserTab) -> Bool {
+		openBrowsers.contains { $0.tabs.contains { $0 === tab } }
 	}
 
 	func publish(from source: Browser) {

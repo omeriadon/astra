@@ -54,7 +54,7 @@ enum AddressIntelligenceCheck {
 		precondition(BrowserSearchMatching.openSearchTemplate(from: Data("<not-search/>".utf8)) == nil)
 		let insecureXML = Data("<OpenSearchDescription><Url type=\"text/html\" method=\"GET\" template=\"http://search.example/?q={searchTerms}\" /></OpenSearchDescription>".utf8)
 		precondition(BrowserSearchMatching.openSearchTemplate(from: insecureXML) == nil)
-		precondition(BrowserSearchMatching.openSearchTemplate(from: Data(repeating: 0, count: 65_537)) == nil)
+		precondition(BrowserSearchMatching.openSearchTemplate(from: Data(repeating: 0, count: 65537)) == nil)
 		let namespacedXML = Data("""
 		<os:OpenSearchDescription xmlns:os="http://a9.com/-/spec/opensearch/1.1/">
 		  <os:Url type="text/html" template="https://search.example/?q={searchTerms}" />

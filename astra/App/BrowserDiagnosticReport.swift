@@ -2,7 +2,7 @@ import Foundation
 
 struct BrowserDiagnosticReport: Codable, Equatable {
 	static let schemaVersion = 1
-	static let maximumEncodedBytes = 32_768
+	static let maximumEncodedBytes = 32768
 	static let maximumEvents = 64
 
 	struct Event: Codable, Equatable {
@@ -42,7 +42,7 @@ struct BrowserDiagnosticReport: Codable, Equatable {
 	static func sanitizedCode(_ raw: String) -> String? {
 		guard !raw.isEmpty, raw.utf8.count <= 64,
 		      raw.unicodeScalars.allSatisfy({ scalar in
-			CharacterSet.alphanumerics.contains(scalar) || ".-_".unicodeScalars.contains(scalar)
+		      	CharacterSet.alphanumerics.contains(scalar) || ".-_".unicodeScalars.contains(scalar)
 		      })
 		else { return nil }
 		return raw

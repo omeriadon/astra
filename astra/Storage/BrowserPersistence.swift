@@ -85,13 +85,6 @@ struct BrowserWindowFrame: Codable, Equatable, Sendable {
 	var width: Double
 	var height: Double
 
-	init(x: Double, y: Double, width: Double, height: Double) {
-		self.x = x
-		self.y = y
-		self.width = width
-		self.height = height
-	}
-
 	var isValid: Bool {
 		x.isFinite && y.isFinite
 			&& width.isFinite && height.isFinite
@@ -104,8 +97,8 @@ struct BrowserWindowFrame: Codable, Equatable, Sendable {
 		let visibleWidth = visible.size.width
 		let visibleHeight = visible.size.height
 		guard visibleWidth > 0, visibleHeight > 0 else { return self }
-		let width = min(max(self.width, min(640, visibleWidth)), visibleWidth)
-		let height = min(max(self.height, min(480, visibleHeight)), visibleHeight)
+		let width = min(max(width, min(640, visibleWidth)), visibleWidth)
+		let height = min(max(height, min(480, visibleHeight)), visibleHeight)
 		return Self(
 			x: min(max(x, visible.origin.x), visible.origin.x + visibleWidth - width),
 			y: min(max(y, visible.origin.y), visible.origin.y + visibleHeight - height),
@@ -128,15 +121,15 @@ struct BrowserShutdownMetadata: Codable, Equatable, Sendable {
 nonisolated enum BrowserHomepage {
 	static func validURL(_ value: String) -> URL? {
 		guard let components = URLComponents(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
-			  let scheme = components.scheme?.lowercased(),
-			  ["http", "https"].contains(scheme),
-			  let host = components.host, !host.isEmpty,
-			  !host.unicodeScalars.contains(where: {
-				CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0)
-			  }),
-			  components.user == nil,
-			  components.password == nil,
-			  components.port.map({ (1 ... 65535).contains($0) }) ?? true
+		      let scheme = components.scheme?.lowercased(),
+		      ["http", "https"].contains(scheme),
+		      let host = components.host, !host.isEmpty,
+		      !host.unicodeScalars.contains(where: {
+		      	CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0)
+		      }),
+		      components.user == nil,
+		      components.password == nil,
+		      components.port.map({ (1 ... 65535).contains($0) }) ?? true
 		else { return nil }
 		return components.url
 	}
@@ -158,7 +151,10 @@ enum BrowserPersistenceError: LocalizedError, Equatable {
 
 final class BrowserPersistence: @unchecked Sendable {
 	private let directory: URL
-	private var readingArchiveDirectory: URL { directory.appendingPathComponent("reading-list", isDirectory: true) }
+	private var readingArchiveDirectory: URL {
+		directory.appendingPathComponent("reading-list", isDirectory: true)
+	}
+
 	private static let maxReadingArchiveBytes = 32 * 1024 * 1024
 	private static let maxReadingArchiveFileBytes = maxReadingArchiveBytes + 32 * 1024
 	private static let maxReadingArchiveCount = 50
@@ -187,7 +183,7 @@ final class BrowserPersistence: @unchecked Sendable {
 	nonisolated func saveReadingArchive(_ data: Data, id: UUID, url: URL) throws -> UUID {
 		guard !data.isEmpty, data.count <= Self.maxReadingArchiveBytes else { throw BrowserUserData.ImportError.tooLarge }
 		guard BrowserHomepage.validURL(url.absoluteString) != nil else { throw BrowserPersistenceError.invalidSnapshot }
-		guard url.absoluteString.utf8.count <= 16_384 else { throw BrowserUserData.ImportError.tooLarge }
+		guard url.absoluteString.utf8.count <= 16384 else { throw BrowserUserData.ImportError.tooLarge }
 		Self.readingArchiveLock.lock()
 		defer { Self.readingArchiveLock.unlock() }
 		let folder = readingArchiveDirectory
@@ -402,7 +398,7 @@ final class BrowserPersistence: @unchecked Sendable {
 			throw BrowserPersistenceError.invalidSnapshot
 		}
 		guard let header = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-			  let version = header["version"] as? Int
+		      let version = header["version"] as? Int
 		else { throw BrowserPersistenceError.invalidSnapshot }
 		guard (1 ... Self.currentVersion).contains(version) else {
 			throw BrowserPersistenceError.unsupportedVersion
@@ -414,16 +410,16 @@ final class BrowserPersistence: @unchecked Sendable {
 		      state.bookmarks.count <= 100_000,
 		      Set(state.bookmarks.map(\.id)).count == state.bookmarks.count,
 		      state.bookmarks.allSatisfy({ bookmark in
-			      bookmark.name.utf8.count <= 16_384
-					&& bookmark.folder.utf8.count <= 4_096
-					&& (bookmark.order == Int.min || (0 ... 100_000).contains(bookmark.order))
+		      	bookmark.name.utf8.count <= 16384
+		      		&& bookmark.folder.utf8.count <= 4096
+		      		&& (bookmark.order == Int.min || (0 ... 100_000).contains(bookmark.order))
 		      }),
 		      state.readingList.count <= 100_000,
 		      Set(state.readingList.map(\.id)).count == state.readingList.count,
 		      state.readingList.allSatisfy({ item in
-			      BrowserHomepage.validURL(item.url.absoluteString) != nil
-					&& item.url.absoluteString.utf8.count <= 16_384
-					&& item.title.utf8.count <= 16_384
+		      	BrowserHomepage.validURL(item.url.absoluteString) != nil
+		      		&& item.url.absoluteString.utf8.count <= 16384
+		      		&& item.title.utf8.count <= 16384
 		      }),
 		      Set(state.workspace.spaces.map(\.id)).count == state.workspace.spaces.count,
 		      state.openTabs.allSatisfy({ $0.pageZoom.isFinite && (0.25 ... 5).contains($0.pageZoom) }),

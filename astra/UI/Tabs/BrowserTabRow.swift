@@ -76,6 +76,8 @@ struct BrowserTabRow: View {
 					.accessibilityHidden(!isHovered)
 			}
 		}
+		.opacity(BrowserWindowRegistry.shared.isOpenInAnotherWindow(tab.id, than: browser) ? 0.35 : 1)
+		.allowsHitTesting(!BrowserWindowRegistry.shared.isOpenInAnotherWindow(tab.id, than: browser))
 		.padding(.horizontal, 8)
 		.frame(height: onSelectTab == nil ? 28 : 44)
 		.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? rowTransitions)
@@ -247,30 +249,32 @@ private struct TabTitleView: View {
 				}
 				.accessibilityIdentifier("tab-name-\(tab.id.uuidString)")
 		} else {
-			Text(verbatim: tab.title)
-				.lineLimit(1)
+			Button {
+				browser.selectTab(tab.id)
+				onSelectTab?(tab.id)
+			} label: {
+				Label {
+					Text(verbatim: tab.title)
+						.lineLimit(1)
+				} icon: {
+					Image(systemName: tab.internalPage?.symbol ?? "globe")
+				}
+				.labelStyle(.titleOnly)
 				.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 				.contentShape(Rectangle())
-				.onTapGesture {
-					browser.selectTab(tab.id)
-					onSelectTab?(tab.id)
+			}
+			.buttonStyle(.plain)
+			.simultaneousGesture(
+				TapGesture(count: 2)
+					.onEnded { _ in onBeginRenaming() }
+			)
+			.accessibilityLabel(Text(verbatim: tab.title))
+			.accessibilityActions {
+				if tab.internalPage == nil {
+					Button("Rename", systemImage: "pencil") { onBeginRenaming() }
 				}
-				.simultaneousGesture(
-					TapGesture(count: 2)
-						.onEnded { _ in onBeginRenaming() }
-				)
-				.accessibilityLabel(Text(verbatim: tab.title))
-				.accessibilityAddTraits(.isButton)
-				.accessibilityAction(.default) {
-					browser.selectTab(tab.id)
-					onSelectTab?(tab.id)
-				}
-				.accessibilityActions {
-					if tab.internalPage == nil {
-						Button("Rename", systemImage: "pencil") { onBeginRenaming() }
-					}
-				}
-				.accessibilityIdentifier("tab-title-\(tab.id.uuidString)")
+			}
+			.accessibilityIdentifier("tab-title-\(tab.id.uuidString)")
 		}
 	}
 }

@@ -1,6 +1,6 @@
+import Defaults
 import Foundation
 import Observation
-import Defaults
 
 #if os(macOS)
 	import AppKit
@@ -102,13 +102,17 @@ final class BrowserTab: Identifiable {
 	let session: BrowserWebSession
 	private(set) var pageTitle: String {
 		didSet {
-			if !isApplyingSynchronizedMetadata { markModified() }
+			if !isApplyingSynchronizedMetadata {
+				markModified()
+			}
 		}
 	}
 
 	private(set) var customTitle: String? {
 		didSet {
-			if !isApplyingSynchronizedMetadata { markModified() }
+			if !isApplyingSynchronizedMetadata {
+				markModified()
+			}
 		}
 	}
 
@@ -308,7 +312,8 @@ final class BrowserTab: Identifiable {
 		markModified()
 	}
 
-	func stopForClose() {
+	func stopForClose(force: Bool = false) {
+		guard force || !BrowserWindowRegistry.shared.isReferenced(self) else { return }
 		controller?.stopForClose()
 		for peek in peeks {
 			peek.controller.stopForClose()
@@ -351,7 +356,7 @@ final class BrowserTab: Identifiable {
 
 	func dismissPeek(_ id: UUID, confirmed: Bool = false) {
 		guard let index = peeks.firstIndex(where: { $0.id == id }) else { return }
-		let containsProtectedMedia = peeks[index...].contains(where: { $0.controller.requiresMediaTeardownConfirmation })
+		let containsProtectedMedia = peeks[index...].contains(where: \.controller.requiresMediaTeardownConfirmation)
 		#if os(macOS)
 			if containsProtectedMedia, !confirmed {
 				Task { @MainActor [weak self] in
@@ -387,7 +392,9 @@ final class BrowserTab: Identifiable {
 				}
 				return
 			}
-			if containsProtectedMedia, !confirmed { return }
+			if containsProtectedMedia, !confirmed {
+				return
+			}
 		#endif
 		for peek in peeks[index...] {
 			peek.controller.stopForClose()
@@ -484,18 +491,18 @@ final class BrowserTab: Identifiable {
 	private func observe(_ peek: BrowserPeek) {
 		peek.controller.historyVisitDidCommit = { [weak self, weak controller = peek.controller] url, title, navigationID in
 			guard let self, let controller else { return }
-			self.didRecordHistoryVisit?(controller, url, title, navigationID)
+			didRecordHistoryVisit?(controller, url, title, navigationID)
 		}
 		peek.controller.historyVisitTitleDidChange = { [weak self, weak controller = peek.controller] url, title, navigationID in
 			guard let self, let controller else { return }
-			self.didUpdateHistoryVisitTitle?(controller, url, title, navigationID)
+			didUpdateHistoryVisitTitle?(controller, url, title, navigationID)
 		}
 		peek.controller.navigationDidChange = { [weak self] in
 			self?.markNavigationModified()
 		}
 		peek.controller.zoomDidChange = { [weak self] in
 			guard let self, !self.isApplyingSynchronizedMetadata else { return }
-			self.markNavigationModified()
+			markNavigationModified()
 		}
 		peek.controller.scrollPositionDidChange = { [weak self] in
 			self?.markModifiedForScroll()
@@ -506,18 +513,18 @@ final class BrowserTab: Identifiable {
 		guard let controller else { return }
 		controller.historyVisitDidCommit = { [weak self, weak controller] url, title, navigationID in
 			guard let self, let controller else { return }
-			self.didRecordHistoryVisit?(controller, url, title, navigationID)
+			didRecordHistoryVisit?(controller, url, title, navigationID)
 		}
 		controller.historyVisitTitleDidChange = { [weak self, weak controller] url, title, navigationID in
 			guard let self, let controller else { return }
-			self.didUpdateHistoryVisitTitle?(controller, url, title, navigationID)
+			didUpdateHistoryVisitTitle?(controller, url, title, navigationID)
 		}
 		controller.navigationDidChange = { [weak self] in
 			self?.markNavigationModified()
 		}
 		controller.zoomDidChange = { [weak self] in
 			guard let self, !self.isApplyingSynchronizedMetadata else { return }
-			self.markNavigationModified()
+			markNavigationModified()
 		}
 		controller.scrollPositionDidChange = { [weak self] in
 			self?.markModifiedForScroll()

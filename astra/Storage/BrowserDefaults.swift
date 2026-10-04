@@ -38,7 +38,7 @@ extension Defaults.Keys {
 		default: "https://203.17.177.58:9644"
 	)
 
-	// Opt in portable browser preferences only; session, endpoint, credential, and device UI keys stay local.
+	/// Opt in portable browser preferences only; session, endpoint, credential, and device UI keys stay local.
 	static let syncedSettingNames: Set<String> = [
 		"addressDisplayStyle",
 		"defaultPageZoom",
