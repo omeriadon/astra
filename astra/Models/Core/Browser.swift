@@ -66,7 +66,6 @@ final class Browser {
 			newTabSearchSelection = nil
 			newTabGoogleSuggestions = []
 			pendingSearchEngineDiscovery = nil
-			searchEngineDiscoveryTask?.cancel()
 		}
 	}
 
@@ -80,7 +79,6 @@ final class Browser {
 				addressSearchGeneration &+= 1
 				addressSuggestionsRequest = nil
 				pendingSearchEngineDiscovery = nil
-				searchEngineDiscoveryTask?.cancel()
 			}
 		}
 	}
@@ -90,7 +88,6 @@ final class Browser {
 	var newTabGoogleSuggestions: [String] = []
 	var addressSuggestionsRequest: BrowserSearchSuggestionsRequest?
 	var pendingSearchEngineDiscovery: BrowserSearchEngineDiscovery?
-	@ObservationIgnored var searchEngineDiscoveryTask: Task<Void, Never>?
 	var sidebarShown: Bool {
 		get {
 			access(keyPath: \.sidebarShown)
@@ -918,7 +915,6 @@ final class Browser {
 		showsQuickSearch = false
 		selectedTab?.activeController?.clearHoveredLink()
 		tab.activeController?.clearHoveredLink()
-		searchEngineDiscoveryTask?.cancel()
 		tab.clearPictureInPictureReturnController()
 		if !workspace.favouriteTabIDs.contains(id),
 		   let ownerIndex = workspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })

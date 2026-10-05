@@ -415,8 +415,13 @@ private struct ShellContentColumn: View {
 					transaction.animation = nil
 				}
 				.frame(maxWidth: .infinity, alignment: .trailing)
-				.frame(height: topBarHeight, alignment: .top)
+				.animation(reduceMotion ? nil : .smooth(duration: 0.3)) { content in
+					content
+						.offset(y: topBarHeight > 0 ? 0 : -BrowserChromeMetrics.topBarRegionHeight - BrowserChromeMetrics.shellEdgePadding)
+						.opacity(topBarHeight > 0 ? 1 : 0)
+				}
 				.clipped()
+				.zIndex(1)
 				.allowsHitTesting(topBarHeight > 0)
 				.accessibilityHidden(topBarHeight == 0)
 			#if os(macOS)
@@ -440,8 +445,10 @@ private struct ShellContentColumn: View {
 					.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: sidebarShown)
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
+			.transaction { transaction in
+				transaction.animation = nil
+			}
 		}
-		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: topBarHeight)
 		.animation(nil, value: browser.selectedTabID)
 		.onContinuousHover { phase in
 			switch phase {

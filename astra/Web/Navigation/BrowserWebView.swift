@@ -246,10 +246,12 @@ struct BrowserWebView {
 		let pageGestures = BrowserDesktopPageGestures()
 		private let curtain = NSImageView()
 		private var insets: [EdgeInsets]?
+		private(set) var refreshPullOffset: CGFloat = 0
 
 		init(specification: BrowserWebView) {
 			self.specification = specification
 			super.init(frame: .zero)
+			clipsToBounds = true
 			curtain.imageScaling = .scaleProportionallyUpOrDown
 			curtain.autoresizingMask = [.width, .height]
 			curtain.setAccessibilityHidden(true)
@@ -272,6 +274,24 @@ struct BrowserWebView {
 				pageGestures.detach()
 			}
 			mountIfReady()
+		}
+
+		func setRefreshPullOffset(_ offset: CGFloat, animated: Bool = false) {
+			refreshPullOffset = offset
+			let webView = specification.controller.webView
+			guard webView.superview === self else { return }
+			let origin = CGPoint(
+				x: bounds.minX,
+				y: bounds.minY + (isFlipped ? offset : -offset)
+			)
+			if animated {
+				NSAnimationContext.runAnimationGroup { context in
+					context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.25
+					webView.animator().setFrameOrigin(origin)
+				}
+			} else {
+				webView.setFrameOrigin(origin)
+			}
 		}
 
 		func mountIfReady() {
@@ -305,6 +325,7 @@ struct BrowserWebView {
 					curtain.isHidden = true
 				}
 			}
+			webView.frame = bounds.offsetBy(dx: 0, dy: isFlipped ? refreshPullOffset : -refreshPullOffset)
 			webView.isHidden = !specification.isVisible
 			webView.setAccessibilityHidden(!specification.isVisible)
 			if specification.isVisible {
@@ -352,6 +373,7 @@ struct BrowserWebView {
 				MainActor.assumeIsolated {
 					guard let self, !webView.isLoading, self.refreshing else { return }
 					self.refreshing = false
+					self.host?.setRefreshPullOffset(0, animated: true)
 					self.indicator.hide()
 				}
 			}
@@ -376,6 +398,7 @@ struct BrowserWebView {
 			action = nil
 			suppressMomentum = false
 			refreshing = false
+			host?.setRefreshPullOffset(0)
 			indicator.hide()
 			indicator.removeFromSuperview()
 			host = nil
@@ -416,12 +439,16 @@ struct BrowserWebView {
 							controller.goForward()
 						case .refresh:
 							refreshing = true
+							host.setRefreshPullOffset(60, animated: true)
+							indicator.show(in: host, progress: 1, back: false, refresh: true, armed: true)
+							indicator.spinner.isIndeterminate = true
 							indicator.spinner.startAnimation(nil)
 							controller.reload()
 							refreshing = controller.webView.isLoading
 					}
 				}
 				if !refreshing {
+					host.setRefreshPullOffset(0, animated: true)
 					indicator.hide()
 				}
 				gestureID = UUID()
@@ -454,6 +481,9 @@ struct BrowserWebView {
 			if armed, !gaveFeedback {
 				NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
 				gaveFeedback = true
+			}
+			if action == .refresh {
+				host.setRefreshPullOffset(min(distance * 0.6, host.bounds.height * 0.3))
 			}
 			indicator.show(
 				in: host,
@@ -571,8 +601,10 @@ struct BrowserWebView {
 			let reveal = 56 * progress
 			let insets = host.specification.obscuredInsets
 			let x = refresh ? host.bounds.midX - 22 : back ? -44 + reveal : host.bounds.width - reveal
-			let topY = host.isFlipped ? insets.top - 44 + reveal : host.bounds.height - insets.top - reveal
-			frame = CGRect(x: x, y: refresh ? topY : host.bounds.midY - 22, width: 44, height: 44)
+			let refreshCenterY = host.isFlipped
+				? insets.top + host.refreshPullOffset / 2
+				: host.bounds.height - insets.top - host.refreshPullOffset / 2
+			frame = CGRect(x: x, y: refresh ? refreshCenterY - 22 : host.bounds.midY - 22, width: 44, height: 44)
 			alphaValue = min(progress * 2, 1)
 			arrow.isHidden = refresh
 			spinner.isHidden = !refresh
@@ -581,7 +613,9 @@ struct BrowserWebView {
 			arrow.contentTintColor = armed ? .controlAccentColor : .labelColor
 			spinner.frame = CGRect(x: 14, y: 14, width: 16, height: 16)
 			if refresh {
-				spinner.startAnimation(nil)
+				spinner.stopAnimation(nil)
+				spinner.isIndeterminate = false
+				spinner.doubleValue = progress * 100
 			}
 		}
 

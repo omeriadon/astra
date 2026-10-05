@@ -166,16 +166,17 @@ extension Browser {
 			&& !isShowingNewTab
 	}
 
-	func discoverSearchEngineFromAddressBar() {
-		guard !isPrivate,
-		      let tab = selectedTab,
+	func discoverSearchEngineFromAddressBar(template: String) {
+		guard !isPrivate, !isShowingNewTab,
+		      let tab = selectedTab, tab.internalPage == nil,
 		      let controller = tab.activeController,
+		      controller.hasCurrentPageDocument, !controller.isLoading,
 		      let webView = controller.webViewIfLoaded,
 		      let pageURL = controller.url,
 		      pageURL.scheme?.lowercased() == "https"
 		else { return }
-		let source = BrowserSearchEngineDiscovery(
-			template: "",
+		let discovery = BrowserSearchEngineDiscovery(
+			template: template,
 			tabID: tab.id,
 			controllerID: controller.id,
 			webViewID: ObjectIdentifier(webView),
@@ -185,45 +186,8 @@ extension Browser {
 			queryGeneration: addressSearchGeneration,
 			configuration: browserSearchConfiguration.encoded
 		)
-		searchEngineDiscoveryTask?.cancel()
-		searchEngineDiscoveryTask = Task {
-			do {
-				switch try await BrowserSearchSuggestions.discoverOpenSearchTemplate(in: webView) {
-					case let .found(template):
-						let pending = BrowserSearchEngineDiscovery(
-							template: template,
-							tabID: source.tabID,
-							controllerID: source.controllerID,
-							webViewID: source.webViewID,
-							documentID: source.documentID,
-							pageURL: source.pageURL,
-							query: source.query,
-							queryGeneration: source.queryGeneration,
-							configuration: source.configuration
-						)
-						guard self.isCurrentSearchEngineDiscovery(pending) else { return }
-						self.pendingSearchEngineDiscovery = pending
-					case .notPublished:
-						self.reportSearchEngineDiscoveryFailure(source, message: "This site does not publish search metadata")
-					case .blocked:
-						self.reportSearchEngineDiscoveryFailure(source, message: "Search metadata was blocked by HTTPS policy")
-					case .invalid:
-						self.reportSearchEngineDiscoveryFailure(source, message: "This site's search metadata is invalid")
-					case .failed:
-						self.reportSearchEngineDiscoveryFailure(source, message: "Could not fetch search metadata")
-					case .cancelled:
-						return
-				}
-			} catch {
-				guard !Task.isCancelled else { return }
-				self.reportSearchEngineDiscoveryFailure(source, message: "Could not fetch search metadata")
-			}
-		}
-	}
-
-	private func reportSearchEngineDiscoveryFailure(_ source: BrowserSearchEngineDiscovery, message: String) {
-		guard isCurrentSearchEngineDiscovery(source) else { return }
-		session.toastManager.show(symbol: "exclamationmark.triangle", message: message)
+		guard isCurrentSearchEngineDiscovery(discovery) else { return }
+		pendingSearchEngineDiscovery = discovery
 	}
 
 	var canAcceptSearchEngineDiscovery: Bool {
@@ -240,7 +204,6 @@ extension Browser {
 	}
 
 	func discardStaleSearchEngineDiscovery() {
-		searchEngineDiscoveryTask?.cancel()
 		guard let pending = pendingSearchEngineDiscovery,
 		      !isCurrentSearchEngineDiscovery(pending)
 		else { return }
@@ -248,8 +211,11 @@ extension Browser {
 	}
 
 	private func isCurrentSearchEngineDiscovery(_ pending: BrowserSearchEngineDiscovery) -> Bool {
-		guard !isPrivate,
+		guard !isPrivate, !isShowingNewTab,
+		      selectedTab?.internalPage == nil,
 		      let controller = selectedTab?.activeController,
+		      controller.hasCurrentPageDocument, !controller.isLoading,
+		      controller.navigationFailure == nil,
 		      let webView = controller.webViewIfLoaded,
 		      let pageURL = controller.url,
 		      webView.url == pageURL,

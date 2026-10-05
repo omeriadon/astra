@@ -15,6 +15,8 @@ struct BrowserAddressField: View {
 	@State private var addressSelectionID: String?
 	@State private var addressRemoteSuggestions: [String] = []
 	@State private var addressSuggestionsRequest: BrowserSearchSuggestionsRequest?
+	@State private var discoveredSearchEngineTemplate: String?
+	@State private var discoveredSearchEngineScope: String?
 	@FocusState private var isFocused: Bool
 
 	private var isDimmed: Bool {
@@ -45,6 +47,37 @@ struct BrowserAddressField: View {
 
 	private var currentAddressSuggestions: [String] {
 		addressSuggestionsRequest == addressSuggestionRequest ? addressRemoteSuggestions : []
+	}
+
+	private var searchEngineDiscoveryScope: String? {
+		guard !browser.isPrivate, !browser.isShowingNewTab,
+		      let tab = browser.selectedTab, tab.internalPage == nil,
+		      let controller = tab.activeController,
+		      controller.hasCurrentPageDocument, !controller.isLoading,
+		      let url = controller.url, url.scheme?.lowercased() == "https"
+		else { return nil }
+		return "\(tab.id):\(controller.id):\(controller.navigationIdentifier):\(url.absoluteString)"
+	}
+
+	private var availableSearchEngineTemplate: String? {
+		guard let scope = searchEngineDiscoveryScope, discoveredSearchEngineScope == scope else { return nil }
+		return discoveredSearchEngineTemplate
+	}
+
+	private func validateSearchEngineMetadata() async {
+		discoveredSearchEngineTemplate = nil
+		discoveredSearchEngineScope = nil
+		guard let scope = searchEngineDiscoveryScope,
+		      let webView = browser.selectedTab?.activeController?.webViewIfLoaded else { return }
+		do {
+			let outcome = try await BrowserSearchSuggestions.discoverOpenSearchTemplate(in: webView)
+			guard !Task.isCancelled, searchEngineDiscoveryScope == scope,
+			      case let .found(template) = outcome else { return }
+			discoveredSearchEngineTemplate = template
+			discoveredSearchEngineScope = scope
+		} catch {
+			// Unsupported or unreachable metadata leaves discovery unavailable.
+		}
 	}
 
 	var body: some View {
@@ -87,12 +120,9 @@ struct BrowserAddressField: View {
 			.labelStyle(.iconOnly)
 			.accessibilityLabel("Paste address")
 			.accessibilityIdentifier("paste-address")
-			if !browser.isPrivate,
-			   let url = browser.selectedTab?.activeController?.url,
-			   url.scheme?.lowercased() == "https"
-			{
+			if let template = availableSearchEngineTemplate {
 				Button {
-					browser.discoverSearchEngineFromAddressBar()
+					browser.discoverSearchEngineFromAddressBar(template: template)
 				} label: {
 					Label("Discover Search Engine", systemImage: "magnifyingglass.circle")
 				}
@@ -220,6 +250,9 @@ struct BrowserAddressField: View {
 		}
 		.onAppear {
 			updateForSelectedTab()
+		}
+		.task(id: searchEngineDiscoveryScope) {
+			await validateSearchEngineMetadata()
 		}
 		.task(id: addressSuggestionRequest) {
 			let request = addressSuggestionRequest
