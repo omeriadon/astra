@@ -1,6 +1,6 @@
 import Foundation
 
-nonisolated struct BrowserUserData: Codable {
+nonisolated struct BrowserUserData: Codable, Sendable {
 	var version = 1
 	var bookmarks: [Bookmark]
 	var history: [BrowserVisit]

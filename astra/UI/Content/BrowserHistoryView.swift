@@ -49,6 +49,7 @@ struct BrowserHistoryView: View {
 					Label("History", systemImage: "clock.arrow.circlepath")
 						.font(.title2.bold())
 					Spacer()
+					BrowserLibraryTransferControls(browser: browser, scope: .history)
 					Menu {
 						Button("Last Hour", systemImage: "clock") { confirmDeleteRange(seconds: 3600) }
 						Button("Last Day", systemImage: "calendar") { confirmDeleteRange(seconds: 86400) }

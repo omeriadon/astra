@@ -12,6 +12,7 @@ struct BrowserSettingsView: View {
 	enum Page: CaseIterable {
 		case ui
 		case account
+		case importData
 		case privacyAndSecurity
 		case extensions
 		#if os(macOS)
@@ -65,6 +66,14 @@ struct BrowserSettingsView: View {
 							"Sync Server URL", "Signed in with Apple", "Sign in with Apple",
 							"Sign Out", "Sync Now", "Syncing", "Last Sync",
 						]
+					)
+				case .importData:
+					Definition(
+						title: "Import Browsing Data",
+						symbol: "square.and.arrow.down",
+						section: .account,
+						identifier: "settings-import-data",
+						terms: ["Bookmarks", "History", "Profile", "HTML", "JSON"] + BrowserImportSource.allCases.map(\.rawValue)
 					)
 				case .privacyAndSecurity:
 					Definition(
@@ -196,6 +205,8 @@ struct BrowserSettingsView: View {
 					switch selectedPage {
 						case .ui:
 							BrowserGeneralSettingsView()
+						case .importData:
+							BrowserImportView(browser: browser)
 						case .account:
 							BrowserAccountSettingsView()
 						case .privacyAndSecurity:

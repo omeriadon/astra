@@ -89,6 +89,7 @@ struct BrowserBookmarksView: View {
 					Label(showingReadingList ? "Reading List" : "Bookmarks", systemImage: showingReadingList ? "text.book.closed" : "bookmark")
 						.font(.title2.bold())
 					Spacer()
+					BrowserLibraryTransferControls(browser: browser, scope: .bookmarks)
 					#if os(iOS)
 						if !showingReadingList, searchText.isEmpty, bookmarkCount > 1 {
 							Button(editMode?.wrappedValue == .active ? "Done Reordering" : "Reorder Bookmarks", systemImage: editMode?.wrappedValue == .active ? "checkmark" : "arrow.up.arrow.down") {
