@@ -2,7 +2,9 @@
 	import AppKit
 	import Foundation
 
-	@main
+	#if !ASTRA_WEBSITE_APP_RUNTIME
+		@main
+	#endif
 	enum BrowserWebsiteAppHelperMain {
 		@MainActor
 		static func main() {

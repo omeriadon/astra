@@ -25,7 +25,7 @@
 				}
 
 				Section("Dock") {
-					Text("Astra can create and launch the website app, which gives it its own running Dock icon. macOS does not provide a supported public API for silently pinning another app permanently, so Keep in Dock remains a system-assisted action.")
+					Text("Website apps are pinned to the Dock when created. Use Keep in Dock to pin an existing website app again after removing its Dock icon.")
 						.font(.caption)
 						.foregroundStyle(.secondary)
 				}
@@ -78,9 +78,18 @@
 					Button("Reveal", systemImage: "folder") {
 						perform { try registry.reveal(installation.id) }
 					}
-					Button("Keep in Dock…", systemImage: "dock.rectangle") {
-						perform { try registry.beginKeepInDockFlow(installation.id) }
+					Button("Keep in Dock", systemImage: "dock.rectangle") {
+						Task { @MainActor in
+							do {
+								try await registry.beginKeepInDockFlow(installation.id)
+								errorMessage = nil
+							} catch {
+								errorMessage = error.localizedDescription
+							}
+						}
 					}
+					.accessibilityLabel("Keep \(installation.name) in Dock")
+					.accessibilityIdentifier("website-app-keep-in-dock-\(installation.id)")
 					Button("Choose Icon…", systemImage: "photo") {
 						chooseIcon(for: installation.id)
 					}

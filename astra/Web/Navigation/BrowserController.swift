@@ -1,3 +1,6 @@
+#if ASTRA_WEBSITE_APP_RUNTIME
+	import AstraWebPushBridge
+#endif
 import AVFoundation
 import CoreGraphics
 import CoreLocation
