@@ -355,11 +355,99 @@ final class BrowserSync {
 		return settings
 	}
 
+	func requireAIAuthentication() throws -> UInt64 {
+		guard isSignedIn, sessionToken != nil,
+		      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
+		else {
+			throw BrowserAIError.signInRequired
+		}
+		return authGeneration
+	}
+
+	func validateAIAuthentication(_ generation: UInt64) throws {
+		guard try requireAIAuthentication() == generation else {
+			throw BrowserAIError.signInRequired
+		}
+	}
+
+	func generateAI(_ body: BrowserAICloudRequest) async throws -> BrowserAIResponse {
+		let generation = try requireAIAuthentication()
+		let response: BrowserAIResponse = try await request(
+			path: "v1/ai/generate",
+			method: "POST",
+			body: body,
+			bearer: sessionToken,
+			timeout: 90
+		)
+		try validateAIAuthentication(generation)
+		return response
+	}
+
+	func streamAI(
+		_ body: BrowserAICloudRequest,
+		onSnapshot: @MainActor (String) -> Void
+	) async throws -> String {
+		let generation = try requireAIAuthentication()
+		guard let baseURL = currentServerAddress, let bearer = sessionToken else {
+			throw BrowserAIError.signInRequired
+		}
+		var request = URLRequest(url: baseURL.appending(path: "v1/ai/stream"))
+		request.httpMethod = "POST"
+		request.httpBody = try JSONEncoder().encode(body)
+		request.timeoutInterval = 90
+		request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+		request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+		request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+		let configuration = URLSessionConfiguration.ephemeral
+		configuration.timeoutIntervalForRequest = 90
+		configuration.timeoutIntervalForResource = 90
+		let session = URLSession(configuration: configuration)
+		defer { session.invalidateAndCancel() }
+		let (bytes, response) = try await session.bytes(for: request)
+		try validateAIAuthentication(generation)
+		guard let response = response as? HTTPURLResponse else {
+			throw BrowserAIError.invalidStream
+		}
+		if response.statusCode == 401 {
+			signOut()
+			throw BrowserAIError.signInRequired
+		}
+		guard response.statusCode == 200 else {
+			throw BrowserSyncError.http(response.statusCode)
+		}
+		guard response.value(forHTTPHeaderField: "Content-Type")?.lowercased().hasPrefix("text/event-stream") == true else {
+			throw BrowserAIError.invalidStream
+		}
+		var totalBytes = 0
+		for try await line in bytes.lines {
+			try Task.checkCancellation()
+			try validateAIAuthentication(generation)
+			totalBytes += line.utf8.count
+			guard line.utf8.count <= 524_288, totalBytes <= 32 * 1024 * 1024 else {
+				throw BrowserAIError.invalidStream
+			}
+			guard line.hasPrefix("data: ") else { continue }
+			let event = try JSONDecoder().decode(BrowserAIStreamEvent.self, from: Data(line.dropFirst(6).utf8))
+			guard event.error == nil, let text = event.text, let isFinal = event.isFinal else {
+				throw BrowserAIError.invalidStream
+			}
+			onSnapshot(text)
+			if isFinal {
+				guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+					throw BrowserAIError.emptyResponse
+				}
+				return text
+			}
+		}
+		throw BrowserAIError.invalidStream
+	}
+
 	private func request<Response: Decodable>(
 		path: String,
 		method: String,
 		body: (some Encodable)?,
-		bearer: String?
+		bearer: String?,
+		timeout: TimeInterval = 30
 	) async throws -> Response {
 		guard let baseURL = SyncServerAddress.normalized(Defaults[.syncServerURL], allowLocalHTTP: Self.allowsLocalHTTP)
 		else {
@@ -367,7 +455,7 @@ final class BrowserSync {
 		}
 		var request = URLRequest(url: baseURL.appending(path: path))
 		request.httpMethod = method
-		request.timeoutInterval = 30
+		request.timeoutInterval = timeout
 		request.setValue("application/json", forHTTPHeaderField: "Accept")
 		if let body {
 			request.httpBody = try JSONEncoder().encode(body)
@@ -424,6 +512,12 @@ final class BrowserSync {
 		guard self.browser === browser, isSignedIn else { return }
 		Task { await syncNow() }
 	}
+}
+
+private nonisolated struct BrowserAIStreamEvent: Decodable {
+	let text: String?
+	let isFinal: Bool?
+	let error: String?
 }
 
 private struct AuthenticationRequest: Encodable {

@@ -1,6 +1,5 @@
 import Defaults
 import Foundation
-import FoundationModels
 import Observation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -1702,24 +1701,14 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	private func humanReadableStem(original: String, source: String?, fileType: String?) async -> String? {
-		guard Defaults[.renameDownloadsWithAppleIntelligence],
-		      SystemLanguageModel.default.isAvailable
-		else { return nil }
-
-		let session = LanguageModelSession {
-			"Create short, descriptive file names. Return only a filename stem, without an extension or explanation."
-		}
-		let prompt = "Original filename: \(original)\nWebsite: \(source ?? "Unknown")\nFile type: \(fileType ?? "Unknown")"
-		guard let response = try? await session.respond(to: prompt) else { return nil }
-		let stem = Self.safeStem(response.content)
-		return stem == "Download" ? nil : stem
+		guard Defaults[.renameDownloadsWithAppleIntelligence] else { return nil }
+		return try? await BrowserAI.shared.perform(
+			BrowserDownloadNamingFeature(),
+			input: .init(original: original, source: source, fileType: fileType)
+		)
 	}
 
 	static func safeStem(_ name: String) -> String {
-		let scalars = name.unicodeScalars.filter { !unsafeFilenameCharacters.contains($0) }
-		let cleaned = String(String.UnicodeScalarView(scalars))
-			.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
-		let limited = String(cleaned.prefix(100))
-		return limited.isEmpty ? "Download" : limited
+		BrowserDownloadNamingFeature.safeStem(name)
 	}
 }
