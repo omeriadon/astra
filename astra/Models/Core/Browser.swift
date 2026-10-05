@@ -1658,12 +1658,14 @@ final class Browser {
 
 	func importHistory(_ incoming: [BrowserVisit]) {
 		guard !isPrivate else { return }
-		var existing = Set(historyVisits.map(\.url))
+		var existing = Set(historyVisits.map { "\($0.url.absoluteString)\u{1f}\($0.visitedAt.timeIntervalSince1970.bitPattern)" })
 		var existingIDs = Set(historyVisits.map(\.id))
-		for source in incoming {
+		let mutationDate = nextHistoryMutationDate(after: .now)
+		for source in BrowserVisit.retained(incoming, days: Defaults[.historyRetentionDays]) {
 			guard var visit = visibleHistoryVisits([source]).first else { continue }
-			guard existing.insert(visit.url).inserted, existingIDs.insert(visit.id).inserted else { continue }
-			visit.modifiedAt = nextHistoryMutationDate(after: .now)
+			let key = "\(visit.url.absoluteString)\u{1f}\(visit.visitedAt.timeIntervalSince1970.bitPattern)"
+			guard existing.insert(key).inserted, existingIDs.insert(visit.id).inserted else { continue }
+			visit.modifiedAt = mutationDate
 			historyVisits.append(visit)
 		}
 		historyVisits.sort { $0.visitedAt > $1.visitedAt }
