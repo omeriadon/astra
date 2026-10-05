@@ -60,5 +60,4 @@ struct Task05PermissionsCheck {
 
 		print("Task 05 permission model checks passed")
 	}
-
 }

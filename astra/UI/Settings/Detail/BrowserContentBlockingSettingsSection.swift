@@ -76,7 +76,7 @@ struct BrowserContentBlockingSettingsSection: View {
 				LabeledContent("uBlock Origin Lite", value: "Unavailable in Private Browsing")
 			} else {
 				LabeledContent("uBlock Origin Lite", value: extensionStatus)
-				if contentBlocking.isActive && extensions.isLoaded("ublock-origin-lite-safari") {
+				if contentBlocking.isActive, extensions.isLoaded("ublock-origin-lite-safari") {
 					Text("Both the native list and uBlock Origin Lite can apply to this page.")
 						.font(.caption)
 						.foregroundStyle(.secondary)
@@ -102,10 +102,15 @@ struct BrowserContentBlockingSettingsSection: View {
 	}
 
 	private var statusTitle: String {
-		if contentBlocking.isBusy { "Compiling" }
-		else if contentBlocking.isEnabled && contentBlocking.compiledRuleList != nil { "Enabled" }
-		else if contentBlocking.compiledRuleList == nil { "Unavailable" }
-		else { "Disabled" }
+		if contentBlocking.isBusy {
+			"Compiling"
+		} else if contentBlocking.isEnabled, contentBlocking.compiledRuleList != nil {
+			"Enabled"
+		} else if contentBlocking.compiledRuleList == nil {
+			"Unavailable"
+		} else {
+			"Disabled"
+		}
 	}
 
 	private var extensionStatus: String {

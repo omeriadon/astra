@@ -14,8 +14,12 @@ struct BrowserBookmarksView: View {
 		browser.bookmarks
 			.filter { searchText.isEmpty || [$0.name, $0.url.absoluteString, $0.folder].contains { $0.localizedCaseInsensitiveContains(searchText) } }
 			.sorted {
-				if $0.folder != $1.folder { return $0.folder.localizedStandardCompare($1.folder) == .orderedAscending }
-				if $0.order != $1.order { return $0.order < $1.order }
+				if $0.folder != $1.folder {
+					return $0.folder.localizedStandardCompare($1.folder) == .orderedAscending
+				}
+				if $0.order != $1.order {
+					return $0.order < $1.order
+				}
 				return $0.name.localizedStandardCompare($1.name) == .orderedAscending
 			}
 	}
@@ -85,13 +89,14 @@ struct BrowserBookmarksView: View {
 					Label(showingReadingList ? "Reading List" : "Bookmarks", systemImage: showingReadingList ? "text.book.closed" : "bookmark")
 						.font(.title2.bold())
 					Spacer()
+					BrowserLibraryTransferControls(browser: browser, scope: .bookmarks)
 					#if os(iOS)
-					if !showingReadingList && searchText.isEmpty && bookmarkCount > 1 {
-						Button(editMode?.wrappedValue == .active ? "Done Reordering" : "Reorder Bookmarks", systemImage: editMode?.wrappedValue == .active ? "checkmark" : "arrow.up.arrow.down") {
-							withAnimation { editMode?.wrappedValue = editMode?.wrappedValue == .active ? .inactive : .active }
+						if !showingReadingList, searchText.isEmpty, bookmarkCount > 1 {
+							Button(editMode?.wrappedValue == .active ? "Done Reordering" : "Reorder Bookmarks", systemImage: editMode?.wrappedValue == .active ? "checkmark" : "arrow.up.arrow.down") {
+								withAnimation { editMode?.wrappedValue = editMode?.wrappedValue == .active ? .inactive : .active }
+							}
+							.accessibilityIdentifier("reorder-bookmarks")
 						}
-						.accessibilityIdentifier("reorder-bookmarks")
-					}
 					#endif
 					Button(showingReadingList ? "Show Bookmarks" : "Show Reading List", systemImage: showingReadingList ? "bookmark" : "text.book.closed") {
 						showingReadingList.toggle()
@@ -116,17 +121,16 @@ struct BrowserBookmarksView: View {
 			#endif
 		}
 		.overlay {
-			if showingReadingList && readingItems.isEmpty && searchText.isEmpty {
+			if showingReadingList, readingItems.isEmpty, searchText.isEmpty {
 				ContentUnavailableView("No Reading List Items", systemImage: "text.book.closed")
-			} else if showingReadingList && readingItems.isEmpty {
+			} else if showingReadingList, readingItems.isEmpty {
 				ContentUnavailableView("No Search Results", systemImage: "magnifyingglass")
-			} else if !showingReadingList && bookmarkCount == 0 {
+			} else if !showingReadingList, bookmarkCount == 0 {
 				ContentUnavailableView(searchText.isEmpty ? "No Bookmarks" : "No Search Results", systemImage: searchText.isEmpty ? "bookmark" : "magnifyingglass")
 			}
 		}
 	}
 
-	@ViewBuilder
 	private func bookmarkRows(_ items: [Bookmark]) -> some View {
 		ForEach(items) { bookmark in
 			HistoryRow(

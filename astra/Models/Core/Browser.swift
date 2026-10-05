@@ -66,10 +66,11 @@ final class Browser {
 			newTabSearchSelection = nil
 			newTabGoogleSuggestions = []
 			pendingSearchEngineDiscovery = nil
-			searchEngineDiscoveryTask?.cancel()
 		}
 	}
 
+	var showsQuickSearch = false
+	var quickSearchFocusRequest = 0
 	var newTabSearchSelection: String?
 	var newTabSearchGeneration = 0
 	var addressSearchText = "" {
@@ -78,16 +79,15 @@ final class Browser {
 				addressSearchGeneration &+= 1
 				addressSuggestionsRequest = nil
 				pendingSearchEngineDiscovery = nil
-				searchEngineDiscoveryTask?.cancel()
 			}
 		}
 	}
+
 	var addressSearchGeneration = 0
 	var addressFieldIsFocused = false
 	var newTabGoogleSuggestions: [String] = []
 	var addressSuggestionsRequest: BrowserSearchSuggestionsRequest?
 	var pendingSearchEngineDiscovery: BrowserSearchEngineDiscovery?
-	@ObservationIgnored var searchEngineDiscoveryTask: Task<Void, Never>?
 	var sidebarShown: Bool {
 		get {
 			access(keyPath: \.sidebarShown)
@@ -119,8 +119,13 @@ final class Browser {
 	/// stash flags so a placeholder window never saves or broadcasts itself.
 	@ObservationIgnored
 	private var didFinishHydration = true
-	var isReadyForSync: Bool { didFinishHydration && !hydrationFailed && persistence != nil }
-	var isHydrationFinished: Bool { didFinishHydration }
+	var isReadyForSync: Bool {
+		didFinishHydration && !hydrationFailed && persistence != nil
+	}
+
+	var isHydrationFinished: Bool {
+		didFinishHydration
+	}
 
 	@ObservationIgnored
 	private var hydrationFailed = false
@@ -486,7 +491,35 @@ final class Browser {
 			BrowserWindowRegistry.shared.register(self)
 		}
 		BrowserController.prewarmSharedProcess()
-		if persistenceStore != nil {
+		if !isPrivate, !isMini,
+		   let source = BrowserWindowRegistry.shared.openBrowsers.first(where: {
+		   	$0 !== self && !$0.isPrivate && !$0.isMini && $0.isHydrationFinished
+		   })
+		{
+			tabs = source.tabs
+			workspace = source.workspace
+			selectedTabID = source.selectedTabID
+			recentlyUsedTabIDs = source.recentlyUsedTabIDs
+			bookmarks = source.bookmarks
+			readingList = source.readingList
+			historyVisits = source.historyVisits
+			closedHistoryTabs = source.closedHistoryTabs
+			closedTabIDs = source.closedTabIDs
+			deletedBookmarkIDs = source.deletedBookmarkIDs
+			closedTabsAt = source.closedTabsAt
+			deletedBookmarksAt = source.deletedBookmarksAt
+			deletedReadingListAt = source.deletedReadingListAt
+			deletedSpacesAt = source.deletedSpacesAt
+			deletedVisitsAt = source.deletedVisitsAt
+			historyClearedAt = source.historyClearedAt
+			selectedTabModifiedAt = source.selectedTabModifiedAt
+			didFinishHydration = true
+			if let record = restorationRecord,
+			   let selectedID = record.restoredSelection(availableTabIDs: Set(tabs.map(\.id)))
+			{
+				selectTab(selectedID)
+			}
+		} else if persistenceStore != nil {
 			hydrateFromDisk(placeholderID: placeholderID, placeholderModifiedAt: placeholderModifiedAt)
 		}
 	}
@@ -636,6 +669,9 @@ final class Browser {
 		let restoredTabs = loaded.tabs.compactMap { saved -> BrowserTab? in
 			let internalPage = saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:))
 			guard saved.internalPage == nil || internalPage != nil else { return nil }
+			if let shared = BrowserWindowRegistry.shared.sharedTab(withID: saved.id, for: self) {
+				return shared
+			}
 			return BrowserTab(
 				id: saved.id,
 				internalPage: internalPage,
@@ -709,6 +745,23 @@ final class Browser {
 			configure(selectedTab)
 		}
 		BrowserExtensionManager.shared.sync(self)
+	}
+
+	func requestNewTab() {
+		if Defaults[.newTabStyle] == .overlay, !isMini {
+			newTabSearchText = ""
+			newTabSearchSelection = nil
+			showsQuickSearch = true
+			quickSearchFocusRequest += 1
+		} else {
+			addTab()
+		}
+	}
+
+	func dismissQuickSearch() {
+		showsQuickSearch = false
+		newTabSearchText = ""
+		newTabSearchSelection = nil
 	}
 
 	@discardableResult
@@ -859,7 +912,9 @@ final class Browser {
 
 	func selectTab(_ id: UUID) {
 		guard let tab = tabs.first(where: { $0.id == id }) else { return }
-		searchEngineDiscoveryTask?.cancel()
+		showsQuickSearch = false
+		selectedTab?.activeController?.clearHoveredLink()
+		tab.activeController?.clearHoveredLink()
 		tab.clearPictureInPictureReturnController()
 		if !workspace.favouriteTabIDs.contains(id),
 		   let ownerIndex = workspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })
@@ -870,16 +925,21 @@ final class Browser {
 			workspace.selectedSpaceID = workspace.spaces[ownerIndex].id
 		}
 		let didWake = tab.isHibernated
-		if didWake {
-			tab.wake()
-			configure(tab)
-		}
 		if selectedTabID != id {
 			newTabSearchText = ""
 			newTabSearchSelection = nil
 			newTabGoogleSuggestions = []
 		}
 		selectedTabID = id
+		BrowserWindowRegistry.shared.claimSelectedTab(in: self)
+		if didWake {
+			Task { @MainActor [weak self, weak tab] in
+				await Task.yield()
+				guard let self, let tab, selectedTabID == id else { return }
+				tab.wake()
+				configure(tab)
+			}
+		}
 		let selectionDate = nextWorkspaceMutationDate()
 		selectedTabModifiedAt = selectionDate
 		if let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
@@ -925,7 +985,7 @@ final class Browser {
 		      !bookmarks.contains(where: { $0.url == url })
 		else { return }
 		let title = tab.activeController?.webViewIfLoaded?.title ?? tab.title
-		guard title.utf8.count <= 16_384 else { return }
+		guard title.utf8.count <= 16384 else { return }
 		bookmarks.append(Bookmark(name: title, url: url))
 		schedulePersistence()
 	}
@@ -933,14 +993,14 @@ final class Browser {
 	private var selectedPageBookmarkURL: URL? {
 		guard let source = selectedTab?.activeController?.committedURL ?? selectedTab?.currentURL else { return nil }
 		let url = BrowserAddress.withoutCredentials(source)
-		return url.absoluteString.utf8.count <= 16_384 ? url : nil
+		return url.absoluteString.utf8.count <= 16384 ? url : nil
 	}
 
 	func updateBookmark(_ id: UUID, name: String, folder: String, isFavorite: Bool, order: Int) {
 		guard let index = bookmarks.firstIndex(where: { $0.id == id }) else { return }
 		let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
 		let folder = folder.trimmingCharacters(in: .whitespacesAndNewlines)
-		guard name.utf8.count <= 16_384, folder.utf8.count <= 4_096 else { return }
+		guard name.utf8.count <= 16384, folder.utf8.count <= 4096 else { return }
 		guard bookmarks[index].name != name || bookmarks[index].folder != folder
 			|| bookmarks[index].isFavorite != isFavorite || bookmarks[index].order != order else { return }
 		bookmarks[index].name = name
@@ -962,7 +1022,7 @@ final class Browser {
 	}
 
 	func addToReadingList(_ url: URL, title: String) {
-		guard title.utf8.count <= 16_384,
+		guard title.utf8.count <= 16384,
 		      canAddToReadingList(url),
 		      let safe = BrowserHomepage.validURL(url.absoluteString) else { return }
 		readingList.append(ReadingListItem(url: safe, title: title))
@@ -970,7 +1030,7 @@ final class Browser {
 	}
 
 	func canAddToReadingList(_ url: URL) -> Bool {
-		guard !isPrivate, url.absoluteString.utf8.count <= 16_384,
+		guard !isPrivate, url.absoluteString.utf8.count <= 16384,
 		      let safe = BrowserHomepage.validURL(url.absoluteString) else { return false }
 		return !readingList.contains(where: { $0.url == safe })
 	}
@@ -1033,14 +1093,14 @@ final class Browser {
 		let documentID = controller.navigationIdentifier
 		webView.createWebArchiveData { [weak self, weak tab, weak controller] result in
 			guard let self, let tab, let controller,
-			      self.ownsReadingListCapture(tab, controller: controller, item: item),
+			      ownsReadingListCapture(tab, controller: controller, item: item),
 			      controller.navigationIdentifier == documentID else { return }
 			guard case let .success(data) = result else {
-				self.session.toastManager.show(symbol: "exclamationmark.triangle", message: "Could not capture this page for offline reading")
+				session.toastManager.show(symbol: "exclamationmark.triangle", message: "Could not capture this page for offline reading")
 				return
 			}
-			let previousWrite = self.session.persistenceWriteTask
-			self.session.persistenceWriteTask = Task.detached(priority: .utility) { [weak self, weak tab, weak controller] in
+			let previousWrite = session.persistenceWriteTask
+			session.persistenceWriteTask = Task.detached(priority: .utility) { [weak self, weak tab, weak controller] in
 				await previousWrite?.value
 				let generation: UUID
 				do {
@@ -1075,12 +1135,12 @@ final class Browser {
 			return
 		}
 		guard isRegisteredNormalWindow, let persistence else { return }
-		let windowID = self.windowID
+		let windowID = windowID
 		let sourceTabID = selectedTabID
 		Task.detached(priority: .userInitiated) { [weak self] in
 			let archive: Result<Data?, Error>
 			do {
-				archive = .success(try persistence.loadReadingArchive(id: item.id, url: item.url))
+				archive = try .success(persistence.loadReadingArchive(id: item.id, url: item.url))
 			} catch {
 				archive = .failure(error)
 			}
@@ -1192,10 +1252,14 @@ final class Browser {
 	}
 
 	func closeTab(_ id: UUID, confirmed: Bool = false) {
+		if showsQuickSearch, id == selectedTabID, !confirmed {
+			dismissQuickSearch()
+			return
+		}
 		guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
 		#if os(iOS)
 			let tab = tabs[index]
-			let protectedController = ([tab.controller].compactMap { $0 } + tab.peeks.map(\.controller))
+			let protectedController = ([tab.controller].compactMap(\.self) + tab.peeks.map(\.controller))
 				.first(where: \.requiresMediaTeardownConfirmation)
 			if !confirmed, let protectedController {
 				guard let webView = protectedController.webViewIfLoaded else { return }
@@ -1443,7 +1507,7 @@ final class Browser {
 		var seenIDs = Set<UUID>()
 		return visits.compactMap { source in
 			guard let url = BrowserVisit.normalizedURL(source.url),
-			      (historyClearedAt == .distantPast || source.modifiedAt > historyClearedAt),
+			      historyClearedAt == .distantPast || source.modifiedAt > historyClearedAt,
 			      deletedVisitsAt[source.id].map({ source.modifiedAt > $0 }) ?? true,
 			      seenIDs.insert(source.id).inserted else { return nil }
 			var visit = source
@@ -1532,7 +1596,9 @@ final class Browser {
 
 	private func removeHistoryLocally(_ ids: Set<UUID>, at date: Date) {
 		historyVisits.removeAll { ids.contains($0.id) }
-		for id in ids { deletedVisitsAt[id] = date }
+		for id in ids {
+			deletedVisitsAt[id] = date
+		}
 		removeHistoryVisitReferences(ids)
 		schedulePersistence()
 	}
@@ -1549,9 +1615,9 @@ final class Browser {
 		guard !isPrivate else { return }
 		var indexes = Dictionary(bookmarks.enumerated().map { ($1.url, $0) }, uniquingKeysWith: { first, _ in first })
 		for bookmark in incoming where BrowserHomepage.validURL(bookmark.url.absoluteString) != nil
-			&& bookmark.url.absoluteString.utf8.count <= 16_384
-			&& bookmark.name.utf8.count <= 16_384
-			&& bookmark.folder.utf8.count <= 4_096
+			&& bookmark.url.absoluteString.utf8.count <= 16384
+			&& bookmark.name.utf8.count <= 16384
+			&& bookmark.folder.utf8.count <= 4096
 			&& (bookmark.order == Int.min || (0 ... 100_000).contains(bookmark.order))
 		{
 			if let index = indexes[bookmark.url] {
@@ -1573,8 +1639,8 @@ final class Browser {
 		guard !isPrivate else { return }
 		var indexes = Dictionary(readingList.enumerated().map { ($1.url, $0) }, uniquingKeysWith: { first, _ in first })
 		for item in incoming where BrowserHomepage.validURL(item.url.absoluteString) != nil
-			&& item.url.absoluteString.utf8.count <= 16_384
-			&& item.title.utf8.count <= 16_384
+			&& item.url.absoluteString.utf8.count <= 16384
+			&& item.title.utf8.count <= 16384
 		{
 			if let index = indexes[item.url] {
 				guard replacingDuplicates else { continue }
@@ -1592,12 +1658,14 @@ final class Browser {
 
 	func importHistory(_ incoming: [BrowserVisit]) {
 		guard !isPrivate else { return }
-		var existing = Set(historyVisits.map(\.url))
+		var existing = Set(historyVisits.map { "\($0.url.absoluteString)\u{1f}\($0.visitedAt.timeIntervalSince1970.bitPattern)" })
 		var existingIDs = Set(historyVisits.map(\.id))
-		for source in incoming {
+		let mutationDate = nextHistoryMutationDate(after: .now)
+		for source in BrowserVisit.retained(incoming, days: Defaults[.historyRetentionDays]) {
 			guard var visit = visibleHistoryVisits([source]).first else { continue }
-			guard existing.insert(visit.url).inserted, existingIDs.insert(visit.id).inserted else { continue }
-			visit.modifiedAt = nextHistoryMutationDate(after: .now)
+			let key = "\(visit.url.absoluteString)\u{1f}\(visit.visitedAt.timeIntervalSince1970.bitPattern)"
+			guard existing.insert(key).inserted, existingIDs.insert(visit.id).inserted else { continue }
+			visit.modifiedAt = mutationDate
 			historyVisits.append(visit)
 		}
 		historyVisits.sort { $0.visitedAt > $1.visitedAt }
@@ -1619,9 +1687,30 @@ final class Browser {
 		}
 	}
 
+	func prepareSelectedTabDisplayOwner() {
+		selectedTab?.controller?.displayWindowID = windowID
+		for peek in selectedTab?.peeks ?? [] {
+			peek.controller.displayWindowID = windowID
+		}
+	}
+
+	func configureSelectedTab() {
+		if let tab = selectedTab {
+			configure(tab)
+		}
+	}
+
+	func configureOwnedTabs() {
+		for tab in tabs where BrowserWindowRegistry.shared.ownsTab(tab.id, in: self) {
+			configure(tab)
+		}
+	}
+
 	private func configure(_ tab: BrowserTab) {
+		guard BrowserWindowRegistry.shared.ownsTab(tab.id, in: self) else { return }
 		attachPersistence(to: tab)
 		guard let controller = tab.controller else { return }
+		controller.displayWindowID = windowID
 		controller.pictureInPictureRestoreRequested = { [weak self, weak tab, weak controller] in
 			guard let self, let tab, let controller else { return }
 			selectTab(tab.id)
@@ -1716,6 +1805,7 @@ final class Browser {
 	}
 
 	private func configure(_ peek: BrowserPeek, in tab: BrowserTab) {
+		peek.controller.displayWindowID = windowID
 		peek.controller.pictureInPictureRestoreRequested = { [weak self, weak tab, weak controller = peek.controller] in
 			guard let self, let tab, let controller else { return }
 			selectTab(tab.id)
@@ -1826,7 +1916,7 @@ final class Browser {
 		)
 		#if os(iOS)
 			let controllers = removedTabs.flatMap { tab in
-				[tab.controller].compactMap { $0 } + tab.peeks.map(\.controller)
+				[tab.controller].compactMap(\.self) + tab.peeks.map(\.controller)
 			}
 			let protectedController = controllers.first(where: \.requiresMediaTeardownConfirmation)
 			if !confirmed, let protectedController, let webView = protectedController.webViewIfLoaded {
@@ -1846,10 +1936,12 @@ final class Browser {
 				}
 				return
 			}
-			if !confirmed && removedTabs.contains(where: { tab in
+			if !confirmed, removedTabs.contains(where: { tab in
 				tab.controller?.requiresMediaTeardownConfirmation == true
 					|| tab.peeks.contains { $0.controller.requiresMediaTeardownConfirmation }
-			}) { return }
+			}) {
+				return
+			}
 		#endif
 		#if os(macOS)
 			let hasUnsavedChanges = removedTabs.contains { tab in
@@ -1971,17 +2063,18 @@ final class Browser {
 		let changedTabs = document.tabs.compactMap { saved -> BrowserTab? in
 			let internalPage = saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:))
 			guard saved.internalPage == nil || internalPage != nil else { return nil }
-			if let current = currentTabs[saved.id] {
+			if let current = currentTabs[saved.id] ?? BrowserWindowRegistry.shared.sharedTab(withID: saved.id, for: self) {
 				if localPortableTabs[saved.id] == saved
 					|| current.modifiedAt > saved.modifiedAt
 					|| !current.canHibernate
 				{
 					return current
 				}
-				if current.currentURL.map(BrowserAddress.withoutCredentials) == saved.url {
-					current.applySynchronizedMetadata(from: saved)
-					return current
+				if current.currentURL.map(BrowserAddress.withoutCredentials) != saved.url, let url = saved.url {
+					current.controller?.load(url)
 				}
+				current.applySynchronizedMetadata(from: saved)
+				return current
 			}
 			let tab = BrowserTab(
 				id: saved.id,
@@ -2030,7 +2123,9 @@ final class Browser {
 			let previousWrite = session.persistenceWriteTask
 			session.persistenceWriteTask = Task.detached(priority: .utility) {
 				await previousWrite?.value
-				for id in removedReadingIDs { try? persistence.removeReadingArchive(id: id) }
+				for id in removedReadingIDs {
+					try? persistence.removeReadingArchive(id: id)
+				}
 			}
 		}
 		deletedSpacesAt = document.browser.deletedSpacesAt
@@ -2136,7 +2231,7 @@ final class Browser {
 		}
 		for index in workspace.spaces.indices {
 			if let selectedID = selectedTabsBySpace[workspace.spaces[index].id] ?? nil,
-				workspace.spaces[index].tabIDs.contains(selectedID) || workspace.favouriteTabIDs.contains(selectedID)
+			   workspace.spaces[index].tabIDs.contains(selectedID) || workspace.favouriteTabIDs.contains(selectedID)
 			{
 				workspace.spaces[index].selectedTabID = selectedID
 			}
@@ -2184,7 +2279,7 @@ final class Browser {
 		workspace.reconcileMembership(existingTabIDs: existingIDs, unassignedTabIDs: unassignedIDs)
 		if let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }),
 		   workspace.spaces[index].tabIDs.contains(selectedTabID)
-			|| workspace.favouriteTabIDs.contains(selectedTabID)
+		   || workspace.favouriteTabIDs.contains(selectedTabID)
 		{
 			workspace.spaces[index].selectedTabID = selectedTabID
 		}
@@ -2244,7 +2339,7 @@ final class Browser {
 			openTabs: tabs.map(\.openTab),
 			closedTabs: closedHistoryTabs,
 			workspace: workspace,
-				snapshot: BrowserSnapshot(
+			snapshot: BrowserSnapshot(
 				selectedTabID: selectedTabID,
 				selectedTabModifiedAt: selectedTabModifiedAt,
 				closedTabIDs: closedTabIDs,

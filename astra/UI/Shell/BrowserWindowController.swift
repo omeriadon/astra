@@ -71,6 +71,8 @@
 			window.contentView = contentHost
 			window.contentMinSize = NSSize(width: min(640, visibleFrame.width), height: min(480, visibleFrame.height))
 			window.title = browser.isPrivate ? "astra — Private Browsing" : "astra"
+			window.isOpaque = false
+			window.backgroundColor = NSColor.white.withAlphaComponent(0.001)
 			window.titleVisibility = .hidden
 			window.titlebarAppearsTransparent = true
 			window.titlebarSeparatorStyle = .none
@@ -91,6 +93,9 @@
 		}
 
 		func showWindow() {
+			BrowserWindowRegistry.shared.activate(browser)
+			window.contentView?.layoutSubtreeIfNeeded()
+			window.displayIfNeeded()
 			window.makeKeyAndOrderFront(nil)
 		}
 
@@ -135,9 +140,9 @@
 						|| tab.peeks.contains { $0.controller.requiresMediaTeardownConfirmation }
 				})
 				if hasUnsavedChanges || hasProtectedMedia {
-				let message = hasUnsavedChanges && hasProtectedMedia
-					? "Some tabs contain unsaved changes or media playback that will stop."
-					: hasUnsavedChanges ? "Some tabs contain changes that may not be saved." : "Closing this window will stop media playback."
+					let message = hasUnsavedChanges && hasProtectedMedia
+						? "Some tabs contain unsaved changes or media playback that will stop."
+						: hasUnsavedChanges ? "Some tabs contain changes that may not be saved." : "Closing this window will stop media playback."
 					let alert = BrowserWebsiteUI.alert(title: "Close this window?", message: message, confirm: "Close Window")
 					guard await BrowserWebsiteUI.present(alert, in: sender) == .alertFirstButtonReturn else { return }
 				}

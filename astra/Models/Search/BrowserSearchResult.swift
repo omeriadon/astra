@@ -27,6 +27,11 @@ struct BrowserSearchResult: Identifiable {
 	let destination: String?
 	let perform: @MainActor () -> Void
 
+	var isGitHubRepository: Bool {
+		guard kind == .typed, let destination, let url = URL(string: destination) else { return false }
+		return BrowserSearchConfiguration.githubRepositoryDestination(for: title) == url
+	}
+
 	static func selected(in results: [Self], id: String?, automaticallySelectFirst: Bool) -> Self? {
 		if let result = results.first(where: { $0.id == id }) {
 			return result

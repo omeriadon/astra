@@ -96,7 +96,7 @@ struct BrowserWorkspace: Codable, Equatable, Sendable {
 			for id in space.tabIDs where existingTabIDs.contains(id) {
 				if let owner = owners[id],
 				   owner.modifiedAt > space.modifiedAt
-					|| (owner.modifiedAt == space.modifiedAt && owner.key <= key)
+				   || (owner.modifiedAt == space.modifiedAt && owner.key <= key)
 				{
 					continue
 				}
@@ -144,7 +144,7 @@ struct BrowserWorkspace: Codable, Equatable, Sendable {
 				for tabID in folder.tabIDs where pinnedIDs.contains(tabID) {
 					if let current = folderOwners[tabID],
 					   current.modifiedAt > folder.modifiedAt
-						|| (current.modifiedAt == folder.modifiedAt && current.folderID.uuidString < folder.id.uuidString)
+					   || (current.modifiedAt == folder.modifiedAt && current.folderID.uuidString < folder.id.uuidString)
 					{
 						continue
 					}

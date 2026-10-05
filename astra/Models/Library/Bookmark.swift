@@ -53,7 +53,7 @@ nonisolated struct ReadingListItem: Codable, Identifiable, Equatable, Sendable {
 	var isRead: Bool
 
 	static func admitsOfflineOpen(_ candidate: Self?, id: UUID, url: URL, isPrivate: Bool) -> Bool {
-		guard !isPrivate, url.absoluteString.utf8.count <= 16_384,
+		guard !isPrivate, url.absoluteString.utf8.count <= 16384,
 		      let candidate, candidate.id == id,
 		      candidate.url.absoluteString == url.absoluteString,
 		      let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
@@ -61,9 +61,9 @@ nonisolated struct ReadingListItem: Codable, Identifiable, Equatable, Sendable {
 		      let host = components.host, !host.isEmpty,
 		      components.user == nil, components.password == nil,
 		      !host.unicodeScalars.contains(where: {
-				CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0)
-			}),
-		      (components.port.map({ (1 ... 65_535).contains($0) }) ?? true) else { return false }
+		      	CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0)
+		      }),
+		      components.port.map({ (1 ... 65535).contains($0) }) ?? true else { return false }
 		return true
 	}
 

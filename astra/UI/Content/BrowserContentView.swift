@@ -21,15 +21,46 @@ struct BrowserContentView: View, Animatable {
 				content
 					.zIndex(1)
 			}
-			.frame(width: proxy.size.width, height: proxy.size.height)
-			.background(browser.theme.contentShade(for: colorScheme))
-			.allowsHitTesting(selectedTab?.peeks.isEmpty == true || selectedTab?.activeController === selectedTab?.controller)
-			.accessibilityHidden(!(selectedTab?.peeks.isEmpty == true || selectedTab?.activeController === selectedTab?.controller))
+			.animation(nil, value: browser.selectedTabID)
+			.animation(nil, value: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
+			#if os(macOS)
+				.overlay(alignment: .bottomLeading) {
+					if !BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser),
+					   let controller = browser.selectedTab?.activeController,
+					   let url = controller.hoveredLinkURL
+					{
+						BrowserLinkPreview(url: url)
+							.frame(maxWidth: min(700, proxy.size.width * 0.75), alignment: .leading)
+							.frame(maxWidth: .infinity, alignment: controller.hoveredLinkUsesTrailingCorner ? .trailing : .leading)
+							.padding(8)
+							.allowsHitTesting(false)
+					}
+				}
+			#endif
+				.frame(width: proxy.size.width, height: proxy.size.height)
+				.background(browser.theme.contentShade(for: colorScheme))
+				.allowsHitTesting(selectedTab?.peeks.isEmpty == true || selectedTab?.activeController === selectedTab?.controller)
+				.accessibilityHidden(!(selectedTab?.peeks.isEmpty == true || selectedTab?.activeController === selectedTab?.controller))
 		}
 	}
 
 	@ViewBuilder
 	private var content: some View {
+		#if os(macOS)
+			if let controller = browser.selectedTab?.activeController, controller.url != nil,
+			   BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
+			{
+				BrowserTabMirrorView(controller: controller)
+			} else {
+				selectedContent
+			}
+		#else
+			selectedContent
+		#endif
+	}
+
+	@ViewBuilder
+	private var selectedContent: some View {
 		if let tab = browser.selectedTab, tab.internalPage != nil {
 			InternalPageHost(browser: browser)
 		} else if let tab = browser.selectedTab, tab.controller?.url != nil {
@@ -90,6 +121,8 @@ private struct KeepAliveWebStack: View {
 			ForEach(keepAliveControllers()) { controller in
 				BrowserWebView(
 					controller: controller,
+					windowID: browser.windowID,
+					isVisible: controller === selectedTab?.controller && selectedTab?.internalPage == nil,
 					obscuredInsets: controller === selectedTab?.controller ? insets.obscured : EdgeInsets(),
 					minimumViewportInsets: insets.minimum,
 					maximumViewportInsets: insets.maximum
@@ -123,13 +156,16 @@ private struct KeepAliveWebStack: View {
 			guard let controller, controller.url != nil, seen.insert(controller.id).inserted else { return }
 			result.append(controller)
 		}
-		append(selectedTab?.controller)
+		if let selectedTab, BrowserWindowRegistry.shared.ownsTab(selectedTab.id, in: browser) {
+			append(selectedTab.controller)
+		}
 		for id in browser.recentlyUsedTabIDs where result.count < 4 {
-			guard let tab = browser.tab(withID: id), tab.internalPage == nil else { continue }
+			guard let tab = browser.tab(withID: id), tab.internalPage == nil,
+			      BrowserWindowRegistry.shared.ownsTab(tab.id, in: browser) else { continue }
 			append(tab.controller)
 		}
 		// ponytail: retain all playing or paused media while iframe PiP state is unobservable; narrow this when WebKit exposes a frame-aware callback.
-		for tab in browser.tabs {
+		for tab in browser.tabs where BrowserWindowRegistry.shared.ownsTab(tab.id, in: browser) {
 			append(tab.controller?.requiresMediaTeardownConfirmation == true ? tab.controller : nil)
 			for peek in tab.id == selectedTab?.id ? [] : tab.peeks {
 				if peek.controller.requiresMediaTeardownConfirmation {

@@ -120,7 +120,7 @@ struct BrowserContentBlockingChecks {
 		errorOf { try BrowserContentBlockingRuleSource.readBounded(from: url) } != nil
 	}
 
-	private static func errorOf<T>(_ body: () throws -> T) -> (any Error)? {
+	private static func errorOf(_ body: () throws -> some Any) -> (any Error)? {
 		do {
 			_ = try body()
 			return nil

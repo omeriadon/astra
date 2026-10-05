@@ -2,7 +2,7 @@ import Foundation
 
 enum BrowserAuthenticationPolicy {
 	static let maximumFailures = 3
-	private static let maximumInitialURLBytes = 16_384
+	private static let maximumInitialURLBytes = 16384
 	static let credentialMethods = [
 		NSURLAuthenticationMethodHTTPBasic,
 		NSURLAuthenticationMethodHTTPDigest,
@@ -37,18 +37,18 @@ enum BrowserAuthenticationPolicy {
 		headers: [String: String]?
 	) -> URLRequest? {
 		guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-			  url.absoluteString.utf8.count <= maximumInitialURLBytes,
-			  ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
-			  let host = components.host,
-			  !host.isEmpty,
-			  !host.unicodeScalars.contains(where: {
-				  CharacterSet.whitespacesAndNewlines.contains($0)
-					  || CharacterSet.controlCharacters.contains($0)
-			  }),
-			  components.port.map({ (1...65_535).contains($0) }) ?? true,
-			  !hasEmptyPort(url),
-			  components.user == nil,
-			  components.password == nil
+		      url.absoluteString.utf8.count <= maximumInitialURLBytes,
+		      ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+		      let host = components.host,
+		      !host.isEmpty,
+		      !host.unicodeScalars.contains(where: {
+		      	CharacterSet.whitespacesAndNewlines.contains($0)
+		      		|| CharacterSet.controlCharacters.contains($0)
+		      }),
+		      components.port.map({ (1 ... 65535).contains($0) }) ?? true,
+		      !hasEmptyPort(url),
+		      components.user == nil,
+		      components.password == nil
 		else { return nil }
 
 		var request = URLRequest(url: url)
@@ -59,7 +59,7 @@ enum BrowserAuthenticationPolicy {
 			guard isSafeHeader(name: name, value: value),
 			      headerNames.insert(normalizedName).inserted else { return nil }
 			totalHeaderBytes += name.utf8.count + value.utf8.count
-			guard totalHeaderBytes <= 65_536 else { return nil }
+			guard totalHeaderBytes <= 65536 else { return nil }
 			request.setValue(value, forHTTPHeaderField: name)
 		}
 		return request
@@ -84,16 +84,16 @@ enum BrowserAuthenticationPolicy {
 
 	private static func isSafeHeader(name: String, value: String) -> Bool {
 		guard !name.isEmpty,
-			  name.utf8.count <= 256,
-			  value.utf8.count <= 8_192,
-			  name.utf8.allSatisfy(isTokenByte),
-			  value.unicodeScalars.allSatisfy({
-				  $0.value == 9 || (32...126).contains($0.value) || (128...255).contains($0.value)
-			  })
+		      name.utf8.count <= 256,
+		      value.utf8.count <= 8192,
+		      name.utf8.allSatisfy(isTokenByte),
+		      value.unicodeScalars.allSatisfy({
+		      	$0.value == 9 || (32 ... 126).contains($0.value) || (128 ... 255).contains($0.value)
+		      })
 		else { return false }
 
 		let normalizedName = name.lowercased()
-		let browserManagedHeaders: Set<String> = [
+		let browserManagedHeaders: Set = [
 			"accept-charset",
 			"accept-encoding",
 			"access-control-request-headers",
@@ -126,9 +126,9 @@ enum BrowserAuthenticationPolicy {
 	}
 
 	private static func isTokenByte(_ byte: UInt8) -> Bool {
-		(65...90).contains(byte)
-			|| (97...122).contains(byte)
-			|| (48...57).contains(byte)
+		(65 ... 90).contains(byte)
+			|| (97 ... 122).contains(byte)
+			|| (48 ... 57).contains(byte)
 			|| "!#$%&'*+-.^_`|~".utf8.contains(byte)
 	}
 

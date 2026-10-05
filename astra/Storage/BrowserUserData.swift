@@ -1,6 +1,6 @@
 import Foundation
 
-nonisolated struct BrowserUserData: Codable {
+nonisolated struct BrowserUserData: Codable, Sendable {
 	var version = 1
 	var bookmarks: [Bookmark]
 	var history: [BrowserVisit]
@@ -35,10 +35,10 @@ nonisolated struct BrowserUserData: Codable {
 		      let rawHistory = root["history"] as? [[String: Any]],
 		      rawHistory.count <= 100_000,
 		      rawHistory.allSatisfy({ record in
-			      guard let address = record["url"] as? String,
-				        let url = URL(string: address),
-				        isPortableURL(url) else { return false }
-			      return true
+		      	guard let address = record["url"] as? String,
+		      	      let url = URL(string: address),
+		      	      isPortableURL(url) else { return false }
+		      	return true
 		      }) else { throw ImportError.invalidFile }
 		var document = try JSONDecoder().decode(Self.self, from: data)
 		guard document.version == 1,
@@ -50,18 +50,18 @@ nonisolated struct BrowserUserData: Codable {
 		      Set(document.readingList.map(\.id)).count == document.readingList.count else { throw ImportError.invalidFile }
 		guard document.bookmarks.allSatisfy({ bookmark in
 			isPortableURL(bookmark.url)
-				&& bookmark.name.utf8.count <= 16_384
-				&& bookmark.folder.utf8.count <= 4_096
+				&& bookmark.name.utf8.count <= 16384
+				&& bookmark.folder.utf8.count <= 4096
 				&& (bookmark.order == Int.min || (0 ... 100_000).contains(bookmark.order))
 				&& isSaneDate(bookmark.modifiedAt)
 		}), document.readingList.allSatisfy({ item in
 			isPortableURL(item.url)
-				&& item.title.utf8.count <= 16_384
+				&& item.title.utf8.count <= 16384
 				&& isSaneDate(item.addedAt)
 				&& isSaneDate(item.modifiedAt)
 		}), document.history.allSatisfy({ visit in
 			isPortableURL(visit.url)
-				&& visit.title.utf8.count <= 16_384
+				&& visit.title.utf8.count <= 16384
 				&& isSaneDate(visit.visitedAt)
 				&& isSaneDate(visit.modifiedAt)
 		}) else { throw ImportError.invalidFile }
@@ -114,10 +114,12 @@ nonisolated struct BrowserUserData: Codable {
 			if lower.hasPrefix("<h3") {
 				let titleRange = match.range(at: 1)
 				let title = unescape(source.substring(with: titleRange).replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression))
-				guard title.utf8.count <= 4_096 else { throw ImportError.tooLarge }
+				guard title.utf8.count <= 4096 else { throw ImportError.tooLarge }
 				pendingFolder = title
 			} else if lower.hasPrefix("</dl") {
-				if !folderStack.isEmpty { folderStack.removeLast() }
+				if !folderStack.isEmpty {
+					folderStack.removeLast()
+				}
 				pendingFolder = nil
 			} else if lower.hasPrefix("<dl") {
 				folderStack.append(pendingFolder ?? "")
@@ -129,7 +131,7 @@ nonisolated struct BrowserUserData: Codable {
 				let address = unescape((header as NSString).substring(with: href.range(at: 2)))
 				guard let url = URL(string: address), isPortableURL(url) else { throw ImportError.invalidFile }
 				let title = unescape(source.substring(with: match.range(at: 3)).replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression))
-				guard title.utf8.count <= 16_384 else { throw ImportError.tooLarge }
+				guard title.utf8.count <= 16384 else { throw ImportError.tooLarge }
 				let folder = folderStack.filter { !$0.isEmpty }.joined(separator: "/")
 				bookmarks.append(Bookmark(name: title.isEmpty ? url.host ?? address : title, url: url, folder: folder, order: bookmarks.count))
 				guard bookmarks.count <= 100_000 else { throw ImportError.tooLarge }
@@ -144,12 +146,12 @@ nonisolated struct BrowserUserData: Codable {
 	}
 
 	private static func isPortableURL(_ url: URL) -> Bool {
-		guard url.absoluteString.utf8.count <= 16_384,
+		guard url.absoluteString.utf8.count <= 16384,
 		      let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
 		      ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
 		      let host = components.host, !host.isEmpty,
 		      components.user == nil, components.password == nil,
-		      (components.port.map({ (1 ... 65_535).contains($0) }) ?? true),
+		      components.port.map({ (1 ... 65535).contains($0) }) ?? true,
 		      !host.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) })
 		else { return false }
 		return true

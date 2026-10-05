@@ -16,6 +16,13 @@ struct InternalURLChecks {
 		precondition(route("astra://settings") == .settings(nil))
 		precondition(route("astra://settings?page=privacy") == .settings(.privacyAndSecurity))
 		precondition(route("astra://settings?page=extensions") == .settings(.extensions))
+		precondition(route("astra://settings?page=developer") == .settings(.developer))
+		#if os(macOS)
+			precondition(route("astra://settings?page=website-apps") == .settings(.websiteApps))
+		#endif
+		precondition(route("astra://settings?page=unknown") == nil)
+		precondition(route("astra://settings?page=") == nil)
+		precondition(route("astra://settings?page") == nil)
 
 		precondition(route("astra://unknown") == nil)
 		precondition(route("astra://settings/extra") == nil)

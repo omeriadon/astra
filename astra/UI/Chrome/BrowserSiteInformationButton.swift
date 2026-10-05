@@ -95,7 +95,7 @@ private struct BrowserSiteInformationView: View {
 						committedDocumentID: controller.committedSecurityNavigationID
 					).title
 				)
-					.accessibilityIdentifier("active-camera-state")
+				.accessibilityIdentifier("active-camera-state")
 				LabeledContent(
 					"Microphone",
 					value: BrowserActiveCaptureStatus.current(
@@ -105,7 +105,7 @@ private struct BrowserSiteInformationView: View {
 						committedDocumentID: controller.committedSecurityNavigationID
 					).title
 				)
-					.accessibilityIdentifier("active-microphone-state")
+				.accessibilityIdentifier("active-microphone-state")
 				LabeledContent("Location", value: "Activity unavailable")
 					.accessibilityIdentifier("active-location-state")
 				LabeledContent("Display Sharing", value: "Activity unavailable")

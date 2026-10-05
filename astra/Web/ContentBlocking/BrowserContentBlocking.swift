@@ -105,7 +105,8 @@ final class BrowserContentBlocking {
 		do {
 			let values = try? url.resourceValues(forKeys: [.fileSizeKey])
 			if let fileSize = values?.fileSize,
-			   fileSize > BrowserContentBlockingRuleSource.maximumBytes {
+			   fileSize > BrowserContentBlockingRuleSource.maximumBytes
+			{
 				throw BrowserContentBlockingRuleSource.ValidationError.sourceTooLarge
 			}
 			let data = try BrowserContentBlockingRuleSource.readBounded(from: url)
@@ -138,11 +139,10 @@ final class BrowserContentBlocking {
 			} catch {
 				cachedList = nil
 			}
-			let list: WKContentRuleList
-			if let cachedList {
-				list = cachedList
+			let list: WKContentRuleList = if let cachedList {
+				cachedList
 			} else {
-				list = try await compile(candidate, using: store)
+				try await compile(candidate, using: store)
 			}
 			guard let accepted = BrowserContentBlockingRuleSource.lastGood(
 				current: source,
@@ -161,7 +161,7 @@ final class BrowserContentBlocking {
 				defaults.set(encoded, forKey: Self.defaultsKey)
 			}
 			let previousIdentifier = source?.identifier
-			self.source = accepted
+			source = accepted
 			storedSource = stored
 			compiledRuleList = list
 			sourceFileName = stored.fileName
@@ -189,11 +189,10 @@ final class BrowserContentBlocking {
 			} catch {
 				cachedList = nil
 			}
-			let list: WKContentRuleList
-			if let cachedList {
-				list = cachedList
+			let list: WKContentRuleList = if let cachedList {
+				cachedList
 			} else {
-				list = try await compile(source, using: store)
+				try await compile(source, using: store)
 			}
 			guard list.identifier == source.identifier else { throw StoreError.staleCompile }
 			compiledRuleList = list
@@ -284,7 +283,9 @@ final class BrowserContentBlocking {
 	}
 
 	private func contentRuleListStore() throws -> WKContentRuleListStore {
-		if let store { return store }
+		if let store {
+			return store
+		}
 		guard isPrivate else { throw StoreError.unavailable }
 		let directory = FileManager.default.temporaryDirectory
 			.appendingPathComponent("astra-content-rules-\(UUID().uuidString)", isDirectory: true)
@@ -304,8 +305,8 @@ final class BrowserContentBlocking {
 	) async throws -> WKContentRuleList {
 		guard let json = String(data: source.data, encoding: .utf8),
 		      let list = try await store.compileContentRuleList(
-			forIdentifier: source.identifier,
-			encodedContentRuleList: json
+		      	forIdentifier: source.identifier,
+		      	encodedContentRuleList: json
 		      ) else { throw StoreError.compileFailed }
 		return list
 	}

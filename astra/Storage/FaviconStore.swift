@@ -155,7 +155,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		)
 	}
 
-	func image(for pageURL: URL?, in webView: WKWebView? = nil) -> Image? {
+	func image(for pageURL: URL?, in _: WKWebView? = nil) -> Image? {
 		guard let key = FaviconKey.origin(for: pageURL) else { return nil }
 		if let cached = decodedImages[key] {
 			return Self.swiftUIImage(cached)

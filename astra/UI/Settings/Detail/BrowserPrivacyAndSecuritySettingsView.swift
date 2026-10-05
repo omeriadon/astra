@@ -208,5 +208,4 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 		guard recordsRefreshID == refreshID else { return }
 		records = updatedRecords
 	}
-
 }

@@ -392,7 +392,7 @@ private struct ShellNewTabButton: View {
 
 	var body: some View {
 		Button {
-			browser.addTab()
+			browser.requestNewTab()
 			onNewTab?()
 		} label: {
 			Label("New Tab", systemImage: "plus")

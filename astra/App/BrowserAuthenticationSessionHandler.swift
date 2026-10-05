@@ -25,9 +25,10 @@
 			}
 			guard request.callback != nil,
 			      let initialRequest = BrowserAuthenticationPolicy.initialRequest(
-				      url: request.url,
-				      headers: request.additionalHeaderFields
-			      ) else {
+			      	url: request.url,
+			      	headers: request.additionalHeaderFields
+			      )
+			else {
 				request.cancelWithError(Self.cancellationError)
 				return
 			}
@@ -46,10 +47,10 @@
 				      let window,
 				      let current = sessions[id],
 				      BrowserAuthenticationPolicy.isCurrentSession(
-					  generation: generation,
-					  currentGeneration: current.generation,
-					  sameRequest: current.request === request,
-					  sameWindow: current.window === window
+				      	generation: generation,
+				      	currentGeneration: current.generation,
+				      	sameRequest: current.request === request,
+				      	sameWindow: current.window === window
 				      ),
 				      request.callback?.matchesURL(url) == true else { return false }
 				sessions[id] = nil
@@ -63,10 +64,10 @@
 				defer { cleanUpPrivateSession(webSession) }
 				if let current = sessions[id],
 				   BrowserAuthenticationPolicy.isCurrentSession(
-					   generation: generation,
-					   currentGeneration: current.generation,
-					   sameRequest: true,
-					   sameWindow: current.window === window
+				   	generation: generation,
+				   	currentGeneration: current.generation,
+				   	sameRequest: true,
+				   	sameWindow: current.window === window
 				   )
 				{
 					sessions[id] = nil

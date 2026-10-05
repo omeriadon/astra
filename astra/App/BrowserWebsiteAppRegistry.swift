@@ -1,7 +1,11 @@
 #if os(macOS)
 	import AppKit
+	import CoreServices
+	import Darwin
 	import Foundation
+	import ImageIO
 	import Observation
+	import Security
 
 	struct BrowserWebsiteAppInstallation: Codable, Equatable, Identifiable {
 		let id: UUID
@@ -11,12 +15,14 @@
 		let createdAt: Date
 		var modifiedAt: Date
 
-		var bundleURL: URL { URL(fileURLWithPath: bundlePath, isDirectory: true) }
+		var bundleURL: URL {
+			URL(fileURLWithPath: bundlePath, isDirectory: true)
+		}
 	}
 
 	nonisolated enum BrowserWebsiteAppPolicy {
 		static let maximumNameBytes = 160
-		static let maximumURLBytes = 8_192
+		static let maximumURLBytes = 8192
 
 		static func validatedURL(_ url: URL) -> URL? {
 			guard url.absoluteString.utf8.count <= maximumURLBytes,
@@ -24,7 +30,7 @@
 			      ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
 			      let host = components.host, !host.isEmpty,
 			      components.user == nil, components.password == nil,
-			      components.port.map({ (1 ... 65_535).contains($0) }) ?? true
+			      components.port.map({ (1 ... 65535).contains($0) }) ?? true
 			else { return nil }
 			return components.url
 		}
@@ -68,6 +74,9 @@
 			case templateInvalid
 			case installationOutsideOwnedDirectory
 			case signingFailed(String)
+			case registrationFailed(OSStatus)
+			case dockPinningFailed(String)
+			case dockPinningUnavailable
 
 			var errorDescription: String? {
 				switch self {
@@ -77,24 +86,33 @@
 					case .templateInvalid: "The website-app helper template is invalid."
 					case .installationOutsideOwnedDirectory: "Astra refused to modify a website app outside its owned installation directory."
 					case let .signingFailed(message): "The generated website app could not be locally signed: \(message)"
+					case let .registrationFailed(status): "macOS could not register the website app (\(status))."
+					case let .dockPinningFailed(message): "The website app could not be pinned: \(message)"
+					case .dockPinningUnavailable: "Dock pinning is unavailable on this version of macOS."
 				}
 			}
 		}
 
 		private let fileManager: FileManager
 		private let rootURL: URL
+		private let resourceBundle: Bundle
 		private let registryURL: URL
 		private(set) var installations: [BrowserWebsiteAppInstallation] = []
 
-		init(fileManager: FileManager = .default) {
+		init(
+			fileManager: FileManager = .default,
+			rootDirectory: URL? = nil,
+			resourceBundle: Bundle = .main
+		) {
 			self.fileManager = fileManager
+			self.resourceBundle = resourceBundle
 			let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
 				?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-			let rootURL = applicationSupport
+			let rootURL = rootDirectory ?? applicationSupport
 				.appendingPathComponent("Astra", isDirectory: true)
 				.appendingPathComponent("Website Apps", isDirectory: true)
 			self.rootURL = rootURL
-			self.registryURL = rootURL.appendingPathComponent("registry.json", isDirectory: false)
+			registryURL = rootURL.appendingPathComponent("registry.json", isDirectory: false)
 			try? fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
 			load()
 		}
@@ -106,7 +124,7 @@
 		func install(name: String, url: URL, icon: NSImage?) throws -> BrowserWebsiteAppInstallation {
 			guard let name = BrowserWebsiteAppPolicy.validatedName(name) else { throw RegistryError.invalidName }
 			guard let url = BrowserWebsiteAppPolicy.validatedURL(url) else { throw RegistryError.invalidURL }
-			guard let templateURL = Bundle.main.url(forResource: "AstraWebsiteAppTemplate", withExtension: "app") else {
+			guard let templateURL = resourceBundle.url(forResource: "AstraWebsiteAppTemplate", withExtension: "app") else {
 				throw RegistryError.templateMissing
 			}
 			guard fileManager.fileExists(atPath: templateURL.appendingPathComponent("Contents/MacOS").path) else {
@@ -152,13 +170,9 @@
 			guard let index = installations.firstIndex(where: { $0.id == id }) else { return }
 			let old = installations[index]
 			guard isOwnedInstallation(old.bundleURL) else { throw RegistryError.installationOutsideOwnedDirectory }
-			let newURL = rootURL.appendingPathComponent(BrowserWebsiteAppPolicy.bundleFilename(name: name, id: id), isDirectory: true)
-			if old.bundleURL != newURL {
-				try fileManager.moveItem(at: old.bundleURL, to: newURL)
-			}
-			try configureBundle(at: newURL, id: id, name: name, launchURL: old.launchURL, icon: nil)
+			// Keep the installed path stable so existing Dock tiles continue to resolve.
+			try configureBundle(at: old.bundleURL, id: id, name: name, launchURL: old.launchURL, icon: nil)
 			installations[index].name = name
-			installations[index].bundlePath = newURL.path
 			installations[index].modifiedAt = .now
 			try save()
 		}
@@ -177,6 +191,8 @@
 			      isOwnedInstallation(installation.bundleURL),
 			      fileManager.fileExists(atPath: installation.bundlePath)
 			else { throw RegistryError.installationOutsideOwnedDirectory }
+			try migrateToSharedRuntime(installation)
+			try registerGeneratedApp(at: installation.bundleURL)
 			NSWorkspace.shared.openApplication(at: installation.bundleURL, configuration: .init())
 		}
 
@@ -186,9 +202,77 @@
 			NSWorkspace.shared.activateFileViewerSelecting([installation.bundleURL])
 		}
 
-		func beginKeepInDockFlow(_ id: UUID) throws {
+		func beginKeepInDockFlow(_ id: UUID) async throws {
+			guard let installation = installation(for: id),
+			      isOwnedInstallation(installation.bundleURL),
+			      fileManager.fileExists(atPath: installation.bundlePath)
+			else { throw RegistryError.installationOutsideOwnedDirectory }
+			try migrateToSharedRuntime(installation)
+			try registerGeneratedApp(at: installation.bundleURL)
+			try await pinToDock(installation)
 			try launch(id)
-			try reveal(id)
+		}
+
+		private func pinToDock(_ installation: BrowserWebsiteAppInstallation) async throws {
+			let helperName = "AstraWebsiteAppInstaller.app"
+			let helperURL = resourceBundle.bundleURL.appendingPathComponent("Contents/Resources").appendingPathComponent(helperName)
+			guard fileManager.fileExists(atPath: helperURL.path) else { throw RegistryError.dockPinningUnavailable }
+			let responseURL = rootURL.appendingPathComponent("dock-result-\(UUID().uuidString).json")
+			defer { try? fileManager.removeItem(at: responseURL) }
+			let configuration = NSWorkspace.OpenConfiguration()
+			configuration.activates = false
+			configuration.addsToRecentItems = false
+			configuration.createsNewApplicationInstance = true
+			configuration.arguments = ["--pin", installation.bundlePath, responseURL.path]
+			let helper = try await NSWorkspace.shared.openApplication(at: helperURL, configuration: configuration)
+			let deadline = ContinuousClock.now.advanced(by: .seconds(15))
+			while ContinuousClock.now < deadline {
+				if let data = try? Data(contentsOf: responseURL) {
+					let message = try JSONDecoder().decode(String.self, from: data)
+					guard message.isEmpty else { throw RegistryError.dockPinningFailed(message) }
+					return
+				}
+				if helper.isTerminated {
+					throw RegistryError.dockPinningFailed("The Dock installer exited without a result.")
+				}
+				try await Task.sleep(for: .milliseconds(100))
+			}
+			throw RegistryError.dockPinningFailed("The Dock installer did not respond.")
+		}
+
+		private func registerGeneratedApp(at appURL: URL) throws {
+			// Match Chromium's generated-shim installation: copied quarantine belongs
+			// to the downloaded template, not to an app assembled locally by Astra.
+			let plistURL = appURL.appendingPathComponent("Contents/Info.plist")
+			guard let plist = NSDictionary(contentsOf: plistURL) as? [String: Any],
+			      let executable = plist["CFBundleExecutable"] as? String,
+			      !executable.isEmpty, !executable.contains("/"),
+			      executable != ".", executable != ".."
+			else { throw RegistryError.templateInvalid }
+			let executableURL = appURL.appendingPathComponent("Contents/MacOS").appendingPathComponent(executable)
+			for url in [appURL, executableURL] {
+				if removexattr(url.path, "com.apple.quarantine", XATTR_NOFOLLOW) != 0 {
+					let error = errno
+					guard error == ENOATTR else {
+						throw NSError(domain: NSPOSIXErrorDomain, code: Int(error))
+					}
+				}
+			}
+			let status = LSRegisterURL(appURL as CFURL, true)
+			guard status == noErr else { throw RegistryError.registrationFailed(status) }
+		}
+
+		private func migrateToSharedRuntime(_ installation: BrowserWebsiteAppInstallation) throws {
+			let plistURL = installation.bundleURL.appendingPathComponent("Contents/Info.plist")
+			let plist = NSDictionary(contentsOf: plistURL) as? [String: Any]
+			guard plist?["AstraWebsiteAppRuntimeVersion"] as? Int != 1 else { return }
+			try configureBundle(
+				at: installation.bundleURL,
+				id: installation.id,
+				name: installation.name,
+				launchURL: installation.launchURL,
+				icon: nil
+			)
 		}
 
 		private func load() {
@@ -219,7 +303,11 @@
 		}
 
 		private func configureBundle(at appURL: URL, id: UUID, name: String, launchURL: URL, icon: NSImage?) throws {
-			let entitlements = try signingEntitlements(from: appURL)
+			guard let templateURL = resourceBundle.url(forResource: "AstraWebsiteAppTemplate", withExtension: "app"),
+			      let templatePlist = NSDictionary(contentsOf: templateURL.appendingPathComponent("Contents/Info.plist")) as? [String: Any],
+			      let executable = templatePlist["CFBundleExecutable"] as? String
+			else { throw RegistryError.templateMissing }
+			let entitlements = try signingEntitlements(from: templateURL)
 			let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
 			let plistURL = contentsURL.appendingPathComponent("Info.plist", isDirectory: false)
 			guard var plist = NSDictionary(contentsOf: plistURL) as? [String: Any] else {
@@ -228,13 +316,70 @@
 			plist["CFBundleIdentifier"] = BrowserWebsiteAppPolicy.bundleIdentifier(for: id)
 			plist["CFBundleName"] = name
 			plist["CFBundleDisplayName"] = name
+			plist["CFBundleExecutable"] = executable
+			plist["AstraWebsiteAppRuntimeVersion"] = 1
+			plist["AstraWebsiteAppLaunchURL"] = launchURL.absoluteString
 			plist["AstraWebsiteAppURL"] = launchURL.absoluteString
+			var hostCode: SecStaticCode?
+			var requirement: SecRequirement?
+			var requirementText: CFString?
+			guard let hostIdentifier = resourceBundle.bundleIdentifier,
+			      SecStaticCodeCreateWithPath(resourceBundle.bundleURL as CFURL, [], &hostCode) == errSecSuccess,
+			      let hostCode,
+			      SecCodeCopyDesignatedRequirement(hostCode, [], &requirement) == errSecSuccess,
+			      let requirement,
+			      SecRequirementCopyString(requirement, [], &requirementText) == errSecSuccess,
+			      let requirementText
+			else { throw RegistryError.templateInvalid }
+			plist["AstraWebsiteAppHostBundlePath"] = resourceBundle.bundleURL.path
+			plist["AstraWebsiteAppHostBundleIdentifier"] = hostIdentifier
+			plist["AstraWebsiteAppHostCodeRequirement"] = requirementText as String
+			// Replace legacy browser binaries with the bundled launcher. The browser
+			// implementation and its frameworks now stay inside Astra.app.
+			let executableDirectory = contentsURL.appendingPathComponent("MacOS", isDirectory: true)
+			try fileManager.removeItem(at: executableDirectory)
+			try fileManager.copyItem(at: templateURL.appendingPathComponent("Contents/MacOS"), to: executableDirectory)
+			let frameworksDirectory = contentsURL.appendingPathComponent("Frameworks", isDirectory: true)
+			if fileManager.fileExists(atPath: frameworksDirectory.path) {
+				try fileManager.removeItem(at: frameworksDirectory)
+			}
+			if let icon {
+				let iconURL = contentsURL.appendingPathComponent("Resources/WebsiteIcon.icns")
+				try writeIcon(icon, to: iconURL)
+				plist["CFBundleIconFile"] = "WebsiteIcon"
+				plist.removeValue(forKey: "CFBundleIconName")
+			}
 			let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
 			try data.write(to: plistURL, options: .atomic)
-			if let icon {
-				NSWorkspace.shared.setIcon(icon, forFile: appURL.path)
-			}
 			try adHocSign(appURL, entitlements: entitlements)
+			try registerGeneratedApp(at: appURL)
+		}
+
+		private func writeIcon(_ image: NSImage, to url: URL) throws {
+			guard let bitmap = NSBitmapImageRep(
+				bitmapDataPlanes: nil,
+				pixelsWide: 256,
+				pixelsHigh: 256,
+				bitsPerSample: 8,
+				samplesPerPixel: 4,
+				hasAlpha: true,
+				isPlanar: false,
+				colorSpaceName: .deviceRGB,
+				bytesPerRow: 0,
+				bitsPerPixel: 0
+			), let context = NSGraphicsContext(bitmapImageRep: bitmap) else { throw RegistryError.templateInvalid }
+			NSGraphicsContext.saveGraphicsState()
+			NSGraphicsContext.current = context
+			image.draw(in: NSRect(x: 0, y: 0, width: 256, height: 256), from: .zero, operation: .copy, fraction: 1)
+			NSGraphicsContext.restoreGraphicsState()
+			try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+			guard let cgImage = bitmap.cgImage,
+			      let destination = CGImageDestinationCreateWithURL(url as CFURL, "com.apple.icns" as CFString, 1, nil)
+			else {
+				throw RegistryError.templateInvalid
+			}
+			CGImageDestinationAddImage(destination, cgImage, nil)
+			guard CGImageDestinationFinalize(destination) else { throw RegistryError.templateInvalid }
 		}
 
 		private func signingEntitlements(from bundleURL: URL) throws -> Data {
@@ -276,7 +421,7 @@
 			let pipe = Pipe()
 			process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
 			process.arguments = [
-				"--force", "--sign", "-", "--entitlements", entitlementsURL.path, bundleURL.path,
+				"--force", "--sign", "-", "--options", "runtime", "--entitlements", entitlementsURL.path, bundleURL.path,
 			]
 			process.standardError = pipe
 			try process.run()
@@ -300,6 +445,5 @@
 				throw RegistryError.signingFailed(String(message.prefix(500)))
 			}
 		}
-
 	}
 #endif

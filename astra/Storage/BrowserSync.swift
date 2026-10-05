@@ -75,7 +75,7 @@ final class BrowserSync {
 			guard let token = try? BrowserSessionStore.load() else { return }
 			await MainActor.run { [weak self] in
 				guard let self, sessionToken == nil,
-					  SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
+				      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
 				else { return }
 				sessionToken = token
 				isSignedIn = true
@@ -157,7 +157,8 @@ final class BrowserSync {
 				bearer: nil
 			)
 			guard authGeneration == signInGeneration,
-				currentServerAddress?.absoluteString == signInAddress.absoluteString else {
+			      currentServerAddress?.absoluteString == signInAddress.absoluteString
+			else {
 				throw BrowserSyncError.serverChanged
 			}
 			try BrowserSessionStore.save(response.token)
@@ -189,8 +190,8 @@ final class BrowserSync {
 
 	func syncNow() async {
 		guard let browser, browser.isReadyForSync,
-			  let sessionToken,
-			  SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
+		      let sessionToken,
+		      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
 		else { return }
 		guard !isSyncing else {
 			syncRequestedWhileBusy = true
@@ -214,8 +215,8 @@ final class BrowserSync {
 				bearer: sessionToken
 			)
 			guard self.sessionToken == sessionToken,
-				authGeneration == syncGeneration,
-				SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
+			      authGeneration == syncGeneration,
+			      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 			let local = browser.syncDocument(settings: settingSnapshot())
 			// Decode + merge off-main; docs are Sendable values.
 			let merged = try await Task.detached(priority: .utility) {
@@ -230,8 +231,8 @@ final class BrowserSync {
 				return documents.reduce(local) { $0.merging($1) }
 			}.value
 			guard self.sessionToken == sessionToken,
-				authGeneration == syncGeneration,
-				SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
+			      authGeneration == syncGeneration,
+			      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 			settingsDidChange()
 			let currentBrowsers = BrowserWindowRegistry.shared.openBrowsers.filter {
 				!$0.isPrivate && !$0.isMini && $0.session === browser.session
@@ -250,8 +251,8 @@ final class BrowserSync {
 					await target.flushAndWaitForPersistence()
 				}
 				guard self.sessionToken == sessionToken,
-					authGeneration == syncGeneration,
-					SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
+				      authGeneration == syncGeneration,
+				      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 			}
 
 			let outgoing = currentBrowsers.reduce(browser.syncDocument(settings: settingSnapshot())) { partial, peer in
@@ -271,12 +272,12 @@ final class BrowserSync {
 				return payload
 			}.value
 			guard self.sessionToken == sessionToken,
-				authGeneration == syncGeneration,
-				SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
+			      authGeneration == syncGeneration,
+			      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 			if let payload = pushPayload {
 				guard self.sessionToken == sessionToken,
-					authGeneration == syncGeneration,
-					SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
+				      authGeneration == syncGeneration,
+				      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 				let _: ServerSnapshot = try await request(
 					path: "v1/sync",
 					method: "PUT",
@@ -284,8 +285,8 @@ final class BrowserSync {
 					bearer: sessionToken
 				)
 				guard self.sessionToken == sessionToken,
-					authGeneration == syncGeneration,
-					SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
+				      authGeneration == syncGeneration,
+				      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 			}
 			lastSync = .now
 			errorDescription = nil
@@ -306,13 +307,13 @@ final class BrowserSync {
 	}
 
 	private func applySettings(_ settings: [String: SyncedSetting]) throws {
-		var updates: [(String, Any? , Date)] = []
+		var updates: [(String, Any?, Date)] = []
 		for key in Defaults.Keys.syncedSettingNames {
 			guard let setting = settings[key],
 			      setting.shouldApply(
-					over: knownSettings[key],
-					newerThan: settingVersions[key] ?? .distantPast
-				)
+			      	over: knownSettings[key],
+			      	newerThan: settingVersions[key] ?? .distantPast
+			      )
 			else { continue }
 			if let data = setting.value {
 				let object = try PropertyListSerialization.propertyList(from: data, format: nil)
@@ -354,11 +355,99 @@ final class BrowserSync {
 		return settings
 	}
 
+	func requireAIAuthentication() throws -> UInt64 {
+		guard isSignedIn, sessionToken != nil,
+		      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
+		else {
+			throw BrowserAIError.signInRequired
+		}
+		return authGeneration
+	}
+
+	func validateAIAuthentication(_ generation: UInt64) throws {
+		guard try requireAIAuthentication() == generation else {
+			throw BrowserAIError.signInRequired
+		}
+	}
+
+	func generateAI(_ body: BrowserAICloudRequest) async throws -> BrowserAIResponse {
+		let generation = try requireAIAuthentication()
+		let response: BrowserAIResponse = try await request(
+			path: "v1/ai/generate",
+			method: "POST",
+			body: body,
+			bearer: sessionToken,
+			timeout: 90
+		)
+		try validateAIAuthentication(generation)
+		return response
+	}
+
+	func streamAI(
+		_ body: BrowserAICloudRequest,
+		onSnapshot: @MainActor (String) -> Void
+	) async throws -> String {
+		let generation = try requireAIAuthentication()
+		guard let baseURL = currentServerAddress, let bearer = sessionToken else {
+			throw BrowserAIError.signInRequired
+		}
+		var request = URLRequest(url: baseURL.appending(path: "v1/ai/stream"))
+		request.httpMethod = "POST"
+		request.httpBody = try JSONEncoder().encode(body)
+		request.timeoutInterval = 90
+		request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+		request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+		request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+		let configuration = URLSessionConfiguration.ephemeral
+		configuration.timeoutIntervalForRequest = 90
+		configuration.timeoutIntervalForResource = 90
+		let session = URLSession(configuration: configuration)
+		defer { session.invalidateAndCancel() }
+		let (bytes, response) = try await session.bytes(for: request)
+		try validateAIAuthentication(generation)
+		guard let response = response as? HTTPURLResponse else {
+			throw BrowserAIError.invalidStream
+		}
+		if response.statusCode == 401 {
+			signOut()
+			throw BrowserAIError.signInRequired
+		}
+		guard response.statusCode == 200 else {
+			throw BrowserSyncError.http(response.statusCode)
+		}
+		guard response.value(forHTTPHeaderField: "Content-Type")?.lowercased().hasPrefix("text/event-stream") == true else {
+			throw BrowserAIError.invalidStream
+		}
+		var totalBytes = 0
+		for try await line in bytes.lines {
+			try Task.checkCancellation()
+			try validateAIAuthentication(generation)
+			totalBytes += line.utf8.count
+			guard line.utf8.count <= 524_288, totalBytes <= 32 * 1024 * 1024 else {
+				throw BrowserAIError.invalidStream
+			}
+			guard line.hasPrefix("data: ") else { continue }
+			let event = try JSONDecoder().decode(BrowserAIStreamEvent.self, from: Data(line.dropFirst(6).utf8))
+			guard event.error == nil, let text = event.text, let isFinal = event.isFinal else {
+				throw BrowserAIError.invalidStream
+			}
+			onSnapshot(text)
+			if isFinal {
+				guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+					throw BrowserAIError.emptyResponse
+				}
+				return text
+			}
+		}
+		throw BrowserAIError.invalidStream
+	}
+
 	private func request<Response: Decodable>(
 		path: String,
 		method: String,
 		body: (some Encodable)?,
-		bearer: String?
+		bearer: String?,
+		timeout: TimeInterval = 30
 	) async throws -> Response {
 		guard let baseURL = SyncServerAddress.normalized(Defaults[.syncServerURL], allowLocalHTTP: Self.allowsLocalHTTP)
 		else {
@@ -366,7 +455,7 @@ final class BrowserSync {
 		}
 		var request = URLRequest(url: baseURL.appending(path: path))
 		request.httpMethod = method
-		request.timeoutInterval = 30
+		request.timeoutInterval = timeout
 		request.setValue("application/json", forHTTPHeaderField: "Accept")
 		if let body {
 			request.httpBody = try JSONEncoder().encode(body)
@@ -423,6 +512,12 @@ final class BrowserSync {
 		guard self.browser === browser, isSignedIn else { return }
 		Task { await syncNow() }
 	}
+}
+
+private nonisolated struct BrowserAIStreamEvent: Decodable {
+	let text: String?
+	let isFinal: Bool?
+	let error: String?
 }
 
 private struct AuthenticationRequest: Encodable {

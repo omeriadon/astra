@@ -1,0 +1,4 @@
+module AstraWebPushBridge {
+	header "../astra/Web/Navigation/BrowserWebPushBridge.h"
+	export *
+}

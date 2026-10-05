@@ -10,6 +10,7 @@ let addressDisplayStyleSpacing: CGFloat = 8
 
 struct BrowserGeneralSettingsView: View {
 	@Bindable private var updates = UpdateManager.shared
+	@Default(.newTabStyle) private var newTabStyle
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
 	@Default(.defaultPageZoom) private var defaultPageZoom
 	@Default(.peekLevel) private var peekLevel
@@ -27,7 +28,6 @@ struct BrowserGeneralSettingsView: View {
 		@Default(.miniAstraEnabled) private var miniAstraEnabled
 		@Default(.miniAstraWindowAnimation) private var miniAstraWindowAnimation
 		@Default(.miniAstraShortcutEnabled) private var miniAstraShortcutEnabled
-		@Default(.webInspectorEnabled) private var webInspectorEnabled
 	#endif
 
 	var body: some View {
@@ -75,6 +75,39 @@ struct BrowserGeneralSettingsView: View {
 				.accessibilityIdentifier("address-display-style-picker")
 				.id("Address Bar")
 			}
+
+			Section("New Tab") {
+				VStack(spacing: addressDisplayStyleSpacing) {
+					ForEach(BrowserNewTabStyle.allCases) { style in
+						Button {
+							newTabStyle = style
+						} label: {
+							HStack(spacing: 12) {
+								Label(style.title, systemImage: style.symbol)
+									.frame(width: 140, alignment: .leading)
+								Text(style.description)
+									.font(.caption)
+									.frame(maxWidth: .infinity, alignment: .leading)
+							}
+							.padding(12)
+							.contentShape(RoundedRectangle(cornerRadius: 15))
+							.background(Color.primary.opacity(newTabStyle == style ? 0.2 : 0), in: RoundedRectangle(cornerRadius: 15))
+							.overlay {
+								RoundedRectangle(cornerRadius: 15)
+									.strokeBorder(.white.opacity(newTabStyle == style ? 0.6 : 0.3), lineWidth: 1)
+							}
+						}
+						.buttonStyle(.plain)
+						.accessibilityLabel(style.title)
+						.accessibilityValue(newTabStyle == style ? "Selected" : "Not selected")
+						.accessibilityIdentifier("new-tab-style-\(style.rawValue)")
+					}
+				}
+				.padding(5)
+				.background(Color.primary.opacity(0.1), in: RoundedRectangle(cornerRadius: 20))
+				.accessibilityIdentifier("new-tab-style-picker")
+			}
+			.id("New Tab")
 
 			Section("Search") {
 				Picker("Normal browsing", selection: engineBinding(isPrivate: false)) {
@@ -130,8 +163,8 @@ struct BrowserGeneralSettingsView: View {
 						in: BrowserZoomPolicy.range,
 						step: 0.05
 					)
-						.accessibilityLabel("Default page zoom")
-						.accessibilityIdentifier("default-page-zoom-slider")
+					.accessibilityLabel("Default page zoom")
+					.accessibilityIdentifier("default-page-zoom-slider")
 					Text(BrowserZoomPolicy.clamp(defaultPageZoom), format: .percent.precision(.fractionLength(0)))
 						.monospacedDigit()
 						.frame(minWidth: 48, alignment: .trailing)
@@ -190,13 +223,6 @@ struct BrowserGeneralSettingsView: View {
 					}
 				}
 
-				Section("Developer") {
-					Toggle("Allow Web Inspector in Safari", isOn: $webInspectorEnabled)
-						.accessibilityIdentifier("web-inspector-enabled")
-					Text("Inspect pages from Safari’s Develop menu. This applies when each page is created; Astra has no public embedded inspector command.")
-						.font(.caption)
-						.foregroundStyle(.secondary)
-				}
 			#endif
 
 			Section("Peek") {
@@ -302,7 +328,7 @@ struct BrowserGeneralSettingsView: View {
 			get: { searchConfiguration.customTemplate },
 			set: { value in
 				var configuration = searchConfiguration
-				configuration.customTemplate = bounded(value, maxBytes: 2_048)
+				configuration.customTemplate = bounded(value, maxBytes: 2048)
 				browserSearchConfigurationValue = configuration.encoded
 			}
 		)
@@ -313,7 +339,7 @@ struct BrowserGeneralSettingsView: View {
 			get: { searchConfiguration.keywordShortcuts },
 			set: { value in
 				var configuration = searchConfiguration
-				configuration.keywordShortcuts = bounded(value, maxBytes: 4_096)
+				configuration.keywordShortcuts = bounded(value, maxBytes: 4096)
 				browserSearchConfigurationValue = configuration.encoded
 			}
 		)

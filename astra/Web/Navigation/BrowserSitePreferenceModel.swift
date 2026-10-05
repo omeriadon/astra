@@ -41,7 +41,9 @@ enum BrowserWebsiteDataRange: String, CaseIterable, Identifiable {
 	case today
 	case allTime
 
-	var id: Self { self }
+	var id: Self {
+		self
+	}
 
 	var title: String {
 		switch self {
@@ -165,9 +167,9 @@ nonisolated struct BrowserSiteZoomDocument: Codable, Equatable, Sendable {
 		      let second = decodeSyncDocument(second),
 		      let merged = first.merging(second).encoded(),
 		      let value = try? PropertyListSerialization.data(
-			fromPropertyList: ["value": merged],
-			format: .binary,
-			options: 0
+		      	fromPropertyList: ["value": merged],
+		      	format: .binary,
+		      	options: 0
 		      ) else { return nil }
 		return value
 	}

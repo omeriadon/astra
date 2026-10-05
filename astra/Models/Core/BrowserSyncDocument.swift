@@ -37,7 +37,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		version = try values.decodeIfPresent(Int.self, forKey: .version) ?? 1
 		tabs = try values.decode([OpenTab].self, forKey: .tabs)
 		workspace = try values.decodeIfPresent(BrowserWorkspace.self, forKey: .workspace)
-		bookmarks = Bookmark.preservingLegacyOrder(try values.decode([Bookmark].self, forKey: .bookmarks))
+		bookmarks = try Bookmark.preservingLegacyOrder(values.decode([Bookmark].self, forKey: .bookmarks))
 		readingList = try values.decodeIfPresent([ReadingListItem].self, forKey: .readingList) ?? []
 		history = try values.decodeIfPresent([BrowserVisit].self, forKey: .history) ?? []
 		browser = try values.decode(BrowserSnapshot.self, forKey: .browser)
@@ -91,7 +91,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		projected.browser.closedTabsAt = projected.browser.closedTabsAt.filter { !localOnlyTabIDs.contains($0.key) }
 		projected.browser.deletedBookmarkIDs.subtract(localOnlyBookmarkIDs)
 		projected.browser.deletedBookmarksAt = projected.browser.deletedBookmarksAt.filter { !localOnlyBookmarkIDs.contains($0.key) }
-		if var workspace = workspace {
+		if var workspace {
 			workspace.favouriteTabIDs.removeAll { !portableTabIDs.contains($0) }
 			for index in workspace.spaces.indices {
 				let foldersWithMembers = Set(workspace.spaces[index].pinnedFolders.filter { !$0.tabIDs.isEmpty }.map(\.id))
@@ -104,7 +104,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 					foldersWithMembers.contains(folder.id) && folder.tabIDs.isEmpty
 				}
 				if let selectedID = workspace.spaces[index].selectedTabID,
-					!portableTabIDs.contains(selectedID)
+				   !portableTabIDs.contains(selectedID)
 				{
 					workspace.spaces[index].selectedTabID = workspace.spaces[index].tabIDs.first
 				}
@@ -127,7 +127,9 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		let localTabs = local.tabs.filter { !isPortableSyncTab($0) && $0.internalPage == nil }
 		let localTabIDs = Set(localTabs.map(\.id))
 		var tabsByID = Dictionary(projected.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-		for tab in localTabs { tabsByID[tab.id] = tab }
+		for tab in localTabs {
+			tabsByID[tab.id] = tab
+		}
 		projected.tabs = tabsByID.values.sorted { $0.id.uuidString < $1.id.uuidString }
 
 		var bookmarksByID = Dictionary(projected.bookmarks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -196,7 +198,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 			space.id == localWorkspace.selectedSpaceID
 				&& (space.tabIDs + space.pinnedTabIDs + space.pinnedFolders.flatMap(\.tabIDs)).contains(where: localTabIDs.contains)
 		}
-		if localSelectedSpaceHasLocalTab && localWorkspace.selectionModifiedAt >= target.selectionModifiedAt {
+		if localSelectedSpaceHasLocalTab, localWorkspace.selectionModifiedAt >= target.selectionModifiedAt {
 			target.selectedSpaceID = localWorkspace.selectedSpaceID
 			target.selectionModifiedAt = localWorkspace.selectionModifiedAt
 		}
@@ -204,7 +206,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		projected.workspace = target
 
 		if localTabIDs.contains(local.browser.selectedTabID),
-			local.browser.selectedTabModifiedAt >= projected.browser.selectedTabModifiedAt
+		   local.browser.selectedTabModifiedAt >= projected.browser.selectedTabModifiedAt
 		{
 			projected.browser.selectedTabID = local.browser.selectedTabID
 			projected.browser.selectedTabModifiedAt = local.browser.selectedTabModifiedAt
@@ -212,7 +214,9 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		return projected
 	}
 
-	nonisolated var hasSupportedVersion: Bool { (1 ... 3).contains(version) }
+	nonisolated var hasSupportedVersion: Bool {
+		(1 ... 3).contains(version)
+	}
 
 	nonisolated var hasValidStructure: Bool {
 		Set(tabs.map(\.id)).count == tabs.count
@@ -225,23 +229,23 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 					&& (tab.history + [tab.url].compactMap(\.self) + tab.peeks.compactMap(\.url)).allSatisfy(isSafeSyncURL)
 					&& tab.modifiedAt.isSaneSyncTimestamp
 			}
-		&& bookmarks.allSatisfy { bookmark in
-			isSafeSyncURL(bookmark.url)
-				&& (bookmark.order == Int.min || (0 ... 100_000).contains(bookmark.order))
-				&& bookmark.name.utf8.count <= 16_384
-				&& bookmark.folder.utf8.count <= 4_096
-				&& bookmark.modifiedAt.isSaneSyncTimestamp
-		}
+			&& bookmarks.allSatisfy { bookmark in
+				isSafeSyncURL(bookmark.url)
+					&& (bookmark.order == Int.min || (0 ... 100_000).contains(bookmark.order))
+					&& bookmark.name.utf8.count <= 16384
+					&& bookmark.folder.utf8.count <= 4096
+					&& bookmark.modifiedAt.isSaneSyncTimestamp
+			}
 			&& Set(readingList.map(\.id)).count == readingList.count
 			&& readingList.allSatisfy { item in
 				isSafeSyncURL(item.url)
-					&& item.url.absoluteString.utf8.count <= 16_384
-					&& item.title.utf8.count <= 16_384
+					&& item.url.absoluteString.utf8.count <= 16384
+					&& item.title.utf8.count <= 16384
 					&& item.modifiedAt.isSaneSyncTimestamp
 					&& item.addedAt.isSaneSyncTimestamp
 			}
 			&& history.allSatisfy { isSafeSyncURL($0.url) && $0.modifiedAt.isSaneSyncTimestamp && $0.visitedAt.isSaneSyncTimestamp }
-		&& settings.values.allSatisfy { $0.modifiedAt.isSaneSyncTimestamp && $0.hasValidPropertyListValue }
+			&& settings.values.allSatisfy { $0.modifiedAt.isSaneSyncTimestamp && $0.hasValidPropertyListValue }
 			&& (settings[BrowserSiteZoomDocument.defaultsKey].map {
 				$0.value == nil
 					|| BrowserSiteZoomDocument.mergeSyncValues($0.value, $0.value) != nil
@@ -255,7 +259,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 					&& value.spaces.allSatisfy { space in
 						Set(space.pinnedFolders.map(\.id)).count == space.pinnedFolders.count
 							&& space.modifiedAt.isSaneSyncTimestamp
-							&& space.pinnedFolders.allSatisfy { $0.modifiedAt.isSaneSyncTimestamp }
+							&& space.pinnedFolders.allSatisfy(\.modifiedAt.isSaneSyncTimestamp)
 							&& space.deletedPinnedFoldersAt.values.allSatisfy(\.isSaneSyncTimestamp)
 					}
 					&& value.modifiedAt.isSaneSyncTimestamp
@@ -337,14 +341,14 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 			let orderedIDs = preferredOrder.map(\.id) + spacesByID.keys.filter { id in !preferredOrder.contains(where: { $0.id == id }) }.sorted { $0.uuidString < $1.uuidString }
 			merged.spaces = orderedIDs.uniqued().compactMap { id in
 				guard let space = spacesByID[id],
-					  !isDeleted(id, modifiedAt: space.modifiedAt, dates: merged.deletedSpacesAt, legacyIDs: merged.deletedSpaceIDs)
+				      !isDeleted(id, modifiedAt: space.modifiedAt, dates: merged.deletedSpacesAt, legacyIDs: merged.deletedSpaceIDs)
 				else { return nil }
 				return space
 			}
 			let useIncomingFavourites = right.favouritesModifiedAt > left.favouritesModifiedAt
 				|| (right.favouritesModifiedAt == left.favouritesModifiedAt
 					&& right.favouriteTabIDs.map(\.uuidString).joined(separator: ",")
-						< left.favouriteTabIDs.map(\.uuidString).joined(separator: ","))
+					< left.favouriteTabIDs.map(\.uuidString).joined(separator: ","))
 			if useIncomingFavourites {
 				merged.favouriteTabIDs = right.favouriteTabIDs
 				merged.favouritesModifiedAt = right.favouritesModifiedAt
@@ -388,7 +392,6 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		}
 		return result
 	}
-
 }
 
 private nonisolated func appendUnique(_ existing: [UUID], _ incoming: [UUID]) -> [UUID] {
@@ -403,12 +406,12 @@ private nonisolated func isPortableSyncTab(_ tab: OpenTab) -> Bool {
 }
 
 private nonisolated func isPortableSyncURL(_ url: URL) -> Bool {
-	guard url.absoluteString.utf8.count <= 16_384,
-		  let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-		  ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
-		  let host = components.host, !host.isEmpty,
-		  (components.port.map({ (1 ... 65_535).contains($0) }) ?? true),
-		  !host.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) }) else { return false }
+	guard url.absoluteString.utf8.count <= 16384,
+	      let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+	      ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+	      let host = components.host, !host.isEmpty,
+	      components.port.map({ (1 ... 65535).contains($0) }) ?? true,
+	      !host.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) }) else { return false }
 	return true
 }
 
@@ -429,13 +432,13 @@ private extension Date {
 }
 
 private nonisolated func isSafeSyncURL(_ url: URL) -> Bool {
-	guard url.absoluteString.utf8.count <= 16_384,
-		  let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-		  ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
-		  let host = components.host, !host.isEmpty,
-		  components.user == nil, components.password == nil,
-		  (components.port.map({ (1 ... 65_535).contains($0) }) ?? true),
-		  !host.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) })
+	guard url.absoluteString.utf8.count <= 16384,
+	      let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+	      ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+	      let host = components.host, !host.isEmpty,
+	      components.user == nil, components.password == nil,
+	      components.port.map({ (1 ... 65535).contains($0) }) ?? true,
+	      !host.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) })
 	else { return false }
 	return true
 }
@@ -446,12 +449,16 @@ private nonisolated func isDeleted(
 	dates: [UUID: Date],
 	legacyIDs: Set<UUID>
 ) -> Bool {
-	if let deletedAt = dates[id] { return modifiedAt <= deletedAt }
+	if let deletedAt = dates[id] {
+		return modifiedAt <= deletedAt
+	}
 	return legacyIDs.contains(id)
 }
 
 private nonisolated func preferredSpace(_ first: BrowserSpace, _ second: BrowserSpace) -> BrowserSpace {
-	if first.modifiedAt != second.modifiedAt { return first.modifiedAt > second.modifiedAt ? first : second }
+	if first.modifiedAt != second.modifiedAt {
+		return first.modifiedAt > second.modifiedAt ? first : second
+	}
 	return spaceKey(first) >= spaceKey(second) ? first : second
 }
 
@@ -469,9 +476,11 @@ private nonisolated func mergeSpace(_ first: BrowserSpace, _ second: BrowserSpac
 }
 
 private nonisolated func workspaceOrder(_ first: BrowserWorkspace, over second: BrowserWorkspace) -> Bool {
-	if first.modifiedAt != second.modifiedAt { return first.modifiedAt > second.modifiedAt }
-	return first.spaces.map { $0.id.uuidString }.joined(separator: ",")
-		< second.spaces.map { $0.id.uuidString }.joined(separator: ",")
+	if first.modifiedAt != second.modifiedAt {
+		return first.modifiedAt > second.modifiedAt
+	}
+	return first.spaces.map(\.id.uuidString).joined(separator: ",")
+		< second.spaces.map(\.id.uuidString).joined(separator: ",")
 }
 
 private nonisolated func spaceKey(_ space: BrowserSpace) -> String {
@@ -480,9 +489,9 @@ private nonisolated func spaceKey(_ space: BrowserSpace) -> String {
 	let deleted = space.deletedPinnedFoldersAt.sorted { $0.key.uuidString < $1.key.uuidString }
 		.map { "\($0.key)|\($0.value.timeIntervalSince1970)" }
 	return [space.id.uuidString, space.name, space.symbol, String(space.modifiedAt.timeIntervalSince1970),
-		space.tabIDs.map(\.uuidString).joined(separator: ","), space.pinnedTabIDs.map(\.uuidString).joined(separator: ","),
-		space.selectedTabID?.uuidString ?? "", folders.joined(separator: ";"), deleted.joined(separator: ";"),
-		themeKey(space.theme)].joined(separator: "|")
+	        space.tabIDs.map(\.uuidString).joined(separator: ","), space.pinnedTabIDs.map(\.uuidString).joined(separator: ","),
+	        space.selectedTabID?.uuidString ?? "", folders.joined(separator: ";"), deleted.joined(separator: ";"),
+	        themeKey(space.theme)].joined(separator: "|")
 }
 
 private nonisolated func themeKey(_ theme: BrowserTheme) -> String {
@@ -513,11 +522,13 @@ private nonisolated func preferred<Value: Codable & Equatable>(
 	_ second: Value,
 	_ secondDate: Date
 ) -> Value {
-	if firstDate != secondDate { return firstDate > secondDate ? first : second }
+	if firstDate != secondDate {
+		return firstDate > secondDate ? first : second
+	}
 	return stableData(first).lexicographicallyPrecedes(stableData(second)) ? second : first
 }
 
-private nonisolated func stableData<Value: Codable>(_ value: Value) -> [UInt8] {
+private nonisolated func stableData(_ value: some Codable) -> [UInt8] {
 	let encoder = JSONEncoder()
 	encoder.outputFormatting = [.sortedKeys]
 	return Array((try? encoder.encode(value)) ?? Data())
@@ -534,8 +545,8 @@ nonisolated struct SyncedSetting: Codable, Equatable, Sendable {
 	nonisolated var hasValidPropertyListValue: Bool {
 		guard let value else { return true }
 		guard let propertyList = try? PropertyListSerialization.propertyList(from: value, format: nil),
-			  let dictionary = propertyList as? [String: Any],
-			  dictionary["value"] != nil
+		      let dictionary = propertyList as? [String: Any],
+		      dictionary["value"] != nil
 		else { return false }
 		return true
 	}

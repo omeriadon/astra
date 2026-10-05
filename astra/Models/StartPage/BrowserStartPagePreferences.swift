@@ -11,7 +11,9 @@ nonisolated struct BrowserStartPagePreferences: Codable, Equatable, Sendable {
 		case recent
 		case recentlyClosed
 
-		var id: String { rawValue }
+		var id: String {
+			rawValue
+		}
 
 		var title: String {
 			switch self {
@@ -40,11 +42,11 @@ nonisolated struct BrowserStartPagePreferences: Codable, Equatable, Sendable {
 
 	static func decode(_ value: String) -> Self? {
 		guard let data = value.data(using: .utf8),
-			  let preferences = try? JSONDecoder().decode(Self.self, from: data),
-			  preferences.version == 1,
-			  preferences.moduleOrder.count == Module.allCases.count,
-			  Set(preferences.moduleOrder) == Set(Module.allCases),
-			  preferences.hiddenModules.isSubset(of: Set(Module.allCases))
+		      let preferences = try? JSONDecoder().decode(Self.self, from: data),
+		      preferences.version == 1,
+		      preferences.moduleOrder.count == Module.allCases.count,
+		      Set(preferences.moduleOrder) == Set(Module.allCases),
+		      preferences.hiddenModules.isSubset(of: Set(Module.allCases))
 		else { return nil }
 		return preferences
 	}

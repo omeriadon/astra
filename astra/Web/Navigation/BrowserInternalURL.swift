@@ -61,7 +61,9 @@ nonisolated enum BrowserInternalURL {
 				return .settings(.about)
 			case "settings":
 				guard items.allSatisfy({ $0.name == "page" }), items.count <= 1 else { return nil }
-				return .settings(items.first?.value.flatMap(settingsPage(named:)))
+				guard let item = items.first else { return .settings(nil) }
+				guard let value = item.value, let page = settingsPage(named: value) else { return nil }
+				return .settings(page)
 			default:
 				return nil
 		}
@@ -96,6 +98,10 @@ nonisolated enum BrowserInternalURL {
 			case "account", "sync": .account
 			case "privacy", "security": .privacyAndSecurity
 			case "extensions": .extensions
+			case "developer": .developer
+			#if os(macOS)
+				case "website-apps": .websiteApps
+			#endif
 			case "advanced": .advanced
 			case "about", "version": .about
 			#if DEBUG

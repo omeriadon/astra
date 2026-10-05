@@ -3,6 +3,7 @@ import Foundation
 
 extension AddressDisplayStyle: Defaults.Serializable {}
 extension PeekLevel: Defaults.Serializable {}
+extension BrowserNewTabStyle: Defaults.Serializable {}
 extension BrowserTheme: Defaults.Serializable {}
 
 enum BrowserStartupBehavior: String, CaseIterable {
@@ -14,6 +15,7 @@ enum BrowserStartupBehavior: String, CaseIterable {
 extension BrowserStartupBehavior: Defaults.Serializable {}
 
 extension Defaults.Keys {
+	static let newTabStyle = Key<BrowserNewTabStyle>("newTabStyle", default: .page)
 	static let startupBehavior = Key<BrowserStartupBehavior>("startupBehavior", default: .restore)
 	static let homepageURL = Key<String>("homepageURL", default: "https://www.google.com")
 	static let tryHTTPSFirst = Key<Bool>("tryHTTPSFirst", default: true)
@@ -38,9 +40,10 @@ extension Defaults.Keys {
 		default: "https://203.17.177.58:9644"
 	)
 
-	// Opt in portable browser preferences only; session, endpoint, credential, and device UI keys stay local.
+	/// Opt in portable browser preferences only; session, endpoint, credential, and device UI keys stay local.
 	static let syncedSettingNames: Set<String> = [
 		"addressDisplayStyle",
+		"newTabStyle",
 		"defaultPageZoom",
 		"peekLevel",
 		"zoomOutInPeeks",

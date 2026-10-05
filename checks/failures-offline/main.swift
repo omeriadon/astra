@@ -22,7 +22,7 @@ assert(BrowserNavigationFailure(error: NSError(domain: NSURLErrorDomain, code: N
 assert(BrowserNavigationFailure(error: NSError(domain: NSURLErrorDomain, code: NSURLErrorUnsupportedURL), url: url).kind == .invalidAddress)
 
 var terminations = BrowserContentProcessTerminationTracker()
-let firstTermination = Date(timeIntervalSince1970: 1_000)
+let firstTermination = Date(timeIntervalSince1970: 1000)
 assert(!terminations.record(url, at: firstTermination))
 terminations.navigationCommitted(at: url)
 assert(terminations.record(url, at: firstTermination.addingTimeInterval(1)))

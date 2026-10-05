@@ -3,8 +3,8 @@ import Foundation
 
 nonisolated enum BrowserContentBlockingRuleSource {
 	static let maximumBytes = 2 * 1024 * 1024
-	static let maximumRuleCount = 50_000
-	static let maximumPatternBytes = 4_096
+	static let maximumRuleCount = 50000
+	static let maximumPatternBytes = 4096
 
 	struct Validated: Equatable, Sendable {
 		let data: Data
@@ -64,7 +64,8 @@ nonisolated enum BrowserContentBlockingRuleSource {
 			      pattern.utf8.count <= maximumPatternBytes,
 			      !pattern.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
 			      let action = rule["action"] as? [String: Any],
-			      let type = action["type"] as? String else {
+			      let type = action["type"] as? String
+			else {
 				throw ValidationError.invalidRule
 			}
 			guard ["block", "block-cookies", "css-display-none", "ignore-previous-rules", "make-https"].contains(type) else {
@@ -73,7 +74,8 @@ nonisolated enum BrowserContentBlockingRuleSource {
 			if type == "css-display-none" {
 				guard let selector = action["selector"] as? String,
 				      !selector.isEmpty,
-				      selector.utf8.count <= 16_384 else {
+				      selector.utf8.count <= 16384
+				else {
 					throw ValidationError.invalidRule
 				}
 			}
@@ -121,7 +123,9 @@ nonisolated enum BrowserContentBlockingRuleSource {
 		currentOrigin: String?,
 		destinationOrigin: String?
 	) -> String? {
-		if disposition == .redirect { return nil }
+		if disposition == .redirect {
+			return nil
+		}
 		guard isMainFrame, disposition == .allow else { return currentOrigin }
 		return destinationOrigin
 	}

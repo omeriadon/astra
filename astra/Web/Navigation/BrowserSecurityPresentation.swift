@@ -47,17 +47,19 @@ nonisolated enum BrowserActiveCaptureStatus: Equatable, Sendable {
 	var title: String {
 		switch self {
 			case .unavailable: "Unavailable"
-				case .checking: "Checking"
-				case .inactive: "Not active"
-				case .active: "Active"
-				case .muted: "Muted"
+			case .checking: "Checking"
+			case .inactive: "Not active"
+			case .active: "Active"
+			case .muted: "Muted"
 		}
 	}
 
 	static func current(isActive: Bool, isMuted: Bool, sampledDocumentID: Int?, committedDocumentID: Int?) -> Self {
 		guard let committedDocumentID else { return .unavailable }
 		guard sampledDocumentID == committedDocumentID else { return .checking }
-		if isMuted { return .muted }
+		if isMuted {
+			return .muted
+		}
 		return isActive ? .active : .inactive
 	}
 }
@@ -77,10 +79,10 @@ nonisolated struct BrowserServerCertificateSummary: Equatable, Sendable {
 
 	init?(trust: SecTrust, committedURL: URL) {
 		guard committedURL.scheme?.lowercased() == "https",
-			  let origin = BrowserSiteOrigin.canonical(for: committedURL),
-			  let certificates = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
-			  let leaf = certificates.first,
-			  let certificateSubject = SecCertificateCopySubjectSummary(leaf) as String?
+		      let origin = BrowserSiteOrigin.canonical(for: committedURL),
+		      let certificates = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
+		      let leaf = certificates.first,
+		      let certificateSubject = SecCertificateCopySubjectSummary(leaf) as String?
 		else { return nil }
 
 		let subject = certificateSubject.trimmingCharacters(in: .whitespacesAndNewlines)

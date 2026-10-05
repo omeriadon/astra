@@ -3,6 +3,7 @@ import SwiftUI
 
 struct NewTabView: View {
 	@Bindable var browser: Browser
+	var isQuickSearch = false
 	@Default(.searchSuggestionsEnabled) private var searchSuggestionsEnabled
 	@Default(.browserSearchConfiguration) private var searchConfigurationValue
 	@Default(.startPagePreferences) private var startPagePreferencesValue
@@ -42,7 +43,7 @@ struct NewTabView: View {
 		let selectedResultID = browser.selectedNewTabSearchResult?.id
 		ScrollViewReader { proxy in
 			List {
-				if browser.newTabSearchText.isEmpty {
+				if browser.newTabSearchText.isEmpty, !isQuickSearch {
 					startPageModules
 					if !hasStartPageContent {
 						Section {
@@ -54,7 +55,9 @@ struct NewTabView: View {
 					ForEach(browser.newTabSearchResults) { result in
 						let query = browser.newTabSearchText
 						let generation = browser.newTabSearchGeneration
-						Button(action: result.perform) {
+						Button {
+							browser.performNewTabSearchResult(result)
+						} label: {
 							Label {
 								VStack(alignment: .leading, spacing: 2) {
 									Text(verbatim: result.title)
@@ -63,11 +66,11 @@ struct NewTabView: View {
 										.font(.caption)
 										.foregroundStyle(.secondary)
 										.lineLimit(1)
-							}
+								}
 								.frame(maxWidth: .infinity, alignment: .leading)
 							} icon: {
-								Image(systemName: result.symbol)
-									.frame(width: 20)
+								BrowserSearchResultIcon(result: result)
+									.frame(width: 20, height: 20)
 							}
 							.contentShape(Rectangle())
 						}
@@ -110,6 +113,11 @@ struct NewTabView: View {
 		}
 		.frame(maxWidth: 680)
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
+		.task(id: browser.quickSearchFocusRequest) {
+			guard isQuickSearch else { return }
+			await Task.yield()
+			isSearchFocused = true
+		}
 		.task(id: browser.selectedTabID) {
 			isSearchFocused = true
 		}
@@ -180,7 +188,7 @@ struct NewTabView: View {
 							}
 						}
 					case .frequent:
-						if !browser.isPrivate && !frequentVisits.isEmpty {
+						if !browser.isPrivate, !frequentVisits.isEmpty {
 							Section("Frequently Visited") {
 								ForEach(frequentVisits, id: \.url) { visit in
 									StartPageVisitRow(
@@ -195,7 +203,7 @@ struct NewTabView: View {
 							}
 						}
 					case .recent:
-						if !browser.isPrivate && !recentVisits.isEmpty {
+						if !browser.isPrivate, !recentVisits.isEmpty {
 							Section("Recently Visited") {
 								ForEach(recentVisits) { visit in
 									StartPageVisitRow(
@@ -232,7 +240,7 @@ struct NewTabView: View {
 										}
 									}
 									.buttonStyle(.plain)
-										.accessibilityLabel("Reopen \(tab.customTitle ?? tab.pageTitle)")
+									.accessibilityLabel("Reopen \(tab.customTitle ?? tab.pageTitle)")
 									.accessibilityIdentifier("start-page-closed-\(tab.id.uuidString)")
 									.contextMenu {
 										Button("Reopen in Background", systemImage: "plus.square.on.square") {
@@ -242,7 +250,7 @@ struct NewTabView: View {
 									}
 								}
 							}
-					}
+						}
 				}
 			}
 		}
@@ -262,22 +270,24 @@ struct NewTabView: View {
 
 	private var searchHeader: some View {
 		VStack(alignment: .leading, spacing: 14) {
-			HStack {
-				Text(browser.isPrivate ? "Private Browsing" : "astra")
-					.font(.largeTitle.bold())
-				Spacer()
-				Button {
-					showingPreferences = true
-				} label: {
-					Label("Customize Start Page", systemImage: "slider.horizontal.3")
+			if !isQuickSearch {
+				HStack {
+					Text(browser.isPrivate ? "Private Browsing" : "astra")
+						.font(.largeTitle.bold())
+					Spacer()
+					Button {
+						showingPreferences = true
+					} label: {
+						Label("Customize Start Page", systemImage: "slider.horizontal.3")
+					}
+					.labelStyle(.iconOnly)
+					.accessibilityLabel("Customize Start Page")
+					.accessibilityIdentifier("start-page-preferences")
+					.matchedTransitionSource(id: "start-page-preferences", in: transitions)
 				}
-				.labelStyle(.iconOnly)
-				.accessibilityLabel("Customize Start Page")
-				.accessibilityIdentifier("start-page-preferences")
-				.matchedTransitionSource(id: "start-page-preferences", in: transitions)
+				Text(browser.isPrivate ? "Tabs and website data are discarded when this window closes. Downloaded files are kept." : "Search the web, history, or browser actions")
+					.foregroundStyle(.secondary)
 			}
-			Text(browser.isPrivate ? "Tabs and website data are discarded when this window closes. Downloaded files are kept." : "Search the web, history, or browser actions")
-				.foregroundStyle(.secondary)
 			HStack(spacing: 10) {
 				Image(systemName: "magnifyingglass")
 					.accessibilityHidden(true)
@@ -285,11 +295,11 @@ struct NewTabView: View {
 					.focused($isSearchFocused)
 					.textFieldStyle(.plain)
 				#if os(macOS)
-						.fontDesign(.monospaced)
+					.fontDesign(.monospaced)
 				#elseif os(iOS)
-						.textInputAutocapitalization(.never)
-						.autocorrectionDisabled()
-						.keyboardType(.webSearch)
+					.textInputAutocapitalization(.never)
+					.autocorrectionDisabled()
+					.keyboardType(.webSearch)
 				#endif
 					.submitLabel(.go)
 					.onSubmit { browser.submitNewTabSearch() }
@@ -302,7 +312,11 @@ struct NewTabView: View {
 						return .handled
 					}
 					.onKeyPress(.escape) {
-						browser.newTabSearchSelection = "typed"
+						if isQuickSearch {
+							browser.dismissQuickSearch()
+						} else {
+							browser.newTabSearchSelection = "typed"
+						}
 						return .handled
 					}
 					.accessibilityLabel("Search the web, history, or browser actions")
@@ -312,7 +326,7 @@ struct NewTabView: View {
 			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
 		}
 		.padding(.horizontal, 24)
-		.padding(.top, 32)
+		.padding(.top, isQuickSearch ? 16 : 32)
 		.padding(.bottom, 16)
 	}
 }
@@ -382,7 +396,7 @@ private struct StartPagePreferencesView: View {
 			List {
 				if containsUnsupportedValue {
 					Section {
-								Label("These saved settings are unsupported or unreadable and cannot be edited here.", systemImage: "exclamationmark.triangle")
+						Label("These saved settings are unsupported or unreadable and cannot be edited here.", systemImage: "exclamationmark.triangle")
 							.foregroundStyle(.secondary)
 					}
 				}
@@ -411,6 +425,8 @@ private struct StartPagePreferencesView: View {
 					}
 				}
 			}
+			.listStyle(.sidebar)
+			.scrollContentBackground(.hidden)
 			.navigationTitle("Start Page")
 			.toolbar {
 				ToolbarItem(placement: .cancellationAction) {
@@ -420,6 +436,9 @@ private struct StartPagePreferencesView: View {
 				}
 			}
 		}
+		#if os(macOS)
+		.frame(width: 520, height: 360)
+		#endif
 	}
 
 	private func visibilityBinding(for module: BrowserStartPagePreferences.Module) -> Binding<Bool> {

@@ -42,7 +42,7 @@
 			guard let candidate = currentCandidate(), let window = candidate.window else { return }
 			let alert = NSAlert()
 			alert.messageText = "Add Website to Dock"
-			alert.informativeText = "Astra will create a local standalone app for this website. Website data is not exported from private browsing."
+			alert.informativeText = "Astra will create a website app and pin it to the Dock. Website data is not exported from private browsing."
 			alert.alertStyle = .informational
 			alert.addButton(withTitle: "Add Website")
 			alert.addButton(withTitle: "Cancel")
@@ -59,8 +59,10 @@
 						return
 					}
 					do {
-						_ = try BrowserWebsiteAppRegistry.shared.install(name: field.stringValue, url: candidate.url, icon: candidate.icon)
-						candidate.browser.session.toastManager.show(symbol: "checkmark", message: "Website app created. Open Website Apps settings to launch or keep it in the Dock.")
+						let registry = BrowserWebsiteAppRegistry.shared
+						let installation = try registry.install(name: field.stringValue, url: candidate.url, icon: candidate.icon)
+						try await registry.beginKeepInDockFlow(installation.id)
+						candidate.browser.session.toastManager.show(symbol: "checkmark", message: "Website app added to the Dock.")
 					} catch {
 						candidate.browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error.localizedDescription)
 					}

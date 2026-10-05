@@ -1,6 +1,9 @@
 name: Validate Release
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - 'release/**'
@@ -20,7 +23,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Check out release branch
+      - name: Check out proposed changes
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -36,9 +39,10 @@ jobs:
         run: xcodebuild -downloadComponent MetalToolchain
 
       - name: Parse and validate release metadata
+        if: startsWith(github.head_ref || github.ref_name, 'release/')
         shell: bash
         env:
-          RELEASE_BRANCH: ${{ github.ref_name }}
+          RELEASE_BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
           set -euo pipefail
 
@@ -68,7 +72,9 @@ jobs:
           fi
 
       - name: Check distribution validation rules
-        run: python3 scripts/release/validate_artifact.py --self-test
+        run: |
+          python3 scripts/release/validate_artifact.py --self-test
+          python3 checks/website-app-bundle-check.py --self-test
 
       - name: Check unsigned release archive
         shell: bash
@@ -77,6 +83,10 @@ jobs:
 
           ARCHIVE="$RUNNER_TEMP/astra-validation.xcarchive"
           PACKAGES="$RUNNER_TEMP/SourcePackages"
+          BUILD_ARGUMENTS=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO)
+          if [[ -n "${VERSION:-}" ]]; then
+            BUILD_ARGUMENTS+=("MARKETING_VERSION=$VERSION" "CURRENT_PROJECT_VERSION=$BUILD")
+          fi
 
           xcodebuild archive \
             -project astra.xcodeproj \
@@ -85,10 +95,7 @@ jobs:
             -destination 'generic/platform=macOS' \
             -archivePath "$ARCHIVE" \
             -clonedSourcePackagesDirPath "$PACKAGES" \
-            MARKETING_VERSION="$VERSION" \
-            CURRENT_PROJECT_VERSION="$BUILD" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+            "${BUILD_ARGUMENTS[@]}"
 
           APP="$(find "$ARCHIVE/Products/Applications" -maxdepth 1 -name '*.app' -print -quit)"
 
@@ -100,14 +107,16 @@ jobs:
           ACTUAL_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
           ACTUAL_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
 
-          if [[ "$ACTUAL_VERSION" != "$VERSION" ]]; then
+          if [[ -n "${VERSION:-}" && "$ACTUAL_VERSION" != "$VERSION" ]]; then
             echo "::error::Built app version is $ACTUAL_VERSION, expected $VERSION"
             exit 1
           fi
 
-          if [[ "$ACTUAL_BUILD" != "$BUILD" ]]; then
+          if [[ -n "${BUILD:-}" && "$ACTUAL_BUILD" != "$BUILD" ]]; then
             echo "::error::Built app build is $ACTUAL_BUILD, expected $BUILD"
             exit 1
           fi
 
-          echo "Compiled unsigned Astra $ACTUAL_VERSION (build $ACTUAL_BUILD). Production signing and notarization are checked after merge."
+          python3 checks/website-app-bundle-check.py "$APP"
+
+          echo "Compiled unsigned Astra $ACTUAL_VERSION (build $ACTUAL_BUILD). Distribution signing and notarization run only for merged release PRs."
