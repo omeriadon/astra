@@ -83,7 +83,7 @@ jobs:
 
           ARCHIVE="$RUNNER_TEMP/astra-validation.xcarchive"
           PACKAGES="$RUNNER_TEMP/SourcePackages"
-          BUILD_ARGUMENTS=()
+          BUILD_ARGUMENTS=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO)
           if [[ -n "${VERSION:-}" ]]; then
             BUILD_ARGUMENTS+=("MARKETING_VERSION=$VERSION" "CURRENT_PROJECT_VERSION=$BUILD")
           fi
@@ -95,9 +95,7 @@ jobs:
             -destination 'generic/platform=macOS' \
             -archivePath "$ARCHIVE" \
             -clonedSourcePackagesDirPath "$PACKAGES" \
-            "${BUILD_ARGUMENTS[@]}" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+            "${BUILD_ARGUMENTS[@]}"
 
           APP="$(find "$ARCHIVE/Products/Applications" -maxdepth 1 -name '*.app' -print -quit)"
 
