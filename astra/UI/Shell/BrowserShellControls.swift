@@ -293,6 +293,7 @@ private struct ShellWebsiteNavigationControls: View {
 				.buttonStyle(.bordered)
 				.foregroundStyle(theme.foregroundColor)
 				.id(ObjectIdentifier(controller))
+			BrowserTranslationButton(browser: browser, controller: controller)
 			if !browser.isPrivate, Defaults[.aiSidebar] {
 				Button("AI Sidebar", systemImage: "bubble.left.and.text.bubble.right") {
 					browser.showsAISidebar.toggle()
