@@ -114,6 +114,11 @@
 							addressCapsule
 								.frame(maxWidth: .infinity)
 								.glassEffect(.regular, in: Capsule())
+							if let controller = browser.selectedTab?.activeController, browser.selectedTab?.internalPage == nil {
+								BrowserTranslationButton(browser: browser, controller: controller)
+									.frame(width: 44, height: 44)
+									.buttonBorderShape(.circle)
+							}
 
 							newTabButton
 								.labelStyle(.iconOnly)
