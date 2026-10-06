@@ -42,7 +42,7 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View {
 					.clipped()
 					.offset(x: edge == .leading ? visibleWidth : 0)
 			}
-			.frame(width: geometry.size.width, height: geometry.size.height)
+			.frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
 			.clipped()
 		}
 	}
