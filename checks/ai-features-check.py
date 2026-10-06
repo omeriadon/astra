@@ -15,6 +15,8 @@ prompts = (root / 'astra/AI/BrowserAIPrompts.swift').read_text()
 chat = (root / 'astra/AI/BrowserAIChat.swift').read_text()
 mentions = chat[chat.index('nonisolated enum BrowserAIMentions'):]
 cli = (root / 'astra/AI/BrowserAICLI.swift').read_text()
+settings = (root / 'astra/AI/BrowserAISettings.swift').read_text()
+reasoning = settings[settings.index('\tstatic func effectiveReasoning'):settings.index('\n\tstatic func effectiveModel')]
 symbols = (root / 'astra/AI/BrowserAISymbols.swift').read_text()
 titles = (root / 'astra/AI/Features/BrowserChatTitleFeature.swift').read_text()
 auth_start = manager.index('\tprivate func authentication(')
@@ -47,9 +49,33 @@ nonisolated struct BrowserAIPageText {
 '''
 stubs = stubs.replace('AUTHENTICATION', authentication)
 stubs += 'enum BrowserAddress {\n' + address_method + '\n}\n'
+stubs += '''
+@MainActor enum Defaults {
+    enum Key { case aiCodexReasoning, aiClaudeReasoning }
+    static var values: [Key: String] = [.aiCodexReasoning: "low", .aiClaudeReasoning: ""]
+    static subscript(key: Key) -> String {
+        get { values[key]! }
+        set { values[key] = newValue }
+    }
+}
+'''
+stubs += '@MainActor enum BrowserAISettings {\n' + reasoning + '\n}\n'
 checks = r'''
 @main struct Checks {
     @MainActor static func main() async throws {
+        let codexModel = BrowserAIModel.codex(modelID: "available-low")
+        let claudeModel = BrowserAIModel.claude(modelID: "claude-current")
+        Defaults[.aiCodexReasoning] = "high"
+        Defaults[.aiClaudeReasoning] = "medium"
+        assert(BrowserAISettings.effectiveReasoning(nil, model: codexModel) == "high")
+        assert(BrowserAISettings.effectiveReasoning(nil, model: claudeModel) == "medium")
+        assert(BrowserAISettings.effectiveReasoning("low", model: codexModel) == "low")
+        assert(BrowserAISettings.effectiveReasoning("provider-default", model: claudeModel) == "provider-default")
+        Defaults[.aiCodexReasoning] = ""
+        assert(BrowserAISettings.effectiveReasoning(nil, model: codexModel) == "")
+        assert(BrowserAISettings.effectiveReasoning(nil, model: .appleIntelligence) == nil)
+        Defaults[.aiCodexReasoning] = "low"
+        Defaults[.aiClaudeReasoning] = ""
         let accessProvider = "astra-check-\(UUID().uuidString)"
         let accessKey = "ai-command-access-\(accessProvider)"
         assert(BrowserAICLI.shouldRequestAccountAccess(provider: accessProvider))

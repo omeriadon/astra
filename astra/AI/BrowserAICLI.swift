@@ -28,6 +28,8 @@ enum BrowserAICLI {
 		onSnapshot: @MainActor (String) -> Void = { _ in }
 	) async throws -> String {
 		#if os(macOS)
+			var request = request
+			request.reasoningEffort = BrowserAISettings.effectiveReasoning(request.reasoningEffort, model: model)
 			let name: String
 			switch model {
 				case .codex: name = "codex"

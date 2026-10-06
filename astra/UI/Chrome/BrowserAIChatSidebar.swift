@@ -133,8 +133,16 @@ struct BrowserAIChatSidebar: View {
 				.buttonStyle(.glass)
 				.padding([.top, .horizontal], 12)
 				if isVisible, ["codex", "claude"].contains(provider) {
-					BrowserAIModelControls(chat: chat, provider: provider)
-						.padding(.horizontal, 12)
+					BrowserAIModelControls(
+						selectedProvider: $chat.selectedProvider,
+						selectedModelID: $chat.selectedModelID,
+						selectedReasoning: $chat.selectedReasoning,
+						provider: provider,
+						isDisabled: chat.isResponding,
+						initialModelID: provider == "codex" ? Defaults[.aiCodexModel] : Defaults[.aiClaudeModel],
+						initialReasoning: provider == "codex" ? Defaults[.aiCodexReasoning] : Defaults[.aiClaudeReasoning]
+					)
+					.padding(.horizontal, 12)
 				}
 				if needsSignIn {
 					VStack(alignment: .leading, spacing: 6) {

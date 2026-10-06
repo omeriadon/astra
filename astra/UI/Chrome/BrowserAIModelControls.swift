@@ -1,8 +1,14 @@
 import SwiftUI
 
 struct BrowserAIModelControls: View {
-	@Bindable var chat: BrowserAIChat
+	@Binding var selectedProvider: String
+	@Binding var selectedModelID: String
+	@Binding var selectedReasoning: String
 	let provider: String
+	var isDisabled = false
+	var identifierPrefix = "ai-chat"
+	var initialModelID = ""
+	var initialReasoning = ""
 	@State private var models: [BrowserAIModelOption] = []
 	@State private var showingModels = false
 	@State private var loading = false
@@ -10,14 +16,15 @@ struct BrowserAIModelControls: View {
 	@State private var error: String?
 
 	private var selected: BrowserAIModelOption? {
-		models.first { $0.id == chat.selectedModelID }
+		models.first { $0.id == selectedModelID }
 	}
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 8) {
 			Button(selected?.title ?? "Choose Model", systemImage: "cpu") { showingModels = true }
 				.lineLimit(1)
-				.accessibilityIdentifier("ai-chat-model")
+				.accessibilityLabel("Model: \(selected?.title ?? "Choose Model")")
+				.accessibilityIdentifier("\(identifierPrefix)-model")
 				.popover(isPresented: $showingModels) {
 					List {
 						if loading {
@@ -50,12 +57,12 @@ struct BrowserAIModelControls: View {
 						#endif
 						ForEach(models) { model in
 							Button(model.title, systemImage: "cpu") {
-								chat.selectedProvider = provider
-								chat.selectedModelID = model.id
-								chat.selectedReasoning = model.reasoningLevels.contains("low") ? "low" : model.defaultReasoning ?? ""
+								selectedProvider = provider
+								selectedModelID = model.id
+								selectedReasoning = model.reasoningLevels.contains("low") ? "low" : model.defaultReasoning ?? ""
 								showingModels = false
 							}
-							.accessibilityIdentifier("ai-chat-model-\(model.id)")
+							.accessibilityIdentifier("\(identifierPrefix)-model-\(model.id)")
 						}
 					}
 					.listStyle(.sidebar)
@@ -63,19 +70,23 @@ struct BrowserAIModelControls: View {
 					.frame(width: 340, height: 350)
 					.task { await refresh() }
 				}
-			Picker("Reasoning", selection: $chat.selectedReasoning) {
+			Picker("Reasoning", selection: $selectedReasoning) {
 				Text("Provider Default").tag("")
-				ForEach(selected?.reasoningLevels ?? [], id: \.self) { level in Text(level.capitalized).tag(level) }
+				ForEach(selected?.reasoningLevels ?? [], id: \.self) { level in
+					Text(level.capitalized).tag(level)
+				}
 			}
-			.accessibilityIdentifier("ai-chat-reasoning")
+			.accessibilityIdentifier("\(identifierPrefix)-reasoning")
 		}
 		.buttonStyle(.glass)
-		.disabled(chat.isResponding)
+		.disabled(isDisabled)
 		.task(id: provider) {
-			if chat.selectedProvider != provider {
-				chat.selectedModelID = ""
-				chat.selectedReasoning = ""
+			if selectedProvider != provider {
+				selectedModelID = initialModelID
+				selectedReasoning = initialReasoning
+				selectedProvider = provider
 			}
+			models = []
 			await refresh()
 		}
 	}
@@ -100,10 +111,10 @@ struct BrowserAIModelControls: View {
 			if result.isEmpty {
 				error = "The installed command returned no available models."
 			}
-			if chat.selectedModelID.isEmpty, let first = result.first {
-				chat.selectedProvider = provider
-				chat.selectedModelID = first.id
-				chat.selectedReasoning = first.reasoningLevels.contains("low") ? "low" : first.defaultReasoning ?? ""
+			if selectedModelID.isEmpty, let first = result.first {
+				selectedProvider = provider
+				selectedModelID = first.id
+				selectedReasoning = first.reasoningLevels.contains("low") ? "low" : first.defaultReasoning ?? ""
 			}
 		} catch {
 			if !Task.isCancelled, provider == requestedProvider {

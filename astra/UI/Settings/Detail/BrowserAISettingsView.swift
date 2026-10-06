@@ -15,6 +15,10 @@ struct BrowserAISettingsView: View {
 	@Default(.aiSidebar) private var sidebar
 	@Default(.aiTabTitles) private var titles
 	@Default(.aiProvider) private var provider
+	@Default(.aiCodexModel) private var codexModel
+	@Default(.aiClaudeModel) private var claudeModel
+	@Default(.aiCodexReasoning) private var codexReasoning
+	@Default(.aiClaudeReasoning) private var claudeReasoning
 	@Default(.aiBrowserActionPermissions) private var permissions
 	@Default(.aiBookmarkTitles) private var bookmarkTitles
 	@Default(.aiWebsiteMonitoring) private var monitoring
@@ -107,6 +111,16 @@ struct BrowserAISettingsView: View {
 						Label("Claude", systemImage: "terminal").tag("claude")
 					}
 					.accessibilityIdentifier("ai-request-provider")
+					if provider == "codex" || provider == "claude" {
+						BrowserAIModelControls(
+							selectedProvider: .constant(provider),
+							selectedModelID: provider == "codex" ? $codexModel : $claudeModel,
+							selectedReasoning: provider == "codex" ? $codexReasoning : $claudeReasoning,
+							provider: provider,
+							identifierPrefix: "ai-request"
+						)
+						.id(provider)
+					}
 					Text("Codex or Claude applies to every AI feature and uses your installed command and its signed-in account. Page text, linked pages, titles, or download names are sent to the selected service. AI features do not run in private windows.")
 						.font(.caption)
 						.foregroundStyle(.secondary)

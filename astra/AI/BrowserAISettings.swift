@@ -73,6 +73,17 @@ enum BrowserAISettings {
 		return delay.isFinite ? min(10, max(0, delay)) : 2
 	}
 
+	static func effectiveReasoning(_ requested: String?, model: BrowserAIModel) -> String? {
+		if let requested {
+			return requested
+		}
+		switch model {
+			case .codex: return Defaults[.aiCodexReasoning]
+			case .claude: return Defaults[.aiClaudeReasoning]
+			default: return nil
+		}
+	}
+
 	static func effectiveModel(_ preset: BrowserAIModel) -> BrowserAIModel {
 		#if os(macOS)
 			switch Defaults[.aiProvider] {
@@ -97,6 +108,8 @@ extension Defaults.Keys {
 	static let aiProvider = Key<String>("aiProvider", default: "presets")
 	static let aiCodexModel = Key<String>("aiCodexModel", default: "")
 	static let aiClaudeModel = Key<String>("aiClaudeModel", default: "")
+	static let aiCodexReasoning = Key<String>("aiCodexReasoning", default: "low")
+	static let aiClaudeReasoning = Key<String>("aiClaudeReasoning", default: "")
 	static let aiFeaturePresets = Key<String>("aiFeaturePresets", default: "{}")
 	static let aiBrowserActionPermissions = Key<String>("aiBrowserActionPermissions", default: "{}")
 	static let aiBookmarkTitles = Key<Bool>("aiBookmarkTitles", default: true)
