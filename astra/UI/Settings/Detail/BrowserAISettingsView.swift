@@ -8,6 +8,7 @@ struct BrowserAISettingsView: View {
 	@Default(.aiFeaturesEnabled) private var allFeatures
 	@Default(.renameDownloadsWithAppleIntelligence) private var downloads
 	@Default(.aiLinkPreviews) private var previews
+	@Default(.aiLinkPreviewDelay) private var previewDelay
 	@Default(.aiTabGroups) private var groups
 	@Default(.aiFind) private var find
 	@Default(.aiFindContextLimit) private var contextLimit
@@ -32,7 +33,18 @@ struct BrowserAISettingsView: View {
 					.id("Rename Downloads")
 				Toggle("Link Previews", isOn: $previews)
 					.accessibilityIdentifier("ai-link-previews")
-				Text("Hold over a link for two seconds to summarize its destination. Preview pages load separately and may differ from signed-in pages.")
+				HStack {
+					Slider(value: $previewDelay, in: 0 ... 10, step: 0.25) {
+						Text("Preview Delay")
+					}
+					.accessibilityLabel("Link preview delay in seconds")
+					.accessibilityIdentifier("ai-link-preview-delay")
+					Text("\(previewDelay, format: .number.precision(.fractionLength(0 ... 2))) s")
+						.monospacedDigit()
+						.frame(minWidth: 48, alignment: .trailing)
+				}
+				.disabled(!previews)
+				Text("Hold over a link for the preview delay to summarize its destination. Preview pages load separately and may differ from signed-in pages.")
 					.font(.caption)
 					.foregroundStyle(.secondary)
 				Toggle("Tidy Today Tabs", isOn: $groups)

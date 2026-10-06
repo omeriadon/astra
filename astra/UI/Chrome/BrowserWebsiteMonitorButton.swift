@@ -55,9 +55,12 @@ struct BrowserWebsiteMonitorButton: View {
 							}
 						}
 					}
+					#if os(macOS)
+					.frame(minWidth: 400, idealWidth: 480, minHeight: 360, idealHeight: 420)
+					.presentationSizing(.fitted)
+					#else
 					.presentationDetents([.fraction(0.6)])
-					#if os(iOS)
-						.navigationTransition(.zoom(sourceID: "monitor-website", in: transitions))
+					.navigationTransition(.zoom(sourceID: "monitor-website", in: transitions))
 					#endif
 				}
 		}

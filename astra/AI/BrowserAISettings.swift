@@ -68,6 +68,11 @@ extension BrowserAIModel {
 
 @MainActor
 enum BrowserAISettings {
+	static var linkPreviewDelay: Double {
+		let delay = Defaults[.aiLinkPreviewDelay]
+		return delay.isFinite ? min(10, max(0, delay)) : 2
+	}
+
 	static func effectiveModel(_ preset: BrowserAIModel) -> BrowserAIModel {
 		#if os(macOS)
 			switch Defaults[.aiProvider] {
@@ -83,6 +88,7 @@ enum BrowserAISettings {
 extension Defaults.Keys {
 	static let aiFeaturesEnabled = Key<Bool>("aiFeaturesEnabled", default: true)
 	static let aiLinkPreviews = Key<Bool>("aiLinkPreviews", default: true)
+	static let aiLinkPreviewDelay = Key<Double>("aiLinkPreviewDelay", default: 2)
 	static let aiTabGroups = Key<Bool>("aiTabGroups", default: true)
 	static let aiFind = Key<Bool>("aiFind", default: true)
 	static let aiFindContextLimit = Key<Bool>("aiFindContextLimit", default: true)

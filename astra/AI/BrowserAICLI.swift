@@ -13,6 +13,15 @@ nonisolated struct BrowserAIModelOption: Identifiable, Sendable {
 
 @MainActor
 enum BrowserAICLI {
+	#if os(macOS)
+		private static var requestedAccountAccess = Set<String>()
+
+		static func shouldRequestAccountAccess(provider: String) -> Bool {
+			UserDefaults.standard.data(forKey: "ai-command-access-\(provider)") == nil
+				&& !requestedAccountAccess.contains(provider)
+		}
+	#endif
+
 	static func generate(
 		_ request: BrowserAIRequest,
 		model: BrowserAIModel,
@@ -29,7 +38,8 @@ enum BrowserAICLI {
 				return try await generateCommand(request, model: model, onSnapshot: onSnapshot)
 			} catch let error as BrowserAIError {
 				guard case let .commandFailed(_, reason) = error,
-				      reason.contains("permissions"), await authorize(provider: name) else { throw error }
+				      reason.contains("permissions"), shouldRequestAccountAccess(provider: name),
+				      await authorize(provider: name) else { throw error }
 				return try await generateCommand(request, model: model, onSnapshot: onSnapshot)
 			}
 		#else
@@ -177,6 +187,7 @@ enum BrowserAICLI {
 		}
 
 		static func authorize(provider: String) async -> Bool {
+			requestedAccountAccess.insert(provider)
 			let panel = NSOpenPanel()
 			panel.canChooseDirectories = true
 			panel.canChooseFiles = false
@@ -199,7 +210,8 @@ enum BrowserAICLI {
 				return try await modelCatalog(provider: provider)
 			} catch let error as BrowserAIError {
 				guard case let .commandFailed(_, reason) = error,
-				      reason.contains("permissions"), await authorize(provider: provider) else { throw error }
+				      reason.contains("permissions"), shouldRequestAccountAccess(provider: provider),
+				      await authorize(provider: provider) else { throw error }
 				return try await modelCatalog(provider: provider)
 			}
 		#else
@@ -385,11 +397,18 @@ nonisolated struct BrowserAICommandResponse {
 		init(name: String, arguments: [String]) throws {
 			self.name = name
 			let realHome = Self.realHome
+			var accountDirectory: URL?
 			for key in ["ai-command-access-\(name)", "ai-command-executable-access-\(name)"] {
 				if let bookmark = UserDefaults.standard.data(forKey: key) {
 					var stale = false
 					if let url = try? URL(resolvingBookmarkData: bookmark, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &stale), url.startAccessingSecurityScopedResource() {
 						scopedAccess.append(url)
+						if key == "ai-command-access-\(name)" {
+							accountDirectory = url
+						}
+						if stale, let refreshed = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
+							UserDefaults.standard.set(refreshed, forKey: key)
+						}
 					}
 				}
 			}
@@ -417,6 +436,9 @@ nonisolated struct BrowserAICommandResponse {
 			process.standardError = diagnosticFile
 			var environment = ProcessInfo.processInfo.environment
 			environment["HOME"] = realHome.path
+			if name == "codex" {
+				environment["CODEX_HOME"] = (accountDirectory ?? realHome.appendingPathComponent(".codex")).path
+			}
 			environment["PATH"] = ([URL(fileURLWithPath: path).resolvingSymlinksInPath().deletingLastPathComponent().path] + paths).joined(separator: ":")
 			environment["CLAUDE_CODE_EFFORT_LEVEL"] = "low"
 			process.environment = environment

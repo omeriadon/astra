@@ -14,7 +14,7 @@ struct BrowserAIModelControls: View {
 	}
 
 	var body: some View {
-		HStack {
+		VStack(alignment: .leading, spacing: 8) {
 			Button(selected?.title ?? "Choose Model", systemImage: "cpu") { showingModels = true }
 				.lineLimit(1)
 				.accessibilityIdentifier("ai-chat-model")

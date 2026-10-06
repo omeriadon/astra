@@ -9,6 +9,7 @@ import WebKit
 		let browser: Browser
 		let controller: BrowserController
 		@Default(.aiLinkPreviews) private var enabled
+		@Default(.aiLinkPreviewDelay) private var previewDelay
 		@Default(.aiFeaturesEnabled) private var allFeatures
 		@State private var summary: BrowserLinkSummaryFeature.Summary?
 		@State private var page: BrowserAIPageText?
@@ -23,7 +24,7 @@ import WebKit
 		@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 		private var requestKey: String {
-			"\(controller.navigationIdentifier)|\(controller.hoveredLinkURL?.absoluteString ?? "")|\(controller.hoveredLinkID)|\(enabled)|\(allFeatures)"
+			"\(controller.navigationIdentifier)|\(controller.hoveredLinkURL?.absoluteString ?? "")|\(controller.hoveredLinkID)|\(enabled)|\(allFeatures)|\(previewDelay)"
 		}
 
 		var body: some View {
@@ -123,7 +124,7 @@ import WebKit
 				let key = requestKey
 				guard dismissedKey != key else { return }
 				do {
-					try await Task.sleep(for: .seconds(2))
+					try await Task.sleep(for: .seconds(BrowserAISettings.linkPreviewDelay))
 					try await BrowserAI.shared.checkAccess(for: BrowserAIFeatureID.linkPreview.model, feature: "Link Previews")
 					previewRect = controller.hoveredLinkRect.applying(CGAffineTransform(scaleX: controller.webViewIfLoaded?.pageZoom ?? 1, y: controller.webViewIfLoaded?.pageZoom ?? 1))
 					summary = nil

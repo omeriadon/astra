@@ -3,7 +3,6 @@ import SwiftUI
 struct BrowserSplitView<Sidebar: View, Content: View>: View {
 	let sidebarWidth: CGFloat
 	let edge: HorizontalEdge
-	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	@Binding var sidebarShown: Bool
 	@ViewBuilder let sidebar: Sidebar
@@ -24,27 +23,27 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View {
 	}
 
 	var body: some View {
-		ZStack(alignment: edge == .leading ? .topLeading : .topTrailing) {
-			sidebar
-				.frame(width: sidebarWidth)
-				.frame(maxHeight: .infinity)
-				.allowsHitTesting(sidebarShown)
-				.accessibilityHidden(!sidebarShown)
+		GeometryReader { geometry in
+			let width = min(sidebarWidth, geometry.size.width)
+			let visibleWidth = sidebarShown ? width : 0
+			ZStack(alignment: .topLeading) {
+				sidebar
+					.frame(width: width, height: geometry.size.height)
+					.clipped()
+					.mask(alignment: edge == .leading ? .leading : .trailing) {
+						Rectangle().frame(width: visibleWidth)
+					}
+					.offset(x: edge == .leading ? 0 : geometry.size.width - width)
+					.allowsHitTesting(sidebarShown)
+					.accessibilityHidden(!sidebarShown)
 
-			HStack(spacing: 0) {
-				if edge == .leading {
-					Spacer(minLength: 0)
-						.frame(width: sidebarShown ? sidebarWidth : 0)
-				}
 				content
-					.frame(maxWidth: .infinity, maxHeight: .infinity)
-				if edge == .trailing {
-					Spacer(minLength: 0)
-						.frame(width: sidebarShown ? sidebarWidth : 0)
-				}
+					.frame(width: max(0, geometry.size.width - visibleWidth), height: geometry.size.height)
+					.clipped()
+					.offset(x: edge == .leading ? visibleWidth : 0)
 			}
+			.frame(width: geometry.size.width, height: geometry.size.height)
+			.clipped()
 		}
-		.clipped()
-		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: sidebarShown)
 	}
 }

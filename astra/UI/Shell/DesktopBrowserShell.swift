@@ -49,12 +49,16 @@ struct DesktopBrowserShell: View {
 		allAIFeatures && browser.showsAISidebar && browser.canShowAISidebar && Defaults[.aiSidebar]
 	}
 
-	private var hasVisibleSidebar: Bool {
-		sidebarShown || showsAISidebar
+	private var showsTopBarOnPage: Bool {
+		!browser.isShowingNewTab && browser.selectedTab?.internalPage == nil
+	}
+
+	private var hasVisibleChrome: Bool {
+		sidebarShown || showsAISidebar || (showsTopBarOnPage && (showsTopBar || isTopBarRevealed))
 	}
 
 	private var contentCornerRadius: CGFloat {
-		hasVisibleSidebar
+		hasVisibleChrome
 			? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar
 			: BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar
 	}
@@ -148,13 +152,16 @@ struct DesktopBrowserShell: View {
 						transitionToTheme: transitionToTheme,
 						themeBlend: themeBlend,
 						contentCornerRadius: contentCornerRadius,
-						hasVisibleSidebar: hasVisibleSidebar,
+						hasVisibleChrome: hasVisibleChrome,
 						showsTopBar: showsTopBar,
 						isTopBarRevealed: $isTopBarRevealed
 					)
 				}
+				.animation(nil, value: browser.selectedTabID)
+				.animation(nil, value: browser.canShowAISidebar)
 			}
 		}
+		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: sidebarShown)
 		.background {
 			BrowserThemeBackground(
 				theme: transitionToTheme ?? theme,
@@ -385,7 +392,7 @@ private struct ShellContentColumn: View {
 	let transitionToTheme: BrowserTheme?
 	let themeBlend: Double
 	let contentCornerRadius: CGFloat
-	let hasVisibleSidebar: Bool
+	let hasVisibleChrome: Bool
 	let showsTopBar: Bool
 	@Binding var isTopBarRevealed: Bool
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -418,13 +425,9 @@ private struct ShellContentColumn: View {
 			topBar
 				.frame(height: BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding, alignment: .top)
 				.frame(maxWidth: .infinity, alignment: .trailing)
-				.animation(reduceMotion ? nil : .smooth(duration: 0.3)) { content in
-					content
-						.offset(y: topBarHeight > 0 ? 0 : -BrowserChromeMetrics.topBarRegionHeight - BrowserChromeMetrics.shellEdgePadding)
-						.opacity(topBarHeight > 0 ? 1 : 0)
+				.mask(alignment: .top) {
+					Rectangle().frame(height: topBarHeight)
 				}
-				.clipped()
-				.zIndex(1)
 				.allowsHitTesting(topBarHeight > 0)
 				.accessibilityHidden(topBarHeight == 0)
 			#if os(macOS)
@@ -443,12 +446,10 @@ private struct ShellContentColumn: View {
 				Spacer(minLength: 0)
 					.frame(height: topBarHeight)
 				BrowserPageView(browser: browser, cornerRadius: contentCornerRadius)
-					.padding(.top, hasVisibleSidebar ? BrowserChromeMetrics.shellEdgePadding : 0)
-					.padding([.bottom, .horizontal], hasVisibleSidebar ? BrowserChromeMetrics.shellEdgePadding : 0)
-					.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: hasVisibleSidebar)
+					.padding(.top, hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
+					.padding([.bottom, .horizontal], hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
-			.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: topBarHeight)
 		}
 		.animation(nil, value: browser.selectedTabID)
 		.onContinuousHover { phase in
@@ -457,9 +458,13 @@ private struct ShellContentColumn: View {
 					let revealHeight = isTopBarRevealed
 						? BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding
 						: 6
-					isTopBarRevealed = !showsTopBar && location.y < revealHeight
+					withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+						isTopBarRevealed = !showsTopBar && location.y < revealHeight
+					}
 				case .ended:
-					isTopBarRevealed = false
+					withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+						isTopBarRevealed = false
+					}
 			}
 		}
 		.onChange(of: sidebarShown) { _, _ in

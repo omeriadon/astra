@@ -11,6 +11,7 @@
 	import Carbon
 	import Defaults
 	import Sparkle
+	import SwiftUI
 	import WebKit
 
 	@MainActor
@@ -503,7 +504,9 @@
 
 		@objc private func toggleAISidebar(_: Any?) {
 			guard let browser = activeBrowser, browser.canShowAISidebar else { return }
-			browser.showsAISidebar.toggle()
+			withAnimation(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .smooth(duration: 0.3)) {
+				browser.showsAISidebar.toggle()
+			}
 		}
 
 		@objc private func editSpace(_: Any?) {

@@ -50,6 +50,12 @@ stubs += 'enum BrowserAddress {\n' + address_method + '\n}\n'
 checks = r'''
 @main struct Checks {
     @MainActor static func main() async throws {
+        let accessProvider = "astra-check-\(UUID().uuidString)"
+        let accessKey = "ai-command-access-\(accessProvider)"
+        assert(BrowserAICLI.shouldRequestAccountAccess(provider: accessProvider))
+        UserDefaults.standard.set(Data([1]), forKey: accessKey)
+        assert(!BrowserAICLI.shouldRequestAccountAccess(provider: accessProvider))
+        UserDefaults.standard.removeObject(forKey: accessKey)
         func rejects(_ action: () throws -> Void) {
             do {
                 try action()

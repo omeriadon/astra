@@ -453,6 +453,7 @@ struct BrowserAIChatSidebar: View {
 		let browser: Browser
 		let url: URL
 		@Default(.aiLinkPreviews) private var enabled
+		@Default(.aiLinkPreviewDelay) private var previewDelay
 		@Default(.aiFeaturesEnabled) private var allFeatures
 		@State private var summary: BrowserLinkSummaryFeature.Summary?
 		@State private var streamedText = ""
@@ -462,7 +463,7 @@ struct BrowserAIChatSidebar: View {
 		var body: some View {
 			VStack(alignment: .leading, spacing: 8) {
 				BrowserLinkPreview(url: url)
-				if visible {
+				if visible, enabled, allFeatures, !browser.isPrivate, ["https", "http"].contains(url.scheme?.lowercased() ?? "") {
 					if let summary {
 						Text(summary.title).font(.headline)
 						Text(summary.header).bold()
@@ -481,17 +482,20 @@ struct BrowserAIChatSidebar: View {
 			.padding(12)
 			.frame(maxWidth: 340, alignment: .leading)
 			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+			.opacity(visible ? 1 : 0)
+			.accessibilityHidden(!visible)
 			.allowsHitTesting(false)
 			.accessibilityIdentifier("ai-chat-link-preview")
-			.task(id: url) {
+			.task(id: "\(url.absoluteString)|\(previewDelay)|\(enabled)|\(allFeatures)") {
 				visible = false
 				summary = nil
 				streamedText = ""
 				error = nil
-				guard enabled, allFeatures, !browser.isPrivate, ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return }
 				do {
-					try await Task.sleep(for: .seconds(2))
+					try await Task.sleep(for: .seconds(BrowserAISettings.linkPreviewDelay))
+					try Task.checkCancellation()
 					visible = true
+					guard enabled, allFeatures, !browser.isPrivate, ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return }
 					let model = BrowserAISettings.effectiveModel(BrowserAIFeatureID.linkPreview.model)
 					let page = try await BrowserAIPageLoader().page(at: url)
 					let context = try await page.limited(to: model == .appleIntelligence ? 1000 : 26000)
