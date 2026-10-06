@@ -219,6 +219,9 @@
 		}
 
 		private func presentationOptions(for notification: UNNotification) -> UNNotificationPresentationOptions {
+			if notification.request.content.categoryIdentifier == BrowserWebsiteMonitoring.category {
+				return [.banner, .list, .sound]
+			}
 			guard notification.request.content.categoryIdentifier == Self.category,
 			      let origin = notification.request.content.userInfo["astraOrigin"] as? String, allows(origin) else { return [] }
 			return [.banner, .list, .sound]
@@ -230,6 +233,12 @@
 
 		private func process(_ response: UNNotificationResponse) async {
 			let content = response.notification.request.content
+			if content.categoryIdentifier == BrowserWebsiteMonitoring.category {
+				if let id = content.userInfo["monitorID"] as? String, response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+					BrowserWebsiteMonitoring.shared.openNotification(id)
+				}
+				return
+			}
 			guard content.categoryIdentifier == Self.category, let dataStore,
 			      let origin = content.userInfo["astraOrigin"] as? String, allows(origin),
 			      let info = content.userInfo["astraWebPush"] as? [String: Any] else { return }

@@ -9,6 +9,7 @@ protocol = manager[manager.index('@MainActor\nprotocol BrowserAIFeature'):manage
 request = manager[manager.index('nonisolated struct BrowserAIRequest'):manager.index('nonisolated struct BrowserAIResponse')]
 errors = manager[manager.index('nonisolated enum BrowserAIError'):]
 features = (root / 'astra/AI/Features/BrowserPageFeatures.swift').read_text()
+prompts = (root / 'astra/AI/BrowserAIPrompts.swift').read_text()
 chat = (root / 'astra/AI/BrowserAIChat.swift').read_text()
 mentions = chat[chat.index('nonisolated enum BrowserAIMentions'):]
 cli = (root / 'astra/AI/BrowserAICLI.swift').read_text()
@@ -111,7 +112,8 @@ checks = r'''
         assert(codexAccess == nil && claudeAccess == nil && localAccess == nil)
         rejects { _ = try authentication.check(.openRouter()) }
         let codexModels = try await BrowserAICLI.models(provider: "codex")
-        assert(codexModels.map(\.id) == ["available-low"])
+        assert(codexModels.map(\.id) == ["available-low", "high-only"])
+        assert(codexModels.first?.reasoningLevels == ["low"])
         let claudeModels = try await BrowserAICLI.models(provider: "claude")
         assert(claudeModels.map(\.id) == ["claude-current"])
         let request = BrowserAIRequest(instructions: "Return plain text", prompt: String(repeating: "page-data ", count: 30_000), maximumResponseTokens: 128)
@@ -146,7 +148,7 @@ checks = r'''
 with tempfile.TemporaryDirectory(prefix='astra-ai-check-') as temporary:
     source = Path(temporary) / 'Checks.swift'
     binary = Path(temporary) / 'checks'
-    source.write_text('import Foundation\n' + models + request + protocol + errors + stubs + features + symbols + titles + mentions + cli + checks)
+    source.write_text('import Foundation\n' + models + request + protocol + errors + stubs + prompts + features + symbols + titles + mentions + cli + checks)
     subprocess.run(['xcrun', 'swiftc', '-parse-as-library', str(source), '-o', str(binary)], check=True)
     import os
     fake = r'''#!/usr/bin/python3

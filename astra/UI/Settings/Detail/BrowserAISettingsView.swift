@@ -14,6 +14,10 @@ struct BrowserAISettingsView: View {
 	@Default(.aiSidebar) private var sidebar
 	@Default(.aiTabTitles) private var titles
 	@Default(.aiProvider) private var provider
+	@Default(.aiBrowserActionPermissions) private var permissions
+	@Default(.aiBookmarkTitles) private var bookmarkTitles
+	@Default(.aiWebsiteMonitoring) private var monitoring
+	@State private var websiteMonitors = BrowserWebsiteMonitoring.shared
 	@State private var usageLog = BrowserAIUsageLog.shared
 
 	var body: some View {
@@ -35,6 +39,10 @@ struct BrowserAISettingsView: View {
 					.accessibilityIdentifier("ai-tab-groups")
 				Toggle("Clean Tab Titles", isOn: $titles)
 					.accessibilityIdentifier("ai-tab-titles")
+				Toggle("Clean Bookmark Titles", isOn: $bookmarkTitles)
+					.accessibilityIdentifier("ai-bookmark-titles")
+				Toggle("Monitor Websites", isOn: $monitoring)
+					.accessibilityIdentifier("ai-website-monitoring")
 				Toggle("Ask in Find", isOn: $find)
 					.accessibilityIdentifier("ai-find")
 				Toggle("Limit Large Pages to 30,000 Tokens", isOn: $contextLimit)
@@ -48,6 +56,37 @@ struct BrowserAISettingsView: View {
 					.accessibilityIdentifier("ai-sidebar-enabled")
 			}
 			.disabled(!allFeatures)
+			Section("Browser Actions") {
+				ForEach(BrowserAIAction.allCases) { action in
+					Toggle(action.title, isOn: Binding(get: { action.enabled }, set: { action.enabled = $0 }))
+						.accessibilityIdentifier("ai-action-\(action.rawValue)")
+				}
+				Text("Closing tabs and deleting bookmarks are disabled by default. Disabled actions are checked again before execution.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+			}
+			.disabled(!allFeatures)
+			Section("Monitored Websites") {
+				ForEach(websiteMonitors.monitors) { monitor in
+					HStack {
+						VStack(alignment: .leading, spacing: 4) {
+							Text(monitor.title).lineLimit(1)
+							Text(monitor.criterion).font(.caption).foregroundStyle(.secondary)
+							Text(monitor.matchedAt != nil ? "Condition fulfilled" : monitor.enabled ? "Monitoring" : "Paused").font(.caption)
+							if let error = monitor.lastError {
+								Text(error).font(.caption).foregroundStyle(.secondary)
+							}
+						}
+						Spacer()
+						Button("Delete Website Monitor", systemImage: "trash", role: .destructive) { Task { await websiteMonitors.remove(monitor.id) } }
+							.labelStyle(.iconOnly)
+							.accessibilityIdentifier("delete-monitor-\(monitor.id.uuidString)")
+					}
+				}
+				if let error = websiteMonitors.error {
+					Text(error).font(.caption).foregroundStyle(.secondary)
+				}
+			}
 			#if os(macOS)
 				Section("Requests") {
 					Picker("Use AI With", selection: $provider) {
@@ -93,6 +132,9 @@ struct BrowserAISettingsView: View {
 		}
 		.listStyle(.sidebar)
 		.scrollContentBackground(.hidden)
+		.task { await websiteMonitors.refresh() }
+		.onChange(of: allFeatures) { _, enabled in Task { await websiteMonitors.setEnabled(enabled && monitoring) } }
+		.onChange(of: monitoring) { _, enabled in Task { await websiteMonitors.setEnabled(enabled && allFeatures) } }
 	}
 }
 

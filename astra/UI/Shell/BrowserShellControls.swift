@@ -294,8 +294,9 @@ private struct ShellWebsiteNavigationControls: View {
 				.buttonStyle(.bordered)
 				.foregroundStyle(theme.foregroundColor)
 				.id(ObjectIdentifier(controller))
+			BrowserWebsiteMonitorButton(browser: browser)
 			BrowserTranslationButton(browser: browser, controller: controller)
-			if allAIFeatures, !browser.isPrivate, Defaults[.aiSidebar] {
+			if allAIFeatures, browser.canShowAISidebar, Defaults[.aiSidebar] {
 				Button("AI Sidebar", systemImage: "bubble.left.and.text.bubble.right") {
 					browser.showsAISidebar.toggle()
 				}
@@ -510,7 +511,7 @@ struct ShellDownloadsBarView: View {
 					.frame(maxWidth: .infinity)
 			}
 
-			if allAIFeatures, !browser.isPrivate, Defaults[.aiSidebar] {
+			if allAIFeatures, browser.canShowAISidebar, Defaults[.aiSidebar] {
 				Button("AI Sidebar", systemImage: "bubble.left.and.text.bubble.right") {
 					browser.showsAISidebar.toggle()
 				}

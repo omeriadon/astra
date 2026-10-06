@@ -184,6 +184,43 @@ Additional checks: `python3 checks/sync-cancellation-check.py` and
 `python3 checks/ai-chat-archive-check.py`. The latter runs the production archive
 and attachment reader in an isolated folder, including corrupt-file preservation.
 
+## Browser assistant tools and monitoring
+
+All feature instructions are centralized in `astra/AI/BrowserAIPrompts.swift` as
+separate multiline constants. The assistant uses a bounded JSON tool loop: the
+model proposes named actions, and Swift validates permissions, identifiers, URLs,
+private-session exclusions, and the originating space before applying them through
+existing browser APIs. Closing tabs and deleting bookmarks default to disabled.
+The AI settings page exposes every action permission. Native CLI shell/file tools
+remain disabled; only explicit web-search turns enable provider web search.
+
+The chat opens only for a website tab and initially links that page. Summarise is
+the single preset. Codex/Claude selectors fetch current model and reasoning metadata
+when opened; switching models preserves the conversation. Markdown rendering uses
+the user's starred `Lakr233/MarkdownView` package for block structure, tables, code,
+links, and math. It is a rich Markdown renderer rather than byte-exact CommonMark.
+The right sidebar now mirrors the left sidebar's clipped-width animation.
+
+Codex command lookup now uses the actual Unix home directory, including from the
+sandboxed app, and narrowly scoped file exceptions cover Homebrew installations and
+the Codex/Claude account directories. No shell execution permission is granted to
+the assistant. Bookmark title cleanup defaults to the on-device model, validates
+seven-word titles, and preserves bookmarks if they changed during generation.
+
+Website monitoring is durable on the server, always uses OpenRouter, and supports
+daily, weekly, fortnightly, and calendar-monthly checks. The authenticated monitor
+API stores conditions and originating spaces; matched results stop further checks.
+Public fetches pin validated DNS addresses, check redirects, and reject private
+networks. Browser cookies are not uploaded. Fulfilled results become pinned space
+tabs with persistent bell badges and a short explanation; selecting the tab clears
+the badge. Results and notifications are delivered while Astra runs or reconnects.
+Delivery while Astra is quit requires APNs credentials, which are not configured on
+the current server. Website checks still run while the Mac is closed.
+
+`python3 checks/ai-browser-tools-check.py` checks the actual permission boundary,
+destructive defaults, space/private isolation, Boolean arguments, and unknown-tool
+rejection without performing live browser mutations.
+
 ## Local AI usage log
 
 Every single or streaming request writes a start and outcome entry to

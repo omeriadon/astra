@@ -369,6 +369,30 @@ final class BrowserSync {
 		return authGeneration
 	}
 
+	func websiteMonitors() async throws -> [BrowserWebsiteMonitor] {
+		let generation = try requireAIAuthentication()
+		let result: [BrowserWebsiteMonitor] = try await request(path: "v1/monitors", method: "GET", body: String?.none, bearer: sessionToken)
+		try validateAIAuthentication(generation)
+		return result
+	}
+
+	func createWebsiteMonitor(_ input: BrowserWebsiteMonitorInput) async throws -> BrowserWebsiteMonitor {
+		let generation = try requireAIAuthentication()
+		let result: BrowserWebsiteMonitor = try await request(path: "v1/monitors", method: "POST", body: input, bearer: sessionToken)
+		try validateAIAuthentication(generation)
+		return result
+	}
+
+	func setWebsiteMonitorsEnabled(_ enabled: Bool) async throws {
+		_ = try requireAIAuthentication()
+		let _: BrowserMonitorState = try await request(path: "v1/monitors/enabled", method: "PUT", body: BrowserMonitorState(enabled: enabled), bearer: sessionToken)
+	}
+
+	func deleteWebsiteMonitor(_ id: UUID) async throws {
+		_ = try requireAIAuthentication()
+		let _: BrowserMonitorDeleted = try await request(path: "v1/monitors/\(id.uuidString)", method: "DELETE", body: String?.none, bearer: sessionToken)
+	}
+
 	func validateAIAuthentication(_ generation: UInt64) throws {
 		guard try requireAIAuthentication() == generation else {
 			throw BrowserAIError.signInRequired

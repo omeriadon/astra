@@ -1,3 +1,4 @@
+import Defaults
 import SwiftUI
 
 struct BrowserBookmarksView: View {
@@ -9,6 +10,11 @@ struct BrowserBookmarksView: View {
 	@State private var searchText = ""
 	@State private var showingReadingList = false
 	@State private var editingBookmark: Bookmark?
+	@Default(.bookmarkFolderNames) private var emptyFolders
+	@Default(.aiFeaturesEnabled) private var allAI
+	@Default(.aiBookmarkTitles) private var aiTitles
+	@State private var cleanupRequested = false
+	@State private var cleanupError: String?
 
 	private var visibleBookmarks: [Bookmark] {
 		browser.bookmarks
@@ -36,7 +42,7 @@ struct BrowserBookmarksView: View {
 
 	var body: some View {
 		let bookmarkGroups = Dictionary(grouping: visibleBookmarks, by: \.folder)
-		let bookmarkFolders = bookmarkGroups.keys.sorted()
+		let bookmarkFolders = Set(Array(bookmarkGroups.keys) + emptyFolders.filter { searchText.isEmpty || $0.localizedCaseInsensitiveContains(searchText) }).sorted()
 		let bookmarkCount = bookmarkGroups.values.reduce(0) { $0 + $1.count }
 		let readingItems = visibleReadingList
 		List {
@@ -72,6 +78,9 @@ struct BrowserBookmarksView: View {
 				ForEach(bookmarkFolders, id: \.self) { folder in
 					let items = bookmarkGroups[folder] ?? []
 					Section(folder.isEmpty ? "Bookmarks" : folder) {
+						if items.isEmpty {
+							Text("No bookmarks in this folder").foregroundStyle(.secondary)
+						}
 						bookmarkRows(items)
 					}
 				}
@@ -89,6 +98,11 @@ struct BrowserBookmarksView: View {
 					Label(showingReadingList ? "Reading List" : "Bookmarks", systemImage: showingReadingList ? "text.book.closed" : "bookmark")
 						.font(.title2.bold())
 					Spacer()
+					if !showingReadingList, allAI, aiTitles {
+						Button("Clean Bookmark Titles", systemImage: "text.badge.checkmark") { cleanupRequested = true }
+							.disabled(cleanupRequested || browser.isPrivate || browser.bookmarks.isEmpty)
+							.accessibilityIdentifier("clean-bookmark-titles")
+					}
 					BrowserLibraryTransferControls(browser: browser, scope: .bookmarks)
 					#if os(iOS)
 						if !showingReadingList, searchText.isEmpty, bookmarkCount > 1 {
@@ -107,6 +121,9 @@ struct BrowserBookmarksView: View {
 				TextField(showingReadingList ? "Search Reading List" : "Search Bookmarks", text: $searchText)
 					.textFieldStyle(.plain)
 					.accessibilityIdentifier(showingReadingList ? "reading-list-search" : "bookmark-search")
+				if let cleanupError {
+					Text(cleanupError).font(.caption).foregroundStyle(.secondary)
+				}
 			}
 			.padding(.horizontal, 24)
 			.padding(.vertical, 14)
@@ -120,12 +137,34 @@ struct BrowserBookmarksView: View {
 			.presentationDetents([.fraction(0.6)])
 			#endif
 		}
+		.task(id: cleanupRequested) {
+			guard cleanupRequested else { return }
+			defer { cleanupRequested = false }
+			cleanupError = nil
+			do {
+				let originals = browser.bookmarks
+				var replacements: [(Bookmark, String)] = []
+				for bookmark in originals {
+					let title = try await BrowserAI.shared.perform(BrowserBookmarkTitleFeature(), input: bookmark)
+					replacements.append((bookmark, title))
+				}
+				try Task.checkCancellation()
+				guard browser.bookmarks == originals, allAI, aiTitles else { throw BrowserAIError.pageUnavailable }
+				for (bookmark, title) in replacements {
+					browser.updateBookmark(bookmark.id, name: title, folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order)
+				}
+			} catch {
+				if !Task.isCancelled {
+					cleanupError = error.localizedDescription
+				}
+			}
+		}
 		.overlay {
 			if showingReadingList, readingItems.isEmpty, searchText.isEmpty {
 				ContentUnavailableView("No Reading List Items", systemImage: "text.book.closed")
 			} else if showingReadingList, readingItems.isEmpty {
 				ContentUnavailableView("No Search Results", systemImage: "magnifyingglass")
-			} else if !showingReadingList, bookmarkCount == 0 {
+			} else if !showingReadingList, bookmarkCount == 0, bookmarkFolders.isEmpty {
 				ContentUnavailableView(searchText.isEmpty ? "No Bookmarks" : "No Search Results", systemImage: searchText.isEmpty ? "bookmark" : "magnifyingglass")
 			}
 		}

@@ -23,6 +23,7 @@ struct BrowserTabRow: View {
 
 	@State private var isRenaming = false
 	@State private var isHovered = false
+	@State private var showsMonitorDetails = false
 	@State private var renameText = ""
 	@FocusState private var isTitleFocused: Bool
 	#if os(macOS)
@@ -53,6 +54,23 @@ struct BrowserTabRow: View {
 	var body: some View {
 		HStack(spacing: 6) {
 			TabIconView(tab: tab, browser: browser, onSelectTab: onSelectTab)
+			if let match = tab.monitorMatch {
+				Button("Monitored condition met", systemImage: "bell.badge.fill") { browser.selectTab(tab.id) }
+					.labelStyle(.iconOnly)
+					.buttonStyle(.glassProminent)
+					.tint(.yellow)
+					.onHover { showsMonitorDetails = $0 }
+					.accessibilityIdentifier("monitor-match-\(match.id.uuidString)")
+					.popover(isPresented: $showsMonitorDetails) {
+						VStack(alignment: .leading, spacing: 8) {
+							Label("Condition fulfilled", systemImage: "bell.badge.fill").font(.headline)
+							Text(match.criterion).font(.caption).foregroundStyle(.secondary)
+							Text(match.message).textSelection(.enabled)
+						}
+						.padding(16)
+						.frame(width: 300)
+					}
+			}
 
 			TabTitleView(
 				tab: tab,

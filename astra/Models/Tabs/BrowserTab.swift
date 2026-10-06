@@ -125,6 +125,13 @@ final class BrowserTab: Identifiable {
 	}
 
 	private(set) var controller: BrowserController?
+	private(set) var monitorMatch: BrowserMonitorMatch?
+
+	func setMonitorMatch(_ match: BrowserMonitorMatch?) {
+		monitorMatch = match
+		markModified()
+	}
+
 	private(set) var pictureInPictureReturnControllerID: UUID?
 	var activeController: BrowserController? {
 		if let pictureInPictureReturnControllerID {
@@ -190,6 +197,7 @@ final class BrowserTab: Identifiable {
 			internalPage: internalPage?.persistenceID,
 			pageTitle: pageTitle,
 			customTitle: customTitle,
+			monitorMatch: monitorMatch,
 			url: (controller?.url ?? storedURL).map(BrowserAddress.withoutCredentials),
 			history: recordsNavigationHistory ? (controller?.history ?? storedHistory).map(BrowserAddress.withoutCredentials) : currentURL.map { [BrowserAddress.withoutCredentials($0)] } ?? [],
 			historyIndex: recordsNavigationHistory ? (controller?.historyIndex ?? storedHistoryIndex) : 0,
@@ -211,6 +219,7 @@ final class BrowserTab: Identifiable {
 		internalPage: BrowserInternalPage? = nil,
 		pageTitle: String = "New Tab",
 		customTitle: String? = nil,
+		monitorMatch: BrowserMonitorMatch? = nil,
 		initialURL: URL? = nil,
 		history: [URL] = [],
 		historyIndex: Int = 0,
@@ -232,6 +241,7 @@ final class BrowserTab: Identifiable {
 		self.session = existingController?.session ?? session
 		self.pageTitle = pageTitle
 		self.customTitle = customTitle
+		self.monitorMatch = monitorMatch
 		storedURL = initialURL
 		storedRestorationState = restorationState
 		storedFileAccessBookmark = fileAccessBookmark
@@ -443,6 +453,7 @@ final class BrowserTab: Identifiable {
 		isApplyingSynchronizedMetadata = true
 		pageTitle = updated.pageTitle
 		customTitle = updated.customTitle
+		monitorMatch = updated.monitorMatch
 		recordsNavigationHistory = updated.recordsNavigationHistory
 		storedPageZoom = updated.pageZoom
 		if !updated.recordsNavigationHistory {

@@ -127,6 +127,7 @@
 			Task { await BrowserExtensionManager.shared.prepare() }
 			UpdateManager.shared.start()
 			BrowserDownloadManager.shared.resumeAvailableDownloads()
+			BrowserWebsiteMonitoring.shared.start()
 			BrowserController.prewarmSharedProcess()
 			let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
 			source.setEventHandler {

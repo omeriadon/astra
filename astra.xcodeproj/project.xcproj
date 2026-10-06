@@ -13,6 +13,12 @@
   "packages": [
     {
       "kind": "remote",
+      "repository": "https://github.com/Lakr233/MarkdownView",
+      "version": {
+        "up-to-next-major-version": "4.1.7",
+      },
+    }, {
+      "kind": "remote",
       "repository": "https://github.com/sindresorhus/Defaults",
       "version": {
         "up-to-next-major-version": "9.0.9",
@@ -122,6 +128,10 @@
           "package": "DockProgress",
           "product-name": "DockProgress",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
+        }, {
+          "package": "MarkdownView",
+          "product-name": "MarkdownView",
+          "build-phase": { "build-phase": "frameworks" },
         }, {
           "package": "MaterialView",
           "product-name": "MaterialView",
@@ -338,6 +348,10 @@
           "package": "DockProgress",
           "product-name": "DockProgress",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
+        }, {
+          "package": "MarkdownView",
+          "product-name": "MarkdownView",
+          "build-phase": { "build-phase": "frameworks" },
         }, {
           "package": "MaterialView",
           "product-name": "MaterialView",

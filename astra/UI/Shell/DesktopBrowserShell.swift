@@ -144,7 +144,7 @@ struct DesktopBrowserShell: View {
 
 	var body: some View {
 		GeometryReader { geometry in
-			let showsAI = allAIFeatures && browser.showsAISidebar && !browser.isPrivate && Defaults[.aiSidebar]
+			let showsAI = allAIFeatures && browser.showsAISidebar && browser.canShowAISidebar && Defaults[.aiSidebar]
 			BrowserSplitView(sidebarShown: $browser.sidebarShown) {
 				ShellSidebarColumn(
 					browser: browser,
@@ -162,7 +162,13 @@ struct DesktopBrowserShell: View {
 				)
 
 			} content: {
-				HStack(spacing: 0) {
+				BrowserSplitView(sidebarShown: .constant(showsAI), sidebarWidth: min(360, geometry.size.width * 0.45) + BrowserChromeMetrics.shellEdgePadding, edge: .trailing) {
+					BrowserAIChatSidebar(browser: browser, chat: browser.aiChat, isVisible: showsAI)
+						.padding(.vertical, BrowserChromeMetrics.shellEdgePadding)
+						.padding(.trailing, BrowserChromeMetrics.shellEdgePadding)
+						.allowsHitTesting(showsAI)
+						.accessibilityHidden(!showsAI)
+				} content: {
 					ShellContentColumn(
 						browser: browser,
 						theme: theme,
@@ -177,15 +183,7 @@ struct DesktopBrowserShell: View {
 						windowWidth: geometry.size.width - (showsAI ? min(360, geometry.size.width * 0.45) + BrowserChromeMetrics.shellEdgePadding : 0),
 						isTopBarRevealed: $isTopBarRevealed
 					)
-					if showsAI {
-						BrowserAIChatSidebar(browser: browser, chat: browser.aiChat)
-							.frame(width: min(360, geometry.size.width * 0.45))
-							.padding(.vertical, BrowserChromeMetrics.shellEdgePadding)
-							.padding(.trailing, BrowserChromeMetrics.shellEdgePadding)
-							.transition(reduceMotion ? .identity : .move(edge: .trailing))
-					}
 				}
-				.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsAI)
 			}
 		}
 		.background {

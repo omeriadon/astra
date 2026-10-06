@@ -15,6 +15,8 @@ nonisolated struct BrowserAIRequest: Codable, Sendable {
 	let prompt: String
 	let maximumResponseTokens: Int
 	var images: [BrowserAIImage]? = nil
+	var reasoningEffort: String? = nil
+	var webSearch: Bool? = nil
 }
 
 nonisolated struct BrowserAIResponse: Codable, Sendable {
@@ -27,6 +29,7 @@ nonisolated struct BrowserAICloudRequest: Encodable, Sendable {
 	let prompt: String
 	let maximumResponseTokens: Int
 	let images: [BrowserAIImage]?
+	let webSearch: Bool?
 }
 
 /// Features own prompts and output validation; the manager owns provider execution.
@@ -57,7 +60,7 @@ final class BrowserAI {
 		model: BrowserAIModel? = nil
 	) async throws -> Feature.Output {
 		let request = try feature.request(for: input)
-		let selected = BrowserAISettings.effectiveModel(model ?? feature.model)
+		let selected = model ?? BrowserAISettings.effectiveModel(feature.model)
 		return try await logged(request, model: selected, feature: feature.logName, mode: "single") {
 			let text = try await generateResponse(request, model: selected)
 			return try (feature.output(from: text), text.utf8.count)
@@ -123,7 +126,7 @@ final class BrowserAI {
 		onSnapshot: @MainActor (String) -> Void
 	) async throws -> Feature.Output {
 		let request = try feature.request(for: input)
-		let selected = BrowserAISettings.effectiveModel(model ?? feature.model)
+		let selected = model ?? BrowserAISettings.effectiveModel(feature.model)
 		return try await logged(request, model: selected, feature: feature.logName, mode: "stream") {
 			let text = try await streamResponse(request, model: selected, onSnapshot: onSnapshot)
 			return try (feature.output(from: text), text.utf8.count)
@@ -307,7 +310,8 @@ final class BrowserAI {
 			instructions: request.instructions,
 			prompt: request.prompt,
 			maximumResponseTokens: request.maximumResponseTokens,
-			images: request.images
+			images: request.images,
+			webSearch: request.webSearch
 		)
 	}
 
@@ -319,6 +323,8 @@ final class BrowserAI {
 }
 
 nonisolated enum BrowserAIError: LocalizedError {
+	case toolDenied
+	case toolLimit
 	case disabled
 	case commandMissing(String)
 	case commandFailed(String, String)
@@ -345,6 +351,10 @@ nonisolated enum BrowserAIError: LocalizedError {
 
 	var errorDescription: String? {
 		switch self {
+			case .toolLimit:
+				"The assistant reached its browser-action limit for this turn. Completed actions are retained; send another message to continue."
+			case .toolDenied:
+				"This browser action is disabled, unavailable in this space, or not allowed in private browsing."
 			case .disabled:
 				"AI features are disabled. Turn on All AI Features in AI settings to use them."
 			case let .commandMissing(provider):

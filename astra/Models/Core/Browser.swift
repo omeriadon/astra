@@ -690,6 +690,7 @@ final class Browser {
 				internalPage: internalPage,
 				pageTitle: saved.pageTitle,
 				customTitle: saved.customTitle,
+				monitorMatch: saved.monitorMatch,
 				initialURL: saved.url,
 				history: saved.history,
 				historyIndex: saved.historyIndex,
@@ -843,6 +844,7 @@ final class Browser {
 		let tab = BrowserTab(
 			pageTitle: saved.pageTitle,
 			customTitle: saved.customTitle,
+			monitorMatch: saved.monitorMatch,
 			initialURL: saved.url,
 			history: saved.history,
 			historyIndex: saved.historyIndex,
@@ -925,6 +927,9 @@ final class Browser {
 
 	func selectTab(_ id: UUID) {
 		guard let tab = tabs.first(where: { $0.id == id }) else { return }
+		if tab.monitorMatch != nil {
+			tab.setMonitorMatch(nil)
+		}
 		showsQuickSearch = false
 		selectedTab?.activeController?.clearHoveredLink()
 		tab.activeController?.clearHoveredLink()
@@ -1002,6 +1007,18 @@ final class Browser {
 	var canBookmarkSelectedPage: Bool {
 		guard let url = selectedPageBookmarkURL else { return false }
 		return !bookmarks.contains { $0.url == url }
+	}
+
+	var canShowAISidebar: Bool {
+		!isPrivate && !isShowingNewTab && selectedTab?.internalPage == nil && selectedTab?.currentURL != nil
+	}
+
+	func createBookmarkFolder(_ name: String) {
+		guard !isPrivate, !name.isEmpty, name.utf8.count <= 500 else { return }
+		if !Defaults[.bookmarkFolderNames].contains(name) {
+			Defaults[.bookmarkFolderNames].append(name)
+		}
+		schedulePersistence()
 	}
 
 	func bookmarkSelectedPage() {
@@ -2106,6 +2123,7 @@ final class Browser {
 				internalPage: internalPage,
 				pageTitle: saved.pageTitle,
 				customTitle: saved.customTitle,
+				monitorMatch: saved.monitorMatch,
 				initialURL: saved.url,
 				history: saved.history,
 				historyIndex: saved.historyIndex,

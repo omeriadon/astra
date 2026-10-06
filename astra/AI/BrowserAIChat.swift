@@ -1,3 +1,4 @@
+import Defaults
 import Foundation
 import Observation
 
@@ -17,6 +18,9 @@ final class BrowserAIChat {
 	var attachments: [BrowserAIAttachment] = []
 	var pendingPages: [BrowserAIPageText] = []
 	var isImporting = false
+	var selectedProvider = ""
+	var selectedModelID = ""
+	var selectedReasoning = "low"
 	var draft = ""
 	var linkedTabIDs: [UUID] = []
 	private(set) var messages: [Message] = []
@@ -24,6 +28,22 @@ final class BrowserAIChat {
 	private(set) var error: String?
 	private(set) var isResponding = false
 	@ObservationIgnored private var pages: [UUID: BrowserAIPageText] = [:]
+
+	var effectiveModel: BrowserAIModel {
+		let provider = Defaults[.aiProvider]
+		if provider == "codex" {
+			return .codex(modelID: selectedProvider == provider && !selectedModelID.isEmpty ? selectedModelID : Defaults[.aiCodexModel])
+		}
+		if provider == "claude" {
+			return .claude(modelID: selectedProvider == provider && !selectedModelID.isEmpty ? selectedModelID : Defaults[.aiClaudeModel])
+		}
+		return BrowserAIFeatureID.chat.model
+	}
+
+	func includeCurrentTab(in browser: Browser) {
+		guard browser.canShowAISidebar, let tab = browser.selectedTab, !linkedTabIDs.contains(tab.id) else { return }
+		linkedTabIDs.append(tab.id)
+	}
 
 	func availableTabs(in browser: Browser) -> [BrowserTab] {
 		var seen = Set<UUID>()
@@ -91,6 +111,9 @@ final class BrowserAIChat {
 		titleIsGenerated = conversation.titleIsGenerated
 		messages = conversation.messages
 		pages = conversation.pages
+		selectedProvider = conversation.provider ?? ""
+		selectedModelID = conversation.modelID ?? ""
+		selectedReasoning = conversation.reasoning ?? "low"
 		draft = ""
 		attachments = []
 		pendingPages = []
@@ -106,12 +129,14 @@ final class BrowserAIChat {
 		let question = entered.isEmpty ? "Describe and explain the attached context." : entered
 		let newAttachments = attachments
 		let conversationID = id
+		let spaceID = browser.selectedSpace.id
+		let model = effectiveModel
 		isResponding = true
 		error = nil
 		preview = ""
 		defer { isResponding = false }
 		do {
-			try await BrowserAI.shared.checkAccess(for: BrowserAIFeatureID.chat.model, feature: "AI Sidebar")
+			try await BrowserAI.shared.checkAccess(for: model, feature: "AI Sidebar")
 			let tabs = availableTabs(in: browser)
 			var ids = linkedTabIDs
 			for tab in tabs.sorted(by: { $0.title.count > $1.title.count }) {
@@ -140,14 +165,29 @@ final class BrowserAIChat {
 			let conversation = messages.map { "\($0.isUser ? "User" : "Assistant"): \($0.text)" }.joined(separator: "\n")
 			let context = contextPages.sorted { $0.key.uuidString < $1.key.uuidString }.map(\.value.prompt).joined(separator: "\n\n")
 			let fileContext = files.map(\.prompt).joined(separator: "\n\n")
-			let answer = try await BrowserAI.shared.performStreaming(
-				BrowserPageAnswerFeature(feature: .chat),
-				input: .init(question: question, context: context + "\n" + fileContext + "\n<conversation>\n" + conversation + "\n</conversation>", images: images)
-			) {
-				if !Task.isCancelled {
-					preview = $0
+			var toolResults = ""
+			var answer = ""
+			for _ in 0 ..< 5 {
+				try Task.checkCancellation()
+				let turn = try await BrowserAI.shared.perform(BrowserAIChatTurnFeature(), input: .init(context: context + "\n" + fileContext + "\n<conversation>\n" + conversation + "\n</conversation>\n" + BrowserAITools.inventory(browser) + "\n<tool-results>\n" + toolResults + "\n</tool-results>", question: question, catalog: BrowserAITools.catalog(), images: images, reasoning: selectedReasoning.isEmpty ? "provider-default" : selectedReasoning), model: model)
+				if turn.actions.isEmpty {
+					answer = turn.response; break
+				}
+				preview = turn.response
+				for call in turn.actions {
+					try Task.checkCancellation()
+					do {
+						let result = try await BrowserAITools.execute(call, browser: browser, spaceID: spaceID, model: model)
+						toolResults += "\n\(call.name): \(result)\n"
+						await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "success", details: "phase=tool")
+					} catch {
+						try Task.checkCancellation()
+						toolResults += "\n\(call.name): Failed. \(error.localizedDescription)\n"
+						await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "failed", details: "phase=tool")
+					}
 				}
 			}
+			guard !answer.isEmpty else { throw BrowserAIError.toolLimit }
 			try Task.checkCancellation()
 			guard id == conversationID else { return }
 			pages = contextPages
@@ -163,7 +203,7 @@ final class BrowserAIChat {
 			preview = ""
 			try await save()
 			if !titleIsGenerated {
-				let generated = try await BrowserAI.shared.perform(BrowserChatTitleFeature(), input: .init(question: question, answer: answer))
+				let generated = try await BrowserAI.shared.perform(BrowserChatTitleFeature(), input: .init(question: question, answer: answer), model: model)
 				try Task.checkCancellation()
 				title = generated
 				titleIsGenerated = true
@@ -178,7 +218,7 @@ final class BrowserAIChat {
 	}
 
 	private func save() async throws {
-		try await BrowserAIChatHistory.shared.save(.init(id: id, title: title, titleIsGenerated: titleIsGenerated, updatedAt: .now, messages: messages, pages: pages))
+		try await BrowserAIChatHistory.shared.save(.init(id: id, title: title, titleIsGenerated: titleIsGenerated, updatedAt: .now, messages: messages, pages: pages, provider: selectedProvider, modelID: selectedModelID, reasoning: selectedReasoning))
 	}
 
 	func clear() {

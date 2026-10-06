@@ -1,8 +1,13 @@
 import Foundation
+#if os(macOS)
+	import Darwin
+#endif
 
 nonisolated struct BrowserAIModelOption: Identifiable, Sendable {
 	let id: String
 	let title: String
+	var reasoningLevels: [String] = []
+	var defaultReasoning: String?
 }
 
 @MainActor
@@ -10,13 +15,20 @@ enum BrowserAICLI {
 	static func generate(_ request: BrowserAIRequest, model: BrowserAIModel) async throws -> String {
 		#if os(macOS)
 			let images = request.images ?? []
+			let reasoning = request.reasoningEffort ?? "low"
 			let instructions = request.instructions + "\nKeep the response within \(request.maximumResponseTokens) tokens."
 			let command: BrowserAICommand
 			let isCodex: Bool
 			switch model {
 				case let .codex(modelID):
 					isCodex = true
-					var arguments = ["exec", "--json", "--ephemeral", "--ignore-user-config", "--skip-git-repo-check", "--sandbox", "read-only", "--disable", "shell_tool", "-c", "approval_policy=\"never\"", "-c", "model_reasoning_effort=\"low\""]
+					var arguments = ["exec", "--json", "--ephemeral", "--ignore-user-config", "--skip-git-repo-check", "--sandbox", "read-only", "--disable", "shell_tool", "-c", "approval_policy=\"never\"", "-c", "model_reasoning_effort=\"\(reasoning)\""]
+					if reasoning == "provider-default" {
+						arguments.removeLast(2)
+					}
+					if request.webSearch == true {
+						arguments += ["-c", "web_search=\"live\""]
+					}
 					if !modelID.isEmpty {
 						arguments += ["--model", modelID]
 					}
@@ -24,7 +36,13 @@ enum BrowserAICLI {
 					command = try BrowserAICommand(name: "codex", arguments: arguments)
 				case let .claude(modelID):
 					isCodex = false
-					var arguments = ["--print", "--output-format", images.isEmpty ? "json" : "stream-json", "--tools", "", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--setting-sources", "", "--no-session-persistence", "--effort", "low", "--system-prompt", instructions]
+					var arguments = ["--print", "--output-format", images.isEmpty ? "json" : "stream-json", "--tools", request.webSearch == true ? "WebSearch,WebFetch" : "", "--strict-mcp-config", "--mcp-config", "{\"mcpServers\":{}}", "--setting-sources", "", "--no-session-persistence", "--effort", reasoning, "--system-prompt", instructions]
+					if request.webSearch == true {
+						arguments += ["--allowedTools", "WebSearch,WebFetch"]
+					}
+					if reasoning == "provider-default", let index = arguments.firstIndex(of: "--effort") {
+						arguments.removeSubrange(index ... index + 1)
+					}
 					if !modelID.isEmpty {
 						arguments += ["--model", modelID]
 					}
@@ -40,7 +58,7 @@ enum BrowserAICLI {
 					try command.attach(images)
 				}
 				var input = isCodex
-					? "\(instructions)\nRespond only with the requested text. Do not use tools or access files.\n<page-data>\n\(request.prompt)\n</page-data>"
+					? "\(instructions)\n\(request.webSearch == true ? "Use only web search; never access local files or execute commands." : "Do not use tools or access files.")\n<page-data>\n\(request.prompt)\n</page-data>"
 					: request.prompt
 				if !isCodex, !images.isEmpty {
 					var content: [[String: Any]] = [["type": "text", "text": request.prompt]]
@@ -121,8 +139,7 @@ enum BrowserAICLI {
 							options += models.compactMap { item in
 								guard let id = item["model"] as? String else { return nil }
 								let efforts = item["supportedReasoningEfforts"] as? [[String: Any]] ?? []
-								guard efforts.isEmpty || efforts.contains(where: { $0["reasoningEffort"] as? String == "low" }) else { return nil }
-								return BrowserAIModelOption(id: id, title: item["displayName"] as? String ?? id)
+								return BrowserAIModelOption(id: id, title: item["displayName"] as? String ?? id, reasoningLevels: efforts.compactMap { $0["reasoningEffort"] as? String }, defaultReasoning: item["defaultReasoningEffort"] as? String)
 							}
 							if let cursor = result["nextCursor"] as? String {
 								try command.write(json(["id": 2, "method": "model/list", "params": ["limit": 100, "cursor": cursor]]) + "\n")
@@ -134,7 +151,7 @@ enum BrowserAICLI {
 						guard response["subtype"] as? String == "success", let result = response["response"] as? [String: Any] else { throw BrowserAIError.cliUnavailable }
 						return (result["models"] as? [[String: Any]] ?? []).compactMap { item in
 							guard let id = item["value"] as? String else { return nil }
-							return BrowserAIModelOption(id: id, title: item["displayName"] as? String ?? id)
+							return BrowserAIModelOption(id: id, title: item["displayName"] as? String ?? id, reasoningLevels: item["supportedEffortLevels"] as? [String] ?? [])
 						}
 					}
 				}
@@ -197,8 +214,9 @@ enum BrowserAICLI {
 
 		init(name: String, arguments: [String]) throws {
 			self.name = name
+			let realHome = getpwuid(getuid()).map { URL(fileURLWithPath: String(cString: $0.pointee.pw_dir)) } ?? FileManager.default.homeDirectoryForCurrentUser
 			let paths = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
-				+ ["/opt/homebrew/bin", "/usr/local/bin", FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin").path]
+				+ ["/opt/homebrew/bin", "/usr/local/bin", realHome.appendingPathComponent(".local/bin").path]
 			guard let path = paths.map({ URL(fileURLWithPath: $0).appendingPathComponent(name).path })
 				.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
 				?? ["/Applications/Codex.app/Contents/Resources/codex", FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/Codex.app/Contents/Resources/codex").path]
@@ -217,6 +235,7 @@ enum BrowserAICLI {
 			process.standardOutput = output
 			process.standardError = diagnosticFile
 			var environment = ProcessInfo.processInfo.environment
+			environment["HOME"] = realHome.path
 			environment["PATH"] = paths.joined(separator: ":")
 			environment["CLAUDE_CODE_EFFORT_LEVEL"] = "low"
 			process.environment = environment

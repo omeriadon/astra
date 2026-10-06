@@ -8,6 +8,7 @@ nonisolated enum BrowserAIFeatureID: String, CaseIterable, Identifiable, Sendabl
 	case find
 	case chat
 	case tabTitles
+	case bookmarkTitles
 
 	var id: String {
 		rawValue
@@ -21,12 +22,13 @@ nonisolated enum BrowserAIFeatureID: String, CaseIterable, Identifiable, Sendabl
 			case .find: "Ask in Find"
 			case .chat: "AI Sidebar"
 			case .tabTitles: "Clean Tab Titles"
+			case .bookmarkTitles: "Clean Bookmark Titles"
 		}
 	}
 
 	var defaultModel: BrowserAIModel {
 		switch self {
-			case .downloads, .tabTitles: .appleIntelligence
+			case .downloads, .tabTitles, .bookmarkTitles: .appleIntelligence
 			case .linkPreview, .find, .chat, .tabGroups: .openRouter(modelID: "openai/gpt-4o-mini")
 		}
 	}
@@ -102,4 +104,9 @@ extension Defaults.Keys {
 	static let aiCodexModel = Key<String>("aiCodexModel", default: "")
 	static let aiClaudeModel = Key<String>("aiClaudeModel", default: "")
 	static let aiFeaturePresets = Key<String>("aiFeaturePresets", default: "{}")
+	static let aiBrowserActionPermissions = Key<String>("aiBrowserActionPermissions", default: "{}")
+	static let aiBookmarkTitles = Key<Bool>("aiBookmarkTitles", default: true)
+	static let aiWebsiteMonitoring = Key<Bool>("aiWebsiteMonitoring", default: true)
+	static let bookmarkFolderNames = Key<[String]>("bookmarkFolderNames", default: [])
+	static let deliveredWebsiteMonitors = Key<[String: String]>("deliveredWebsiteMonitors", default: [:])
 }

@@ -1,4 +1,5 @@
 import Defaults
+import MarkdownView
 import SwiftUI
 import UniformTypeIdentifiers
 #if os(macOS)
@@ -10,6 +11,7 @@ import UniformTypeIdentifiers
 struct BrowserAIChatSidebar: View {
 	@Bindable var browser: Browser
 	@Bindable var chat: BrowserAIChat
+	var isVisible = true
 	@Environment(\.colorScheme) private var colorScheme
 	@State private var requestID: UUID?
 	@State private var showsHistory = false
@@ -84,6 +86,10 @@ struct BrowserAIChatSidebar: View {
 			}
 			.buttonStyle(.glass)
 			.padding([.top, .horizontal], 12)
+			if isVisible, ["codex", "claude"].contains(provider) {
+				BrowserAIModelControls(chat: chat, provider: provider)
+					.padding(.horizontal, 12)
+			}
 			if needsSignIn {
 				VStack(alignment: .leading, spacing: 6) {
 					Label("Sign in to Astra to use Default AI.", systemImage: "person.crop.circle.badge.exclamationmark")
@@ -112,8 +118,11 @@ struct BrowserAIChatSidebar: View {
 								if !message.attachments.isEmpty {
 									attachmentRow(message.attachments, removable: false)
 								}
-								Text(message.isUser ? AttributedString(message.text) : (try? AttributedString(markdown: message.text)) ?? AttributedString(message.text))
-									.textSelection(.enabled)
+								if message.isUser {
+									Text(message.text).textSelection(.enabled)
+								} else {
+									MarkdownView(message.text)
+								}
 							}
 							.id(message.id)
 						}
@@ -121,7 +130,7 @@ struct BrowserAIChatSidebar: View {
 							if chat.preview.isEmpty {
 								ProgressView("Reading and Answering")
 							} else {
-								Text(chat.preview).textSelection(.enabled)
+								MarkdownView(chat.preview)
 							}
 						}
 						if let error = chat.error {
@@ -137,6 +146,14 @@ struct BrowserAIChatSidebar: View {
 				.onChange(of: chat.preview) { _, _ in reader.scrollTo("chat-bottom", anchor: .bottom) }
 			}
 			VStack(alignment: .leading, spacing: 8) {
+				Button("Summarise", systemImage: "text.alignleft") {
+					chat.includeCurrentTab(in: browser)
+					chat.draft = "Summarise the current page."
+					send()
+				}
+				.buttonStyle(.glass)
+				.disabled(chat.isResponding || !chat.draft.isEmpty)
+				.accessibilityIdentifier("ai-chat-summarise")
 				if chat.mentionQuery != nil {
 					ScrollView {
 						VStack(alignment: .leading, spacing: 4) {
@@ -216,7 +233,18 @@ struct BrowserAIChatSidebar: View {
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
 		.background(browser.theme.contentShade(for: colorScheme))
 		.clipShape(RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
-		.onAppear { focused = true }
+		.onAppear {
+			focused = isVisible
+			if isVisible {
+				chat.includeCurrentTab(in: browser)
+			}
+		}
+		.onChange(of: isVisible) { _, visible in
+			focused = visible
+			if visible {
+				chat.includeCurrentTab(in: browser)
+			}
+		}
 		.task { await history.load() }
 		.fileImporter(isPresented: $showsFileImporter, allowedContentTypes: [.image, .pdf, .text, .data], allowsMultipleSelection: true) { result in
 			switch result {
@@ -224,8 +252,8 @@ struct BrowserAIChatSidebar: View {
 				case let .failure(error): chat.reportImportError(error)
 			}
 		}
-		.task(id: requestID) {
-			guard requestID != nil else { return }
+		.task(id: "\(requestID?.uuidString ?? "")|\(isVisible)") {
+			guard isVisible, requestID != nil else { return }
 			await chat.send(in: browser)
 			if !Task.isCancelled {
 				requestID = nil

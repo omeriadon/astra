@@ -50,6 +50,7 @@ extension Defaults.Keys {
 		"peekLevel",
 		"zoomOutInPeeks",
 		"renameDownloadsWithAppleIntelligence",
+		"bookmarkFolderNames",
 		"copyMailtoAddresses",
 		"requireDoublePressToQuit",
 		"browserTheme",

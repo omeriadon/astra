@@ -8,6 +8,9 @@ nonisolated struct BrowserAIConversation: Codable, Identifiable, Sendable {
 	var updatedAt: Date
 	var messages: [BrowserAIChat.Message]
 	var pages: [UUID: BrowserAIPageText]
+	var provider: String? = nil
+	var modelID: String? = nil
+	var reasoning: String? = nil
 }
 
 @MainActor

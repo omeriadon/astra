@@ -61,7 +61,7 @@ struct BrowserSearchAction: Identifiable {
 				perform: { browser.createSpace() }
 			),
 		]
-		if Defaults[.aiFeaturesEnabled], !browser.isPrivate, Defaults[.aiSidebar] {
+		if Defaults[.aiFeaturesEnabled], browser.canShowAISidebar, Defaults[.aiSidebar] {
 			actions.append(Self(
 				id: "toggle-ai-sidebar", title: "AI Sidebar", symbol: "bubble.left.and.text.bubble.right",
 				terms: ["chat", "ask AI", "toggle AI"], detail: "Browser Action",
