@@ -128,6 +128,10 @@ final class BrowserSync {
 
 	func scheduleSync() {
 		guard isSignedIn, browser != nil else { return }
+		guard !isSyncing else {
+			syncRequestedWhileBusy = true
+			return
+		}
 		scheduledSync?.cancel()
 		scheduledSync = Task { @MainActor [weak self] in
 			try? await Task.sleep(for: .seconds(2))
@@ -291,6 +295,7 @@ final class BrowserSync {
 			lastSync = .now
 			errorDescription = nil
 		} catch {
+			guard !Task.isCancelled, !(error is CancellationError), (error as? URLError)?.code != .cancelled else { return }
 			errorDescription = error.localizedDescription
 		}
 	}
@@ -394,6 +399,7 @@ final class BrowserSync {
 		var request = URLRequest(url: baseURL.appending(path: "v1/ai/stream"))
 		request.httpMethod = "POST"
 		request.httpBody = try JSONEncoder().encode(body)
+		guard (request.httpBody?.count ?? 0) <= 20 * 1024 * 1024 else { throw BrowserAIError.server(413, nil) }
 		request.timeoutInterval = 90
 		request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 		request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
@@ -413,7 +419,14 @@ final class BrowserSync {
 			throw BrowserAIError.signInRequired
 		}
 		guard response.statusCode == 200 else {
-			throw BrowserSyncError.http(response.statusCode)
+			var message = ""
+			for try await line in bytes.lines {
+				message += String(line.prefix(16384 - min(message.utf8.count, 16384)))
+				if message.utf8.count >= 16384 {
+					break
+				}
+			}
+			throw BrowserAIError.http(response.statusCode, data: Data(message.utf8))
 		}
 		guard response.value(forHTTPHeaderField: "Content-Type")?.lowercased().hasPrefix("text/event-stream") == true else {
 			throw BrowserAIError.invalidStream
@@ -428,7 +441,10 @@ final class BrowserSync {
 			}
 			guard line.hasPrefix("data: ") else { continue }
 			let event = try JSONDecoder().decode(BrowserAIStreamEvent.self, from: Data(line.dropFirst(6).utf8))
-			guard event.error == nil, let text = event.text, let isFinal = event.isFinal else {
+			if let error = event.error {
+				throw BrowserAIError.server(502, String(error.prefix(300)))
+			}
+			guard let text = event.text, let isFinal = event.isFinal else {
 				throw BrowserAIError.invalidStream
 			}
 			onSnapshot(text)
@@ -478,6 +494,9 @@ final class BrowserSync {
 					signOut()
 				}
 				guard 200 ..< 300 ~= response.statusCode else {
+					if path.hasPrefix("v1/ai/") {
+						throw BrowserAIError.http(response.statusCode, data: data)
+					}
 					throw BrowserSyncError.http(response.statusCode)
 				}
 				return try JSONDecoder().decode(Response.self, from: data)

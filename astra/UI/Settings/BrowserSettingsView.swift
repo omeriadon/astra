@@ -11,6 +11,7 @@ struct BrowserSettingsView: View {
 
 	enum Page: CaseIterable {
 		case ui
+		case ai
 		case account
 		case importData
 		case privacyAndSecurity
@@ -51,10 +52,18 @@ struct BrowserSettingsView: View {
 							"Default Browser", "Make Default Browser",
 							"New Tab", "Sidebar Tab", "Spotlight Overlay", "Address Bar", "Page Zoom", "Default Page Zoom", "Reset Default Zoom", "Peek", "Levels",
 							"Mini Astra", "links", "cursor", "animation", "shortcut",
-							"Zoom out in Peeks", "Downloads", "Rename downloads with Apple Intelligence",
+							"Zoom out in Peeks", "Downloads",
 							"Ask where to save each download", "Download folder", "Choose Folder",
 							"Updates", "Automatically check for updates", "Automatically install updates",
 						] + AddressDisplayStyle.allCases.map(\.title) + PeekLevel.allCases.map(\.title)
+					)
+				case .ai:
+					Definition(
+						title: "AI",
+						symbol: "sparkles",
+						section: .ui,
+						identifier: "settings-ai",
+						terms: ["Rename Downloads", "Rename downloads with Apple Intelligence", "Link Previews", "Today Tabs", "Clean Tab Titles", "Ask in Find", "AI Sidebar", "Codex", "Claude", "Tokens"]
 					)
 				case .account:
 					Definition(
@@ -203,6 +212,8 @@ struct BrowserSettingsView: View {
 			ScrollViewReader { proxy in
 				Group {
 					switch selectedPage {
+						case .ai:
+							BrowserAISettingsView()
 						case .ui:
 							BrowserGeneralSettingsView()
 						case .importData:

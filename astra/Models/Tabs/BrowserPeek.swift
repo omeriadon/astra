@@ -51,7 +51,7 @@ final class BrowserPeek: Identifiable {
 		}
 	}
 
-	init(openPeek: OpenPeek, session: BrowserWebSession = .shared) {
+	init(openPeek: OpenPeek, session: BrowserWebSession? = nil) {
 		id = openPeek.id
 		depth = openPeek.depth
 		source = UnitPoint(

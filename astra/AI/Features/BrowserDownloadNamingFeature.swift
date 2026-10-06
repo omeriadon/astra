@@ -8,7 +8,9 @@ struct BrowserDownloadNamingFeature: BrowserAIFeature {
 		let fileType: String?
 	}
 
-	let model: BrowserAIModel = .appleIntelligence
+	var model: BrowserAIModel {
+		BrowserAIFeatureID.downloads.model
+	}
 
 	func request(for input: Input) -> BrowserAIRequest {
 		BrowserAIRequest(

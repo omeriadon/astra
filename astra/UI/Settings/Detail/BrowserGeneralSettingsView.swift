@@ -15,7 +15,6 @@ struct BrowserGeneralSettingsView: View {
 	@Default(.defaultPageZoom) private var defaultPageZoom
 	@Default(.peekLevel) private var peekLevel
 	@Default(.zoomOutInPeeks) private var zoomOutInPeeks
-	@Default(.renameDownloadsWithAppleIntelligence) private var renameDownloadsWithAppleIntelligence
 	@Default(.downloadsAskWhereToSave) private var downloadsAskWhereToSave
 	@Default(.startupBehavior) private var startupBehavior
 	@Default(.homepageURL) private var homepageURL
@@ -264,11 +263,6 @@ struct BrowserGeneralSettingsView: View {
 						.accessibilityIdentifier("downloads-choose-folder")
 					}
 				#endif
-
-				Toggle("Rename downloads with Apple Intelligence", isOn: $renameDownloadsWithAppleIntelligence)
-					.accessibilityLabel("Rename downloads with Apple Intelligence")
-					.accessibilityIdentifier("rename-downloads-with-apple-intelligence")
-					.id("Rename downloads with Apple Intelligence")
 
 				ZStack {}
 			}

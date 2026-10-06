@@ -70,6 +70,9 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var committedSecurityNavigationID: Int?
 	private(set) var hoveredLinkURL: URL?
 	private(set) var hoveredLinkUsesTrailingCorner = false
+	private(set) var hoveredLinkRect = CGRect.zero
+	private(set) var hoveredLinkID = ""
+	private(set) var aiPreviewDismissal = 0
 	var showsFind = false
 	var findText = "" {
 		didSet {
@@ -573,15 +576,31 @@ final class BrowserController: NSObject, Identifiable {
 
 	private static let linkHoverScript = """
 	(() => {
-		let previous = '', x = 0, y = 0;
+		let previous = '', x = 0, y = 0, current = null, sequence = 0;
+		globalThis.astraAIHoverEnabled = false;
 		const report = (link, clientX, clientY) => {
 			let href = '';
 			try { if (link) href = new URL(link.getAttribute('href'), link.baseURI).href; } catch {}
+			if (link !== current) {
+				current?.removeAttribute('data-astra-ai-preview-hover');
+				current = link;
+				sequence++;
+			}
+			if (current && globalThis.astraAIHoverEnabled && /^https?:/.test(href)) {
+				if (!document.getElementById('astra-ai-hover-style')) {
+					const style = document.createElement('style');
+					style.id = 'astra-ai-hover-style';
+					style.textContent = '[data-astra-ai-preview-hover] { background-color: rgba(128,128,128,0.25) !important; border-radius: 3px; }';
+					(document.head || document.documentElement).append(style);
+				}
+				current.setAttribute('data-astra-ai-preview-hover', '');
+			} else current?.removeAttribute('data-astra-ai-preview-hover');
 			const trailing = clientX < innerWidth / 2 && clientY > innerHeight - 72;
-			const key = href + ':' + trailing;
+			const rect = link?.getBoundingClientRect();
+			const key = href + ':' + trailing + ':' + sequence + ':' + (rect?.top ?? 0);
 			if (key === previous) return;
 			previous = key;
-			window.webkit.messageHandlers.linkHoverChanged.postMessage({ href, trailing });
+			window.webkit.messageHandlers.linkHoverChanged.postMessage({ href, trailing, id: String(sequence), x: rect?.left ?? clientX, y: rect?.top ?? clientY, width: rect?.width ?? 0, height: rect?.height ?? 0 });
 		};
 		document.addEventListener('pointermove', event => {
 			x = event.clientX;
@@ -593,15 +612,27 @@ final class BrowserController: NSObject, Identifiable {
 		window.addEventListener('blur', () => report(null, 0, 0));
 		window.addEventListener('pagehide', () => report(null, 0, 0));
 		document.addEventListener('scroll', () => {
+			window.webkit.messageHandlers.linkHoverChanged.postMessage({ dismissPreview: true });
 			const link = document.elementFromPoint(x, y)?.closest('a[href], area[href]');
 			report(link, x, y);
 		}, true);
 	})();
 	"""
 
+	func updateAIHoverHighlight() {
+		let enabled = Defaults[.aiLinkPreviews] && !session.isPrivate
+		createdWebView?.evaluateJavaScript(
+			"globalThis.astraAIHoverEnabled = \(enabled); if (!globalThis.astraAIHoverEnabled) document.querySelectorAll('[data-astra-ai-preview-hover]').forEach(link => link.removeAttribute('data-astra-ai-preview-hover'));",
+			in: nil,
+			in: .defaultClient
+		) { _ in }
+	}
+
 	func clearHoveredLink() {
 		hoveredLinkURL = nil
 		hoveredLinkUsesTrailingCorner = false
+		hoveredLinkID = ""
+		hoveredLinkRect = .zero
 	}
 
 	private static let activityScript = """
@@ -1186,7 +1217,7 @@ final class BrowserController: NSObject, Identifiable {
 		#if os(macOS)
 			webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "linkHoverChanged")
 			webView.configuration.userContentController.addUserScript(
-				WKUserScript(source: Self.linkHoverScript, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient)
+				WKUserScript(source: Self.linkHoverScript + "\nglobalThis.astraAIHoverEnabled = \(Defaults[.aiLinkPreviews] && !session.isPrivate);", injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient)
 			)
 		#endif
 		webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "pageActivityChanged")
@@ -2142,6 +2173,12 @@ extension BrowserController: WKScriptMessageHandler {
 	func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
 		guard !isInvalidated else { return }
 		if message.name == "linkHoverChanged" {
+			if let value = message.body as? [String: Any], value["dismissPreview"] as? Bool == true,
+			   let webView = message.webView, owns(webView)
+			{
+				aiPreviewDismissal += 1
+				return
+			}
 			guard !awaitsNavigationCommit, let webView = message.webView,
 			      owns(webView), !webView.isHidden,
 			      let value = message.body as? [String: Any],
@@ -2152,6 +2189,17 @@ extension BrowserController: WKScriptMessageHandler {
 			}
 			hoveredLinkURL = BrowserAddress.withoutCredentials(url)
 			hoveredLinkUsesTrailingCorner = value["trailing"] as? Bool == true
+			if message.frameInfo.isMainFrame,
+			   let x = value["x"] as? Double, let y = value["y"] as? Double,
+			   let width = value["width"] as? Double, let height = value["height"] as? Double,
+			   [x, y, width, height].allSatisfy(\.isFinite), width >= 0, height >= 0
+			{
+				hoveredLinkRect = CGRect(x: x, y: y, width: width, height: height)
+				hoveredLinkID = value["id"] as? String ?? ""
+			} else {
+				hoveredLinkID = ""
+			}
+
 			return
 		}
 		if message.name == "pageActivityChanged" {

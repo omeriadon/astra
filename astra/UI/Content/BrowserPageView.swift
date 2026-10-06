@@ -39,32 +39,43 @@ struct BrowserPageView: View {
 		}
 		.animation(nil, value: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
 		.allowsHitTesting(!BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
-		.overlay(alignment: .topTrailing) {
-			if let controller = browser.selectedTab?.activeController, controller.showsFind {
-				BrowserFindBar(controller: controller)
-					.id(controller.id)
+		#if os(macOS)
+			.overlay {
+				if let controller = browser.selectedTab?.activeController,
+				   !BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
+				{
+					BrowserAIHoverPreview(browser: browser, controller: controller)
+						.id(controller.id)
+				}
 			}
-		}
-		.overlay(alignment: .topTrailing) {
-			if let toast = toastManager.toast {
-				BrowserToastView(toast: toast)
-					.padding(.top, 12)
-					.padding(.trailing, 14)
-					.transition(reduceMotion ? .opacity : .move(edge: .trailing))
+		#endif
+
+			.overlay(alignment: .topTrailing) {
+				if let controller = browser.selectedTab?.activeController, controller.showsFind {
+					BrowserFindBar(controller: controller)
+						.id(controller.id)
+				}
 			}
-		}
-		.animation(.easeOut(duration: 0.1), value: toastManager.toast != nil)
-		.allowsHitTesting(!BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
-		.clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-		.overlay {
-			if isLocalhost {
-				RoundedRectangle(cornerRadius: cornerRadius)
-					.inset(by: -2)
-					.strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [10, 5]))
-					.foregroundStyle(.yellow)
-					.allowsHitTesting(false)
-					.accessibilityHidden(true)
+			.overlay(alignment: .topTrailing) {
+				if let toast = toastManager.toast {
+					BrowserToastView(toast: toast)
+						.padding(.top, 12)
+						.padding(.trailing, 14)
+						.transition(reduceMotion ? .opacity : .move(edge: .trailing))
+				}
 			}
-		}
+			.animation(.easeOut(duration: 0.1), value: toastManager.toast != nil)
+			.allowsHitTesting(!BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
+			.clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+			.overlay {
+				if isLocalhost {
+					RoundedRectangle(cornerRadius: cornerRadius)
+						.inset(by: -2)
+						.strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [10, 5]))
+						.foregroundStyle(.yellow)
+						.allowsHitTesting(false)
+						.accessibilityHidden(true)
+				}
+			}
 	}
 }

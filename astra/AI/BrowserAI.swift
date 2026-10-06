@@ -3,13 +3,17 @@ import FoundationModels
 
 nonisolated enum BrowserAIModel: Equatable, Sendable {
 	case appleIntelligence
-	case openRouter(modelID: String = "openai/gpt-4o-mini")
+	case privateCloudCompute
+	case codex(modelID: String)
+	case claude(modelID: String)
+	case openRouter(modelID: String = "inclusionai/ling-3.1-flash")
 }
 
 nonisolated struct BrowserAIRequest: Codable, Sendable {
 	let instructions: String
 	let prompt: String
 	let maximumResponseTokens: Int
+	var images: [BrowserAIImage]? = nil
 }
 
 nonisolated struct BrowserAIResponse: Codable, Sendable {
@@ -21,6 +25,7 @@ nonisolated struct BrowserAICloudRequest: Encodable, Sendable {
 	let instructions: String
 	let prompt: String
 	let maximumResponseTokens: Int
+	let images: [BrowserAIImage]?
 }
 
 /// Features own prompts and output validation; the manager owns provider execution.
@@ -50,8 +55,12 @@ final class BrowserAI {
 	/// Each call has its own session. There is no shared transcript or automatic cloud fallback.
 	func generate(_ request: BrowserAIRequest, model: BrowserAIModel = .appleIntelligence) async throws -> String {
 		try Task.checkCancellation()
-		let generation = try BrowserSync.shared.requireAIAuthentication()
+		let model = BrowserAISettings.effectiveModel(model)
+		let generation = try authentication(for: model)
 		try validate(request)
+		if request.images?.isEmpty == false, model == .appleIntelligence || model == .privateCloudCompute {
+			throw BrowserAIError.attachmentsUnsupported
+		}
 
 		let text: String
 		switch model {
@@ -65,12 +74,22 @@ final class BrowserAI {
 					options: GenerationOptions(maximumResponseTokens: request.maximumResponseTokens)
 				)
 				text = response.content
+			case .privateCloudCompute:
+				text = try await pccSession(instructions: request.instructions).respond(
+					to: request.prompt,
+					options: GenerationOptions(maximumResponseTokens: request.maximumResponseTokens),
+					contextOptions: ContextOptions(reasoningLevel: .light)
+				).content
+			case .codex, .claude:
+				text = try await BrowserAICLI.generate(request, model: model)
 			case let .openRouter(modelID):
 				let response = try await BrowserSync.shared.generateAI(cloudRequest(request, modelID: modelID))
 				text = response.text
 		}
 		try Task.checkCancellation()
-		try BrowserSync.shared.validateAIAuthentication(generation)
+		if let generation {
+			try BrowserSync.shared.validateAIAuthentication(generation)
+		}
 		try validateOutput(text)
 		return text
 	}
@@ -96,8 +115,12 @@ final class BrowserAI {
 		onSnapshot: @MainActor (String) -> Void
 	) async throws -> String {
 		try Task.checkCancellation()
-		let generation = try BrowserSync.shared.requireAIAuthentication()
+		let model = BrowserAISettings.effectiveModel(model)
+		let generation = try authentication(for: model)
 		try validate(request)
+		if request.images?.isEmpty == false, model == .appleIntelligence || model == .privateCloudCompute {
+			throw BrowserAIError.attachmentsUnsupported
+		}
 		let text: String
 		switch model {
 			case .appleIntelligence:
@@ -112,11 +135,32 @@ final class BrowserAI {
 				var latest = ""
 				for try await snapshot in snapshots {
 					try Task.checkCancellation()
-					try BrowserSync.shared.validateAIAuthentication(generation)
+					if let generation {
+						try BrowserSync.shared.validateAIAuthentication(generation)
+					}
 					latest = snapshot.content
 					onSnapshot(latest)
 				}
 				text = latest
+			case .privateCloudCompute:
+				let session = try pccSession(instructions: request.instructions)
+				var latest = ""
+				for try await snapshot in session.streamResponse(
+					to: request.prompt,
+					options: GenerationOptions(maximumResponseTokens: request.maximumResponseTokens),
+					contextOptions: ContextOptions(reasoningLevel: .light)
+				) {
+					try Task.checkCancellation()
+					if let generation {
+						try BrowserSync.shared.validateAIAuthentication(generation)
+					}
+					latest = snapshot.content
+					onSnapshot(latest)
+				}
+				text = latest
+			case .codex, .claude:
+				text = try await BrowserAICLI.generate(request, model: model)
+				onSnapshot(text)
 			case let .openRouter(modelID):
 				text = try await BrowserSync.shared.streamAI(
 					cloudRequest(request, modelID: modelID),
@@ -124,14 +168,34 @@ final class BrowserAI {
 				)
 		}
 		try Task.checkCancellation()
-		try BrowserSync.shared.validateAIAuthentication(generation)
+		if let generation {
+			try BrowserSync.shared.validateAIAuthentication(generation)
+		}
 		try validateOutput(text)
 		return text
 	}
 
+	func checkAccess(for model: BrowserAIModel) throws {
+		_ = try authentication(for: BrowserAISettings.effectiveModel(model))
+	}
+
+	private func authentication(for model: BrowserAIModel) throws -> UInt64? {
+		switch model {
+			case .openRouter: try BrowserSync.shared.requireAIAuthentication()
+			default: nil
+		}
+	}
+
+	private func pccSession(instructions: String) throws -> LanguageModelSession {
+		let model = PrivateCloudComputeLanguageModel()
+		guard model.isAvailable else { throw BrowserAIError.privateCloudComputeUnavailable }
+		return LanguageModelSession(model: model, instructions: instructions)
+	}
+
 	private func validate(_ request: BrowserAIRequest) throws {
 		guard !request.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-		      request.instructions.utf8.count + request.prompt.utf8.count <= 32768,
+		      request.instructions.utf8.count <= 32768,
+
 		      (1 ... 2048).contains(request.maximumResponseTokens)
 		else {
 			throw BrowserAIError.invalidRequest
@@ -146,7 +210,8 @@ final class BrowserAI {
 			modelID: modelID,
 			instructions: request.instructions,
 			prompt: request.prompt,
-			maximumResponseTokens: request.maximumResponseTokens
+			maximumResponseTokens: request.maximumResponseTokens,
+			images: request.images
 		)
 	}
 
@@ -158,16 +223,61 @@ final class BrowserAI {
 }
 
 nonisolated enum BrowserAIError: LocalizedError {
+	case commandMissing(String)
+	case commandFailed(String, String)
+	case commandTimedOut(String)
+	case server(Int, String?)
+	case chatStorage
+	case attachmentTooLarge
+	case attachmentUnreadable(String)
+	case attachmentsUnsupported
+	case privateCloudComputeUnavailable
+	case cliUnavailable
+	case pageUnavailable
 	case signInRequired
 	case appleIntelligenceUnavailable
 	case invalidRequest
 	case emptyResponse
 	case invalidStream
 
+	static func http(_ status: Int, data: Data) -> Self {
+		let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+		let reason = (object?["reason"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+		return .server(status, reason.flatMap { $0.isEmpty ? nil : String($0.prefix(300)) })
+	}
+
 	var errorDescription: String? {
 		switch self {
+			case let .commandMissing(provider):
+				"\(provider) is not installed or could not be found. Install its command-line tool. No Astra sign-in is required."
+			case let .commandFailed(provider, reason):
+				"\(provider): \(reason) No Astra sign-in is required."
+			case let .commandTimedOut(provider):
+				"\(provider) did not finish within three minutes. Try again with less context."
+			case let .server(status, reason):
+				switch status {
+					case 401: "Sign in to Astra in Account & Sync to use Default AI. Codex and Claude do not require an Astra account."
+					case 413: "The attached files and page context exceed the server’s request size limit. Remove an attachment or linked page."
+					case 429: reason.map { "Default AI: \($0)" } ?? "The AI provider or account usage limit has been reached. Try again later."
+					case 503: "Default AI is temporarily unavailable or is not configured on the server."
+					default: reason.map { "Default AI: \($0) (HTTP \(status))." } ?? "Default AI returned HTTP \(status). Try again."
+				}
+			case .chatStorage:
+				"The chat could not be saved. Check available disk space and folder permissions. Its open transcript has been preserved."
+			case .attachmentTooLarge:
+				"This attachment is too large. Use files below 20 MB and images totaling at most 10 MB."
+			case let .attachmentUnreadable(name):
+				"Could not read \(name). Use an image, a text-based PDF, a text file, or a Word/RTF document."
+			case .attachmentsUnsupported:
+				"The selected AI preset does not accept images. Use Default, Codex, or Claude for this chat."
+			case .privateCloudComputeUnavailable:
+				"Private Cloud Compute is unavailable. Check Apple Intelligence and the app’s PCC entitlement."
+			case .cliUnavailable:
+				"The selected AI command is unavailable or failed. Install it and sign in, then retry."
+			case .pageUnavailable:
+				"This page has no readable text, changed during extraction, or could not be loaded."
 			case .signInRequired:
-				"Sign in to Astra to use AI features."
+				"Sign in to Astra in Account & Sync to use Default AI. Codex and Claude do not require an Astra account."
 			case .appleIntelligenceUnavailable:
 				"Apple Intelligence is unavailable on this device."
 			case .invalidRequest:

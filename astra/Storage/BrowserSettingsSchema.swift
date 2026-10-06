@@ -19,6 +19,16 @@ enum BrowserSettingsSchema {
 		"miniAstraWindowAnimation",
 		"miniAstraShortcutEnabled",
 		"webInspectorEnabled",
+		"aiLinkPreviews",
+		"aiTabGroups",
+		"aiFind",
+		"aiFindContextLimit",
+		"aiSidebar",
+		"aiTabTitles",
+		"aiProvider",
+		"aiCodexModel",
+		"aiClaudeModel",
+		"aiFeaturePresets",
 		"downloadsFolderBookmark",
 	]
 
@@ -47,6 +57,16 @@ enum BrowserSettingsSchema {
 		Defaults[.startPagePreferences] = BrowserStartPagePreferences.default.encoded
 		Defaults[.browserTheme] = BrowserTheme()
 		Defaults[.renameDownloadsWithAppleIntelligence] = true
+		Defaults[.aiLinkPreviews] = true
+		Defaults[.aiTabGroups] = true
+		Defaults[.aiFind] = true
+		Defaults[.aiFindContextLimit] = true
+		Defaults[.aiSidebar] = true
+		Defaults[.aiTabTitles] = true
+		Defaults[.aiProvider] = "presets"
+		Defaults[.aiCodexModel] = ""
+		Defaults[.aiClaudeModel] = ""
+		Defaults[.aiFeaturePresets] = "{}"
 		Defaults[.downloadsAskWhereToSave] = false
 		Defaults[.copyMailtoAddresses] = true
 		Defaults[.requireDoublePressToQuit] = true

@@ -1,0 +1,194 @@
+import Defaults
+import SwiftUI
+
+struct BrowserAISettingsView: View {
+	@Default(.renameDownloadsWithAppleIntelligence) private var downloads
+	@Default(.aiLinkPreviews) private var previews
+	@Default(.aiTabGroups) private var groups
+	@Default(.aiFind) private var find
+	@Default(.aiFindContextLimit) private var contextLimit
+	@Default(.aiSidebar) private var sidebar
+	@Default(.aiTabTitles) private var titles
+	@Default(.aiProvider) private var provider
+
+	var body: some View {
+		List {
+			Section("Features") {
+				Toggle("Rename Downloads", isOn: $downloads)
+					.accessibilityIdentifier("rename-downloads-with-apple-intelligence")
+					.id("Rename Downloads")
+				Toggle("Link Previews", isOn: $previews)
+					.accessibilityIdentifier("ai-link-previews")
+				Text("Hold over a link for two seconds to summarize its destination. Preview pages load separately and may differ from signed-in pages.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+				Toggle("Tidy Today Tabs", isOn: $groups)
+					.accessibilityIdentifier("ai-tab-groups")
+				Toggle("Clean Tab Titles", isOn: $titles)
+					.accessibilityIdentifier("ai-tab-titles")
+				Toggle("Ask in Find", isOn: $find)
+					.accessibilityIdentifier("ai-find")
+				Toggle("Limit Large Pages to 30,000 Tokens", isOn: $contextLimit)
+					.disabled(!find)
+					.padding(.leading, 16)
+					.accessibilityIdentifier("ai-find-context-limit")
+				Text("When extracted page text exceeds 40,000 tokens, Find uses its first 30,000. Turning this off sends the full text; the provider’s context limit still applies.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+				Toggle("AI Sidebar", isOn: $sidebar)
+					.accessibilityIdentifier("ai-sidebar-enabled")
+			}
+			#if os(macOS)
+				Section("Requests") {
+					Picker("Use AI With", selection: $provider) {
+						Label("Default", systemImage: "sparkles").tag("presets")
+						Label("Codex", systemImage: "terminal").tag("codex")
+						Label("Claude", systemImage: "terminal").tag("claude")
+					}
+					.accessibilityIdentifier("ai-request-provider")
+					Text("Codex or Claude applies to every AI feature and uses your installed command and its signed-in account. Page text, linked pages, titles, or download names are sent to the selected service. AI features do not run in private windows.")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+						.lineLimit(10)
+				}
+			#endif
+			Text("AI processes extracted page text for previews, Find, and explicitly linked chat pages. Chat sends the full linked text. Tab organization sends titles and URLs. Responses can be inaccurate.")
+				.font(.caption)
+				.foregroundStyle(.secondary)
+				.lineLimit(10)
+		}
+		.listStyle(.sidebar)
+		.scrollContentBackground(.hidden)
+	}
+}
+
+#if DEBUG
+	struct BrowserAIPresetSettings: View {
+		@Default(.aiFeaturePresets) private var presets
+		@Default(.aiCodexModel) private var codexModel
+		@Default(.aiClaudeModel) private var claudeModel
+		@State private var feature: BrowserAIFeatureID?
+		@State private var provider: String?
+
+		var body: some View {
+			Section("AI Feature Presets") {
+				ForEach(BrowserAIFeatureID.allCases) { item in
+					Button(item.title, systemImage: "cpu") { feature = item }
+						.accessibilityIdentifier("ai-preset-\(item.rawValue)")
+				}
+				Button("Codex Model", systemImage: "terminal") { provider = "codex" }
+					.accessibilityIdentifier("ai-codex-model")
+				Button("Claude Model", systemImage: "terminal") { provider = "claude" }
+					.accessibilityIdentifier("ai-claude-model")
+				Text("Developer controls. Production settings show feature toggles and the provider override only. Model catalogs refresh whenever these menus open. All requests use low reasoning where supported.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+			}
+			.popover(item: $feature) { item in
+				BrowserAIModelChooser(initialProvider: "openrouter", includesApple: item != .chat) { model in
+					var values = BrowserAISettings.presets
+					values[item.rawValue] = model.identifier
+					BrowserAISettings.presets = values
+					feature = nil
+				}
+			}
+			.popover(isPresented: Binding(get: { provider != nil }, set: {
+				if !$0 {
+					provider = nil
+				}
+			})) {
+				if let provider {
+					BrowserAIModelChooser(initialProvider: provider, includesApple: false) { model in
+						switch model {
+							case let .codex(id): codexModel = id
+							case let .claude(id): claudeModel = id
+							default: break
+						}
+						self.provider = nil
+					}
+				}
+			}
+		}
+	}
+
+	private struct BrowserAIModelChooser: View {
+		let initialProvider: String
+		let includesApple: Bool
+		let select: (BrowserAIModel) -> Void
+		@State private var provider = ""
+		@State private var models: [BrowserAIModelOption] = []
+		@State private var error: String?
+		@State private var loading = true
+
+		var body: some View {
+			List {
+				if includesApple {
+					Button("On-Device Foundation Model", systemImage: "apple.intelligence") { select(.appleIntelligence) }
+						.accessibilityIdentifier("ai-model-apple")
+					Button("Private Cloud Compute", systemImage: "cloud") { select(.privateCloudCompute) }
+						.accessibilityIdentifier("ai-model-pcc")
+					Picker("Catalog", selection: $provider) {
+						Text("OpenRouter").tag("openrouter")
+						Text("Codex").tag("codex")
+						Text("Claude").tag("claude")
+					}
+					.accessibilityIdentifier("ai-model-catalog")
+				}
+				if loading {
+					ProgressView("Retrieving Models")
+				}
+				if let error {
+					Text(error).foregroundStyle(.secondary)
+				}
+				ForEach(models) { model in
+					Button(model.title, systemImage: "cpu") {
+						switch provider {
+							case "codex": select(.codex(modelID: model.id))
+							case "claude": select(.claude(modelID: model.id))
+							default: select(.openRouter(modelID: model.id))
+						}
+					}
+					.accessibilityIdentifier("ai-model-\(model.id)")
+				}
+			}
+			.listStyle(.sidebar)
+			.scrollContentBackground(.hidden)
+			.frame(width: 380, height: 450)
+			.onAppear { provider = initialProvider }
+			.task(id: provider) {
+				guard !provider.isEmpty else { return }
+				models = []
+				error = nil
+				loading = true
+				defer {
+					if !Task.isCancelled {
+						loading = false
+					}
+				}
+				do {
+					let result: [BrowserAIModelOption]
+					if provider == "openrouter" {
+						let (data, response) = try await URLSession.shared.data(from: URL(string: "https://openrouter.ai/api/v1/models")!)
+						guard (response as? HTTPURLResponse)?.statusCode == 200,
+						      let body = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw BrowserAIError.cliUnavailable }
+						result = (body["data"] as? [[String: Any]] ?? []).compactMap { item in
+							guard let id = item["id"] as? String else { return nil }
+							return BrowserAIModelOption(id: id, title: item["name"] as? String ?? id)
+						}
+					} else {
+						result = try await BrowserAICLI.models(provider: provider)
+					}
+					try Task.checkCancellation()
+					models = result
+					if result.isEmpty {
+						error = "No models were returned by this command."
+					}
+				} catch {
+					if !Task.isCancelled {
+						self.error = error.localizedDescription
+					}
+				}
+			}
+		}
+	}
+#endif

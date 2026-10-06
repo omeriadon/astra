@@ -121,6 +121,13 @@ struct BrowserWorkspace: Codable, Equatable, Sendable {
 				tabIDs.contains($0) && seenPinned.insert($0).inserted
 			}
 
+			let normalIDs = tabIDs.subtracting(spaces[index].pinnedTabIDs)
+			var groupedIDs = Set<UUID>()
+			spaces[index].todayTabGroups = spaces[index].todayTabGroups.compactMap { group in
+				let ids = group.tabIDs.filter { normalIDs.contains($0) && groupedIDs.insert($0).inserted }
+				return ids.isEmpty ? nil : BrowserTabGroupingFeature.Group(name: group.name, tabIDs: ids)
+			}
+
 			let pinnedIDs = Set(spaces[index].pinnedTabIDs)
 			var folderIndexes: [UUID: Int] = [:]
 			var folders: [PinnedTabFolder] = []

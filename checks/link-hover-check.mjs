@@ -11,10 +11,13 @@ const window = {
   webkit: { messageHandlers: { linkHoverChanged: { postMessage: value => reports.push(value) } } },
 };
 new Function('document', 'window', 'innerWidth', 'innerHeight', script)(document, window, 1000, 800);
-const anchor = { matches: () => true, getAttribute: () => '../target', baseURI: 'https://example.com/page/' };
+const attributes = new Map();
+const anchor = { matches: () => true, getAttribute: () => '../target', baseURI: 'https://example.com/page/', removeAttribute: key => attributes.delete(key), setAttribute: (key, value) => attributes.set(key, value), getBoundingClientRect: () => ({left: 100, top: 200, width: 80, height: 20}) };
 const hover = (x, y) => events.get('pointermove')({ clientX: x, clientY: y, composedPath: () => [{}, anchor] });
 hover(500, 300);
-assert.deepEqual(reports.at(-1), { href: 'https://example.com/target', trailing: false });
+assert.equal(reports.at(-1).href, 'https://example.com/target');
+assert.equal(reports.at(-1).trailing, false);
+assert.equal(reports.at(-1).width, 80);
 hover(501, 300);
 assert.equal(reports.length, 1, 'Repeated moves on the same link do not update SwiftUI');
 hover(10, 790);
@@ -30,4 +33,10 @@ assert.equal(reports.at(-1).href, '');
 const invalid = { ...anchor, getAttribute: () => 'https://%' };
 events.get('pointermove')({ clientX: 500, clientY: 300, composedPath: () => [invalid] });
 assert.equal(reports.at(-1).href, '');
+document.getElementById = () => ({});
+globalThis.astraAIHoverEnabled = true;
+hover(500, 300);
+assert.equal(attributes.has('data-astra-ai-preview-hover'), true);
+events.get('mouseleave')();
+assert.equal(attributes.has('data-astra-ai-preview-hover'), false);
 console.log('Link hover URL, deduplication, corner avoidance and clearing checks passed');

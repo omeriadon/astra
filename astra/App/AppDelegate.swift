@@ -773,9 +773,8 @@
 		}
 
 		@objc private func copyURL(_: Any?) {
-			guard let url = activeBrowser?.selectedTab?.activeController?.url else { return }
-			NSPasteboard.general.clearContents()
-			NSPasteboard.general.setString(BrowserAddress.withoutCredentials(url).absoluteString, forType: .string)
+			guard let browser = activeBrowser, let tab = browser.selectedTab else { return }
+			browser.copyURL(for: tab)
 		}
 
 		@objc private func toggleFullScreen(_: Any?) {
@@ -868,7 +867,7 @@
 				return BrowserKeyboardMenuPolicy.canResetZoom(activeBrowser?.selectedTab?.activeController?.pageZoom)
 			}
 			if menuItem.action == #selector(copyURL(_:)) {
-				return BrowserKeyboardMenuPolicy.canCopyURL(activeBrowser?.selectedTab?.activeController?.url)
+				return BrowserKeyboardMenuPolicy.canCopyURL(activeBrowser?.selectedTab?.copyableURL)
 			}
 			if menuItem.action == #selector(enterPictureInPicture(_:)) {
 				guard activeAuthenticationBrowser == nil,

@@ -19,6 +19,9 @@ struct BrowserDeveloperSettingsView: View {
 
 	var body: some View {
 		List {
+			#if DEBUG
+				BrowserAIPresetSettings()
+			#endif
 			#if os(macOS)
 				Section("Web Inspector") {
 					Toggle("Allow Web Inspector in Safari", isOn: $webInspectorEnabled)

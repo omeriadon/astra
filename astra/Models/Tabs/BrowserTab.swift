@@ -146,6 +146,10 @@ final class BrowserTab: Identifiable {
 		controller?.url ?? storedURL
 	}
 
+	var copyableURL: URL? {
+		internalPage == nil ? activeController?.url ?? currentURL : nil
+	}
+
 	private(set) var peeks: [BrowserPeek]
 	@ObservationIgnored
 	private var storedInteractionState: Any?

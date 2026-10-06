@@ -1,3 +1,4 @@
+import Defaults
 import SwiftUI
 import WebKit
 
@@ -23,6 +24,10 @@ struct ShellSidebarListView: View {
 		let ungroupedPinnedTabs = pinnedTabs.filter { !folderTabIDs.contains($0.id) }
 		let pinnedSet = Set(space.pinnedTabIDs)
 		let normalTabs = space.tabIDs.filter { !pinnedSet.contains($0) }.compactMap { tabsByID[$0] }
+		let normalIDSet = Set(normalTabs.map(\.id))
+		let normalIndexes = Dictionary(uniqueKeysWithValues: normalTabs.enumerated().map { ($0.element.id, $0.offset) })
+		let groupedIDs = Set(space.todayTabGroups.flatMap(\.tabIDs))
+		let ungroupedNormalTabs = normalTabs.enumerated().filter { !groupedIDs.contains($0.element.id) }
 		let isActiveSpace = space.id == browser.workspace.selectedSpaceID
 		let selectedID = browser.selectedTabID
 		return GeometryReader { geometry in
@@ -79,8 +84,6 @@ struct ShellSidebarListView: View {
 								BrowserDropZone(browser: browser, area: .pinned, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
 							}
 							#endif
-							Divider()
-								.padding(.vertical, 8)
 						}
 						if pinnedTabs.isEmpty, space.pinnedFolders.isEmpty {
 							Button("New Pinned Folder", systemImage: "folder.badge.plus") {
@@ -98,8 +101,24 @@ struct ShellSidebarListView: View {
 									}
 							}
 						#endif
+						BrowserAITabDivider(browser: browser, space: space, tabs: normalTabs)
 						VStack(spacing: 2) {
-							ForEach(Array(normalTabs.enumerated()), id: \.element.id) { index, tab in
+							ForEach(space.todayTabGroups) { group in
+								let groupTabs = group.tabIDs.compactMap { tabsByID[$0] }.filter { normalIDSet.contains($0.id) }
+								if !groupTabs.isEmpty {
+									Text(group.name)
+										.font(.caption.weight(.semibold))
+										.frame(maxWidth: .infinity, alignment: .leading)
+										.padding(.horizontal, 10)
+										.padding(.top, 8)
+									ForEach(groupTabs) { tab in
+										BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
+											.equatable()
+											.id(tab.id)
+									}
+								}
+							}
+							ForEach(ungroupedNormalTabs, id: \.element.id) { index, tab in
 								BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: index, normalCount: normalTabs.count, pinned: false, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
 									.equatable()
 									.id(tab.id)
@@ -274,6 +293,14 @@ private struct ShellWebsiteNavigationControls: View {
 				.buttonStyle(.bordered)
 				.foregroundStyle(theme.foregroundColor)
 				.id(ObjectIdentifier(controller))
+			if !browser.isPrivate, Defaults[.aiSidebar] {
+				Button("AI Sidebar", systemImage: "bubble.left.and.text.bubble.right") {
+					browser.showsAISidebar.toggle()
+				}
+				.labelStyle(.iconOnly)
+				.buttonStyle(.bordered)
+				.accessibilityIdentifier("ai-sidebar-toggle")
+			}
 		}
 	}
 }
@@ -478,6 +505,15 @@ struct ShellDownloadsBarView: View {
 			} else {
 				BrowserSpacesBar(browser: browser, onSwipeProgress: onSwipeProgress)
 					.frame(maxWidth: .infinity)
+			}
+
+			if !browser.isPrivate, Defaults[.aiSidebar] {
+				Button("AI Sidebar", systemImage: "bubble.left.and.text.bubble.right") {
+					browser.showsAISidebar.toggle()
+				}
+				.labelStyle(.iconOnly)
+				.buttonStyle(.plain)
+				.accessibilityIdentifier("sidebar-ai-toggle")
 			}
 
 			if !browser.isPrivate {

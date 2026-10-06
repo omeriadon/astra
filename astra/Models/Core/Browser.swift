@@ -55,6 +55,8 @@ final class Browser {
 		}
 	}
 
+	var showsAISidebar = false
+	let aiChat = BrowserAIChat()
 	var isAboutToQuit: Bool = false
 	var addressFocusRequest = 0
 	var settingsPage: BrowserSettingsView.Page = .ui
@@ -260,6 +262,17 @@ final class Browser {
 			addTab()
 		}
 		schedulePersistence()
+	}
+
+	func applyTodayTabGroups(_ groups: [BrowserTabGroupingFeature.Group], in spaceID: UUID, expectedIDs: [UUID]) {
+		guard !isPrivate, let index = workspace.spaces.firstIndex(where: { $0.id == spaceID }) else { return }
+		let space = workspace.spaces[index]
+		let normalIDs = space.tabIDs.filter { !space.pinnedTabIDs.contains($0) }
+		guard normalIDs == expectedIDs else { return }
+		workspace.spaces[index].todayTabGroups = groups
+		workspace.spaces[index].modifiedAt = .now
+		workspace.modifiedAt = .now
+		persist()
 	}
 
 	func renameSelectedSpace(_ name: String) {
@@ -972,6 +985,18 @@ final class Browser {
 
 	func commitTabSwitch(to id: UUID) {
 		selectTab(id)
+	}
+
+	func copyURL(for tab: BrowserTab) {
+		guard let url = tab.copyableURL else { return }
+		let address = BrowserAddress.withoutCredentials(url)
+		#if os(macOS)
+			NSPasteboard.general.clearContents()
+			guard NSPasteboard.general.setString(address.absoluteString, forType: .string) else { return }
+		#elseif os(iOS)
+			UIPasteboard.general.url = address
+		#endif
+		session.toastManager.show(symbol: "doc.on.doc", message: "URL copied")
 	}
 
 	var canBookmarkSelectedPage: Bool {

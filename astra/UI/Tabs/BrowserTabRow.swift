@@ -161,13 +161,7 @@ struct BrowserTabRow: View {
 	}
 
 	private func copyURL() {
-		guard let url = tab.currentURL else { return }
-		#if os(macOS)
-			NSPasteboard.general.clearContents()
-			NSPasteboard.general.setString(BrowserAddress.withoutCredentials(url).absoluteString, forType: .string)
-		#elseif os(iOS)
-			UIPasteboard.general.url = url
-		#endif
+		browser.copyURL(for: tab)
 	}
 }
 
@@ -377,7 +371,8 @@ private struct TabRowContextMenu: View {
 			Divider()
 
 			Button("Copy URL", systemImage: "doc.on.doc", action: onCopyURL)
-				.disabled(tab.currentURL == nil)
+				.disabled(tab.copyableURL == nil)
+				.accessibilityIdentifier("copy-tab-url-\(tab.id.uuidString)")
 			Button("Add to Reading List", systemImage: "text.badge.plus") {
 				browser.addToReadingList(tabID: tab.id)
 			}
