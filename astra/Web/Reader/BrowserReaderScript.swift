@@ -1,3 +1,4 @@
+import Defaults
 import Foundation
 
 @MainActor
@@ -37,8 +38,7 @@ enum BrowserReaderScript {
 		figcaption { font-size: 0.85em; opacity: 0.7; } a { color: #2868b2; }
 		pre { overflow-x: auto; padding: 1em; background: #8881; } table { display: block; overflow-x: auto; }
 		blockquote { margin-inline: 0; padding-inline-start: 1em; border-inline-start: 3px solid #8888; }
-		@media (prefers-color-scheme: dark) { body { color: #e7e5df; background: #20211f; } a { color: #8bbcf5; } }
-		</style></head><body><main><h1>\(escape(article["title"] ?? ""))</h1>
+		</style><style id="reader-appearance">\(Defaults[.readerAppearance].styleSheet)</style></head><body><main><h1>\(escape(article["title"] ?? ""))</h1>
 		<p class="byline">\(escape(article["byline"] ?? ""))</p>\(article["content"] ?? "")</main></body></html>
 		"""
 	}

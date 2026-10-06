@@ -4,6 +4,7 @@ import WebKit
 struct BrowserReaderWebView {
 	let controller: BrowserController
 	let html: String
+	let appearance: BrowserReaderAppearance
 
 	@MainActor
 	func makeWebView(coordinator: Coordinator) -> WKWebView {
@@ -19,15 +20,37 @@ struct BrowserReaderWebView {
 
 	@MainActor
 	func makeCoordinator() -> Coordinator {
-		Coordinator(controller: controller)
+		Coordinator(controller: controller, appearance: appearance)
 	}
 
 	@MainActor
 	final class Coordinator: NSObject, WKNavigationDelegate {
 		private weak var controller: BrowserController?
+		private var appearance: BrowserReaderAppearance
 
-		init(controller: BrowserController) {
+		init(controller: BrowserController, appearance: BrowserReaderAppearance) {
 			self.controller = controller
+			self.appearance = appearance
+		}
+
+		func updateAppearance(_ appearance: BrowserReaderAppearance, in webView: WKWebView) {
+			guard self.appearance != appearance else { return }
+			self.appearance = appearance
+			applyAppearance(in: webView)
+		}
+
+		private func applyAppearance(in webView: WKWebView) {
+			webView.callAsyncJavaScript(
+				"document.getElementById('reader-appearance').textContent = css;",
+				arguments: ["css": appearance.styleSheet],
+				in: nil,
+				in: .defaultClient,
+				completionHandler: nil
+			)
+		}
+
+		func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {
+			applyAppearance(in: webView)
 		}
 
 		func webView(_: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -53,8 +76,9 @@ struct BrowserReaderWebView {
 			makeWebView(coordinator: context.coordinator)
 		}
 
-		func updateNSView(_ webView: WKWebView, context _: Context) {
+		func updateNSView(_ webView: WKWebView, context: Context) {
 			webView.pageZoom = controller.pageZoom
+			context.coordinator.updateAppearance(appearance, in: webView)
 		}
 	}
 #elseif os(iOS)
@@ -63,8 +87,9 @@ struct BrowserReaderWebView {
 			makeWebView(coordinator: context.coordinator)
 		}
 
-		func updateUIView(_ webView: WKWebView, context _: Context) {
+		func updateUIView(_ webView: WKWebView, context: Context) {
 			webView.pageZoom = controller.pageZoom
+			context.coordinator.updateAppearance(appearance, in: webView)
 		}
 	}
 #endif
