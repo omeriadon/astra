@@ -5,6 +5,7 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View {
 	let edge: HorizontalEdge
 
 	@Binding var sidebarShown: Bool
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@ViewBuilder let sidebar: Sidebar
 	@ViewBuilder let content: Content
 
@@ -45,5 +46,6 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View {
 			.frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
 			.clipped()
 		}
+		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: sidebarShown)
 	}
 }

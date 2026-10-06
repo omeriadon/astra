@@ -156,15 +156,21 @@
 				}.value
 				BrowserWindowRegistry.shared.beginWindowRestoration(records)
 				for record in records where !windows.contains(where: { $0.browser.windowID == record.windowID }) {
-					openBrowserWindow(restorationRecord: record)
+					openBrowserWindow(restorationRecord: record, showImmediately: false)
 				}
 				if windows.isEmpty, !wasLaunchedForWebPush {
-					openBrowserWindow()
+					openBrowserWindow(showImmediately: false)
 				}
 				for controller in windows {
 					while !controller.browser.isHydrationFinished {
 						try? await Task.sleep(for: .milliseconds(25))
 					}
+				}
+				for controller in windows {
+					controller.showWindow()
+				}
+				if !windows.isEmpty {
+					NSApp.activate()
 				}
 				BrowserWindowRegistry.shared.finishWindowRestoration()
 			}
@@ -328,7 +334,8 @@
 		@discardableResult
 		func openBrowserWindow(
 			isPrivate: Bool = false,
-			restorationRecord: BrowserWindowRecord? = nil
+			restorationRecord: BrowserWindowRecord? = nil,
+			showImmediately: Bool = true
 		) -> BrowserWindowController {
 			let record = isPrivate ? nil : restorationRecord
 			let controller = BrowserWindowController(browser: Browser(isPrivate: isPrivate, windowRecord: record))
@@ -346,8 +353,10 @@
 			}
 
 			windows.append(controller)
-			controller.showWindow()
-			NSApp.activate()
+			if showImmediately {
+				controller.showWindow()
+				NSApp.activate()
+			}
 			return controller
 		}
 

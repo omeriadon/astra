@@ -66,7 +66,7 @@ struct DesktopBrowserShell: View {
 	#if os(macOS)
 		private func updateWindowButtons(in window: NSWindow?, animated: Bool = true) {
 			guard let window else { return }
-			let hidden = !sidebarShown && !showsTopBar && !isTopBarRevealed
+			let hidden = !sidebarShown && !(showsTopBarOnPage && (showsTopBar || isTopBarRevealed))
 			let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
 				.compactMap { window.standardWindowButton($0) }
 			windowButtonAnimationGeneration += 1
@@ -201,6 +201,10 @@ struct DesktopBrowserShell: View {
 		.onChange(of: isTopBarRevealed) { _, _ in
 			updateWindowButtons(in: hostWindow)
 		}
+		.onChange(of: showsTopBarOnPage) { _, _ in
+			isTopBarRevealed = false
+			updateWindowButtons(in: hostWindow)
+		}
 		#endif
 		.overlay {
 			DownloadFlightOverlay(
@@ -295,7 +299,9 @@ private struct ShellSidebarColumn: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	var body: some View {
-		VStack(spacing: 0) {
+		ZStack(alignment: .topLeading) {
+			sidebarContent
+
 			ShellNavigationBarControls(
 				browser: browser,
 				theme: theme,
@@ -305,79 +311,93 @@ private struct ShellSidebarColumn: View {
 				topBarColorScheme: topBarColorScheme
 			)
 			.frame(maxWidth: .infinity, alignment: .leading)
-			ZStack(alignment: .top) {
-				Group {
-					if browser.isPrivate {
-						PrivateBrowserSidebar(browser: browser)
-					} else {
-						ScrollView(.horizontal) {
-							LazyHStack(spacing: 0) {
-								ForEach(browser.workspace.spaces) { space in
-									ShellSidebarListView(browser: browser, space: space, theme: space.theme)
-										.foregroundStyle(space.theme.foregroundColor)
-										.containerRelativeFrame(.horizontal)
-										.id(space.id)
-								}
-							}
-							.scrollTargetLayout()
-						}
-						.scrollIndicators(.hidden)
-						.scrollTargetBehavior(.paging)
-						.scrollPosition(id: $scrollSpaceID, anchor: .center)
-						.onScrollPhaseChange { _, phase in
-							isScrollingSpaces = phase == .interacting || phase == .decelerating
-						}
-						.onChange(of: browser.workspace.selectedSpaceID, initial: true) { _, id in
-							withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
-								scrollSpaceID = id
-							}
-						}
-						.onChange(of: scrollSpaceID) { _, id in
-							guard isScrollingSpaces, let id, id != browser.workspace.selectedSpaceID else { return }
-							browser.selectSpace(id)
-						}
-						.accessibilityIdentifier("sidebar-space-pages")
-					}
-				}
-				.foregroundStyle(theme.foregroundColor)
-				.offset(x: showsDownloads ? BrowserChromeMetrics.expandedSidebarWidth : 0)
+			.allowsHitTesting(false)
+		}
+	}
 
-				DownloadsSidebarView(manager: downloads, theme: theme)
-					.foregroundStyle(theme.foregroundColor)
-					.offset(x: showsDownloads ? 0 : -BrowserChromeMetrics.expandedSidebarWidth)
+	private var sidebarContent: some View {
+		ZStack(alignment: .top) {
+			Group {
+				if browser.isPrivate {
+					PrivateBrowserSidebar(browser: browser)
+				} else {
+					ScrollView(.horizontal) {
+						LazyHStack(spacing: 0) {
+							ForEach(browser.workspace.spaces) { space in
+								ShellSidebarListView(browser: browser, space: space, theme: space.theme)
+									.foregroundStyle(space.theme.foregroundColor)
+									.containerRelativeFrame(.horizontal)
+									.id(space.id)
+							}
+						}
+						.scrollTargetLayout()
+					}
+					.scrollIndicators(.hidden)
+					.scrollTargetBehavior(.paging)
+					.scrollPosition(id: $scrollSpaceID, anchor: .center)
+					.onScrollPhaseChange { _, phase in
+						isScrollingSpaces = phase == .interacting || phase == .decelerating
+					}
+					.onChange(of: browser.workspace.selectedSpaceID, initial: true) { _, id in
+						withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+							scrollSpaceID = id
+						}
+					}
+					.onChange(of: scrollSpaceID) { _, id in
+						guard isScrollingSpaces, let id, id != browser.workspace.selectedSpaceID else { return }
+						browser.selectSpace(id)
+					}
+					.layerEffect(
+						ShaderLibrary.variableBlurVertical(
+							.float(38),
+							.float(6)
+						),
+						maxSampleOffset: CGSize(width: 0, height: 12)
+					)
+					.accessibilityIdentifier("sidebar-space-pages")
+				}
 			}
-			.clipped()
-			.frame(maxWidth: .infinity, maxHeight: .infinity)
-			.safeAreaInset(edge: .bottom, spacing: 0) {
+			.foregroundStyle(theme.foregroundColor)
+			.offset(x: showsDownloads ? BrowserChromeMetrics.expandedSidebarWidth : 0)
+
+			DownloadsSidebarView(manager: downloads, theme: theme)
+				.foregroundStyle(theme.foregroundColor)
+				.offset(x: showsDownloads ? 0 : -BrowserChromeMetrics.expandedSidebarWidth)
+		}
+		.safeAreaBar(edge: .bottom, spacing: 0) {
+			VStack(spacing: 8) {
 				BrowserMediaActivityView(browser: browser)
 					.padding(.horizontal, 8)
-					.padding(.bottom, 48)
-			}
-			.overlay(alignment: .bottom) {
-				ZStack(alignment: .bottom) {
-					HazeEffect(
-						maskProvider: LinearGradientMaskProvider(
-							startPoint: .bottom,
-							endPoint: .top,
-							startOpacity: 1,
-							endOpacity: 0,
-							isSmooth: true
-						),
-						maxBlurRadius: 2
-					)
-					.frame(height: 56)
-					.allowsHitTesting(false)
-					ShellDownloadsBarView(
-						browser: browser,
-						theme: theme,
-						downloads: downloads,
-						showsDownloads: $showsDownloads,
-						onSwipeProgress: onSwipeProgress
-					)
-					.foregroundStyle(theme.foregroundColor)
-				}
+				ShellDownloadsBarView(
+					browser: browser,
+					theme: theme,
+					downloads: downloads,
+					showsDownloads: $showsDownloads,
+					onSwipeProgress: onSwipeProgress
+				)
+				.foregroundStyle(theme.foregroundColor)
 			}
 		}
+		.frame(maxWidth: .infinity, maxHeight: .infinity)
+		.safeAreaPadding(.top, BrowserChromeMetrics.topBarRegionHeight)
+		.scrollEdgeEffectHidden(true, for: .top)
+//		.overlay(alignment: .top) {
+//			HazeEffect(
+//				maskProvider: LinearGradientMaskProvider(
+//					startPoint: .top,
+//					endPoint: .bottom,
+//					startOpacity: 1,
+//					endOpacity: 0,
+//					isSmooth: true
+//				),
+//				maxBlurRadius: 2,
+//				isolatesBackdrop: true
+//			)
+//			.frame(height: BrowserChromeMetrics.topBarRegionHeight)
+//			.allowsHitTesting(false)
+//			.accessibilityHidden(true)
+//		}
+		.compositingGroup()
 	}
 }
 
@@ -459,7 +479,9 @@ private struct ShellContentColumn: View {
 						? BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding
 						: 6
 					withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
-						isTopBarRevealed = !showsTopBar && location.y < revealHeight
+						isTopBarRevealed = browser.selectedTab?.internalPage == nil
+							&& !browser.isShowingNewTab
+							&& !showsTopBar && location.y < revealHeight
 					}
 				case .ended:
 					withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
