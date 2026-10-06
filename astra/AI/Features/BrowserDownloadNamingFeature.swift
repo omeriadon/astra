@@ -25,7 +25,7 @@ struct BrowserDownloadNamingFeature: BrowserAIFeature {
 	}
 
 	func output(from text: String) throws -> String {
-		let stem = Self.safeStem(text)
+		let stem = Self.safeStem(BrowserAIOutput.title(text))
 		guard stem != "Download" else {
 			throw BrowserAIError.emptyResponse
 		}

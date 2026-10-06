@@ -496,6 +496,16 @@
 			activeBrowser?.sidebarShown.toggle()
 		}
 
+		@objc private func toggleTopBar(_: Any?) {
+			guard let browser = activeBrowser, !browser.isMini else { return }
+			NotificationCenter.default.post(name: .toggleBrowserTopBar, object: browser.windowID)
+		}
+
+		@objc private func toggleAISidebar(_: Any?) {
+			guard let browser = activeBrowser, browser.canShowAISidebar else { return }
+			browser.showsAISidebar.toggle()
+		}
+
 		@objc private func editSpace(_: Any?) {
 			guard activeAuthenticationBrowser == nil else { return }
 			activeBrowser?.openInternalPage(.themeEditor)
@@ -703,6 +713,12 @@
 			exportPage(.source)
 		}
 
+		@objc private func showWebInspector(_: Any?) {
+			guard activeAuthenticationBrowser == nil,
+			      let controller = activeBrowser?.selectedTab?.activeController else { return }
+			BrowserDesktopCommands.showWebInspector(controller)
+		}
+
 		private func exportPage(_ format: BrowserDesktopCommands.ExportFormat) {
 			guard let browser = activeBrowser,
 			      let controller = browser.selectedTab?.activeController
@@ -794,7 +810,7 @@
 			let pageActions: Set<Selector> = [
 				#selector(printPage(_:)), #selector(sharePage(_:)), #selector(savePDF(_:)), #selector(saveWebArchive(_:)),
 				#selector(saveSource(_:)), #selector(findInPage(_:)), #selector(findNext(_:)),
-				#selector(findPrevious(_:)),
+				#selector(findPrevious(_:)), #selector(showWebInspector(_:)),
 			]
 			let dataActions: Set<Selector> = [#selector(importBrowsingData(_:)), #selector(exportBrowsingData(_:)), #selector(exportBookmarks(_:))]
 			if let action = menuItem.action, pageActions.contains(action) {
@@ -819,6 +835,12 @@
 			}
 			if menuItem.action == #selector(openLocation(_:)) {
 				return activeBrowser != nil
+			}
+			if menuItem.action == #selector(toggleAISidebar(_:)) {
+				return activeBrowser?.canShowAISidebar == true && Defaults[.aiFeaturesEnabled] && Defaults[.aiSidebar]
+			}
+			if menuItem.action == #selector(toggleTopBar(_:)) {
+				return activeBrowser?.isMini == false
 			}
 			if menuItem.action == #selector(toggleSidebar(_:)) {
 				return activeBrowser?.isMini == false
@@ -1005,7 +1027,16 @@
 			mainMenu.addItem(menuRoot("View", submenu: viewMenu))
 			viewMenu.addItem(item("Show Reader", action: #selector(toggleReader(_:)), key: "r", modifiers: [.command, .option]))
 			viewMenu.addItem(item("Toggle Sidebar", action: #selector(toggleSidebar(_:)), key: "s"))
+			viewMenu.addItem(item("Toggle Top Bar", action: #selector(toggleTopBar(_:)), key: "d"))
+			viewMenu.addItem(item("Toggle AI Sidebar", action: #selector(toggleAISidebar(_:)), key: "l", modifiers: [.command, .option]))
 			viewMenu.addItem(item("Edit Space", action: #selector(editSpace(_:))))
+			viewMenu.addItem(.separator())
+			viewMenu.addItem(item(
+				"Web Inspector",
+				action: #selector(showWebInspector(_:)),
+				key: "i",
+				modifiers: [.command, .option]
+			))
 			viewMenu.addItem(.separator())
 			viewMenu.addItem(item(
 				"Enter Full Screen",
@@ -1019,7 +1050,7 @@
 			navigationMenu.delegate = self
 			navigationMenu.addItem(item("History", action: #selector(openHistory(_:)), key: "y"))
 			navigationMenu.addItem(.separator())
-			navigationMenu.addItem(item("Show Downloads", action: #selector(showDownloads(_:)), key: "l", modifiers: [.command, .option]))
+			navigationMenu.addItem(item("Show Downloads", action: #selector(showDownloads(_:)), key: "j"))
 			navigationMenu.addItem(item("Open Location", action: #selector(openLocation(_:)), key: "l"))
 			navigationMenu.addItem(item("Back", action: #selector(goBack(_:)), key: "["))
 			navigationMenu.addItem(item("Forward", action: #selector(goForward(_:)), key: "]"))
@@ -1041,7 +1072,7 @@
 
 			let tabMenu = NSMenu(title: "Tab")
 			mainMenu.addItem(menuRoot("Tab", submenu: tabMenu))
-			tabMenu.addItem(item("Duplicate Tab", action: #selector(duplicateTab(_:)), key: "d"))
+			tabMenu.addItem(item("Duplicate Tab", action: #selector(duplicateTab(_:)), key: "d", modifiers: [.command, .shift]))
 			tabMenu.addItem(item(
 				"Copy URL",
 				action: #selector(copyURL(_:)),

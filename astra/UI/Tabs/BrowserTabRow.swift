@@ -234,6 +234,7 @@ private struct TabIconView: View {
 }
 
 private struct TabTitleView: View {
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	let tab: BrowserTab
 	let browser: Browser
 	let isRenaming: Bool
@@ -267,6 +268,8 @@ private struct TabTitleView: View {
 			} label: {
 				Label {
 					Text(verbatim: tab.title)
+						.contentTransition(.opacity)
+						.animation(reduceMotion ? nil : .smooth(duration: 0.2), value: tab.title)
 						.lineLimit(1)
 				} icon: {
 					Image(systemName: tab.internalPage?.symbol ?? "globe")

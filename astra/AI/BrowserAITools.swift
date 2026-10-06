@@ -1,6 +1,12 @@
 import CoreFoundation
 import Defaults
 import Foundation
+import SwiftUI
+#if os(macOS)
+	import AppKit
+#else
+	import UIKit
+#endif
 
 nonisolated enum BrowserAIAction: String, CaseIterable, Identifiable, Sendable {
 	case createSpaceFolder = "create_space_folder"
@@ -72,6 +78,7 @@ struct BrowserAIChatTurnFeature: BrowserAIFeature {
 		let catalog: String
 		let images: [BrowserAIImage]
 		let reasoning: String
+		var files: [BrowserAIFile] = []
 	}
 
 	nonisolated struct Turn: Decodable, Sendable {
@@ -90,16 +97,18 @@ struct BrowserAIChatTurnFeature: BrowserAIFeature {
 	func request(for input: Input) -> BrowserAIRequest {
 		.init(instructions: BrowserAIPrompts.chatTools + "\nEnabled tools and arguments (all argument values are strings):\n" + input.catalog,
 		      prompt: "<context>\n\(input.context)\n</context>\nUser request: \(input.question)", maximumResponseTokens: 2048,
-		      images: input.images.isEmpty ? nil : input.images, reasoningEffort: input.reasoning)
+		      images: input.images.isEmpty ? nil : input.images, reasoningEffort: input.reasoning, files: input.files.isEmpty ? nil : input.files)
 	}
 
 	func output(from text: String) throws -> Turn {
 		let data = BrowserAIOutput.jsonData(text)
 		if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-			guard let response = object["response"] as? String, let actions = object["actions"] as? [[String: Any]], actions.count <= 5 else { throw BrowserAIError.emptyResponse }
+			guard let response = object["response"] as? String else { throw BrowserAIError.invalidResponse("The AI returned an action response without readable response text.") }
+			let rawActions = object["actions"] ?? []
+			guard let actions = rawActions as? [[String: Any]], actions.count <= 5 else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
 			let calls = try actions.map { item -> BrowserAIToolCall in
 				guard let name = item["name"] as? String, BrowserAIAction(rawValue: name) != nil,
-				      let values = item["arguments"] as? [String: Any], values.count <= 8 else { throw BrowserAIError.emptyResponse }
+				      let values = item["arguments"] as? [String: Any], values.count <= 8 else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
 				var arguments: [String: String] = [:]
 				for (key, value) in values {
 					let string: String
@@ -108,17 +117,17 @@ struct BrowserAIChatTurnFeature: BrowserAIFeature {
 					} else if let value = value as? NSNumber {
 						string = CFGetTypeID(value) == CFBooleanGetTypeID() ? (value.boolValue ? "true" : "false") : value.stringValue
 					} else {
-						throw BrowserAIError.emptyResponse
+						throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.")
 					}
-					guard string.utf8.count <= 8192 else { throw BrowserAIError.emptyResponse }
+					guard string.utf8.count <= 8192 else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
 					arguments[key] = string
 				}
 				return BrowserAIToolCall(name: name, arguments: arguments)
 			}
 			return Turn(response: response, actions: calls)
 		}
-		guard !String(decoding: data, as: UTF8.self).hasPrefix("{") else { throw BrowserAIError.emptyResponse }
-		guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw BrowserAIError.emptyResponse }
+		guard !String(decoding: data, as: UTF8.self).hasPrefix("{") else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
+		guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
 		return Turn(response: text, actions: [])
 	}
 }
@@ -172,6 +181,11 @@ enum BrowserAITools {
 	static func execute(_ call: BrowserAIToolCall, browser: Browser, spaceID: UUID, model: BrowserAIModel) async throws -> String {
 		guard Defaults[.aiFeaturesEnabled], !browser.isPrivate, browser.selectedSpace.id == spaceID,
 		      let action = BrowserAIAction(rawValue: call.name), action.enabled else { throw BrowserAIError.toolDenied }
+		#if os(macOS)
+			let animation: Animation? = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .smooth(duration: 0.25)
+		#else
+			let animation: Animation? = UIAccessibility.isReduceMotionEnabled ? nil : .smooth(duration: 0.25)
+		#endif
 		let arguments = call.arguments
 		func name() throws -> String {
 			guard let value = arguments["name"]?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty, value.utf8.count <= 500 else { throw BrowserAIError.invalidRequest }
@@ -187,9 +201,9 @@ enum BrowserAITools {
 		}
 		switch action {
 			case .createSpaceFolder:
-				try browser.createPinnedFolder(named: name())
+				try withAnimation(animation) { try browser.createPinnedFolder(named: name()) }
 			case .createBookmarkFolder:
-				try browser.createBookmarkFolder(name())
+				try withAnimation(animation) { try browser.createBookmarkFolder(name()) }
 			case .createBookmark:
 				let destination = try url()
 				let folder = arguments["folder"] ?? ""
@@ -197,19 +211,19 @@ enum BrowserAITools {
 				if let existing = browser.bookmarks.first(where: { $0.url == destination }) {
 					return "Already bookmarked as \(existing.id)."
 				}
-				try browser.importBookmarks([Bookmark(name: name(), url: destination, folder: folder)])
+				try withAnimation(animation) { try browser.importBookmarks([Bookmark(name: name(), url: destination, folder: folder)]) }
 			case .deleteBookmark:
 				guard let id = arguments["bookmarkID"].flatMap(UUID.init(uuidString:)), browser.bookmarks.contains(where: { $0.id == id }) else { throw BrowserAIError.invalidRequest }
-				browser.removeBookmark(id)
+				withAnimation(animation) { browser.removeBookmark(id) }
 			case .openTab:
-				let opened = try browser.openHistoryURL(url(), inBackground: true)
+				let opened = try withAnimation(animation) { try browser.openHistoryURL(url(), inBackground: true) }
 				if let name = arguments["name"], !name.isEmpty {
-					opened.rename(to: String(name.prefix(200)))
+					withAnimation(animation) { opened.rename(to: String(name.prefix(200))) }
 				}
 				return "Created tab \(opened.id)."
 			case .closeTab:
 				let target = try tab()
-				browser.closeTab(target.id)
+				withAnimation(animation) { browser.closeTab(target.id) }
 				return browser.tabs.contains(where: { $0.id == target.id }) ? "The tab remains open or hibernated; closing was not completed." : "Closed tab \(target.id)."
 			case .pinTab, .favouriteTab:
 				let target = try tab()
@@ -225,14 +239,17 @@ enum BrowserAITools {
 				if arguments["enabled"] == "false", !(action == .pinTab ? pinned : favourite) {
 					return "The tab already has the requested state."
 				}
-				browser.moveTab(target.id, to: arguments["enabled"] == "false" ? .normal : action == .pinTab ? .pinned : .favourite)
+				withAnimation(animation) { browser.moveTab(target.id, to: arguments["enabled"] == "false" ? .normal : action == .pinTab ? .pinned : .favourite) }
 			case .moveTabToFolder:
 				let target = try tab()
 				guard let id = arguments["folderID"].flatMap(UUID.init(uuidString:)), browser.selectedSpace.pinnedFolders.contains(where: { $0.id == id }) else { throw BrowserAIError.invalidRequest }
 				guard browser.selectedSpace.pinnedTabIDs.contains(target.id) || BrowserAIAction.pinTab.enabled else { throw BrowserAIError.toolDenied }
-				browser.moveTab(target.id, to: .pinned)
-				browser.movePinnedTab(target.id, toFolder: id)
-			case .renameTab: try tab().rename(to: name())
+				withAnimation(animation) {
+					browser.moveTab(target.id, to: .pinned)
+					browser.movePinnedTab(target.id, toFolder: id)
+				}
+			case .renameTab:
+				try withAnimation(animation) { try tab().rename(to: name()) }
 			case .selectTab: try browser.selectTab(tab().id)
 			case .readPage:
 				guard let controller = try tab().activeController else { throw BrowserAIError.pageUnavailable }

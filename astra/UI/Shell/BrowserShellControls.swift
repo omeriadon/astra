@@ -212,24 +212,24 @@ struct ShellTopBarView: View {
 	let transitionToTheme: BrowserTheme?
 	let themeBlend: Double
 	var isCompact = false
+	var reservesWindowControls = false
 
 	var body: some View {
 		if browser.selectedTab?.internalPage == nil, !browser.isShowingNewTab {
 			websiteControls
 				.transition(.identity)
 				.frame(height: isCompact ? BrowserChromeMetrics.topBarRegionHeight * 2 : BrowserChromeMetrics.topBarRegionHeight)
-				.background {
-					if let transitionFromTheme {
-						transitionFromTheme.tabColor
-							.opacity(1 - themeBlend)
-							.overlay((transitionToTheme ?? theme).tabColor.opacity(themeBlend))
-					} else {
-						theme.tabColor
-					}
-				}
+				.background(browser.selectedTab?.activeController?.themeColor ?? theme.tabColor)
 				.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar : BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar))
 				.padding([.top, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 		}
+	}
+
+	private var controlsColorScheme: ColorScheme {
+		if let isLight = browser.selectedTab?.activeController?.themeColorIsLight {
+			return isLight ? .light : .dark
+		}
+		return theme.foregroundColor == .black ? .light : .dark
 	}
 
 	private var websiteControls: some View {
@@ -258,7 +258,7 @@ struct ShellTopBarView: View {
 		}
 		.padding(
 			.leading,
-			sidebarShown ? 10 : BrowserChromeMetrics.persistentControlsAreaWidth
+			reservesWindowControls ? 80 : (sidebarShown ? 10 : BrowserChromeMetrics.persistentControlsAreaWidth)
 		)
 		.frame(height: isCompact ? BrowserChromeMetrics.topBarRegionHeight * 2 : BrowserChromeMetrics.topBarRegionHeight)
 		.frame(maxWidth: .infinity, alignment: .leading)
@@ -267,7 +267,8 @@ struct ShellTopBarView: View {
 				NonDraggableTitlebarRegion()
 			}
 		#endif
-			.environment(\.colorScheme, topBarColorScheme)
+			.environment(\.colorScheme, controlsColorScheme)
+			.foregroundStyle(.primary)
 			.overlay(alignment: .bottom) {
 				if let controller = browser.selectedTab?.activeController {
 					ShellTopBarLoadingBar(
@@ -292,7 +293,7 @@ private struct ShellWebsiteNavigationControls: View {
 				.labelStyle(.iconOnly)
 				.buttonSizing(.fitted)
 				.buttonStyle(.bordered)
-				.foregroundStyle(theme.foregroundColor)
+				.foregroundStyle(.primary)
 				.id(ObjectIdentifier(controller))
 			BrowserWebsiteMonitorButton(browser: browser)
 			BrowserTranslationButton(browser: browser, controller: controller)
@@ -354,7 +355,7 @@ struct ShellExtensionControls: View {
 				.controlSize(.regular)
 				.buttonSizing(.fitted)
 				.buttonStyle(.bordered)
-				.foregroundStyle(theme.foregroundColor)
+				.foregroundStyle(.primary)
 				.accessibilityLabel(action?.label ?? extensions.title(for: name))
 				.accessibilityIdentifier("extension-action-\(name)")
 			}
@@ -375,7 +376,7 @@ struct ShellExtensionControls: View {
 			.controlSize(.regular)
 			.buttonSizing(.fitted)
 			.buttonStyle(.bordered)
-			.foregroundStyle(theme.foregroundColor)
+			.foregroundStyle(.primary)
 			.accessibilityLabel("Extensions")
 			.accessibilityIdentifier("browser-extensions")
 		}

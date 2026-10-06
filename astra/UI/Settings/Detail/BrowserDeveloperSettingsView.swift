@@ -19,15 +19,12 @@ struct BrowserDeveloperSettingsView: View {
 
 	var body: some View {
 		List {
-			#if DEBUG
-				BrowserAIPresetSettings()
-			#endif
 			#if os(macOS)
 				Section("Web Inspector") {
-					Toggle("Allow Web Inspector in Safari", isOn: $webInspectorEnabled)
-						.accessibilityLabel("Allow Web Inspector in Safari")
+					Toggle("Enable Web Inspector", isOn: $webInspectorEnabled)
+						.accessibilityLabel("Enable Web Inspector")
 						.accessibilityIdentifier("web-inspector-enabled")
-					Text("Inspect pages from Safari’s Develop menu. This applies when each page is created; Astra has no public embedded inspector command.")
+					Text("Open Astra’s Web Inspector with Option-Command-I or View → Web Inspector. Pages can also be inspected from Safari’s Develop menu.")
 						.font(.caption)
 						.foregroundStyle(.secondary)
 				}

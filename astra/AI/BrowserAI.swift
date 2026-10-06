@@ -17,6 +17,7 @@ nonisolated struct BrowserAIRequest: Codable, Sendable {
 	var images: [BrowserAIImage]? = nil
 	var reasoningEffort: String? = nil
 	var webSearch: Bool? = nil
+	var files: [BrowserAIFile]? = nil
 }
 
 nonisolated struct BrowserAIResponse: Codable, Sendable {
@@ -81,6 +82,7 @@ final class BrowserAI {
 		try requireEnabled()
 		let generation = try authentication(for: model)
 		try validate(request)
+		try validateFiles(request, model: model)
 		if request.images?.isEmpty == false, model == .appleIntelligence || model == .privateCloudCompute {
 			throw BrowserAIError.attachmentsUnsupported
 		}
@@ -154,6 +156,7 @@ final class BrowserAI {
 		try requireEnabled()
 		let generation = try authentication(for: model)
 		try validate(request)
+		try validateFiles(request, model: model)
 		if request.images?.isEmpty == false, model == .appleIntelligence || model == .privateCloudCompute {
 			throw BrowserAIError.attachmentsUnsupported
 		}
@@ -197,9 +200,11 @@ final class BrowserAI {
 				}
 				text = latest
 			case .codex, .claude:
-				text = try await BrowserAICLI.generate(request, model: model)
-				try requireEnabled()
-				onSnapshot(text)
+				text = try await BrowserAICLI.generate(request, model: model) { snapshot in
+					if Defaults[.aiFeaturesEnabled] {
+						onSnapshot(snapshot)
+					}
+				}
 			case let .openRouter(modelID):
 				text = try await BrowserSync.shared.streamAI(
 					cloudRequest(request, modelID: modelID),
@@ -301,6 +306,14 @@ final class BrowserAI {
 		}
 	}
 
+	private func validateFiles(_ request: BrowserAIRequest, model: BrowserAIModel) throws {
+		guard request.files?.contains(where: { $0.hasExtractedText != true }) == true else { return }
+		switch model {
+			case .codex, .claude: break
+			default: throw BrowserAIError.fileProviderRequired
+		}
+	}
+
 	private func cloudRequest(_ request: BrowserAIRequest, modelID: String) throws -> BrowserAICloudRequest {
 		guard !modelID.isEmpty, modelID.utf8.count <= 200 else {
 			throw BrowserAIError.invalidRequest
@@ -334,6 +347,7 @@ nonisolated enum BrowserAIError: LocalizedError {
 	case attachmentTooLarge
 	case attachmentUnreadable(String)
 	case attachmentsUnsupported
+	case fileProviderRequired
 	case privateCloudComputeUnavailable
 	case cliUnavailable
 	case pageUnavailable
@@ -341,6 +355,7 @@ nonisolated enum BrowserAIError: LocalizedError {
 	case appleIntelligenceUnavailable
 	case invalidRequest
 	case emptyResponse
+	case invalidResponse(String)
 	case invalidStream
 
 	static func http(_ status: Int, data: Data) -> Self {
@@ -374,11 +389,13 @@ nonisolated enum BrowserAIError: LocalizedError {
 			case .chatStorage:
 				"The chat could not be saved. Check available disk space and folder permissions. Its open transcript has been preserved."
 			case .attachmentTooLarge:
-				"This attachment is too large. Use files below 20 MB and images totaling at most 10 MB."
+				"The image exceeds the provider’s supported image size."
 			case let .attachmentUnreadable(name):
-				"Could not read \(name). Use an image, a text-based PDF, a text file, or a Word/RTF document."
+				"Could not read \(name). Check the file’s access permissions and retry."
+			case .fileProviderRequired:
+				"This provider cannot inspect the original file contents. Codex or Claude can access the attached file through the installed command. The file remains attached."
 			case .attachmentsUnsupported:
-				"The selected AI preset does not accept images. Use Default, Codex, or Claude for this chat."
+				"The selected AI provider does not accept images. Use Default, Codex, or Claude for this chat."
 			case .privateCloudComputeUnavailable:
 				"Private Cloud Compute is unavailable. Check Apple Intelligence and the app’s PCC entitlement."
 			case .cliUnavailable:
@@ -391,6 +408,8 @@ nonisolated enum BrowserAIError: LocalizedError {
 				"Apple Intelligence is unavailable on this device."
 			case .invalidRequest:
 				"The AI request exceeds the supported limits or is empty."
+			case let .invalidResponse(reason):
+				"The AI response could not be applied: \(reason)"
 			case .emptyResponse:
 				"The AI model did not return usable text."
 			case .invalidStream:

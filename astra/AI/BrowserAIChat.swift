@@ -169,23 +169,13 @@ final class BrowserAIChat {
 			var answer = ""
 			for _ in 0 ..< 5 {
 				try Task.checkCancellation()
-				let turn = try await BrowserAI.shared.perform(BrowserAIChatTurnFeature(), input: .init(context: context + "\n" + fileContext + "\n<conversation>\n" + conversation + "\n</conversation>\n" + BrowserAITools.inventory(browser) + "\n<tool-results>\n" + toolResults + "\n</tool-results>", question: question, catalog: BrowserAITools.catalog(), images: images, reasoning: selectedReasoning.isEmpty ? "provider-default" : selectedReasoning), model: model)
+				let (turn, results) = try await streamTurn(input: .init(context: context + "\n" + fileContext + "\n<conversation>\n" + conversation + "\n</conversation>\n" + BrowserAITools.inventory(browser) + "\n<tool-results>\n" + toolResults + "\n</tool-results>", question: question, catalog: BrowserAITools.catalog(), images: images, reasoning: selectedReasoning.isEmpty ? "provider-default" : selectedReasoning, files: files.compactMap(\.file)), model: model, browser: browser, spaceID: spaceID)
+				toolResults += results
 				if turn.actions.isEmpty {
-					answer = turn.response; break
+					answer = turn.response
+					break
 				}
 				preview = turn.response
-				for call in turn.actions {
-					try Task.checkCancellation()
-					do {
-						let result = try await BrowserAITools.execute(call, browser: browser, spaceID: spaceID, model: model)
-						toolResults += "\n\(call.name): \(result)\n"
-						await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "success", details: "phase=tool")
-					} catch {
-						try Task.checkCancellation()
-						toolResults += "\n\(call.name): Failed. \(error.localizedDescription)\n"
-						await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "failed", details: "phase=tool")
-					}
-				}
 			}
 			guard !answer.isEmpty else { throw BrowserAIError.toolLimit }
 			try Task.checkCancellation()
@@ -203,11 +193,13 @@ final class BrowserAIChat {
 			preview = ""
 			try await save()
 			if !titleIsGenerated {
-				let generated = try await BrowserAI.shared.perform(BrowserChatTitleFeature(), input: .init(question: question, answer: answer), model: model)
+				let generated = try? await BrowserAI.shared.perform(BrowserChatTitleFeature(), input: .init(question: question, answer: answer), model: model)
 				try Task.checkCancellation()
-				title = generated
-				titleIsGenerated = true
-				try await save()
+				if let generated {
+					title = generated
+					titleIsGenerated = true
+					try await save()
+				}
 			}
 		} catch {
 			preview = ""
@@ -215,6 +207,53 @@ final class BrowserAIChat {
 				self.error = error.localizedDescription
 			}
 		}
+	}
+
+	private func streamTurn(input: BrowserAIChatTurnFeature.Input, model: BrowserAIModel, browser: Browser, spaceID: UUID) async throws -> (BrowserAIChatTurnFeature.Turn, String) {
+		let feature = BrowserAIChatTurnFeature()
+		var queued: [BrowserAIToolCall] = []
+		var seen = Set<Data>()
+		var finished = false
+		var results = ""
+		let generation = Task { @MainActor in
+			defer { finished = true }
+			return try await BrowserAI.shared.performStreaming(feature, input: input, model: model) { snapshot in
+				preview = BrowserAIOutput.streamedString("response", in: snapshot) ?? (snapshot.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") ? "" : snapshot)
+				for data in BrowserAIOutput.completedObjects(in: snapshot) {
+					guard seen.count < 5,
+					      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+					      object["name"] != nil, object["arguments"] != nil,
+					      let envelope = try? JSONSerialization.data(withJSONObject: ["response": "", "actions": [object]]),
+					      let turn = try? feature.output(from: String(decoding: envelope, as: UTF8.self)),
+					      let call = turn.actions.first else { continue }
+					let encoder = JSONEncoder()
+					encoder.outputFormatting = .sortedKeys
+					guard let identifier = try? encoder.encode(call), seen.insert(identifier).inserted else { continue }
+					queued.append(call)
+				}
+			}
+		}
+		defer { generation.cancel() }
+		var next = 0
+		while !finished || next < queued.count {
+			try Task.checkCancellation()
+			guard next < queued.count else {
+				try await Task.sleep(for: .milliseconds(30))
+				continue
+			}
+			let call = queued[next]
+			next += 1
+			do {
+				let result = try await BrowserAITools.execute(call, browser: browser, spaceID: spaceID, model: model)
+				results += "\n\(call.name): \(result)\n"
+				await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "success", details: "phase=tool")
+			} catch {
+				try Task.checkCancellation()
+				results += "\n\(call.name): Failed. \(error.localizedDescription)\n"
+				await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "failed", details: "phase=tool")
+			}
+		}
+		return try await (generation.value, results)
 	}
 
 	private func save() async throws {

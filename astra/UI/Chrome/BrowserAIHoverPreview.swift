@@ -20,6 +20,7 @@ import WebKit
 		@State private var dismissedKey: String?
 		@State private var dismissalGeneration = 0
 		@Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+		@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 		private var requestKey: String {
 			"\(controller.navigationIdentifier)|\(controller.hoveredLinkURL?.absoluteString ?? "")|\(controller.hoveredLinkID)|\(enabled)|\(allFeatures)"
@@ -133,10 +134,18 @@ import WebKit
 					let budget = model == .appleIntelligence ? 1000 : 26000
 					let extracted = try await BrowserAIPageLoader().page(at: url)
 					let context = try await extracted.limited(to: budget)
-					let result = try await BrowserAI.shared.perform(BrowserLinkSummaryFeature(), input: .init(sourceURL: sourceURL, destinationURL: url, page: context))
+					page = extracted
+					let result = try await BrowserAI.shared.performStreaming(BrowserLinkSummaryFeature(), input: .init(sourceURL: sourceURL, destinationURL: url, page: context)) { snapshot in
+						guard !Task.isCancelled, requestKey == key, dismissedKey != key else { return }
+						if let partial = BrowserLinkSummaryFeature.streamingSummary(snapshot, title: extracted.title) {
+							withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) { summary = partial }
+						} else if !snapshot.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{"), !snapshot.contains("```") {
+							summary = .init(title: extracted.title, header: snapshot, bullets: [])
+						}
+					}
 					if !Task.isCancelled, requestKey == key, dismissedKey != key {
 						page = extracted
-						summary = result
+						withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) { summary = result }
 					}
 				} catch {
 					if !Task.isCancelled, requestKey == key, dismissedKey != key {

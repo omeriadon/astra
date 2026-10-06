@@ -79,6 +79,7 @@ private struct DownloadsEmptyView: View {
 }
 
 private struct DownloadRowView: View {
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	let item: BrowserDownload
 	let manager: BrowserDownloadManager
 	let theme: BrowserTheme
@@ -92,7 +93,9 @@ private struct DownloadRowView: View {
 				.accessibilityHidden(true)
 
 			VStack(alignment: .leading, spacing: 3) {
-				Text(item.name)
+				Text(manager.aiSuggestedNames[item.id] ?? item.name)
+					.contentTransition(.opacity)
+					.animation(reduceMotion ? nil : .smooth(duration: 0.2), value: manager.aiSuggestedNames[item.id] ?? item.name)
 					.lineLimit(2)
 					.font(.subheadline)
 				if let host = item.sourceURL?.host {

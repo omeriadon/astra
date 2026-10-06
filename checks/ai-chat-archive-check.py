@@ -29,6 +29,12 @@ with tempfile.TemporaryDirectory(prefix='astra-chat-archive-check-') as director
         try Data("Specific document facts\nA second detail.".utf8).write(to: textURL)
         let file = try await BrowserAIAttachment.read(textURL)
         assert(file.image == nil && file.text?.contains("Specific document facts") == true)
+        assert(file.file?.data == Data("Specific document facts\nA second detail.".utf8))
+        let binaryURL = directory.appendingPathComponent("archive.zip")
+        let binary = Data([80, 75, 3, 4, 0, 255, 1, 2])
+        try binary.write(to: binaryURL)
+        let archiveFile = try await BrowserAIAttachment.read(binaryURL)
+        assert(archiveFile.file?.data == binary && archiveFile.text == nil)
         let image = NSImage(size: NSSize(width: 8, height: 8))
         image.lockFocus()
         NSColor.blue.setFill()
@@ -37,6 +43,13 @@ with tempfile.TemporaryDirectory(prefix='astra-chat-archive-check-') as director
         let pngURL = directory.appendingPathComponent("reference.png")
         let bitmap = NSBitmapImageRep(data: image.tiffRepresentation!)!
         try bitmap.representation(using: .png, properties: [:])!.write(to: pngURL)
+        let scannedURL = directory.appendingPathComponent("scan.pdf")
+        let scanned = PDFDocument()
+        scanned.insert(PDFPage(image: image)!, at: 0)
+        let scannedData = scanned.dataRepresentation()!
+        try scannedData.write(to: scannedURL)
+        let scannedFile = try await BrowserAIAttachment.read(scannedURL)
+        assert(scannedFile.file?.data == scannedData && scannedFile.image == nil)
         let picture = try await BrowserAIAttachment.read(pngURL)
         assert(picture.image?.mediaType == "image/png")
         assert(picture.image?.data.starts(with: [137,80,78,71]) == true)
@@ -65,7 +78,7 @@ with tempfile.TemporaryDirectory(prefix='astra-chat-archive-check-') as director
         } catch {}
         let preserved = try Data(contentsOf: archive)
         assert(preserved == corrupt)
-        print("Text/image attachments, chat restoration, stale-write protection, and corrupt-archive preservation passed")
+        print("Text/image/binary/scanned PDF attachments, chat restoration, stale-write protection, and corrupt-archive preservation passed")
     }
 }
 '''.replace('CHECK_DIRECTORY', directory)

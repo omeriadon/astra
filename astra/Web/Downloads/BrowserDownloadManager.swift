@@ -15,6 +15,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	static let shared = BrowserDownloadManager()
 	private static let unsafeFilenameCharacters = CharacterSet(charactersIn: "/\\:").union(.controlCharacters)
 
+	var aiSuggestedNames: [UUID: String] = [:]
 	private var downloads: [ObjectIdentifier: WKDownload] = [:]
 	private var observations: [ObjectIdentifier: NSKeyValueObservation] = [:]
 	private var destinations: [ObjectIdentifier: URL] = [:]
@@ -1679,12 +1680,20 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		      	$0.id == itemID && $0.status == .completed && $0.fileURL == fileURL && $0.destinationIsFileScoped != true
 		      })
 		else { return }
+		defer { aiSuggestedNames[itemID] = nil }
 		let item = items[index]
 		let original = URL(fileURLWithPath: item.originalName).deletingPathExtension().lastPathComponent
 		guard let stem = await humanReadableStem(
 			original: original,
 			source: item.sourceURL?.host,
-			fileType: item.fileURL.pathExtension
+			fileType: item.fileURL.pathExtension,
+			onSnapshot: { [weak self] snapshot in
+				guard !Task.isCancelled, let self, self.items.contains(where: { $0.id == itemID && $0.fileURL == fileURL && $0.status == .completed }) else { return }
+				let stem = BrowserDownloadNamingFeature.safeStem(BrowserAIOutput.title(snapshot))
+				guard stem != "Download" else { return }
+				let ext = fileURL.pathExtension
+				self.aiSuggestedNames[itemID] = ext.isEmpty ? stem : "\(stem).\(ext)"
+			}
 		), Defaults[.aiFeaturesEnabled],
 		let currentIndex = items.firstIndex(where: { $0.id == itemID && $0.status == .completed && $0.fileURL == fileURL })
 		else { return }
@@ -1697,16 +1706,24 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		})) != nil,
 			let updatedIndex = items.firstIndex(where: { $0.id == itemID && $0.status == .completed && $0.fileURL == fileURL })
 		else { return }
-		items[updatedIndex].fileURL = destination
-		items[updatedIndex].renamedByAppleIntelligence = true
+		#if os(macOS)
+			let animation: Animation? = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .smooth(duration: 0.25)
+		#else
+			let animation: Animation? = UIAccessibility.isReduceMotionEnabled ? nil : .smooth(duration: 0.25)
+		#endif
+		withAnimation(animation) {
+			items[updatedIndex].fileURL = destination
+			items[updatedIndex].renamedByAppleIntelligence = true
+		}
 		persist()
 	}
 
-	private func humanReadableStem(original: String, source: String?, fileType: String?) async -> String? {
+	private func humanReadableStem(original: String, source: String?, fileType: String?, onSnapshot: @MainActor (String) -> Void) async -> String? {
 		guard Defaults[.aiFeaturesEnabled], Defaults[.renameDownloadsWithAppleIntelligence] else { return nil }
-		return try? await BrowserAI.shared.perform(
+		return try? await BrowserAI.shared.performStreaming(
 			BrowserDownloadNamingFeature(),
-			input: .init(original: original, source: source, fileType: fileType)
+			input: .init(original: original, source: source, fileType: fileType),
+			onSnapshot: onSnapshot
 		)
 	}
 

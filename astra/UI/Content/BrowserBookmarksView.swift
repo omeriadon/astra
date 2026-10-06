@@ -2,6 +2,7 @@ import Defaults
 import SwiftUI
 
 struct BrowserBookmarksView: View {
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	let browser: Browser
 	#if os(iOS)
 		@Environment(\.editMode) private var editMode
@@ -143,15 +144,34 @@ struct BrowserBookmarksView: View {
 			cleanupError = nil
 			do {
 				let originals = browser.bookmarks
-				var replacements: [(Bookmark, String)] = []
 				for bookmark in originals {
-					let title = try await BrowserAI.shared.perform(BrowserBookmarkTitleFeature(), input: bookmark)
-					replacements.append((bookmark, title))
-				}
-				try Task.checkCancellation()
-				guard browser.bookmarks == originals, allAI, aiTitles else { throw BrowserAIError.pageUnavailable }
-				for (bookmark, title) in replacements {
-					browser.updateBookmark(bookmark.id, name: title, folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order)
+					var displayed = bookmark
+					var completed = false
+					defer {
+						if !completed, browser.bookmarks.first(where: { $0.id == bookmark.id }) == displayed {
+							withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
+								browser.updateBookmark(bookmark.id, name: bookmark.name, folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order)
+							}
+						}
+					}
+					let title = try await BrowserAI.shared.performStreaming(BrowserBookmarkTitleFeature(), input: bookmark) { snapshot in
+						let partial = BrowserAIOutput.title(snapshot)
+						guard !Task.isCancelled, allAI, aiTitles,
+						      BrowserAIOutput.validLine(partial, maximumWords: 40),
+						      browser.bookmarks.first(where: { $0.id == bookmark.id }) == displayed else { return }
+						withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) {
+							browser.updateBookmark(bookmark.id, name: partial, folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order)
+						}
+						if let current = browser.bookmarks.first(where: { $0.id == bookmark.id }) {
+							displayed = current
+						}
+					}
+					try Task.checkCancellation()
+					guard browser.bookmarks.first(where: { $0.id == bookmark.id }) == displayed, allAI, aiTitles else { throw BrowserAIError.pageUnavailable }
+					withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
+						browser.updateBookmark(bookmark.id, name: title, folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order)
+					}
+					completed = true
 				}
 			} catch {
 				if !Task.isCancelled {

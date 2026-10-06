@@ -24,47 +24,27 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View {
 	}
 
 	var body: some View {
-		if edge == .trailing {
-			ZStack(alignment: .topTrailing) {
-				HStack(spacing: 0) {
-					Spacer(minLength: 0)
-					ZStack(alignment: .trailing) {
-						sidebar
-							.frame(width: sidebarWidth)
-							.offset(x: sidebarShown ? 0 : -sidebarWidth)
-					}
-					.frame(width: sidebarShown ? sidebarWidth : 0, alignment: .leading)
-					.clipped()
-				}
-				HStack(spacing: 0) {
-					content.frame(maxWidth: .infinity, maxHeight: .infinity)
-					Spacer(minLength: 0).frame(width: sidebarShown ? sidebarWidth : 0)
-				}
-			}
-			.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: sidebarShown)
-		} else {
-			ZStack(alignment: .topLeading) {
-				HStack(spacing: 0) {
-					ZStack(alignment: .leading) {
-						sidebar
-							.frame(width: sidebarWidth)
-							.offset(x: sidebarShown ? 0 : sidebarWidth)
-					}
-					.frame(width: sidebarShown ? sidebarWidth : 0, alignment: .trailing)
-					.clipped()
+		ZStack(alignment: edge == .leading ? .topLeading : .topTrailing) {
+			sidebar
+				.frame(width: sidebarWidth)
+				.frame(maxHeight: .infinity)
+				.allowsHitTesting(sidebarShown)
+				.accessibilityHidden(!sidebarShown)
 
-					Spacer(minLength: 0)
-				}
-
-				HStack(spacing: 0) {
+			HStack(spacing: 0) {
+				if edge == .leading {
 					Spacer(minLength: 0)
 						.frame(width: sidebarShown ? sidebarWidth : 0)
-
-					content
-						.frame(maxWidth: .infinity, maxHeight: .infinity)
+				}
+				content
+					.frame(maxWidth: .infinity, maxHeight: .infinity)
+				if edge == .trailing {
+					Spacer(minLength: 0)
+						.frame(width: sidebarShown ? sidebarWidth : 0)
 				}
 			}
-			.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: sidebarShown)
 		}
+		.clipped()
+		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: sidebarShown)
 	}
 }

@@ -48,6 +48,8 @@ final class BrowserController: NSObject, Identifiable {
 	#if os(macOS)
 		@ObservationIgnored
 		private var webInspectorObserver: NSObjectProtocol?
+		@ObservationIgnored
+		var webInspectorAttachmentView: NSView?
 	#endif
 	@ObservationIgnored
 	var displayWindowID: UUID?
@@ -1208,7 +1210,9 @@ final class BrowserController: NSObject, Identifiable {
 
 	#if os(macOS)
 		func updateWebInspectorAvailability(_ enabled: Bool) {
-			createdWebView?.isInspectable = enabled
+			if let createdWebView {
+				BrowserDesktopCommands.configureWebInspector(createdWebView, enabled: enabled)
+			}
 		}
 	#endif
 
@@ -1239,7 +1243,7 @@ final class BrowserController: NSObject, Identifiable {
 		session.favicons.configureFaviconObservation(in: configuration.userContentController)
 		let webView = PeekSourceWebView(frame: .zero, configuration: configuration)
 		#if os(macOS)
-			webView.isInspectable = Defaults[.webInspectorEnabled]
+			BrowserDesktopCommands.configureWebInspector(webView, enabled: Defaults[.webInspectorEnabled])
 		#endif
 		createdWebView = webView
 		let scrollHandler = WeakScriptMessageHandler(delegate: self)

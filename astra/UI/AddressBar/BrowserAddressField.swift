@@ -287,7 +287,7 @@ struct BrowserAddressField: View {
 
 	private var dimmedAddressText: AttributedString {
 		var text = AttributedString(addressText)
-		text.foregroundColor = Color.primary.opacity(0.2)
+		text.foregroundColor = Color.primary.opacity(0.65)
 		guard let url = browser.selectedTab?.activeController?.url else {
 			text.foregroundColor = .primary
 			return text

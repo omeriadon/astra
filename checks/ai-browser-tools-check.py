@@ -7,11 +7,13 @@ root = Path(__file__).resolve().parents[1]
 source = (root / 'astra/AI/BrowserAITools.swift').read_text()
 types = source[:source.index('@MainActor\nenum BrowserAITools')].replace('import Defaults', '')
 gate_start = source.index('\t\tguard Defaults[.aiFeaturesEnabled]')
-gate = source[gate_start:source.index('\t\tlet arguments', gate_start)]
+gate = source[gate_start:source.index('\t\t#if os(macOS)', gate_start)]
 manager = (root / 'astra/AI/BrowserAI.swift').read_text()
 protocol = manager[manager.index('@MainActor\nprotocol BrowserAIFeature'):manager.index('@MainActor\nfinal class BrowserAI')]
 models = manager[manager.index('nonisolated enum BrowserAIModel'):manager.index('nonisolated struct BrowserAIResponse')]
 errors = manager[manager.index('nonisolated enum BrowserAIError'):]
+attachments = (root / 'astra/AI/BrowserAIAttachment.swift').read_text()
+attachment_types = attachments[attachments.index('nonisolated struct BrowserAIImage'):attachments.index('nonisolated struct BrowserAIAttachment')]
 prompts = (root / 'astra/AI/BrowserAIPrompts.swift').read_text()
 output = (root / 'astra/AI/Features/BrowserPageFeatures.swift').read_text().split('nonisolated enum BrowserAIOutput')[1]
 host = '''
@@ -26,7 +28,6 @@ host = '''
         set { permissions = newValue }
     }
 }
-nonisolated struct BrowserAIImage: Codable, Sendable { let data: Data }
 @MainActor enum BrowserAIFeatureID {
     case chat
     var model: BrowserAIModel { .codex(modelID: "") }
@@ -72,6 +73,6 @@ nonisolated struct BrowserAIImage: Codable, Sendable { let data: Data }
 with tempfile.TemporaryDirectory(prefix='astra-tools-check-') as directory:
     swift = Path(directory) / 'Check.swift'
     executable = Path(directory) / 'check'
-    swift.write_text('import Foundation\n' + models + errors + protocol + prompts + 'nonisolated enum BrowserAIOutput' + output + types + host)
+    swift.write_text('import Foundation\n' + attachment_types + models + errors + protocol + prompts + 'nonisolated enum BrowserAIOutput' + output + types + host)
     subprocess.run(['xcrun', 'swiftc', '-parse-as-library', str(swift), '-o', str(executable)], check=True)
     subprocess.run([str(executable)], check=True)

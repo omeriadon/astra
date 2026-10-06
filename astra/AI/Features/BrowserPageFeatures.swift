@@ -51,12 +51,29 @@ struct BrowserLinkSummaryFeature: BrowserAIFeature {
 	}
 
 	func output(from text: String) throws -> Summary {
-		let summary = try JSONDecoder().decode(Summary.self, from: BrowserAIOutput.jsonData(text))
-		guard BrowserAIOutput.validLine(summary.title, maximumWords: 30),
-		      BrowserAIOutput.validLine(summary.header, maximumWords: 25),
-		      (1 ... 5).contains(summary.bullets.count),
-		      summary.bullets.allSatisfy({ BrowserAIOutput.validLine($0.text, maximumWords: 20) && BrowserAISymbols.allowed.contains($0.symbol) }) else { throw BrowserAIError.emptyResponse }
-		return summary
+		if let summary = try? JSONDecoder().decode(Summary.self, from: BrowserAIOutput.jsonData(text)),
+		   !summary.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+		   !summary.header.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+		{
+			return Summary(title: summary.title, header: summary.header, bullets: summary.bullets.prefix(5).compactMap { bullet in
+				guard !bullet.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+				return Summary.Bullet(text: bullet.text, symbol: BrowserAISymbols.allowed.contains(bullet.symbol) ? bullet.symbol : "text.alignleft")
+			})
+		}
+		let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard !value.isEmpty, !value.hasPrefix("{"), !value.hasPrefix("[") else {
+			throw BrowserAIError.invalidResponse("The preview response was incomplete. Retry the preview.")
+		}
+		return Summary(title: "Page Preview", header: value, bullets: [])
+	}
+
+	static func streamingSummary(_ text: String, title: String) -> Summary? {
+		guard let header = BrowserAIOutput.streamedString("header", in: text), !header.isEmpty else { return nil }
+		let bullets = BrowserAIOutput.completedObjects(in: text).compactMap { data -> Summary.Bullet? in
+			guard let bullet = try? JSONDecoder().decode(Summary.Bullet.self, from: data) else { return nil }
+			return Summary.Bullet(text: bullet.text, symbol: BrowserAISymbols.allowed.contains(bullet.symbol) ? bullet.symbol : "text.alignleft")
+		}
+		return Summary(title: BrowserAIOutput.streamedString("title", in: text) ?? title, header: header, bullets: Array(bullets.prefix(5)))
 	}
 }
 
@@ -79,8 +96,8 @@ struct BrowserTabTitleFeature: BrowserAIFeature {
 	}
 
 	func output(from text: String) throws -> String {
-		let title = text.trimmingCharacters(in: .whitespacesAndNewlines)
-		guard BrowserAIOutput.validLine(title, maximumWords: 7) else { throw BrowserAIError.emptyResponse }
+		let title = BrowserAIOutput.title(text)
+		guard BrowserAIOutput.validLine(title, maximumWords: 40) else { throw BrowserAIError.invalidResponse("The AI returned an invalid title. Retry title cleanup.") }
 		return title
 	}
 }
@@ -119,16 +136,18 @@ struct BrowserTabGroupingFeature: BrowserAIFeature {
 	}
 
 	func output(from text: String) throws -> [Group] {
-		let groups = try JSONDecoder().decode([Group].self, from: BrowserAIOutput.jsonData(text))
+		guard let groups = try? JSONDecoder().decode([Group].self, from: BrowserAIOutput.jsonData(text)) else {
+			throw BrowserAIError.invalidResponse("The AI did not return tab sections with valid tab identifiers. Retry Tidy Today Tabs.")
+		}
 		guard !groups.isEmpty, Set(groups.map(\.name)).count == groups.count,
-		      groups.allSatisfy({ BrowserAIOutput.validLine($0.name, maximumWords: 4) && !$0.tabIDs.isEmpty }) else { throw BrowserAIError.emptyResponse }
+		      groups.allSatisfy({ BrowserAIOutput.validLine($0.name, maximumWords: 40) && !$0.tabIDs.isEmpty }) else { throw BrowserAIError.invalidResponse("The AI returned empty or duplicate tab sections. Retry Tidy Today Tabs.") }
 		return groups
 	}
 
 	static func validate(_ groups: [Group], expectedIDs: [UUID]) throws {
 		let ids = groups.flatMap(\.tabIDs)
 		guard ids.count == expectedIDs.count, Set(ids).count == ids.count,
-		      Set(ids) == Set(expectedIDs) else { throw BrowserAIError.emptyResponse }
+		      Set(ids) == Set(expectedIDs) else { throw BrowserAIError.invalidResponse("The proposed tab sections omitted or repeated tabs. No final organization was applied.") }
 	}
 }
 
@@ -174,11 +193,108 @@ nonisolated enum BrowserAIOutput {
 			&& !text.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
 	}
 
+	static func title(_ text: String) -> String {
+		text.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"`")))
+	}
+
+	/// Recover one complete JSON value, including fenced output or explanatory prose.
 	static func jsonData(_ text: String) -> Data {
-		var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-		if value.hasPrefix("```"), let first = value.firstIndex(of: "\n"), let last = value.range(of: "```", options: .backwards), first < last.lowerBound {
-			value = String(value[value.index(after: first) ..< last.lowerBound])
+		let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+		if (try? JSONSerialization.jsonObject(with: Data(value.utf8), options: .fragmentsAllowed)) != nil {
+			return Data(value.utf8)
+		}
+		for start in value.indices where value[start] == "{" || value[start] == "[" {
+			var stack: [Character] = []
+			var quoted = false
+			var escaped = false
+			for index in value[start...].indices {
+				let character = value[index]
+				if quoted {
+					if escaped {
+						escaped = false
+					} else if character == "\\" {
+						escaped = true
+					} else if character == "\"" {
+						quoted = false
+					}
+					continue
+				}
+				if character == "\"" {
+					quoted = true
+				} else if character == "{" || character == "[" {
+					stack.append(character)
+				} else if character == "}" || character == "]" {
+					guard stack.last == (character == "}" ? "{" : "[") else { break }
+					stack.removeLast()
+					if stack.isEmpty {
+						let data = Data(value[start ... index].utf8)
+						if (try? JSONSerialization.jsonObject(with: data)) != nil {
+							return data
+						}
+						break
+					}
+				}
+			}
 		}
 		return Data(value.utf8)
+	}
+
+	/// Complete nested objects only; incomplete streamed objects are never actionable.
+	static func completedObjects(in text: String) -> [Data] {
+		var starts: [String.Index] = []
+		var objects: [Data] = []
+		var quoted = false
+		var escaped = false
+		for index in text.indices {
+			let character = text[index]
+			if quoted {
+				if escaped {
+					escaped = false
+				} else if character == "\\" {
+					escaped = true
+				} else if character == "\"" {
+					quoted = false
+				}
+				continue
+			}
+			if character == "\"" {
+				quoted = true
+			} else if character == "{" {
+				starts.append(index)
+			} else if character == "}", let start = starts.popLast() {
+				let data = Data(text[start ... index].utf8)
+				if (try? JSONSerialization.jsonObject(with: data)) != nil {
+					objects.append(data)
+				}
+			}
+		}
+		return objects
+	}
+
+	/// Decode display-only partial strings without publishing raw JSON syntax.
+	static func streamedString(_ key: String, in text: String) -> String? {
+		guard let keyRange = text.range(of: "\"" + key + "\""),
+		      let colon = text[keyRange.upperBound...].firstIndex(of: ":") else { return nil }
+		let suffix = text[text.index(after: colon)...].drop(while: \.isWhitespace)
+		guard suffix.first == "\"" else { return nil }
+		var encoded = "\""
+		var escaped = false
+		for character in suffix.dropFirst() {
+			encoded.append(character)
+			if escaped {
+				escaped = false
+			} else if character == "\\" {
+				escaped = true
+			} else if character == "\"" {
+				return try? JSONDecoder().decode(String.self, from: Data(encoded.utf8))
+			}
+		}
+		while encoded.count > 1 {
+			if let value = try? JSONDecoder().decode(String.self, from: Data((encoded + "\"").utf8)) {
+				return value
+			}
+			encoded.removeLast()
+		}
+		return ""
 	}
 }

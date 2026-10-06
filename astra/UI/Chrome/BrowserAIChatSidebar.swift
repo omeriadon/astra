@@ -13,6 +13,7 @@ struct BrowserAIChatSidebar: View {
 	@Bindable var chat: BrowserAIChat
 	var isVisible = true
 	@Environment(\.colorScheme) private var colorScheme
+	@State private var hoveredURL: URL?
 	@State private var requestID: UUID?
 	@State private var showsHistory = false
 	@State private var showsFileImporter = false
@@ -35,74 +36,6 @@ struct BrowserAIChatSidebar: View {
 
 	var body: some View {
 		VStack(spacing: 12) {
-			HStack(spacing: 8) {
-				Text(chat.title)
-					.font(.headline)
-					.lineLimit(1)
-					.accessibilityIdentifier("ai-chat-title")
-				Spacer(minLength: 0)
-				Button("Recent Chats", systemImage: "clock.arrow.circlepath") { showsHistory.toggle() }
-					.labelStyle(.iconOnly)
-					.disabled(chat.isResponding || chat.isImporting)
-					.accessibilityIdentifier("ai-chat-history")
-					.popover(isPresented: $showsHistory) {
-						List {
-							Section("Chats") {
-								if history.conversations.isEmpty {
-									Text("No saved chats").foregroundStyle(.secondary)
-								}
-								ForEach(history.conversations) { conversation in
-									Button {
-										chat.select(conversation)
-										showsHistory = false
-									} label: {
-										VStack(alignment: .leading, spacing: 4) {
-											Label(conversation.title, systemImage: conversation.id == chat.id ? "bubble.left.fill" : "bubble.left")
-												.lineLimit(2)
-											Text(conversation.updatedAt, style: .relative)
-												.font(.caption)
-												.foregroundStyle(.secondary)
-										}
-									}
-									.buttonStyle(.plain)
-									.accessibilityIdentifier("ai-recent-chat-\(conversation.id.uuidString)")
-								}
-							}
-							if let error = history.error {
-								Text(error).font(.caption).foregroundStyle(.secondary)
-							}
-						}
-						.listStyle(.sidebar)
-						.scrollContentBackground(.hidden)
-						.frame(width: 320, height: 360)
-					}
-				Button("New Chat", systemImage: "square.and.pencil", action: chat.clear)
-					.labelStyle(.iconOnly)
-					.disabled(chat.isResponding || chat.isImporting)
-					.accessibilityIdentifier("ai-chat-new")
-				Button("Close AI Sidebar", systemImage: "xmark") { browser.showsAISidebar = false }
-					.labelStyle(.iconOnly)
-					.accessibilityIdentifier("ai-chat-close")
-			}
-			.buttonStyle(.glass)
-			.padding([.top, .horizontal], 12)
-			if isVisible, ["codex", "claude"].contains(provider) {
-				BrowserAIModelControls(chat: chat, provider: provider)
-					.padding(.horizontal, 12)
-			}
-			if needsSignIn {
-				VStack(alignment: .leading, spacing: 6) {
-					Label("Sign in to Astra to use Default AI.", systemImage: "person.crop.circle.badge.exclamationmark")
-					Text("Codex and Claude do not require an Astra account.").font(.caption).foregroundStyle(.secondary)
-					Button("Account & Sync", systemImage: "person.crop.circle") {
-						browser.settingsPage = .account
-						browser.openInternalPage(.settings)
-					}
-					.accessibilityIdentifier("ai-chat-sign-in-settings")
-				}
-				.padding(.horizontal, 12)
-				.accessibilityIdentifier("ai-chat-sign-in-required")
-			}
 			ScrollViewReader { reader in
 				ScrollView {
 					LazyVStack(alignment: .leading, spacing: 16) {
@@ -121,7 +54,7 @@ struct BrowserAIChatSidebar: View {
 								if message.isUser {
 									Text(message.text).textSelection(.enabled)
 								} else {
-									MarkdownView(message.text)
+									chatMarkdown(message.text, streaming: false)
 								}
 							}
 							.id(message.id)
@@ -130,7 +63,7 @@ struct BrowserAIChatSidebar: View {
 							if chat.preview.isEmpty {
 								ProgressView("Reading and Answering")
 							} else {
-								MarkdownView(chat.preview)
+								chatMarkdown(chat.preview, streaming: true)
 							}
 						}
 						if let error = chat.error {
@@ -145,6 +78,80 @@ struct BrowserAIChatSidebar: View {
 				.onChange(of: chat.messages.count) { _, _ in reader.scrollTo("chat-bottom", anchor: .bottom) }
 				.onChange(of: chat.preview) { _, _ in reader.scrollTo("chat-bottom", anchor: .bottom) }
 			}
+		}
+		.safeAreaBar(edge: .top) {
+			VStack(spacing: 12) {
+				HStack(spacing: 8) {
+					Text(chat.title)
+						.font(.headline)
+						.lineLimit(1)
+						.accessibilityIdentifier("ai-chat-title")
+					Spacer(minLength: 0)
+					Button("Recent Chats", systemImage: "clock.arrow.circlepath") { showsHistory.toggle() }
+						.labelStyle(.iconOnly)
+						.disabled(chat.isResponding || chat.isImporting)
+						.accessibilityIdentifier("ai-chat-history")
+						.popover(isPresented: $showsHistory) {
+							List {
+								Section("Chats") {
+									if history.conversations.isEmpty {
+										Text("No saved chats").foregroundStyle(.secondary)
+									}
+									ForEach(history.conversations) { conversation in
+										Button {
+											chat.select(conversation)
+											showsHistory = false
+										} label: {
+											VStack(alignment: .leading, spacing: 4) {
+												Label(conversation.title, systemImage: conversation.id == chat.id ? "bubble.left.fill" : "bubble.left")
+													.lineLimit(2)
+												Text(conversation.updatedAt, style: .relative)
+													.font(.caption)
+													.foregroundStyle(.secondary)
+											}
+										}
+										.buttonStyle(.plain)
+										.accessibilityIdentifier("ai-recent-chat-\(conversation.id.uuidString)")
+									}
+								}
+								if let error = history.error {
+									Text(error).font(.caption).foregroundStyle(.secondary)
+								}
+							}
+							.listStyle(.sidebar)
+							.scrollContentBackground(.hidden)
+							.frame(width: 320, height: 360)
+						}
+					Button("New Chat", systemImage: "square.and.pencil", action: chat.clear)
+						.labelStyle(.iconOnly)
+						.disabled(chat.isResponding || chat.isImporting)
+						.accessibilityIdentifier("ai-chat-new")
+					Button("Close AI Sidebar", systemImage: "xmark") { browser.showsAISidebar = false }
+						.labelStyle(.iconOnly)
+						.accessibilityIdentifier("ai-chat-close")
+				}
+				.buttonStyle(.glass)
+				.padding([.top, .horizontal], 12)
+				if isVisible, ["codex", "claude"].contains(provider) {
+					BrowserAIModelControls(chat: chat, provider: provider)
+						.padding(.horizontal, 12)
+				}
+				if needsSignIn {
+					VStack(alignment: .leading, spacing: 6) {
+						Label("Sign in to Astra to use Default AI.", systemImage: "person.crop.circle.badge.exclamationmark")
+						Text("Codex and Claude do not require an Astra account.").font(.caption).foregroundStyle(.secondary)
+						Button("Account & Sync", systemImage: "person.crop.circle") {
+							browser.settingsPage = .account
+							browser.openInternalPage(.settings)
+						}
+						.accessibilityIdentifier("ai-chat-sign-in-settings")
+					}
+					.padding(.horizontal, 12)
+					.accessibilityIdentifier("ai-chat-sign-in-required")
+				}
+			}
+		}
+		.safeAreaBar(edge: .bottom) {
 			VStack(alignment: .leading, spacing: 8) {
 				Button("Summarise", systemImage: "text.alignleft") {
 					chat.includeCurrentTab(in: browser)
@@ -230,6 +237,16 @@ struct BrowserAIChatSidebar: View {
 			.padding(12)
 			.disabled(chat.isResponding && requestID == nil)
 		}
+
+		#if os(macOS)
+		.overlay(alignment: .bottomLeading) {
+			if isVisible, let hoveredURL {
+				BrowserAIChatLinkPreview(browser: browser, url: hoveredURL)
+					.padding(8)
+			}
+		}
+		#endif
+
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
 		.background(browser.theme.contentShade(for: colorScheme))
 		.clipShape(RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
@@ -241,16 +258,26 @@ struct BrowserAIChatSidebar: View {
 		}
 		.onChange(of: isVisible) { _, visible in
 			focused = visible
+			if !visible {
+				hoveredURL = nil
+			}
 			if visible {
 				chat.includeCurrentTab(in: browser)
 			}
 		}
 		.task { await history.load() }
-		.fileImporter(isPresented: $showsFileImporter, allowedContentTypes: [.image, .pdf, .text, .data], allowsMultipleSelection: true) { result in
+		.fileImporter(isPresented: $showsFileImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
 			switch result {
 				case let .success(urls): Task { await chat.importFiles(urls) }
 				case let .failure(error): chat.reportImportError(error)
 			}
+		}
+		.dropDestination(for: URL.self) { urls, _ in
+			guard !chat.isResponding, !chat.isImporting else { return false }
+			let files = urls.filter(\.isFileURL)
+			guard !files.isEmpty else { return false }
+			Task { await chat.importFiles(files) }
+			return true
 		}
 		.task(id: "\(requestID?.uuidString ?? "")|\(isVisible)") {
 			guard isVisible, requestID != nil else { return }
@@ -260,6 +287,27 @@ struct BrowserAIChatSidebar: View {
 			}
 		}
 		.accessibilityIdentifier("ai-chat-sidebar")
+	}
+
+	@ViewBuilder
+	private func chatMarkdown(_ text: String, streaming: Bool) -> some View {
+		#if os(macOS)
+			BrowserAIChatMarkdown(text: text, streaming: streaming, open: { url in
+				browser.openHistoryURL(url, inBackground: false)
+			}, hover: { url, previous in
+				if url != nil || hoveredURL == previous {
+					hoveredURL = url
+				}
+			})
+			.frame(maxWidth: .infinity, alignment: .leading)
+		#else
+			Text((try? AttributedString(markdown: text)) ?? AttributedString(text))
+				.textSelection(.enabled)
+				.environment(\.openURL, OpenURLAction { url in
+					browser.openHistoryURL(url, inBackground: false)
+					return .handled
+				})
+		#endif
 	}
 
 	private func attachmentRow(_ attachments: [BrowserAIAttachment], removable: Bool) -> some View {
@@ -308,3 +356,154 @@ struct BrowserAIChatSidebar: View {
 		requestID = UUID()
 	}
 }
+
+#if os(macOS)
+	private struct BrowserAIChatMarkdown: NSViewRepresentable {
+		let text: String
+		let streaming: Bool
+		let open: (URL) -> Void
+		let hover: (URL?, URL?) -> Void
+
+		func makeNSView(context _: Context) -> ChatMarkdownView {
+			let view = ChatMarkdownView()
+			view.setContentHuggingPriority(.required, for: .vertical)
+			view.setContentCompressionResistancePriority(.required, for: .vertical)
+			view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+			return view
+		}
+
+		func updateNSView(_ view: ChatMarkdownView, context _: Context) {
+			view.isStreaming = streaming
+			view.hover = hover
+			view.linkHandler = { payload, _, _ in
+				let url: URL? = switch payload {
+					case let .url(url): url
+					case let .string(value): URL(string: value)
+				}
+				if let url {
+					open(url)
+				}
+			}
+			if view.displayedText != text {
+				view.displayedText = text
+				view.setContent(MarkdownContent(markdown: text, theme: view.theme))
+			}
+		}
+
+		func sizeThatFits(_ proposal: ProposedViewSize, nsView: ChatMarkdownView, context _: Context) -> CGSize? {
+			guard let width = proposal.width, width.isFinite else { return nil }
+			guard width > 0 else { return .zero }
+			return CGSize(width: width, height: ceil(nsView.boundingSize(for: width).height))
+		}
+
+		static func dismantleNSView(_ view: ChatMarkdownView, coordinator _: ()) {
+			view.stopMonitoring()
+		}
+	}
+
+	private final class ChatMarkdownView: MarkdownStreamView {
+		var displayedText = ""
+		var hover: ((URL?, URL?) -> Void)?
+		private var monitor: Any?
+		private var hoveredURL: URL?
+		private var hoverTrackingArea: NSTrackingArea?
+
+		override func updateTrackingAreas() {
+			if let hoverTrackingArea {
+				removeTrackingArea(hoverTrackingArea)
+			}
+			let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+			addTrackingArea(area)
+			hoverTrackingArea = area
+			super.updateTrackingAreas()
+		}
+
+		override func viewDidMoveToWindow() {
+			super.viewDidMoveToWindow()
+			stopMonitoring()
+			guard window != nil else { return }
+			monitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .scrollWheel]) { [weak self] event in
+				MainActor.assumeIsolated {
+					guard let self else { return }
+					let point = self.textLabelView.convert(event.locationInWindow, from: nil)
+					let content = self.window?.contentView
+					let hit = content?.hitTest(content?.convert(event.locationInWindow, from: nil) ?? .zero)
+					let link = event.window === self.window && event.type == .mouseMoved && hit?.isDescendant(of: self) == true
+						? self.textLabelView.highlightRegion(at: point)?.attributes[.link] : nil
+					let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:))
+					if url != self.hoveredURL {
+						let previous = self.hoveredURL
+						self.hoveredURL = url
+						self.hover?(url, previous)
+					}
+				}
+				return event
+			}
+		}
+
+		func stopMonitoring() {
+			if let monitor {
+				NSEvent.removeMonitor(monitor)
+			}
+			monitor = nil
+		}
+	}
+
+	private struct BrowserAIChatLinkPreview: View {
+		let browser: Browser
+		let url: URL
+		@Default(.aiLinkPreviews) private var enabled
+		@Default(.aiFeaturesEnabled) private var allFeatures
+		@State private var summary: BrowserLinkSummaryFeature.Summary?
+		@State private var streamedText = ""
+		@State private var error: String?
+		@State private var visible = false
+
+		var body: some View {
+			VStack(alignment: .leading, spacing: 8) {
+				BrowserLinkPreview(url: url)
+				if visible {
+					if let summary {
+						Text(summary.title).font(.headline)
+						Text(summary.header).bold()
+						ForEach(Array(summary.bullets.enumerated()), id: \.offset) { _, bullet in
+							Label(bullet.text, systemImage: bullet.symbol)
+						}
+					} else if !streamedText.isEmpty {
+						Text(streamedText)
+					} else if let error {
+						Text(error).font(.caption).foregroundStyle(.secondary)
+					} else {
+						ProgressView("Summarizing Page")
+					}
+				}
+			}
+			.padding(12)
+			.frame(maxWidth: 340, alignment: .leading)
+			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+			.allowsHitTesting(false)
+			.accessibilityIdentifier("ai-chat-link-preview")
+			.task(id: url) {
+				visible = false
+				summary = nil
+				streamedText = ""
+				error = nil
+				guard enabled, allFeatures, !browser.isPrivate, ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return }
+				do {
+					try await Task.sleep(for: .seconds(2))
+					visible = true
+					let model = BrowserAISettings.effectiveModel(BrowserAIFeatureID.linkPreview.model)
+					let page = try await BrowserAIPageLoader().page(at: url)
+					let context = try await page.limited(to: model == .appleIntelligence ? 1000 : 26000)
+					summary = try await BrowserAI.shared.performStreaming(BrowserLinkSummaryFeature(), input: .init(sourceURL: browser.selectedTab?.currentURL ?? url, destinationURL: url, page: context)) { snapshot in
+						streamedText = ["title", "header"].compactMap { BrowserAIOutput.streamedString($0, in: snapshot) }.joined(separator: "\n\n")
+					}
+				} catch {
+					if !Task.isCancelled {
+						self.error = error.localizedDescription
+					}
+				}
+			}
+		}
+	}
+#endif

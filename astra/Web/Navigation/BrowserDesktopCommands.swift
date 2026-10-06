@@ -1,5 +1,6 @@
 #if os(macOS)
 	import AppKit
+	import Defaults
 	import UniformTypeIdentifiers
 	import WebKit
 
@@ -37,6 +38,48 @@
 			case pdf
 			case webArchive
 			case source
+		}
+
+		static func configureWebInspector(_ webView: WKWebView, enabled: Bool) {
+			webView.isInspectable = enabled
+			let preferences = webView.configuration.preferences
+			if preferences.responds(to: NSSelectorFromString("_setDeveloperExtrasEnabled:")) {
+				preferences.setValue(enabled, forKey: "developerExtrasEnabled")
+			}
+			if !enabled,
+			   webView.responds(to: NSSelectorFromString("_inspector")),
+			   let inspector = webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
+			   inspector.responds(to: NSSelectorFromString("close"))
+			{
+				inspector.perform(NSSelectorFromString("close"))
+			}
+		}
+
+		static func showWebInspector(_ controller: BrowserController) {
+			guard let webView = controller.webViewIfLoaded,
+			      controller.hasCurrentPageDocument else { return }
+			Defaults[.webInspectorEnabled] = true
+			configureWebInspector(webView, enabled: true)
+			guard webView.responds(to: NSSelectorFromString("_inspector")),
+			      let inspector = webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
+			      inspector.responds(to: NSSelectorFromString("show")),
+			      inspector.responds(to: NSSelectorFromString("detach"))
+			else {
+				controller.session.toastManager.show(
+					symbol: "exclamationmark.triangle",
+					message: "This WebKit version cannot open Astra’s Web Inspector. Inspect this page from Safari’s Develop menu."
+				)
+				return
+			}
+			// Keep WebKit's docked inspector from resizing the page outside SwiftUI layout.
+			if webView.responds(to: NSSelectorFromString("_setInspectorAttachmentView:")) {
+				let attachmentView = controller.webInspectorAttachmentView ?? NSView(frame: .zero)
+				attachmentView.isHidden = true
+				controller.webInspectorAttachmentView = attachmentView
+				webView.perform(NSSelectorFromString("_setInspectorAttachmentView:"), with: attachmentView)
+			}
+			inspector.perform(NSSelectorFromString("show"))
+			inspector.perform(NSSelectorFromString("detach"))
 		}
 
 		static func openFile(in browser: Browser, window: NSWindow?) {

@@ -8,6 +8,8 @@ manager = (root / 'astra/AI/BrowserAI.swift').read_text()
 protocol = manager[manager.index('@MainActor\nprotocol BrowserAIFeature'):manager.index('@MainActor\nfinal class BrowserAI')]
 request = manager[manager.index('nonisolated struct BrowserAIRequest'):manager.index('nonisolated struct BrowserAIResponse')]
 errors = manager[manager.index('nonisolated enum BrowserAIError'):]
+attachments = (root / 'astra/AI/BrowserAIAttachment.swift').read_text()
+attachment_types = attachments[attachments.index('nonisolated struct BrowserAIImage'):attachments.index('nonisolated struct BrowserAIAttachment')]
 features = (root / 'astra/AI/Features/BrowserPageFeatures.swift').read_text()
 prompts = (root / 'astra/AI/BrowserAIPrompts.swift').read_text()
 chat = (root / 'astra/AI/BrowserAIChat.swift').read_text()
@@ -31,11 +33,6 @@ stubs = '''
 AUTHENTICATION
 }
 
-nonisolated struct BrowserAIImage: Codable, Sendable {
-    let name: String
-    let mediaType: String
-    let data: Data
-}
 nonisolated enum BrowserAIFeatureID {
     case downloads, linkPreview, tabGroups, find, chat, tabTitles
     @MainActor var model: BrowserAIModel { .appleIntelligence }
@@ -62,7 +59,8 @@ checks = r'''
         let titles = BrowserTabTitleFeature()
         let cleaned = try titles.output(from: "AirPods Pro 3")
         assert(cleaned == "AirPods Pro 3")
-        rejects { _ = try titles.output(from: "one two three four five six seven eight") }
+        let extendedTitle = try titles.output(from: "one two three four five six seven eight")
+        assert(extendedTitle == "one two three four five six seven eight")
         rejects { _ = try titles.output(from: "First title\nInjected instructions") }
         rejects { _ = try titles.output(from: " \n ") }
         let summaries = BrowserLinkSummaryFeature()
@@ -83,13 +81,16 @@ checks = r'''
         rejects { _ = try summaries.output(from: #"{"title":"Title","header":"Header","bullets":["a","b","c","d","e","f"]}"#) }
         let long = String(repeating: "word ", count: 21)
         let invalid = try JSONSerialization.data(withJSONObject: ["title": "Title", "header": "Header", "bullets": [["text":long,"symbol":"book"]]])
-        rejects { _ = try summaries.output(from: String(decoding: invalid, as: UTF8.self)) }
-        rejects { _ = try summaries.output(from: #"{"title":"Title","header":"Header","bullets":[{"text":"Valid text","symbol":"not.a.real.symbol"}]}"#) }
+        let longerSummary = try summaries.output(from: String(decoding: invalid, as: UTF8.self))
+        assert(longerSummary.bullets.first?.text == long)
+        let fallbackSymbol = try summaries.output(from: #"{"title":"Title","header":"Header","bullets":[{"text":"Valid text","symbol":"not.a.real.symbol"}]}"#)
+        assert(fallbackSymbol.bullets.first?.symbol == "text.alignleft")
         assert((300...400).contains(BrowserAISymbols.names.count))
         assert(Set(BrowserAISymbols.names).count == BrowserAISymbols.names.count)
         let chatTitle = try BrowserChatTitleFeature().output(from: "Understanding SQLite Transactions")
         assert(chatTitle == "Understanding SQLite Transactions")
-        rejects { _ = try BrowserChatTitleFeature().output(from: "one two three four five six seven eight") }
+        let extendedChatTitle = try BrowserChatTitleFeature().output(from: "one two three four five six seven eight")
+        assert(!extendedChatTitle.isEmpty)
         assert(BrowserAIError.signInRequired.localizedDescription.contains("Default AI"))
         assert(BrowserAIError.http(413, data: Data()).localizedDescription.contains("size limit"))
         assert(BrowserAIError.http(400, data: Data(#"{"reason":"This preset is disabled"}"#.utf8)).localizedDescription.contains("preset is disabled"))
@@ -116,9 +117,11 @@ checks = r'''
         assert(codexModels.first?.reasoningLevels == ["low"])
         let claudeModels = try await BrowserAICLI.models(provider: "claude")
         assert(claudeModels.map(\.id) == ["claude-current"])
-        let request = BrowserAIRequest(instructions: "Return plain text", prompt: String(repeating: "page-data ", count: 30_000), maximumResponseTokens: 128)
-        let codexAnswer = try await BrowserAICLI.generate(request, model: .codex(modelID: "available-low"))
+        let request = BrowserAIRequest(instructions: "Return plain text", prompt: String(repeating: "page-data ", count: 30_000), maximumResponseTokens: 128, reasoningEffort: "low")
+        var streamedSnapshots: [String] = []
+        let codexAnswer = try await BrowserAICLI.generate(request, model: .codex(modelID: "available-low")) { streamedSnapshots.append($0) }
         assert(codexAnswer == "Codex pipe answer")
+        assert(streamedSnapshots == ["Codex ", "Codex pipe answer"])
         let claudeAnswer = try await BrowserAICLI.generate(request, model: .claude(modelID: "claude-current"))
         assert(claudeAnswer == "Claude pipe answer")
         let image = BrowserAIImage(name: "diagram.png", mediaType: "image/png", data: Data([137,80,78,71,13,10,26,10]))
@@ -141,14 +144,14 @@ checks = r'''
             assertionFailure("Canceled command completed successfully")
         } catch {}
         print("CLI catalogs, long stdin, responses, tool restrictions, and cancellation passed")
-        print("AI title/summary limits, fenced JSON, tab identity coverage, and exact-title mention checks passed")
+        print("AI title/summary recovery, fenced JSON, tab identity coverage, and exact-title mention checks passed")
     }
 }
 '''
 with tempfile.TemporaryDirectory(prefix='astra-ai-check-') as temporary:
     source = Path(temporary) / 'Checks.swift'
     binary = Path(temporary) / 'checks'
-    source.write_text('import Foundation\n' + models + request + protocol + errors + stubs + prompts + features + symbols + titles + mentions + cli + checks)
+    source.write_text('import Foundation\n' + attachment_types + models + request + protocol + errors + stubs + prompts + features + symbols + titles + mentions + cli + checks)
     subprocess.run(['xcrun', 'swiftc', '-parse-as-library', str(source), '-o', str(binary)], check=True)
     import os
     fake = r'''#!/usr/bin/python3
@@ -157,13 +160,44 @@ args = sys.argv[1:]
 if "app-server" in args:
     for line in sys.stdin:
         event = json.loads(line)
-        if event.get("method") == "initialize":
-            print(json.dumps({"id": 1, "result": {}}), flush=True)
-        elif event.get("method") == "model/list":
-            print(json.dumps({"id": 2, "result": {"data": [
+        method = event.get("method")
+        if method == "initialize":
+            print(json.dumps({"id": event["id"], "result": {}}), flush=True)
+        elif method == "model/list":
+            print(json.dumps({"id": event["id"], "result": {"data": [
                 {"model": "available-low", "displayName": "Low", "supportedReasoningEfforts": [{"reasoningEffort": "low"}]},
                 {"model": "high-only", "supportedReasoningEfforts": [{"reasoningEffort": "high"}]}
             ], "nextCursor": None}}), flush=True)
+        elif method == "config/read":
+            print(json.dumps({"id": event["id"], "result": {"config": {"mcp_servers": {"fixture": {"command": "false"}}}}}), flush=True)
+        elif method == "thread/start":
+            params = event["params"]
+            assert params["sandbox"] == "read-only" and params["approvalPolicy"] == "never"
+            assert params["config"]["mcp_servers"]["fixture"]["enabled"] is False
+            assert params["config"]["features.shell_tool"] is False
+            assert params["config"]["features.multi_agent"] is False
+            print(json.dumps({"id": event["id"], "result": {"thread": {"id": "test-thread"}}}), flush=True)
+        elif method == "turn/start":
+            parts = event["params"]["input"]
+            prompt = next(p["text"] for p in parts if p["type"] == "text")
+            if "waitForCancellation" in prompt:
+                time.sleep(20)
+            if "providerAuthFailure" in prompt:
+                print(json.dumps({"id": event["id"], "error": {"message": "401 Unauthorized: provider account login required"}}), flush=True)
+                continue
+            image = next((p for p in parts if p["type"] == "image"), None)
+            if image:
+                assert image["url"].startswith("data:image/png;base64,")
+                answer = "Codex image answer"
+            else:
+                assert len(prompt) >= 300_000
+                assert event["params"]["effort"] == "low"
+                answer = "Codex pipe answer"
+            print(json.dumps({"id": event["id"], "result": {"turn": {"id": "test-turn"}}}), flush=True)
+            print(json.dumps({"method": "item/agentMessage/delta", "params": {"itemId": "message", "delta": answer[:6]}}), flush=True)
+            print(json.dumps({"method": "item/agentMessage/delta", "params": {"itemId": "message", "delta": answer[6:]}}), flush=True)
+            print(json.dumps({"method": "item/completed", "params": {"item": {"id": "message", "type": "agentMessage", "text": answer}}}), flush=True)
+            print(json.dumps({"method": "turn/completed", "params": {"turn": {"status": "completed"}}}), flush=True)
 elif "--input-format" in args:
     event = json.loads(sys.stdin.readline())
     if event.get("type") == "user":
@@ -182,21 +216,10 @@ else:
     if "providerAuthFailure" in prompt:
         sys.stderr.write("401 Unauthorized: provider account login required")
         sys.exit(1)
-    if "--image" in args:
-        from pathlib import Path
-        data=Path(args[args.index("--image")+1]).read_bytes()
-        assert data.startswith(bytes([137,80,78,71]))
-        print(json.dumps({"type":"item.completed", "item":{"type":"agent_message", "text":"Codex image answer"}}), flush=True)
-        sys.exit(0)
     assert len(prompt) >= 300_000
-    if "exec" in args:
-        assert "--ignore-user-config" in args and "read-only" in args and "shell_tool" in args
-        assert 'model_reasoning_effort="low"' in args
-        print(json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "Codex pipe answer"}}), flush=True)
-    else:
-        assert args[args.index("--tools") + 1] == ""
-        assert "--strict-mcp-config" in args and args[args.index("--effort") + 1] == "low"
-        print(json.dumps({"type": "result", "result": "Claude pipe answer", "is_error": False}), flush=True)
+    assert args[args.index("--tools") + 1] == ""
+    assert "--strict-mcp-config" in args and args[args.index("--effort") + 1] == "low"
+    print(json.dumps({"type": "result", "result": "Claude pipe answer", "is_error": False}), flush=True)
 '''
     for name in ['codex', 'claude']:
         command = Path(temporary) / name

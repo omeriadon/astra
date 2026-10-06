@@ -13,11 +13,19 @@ nonisolated struct BrowserAIImage: Codable, Equatable, Sendable {
 	let data: Data
 }
 
+nonisolated struct BrowserAIFile: Codable, Equatable, Sendable {
+	let name: String
+	let mediaType: String
+	let data: Data
+	var hasExtractedText: Bool? = nil
+}
+
 nonisolated struct BrowserAIAttachment: Codable, Equatable, Identifiable, Sendable {
 	let id: UUID
 	let name: String
 	let image: BrowserAIImage?
 	let text: String?
+	var file: BrowserAIFile? = nil
 
 	@MainActor static func read(_ url: URL) async throws -> Self {
 		let scoped = url.startAccessingSecurityScopedResource()
@@ -27,9 +35,7 @@ nonisolated struct BrowserAIAttachment: Codable, Equatable, Identifiable, Sendab
 			}
 		}
 		let data = try await Task.detached(priority: .userInitiated) {
-			let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-			guard size <= 20 * 1024 * 1024 else { throw BrowserAIError.attachmentTooLarge }
-			return try Data(contentsOf: url)
+			try Data(contentsOf: url)
 		}.value
 		try Task.checkCancellation()
 		let name = String(url.lastPathComponent.prefix(200))
@@ -59,14 +65,15 @@ nonisolated struct BrowserAIAttachment: Codable, Equatable, Identifiable, Sendab
 		} else if ["rtf", "doc", "docx"].contains(url.pathExtension.lowercased()) {
 			try? NSAttributedString(data: data, options: [:], documentAttributes: nil).string
 		} else {
-			String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16)
+			String(data: data, encoding: .utf8) ?? (data.starts(with: [0xFF, 0xFE]) || data.starts(with: [0xFE, 0xFF]) ? String(data: data, encoding: .utf16) : nil)
 		}
-		guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-		      !text.contains("\0") else { throw BrowserAIError.attachmentUnreadable(name) }
-		return Self(id: UUID(), name: name, image: nil, text: text)
+		let readableText = text.flatMap { value in
+			value.contains("\0") || value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : value
+		}
+		return Self(id: UUID(), name: name, image: nil, text: readableText, file: BrowserAIFile(name: name, mediaType: type?.preferredMIMEType ?? "application/octet-stream", data: data, hasExtractedText: readableText != nil))
 	}
 
 	var prompt: String {
-		"<attached-file name=\(name)>\n\(text ?? "Image attached separately.")\n</attached-file>"
+		"<attached-file name=\(name)>\n\(text ?? (image != nil ? "Image attached separately." : "Original file attached separately."))\n</attached-file>"
 	}
 }

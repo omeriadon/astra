@@ -34,8 +34,7 @@ nonisolated enum BrowserAIFeatureID: String, CaseIterable, Identifiable, Sendabl
 	}
 
 	@MainActor var model: BrowserAIModel {
-		let presets = BrowserAISettings.presets
-		return presets[rawValue].flatMap(BrowserAIModel.init(identifier:)) ?? defaultModel
+		defaultModel
 	}
 }
 
@@ -69,17 +68,6 @@ extension BrowserAIModel {
 
 @MainActor
 enum BrowserAISettings {
-	static var presets: [String: String] {
-		get {
-			guard let data = Defaults[.aiFeaturePresets].data(using: .utf8) else { return [:] }
-			return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
-		}
-		set {
-			guard let data = try? JSONEncoder().encode(newValue), let text = String(data: data, encoding: .utf8) else { return }
-			Defaults[.aiFeaturePresets] = text
-		}
-	}
-
 	static func effectiveModel(_ preset: BrowserAIModel) -> BrowserAIModel {
 		#if os(macOS)
 			switch Defaults[.aiProvider] {

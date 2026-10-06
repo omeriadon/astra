@@ -28,7 +28,6 @@ struct BrowserSpacesBar: View {
 				}
 			}
 			.scrollIndicators(.hidden)
-			.scrollDisabled(true)
 			#if os(iOS)
 				.simultaneousGesture(
 					DragGesture(minimumDistance: 10)
@@ -46,24 +45,11 @@ struct BrowserSpacesBar: View {
 						}
 				)
 			#endif
-			#if os(macOS)
-			.background {
-				let index = browser.workspace.spaces.firstIndex(where: { $0.id == browser.workspace.selectedSpaceID }) ?? 0
-				SpaceWheelReader(
-					sidebarShown: browser.sidebarShown,
-					hasPreviousSpace: index > 0,
-					hasNextSpace: index < browser.workspace.spaces.count - 1
-				) { amount, isComplete in
-					handleSwipe(amount, isComplete: isComplete)
+				.onChange(of: browser.workspace.selectedSpaceID, initial: true) { _, id in
+					withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
+						reader.scrollTo(id, anchor: .center)
+					}
 				}
-				.allowsHitTesting(false)
-			}
-			#endif
-			.onChange(of: browser.workspace.selectedSpaceID, initial: true) { _, id in
-				withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
-					reader.scrollTo(id, anchor: .center)
-				}
-			}
 		}
 		#if os(iOS)
 		.frame(height: 44)
@@ -144,25 +130,4 @@ struct BrowserSpacesBar: View {
 				}
 		}
 	}
-
-	#if os(macOS)
-		private func handleSwipe(_ amount: CGFloat, isComplete: Bool) {
-			guard abs(amount) > 0.001 else {
-				onSwipeProgress(nil, 0)
-				return
-			}
-			let spaces = browser.workspace.spaces
-			guard let index = spaces.firstIndex(where: { $0.id == browser.workspace.selectedSpaceID }) else { return }
-			let nextIndex = index + (amount > 0 ? 1 : -1)
-			guard spaces.indices.contains(nextIndex) else {
-				onSwipeProgress(nil, 0)
-				return
-			}
-			onSwipeProgress(spaces[nextIndex].id, min(Double(abs(amount)), 1))
-			if isComplete, abs(amount) >= 0.99 {
-				browser.selectSpace(spaces[nextIndex].id)
-				NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
-			}
-		}
-	#endif
 }

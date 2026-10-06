@@ -6,6 +6,7 @@ struct BrowserAIModelControls: View {
 	@State private var models: [BrowserAIModelOption] = []
 	@State private var showingModels = false
 	@State private var loading = false
+	@State private var loadingProvider: String?
 	@State private var error: String?
 
 	private var selected: BrowserAIModelOption? {
@@ -23,8 +24,30 @@ struct BrowserAIModelControls: View {
 							ProgressView("Retrieving Models")
 						}
 						if let error {
-							Text(error).foregroundStyle(.secondary)
+							Text(error)
+								.foregroundStyle(.secondary)
+								.fixedSize(horizontal: false, vertical: true)
 						}
+						#if os(macOS)
+							if error != nil {
+								Button("Allow Account Files", systemImage: "folder.badge.plus") {
+									Task {
+										if await BrowserAICLI.authorize(provider: provider) {
+											await refresh()
+										}
+									}
+								}
+								.accessibilityIdentifier("ai-allow-account-files")
+								Button("Allow Installed Command", systemImage: "terminal") {
+									Task {
+										if await BrowserAICLI.authorizeCommand(provider: provider) {
+											await refresh()
+										}
+									}
+								}
+								.accessibilityIdentifier("ai-allow-installed-command")
+							}
+						#endif
 						ForEach(models) { model in
 							Button(model.title, systemImage: "cpu") {
 								chat.selectedProvider = provider
@@ -58,20 +81,32 @@ struct BrowserAIModelControls: View {
 	}
 
 	private func refresh() async {
+		let requestedProvider = provider
+		guard loadingProvider != requestedProvider else { return }
+		loadingProvider = requestedProvider
 		loading = true
 		error = nil
-		defer { loading = false }
+		defer {
+			if loadingProvider == requestedProvider {
+				loading = false
+				loadingProvider = nil
+			}
+		}
 		do {
-			let result = try await BrowserAICLI.models(provider: provider)
+			let result = try await BrowserAICLI.models(provider: requestedProvider)
 			try Task.checkCancellation()
+			guard provider == requestedProvider else { return }
 			models = result
+			if result.isEmpty {
+				error = "The installed command returned no available models."
+			}
 			if chat.selectedModelID.isEmpty, let first = result.first {
 				chat.selectedProvider = provider
 				chat.selectedModelID = first.id
 				chat.selectedReasoning = first.reasoningLevels.contains("low") ? "low" : first.defaultReasoning ?? ""
 			}
 		} catch {
-			if !Task.isCancelled {
+			if !Task.isCancelled, provider == requestedProvider {
 				self.error = error.localizedDescription
 			}
 		}

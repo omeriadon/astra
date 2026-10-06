@@ -24,8 +24,8 @@ struct BrowserChatTitleFeature: BrowserAIFeature {
 	}
 
 	func output(from text: String) throws -> String {
-		let title = text.trimmingCharacters(in: .whitespacesAndNewlines)
-		guard BrowserAIOutput.validLine(title, maximumWords: 7) else { throw BrowserAIError.emptyResponse }
+		let title = BrowserAIOutput.title(text)
+		guard BrowserAIOutput.validLine(title, maximumWords: 40) else { throw BrowserAIError.emptyResponse }
 		return title
 	}
 }
