@@ -73,6 +73,11 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var hoveredLinkRect = CGRect.zero
 	private(set) var hoveredLinkID = ""
 	private(set) var aiPreviewDismissal = 0
+	private(set) var isReaderAvailable = false
+	private(set) var readerHTML: String?
+	private(set) var isPreparingReader = false
+	private var readerGeneration = 0
+
 	var showsFind = false
 	var findText = "" {
 		didSet {
@@ -620,7 +625,7 @@ final class BrowserController: NSObject, Identifiable {
 	"""
 
 	func updateAIHoverHighlight() {
-		let enabled = Defaults[.aiLinkPreviews] && !session.isPrivate
+		let enabled = Defaults[.aiFeaturesEnabled] && Defaults[.aiLinkPreviews] && !session.isPrivate
 		createdWebView?.evaluateJavaScript(
 			"globalThis.astraAIHoverEnabled = \(enabled); if (!globalThis.astraAIHoverEnabled) document.querySelectorAll('[data-astra-ai-preview-hover]').forEach(link => link.removeAttribute('data-astra-ai-preview-hover'));",
 			in: nil,
@@ -868,6 +873,7 @@ final class BrowserController: NSObject, Identifiable {
 	"""#
 
 	func presentFind() {
+		readerHTML = nil
 		showsFind = true
 		findFocusRequest += 1
 	}
@@ -1059,8 +1065,46 @@ final class BrowserController: NSObject, Identifiable {
 		}
 	#endif
 
+	func toggleReader() {
+		if readerHTML != nil {
+			readerHTML = nil
+			return
+		}
+		guard isReaderAvailable, !isPreparingReader, hasCurrentPageDocument,
+		      navigationFailure == nil, let webView = createdWebView else { return }
+		isPreparingReader = true
+		let documentID = navigationIdentifier
+		let generation = readerGeneration
+		let pageURL = webView.url
+		webView.evaluateJavaScript("globalThis.astraExtractReader?.()", in: nil, in: .defaultClient) { [weak self, weak webView] result in
+			guard let self, let webView, owns(webView), hasCurrentPageDocument,
+			      documentID == navigationIdentifier, generation == readerGeneration,
+			      pageURL == webView.url else { return }
+			isPreparingReader = false
+			guard case let .success(value) = result,
+			      let article = value as? [String: String],
+			      let content = article["content"], !content.isEmpty,
+			      content.utf8.count <= 5 * 1024 * 1024
+			else {
+				isReaderAvailable = false
+				session.toastManager.show(symbol: "doc.text", message: "Reader mode could not extract an article from this page.")
+				return
+			}
+			showsFind = false
+			readerHTML = BrowserReaderScript.document(article: article)
+		}
+	}
+
+	private func resetReader() {
+		readerGeneration += 1
+		isReaderAvailable = false
+		isPreparingReader = false
+		readerHTML = nil
+	}
+
 	func stopForClose() {
 		guard !isInvalidated else { return }
+		resetReader()
 		clearHoveredLink()
 		isInvalidated = true
 		removeAppliedContentRuleList()
@@ -1111,7 +1155,7 @@ final class BrowserController: NSObject, Identifiable {
 		(createdWebView as? PeekSourceWebView)?.onZoomIn = nil
 		(createdWebView as? PeekSourceWebView)?.onZoomOut = nil
 		(createdWebView as? PeekSourceWebView)?.onResetZoom = nil
-		for name in [Self.scrollPositionMessageName, Self.topEdgeMessageName, Self.zapFinishedMessageName, "pageActivityChanged", "pictureInPictureChanged", "linkHoverChanged", "faviconChanged"] {
+		for name in [Self.scrollPositionMessageName, Self.topEdgeMessageName, Self.zapFinishedMessageName, "pageActivityChanged", "pictureInPictureChanged", "linkHoverChanged", "faviconChanged", "readerAvailabilityChanged"] {
 			createdWebView?.configuration.userContentController.removeScriptMessageHandler(forName: name, contentWorld: .defaultClient)
 		}
 		createdWebView?.configuration.userContentController.removeAllUserScripts()
@@ -1217,10 +1261,16 @@ final class BrowserController: NSObject, Identifiable {
 		#if os(macOS)
 			webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "linkHoverChanged")
 			webView.configuration.userContentController.addUserScript(
-				WKUserScript(source: Self.linkHoverScript + "\nglobalThis.astraAIHoverEnabled = \(Defaults[.aiLinkPreviews] && !session.isPrivate);", injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient)
+				WKUserScript(source: Self.linkHoverScript + "\nglobalThis.astraAIHoverEnabled = \(Defaults[.aiFeaturesEnabled] && Defaults[.aiLinkPreviews] && !session.isPrivate);", injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient)
 			)
 		#endif
 		webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "pageActivityChanged")
+		if let script = BrowserReaderScript.source {
+			webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "readerAvailabilityChanged")
+			webView.configuration.userContentController.addUserScript(
+				WKUserScript(source: script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient)
+			)
+		}
 		webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "pictureInPictureChanged")
 		webView.configuration.userContentController.addUserScript(
 			WKUserScript(source: Self.pictureInPictureScript, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient)
@@ -1590,6 +1640,10 @@ final class BrowserController: NSObject, Identifiable {
 
 	private func updateHistory(reportSameDocumentVisit: Bool = true) {
 		guard let currentURL = createdWebView?.url else { return }
+		if committedURL != currentURL {
+			resetReader()
+			createdWebView?.evaluateJavaScript("globalThis.astraProbeReader?.(true)", in: nil, in: .defaultClient, completionHandler: nil)
+		}
 		url = currentURL
 		if let list = createdWebView?.backForwardList, let current = list.currentItem {
 			let entries = liveHistoryPrefix + list.backList.map(\.url) + [current.url] + list.forwardList.map(\.url)
@@ -2040,6 +2094,7 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
 		guard owns(webView) else { return }
+		resetReader()
 		pictureInPictureControlUnavailable = false
 		canEnterPictureInPicture = false
 		isEnteringPictureInPicture = false
@@ -2053,6 +2108,7 @@ extension BrowserController: WKNavigationDelegate {
 
 	func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
 		guard owns(webView) else { return }
+		resetReader()
 		clearHoveredLink()
 		invalidateFindResults()
 		if isPictureInPictureActive || isEnteringPictureInPicture {
@@ -2135,6 +2191,7 @@ extension BrowserController: WKNavigationDelegate {
 	func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
 		guard owns(webView), navigation === currentNavigation else { return }
 		refreshContentBlocking(for: webView.url)
+		webView.evaluateJavaScript("globalThis.astraProbeReader?.(true)", in: nil, in: .defaultClient, completionHandler: nil)
 		updateHistory()
 		if showsFind, !findText.isEmpty {
 			findNext()
@@ -2172,6 +2229,15 @@ extension BrowserController: WKNavigationDelegate {
 extension BrowserController: WKScriptMessageHandler {
 	func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
 		guard !isInvalidated else { return }
+		if message.name == "readerAvailabilityChanged" {
+			guard message.frameInfo.isMainFrame, let webView = message.webView,
+			      owns(webView), hasCurrentPageDocument, navigationFailure == nil,
+			      let value = message.body as? [String: Any],
+			      let pageURL = value["url"] as? String, pageURL == webView.url?.absoluteString,
+			      let available = value["available"] as? Bool else { return }
+			isReaderAvailable = available
+			return
+		}
 		if message.name == "linkHoverChanged" {
 			if let value = message.body as? [String: Any], value["dismissPreview"] as? Bool == true,
 			   let webView = message.webView, owns(webView)

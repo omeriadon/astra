@@ -19,6 +19,7 @@ enum BrowserSettingsSchema {
 		"miniAstraWindowAnimation",
 		"miniAstraShortcutEnabled",
 		"webInspectorEnabled",
+		"aiFeaturesEnabled",
 		"aiLinkPreviews",
 		"aiTabGroups",
 		"aiFind",
@@ -57,6 +58,7 @@ enum BrowserSettingsSchema {
 		Defaults[.startPagePreferences] = BrowserStartPagePreferences.default.encoded
 		Defaults[.browserTheme] = BrowserTheme()
 		Defaults[.renameDownloadsWithAppleIntelligence] = true
+		Defaults[.aiFeaturesEnabled] = true
 		Defaults[.aiLinkPreviews] = true
 		Defaults[.aiTabGroups] = true
 		Defaults[.aiFind] = true

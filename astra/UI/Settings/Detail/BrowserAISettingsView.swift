@@ -1,7 +1,11 @@
 import Defaults
 import SwiftUI
+#if os(macOS)
+	import AppKit
+#endif
 
 struct BrowserAISettingsView: View {
+	@Default(.aiFeaturesEnabled) private var allFeatures
 	@Default(.renameDownloadsWithAppleIntelligence) private var downloads
 	@Default(.aiLinkPreviews) private var previews
 	@Default(.aiTabGroups) private var groups
@@ -10,9 +14,14 @@ struct BrowserAISettingsView: View {
 	@Default(.aiSidebar) private var sidebar
 	@Default(.aiTabTitles) private var titles
 	@Default(.aiProvider) private var provider
+	@State private var usageLog = BrowserAIUsageLog.shared
 
 	var body: some View {
 		List {
+			Toggle("All AI Features", isOn: $allFeatures)
+				.accessibilityLabel("All AI Features")
+				.accessibilityIdentifier("ai-all-features")
+				.id("All AI Features")
 			Section("Features") {
 				Toggle("Rename Downloads", isOn: $downloads)
 					.accessibilityIdentifier("rename-downloads-with-apple-intelligence")
@@ -38,6 +47,7 @@ struct BrowserAISettingsView: View {
 				Toggle("AI Sidebar", isOn: $sidebar)
 					.accessibilityIdentifier("ai-sidebar-enabled")
 			}
+			.disabled(!allFeatures)
 			#if os(macOS)
 				Section("Requests") {
 					Picker("Use AI With", selection: $provider) {
@@ -52,6 +62,30 @@ struct BrowserAISettingsView: View {
 						.lineLimit(10)
 				}
 			#endif
+			Section("Usage Log") {
+				Text("Every AI request is logged locally with its feature, provider, timing, and outcome. Page text, messages, attachments, and credentials are not copied into the log.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.lineLimit(10)
+				#if os(macOS)
+					Button("Show Usage Log", systemImage: "doc.text.magnifyingglass") {
+						Task {
+							if let url = await usageLog.location() {
+								NSWorkspace.shared.activateFileViewerSelecting([url])
+							}
+						}
+					}
+					.accessibilityIdentifier("ai-show-usage-log")
+					.id("Show Usage Log")
+				#endif
+				if let error = usageLog.errorDescription {
+					Text(error)
+						.font(.caption)
+						.foregroundStyle(.secondary)
+						.accessibilityIdentifier("ai-usage-log-error")
+				}
+			}
+			.id("Usage Log")
 			Text("AI processes extracted page text for previews, Find, and explicitly linked chat pages. Chat sends the full linked text. Tab organization sends titles and URLs. Responses can be inaccurate.")
 				.font(.caption)
 				.foregroundStyle(.secondary)

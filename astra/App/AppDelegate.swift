@@ -749,6 +749,10 @@
 			activeBrowser?.selectedTab?.activeController?.resetZoom()
 		}
 
+		@objc private func toggleReader(_: Any?) {
+			activeBrowser?.selectedTab?.activeController?.toggleReader()
+		}
+
 		@objc private func enterPictureInPicture(_: Any?) {
 			activeBrowser?.selectedTab?.activeController?.enterPictureInPicture()
 		}
@@ -868,6 +872,14 @@
 			}
 			if menuItem.action == #selector(copyURL(_:)) {
 				return BrowserKeyboardMenuPolicy.canCopyURL(activeBrowser?.selectedTab?.copyableURL)
+			}
+			if menuItem.action == #selector(toggleReader(_:)) {
+				let controller = activeBrowser?.selectedTab?.activeController
+				menuItem.title = controller?.readerHTML == nil ? "Show Reader" : "Hide Reader"
+				return activeAuthenticationBrowser == nil
+					&& activeBrowser?.selectedTab?.internalPage == nil
+					&& controller?.isPreparingReader == false
+					&& (controller?.isReaderAvailable == true || controller?.readerHTML != nil)
 			}
 			if menuItem.action == #selector(enterPictureInPicture(_:)) {
 				guard activeAuthenticationBrowser == nil,
@@ -990,6 +1002,7 @@
 
 			let viewMenu = NSMenu(title: "View")
 			mainMenu.addItem(menuRoot("View", submenu: viewMenu))
+			viewMenu.addItem(item("Show Reader", action: #selector(toggleReader(_:)), key: "r", modifiers: [.command, .option]))
 			viewMenu.addItem(item("Toggle Sidebar", action: #selector(toggleSidebar(_:)), key: "s"))
 			viewMenu.addItem(item("Edit Space", action: #selector(editSpace(_:))))
 			viewMenu.addItem(.separator())

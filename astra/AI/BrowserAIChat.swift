@@ -111,7 +111,7 @@ final class BrowserAIChat {
 		preview = ""
 		defer { isResponding = false }
 		do {
-			try BrowserAI.shared.checkAccess(for: BrowserAIFeatureID.chat.model)
+			try await BrowserAI.shared.checkAccess(for: BrowserAIFeatureID.chat.model, feature: "AI Sidebar")
 			let tabs = availableTabs(in: browser)
 			var ids = linkedTabIDs
 			for tab in tabs.sorted(by: { $0.title.count > $1.title.count }) {

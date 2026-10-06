@@ -37,11 +37,24 @@ struct BrowserPageView: View {
 					.id(tab.id)
 			}
 		}
+		.accessibilityHidden(browser.selectedTab?.activeController?.readerHTML != nil)
+		.overlay {
+			if let controller = browser.selectedTab?.activeController,
+			   let html = controller.readerHTML,
+			   !BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
+			{
+				BrowserReaderView(controller: controller, html: html)
+					.id(controller.id)
+					.padding(.top, insets.obscured.top)
+					.padding(.bottom, insets.obscured.bottom)
+			}
+		}
 		.animation(nil, value: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
 		.allowsHitTesting(!BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
 		#if os(macOS)
 			.overlay {
 				if let controller = browser.selectedTab?.activeController,
+				   controller.readerHTML == nil,
 				   !BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
 				{
 					BrowserAIHoverPreview(browser: browser, controller: controller)

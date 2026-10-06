@@ -5,13 +5,14 @@ struct BrowserFindBar: View {
 	@Bindable var controller: BrowserController
 	@FocusState private var isFocused: Bool
 	@Default(.aiFind) private var aiEnabled
+	@Default(.aiFeaturesEnabled) private var allFeatures
 	@Default(.aiFindContextLimit) private var contextLimit
 	@State private var answer = ""
 	@State private var aiError: String?
 	@State private var isAnswering = false
 
 	private var answerKey: String {
-		"\(controller.findText)|\(String(describing: controller.findHasMatch))|\(controller.navigationIdentifier)|\(aiEnabled)|\(contextLimit)"
+		"\(controller.findText)|\(String(describing: controller.findHasMatch))|\(controller.navigationIdentifier)|\(aiEnabled)|\(contextLimit)|\(allFeatures)"
 	}
 
 	var body: some View {
@@ -100,7 +101,7 @@ struct BrowserFindBar: View {
 			answer = ""
 			aiError = nil
 			isAnswering = false
-			guard aiEnabled, !controller.session.isPrivate, controller.findHasMatch == false,
+			guard allFeatures, aiEnabled, !controller.session.isPrivate, controller.findHasMatch == false,
 			      !controller.findText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 			do {
 				try await Task.sleep(for: .milliseconds(750))

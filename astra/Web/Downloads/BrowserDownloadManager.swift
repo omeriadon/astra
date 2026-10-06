@@ -1673,6 +1673,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 	private func renameWithAppleIntelligence(_ itemID: UUID, fileURL: URL) async {
 		guard privateDataStore == nil,
+		      Defaults[.aiFeaturesEnabled],
 		      Defaults[.renameDownloadsWithAppleIntelligence],
 		      let index = items.firstIndex(where: {
 		      	$0.id == itemID && $0.status == .completed && $0.fileURL == fileURL && $0.destinationIsFileScoped != true
@@ -1684,7 +1685,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			original: original,
 			source: item.sourceURL?.host,
 			fileType: item.fileURL.pathExtension
-		), let currentIndex = items.firstIndex(where: { $0.id == itemID && $0.status == .completed && $0.fileURL == fileURL })
+		), Defaults[.aiFeaturesEnabled],
+		let currentIndex = items.firstIndex(where: { $0.id == itemID && $0.status == .completed && $0.fileURL == fileURL })
 		else { return }
 		let ext = fileURL.pathExtension
 		let name = BrowserDownload.safeFilename(ext.isEmpty ? stem : "\(stem).\(ext)")
@@ -1701,7 +1703,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	private func humanReadableStem(original: String, source: String?, fileType: String?) async -> String? {
-		guard Defaults[.renameDownloadsWithAppleIntelligence] else { return nil }
+		guard Defaults[.aiFeaturesEnabled], Defaults[.renameDownloadsWithAppleIntelligence] else { return nil }
 		return try? await BrowserAI.shared.perform(
 			BrowserDownloadNamingFeature(),
 			input: .init(original: original, source: source, fileType: fileType)

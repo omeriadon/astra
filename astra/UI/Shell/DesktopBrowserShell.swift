@@ -18,6 +18,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	@Default(.sidebarShown) private var sidebarShown
+	@Default(.aiFeaturesEnabled) private var allAIFeatures
 	private var downloads: BrowserDownloadManager {
 		browser.session.downloads
 	}
@@ -143,7 +144,7 @@ struct DesktopBrowserShell: View {
 
 	var body: some View {
 		GeometryReader { geometry in
-			let showsAI = browser.showsAISidebar && !browser.isPrivate && Defaults[.aiSidebar]
+			let showsAI = allAIFeatures && browser.showsAISidebar && !browser.isPrivate && Defaults[.aiSidebar]
 			BrowserSplitView(sidebarShown: $browser.sidebarShown) {
 				ShellSidebarColumn(
 					browser: browser,

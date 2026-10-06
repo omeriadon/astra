@@ -20,7 +20,7 @@
 					WindowDragBackground()
 				}
 				.accessibilityIdentifier("mini-astra-top-bar")
-				BrowserContentView(browser: browser)
+				BrowserPageView(browser: browser, cornerRadius: 0)
 			}
 			.background {
 				BrowserThemeBackground(theme: browser.theme)

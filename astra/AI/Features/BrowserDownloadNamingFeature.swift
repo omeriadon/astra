@@ -2,6 +2,10 @@ import Foundation
 
 @MainActor
 struct BrowserDownloadNamingFeature: BrowserAIFeature {
+	var logName: String {
+		"Rename Downloads"
+	}
+
 	struct Input {
 		let original: String
 		let source: String?

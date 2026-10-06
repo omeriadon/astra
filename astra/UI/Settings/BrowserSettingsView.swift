@@ -63,7 +63,7 @@ struct BrowserSettingsView: View {
 						symbol: "sparkles",
 						section: .ui,
 						identifier: "settings-ai",
-						terms: ["Rename Downloads", "Rename downloads with Apple Intelligence", "Link Previews", "Today Tabs", "Clean Tab Titles", "Ask in Find", "AI Sidebar", "Codex", "Claude", "Tokens"]
+						terms: ["All AI Features", "Rename Downloads", "Rename downloads with Apple Intelligence", "Link Previews", "Today Tabs", "Clean Tab Titles", "Ask in Find", "AI Sidebar", "Usage Log", "Show Usage Log", "Codex", "Claude", "Tokens"]
 					)
 				case .account:
 					Definition(

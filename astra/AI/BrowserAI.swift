@@ -1,3 +1,4 @@
+import Defaults
 import Foundation
 import FoundationModels
 
@@ -35,8 +36,15 @@ protocol BrowserAIFeature {
 	associatedtype Output
 
 	var model: BrowserAIModel { get }
+	var logName: String { get }
 	func request(for input: Input) throws -> BrowserAIRequest
 	func output(from text: String) throws -> Output
+}
+
+extension BrowserAIFeature {
+	var logName: String {
+		String(describing: Self.self)
+	}
 }
 
 @MainActor
@@ -48,14 +56,26 @@ final class BrowserAI {
 		input: Feature.Input,
 		model: BrowserAIModel? = nil
 	) async throws -> Feature.Output {
-		let text = try await generate(feature.request(for: input), model: model ?? feature.model)
-		return try feature.output(from: text)
+		let request = try feature.request(for: input)
+		let selected = BrowserAISettings.effectiveModel(model ?? feature.model)
+		return try await logged(request, model: selected, feature: feature.logName, mode: "single") {
+			let text = try await generateResponse(request, model: selected)
+			return try (feature.output(from: text), text.utf8.count)
+		}
 	}
 
 	/// Each call has its own session. There is no shared transcript or automatic cloud fallback.
 	func generate(_ request: BrowserAIRequest, model: BrowserAIModel = .appleIntelligence) async throws -> String {
+		let selected = BrowserAISettings.effectiveModel(model)
+		return try await logged(request, model: selected, feature: "AI Request", mode: "single") {
+			let text = try await generateResponse(request, model: selected)
+			return (text, text.utf8.count)
+		}
+	}
+
+	private func generateResponse(_ request: BrowserAIRequest, model: BrowserAIModel) async throws -> String {
 		try Task.checkCancellation()
-		let model = BrowserAISettings.effectiveModel(model)
+		try requireEnabled()
 		let generation = try authentication(for: model)
 		try validate(request)
 		if request.images?.isEmpty == false, model == .appleIntelligence || model == .privateCloudCompute {
@@ -87,6 +107,7 @@ final class BrowserAI {
 				text = response.text
 		}
 		try Task.checkCancellation()
+		try requireEnabled()
 		if let generation {
 			try BrowserSync.shared.validateAIAuthentication(generation)
 		}
@@ -101,12 +122,12 @@ final class BrowserAI {
 		model: BrowserAIModel? = nil,
 		onSnapshot: @MainActor (String) -> Void
 	) async throws -> Feature.Output {
-		let text = try await stream(
-			feature.request(for: input),
-			model: model ?? feature.model,
-			onSnapshot: onSnapshot
-		)
-		return try feature.output(from: text)
+		let request = try feature.request(for: input)
+		let selected = BrowserAISettings.effectiveModel(model ?? feature.model)
+		return try await logged(request, model: selected, feature: feature.logName, mode: "stream") {
+			let text = try await streamResponse(request, model: selected, onSnapshot: onSnapshot)
+			return try (feature.output(from: text), text.utf8.count)
+		}
 	}
 
 	func stream(
@@ -114,8 +135,20 @@ final class BrowserAI {
 		model: BrowserAIModel = .appleIntelligence,
 		onSnapshot: @MainActor (String) -> Void
 	) async throws -> String {
+		let selected = BrowserAISettings.effectiveModel(model)
+		return try await logged(request, model: selected, feature: "AI Request", mode: "stream") {
+			let text = try await streamResponse(request, model: selected, onSnapshot: onSnapshot)
+			return (text, text.utf8.count)
+		}
+	}
+
+	private func streamResponse(
+		_ request: BrowserAIRequest,
+		model: BrowserAIModel,
+		onSnapshot: @MainActor (String) -> Void
+	) async throws -> String {
 		try Task.checkCancellation()
-		let model = BrowserAISettings.effectiveModel(model)
+		try requireEnabled()
 		let generation = try authentication(for: model)
 		try validate(request)
 		if request.images?.isEmpty == false, model == .appleIntelligence || model == .privateCloudCompute {
@@ -135,6 +168,7 @@ final class BrowserAI {
 				var latest = ""
 				for try await snapshot in snapshots {
 					try Task.checkCancellation()
+					try requireEnabled()
 					if let generation {
 						try BrowserSync.shared.validateAIAuthentication(generation)
 					}
@@ -151,6 +185,7 @@ final class BrowserAI {
 					contextOptions: ContextOptions(reasoningLevel: .light)
 				) {
 					try Task.checkCancellation()
+					try requireEnabled()
 					if let generation {
 						try BrowserSync.shared.validateAIAuthentication(generation)
 					}
@@ -160,14 +195,20 @@ final class BrowserAI {
 				text = latest
 			case .codex, .claude:
 				text = try await BrowserAICLI.generate(request, model: model)
+				try requireEnabled()
 				onSnapshot(text)
 			case let .openRouter(modelID):
 				text = try await BrowserSync.shared.streamAI(
 					cloudRequest(request, modelID: modelID),
-					onSnapshot: onSnapshot
+					onSnapshot: { snapshot in
+						if Defaults[.aiFeaturesEnabled] {
+							onSnapshot(snapshot)
+						}
+					}
 				)
 		}
 		try Task.checkCancellation()
+		try requireEnabled()
 		if let generation {
 			try BrowserSync.shared.validateAIAuthentication(generation)
 		}
@@ -175,8 +216,63 @@ final class BrowserAI {
 		return text
 	}
 
-	func checkAccess(for model: BrowserAIModel) throws {
-		_ = try authentication(for: BrowserAISettings.effectiveModel(model))
+	func checkAccess(for model: BrowserAIModel, feature: String = "AI Request") async throws {
+		let selected = BrowserAISettings.effectiveModel(model)
+		do {
+			try requireEnabled()
+			_ = try authentication(for: selected)
+		} catch {
+			await BrowserAIUsageLog.shared.record(id: UUID(), feature: feature, provider: logProvider(selected), event: "blocked", details: "phase=preflight error=\(logError(error))")
+			throw error
+		}
+	}
+
+	private func requireEnabled() throws {
+		guard Defaults[.aiFeaturesEnabled] else { throw BrowserAIError.disabled }
+	}
+
+	private func logged<Output>(
+		_ request: BrowserAIRequest,
+		model: BrowserAIModel,
+		feature: String,
+		mode: String,
+		operation: @MainActor () async throws -> (Output, Int)
+	) async throws -> Output {
+		let id = UUID()
+		let started = ContinuousClock.now
+		let provider = logProvider(model)
+		await BrowserAIUsageLog.shared.record(id: id, feature: feature, provider: provider, event: "request", details: "mode=\(mode) input_utf8_bytes=\(request.instructions.utf8.count + request.prompt.utf8.count) images=\(request.images?.count ?? 0)")
+		do {
+			try requireEnabled()
+			let (output, bytes) = try await operation()
+			await BrowserAIUsageLog.shared.record(id: id, feature: feature, provider: provider, event: "success", details: "output_utf8_bytes=\(bytes) elapsed_ms=\(elapsedMilliseconds(since: started))")
+			return output
+		} catch {
+			let cancelled = Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled
+			await BrowserAIUsageLog.shared.record(id: id, feature: feature, provider: provider, event: cancelled ? "cancelled" : "failed", details: "error=\(logError(error)) elapsed_ms=\(elapsedMilliseconds(since: started))")
+			throw error
+		}
+	}
+
+	private func logProvider(_ model: BrowserAIModel) -> String {
+		switch model {
+			case .codex: "Codex"
+			case .claude: "Claude"
+			default: "Default"
+		}
+	}
+
+	private func logError(_ error: Error) -> String {
+		if let error = error as? BrowserAIError {
+			return String(String(describing: error).prefix { $0 != "(" })
+		}
+		let error = error as NSError
+		return "\(error.domain):\(error.code)"
+	}
+
+	private func elapsedMilliseconds(since started: ContinuousClock.Instant) -> Int64 {
+		let duration = started.duration(to: .now).components
+		return duration.seconds * 1000 + duration.attoseconds / 1_000_000_000_000_000
 	}
 
 	private func authentication(for model: BrowserAIModel) throws -> UInt64? {
@@ -223,6 +319,7 @@ final class BrowserAI {
 }
 
 nonisolated enum BrowserAIError: LocalizedError {
+	case disabled
 	case commandMissing(String)
 	case commandFailed(String, String)
 	case commandTimedOut(String)
@@ -248,6 +345,8 @@ nonisolated enum BrowserAIError: LocalizedError {
 
 	var errorDescription: String? {
 		switch self {
+			case .disabled:
+				"AI features are disabled. Turn on All AI Features in AI settings to use them."
 			case let .commandMissing(provider):
 				"\(provider) is not installed or could not be found. Install its command-line tool. No Astra sign-in is required."
 			case let .commandFailed(provider, reason):

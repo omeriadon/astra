@@ -283,6 +283,7 @@ struct ShellTopBarView: View {
 private struct ShellWebsiteNavigationControls: View {
 	let browser: Browser
 	let theme: BrowserTheme
+	@Default(.aiFeaturesEnabled) private var allAIFeatures
 
 	var body: some View {
 		if let controller = browser.selectedTab?.activeController {
@@ -293,7 +294,7 @@ private struct ShellWebsiteNavigationControls: View {
 				.buttonStyle(.bordered)
 				.foregroundStyle(theme.foregroundColor)
 				.id(ObjectIdentifier(controller))
-			if !browser.isPrivate, Defaults[.aiSidebar] {
+			if allAIFeatures, !browser.isPrivate, Defaults[.aiSidebar] {
 				Button("AI Sidebar", systemImage: "bubble.left.and.text.bubble.right") {
 					browser.showsAISidebar.toggle()
 				}
@@ -447,6 +448,7 @@ private struct ShellNewTabButton: View {
 struct ShellDownloadsBarView: View {
 	let browser: Browser
 	let theme: BrowserTheme
+	@Default(.aiFeaturesEnabled) private var allAIFeatures
 	let downloads: BrowserDownloadManager
 	@Binding var showsDownloads: Bool
 	let onSwipeProgress: (UUID?, Double) -> Void
@@ -507,7 +509,7 @@ struct ShellDownloadsBarView: View {
 					.frame(maxWidth: .infinity)
 			}
 
-			if !browser.isPrivate, Defaults[.aiSidebar] {
+			if allAIFeatures, !browser.isPrivate, Defaults[.aiSidebar] {
 				Button("AI Sidebar", systemImage: "bubble.left.and.text.bubble.right") {
 					browser.showsAISidebar.toggle()
 				}

@@ -7,6 +7,7 @@ struct BrowserAITabDivider: View {
 	let tabs: [BrowserTab]
 	@Default(.aiTabGroups) private var groupingEnabled
 	@Default(.aiTabTitles) private var titlesEnabled
+	@Default(.aiFeaturesEnabled) private var allFeatures
 	@State private var hovered = false
 	@State private var action: String?
 	@State private var error: String?
@@ -18,7 +19,7 @@ struct BrowserAITabDivider: View {
 				Rectangle()
 					.fill(.secondary.opacity(0.3))
 					.frame(height: 1)
-				if !browser.isPrivate, hovered || voiceOver || action != nil {
+				if allFeatures, !browser.isPrivate, hovered || voiceOver || action != nil {
 					if tabs.count > 6, groupingEnabled {
 						Button("Tidy Today Tabs", systemImage: "rectangle.3.group") { action = "groups" }
 							.accessibilityIdentifier("ai-tidy-today-tabs")
@@ -47,7 +48,11 @@ struct BrowserAITabDivider: View {
 					.accessibilityIdentifier("ai-tab-cleanup-error")
 			}
 		}
-		.task(id: action) {
+		.task(id: "\(action ?? "")|\(allFeatures)") {
+			guard allFeatures else {
+				action = nil
+				return
+			}
 			guard let action else { return }
 			error = nil
 			defer { self.action = nil }

@@ -17,6 +17,8 @@ titles = (root / 'astra/AI/Features/BrowserChatTitleFeature.swift').read_text()
 auth_start = manager.index('\tprivate func authentication(')
 auth_end = manager.index('\n\tprivate func pccSession', auth_start)
 authentication = manager[auth_start:auth_end]
+address = (root / 'astra/UI/AddressBar/BrowserAddress.swift').read_text()
+address_method = address[address.index('\tnonisolated static func withoutCredentials'):address.index('\n\tstatic func destination')]
 models = manager[manager.index('nonisolated enum BrowserAIModel'):manager.index('nonisolated struct BrowserAIRequest')]
 stubs = '''
 @MainActor final class BrowserSync {
@@ -36,6 +38,7 @@ nonisolated struct BrowserAIImage: Codable, Sendable {
 nonisolated enum BrowserAIFeatureID {
     case downloads, linkPreview, tabGroups, find, chat, tabTitles
     @MainActor var model: BrowserAIModel { .appleIntelligence }
+    var title: String { String(describing: self) }
 }
 nonisolated struct BrowserAIPageText {
     let title: String
@@ -45,6 +48,7 @@ nonisolated struct BrowserAIPageText {
 }
 '''
 stubs = stubs.replace('AUTHENTICATION', authentication)
+stubs += 'enum BrowserAddress {\n' + address_method + '\n}\n'
 checks = r'''
 @main struct Checks {
     @MainActor static func main() async throws {
@@ -61,6 +65,15 @@ checks = r'''
         rejects { _ = try titles.output(from: "First title\nInjected instructions") }
         rejects { _ = try titles.output(from: " \n ") }
         let summaries = BrowserLinkSummaryFeature()
+        let origin = URL(string: "https://secret:password@www.google.com/search?q=C%2B%2B+memory+ownership")!
+        let destination = URL(string: "https://username:password@example.com/article")!
+        let page = BrowserAIPageText(title: "C++ Ownership", url: destination, text: "Unique ownership releases memory safely.")
+        let preview = summaries.request(for: .init(sourceURL: origin, destinationURL: destination, page: page))
+        assert(preview.prompt.contains("Source page URL: https://www.google.com/search"))
+        assert(preview.prompt.contains("Previewed link URL: https://example.com/article"))
+        assert(preview.prompt.contains("Search query: C++ memory ownership"))
+        assert(!preview.prompt.contains("secret:") && !preview.prompt.contains("username:"))
+        assert(preview.prompt.contains("Unique ownership releases memory safely."))
         let valid = #"{"title":"SQLite at the Edge","header":"SQLite stores relational data in a single file.","bullets":[{"text":"Embedded storage works without a separate database server.","symbol":"server.rack"}]}"#
         let summary = try summaries.output(from: valid)
         assert(summary.bullets.count == 1)

@@ -9,6 +9,7 @@ import WebKit
 		let browser: Browser
 		let controller: BrowserController
 		@Default(.aiLinkPreviews) private var enabled
+		@Default(.aiFeaturesEnabled) private var allFeatures
 		@State private var summary: BrowserLinkSummaryFeature.Summary?
 		@State private var page: BrowserAIPageText?
 		@State private var error: String?
@@ -21,7 +22,7 @@ import WebKit
 		@Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
 		private var requestKey: String {
-			"\(controller.navigationIdentifier)|\(controller.hoveredLinkURL?.absoluteString ?? "")|\(controller.hoveredLinkID)|\(enabled)"
+			"\(controller.navigationIdentifier)|\(controller.hoveredLinkURL?.absoluteString ?? "")|\(controller.hoveredLinkID)|\(enabled)|\(allFeatures)"
 		}
 
 		var body: some View {
@@ -101,10 +102,16 @@ import WebKit
 					dismiss()
 				}
 			}
+			.onChange(of: allFeatures) { _, value in
+				if !value {
+					dismiss()
+				}
+			}
 			.onChange(of: controller.aiPreviewDismissal) { _, _ in dismiss() }
 			.task(id: "\(requestKey)|\(dismissalGeneration)") {
 				controller.updateAIHoverHighlight()
-				guard enabled, !controller.session.isPrivate, !controller.hoveredLinkID.isEmpty,
+				guard allFeatures, enabled, !controller.session.isPrivate, !controller.hoveredLinkID.isEmpty,
+				      let sourceURL = controller.url,
 				      let url = controller.hoveredLinkURL, ["https", "http"].contains(url.scheme?.lowercased() ?? "")
 				else {
 					if summary == nil {
@@ -116,7 +123,7 @@ import WebKit
 				guard dismissedKey != key else { return }
 				do {
 					try await Task.sleep(for: .seconds(2))
-					try BrowserAI.shared.checkAccess(for: BrowserAIFeatureID.linkPreview.model)
+					try await BrowserAI.shared.checkAccess(for: BrowserAIFeatureID.linkPreview.model, feature: "Link Previews")
 					previewRect = controller.hoveredLinkRect.applying(CGAffineTransform(scaleX: controller.webViewIfLoaded?.pageZoom ?? 1, y: controller.webViewIfLoaded?.pageZoom ?? 1))
 					summary = nil
 					page = nil
@@ -126,7 +133,7 @@ import WebKit
 					let budget = model == .appleIntelligence ? 1000 : 26000
 					let extracted = try await BrowserAIPageLoader().page(at: url)
 					let context = try await extracted.limited(to: budget)
-					let result = try await BrowserAI.shared.perform(BrowserLinkSummaryFeature(), input: context)
+					let result = try await BrowserAI.shared.perform(BrowserLinkSummaryFeature(), input: .init(sourceURL: sourceURL, destinationURL: url, page: context))
 					if !Task.isCancelled, requestKey == key, dismissedKey != key {
 						page = extracted
 						summary = result

@@ -2,6 +2,10 @@ import Foundation
 
 @MainActor
 struct BrowserChatTitleFeature: BrowserAIFeature {
+	var logName: String {
+		"Chat Titles"
+	}
+
 	struct Input {
 		let question: String
 		let answer: String

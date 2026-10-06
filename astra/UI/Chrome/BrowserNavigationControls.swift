@@ -12,6 +12,17 @@ struct BrowserNavigationControls: View {
 			NavigationForwardButton(controller: controller)
 			NavigationReloadButton(controller: controller)
 			BrowserZoomControls(controller: controller)
+			if controller.isReaderAvailable || controller.readerHTML != nil {
+				Button(controller.readerHTML == nil ? "Show Reader" : "Hide Reader", systemImage: "doc.text") {
+					controller.toggleReader()
+				}
+				.labelStyle(.iconOnly)
+				.buttonStyle(.glass)
+				.disabled(controller.isPreparingReader)
+				.accessibilityLabel(controller.readerHTML == nil ? "Show Reader" : "Hide Reader")
+				.accessibilityValue(controller.readerHTML == nil ? "Off" : "On")
+				.accessibilityIdentifier("browser-reader-toggle")
+			}
 			Button("Zap Element", systemImage: "bolt.slash") {
 				controller.toggleZap()
 			}

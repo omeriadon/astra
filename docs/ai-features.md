@@ -78,6 +78,12 @@ cleanup, Find answers, and the chat pane. Existing download naming preferences
 retain their key. AI settings are device-local and participate in settings reset.
 Private windows do not send page data or tab metadata to these features.
 
+The top-level All AI Features switch overrides individual feature toggles without
+changing their stored preferences. The manager checks it before provider execution
+and before accepting results; disabling it also cancels visible preview, Find,
+tab-cleanup, and chat operations and removes AI sidebar controls. Download naming
+retains the original filename when AI is disabled.
+
 | Feature | Shipped preset | Context |
 | --- | --- | --- |
 | Download names | On-device Foundation Model | Filename, source, file type; existing filesystem safeguards |
@@ -86,6 +92,12 @@ Private windows do not send page data or tab metadata to these features.
 | Find answers | OpenRouter | Rendered current-page text; optional 40K → 30K threshold rule |
 | Chat | OpenRouter | Complete explicitly linked page text and conversation; no app token truncation |
 | Today titles | On-device Foundation Model | Current title, URL, optional first 2K Apple tokens; seven-word maximum |
+
+Preview prompts include the source page URL, the hovered destination URL, and
+decoded `q`, `query`, `search`, `search_query`, or `p` search parameters. Form query
+decoding preserves literal encoded plus signs, including searches for C++.
+URL credentials are stripped. Search context changes which supported destination
+facts become bullets, while the title remains the destination page's own title.
 
 Link previews start after two seconds on the same link. Incomplete previews
 cancel on unhover; completed previews remain selectable until scrolling, outside
@@ -171,3 +183,23 @@ timeouts without exposing captured credentials.
 Additional checks: `python3 checks/sync-cancellation-check.py` and
 `python3 checks/ai-chat-archive-check.py`. The latter runs the production archive
 and attachment reader in an isolated folder, including corrupt-file preservation.
+
+## Local AI usage log
+
+Every single or streaming request writes a start and outcome entry to
+`Application Support/<bundle identifier>/ai-usage.log`. The record includes a UTC
+timestamp, request UUID, feature, user-facing provider label, response mode, input
+and output UTF-8 byte counts, image count, elapsed milliseconds, and outcome/error
+code. Feature output validation runs before success is logged. Failed preflight
+checks are recorded as blocked attempts. Cancellations are recorded separately.
+
+The file is plain text, appended through a serial actor, restricted to permission
+0600, and retained without automatic truncation. It is local and excluded from
+browser sync. Prompts, answers, page URLs/content, image data, file contents,
+credentials, and hidden preset model identities are not written to it. Writing
+failures do not discard an AI answer; the AI settings page reports log storage
+errors. Show Usage Log reveals the file in Finder, including when AI is disabled.
+
+`python3 checks/ai-usage-log-check.py` checks the production request wrappers and
+log writer without inference: master gating, single/stream operations, output
+validation failures, cancellations, metadata-only logging, and file permissions.
