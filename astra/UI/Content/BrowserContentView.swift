@@ -150,22 +150,25 @@ private struct KeepAliveWebStack: View {
 
 	private func keepAliveControllers() -> [BrowserController] {
 		let selectedTab = browser.selectedTab
+		let ownedTabIDs = BrowserWindowRegistry.shared.ownedTabIDs(in: browser)
+		let tabsByID = browser.tabsByID
 		var result: [BrowserController] = []
 		var seen = Set<UUID>()
 		func append(_ controller: BrowserController?) {
 			guard let controller, controller.url != nil, seen.insert(controller.id).inserted else { return }
 			result.append(controller)
 		}
-		if let selectedTab, BrowserWindowRegistry.shared.ownsTab(selectedTab.id, in: browser) {
+		if let selectedTab, ownedTabIDs.contains(selectedTab.id) {
 			append(selectedTab.controller)
 		}
 		for id in browser.recentlyUsedTabIDs where result.count < 4 {
-			guard let tab = browser.tab(withID: id), tab.internalPage == nil,
-			      BrowserWindowRegistry.shared.ownsTab(tab.id, in: browser) else { continue }
+			guard ownedTabIDs.contains(id),
+			      let tab = tabsByID[id],
+			      tab.internalPage == nil else { continue }
 			append(tab.controller)
 		}
 		// ponytail: retain all playing or paused media while iframe PiP state is unobservable; narrow this when WebKit exposes a frame-aware callback.
-		for tab in browser.tabs where BrowserWindowRegistry.shared.ownsTab(tab.id, in: browser) {
+		for tab in browser.tabs where ownedTabIDs.contains(tab.id) {
 			append(tab.controller?.requiresMediaTeardownConfirmation == true ? tab.controller : nil)
 			for peek in tab.id == selectedTab?.id ? [] : tab.peeks {
 				if peek.controller.requiresMediaTeardownConfirmation {
