@@ -360,8 +360,6 @@ private struct ShellSidebarColumn: View {
 		}
 		.safeAreaBar(edge: .bottom, spacing: 0) {
 			VStack(spacing: 8) {
-				BrowserMediaActivityView(browser: browser)
-					.padding(.horizontal, 8)
 				ShellDownloadsBarView(
 					browser: browser,
 					theme: theme,
@@ -463,6 +461,11 @@ private struct ShellContentColumn: View {
 					.padding([.bottom, .horizontal], hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
+		}
+		.overlay(alignment: .bottomTrailing) {
+			BrowserMediaActivityView(browser: browser)
+				.frame(maxWidth: 360)
+				.padding(12)
 		}
 		.animation(nil, value: browser.selectedTabID)
 		.onContinuousHover { phase in

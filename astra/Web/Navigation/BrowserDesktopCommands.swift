@@ -1,5 +1,6 @@
 #if os(macOS)
 	import AppKit
+	import Darwin
 	import Defaults
 	import UniformTypeIdentifiers
 	import WebKit
@@ -41,6 +42,9 @@
 		}
 
 		static func configureWebInspector(_ webView: WKWebView, enabled: Bool) {
+			// WebKit's local inspector page group uses these persisted docking preferences.
+			UserDefaults.standard.set(1, forKey: "__WebInspectorPageGroupLevel1__.WebKit2InspectorAttachmentSide")
+			UserDefaults.standard.set(true, forKey: "__WebInspectorPageGroupLevel1__.WebKit2InspectorStartsAttached")
 			webView.isInspectable = enabled
 			let preferences = webView.configuration.preferences
 			if preferences.responds(to: NSSelectorFromString("_setDeveloperExtrasEnabled:")) {
@@ -55,7 +59,7 @@
 			}
 		}
 
-		static func showWebInspector(_ controller: BrowserController) {
+		static func showWebInspector(_ controller: BrowserController, selectingElement: Bool = false) {
 			guard let webView = controller.webViewIfLoaded,
 			      controller.hasCurrentPageDocument else { return }
 			Defaults[.webInspectorEnabled] = true
@@ -63,7 +67,7 @@
 			guard webView.responds(to: NSSelectorFromString("_inspector")),
 			      let inspector = webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
 			      inspector.responds(to: NSSelectorFromString("show")),
-			      inspector.responds(to: NSSelectorFromString("detach"))
+			      inspector.responds(to: NSSelectorFromString("attach"))
 			else {
 				controller.session.toastManager.show(
 					symbol: "exclamationmark.triangle",
@@ -71,15 +75,29 @@
 				)
 				return
 			}
-			// Keep WebKit's docked inspector from resizing the page outside SwiftUI layout.
-			if webView.responds(to: NSSelectorFromString("_setInspectorAttachmentView:")) {
-				let attachmentView = controller.webInspectorAttachmentView ?? NSView(frame: .zero)
-				attachmentView.isHidden = true
-				controller.webInspectorAttachmentView = attachmentView
-				webView.perform(NSSelectorFromString("_setInspectorAttachmentView:"), with: attachmentView)
+			if selectingElement {
+				guard inspector.responds(to: NSSelectorFromString("toggleElementSelection")) else {
+					controller.session.toastManager.show(symbol: "exclamationmark.triangle", message: "Element selection is unavailable in this WebKit version.")
+					return
+				}
+				if inspector.value(forKey: "isElementSelectionActive") as? Bool != true {
+					// Connect without showing the inspector until an element has been selected.
+					inspector.perform(NSSelectorFromString("toggleElementSelection"))
+				}
+			} else {
+				let wasVisible = inspector.value(forKey: "isVisible") as? Bool == true
+				inspector.perform(NSSelectorFromString("show"))
+				if wasVisible {
+					attachWebInspector(inspector)
+				}
 			}
-			inspector.perform(NSSelectorFromString("show"))
-			inspector.perform(NSSelectorFromString("detach"))
+		}
+
+		static func attachWebInspector(_ inspector: NSObject) {
+			// The C entry point preserves the configured side; Objective-C attach defaults to bottom.
+			guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "WKInspectorAttach") else { return }
+			let attach = unsafeBitCast(symbol, to: (@convention(c) (UnsafeRawPointer) -> Void).self)
+			attach(UnsafeRawPointer(Unmanaged.passUnretained(inspector).toOpaque()))
 		}
 
 		static func openFile(in browser: Browser, window: NSWindow?) {

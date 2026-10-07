@@ -115,6 +115,18 @@ struct BrowserTabRow: View {
 					)
 			}
 		}
+		.overlay {
+			if isSelected, tab.isDeveloperMode {
+				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+					.strokeBorder(Color(red: 0.55, green: 0.4, blue: 0), lineWidth: 2)
+					.overlay {
+						RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+							.strokeBorder(.yellow, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+					}
+					.allowsHitTesting(false)
+					.accessibilityHidden(true)
+			}
+		}
 		#if os(macOS)
 		.background {
 			BrowserDropZone(

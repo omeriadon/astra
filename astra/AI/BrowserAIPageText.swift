@@ -49,6 +49,11 @@ nonisolated struct BrowserAIPageText: Codable, Identifiable, Sendable {
 		return Self(title: title, url: url, text: String(text.prefix(lower)))
 	}
 
+	var previewContext: Self {
+		// ponytail: remote previews use a 26,000-character excerpt; use a provider tokenizer if exact budgets become necessary.
+		Self(title: title, url: url, text: String(text.prefix(26000)))
+	}
+
 	/// Read rendered text, including open shadow roots and same-origin frames. Never serialize HTML or form values.
 	static let extractionScript = #"""
 	const lines = [];
@@ -86,9 +91,11 @@ nonisolated struct BrowserAIPageText: Codable, Identifiable, Sendable {
 
 /// Loads a preview in an isolated, nonpersistent store without touching the user's tab or history.
 @MainActor
-final class BrowserAIPageLoader: NSObject, WKNavigationDelegate {
+final class BrowserAIPageLoader: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
 	private let webView: WKWebView
 	private var completion: CheckedContinuation<Void, Error>?
+	private var earlyPage: BrowserAIPageText?
+	private var earlyExtraction: Task<Void, Never>?
 
 	override init() {
 		let configuration = WKWebViewConfiguration()
@@ -98,11 +105,28 @@ final class BrowserAIPageLoader: NSObject, WKNavigationDelegate {
 		webView.navigationDelegate = self
 	}
 
-	func page(at url: URL) async throws -> BrowserAIPageText {
+	func page(at url: URL, forPreview: Bool = false) async throws -> BrowserAIPageText {
 		guard Self.allowed(url) else { throw BrowserAIError.pageUnavailable }
 		return try await withTaskCancellationHandler {
 			try Task.checkCancellation()
-			defer { webView.stopLoading() }
+			earlyPage = nil
+			if forPreview {
+				let content = webView.configuration.userContentController
+				content.add(self, contentWorld: .defaultClient, name: "aiPreviewPageReady")
+				content.addUserScript(WKUserScript(
+					source: Self.previewReadinessScript,
+					injectionTime: .atDocumentEnd,
+					forMainFrameOnly: true,
+					in: .defaultClient
+				))
+			}
+			defer {
+				earlyExtraction?.cancel()
+				earlyExtraction = nil
+				webView.stopLoading()
+				webView.configuration.userContentController.removeScriptMessageHandler(forName: "aiPreviewPageReady", contentWorld: .defaultClient)
+				webView.configuration.userContentController.removeAllUserScripts()
+			}
 			let timeout = Task { [weak self] in
 				do { try await Task.sleep(for: .seconds(20)) } catch { return }
 				self?.finish(.failure(BrowserAIError.pageUnavailable))
@@ -113,11 +137,44 @@ final class BrowserAIPageLoader: NSObject, WKNavigationDelegate {
 				webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20))
 			}
 			try Task.checkCancellation()
+			if let earlyPage {
+				return earlyPage
+			}
 			return try await BrowserAIPageText.extract(from: webView)
 		} onCancel: {
 			Task { @MainActor in
 				self.finish(.failure(CancellationError()))
 				self.webView.stopLoading()
+			}
+		}
+	}
+
+	private static let previewReadinessScript = #"""
+	(() => {
+	    let reported = false;
+	    const observer = new MutationObserver(report);
+	    function report() {
+	        if (reported) return;
+	        const root = document.querySelector('article, main, [role="main"]') || document.body;
+	        const ready = Array.from(root?.querySelectorAll('p, li, blockquote, pre') || []).some(block =>
+	            !block.closest('nav, header, footer, aside') && block.innerText.trim().length >= 80);
+	        if (!ready) return;
+	        reported = true;
+	        observer.disconnect();
+	        window.webkit.messageHandlers.aiPreviewPageReady.postMessage(null);
+	    }
+	    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+	    report();
+	})();
+	"""#
+
+	func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
+		guard message.frameInfo.isMainFrame, message.webView === webView,
+		      completion != nil, earlyExtraction == nil else { return }
+		earlyExtraction = Task { @MainActor in
+			if let page = try? await BrowserAIPageText.extract(from: webView), !Task.isCancelled, completion != nil {
+				earlyPage = page
+				finish(.success(()))
 			}
 		}
 	}

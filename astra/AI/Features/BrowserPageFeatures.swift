@@ -38,6 +38,64 @@ struct BrowserLinkSummaryFeature: BrowserAIFeature {
 		)
 	}
 
+	static func preview(
+		sourceURL: URL,
+		destinationURL: URL,
+		onSnapshot: @MainActor (String, BrowserAIPageText) -> Void
+	) async throws -> (summary: Summary, page: BrowserAIPageText) {
+		let id = UUID()
+		let started = ContinuousClock.now
+		let model = BrowserAISettings.effectiveModel(BrowserAIFeatureID.linkPreview.model)
+		let provider = switch model {
+			case .codex: "Codex"
+			case .claude: "Claude"
+			default: "Default"
+		}
+		var loaded: ContinuousClock.Instant?
+		var prepared: ContinuousClock.Instant?
+		var firstSnapshot: ContinuousClock.Instant?
+		var firstText: ContinuousClock.Instant?
+		func milliseconds(_ start: ContinuousClock.Instant, _ end: ContinuousClock.Instant?) -> Int {
+			guard let end else { return -1 }
+			let duration = start.duration(to: end).components
+			return Int(duration.seconds * 1000 + duration.attoseconds / 1_000_000_000_000_000)
+		}
+		func record(_ outcome: String) async {
+			await BrowserAIUsageLog.shared.record(
+				id: id, feature: "Link Preview Timing", provider: provider, event: outcome,
+				details: "page_load_ms=\(milliseconds(started, loaded)) context_prepare_ms=\(loaded.map { milliseconds($0, prepared) } ?? -1) request_to_first_snapshot_ms=\(prepared.map { milliseconds($0, firstSnapshot) } ?? -1) request_to_first_text_ms=\(prepared.map { milliseconds($0, firstText) } ?? -1) total_first_text_ms=\(milliseconds(started, firstText)) total_ms=\(milliseconds(started, .now))"
+			)
+		}
+		do {
+			let page = try await BrowserAIPageLoader().page(at: destinationURL, forPreview: true)
+			loaded = .now
+			let context = model == .appleIntelligence ? try await page.limited(to: 1000) : page.previewContext
+			try Task.checkCancellation()
+			prepared = .now
+			let summary = try await BrowserAI.shared.performStreaming(Self(), input: .init(sourceURL: sourceURL, destinationURL: destinationURL, page: context)) { snapshot in
+				guard !Task.isCancelled else { return }
+				if firstSnapshot == nil, !snapshot.isEmpty {
+					firstSnapshot = .now
+				}
+				if firstText == nil {
+					let title = BrowserAIOutput.streamedString("title", in: snapshot)
+					let header = BrowserAIOutput.streamedString("header", in: snapshot)
+					let plain = snapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+					if title?.isEmpty == false || header?.isEmpty == false || (!plain.isEmpty && !plain.hasPrefix("{") && !plain.contains("```")) {
+						firstText = .now
+					}
+				}
+				onSnapshot(snapshot, page)
+			}
+			try Task.checkCancellation()
+			await record("success")
+			return (summary, page)
+		} catch {
+			await record(Task.isCancelled ? "cancelled" : "failed")
+			throw error
+		}
+	}
+
 	private static func searchQuery(from url: URL) -> String? {
 		guard let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedQuery else { return nil }
 		for pair in query.split(separator: "&") {

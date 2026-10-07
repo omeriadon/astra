@@ -308,6 +308,13 @@ struct BrowserWebView {
 				webView.frame = bounds
 				webView.autoresizingMask = [.width, .height]
 				addSubview(webView, positioned: .below, relativeTo: curtain)
+				if webView.responds(to: NSSelectorFromString("_inspector")),
+				   let inspector = webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
+				   inspector.value(forKey: "isVisible") as? Bool == true,
+				   inspector.responds(to: NSSelectorFromString("attach"))
+				{
+					BrowserDesktopCommands.attachWebInspector(inspector)
+				}
 				handoffTask = Task { @MainActor [weak self, weak webView] in
 					let deadline = ContinuousClock.now + .seconds(1)
 					while !Task.isCancelled, ContinuousClock.now < deadline {
@@ -325,7 +332,11 @@ struct BrowserWebView {
 					curtain.isHidden = true
 				}
 			}
-			webView.frame = bounds.offsetBy(dx: 0, dy: isFlipped ? refreshPullOffset : -refreshPullOffset)
+			// WebKit owns the page frame while its inspector is docked in this host.
+			let hasDockedInspector = subviews.contains { $0 is WKWebView && $0 !== webView }
+			if !hasDockedInspector {
+				webView.frame = bounds.offsetBy(dx: 0, dy: isFlipped ? refreshPullOffset : -refreshPullOffset)
+			}
 			webView.isHidden = !specification.isVisible
 			webView.setAccessibilityHidden(!specification.isVisible)
 			if specification.isVisible {

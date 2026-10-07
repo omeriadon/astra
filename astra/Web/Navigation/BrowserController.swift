@@ -48,8 +48,6 @@ final class BrowserController: NSObject, Identifiable {
 	#if os(macOS)
 		@ObservationIgnored
 		private var webInspectorObserver: NSObjectProtocol?
-		@ObservationIgnored
-		var webInspectorAttachmentView: NSView?
 	#endif
 	@ObservationIgnored
 	var displayWindowID: UUID?
@@ -76,6 +74,7 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var hoveredLinkID = ""
 	private(set) var hoveredLinkShiftPressed = false
 	private(set) var aiPreviewDismissal = 0
+	@ObservationIgnored var aiLinkPreviewCache: [URL: (summary: BrowserLinkSummaryFeature.Summary, page: BrowserAIPageText)] = [:]
 	private(set) var isReaderAvailable = false
 	private(set) var readerHTML: String?
 	private(set) var isPreparingReader = false
@@ -393,7 +392,14 @@ final class BrowserController: NSObject, Identifiable {
 		createdWebView?.canGoForward ?? false
 	}
 
-	var url: URL?
+	var url: URL? {
+		didSet {
+			if oldValue.flatMap(BrowserSitePermissions.origin(for:)) != url.flatMap(BrowserSitePermissions.origin(for:)) {
+				aiLinkPreviewCache.removeAll()
+			}
+		}
+	}
+
 	private(set) var isLoading = false
 	private(set) var estimatedProgress = 0.0
 	private(set) var navigationFailure: BrowserNavigationFailure? {
@@ -665,11 +671,11 @@ final class BrowserController: NSObject, Identifiable {
 
 	private static let pictureInPictureScript = """
 	(() => {
-		window.__astraSupportsPictureInPicture = video => !video.disablePictureInPicture && !video.ended && video.readyState >= 2 &&
+		window.__astraSupportsPictureInPicture = video => !video.ended && video.readyState >= 2 &&
 			video.videoWidth > 0 && video.videoHeight > 0 &&
-			(typeof video.webkitSupportsPresentationMode === 'function'
-				? typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode('picture-in-picture')
-				: document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function');
+			((typeof video.webkitSupportsPresentationMode === 'function' &&
+				typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode('picture-in-picture')) ||
+				(document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function'));
 		const report = () => {
 			const videos = [...document.querySelectorAll('video')];
 			window.webkit.messageHandlers.pictureInPictureChanged.postMessage({
@@ -707,12 +713,10 @@ final class BrowserController: NSObject, Identifiable {
 		let script = """
 		(() => {
 			const media = [...document.querySelectorAll('audio, video')];
-			const audible = element => !element.muted && element.volume > 0 &&
-				(element.tagName === 'AUDIO' || element.webkitAudioDecodedByteCount > 0 || element.audioTracks?.length > 0);
 			return {
 				videoPlaying: media.some(element => element.tagName === 'VIDEO' && !element.paused && !element.ended && element.readyState >= 2 && element.videoWidth > 0 && element.videoHeight > 0),
-				playing: media.some(element => audible(element) && !element.paused && !element.ended && element.readyState >= 2),
-				paused: media.some(element => audible(element) && element.paused && !element.ended && element.currentTime > 0),
+				playing: media.some(element => !element.paused && !element.ended && element.readyState >= 2),
+				paused: media.some(element => element.paused && !element.ended && element.currentTime > 0),
 				title: navigator.mediaSession?.metadata?.title ?? '',
 				artist: navigator.mediaSession?.metadata?.artist ?? ''
 			};
@@ -741,11 +745,11 @@ final class BrowserController: NSObject, Identifiable {
 		let script = """
 		(() => {
 			const videos = [...document.querySelectorAll('video')];
-			const supports = video => !video.disablePictureInPicture && !video.ended && video.readyState >= 2 &&
+			const supports = video => !video.ended && video.readyState >= 2 &&
 				video.videoWidth > 0 && video.videoHeight > 0 &&
-				(typeof video.webkitSupportsPresentationMode === 'function'
-				? typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode('picture-in-picture')
-				: document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function');
+				((typeof video.webkitSupportsPresentationMode === 'function' &&
+				typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode('picture-in-picture')) ||
+				(document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function'));
 			return {
 				active: Boolean(document.pictureInPictureElement) || videos.some(video => video.webkitPresentationMode === 'picture-in-picture'),
 			eligible: typeof supports === 'function' && videos.some(supports)
@@ -778,26 +782,37 @@ final class BrowserController: NSObject, Identifiable {
 		isEnteringPictureInPicture = true
 		let documentID = navigationIdentifier
 		webView.callAsyncJavaScript("""
-		return (() => {
-			const supports = video => !video.disablePictureInPicture && !video.ended && video.readyState >= 2 &&
+		return (async () => {
+			const supports = video => !video.ended && video.readyState >= 2 &&
 				video.videoWidth > 0 && video.videoHeight > 0 &&
-				(typeof video.webkitSupportsPresentationMode === 'function'
-				? typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode('picture-in-picture')
-				: document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function');
-			if (typeof supports !== 'function') return false;
+				((typeof video.webkitSupportsPresentationMode === 'function' &&
+				typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode('picture-in-picture')) ||
+				(document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function'));
 			const video = [...document.querySelectorAll('video')].find(supports);
 			if (!video) return false;
-			if (typeof video.webkitSetPresentationMode === 'function') {
-				video.webkitSetPresentationMode(video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
-				return new Promise(resolve => {
-					const finish = () => resolve(video.webkitPresentationMode === 'picture-in-picture');
-					video.addEventListener('enterpictureinpicture', finish, { once: true });
-					video.addEventListener('leavepictureinpicture', finish, { once: true });
-					setTimeout(finish, 2000);
-				});
+			// The browser's explicit user action overrides the page's PiP hint for this request.
+			const disabled = video.disablePictureInPicture;
+			video.disablePictureInPicture = false;
+			try {
+				if (typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode?.('picture-in-picture')) {
+					return await new Promise(resolve => {
+						const finish = () => {
+							video.removeEventListener('webkitpresentationmodechanged', finish);
+							resolve(video.webkitPresentationMode === 'picture-in-picture');
+						};
+						video.addEventListener('webkitpresentationmodechanged', finish);
+						video.webkitSetPresentationMode('picture-in-picture');
+						setTimeout(finish, 2000);
+					});
+				}
+				await video.requestPictureInPicture();
+				return true;
+			} catch {
+				return false;
+			} finally {
+				video.disablePictureInPicture = disabled;
 			}
-			return video.requestPictureInPicture().then(() => true).catch(() => false);
-		})()
+		})();
 		""", arguments: [:], in: nil, in: .defaultClient) { [weak self, weak webView] result in
 			guard let self, let webView, owns(webView), documentID == navigationIdentifier else { return }
 			isEnteringPictureInPicture = false
@@ -1114,6 +1129,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	func stopForClose() {
 		guard !isInvalidated else { return }
+		aiLinkPreviewCache.removeAll()
 		resetReader()
 		clearHoveredLink()
 		isInvalidated = true
@@ -1348,6 +1364,9 @@ final class BrowserController: NSObject, Identifiable {
 					guard !self.awaitsNavigationCommit else { return }
 					guard !self.isDownloadHandoff else { return }
 					guard let url = change.newValue ?? webView.url else { return }
+					if self.url != url {
+						self.aiPreviewDismissal += 1
+					}
 					self.url = url
 					if !webView.isLoading {
 						if webView.consumeRecentClick() == true {
@@ -1525,6 +1544,8 @@ final class BrowserController: NSObject, Identifiable {
 
 	func goBack() {
 		guard let webView = createdWebView, webView.canGoBack else { return }
+		aiLinkPreviewCache.removeAll()
+		aiPreviewDismissal += 1
 		invalidateFindResults()
 		historyVisitPolicy.userInitiatedNavigation()
 		currentRequest = nil
@@ -1534,6 +1555,8 @@ final class BrowserController: NSObject, Identifiable {
 
 	func goForward() {
 		guard let webView = createdWebView, webView.canGoForward else { return }
+		aiLinkPreviewCache.removeAll()
+		aiPreviewDismissal += 1
 		invalidateFindResults()
 		historyVisitPolicy.userInitiatedNavigation()
 		currentRequest = nil
@@ -1543,6 +1566,8 @@ final class BrowserController: NSObject, Identifiable {
 
 	func go(toHistoryIndex index: Int) {
 		guard history.indices.contains(index), index != historyIndex else { return }
+		aiLinkPreviewCache.removeAll()
+		aiPreviewDismissal += 1
 		historyVisitPolicy.userInitiatedNavigation()
 		if let webView = createdWebView,
 		   let item = webView.backForwardList.item(at: index - historyIndex)
@@ -1847,6 +1872,10 @@ extension BrowserController: WKNavigationDelegate {
 		guard owns(webView) else {
 			decisionHandler(.cancel, preferences)
 			return
+		}
+		if navigationAction.targetFrame?.isMainFrame == true, navigationAction.navigationType == .backForward {
+			aiLinkPreviewCache.removeAll()
+			aiPreviewDismissal += 1
 		}
 		if navigationAction.targetFrame?.isMainFrame == true,
 		   let origin = navigationAction.request.url.flatMap(BrowserSitePermissions.origin(for:)),

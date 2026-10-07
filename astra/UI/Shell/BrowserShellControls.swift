@@ -219,7 +219,23 @@ struct ShellTopBarView: View {
 			websiteControls
 				.transition(.identity)
 				.frame(height: isCompact ? BrowserChromeMetrics.topBarRegionHeight * 2 : BrowserChromeMetrics.topBarRegionHeight)
-				.background(browser.selectedTab?.activeController?.themeColor ?? theme.tabColor)
+				.background {
+					ZStack {
+						browser.selectedTab?.activeController?.themeColor ?? theme.tabColor
+						if browser.selectedTab?.isDeveloperMode == true {
+							Canvas { context, size in
+								for x in stride(from: -size.height, through: size.width, by: 24) {
+									var stripe = Path()
+									stripe.move(to: CGPoint(x: x, y: 0))
+									stripe.addLine(to: CGPoint(x: x + size.height, y: size.height))
+									context.stroke(stripe, with: .color(.yellow.opacity(0.14)), lineWidth: 12)
+								}
+							}
+							.allowsHitTesting(false)
+							.accessibilityHidden(true)
+						}
+					}
+				}
 				.clipShape(RoundedRectangle(cornerRadius: sidebarShown ? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar : BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar))
 				.padding([.top, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
 		}
@@ -295,6 +311,19 @@ private struct ShellWebsiteNavigationControls: View {
 				.buttonStyle(.bordered)
 				.foregroundStyle(.primary)
 				.id(ObjectIdentifier(controller))
+			#if os(macOS)
+				if browser.selectedTab?.isDeveloperMode == true {
+					Button("Inspect Element", systemImage: "cursorarrow.rays") {
+						BrowserDesktopCommands.showWebInspector(controller, selectingElement: true)
+					}
+					.labelStyle(.iconOnly)
+					.buttonStyle(.bordered)
+					.disabled(!controller.hasCurrentPageDocument)
+					.help("Select an element to inspect in Web Inspector")
+					.accessibilityLabel("Inspect Element")
+					.accessibilityIdentifier("developer-inspect-element")
+				}
+			#endif
 			BrowserWebsiteMonitorButton(browser: browser)
 			BrowserTranslationButton(browser: browser, controller: controller)
 			if allAIFeatures, browser.canShowAISidebar, Defaults[.aiSidebar] {

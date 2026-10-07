@@ -145,6 +145,14 @@ final class BrowserTab: Identifiable {
 		return peeks.last?.controller ?? controller
 	}
 
+	var isDeveloperMode: Bool {
+		guard internalPage == nil, let host = (activeController?.url ?? currentURL)?.host else { return false }
+		return host == "localhost"
+			|| host.hasSuffix(".localhost")
+			|| host == "127.0.0.1"
+			|| host == "::1"
+	}
+
 	var isHibernated: Bool {
 		internalPage == nil && controller == nil
 	}

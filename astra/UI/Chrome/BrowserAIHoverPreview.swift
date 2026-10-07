@@ -151,6 +151,14 @@ import WebKit
 			activeKey = key
 			previewRect = rect
 			controller.updateAIHoverHighlight(enabled: true)
+			if let cached = controller.aiLinkPreviewCache[url] {
+				summary = cached.summary
+				page = cached.page
+				visible = true
+				return
+			}
+			let document = controller.navigationIdentifier
+			let dismissal = controller.aiPreviewDismissal
 			requestTask = Task { @MainActor in
 				do {
 					try await Task.sleep(for: .seconds(BrowserAISettings.linkPreviewDelay))
@@ -159,14 +167,10 @@ import WebKit
 					previewRect = rect
 					visible = true
 					controller.updateAIHoverHighlight(enabled: true, thinking: true)
-					let model = BrowserAISettings.effectiveModel(BrowserAIFeatureID.linkPreview.model)
-					let budget = model == .appleIntelligence ? 1000 : 26000
-					let extracted = try await BrowserAIPageLoader().page(at: url)
-					let context = try await extracted.limited(to: budget)
-					try Task.checkCancellation()
-					page = extracted
-					let result = try await BrowserAI.shared.performStreaming(BrowserLinkSummaryFeature(), input: .init(sourceURL: sourceURL, destinationURL: url, page: context)) { snapshot in
-						guard !Task.isCancelled, activeKey == key else { return }
+					let result = try await BrowserLinkSummaryFeature.preview(sourceURL: sourceURL, destinationURL: url) { snapshot, extracted in
+						guard !Task.isCancelled, activeKey == key, controller.navigationIdentifier == document,
+						      controller.aiPreviewDismissal == dismissal else { return }
+						page = extracted
 						let title = BrowserAIOutput.streamedString("title", in: snapshot)
 						if summary == nil, title?.isEmpty == false || BrowserAIOutput.streamedString("header", in: snapshot)?.isEmpty == false {
 							controller.updateAIHoverHighlight(enabled: true)
@@ -183,11 +187,17 @@ import WebKit
 							}
 							summary = .init(title: extracted.title, header: snapshot, bullets: [])
 						}
+						if let summary {
+							controller.aiLinkPreviewCache[url] = (summary, extracted)
+						}
 					}
 					try Task.checkCancellation()
-					guard activeKey == key else { return }
+					guard activeKey == key, controller.navigationIdentifier == document,
+					      controller.aiPreviewDismissal == dismissal else { return }
+					controller.aiLinkPreviewCache[url] = result
+					page = result.page
 					controller.updateAIHoverHighlight(enabled: true)
-					withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) { summary = result }
+					withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) { summary = result.summary }
 				} catch {
 					if !Task.isCancelled, activeKey == key {
 						controller.updateAIHoverHighlight()

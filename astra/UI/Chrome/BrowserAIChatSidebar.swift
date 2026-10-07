@@ -515,13 +515,12 @@ struct BrowserAIChatSidebar: View {
 					.accessibilityIdentifier("ai-chat-link-preview")
 					.task {
 						do {
-							let model = BrowserAISettings.effectiveModel(BrowserAIFeatureID.linkPreview.model)
-							let page = try await BrowserAIPageLoader().page(at: url)
-							let context = try await page.limited(to: model == .appleIntelligence ? 1000 : 26000)
-							summary = try await BrowserAI.shared.performStreaming(BrowserLinkSummaryFeature(), input: .init(sourceURL: url, destinationURL: url, page: context)) { snapshot in
+							let result = try await BrowserLinkSummaryFeature.preview(sourceURL: url, destinationURL: url) { snapshot, _ in
 								guard !Task.isCancelled else { return }
 								streamedText = ["title", "header"].compactMap { BrowserAIOutput.streamedString($0, in: snapshot) }.joined(separator: "\n\n")
 							}
+							try Task.checkCancellation()
+							summary = result.summary
 						} catch {
 							if !Task.isCancelled {
 								self.error = error.localizedDescription

@@ -23,6 +23,18 @@ struct BrowserFavouriteTile: View {
 			RoundedRectangle(cornerRadius: 10)
 				.fill(browser.selectedTabID == tab.id ? .white.opacity(0.3) : .white.opacity(0.12))
 		}
+		.overlay {
+			if browser.selectedTabID == tab.id, tab.isDeveloperMode {
+				RoundedRectangle(cornerRadius: 10)
+					.strokeBorder(Color(red: 0.55, green: 0.4, blue: 0), lineWidth: 2)
+					.overlay {
+						RoundedRectangle(cornerRadius: 10)
+							.strokeBorder(.yellow, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+					}
+					.allowsHitTesting(false)
+					.accessibilityHidden(true)
+			}
+		}
 		#if os(macOS)
 		.background {
 			BrowserDropZone(

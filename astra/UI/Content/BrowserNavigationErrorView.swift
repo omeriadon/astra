@@ -5,6 +5,7 @@ struct BrowserNavigationErrorView: View {
 	let failedURL: URL?
 	let refresh: () -> Void
 	@State private var isConnected: Bool?
+	@Environment(\.colorScheme) private var colorScheme
 
 	init(kind: BrowserNavigationFailure.Kind, failedURL: URL? = nil, refresh: @escaping () -> Void) {
 		self.kind = kind
@@ -37,6 +38,7 @@ struct BrowserNavigationErrorView: View {
 				.accessibilityIdentifier("retry-failed-page")
 		}
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
+		.background((colorScheme == .dark ? Color.black : .white).opacity(0.45))
 		.overlay(alignment: .bottom) {
 			if kind == .offline, let isConnected {
 				Text(isConnected ? "Internet connection is available." : "Waiting for an internet connection.")
