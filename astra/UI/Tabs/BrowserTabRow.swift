@@ -28,6 +28,7 @@ struct BrowserTabRow: View {
 	@State private var showsMonitorDetails = false
 	#if os(macOS)
 		@State private var hoverFrame = CGRect.zero
+		@State private var hoverPreviewStarted = false
 	#endif
 	@State private var renameText = ""
 	@FocusState private var isTitleFocused: Bool
@@ -159,33 +160,37 @@ struct BrowserTabRow: View {
 			isHovered = hovering
 			#if os(macOS)
 				guard onSelectTab == nil else { return }
-				if hovering {
-					BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
-						tabID: tab.id,
-						windowID: browser.windowID,
-						sourceFrame: hoverFrame
-					)
-				} else {
-					BrowserTabHoverPreviewCoordinator.shared.hoverEnded(
-						tabID: tab.id,
-						windowID: browser.windowID
-					)
+				if !hovering {
+					if hoverPreviewStarted {
+						BrowserTabHoverPreviewCoordinator.shared.hoverEnded(
+							tabID: tab.id,
+							windowID: browser.windowID
+						)
+					}
+					hoverPreviewStarted = false
 				}
 			#endif
 		}
 		#if os(macOS)
-		.onGeometryChange(for: CGRect.self) { proxy in
-			proxy.frame(in: .global)
-		} action: { frame in
-			hoverFrame = frame
-			if isHovered, onSelectTab == nil {
-				BrowserTabHoverPreviewCoordinator.shared.updateFrame(
-					for: tab.id,
-					windowID: browser.windowID,
-					frame: frame
-				)
+		.modifier(
+			TabHoverGeometryModifier(enabled: isHovered && onSelectTab == nil) { frame in
+				hoverFrame = frame
+				if hoverPreviewStarted {
+					BrowserTabHoverPreviewCoordinator.shared.updateFrame(
+						for: tab.id,
+						windowID: browser.windowID,
+						frame: frame
+					)
+				} else {
+					hoverPreviewStarted = true
+					BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
+						tabID: tab.id,
+						windowID: browser.windowID,
+						sourceFrame: frame
+					)
+				}
 			}
-		}
+		)
 		#endif
 		.contextMenu {
 			TabRowContextMenu(
@@ -251,6 +256,9 @@ private struct TabIconView: View {
 	let tab: BrowserTab
 	let browser: Browser
 	var onSelectTab: ((UUID) -> Void)?
+	#if os(macOS)
+		@State private var isMouseDown = false
+	#endif
 
 	var body: some View {
 		Button {
@@ -277,6 +285,19 @@ private struct TabIconView: View {
 			.frame(width: onSelectTab == nil ? 16 : 22, height: onSelectTab == nil ? 16 : 22)
 		}
 		.buttonStyle(.plain)
+		#if os(macOS)
+			.simultaneousGesture(
+				DragGesture(minimumDistance: 0)
+					.onChanged { _ in
+						guard onSelectTab == nil, !isMouseDown else { return }
+						isMouseDown = true
+						browser.selectTab(tab.id)
+					}
+					.onEnded { _ in
+						isMouseDown = false
+					}
+			)
+		#endif
 		.accessibilityIdentifier("select-tab-\(tab.id.uuidString)")
 	}
 }
@@ -292,6 +313,9 @@ private struct TabTitleView: View {
 	let onCommitRenaming: () -> Void
 	let onCancelRenaming: () -> Void
 	var onSelectTab: ((UUID) -> Void)?
+	#if os(macOS)
+		@State private var isMouseDown = false
+	#endif
 
 	var body: some View {
 		if isRenaming {
@@ -327,6 +351,19 @@ private struct TabTitleView: View {
 				.contentShape(Rectangle())
 			}
 			.buttonStyle(.plain)
+			#if os(macOS)
+				.simultaneousGesture(
+					DragGesture(minimumDistance: 0)
+						.onChanged { _ in
+							guard onSelectTab == nil, !isMouseDown else { return }
+							isMouseDown = true
+							browser.selectTab(tab.id)
+						}
+						.onEnded { _ in
+							isMouseDown = false
+						}
+				)
+			#endif
 			.simultaneousGesture(
 				TapGesture(count: 2)
 					.onEnded { _ in onBeginRenaming() }
@@ -480,6 +517,24 @@ private struct TabRowContextMenu: View {
 }
 
 #if os(macOS)
+	private struct TabHoverGeometryModifier: ViewModifier {
+		let enabled: Bool
+		let onFrame: (CGRect) -> Void
+
+		@ViewBuilder
+		func body(content: Content) -> some View {
+			if enabled {
+				content.onGeometryChange(for: CGRect.self) { proxy in
+					proxy.frame(in: .global)
+				} action: { frame in
+					onFrame(frame)
+				}
+			} else {
+				content
+			}
+		}
+	}
+
 	@MainActor
 	@Observable
 	final class BrowserTabHoverPreviewCoordinator {
