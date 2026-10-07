@@ -181,6 +181,7 @@ final class BrowserPersistence: @unchecked Sendable {
 	}
 
 	nonisolated func saveReadingArchive(_ data: Data, id: UUID, url: URL) throws -> UUID {
+		BrowserLog.debug(.persistence, "reading-archive.save", metadata: ["id": BrowserLog.id(id), "url": BrowserLog.url(url), "bytes": String(data.count)])
 		guard !data.isEmpty, data.count <= Self.maxReadingArchiveBytes else { throw BrowserUserData.ImportError.tooLarge }
 		guard BrowserHomepage.validURL(url.absoluteString) != nil else { throw BrowserPersistenceError.invalidSnapshot }
 		guard url.absoluteString.utf8.count <= 16384 else { throw BrowserUserData.ImportError.tooLarge }
@@ -216,6 +217,7 @@ final class BrowserPersistence: @unchecked Sendable {
 	}
 
 	nonisolated func loadReadingArchive(id: UUID, url expectedURL: URL) throws -> Data? {
+		BrowserLog.debug(.persistence, "reading-archive.load", metadata: ["id": BrowserLog.id(id), "url": BrowserLog.url(expectedURL)])
 		Self.readingArchiveLock.lock()
 		defer { Self.readingArchiveLock.unlock() }
 		let folder = readingArchiveDirectory
@@ -232,6 +234,7 @@ final class BrowserPersistence: @unchecked Sendable {
 	}
 
 	nonisolated func removeReadingArchive(id: UUID, ifGeneration generation: UUID? = nil) throws {
+		BrowserLog.debug(.persistence, "reading-archive.remove", metadata: ["id": BrowserLog.id(id), "generation": BrowserLog.id(generation)])
 		Self.readingArchiveLock.lock()
 		defer { Self.readingArchiveLock.unlock() }
 		let folder = readingArchiveDirectory
@@ -258,13 +261,17 @@ final class BrowserPersistence: @unchecked Sendable {
 	}
 
 	nonisolated func loadPersistedState() throws -> BrowserPersistedState? {
+		let logStarted = BrowserLog.clock()
+		BrowserLog.debug(.persistence, "state.load.begin", metadata: ["directory": BrowserLog.path(directory)])
 		var hasSnapshot = false
 		for name in ["browser-state.json", "browser-state.backup.json"] {
 			let url = directory.appendingPathComponent(name)
 			guard FileManager.default.fileExists(atPath: url.path) else { continue }
 			hasSnapshot = true
 			do {
-				return try decodeSnapshot(Data(contentsOf: url))
+				let state = try decodeSnapshot(Data(contentsOf: url))
+				BrowserLog.duration(.persistence, "state.load.end", since: logStarted, warnAboveMilliseconds: 250, metadata: ["source": name, "tabs": String(state.openTabs.count), "bookmarks": String(state.bookmarks.count)])
+				return state
 			} catch BrowserPersistenceError.unsupportedVersion {
 				throw BrowserPersistenceError.unsupportedVersion
 			} catch {
@@ -323,6 +330,8 @@ final class BrowserPersistence: @unchecked Sendable {
 	}
 
 	nonisolated func savePersistedState(_ state: BrowserPersistedState) throws {
+		let logStarted = BrowserLog.clock()
+		BrowserLog.debug(.persistence, "state.save.begin", metadata: ["tabs": String(state.openTabs.count), "bookmarks": String(state.bookmarks.count), "reading_list": String(state.readingList.count), "history": String(state.historyVisits?.count ?? 0)])
 		try validateWindowRecords(state.windowRecords ?? [])
 		for name in ["browser-state.json", "browser-state.backup.json"] {
 			let url = directory.appendingPathComponent(name)
@@ -377,6 +386,7 @@ final class BrowserPersistence: @unchecked Sendable {
 		if privateDataWasRemoved {
 			try data.write(to: directory.appendingPathComponent("browser-state.backup.json"), options: .atomic)
 		}
+		BrowserLog.duration(.persistence, "state.save.end", since: logStarted, warnAboveMilliseconds: 250, metadata: ["bytes": String(data.count), "private_data_removed": String(privateDataWasRemoved)])
 		for name in ["bookmarks.json", "favourites.json", "open-tabs.json", "closed-tabs.json", "workspace.json", "browser-snapshot.json"] {
 			let legacyURL = directory.appendingPathComponent(name)
 			if FileManager.default.fileExists(atPath: legacyURL.path) {
@@ -450,12 +460,14 @@ final class BrowserPersistence: @unchecked Sendable {
 	}
 
 	private nonisolated func read<Value: Decodable>(_ type: Value.Type, named fileName: String) throws -> Value? {
+		BrowserLog.trace(.persistence, "json.read", metadata: ["file": fileName])
 		let url = directory.appendingPathComponent(fileName)
 		guard FileManager.default.fileExists(atPath: url.path) else { return nil }
 		return try JSONDecoder().decode(type, from: Data(contentsOf: url))
 	}
 
 	private nonisolated func write(_ value: some Encodable, named fileName: String) throws {
+		BrowserLog.trace(.persistence, "json.write", metadata: ["file": fileName])
 		let data = try JSONEncoder().encode(value)
 		try data.write(to: directory.appendingPathComponent(fileName), options: .atomic)
 	}

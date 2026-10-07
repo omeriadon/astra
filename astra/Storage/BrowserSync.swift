@@ -87,6 +87,7 @@ final class BrowserSync {
 	}
 
 	func attach(_ browser: Browser) {
+		BrowserLog.info(.sync, "sync.attach", metadata: ["window": BrowserLog.id(browser.windowID), "signed_in": String(isSignedIn)])
 		guard !browser.isPrivate, !browser.isMini else { return }
 		guard self.browser !== browser else { return }
 		let hadBrowser = self.browser != nil
@@ -97,6 +98,7 @@ final class BrowserSync {
 	}
 
 	func settingsDidChange() {
+		BrowserLog.debug(.sync, "sync.settings-changed")
 		do {
 			let current = try Self.readSettings()
 			for key in Defaults.Keys.syncedSettingNames where current[key] != knownSettings[key] {
@@ -127,6 +129,7 @@ final class BrowserSync {
 	}
 
 	func scheduleSync() {
+		BrowserLog.debug(.sync, "sync.schedule", metadata: ["signed_in": String(isSignedIn), "busy": String(isSyncing)])
 		guard isSignedIn, browser != nil else { return }
 		guard !isSyncing else {
 			syncRequestedWhileBusy = true
@@ -141,6 +144,8 @@ final class BrowserSync {
 	}
 
 	func signIn(result: Result<ASAuthorization, any Error>) async {
+		let logStarted = BrowserLog.clock()
+		BrowserLog.info(.sync, "sync.sign-in.begin", metadata: ["server": BrowserLog.url(currentServerAddress)])
 		authGeneration &+= 1
 		let signInGeneration = authGeneration
 		do {
@@ -171,13 +176,16 @@ final class BrowserSync {
 			UserDefaults.standard.set(tokenEndpoint, forKey: "syncTokenEndpoint")
 			isSignedIn = true
 			errorDescription = nil
+			BrowserLog.duration(.sync, "sync.sign-in.success", since: logStarted, warnAboveMilliseconds: 1000, metadata: ["server": BrowserLog.url(currentServerAddress)])
 			await syncNow()
 		} catch {
+			BrowserLog.error(.sync, "sync.sign-in.failed", metadata: ["error": BrowserLog.errorDescription(error), "server": BrowserLog.url(currentServerAddress)])
 			errorDescription = error.localizedDescription
 		}
 	}
 
 	func signOut() {
+		BrowserLog.notice(.sync, "sync.sign-out")
 		do {
 			try BrowserSessionStore.delete()
 			authGeneration &+= 1
@@ -193,6 +201,8 @@ final class BrowserSync {
 	}
 
 	func syncNow() async {
+		let logStarted = BrowserLog.clock()
+		BrowserLog.info(.sync, "sync.begin", metadata: ["server": BrowserLog.url(currentServerAddress), "signed_in": String(isSignedIn)])
 		guard let browser, browser.isReadyForSync,
 		      let sessionToken,
 		      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
@@ -294,8 +304,13 @@ final class BrowserSync {
 			}
 			lastSync = .now
 			errorDescription = nil
+			BrowserLog.duration(.sync, "sync.success", since: logStarted, warnAboveMilliseconds: 1500, metadata: ["server": BrowserLog.url(currentServerAddress)])
 		} catch {
-			guard !Task.isCancelled, !(error is CancellationError), (error as? URLError)?.code != .cancelled else { return }
+			guard !Task.isCancelled, !(error is CancellationError), (error as? URLError)?.code != .cancelled else {
+				BrowserLog.debug(.sync, "sync.cancelled")
+				return
+			}
+			BrowserLog.error(.sync, "sync.failed", metadata: ["error": BrowserLog.errorDescription(error), "server": BrowserLog.url(currentServerAddress)])
 			errorDescription = error.localizedDescription
 		}
 	}
@@ -494,6 +509,7 @@ final class BrowserSync {
 		bearer: String?,
 		timeout: TimeInterval = 30
 	) async throws -> Response {
+		BrowserLog.debug(.sync, "sync.http-request", metadata: ["method": method, "path": path, "server": BrowserLog.url(currentServerAddress)])
 		guard let baseURL = SyncServerAddress.normalized(Defaults[.syncServerURL], allowLocalHTTP: Self.allowsLocalHTTP)
 		else {
 			throw BrowserSyncError.invalidServerURL
