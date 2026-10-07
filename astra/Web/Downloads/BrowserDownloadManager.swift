@@ -984,22 +984,15 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		      items.contains(where: { $0.id == itemID }),
 		      let request = download.originalRequest,
 		      let webView = download.webView,
-		      request.httpMethod == "GET",
+		      (request.httpMethod ?? "GET").uppercased() == "GET",
 		      !BrowserDownload.requestHasBody(request),
-		      !BrowserDownload.requestMayCarryCredentials(request),
+		      !BrowserDownload.requestHasSensitiveCredentials(request),
 		      let url = response.url,
-		      url.scheme == "http" || url.scheme == "https",
+		      ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
 		      let http = response as? HTTPURLResponse,
 		      http.statusCode == 200,
-		      response.expectedContentLength >= 2 * BrowserDownloadSegment.minimumSegmentBytes,
-		      http.value(forHTTPHeaderField: "Accept-Ranges")?.lowercased() == "bytes",
-		      [nil, "identity"].contains(http.value(forHTTPHeaderField: "Content-Encoding")?.lowercased()),
-		      let validator = strongValidator(from: http)
+		      [nil, "identity"].contains(http.value(forHTTPHeaderField: "Content-Encoding")?.lowercased())
 		else { return }
-
-		let total = response.expectedContentLength
-		let plannedSegments = BrowserDownloadSegment.plan(total: total)
-		guard !plannedSegments.isEmpty else { return }
 
 		let cookies = await withCheckedContinuation { continuation in
 			webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
@@ -1014,11 +1007,34 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				&& path.hasPrefix(cookie.path)
 				&& (!cookie.isSecure || url.scheme == "https")
 		}) else { return }
+
+		guard let probe = await probeRangeSupport(
+			url: url,
+			originalRequest: request,
+			expectedLength: response.expectedContentLength
+		) else {
+			BrowserLog.debug(.downloads, "download.acceleration.range-unsupported", metadata: [
+				"item": BrowserLog.id(itemID),
+				"url": BrowserLog.url(url),
+			])
+			return
+		}
+		let total = probe.total
+		let plannedSegments = BrowserDownloadSegment.plan(total: total)
+		guard !plannedSegments.isEmpty else { return }
+		let validator = strongValidator(from: http) ?? probe.validator
+
 		guard downloads[key] != nil,
 		      let currentIndex = items.firstIndex(where: { $0.id == itemID }),
 		      items[currentIndex].status == .downloading
 		else { return }
 
+		BrowserLog.info(.downloads, "download.acceleration.enabled", metadata: [
+			"item": BrowserLog.id(itemID),
+			"segments": String(plannedSegments.count),
+			"total_bytes": String(total),
+			"validator": validator == nil ? "none" : "present",
+		])
 		items[currentIndex].segments = plannedSegments
 		items[currentIndex].rangeValidator = validator
 		items[currentIndex].totalBytes = total
@@ -1040,7 +1056,61 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			return
 		}
 		persist()
-		segmented.start(items[resumedIndex])
+		segmented.start(items[resumedIndex], originalRequest: request)
+	}
+
+	private func probeRangeSupport(
+		url: URL,
+		originalRequest: URLRequest,
+		expectedLength: Int64
+	) async -> (total: Int64, validator: String?)? {
+		var request = URLRequest(url: url)
+		request.httpMethod = "GET"
+		for (field, value) in SegmentedDownloadEngine.safeReplayHeaders(originalRequest) {
+			request.setValue(value, forHTTPHeaderField: field)
+		}
+		request.cachePolicy = .reloadIgnoringLocalCacheData
+		request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+		request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+
+		let configuration = URLSessionConfiguration.ephemeral
+		configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+		configuration.httpCookieStorage = nil
+		configuration.httpShouldSetCookies = false
+		configuration.urlCredentialStorage = nil
+		let session = URLSession(configuration: configuration)
+		defer { session.invalidateAndCancel() }
+
+		do {
+			let (data, response) = try await session.data(for: request)
+			guard data.count == 1,
+			      let http = response as? HTTPURLResponse,
+			      http.statusCode == 206,
+			      [nil, "identity"].contains(http.value(forHTTPHeaderField: "Content-Encoding")?.lowercased()),
+			      let contentRange = http.value(forHTTPHeaderField: "Content-Range"),
+			      let total = Self.totalLength(fromSingleByteContentRange: contentRange),
+			      expectedLength <= 0 || expectedLength == total
+			else { return nil }
+			return (total, strongValidator(from: http))
+		} catch {
+			BrowserLog.debug(.downloads, "download.acceleration.probe-failed", metadata: [
+				"url": BrowserLog.url(url),
+				"error": BrowserLog.error(error),
+			])
+			return nil
+		}
+	}
+
+	private static func totalLength(fromSingleByteContentRange value: String) -> Int64? {
+		let components = value.split(separator: "/", omittingEmptySubsequences: false)
+		guard components.count == 2 else { return nil }
+		let range = String(components[0]).trimmingCharacters(in: .whitespacesAndNewlines)
+		let totalString = String(components[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+		guard range.caseInsensitiveCompare("bytes 0-0") == .orderedSame,
+		      let total = Int64(totalString),
+		      total > 1
+		else { return nil }
+		return total
 	}
 
 	private func strongValidator(from response: HTTPURLResponse) -> String? {
