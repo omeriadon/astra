@@ -293,9 +293,7 @@ private struct ShellSidebarColumn: View {
 	@Binding var showsDownloads: Bool
 	let downloads: BrowserDownloadManager
 	let onSwipeProgress: (UUID?, Double) -> Void
-	@State private var scrollSpaceID: UUID?
-	@State private var isScrollingSpaces = false
-	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	@State private var bottomBarHeight: CGFloat = 38
 
 	var body: some View {
 		ZStack(alignment: .topLeading) {
@@ -315,38 +313,25 @@ private struct ShellSidebarColumn: View {
 	}
 
 	private var sidebarContent: some View {
-		ZStack(alignment: .top) {
+		let bottomFadeHeight = max(bottomBarHeight, 38)
+
+		return ZStack(alignment: .top) {
 			Group {
 				if browser.isPrivate {
 					PrivateBrowserSidebar(browser: browser)
-						.sidebarBackdropEdgeBlur()
+						.sidebarScrollOpacityFade(top: 38, bottom: bottomFadeHeight)
 				} else {
-					ScrollView(.horizontal) {
-						LazyHStack(spacing: 0) {
-							ForEach(browser.workspace.spaces) { space in
-								ShellSidebarListView(browser: browser, space: space, theme: space.theme)
-									.sidebarBackdropEdgeBlur()
-									.foregroundStyle(space.theme.foregroundColor)
-									.containerRelativeFrame(.horizontal)
-									.id(space.id)
-							}
+					BrowserSpacePager(
+						spaces: browser.workspace.spaces,
+						selectedSpaceID: browser.workspace.selectedSpaceID,
+						onSelectSpace: { id in
+							guard id != browser.workspace.selectedSpaceID else { return }
+							browser.selectSpace(id)
 						}
-						.scrollTargetLayout()
-					}
-					.scrollIndicators(.hidden)
-					.scrollTargetBehavior(.paging)
-					.scrollPosition(id: $scrollSpaceID, anchor: .center)
-					.onScrollPhaseChange { _, phase in
-						isScrollingSpaces = phase == .interacting || phase == .decelerating
-					}
-					.onChange(of: browser.workspace.selectedSpaceID, initial: true) { oldID, id in
-						withAnimation(reduceMotion || oldID == id ? nil : .smooth(duration: 0.3)) {
-							scrollSpaceID = id
-						}
-					}
-					.onChange(of: scrollSpaceID) { _, id in
-						guard isScrollingSpaces, let id, id != browser.workspace.selectedSpaceID else { return }
-						browser.selectSpace(id)
+					) { space in
+						ShellSidebarListView(browser: browser, space: space, theme: space.theme)
+							.sidebarScrollOpacityFade(top: 38, bottom: bottomFadeHeight)
+							.foregroundStyle(space.theme.foregroundColor)
 					}
 					.accessibilityIdentifier("sidebar-space-pages")
 				}
@@ -355,40 +340,48 @@ private struct ShellSidebarColumn: View {
 			.offset(x: showsDownloads ? BrowserChromeMetrics.expandedSidebarWidth : 0)
 
 			DownloadsSidebarView(manager: downloads, theme: theme)
+				.sidebarScrollOpacityFade(top: 38, bottom: bottomFadeHeight)
 				.foregroundStyle(theme.foregroundColor)
 				.offset(x: showsDownloads ? 0 : -BrowserChromeMetrics.expandedSidebarWidth)
 		}
 		.safeAreaBar(edge: .bottom, spacing: 0) {
-			VStack(spacing: 8) {
-				ShellDownloadsBarView(
-					browser: browser,
-					theme: theme,
-					downloads: downloads,
-					showsDownloads: $showsDownloads,
-					onSwipeProgress: onSwipeProgress
-				)
-				.foregroundStyle(theme.foregroundColor)
-			}
+			sidebarBottomBar
+		}
+		.onPreferenceChange(SidebarBottomBarHeightPreferenceKey.self) { height in
+			guard height > 0, abs(height - bottomBarHeight) > 0.5 else { return }
+			bottomBarHeight = height
 		}
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
 		.safeAreaPadding(.top, BrowserChromeMetrics.topBarRegionHeight)
-//		.overlay(alignment: .top) {
-//			HazeEffect(
-//				maskProvider: LinearGradientMaskProvider(
-//					startPoint: .top,
-//					endPoint: .bottom,
-//					startOpacity: 1,
-//					endOpacity: 0,
-//					isSmooth: true
-//				),
-//				maxBlurRadius: 2,
-//				isolatesBackdrop: true
-//			)
-//			.frame(height: BrowserChromeMetrics.topBarRegionHeight)
-//			.allowsHitTesting(false)
-//			.accessibilityHidden(true)
-//		}
-//		.compositingGroup()
+	}
+
+	private var sidebarBottomBar: some View {
+		VStack(spacing: 8) {
+			ShellDownloadsBarView(
+				browser: browser,
+				theme: theme,
+				downloads: downloads,
+				showsDownloads: $showsDownloads,
+				onSwipeProgress: onSwipeProgress
+			)
+			.foregroundStyle(theme.foregroundColor)
+		}
+		.background {
+			GeometryReader { geometry in
+				Color.clear.preference(
+					key: SidebarBottomBarHeightPreferenceKey.self,
+					value: geometry.size.height
+				)
+			}
+		}
+	}
+}
+
+private struct SidebarBottomBarHeightPreferenceKey: PreferenceKey {
+	static var defaultValue: CGFloat = 38
+
+	static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+		value = max(value, nextValue())
 	}
 }
 
