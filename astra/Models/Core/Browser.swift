@@ -2406,7 +2406,12 @@ final class Browser {
 	private func schedulePersistence(fullState: Bool = true) {
 		BrowserLog.trace(.persistence, "browser.persistence.schedule", metadata: ["window": BrowserLog.id(windowID), "full": String(fullState), "hydrated": String(didFinishHydration)])
 		guard !isPrivate else { return }
-		BrowserExtensionManager.shared.sync(self)
+		// Selection-only persistence is a hot path and extension activation is
+		// already handled by BrowserWindowRegistry. Rebuilding every extension-tab
+		// snapshot here made each ordinary tab click walk the entire tab set again.
+		if fullState {
+			BrowserExtensionManager.shared.sync(self)
+		}
 		guard persistence != nil else { return }
 		if fullState {
 			pendingFullPersistence = true
