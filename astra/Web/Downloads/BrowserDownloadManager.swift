@@ -263,6 +263,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	) {
 		Task { @MainActor in
 			let downloadID = ObjectIdentifier(download)
+			let originalRequest = download.originalRequest
 			guard !isClosing,
 			      let itemID = itemIDs[downloadID],
 			      downloads[downloadID] != nil,
@@ -347,9 +348,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				destinations[downloadID] = destination
 				persist()
 				completionHandler(destination)
-				Task { @MainActor in
-					await maybeAccelerate(download, response: response)
-				}
+				await maybeAccelerate(download, response: response, originalRequest: originalRequest)
 			} catch {
 				guard let liveIndex = items.firstIndex(where: { $0.id == itemID && $0.status == .downloading }),
 				      downloads[ObjectIdentifier(download)] != nil
@@ -976,13 +975,17 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		showToast(symbol: "exclamationmark.triangle", message: "Astra needs renewed access to this saved file.")
 	}
 
-	private func maybeAccelerate(_ download: WKDownload, response: URLResponse) async {
+	private func maybeAccelerate(
+		_ download: WKDownload,
+		response: URLResponse,
+		originalRequest: URLRequest?
+	) async {
 		guard privateDataStore == nil else { return }
 		let key = ObjectIdentifier(download)
 		guard let itemID = itemIDs[key],
 		      !accelerationAbandoned.contains(itemID),
 		      items.contains(where: { $0.id == itemID }),
-		      let request = download.originalRequest,
+		      let request = originalRequest ?? download.originalRequest,
 		      (request.httpMethod ?? "GET").uppercased() == "GET",
 		      !BrowserDownload.requestHasBody(request),
 		      !BrowserDownload.requestHasSensitiveCredentials(request),
@@ -992,7 +995,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		      http.statusCode == 200
 		else {
 			BrowserLog.debug(.downloads, "download.acceleration.ineligible", metadata: [
-				"request": BrowserLog.request(download.originalRequest),
+				"request": BrowserLog.request(originalRequest ?? download.originalRequest),
 				"response_url": BrowserLog.url(response.url),
 				"status": String((response as? HTTPURLResponse)?.statusCode ?? -1),
 				"has_webview": String(download.webView != nil),
