@@ -1418,7 +1418,8 @@ final class Browser {
 	}
 
 	func promotePeek(in source: BrowserTab, id: UUID) {
-		guard let peek = source.takePeekForPromotion(id) else { return }
+		guard let sourceIndex = tabs.firstIndex(where: { $0 === source }),
+		      let peek = source.takePeekForPromotion(id) else { return }
 		let webView = peek.controller.webViewIfLoaded
 		let navigationIdentifier = peek.controller.navigationIdentifier
 		let tab = BrowserTab(
@@ -1426,8 +1427,19 @@ final class Browser {
 			existingController: peek.controller
 		)
 		configure(tab)
-		tabs.append(tab)
+		tabs.insert(tab, at: sourceIndex + 1)
 		reconcileWorkspace()
+		if let spaceIndex = workspace.spaces.firstIndex(where: { $0.tabIDs.contains(source.id) }) {
+			let space = workspace.spaces[spaceIndex]
+			let nextID = space.tabIDs.drop(while: { $0 != source.id }).dropFirst().first
+			moveTab(tab.id, to: .normal, in: space.id, before: nextID)
+			if let groupIndex = space.todayTabGroups.firstIndex(where: { $0.tabIDs.contains(source.id) }),
+			   let groupTabIndex = space.todayTabGroups[groupIndex].tabIDs.firstIndex(of: source.id)
+			{
+				workspace.spaces[spaceIndex].todayTabGroups[groupIndex].tabIDs.insert(tab.id, at: groupTabIndex + 1)
+			}
+		}
+		markWorkspaceStructureChanged()
 		selectTab(tab.id)
 		assert(tab.controller === peek.controller)
 		assert(tab.controller?.navigationIdentifier == navigationIdentifier)
