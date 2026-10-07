@@ -96,7 +96,7 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 
 	static func averageThroughput(samples: [(bytes: Int64, at: Date)]) -> Double? {
 		guard let first = samples.first, let last = samples.last else { return nil }
-		let cutoff = last.at.addingTimeInterval(-15)
+		let cutoff = last.at.addingTimeInterval(-20)
 		var startBytes = Double(first.bytes)
 		var startTime = first.at
 		if first.at < cutoff, samples.count > 1 {
@@ -109,6 +109,46 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 		let elapsed = last.at.timeIntervalSince(startTime)
 		guard elapsed > 0 else { return nil }
 		return max(0, (Double(last.bytes) - startBytes) / elapsed)
+	}
+
+	static func smoothedThroughput(previous: Double?, observed: Double, elapsed: TimeInterval) -> Double {
+		guard observed.isFinite, observed >= 0 else { return previous ?? 0 }
+		guard let previous, previous.isFinite, previous >= 0, elapsed > 0 else { return observed }
+		let alpha = min(max(1 - exp(-elapsed / 4), 0.04), 0.35)
+		return previous + alpha * (observed - previous)
+	}
+
+	static func smoothedTimeRemaining(
+		previous: TimeInterval?,
+		observed: TimeInterval,
+		elapsed: TimeInterval
+	) -> TimeInterval? {
+		guard observed.isFinite, observed > 0 else { return previous }
+		guard let previous, previous.isFinite, previous > 0, elapsed > 0 else {
+			return observed
+		}
+		let predicted = max(0, previous - elapsed)
+		var alpha = min(max(1 - exp(-elapsed / 8), 0.025), 0.20)
+		if observed > max(predicted * 2, predicted + 60)
+			|| observed < min(predicted * 0.5, max(0, predicted - 60))
+		{
+			alpha = max(alpha, 0.08)
+		}
+		return max(0, predicted + alpha * (observed - predicted))
+	}
+
+	static func displayTimeRemaining(_ value: TimeInterval) -> TimeInterval {
+		guard value.isFinite, value > 0 else { return value }
+		let quantum: TimeInterval = if value < 60 {
+			5
+		} else if value < 10 * 60 {
+			10
+		} else if value < 60 * 60 {
+			30
+		} else {
+			60
+		}
+		return max(quantum, (value / quantum).rounded() * quantum)
 	}
 
 	var estimatedFinish: Date? {
