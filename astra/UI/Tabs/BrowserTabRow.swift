@@ -60,7 +60,8 @@ struct BrowserTabRow: View {
 	}
 
 	var body: some View {
-		HStack(spacing: 6) {
+		let isOpenElsewhere = BrowserWindowRegistry.shared.isOpenInAnotherWindow(tab.id, than: browser)
+		return HStack(spacing: 6) {
 			TabIconView(tab: tab, browser: browser, onSelectTab: onSelectTab)
 			if let match = tab.monitorMatch {
 				Button("Monitored condition met", systemImage: "bell.badge.fill") { browser.selectTab(tab.id) }
@@ -102,8 +103,8 @@ struct BrowserTabRow: View {
 					.accessibilityHidden(!isHovered)
 			}
 		}
-		.opacity(BrowserWindowRegistry.shared.isOpenInAnotherWindow(tab.id, than: browser) ? 0.35 : 1)
-		.allowsHitTesting(!BrowserWindowRegistry.shared.isOpenInAnotherWindow(tab.id, than: browser))
+		.opacity(isOpenElsewhere ? 0.35 : 1)
+		.allowsHitTesting(!isOpenElsewhere)
 		.padding(.horizontal, 8)
 		.frame(height: onSelectTab == nil ? 28 : 44)
 		.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? rowTransitions)
