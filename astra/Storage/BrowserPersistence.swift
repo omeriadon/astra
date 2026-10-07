@@ -18,7 +18,7 @@ private func persistenceDirectory() throws -> URL {
 }
 
 /// One value snapshot is committed atomically, including tab organization and selection.
-struct BrowserPersistedState: Codable, @unchecked Sendable {
+nonisolated struct BrowserPersistedState: Codable, @unchecked Sendable {
 	var bookmarks: [Bookmark]
 	var readingList: [ReadingListItem] = []
 	var openTabs: [OpenTab]
@@ -56,7 +56,7 @@ struct BrowserPersistedState: Codable, @unchecked Sendable {
 	}
 }
 
-struct BrowserWindowRecord: Codable, Equatable, Sendable {
+nonisolated struct BrowserWindowRecord: Codable, Equatable, Sendable {
 	var version: Int
 	var windowID: UUID
 	var tabIDs: [UUID]
@@ -79,7 +79,7 @@ struct BrowserWindowRecord: Codable, Equatable, Sendable {
 	}
 }
 
-struct BrowserWindowFrame: Codable, Equatable, Sendable {
+nonisolated struct BrowserWindowFrame: Codable, Equatable, Sendable {
 	var x: Double
 	var y: Double
 	var width: Double
@@ -108,7 +108,7 @@ struct BrowserWindowFrame: Codable, Equatable, Sendable {
 	}
 }
 
-struct BrowserShutdownMetadata: Codable, Equatable, Sendable {
+nonisolated struct BrowserShutdownMetadata: Codable, Equatable, Sendable {
 	var version: Int
 	var clean: Bool
 	var updatedAt: Date
@@ -135,7 +135,7 @@ nonisolated enum BrowserHomepage {
 	}
 }
 
-enum BrowserPersistenceError: LocalizedError, Equatable {
+nonisolated enum BrowserPersistenceError: LocalizedError, Equatable {
 	case unsupportedVersion
 	case invalidSnapshot
 
@@ -149,7 +149,7 @@ enum BrowserPersistenceError: LocalizedError, Equatable {
 	}
 }
 
-final class BrowserPersistence: @unchecked Sendable {
+nonisolated final class BrowserPersistence: @unchecked Sendable {
 	private let directory: URL
 	private var readingArchiveDirectory: URL {
 		directory.appendingPathComponent("reading-list", isDirectory: true)
