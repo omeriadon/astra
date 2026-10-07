@@ -13,8 +13,10 @@
 				forName: NSApplication.didFinishLaunchingNotification,
 				object: NSApp,
 				queue: .main
-			) { [weak self] _ in
-				Task { @MainActor in self?.installMenuItem() }
+			) { _ in
+				Task { @MainActor in
+					BrowserWebsiteAppMenuIntegration.shared.installMenuItem()
+				}
 			}
 		}
 
