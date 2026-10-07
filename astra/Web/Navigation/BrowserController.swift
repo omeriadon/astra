@@ -68,6 +68,11 @@ final class BrowserController: NSObject, Identifiable {
 	#endif
 	@ObservationIgnored
 	var displayWindowID: UUID?
+	/// The Browser/window whose callbacks are currently installed on this
+	/// controller. Separate from displayWindowID because display ownership is
+	/// updated before callback configuration during a tab switch.
+	@ObservationIgnored
+	var browserConfigurationWindowID: UUID?
 	@ObservationIgnored
 	private var isInvalidated = false
 	@ObservationIgnored
