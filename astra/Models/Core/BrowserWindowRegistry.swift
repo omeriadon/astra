@@ -152,14 +152,38 @@ final class BrowserWindowRegistry {
 	func claimSelectedTab(in browser: Browser) {
 		guard !browser.isPrivate, !browser.isMini,
 		      activeBrowserID == browser.windowID else { return }
+
+		let selectedID = browser.selectedTabID
+		let normalBrowsers = openBrowsers.filter { !$0.isPrivate && !$0.isMini }
+		let previousOwnerID: UUID? = {
+			if let owner = tabOwners[selectedID],
+			   normalBrowsers.contains(where: {
+			   	$0.windowID == owner && $0.tabs.contains(where: { $0.id == selectedID })
+			   })
+			{
+				return owner
+			}
+			return normalBrowsers.first {
+				$0.tabs.contains(where: { $0.id == selectedID })
+			}?.windowID
+		}()
+
 		browser.prepareSelectedTabDisplayOwner()
-		tabOwners[browser.selectedTabID] = browser.windowID
+		tabOwners[selectedID] = browser.windowID
 		browser.configureSelectedTab()
-		Task { @MainActor [weak self] in
+
+		Task { @MainActor [weak self, weak browser] in
 			await Task.yield()
-			guard let self else { return }
-			for window in openBrowsers {
-				BrowserExtensionManager.shared.sync(window)
+			guard let self, let browser else { return }
+			if let previousOwnerID, previousOwnerID != browser.windowID {
+				// Ownership really moved between windows; rebuild the small extension
+				// model because one window loses the tab and another gains it.
+				for window in openBrowsers {
+					BrowserExtensionManager.shared.sync(window)
+				}
+			} else {
+				// Ordinary tab clicks only change the active extension tab.
+				BrowserExtensionManager.shared.selectionDidChange(browser)
 			}
 		}
 	}
