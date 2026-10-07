@@ -1628,21 +1628,49 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		let itemID = items[index].id
 		let now = Date.now
 		var samples = rateSamples[itemID] ?? []
+		let previousSampleTime = samples.last?.at
 		if let last = samples.last, received < last.bytes {
 			samples.removeAll()
+			items[index].throughput = nil
+			items[index].estimatedTimeRemaining = nil
 		}
 		samples.append((received, now))
-		let cutoff = now.addingTimeInterval(-15)
+		let cutoff = now.addingTimeInterval(-20)
 		while samples.count > 2, samples[1].at <= cutoff {
 			samples.removeFirst()
 		}
 		rateSamples[itemID] = samples
-		guard let rate = BrowserDownload.averageThroughput(samples: samples) else { return }
-		items[index].throughput = rate.isFinite && rate < Double(Int.max) ? Int(rate) : nil
-		items[index].estimatedTimeRemaining = nil
-		if rate > 0, let total = items[index].totalBytes, total > received {
-			items[index].estimatedTimeRemaining = Double(total - received) / rate
+
+		guard let observedRate = BrowserDownload.averageThroughput(samples: samples),
+		      observedRate.isFinite,
+		      observedRate > 0
+		else { return }
+
+		let elapsed = max(previousSampleTime.map { now.timeIntervalSince($0) } ?? 0, 0.05)
+		let sampleAge = now.timeIntervalSince(samples.first?.at ?? now)
+		let smoothedRate = BrowserDownload.smoothedThroughput(
+			previous: items[index].throughput.map(Double.init),
+			observed: observedRate,
+			elapsed: elapsed
+		)
+		items[index].throughput = smoothedRate < Double(Int.max) ? Int(smoothedRate.rounded()) : nil
+
+		guard sampleAge >= 2,
+		      samples.count >= 3,
+		      let total = items[index].totalBytes,
+		      total > received,
+		      smoothedRate > 0
+		else {
+			items[index].estimatedTimeRemaining = nil
+			return
 		}
+
+		let observedRemaining = Double(total - received) / smoothedRate
+		items[index].estimatedTimeRemaining = BrowserDownload.smoothedTimeRemaining(
+			previous: items[index].estimatedTimeRemaining,
+			observed: observedRemaining,
+			elapsed: elapsed
+		)
 	}
 
 	private func updateProgress(
@@ -1667,9 +1695,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		updateRate(at: index, received: received)
 		if rateSamples[itemID]?.count == 1 {
 			items[index].throughput = throughput.flatMap { $0 > 0 ? $0 : nil }
-			items[index].estimatedTimeRemaining = estimatedTimeRemaining.flatMap {
-				$0.isFinite && $0 > 0 ? $0 : nil
-			}
+			items[index].estimatedTimeRemaining = nil
 		}
 		updateDockProgress()
 		if Date.now.timeIntervalSince(lastPersistedAt) > 1 {
