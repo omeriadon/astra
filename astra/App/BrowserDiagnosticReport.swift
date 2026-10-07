@@ -62,6 +62,7 @@ final class BrowserDiagnosticEventStore {
 	private var events: [StoredEvent] = []
 
 	func record(_ category: BrowserDiagnosticReport.Event.Category, code rawCode: String, isPrivate: Bool) {
+		BrowserLog.debug(.diagnostics, "diagnostic-event.record", metadata: ["category": category.rawValue, "code": rawCode, "private": String(isPrivate)])
 		guard !isPrivate, let code = BrowserDiagnosticReport.sanitizedCode(rawCode) else { return }
 		events.append(StoredEvent(category: category, code: code, date: .now))
 		if events.count > BrowserDiagnosticReport.maximumEvents {

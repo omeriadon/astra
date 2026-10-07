@@ -95,6 +95,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	}
 
 	init(isPrivate: Bool) {
+		BrowserLog.debug(.favicons, "favicon-store.init", metadata: ["private": String(isPrivate)])
 		let persistence: BrowserPersistence?
 		do {
 			persistence = isPrivate ? nil : try BrowserPersistence()
@@ -166,6 +167,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	}
 
 	func loadFavicon(for pageURL: URL, from webView: WKWebView, onlyIfMissing: Bool = false) async {
+		BrowserLog.trace(.favicons, "favicon.load", metadata: ["url": BrowserLog.url(pageURL), "only_if_missing": String(onlyIfMissing)])
 		guard let key = FaviconKey.origin(for: pageURL),
 		      FaviconKey.origin(for: webView.url) == key
 		else { return }
@@ -250,6 +252,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	}
 
 	func clear() {
+		BrowserLog.notice(.favicons, "favicon.clear")
 		cacheGeneration += 1
 		activeRequests.removeAll()
 		decodedImages.removeAll()

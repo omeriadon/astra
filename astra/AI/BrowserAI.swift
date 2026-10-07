@@ -225,6 +225,7 @@ final class BrowserAI {
 	}
 
 	func checkAccess(for model: BrowserAIModel, feature: String = "AI Request") async throws {
+		BrowserLog.debug(.ai, "ai.access-check", metadata: ["provider": logProvider(model), "feature": BrowserLog.value(feature)])
 		let selected = BrowserAISettings.effectiveModel(model)
 		do {
 			try requireEnabled()
@@ -249,14 +250,24 @@ final class BrowserAI {
 		let id = UUID()
 		let started = ContinuousClock.now
 		let provider = logProvider(model)
+		BrowserLog.info(.ai, "ai.request", metadata: ["id": BrowserLog.id(id), "feature": BrowserLog.value(feature), "provider": provider, "mode": mode, "input_bytes": String(request.instructions.utf8.count + request.prompt.utf8.count), "images": String(request.images?.count ?? 0)])
+		#if DEBUG
+			BrowserLog.debug(.ai, "ai.prompt.debug", metadata: ["id": BrowserLog.id(id), "instructions": BrowserLog.value(request.instructions), "prompt": BrowserLog.value(request.prompt)])
+		#endif
 		await BrowserAIUsageLog.shared.record(id: id, feature: feature, provider: provider, event: "request", details: "mode=\(mode) input_utf8_bytes=\(request.instructions.utf8.count + request.prompt.utf8.count) images=\(request.images?.count ?? 0)")
 		do {
 			try requireEnabled()
 			let (output, bytes) = try await operation()
+			BrowserLog.info(.ai, "ai.success", metadata: ["id": BrowserLog.id(id), "feature": BrowserLog.value(feature), "provider": provider, "output_bytes": String(bytes), "elapsed_ms": String(elapsedMilliseconds(since: started))])
 			await BrowserAIUsageLog.shared.record(id: id, feature: feature, provider: provider, event: "success", details: "output_utf8_bytes=\(bytes) elapsed_ms=\(elapsedMilliseconds(since: started))")
 			return output
 		} catch {
 			let cancelled = Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled
+			if cancelled {
+				BrowserLog.debug(.ai, "ai.cancelled", metadata: ["id": BrowserLog.id(id), "feature": BrowserLog.value(feature), "provider": provider])
+			} else {
+				BrowserLog.error(.ai, "ai.failed", metadata: ["id": BrowserLog.id(id), "feature": BrowserLog.value(feature), "provider": provider, "error": BrowserLog.errorDescription(error), "elapsed_ms": String(elapsedMilliseconds(since: started))])
+			}
 			await BrowserAIUsageLog.shared.record(id: id, feature: feature, provider: provider, event: cancelled ? "cancelled" : "failed", details: "error=\(logError(error)) elapsed_ms=\(elapsedMilliseconds(since: started))")
 			throw error
 		}

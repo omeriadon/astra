@@ -150,6 +150,7 @@ final class BrowserSitePermissions {
 	private(set) var revision = 0
 
 	init(isPrivate: Bool, defaults: UserDefaults = .standard) {
+		BrowserLog.info(.permissions, "permissions.init", metadata: ["private": String(isPrivate)])
 		self.isPrivate = isPrivate
 		self.defaults = defaults
 		if !isPrivate,
@@ -180,6 +181,7 @@ final class BrowserSitePermissions {
 	}
 
 	func decision(origin: String, topOrigin: String, capability: Capability) -> Bool? {
+		BrowserLog.trace(.permissions, "permissions.lookup", metadata: ["origin": BrowserLog.value(origin), "top_origin": BrowserLog.value(topOrigin), "capability": String(describing: capability)])
 		switch effectiveDecision(origin: origin, topOrigin: topOrigin, capability: capability) {
 			case .allowAlways: true
 			case .deny: false
@@ -221,6 +223,7 @@ final class BrowserSitePermissions {
 		controllerID: UUID? = nil,
 		documentID: Int? = nil
 	) {
+		BrowserLog.info(.permissions, "permissions.set", metadata: ["private": String(isPrivate)])
 		guard let origin = Self.normalizedOrigin(origin),
 		      let topOrigin = Self.normalizedOrigin(topOrigin) else { return }
 		if decision == .allowOnce {
@@ -250,6 +253,7 @@ final class BrowserSitePermissions {
 	}
 
 	func remove(_ entry: Entry) {
+		BrowserLog.info(.permissions, "permissions.remove", metadata: ["origin": BrowserLog.value(entry.origin), "capability": String(describing: entry.capability)])
 		entries.removeAll { $0.id == entry.id }
 		temporaryDecisions = temporaryDecisions.filter {
 			$0.key.origin != entry.origin || $0.key.topOrigin != entry.topOrigin || $0.key.capability != entry.capability
@@ -258,10 +262,12 @@ final class BrowserSitePermissions {
 	}
 
 	func removeTemporaryDecisions(controllerID: UUID) {
+		BrowserLog.debug(.permissions, "permissions.clear-temporary", metadata: ["controller": BrowserLog.id(controllerID)])
 		temporaryDecisions = temporaryDecisions.filter { $0.key.controllerID != controllerID }
 	}
 
 	func reset() {
+		BrowserLog.notice(.permissions, "permissions.reset", metadata: ["private": String(isPrivate)])
 		entries.removeAll()
 		temporaryDecisions.removeAll()
 		canReplaceSavedData = true
