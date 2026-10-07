@@ -7,14 +7,10 @@
 
 import SwiftUI
 
-extension View {
-	/// Fades the rendered view itself at the vertical scroll edges.
-	///
-	/// This is an alpha mask, not a dark overlay: content becomes transparent
-	/// toward the top and bottom edges while the sidebar backdrop remains intact.
-	func sidebarScrollOpacityFade(
-		top: CGFloat = 38,
-		bottom: CGFloat = 38
+private extension View {
+	func sidebarScrollAlphaMask(
+		top: CGFloat,
+		bottom: CGFloat
 	) -> some View {
 		mask {
 			GeometryReader { geometry in
@@ -38,3 +34,64 @@ extension View {
 		}
 	}
 }
+
+#if os(macOS)
+	import Haze
+
+	extension View {
+		/// Fades the rendered scroll content itself and applies a subtle variable
+		/// backdrop blur over the exact same top and bottom edge regions.
+		func sidebarScrollOpacityFade(
+			top: CGFloat = 38,
+			bottom: CGFloat = 38,
+			blurRadius: CGFloat = 4
+		) -> some View {
+			scrollEdgeEffectHidden(true, for: .vertical)
+				.sidebarScrollAlphaMask(top: top, bottom: bottom)
+				.overlay(alignment: .top) {
+					HazeEffect(
+						maskProvider: LinearGradientMaskProvider(
+							startPoint: .top,
+							endPoint: .bottom,
+							startOpacity: 1,
+							endOpacity: 0,
+							isSmooth: true
+						),
+						maxBlurRadius: blurRadius,
+						isolatesBackdrop: true
+					)
+					.frame(height: top)
+					.ignoresSafeArea()
+					.allowsHitTesting(false)
+					.accessibilityHidden(true)
+				}
+				.overlay(alignment: .bottom) {
+					HazeEffect(
+						maskProvider: LinearGradientMaskProvider(
+							startPoint: .bottom,
+							endPoint: .top,
+							startOpacity: 1,
+							endOpacity: 0,
+							isSmooth: true
+						),
+						maxBlurRadius: blurRadius,
+						isolatesBackdrop: true
+					)
+					.frame(height: bottom)
+					.ignoresSafeArea()
+					.allowsHitTesting(false)
+					.accessibilityHidden(true)
+				}
+		}
+	}
+#else
+	extension View {
+		func sidebarScrollOpacityFade(
+			top: CGFloat = 38,
+			bottom: CGFloat = 38,
+			blurRadius _: CGFloat = 4
+		) -> some View {
+			sidebarScrollAlphaMask(top: top, bottom: bottom)
+		}
+	}
+#endif
