@@ -113,8 +113,9 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		BrowserLog.trace(.extensions, "extensions.sync-window", metadata: ["window": BrowserLog.id(browser.windowID), "tabs": String(browser.tabs.count)])
 		guard !browser.isPrivate else { return }
 		_ = extensionWindow(for: browser)
+		let ownedIDs = BrowserWindowRegistry.shared.ownedTabIDs(in: browser)
 		let ownedTabs = browser.tabs.filter {
-			$0.internalPage == nil && BrowserWindowRegistry.shared.ownsTab($0.id, in: browser)
+			$0.internalPage == nil && ownedIDs.contains($0.id)
 		}
 		let ids = Set(ownedTabs.map(\.id))
 		var pinnedIDs = Set(browser.workspace.favouriteTabIDs)
@@ -144,7 +145,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 				zoom: tab.controller?.pageZoom ?? 1
 			)
 			if let previousSnapshot = tabSnapshots[browser.windowID]?[tab.id],
-			   let bridge = extensionTab(for: tab.id, in: browser)
+			   let bridge = tabs[browser.windowID]?[tab.id]
 			{
 				var changed: WKWebExtension.TabChangedProperties = []
 				if previousSnapshot.title != snapshot.title {
@@ -168,13 +169,36 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			}
 			tabSnapshots[browser.windowID, default: [:]][tab.id] = snapshot
 		}
-		if let selected = browser.selectedTab, ids.contains(selected.id), selectedTabIDs[browser.windowID] != selected.id {
-			let prior = selectedTabIDs[browser.windowID].flatMap { tabs[browser.windowID]?[$0] }
-			if let current = extensionTab(for: selected.id, in: browser) {
-				controller.didActivateTab(current, previousActiveTab: prior)
-				selectedTabIDs[browser.windowID] = selected.id
-			}
+		selectionDidChange(browser, ownedIDs: ids)
+	}
+
+	/// Selection changes do not require rebuilding every extension-tab snapshot.
+	/// This is the hot path for ordinary tab clicks.
+	func selectionDidChange(_ browser: Browser) {
+		guard !browser.isPrivate else { return }
+		let ownedIDs = BrowserWindowRegistry.shared.ownedTabIDs(in: browser)
+		selectionDidChange(browser, ownedIDs: ownedIDs)
+	}
+
+	private func selectionDidChange(_ browser: Browser, ownedIDs: Set<UUID>) {
+		guard let selected = browser.selectedTab,
+		      selected.internalPage == nil,
+		      ownedIDs.contains(selected.id),
+		      selectedTabIDs[browser.windowID] != selected.id
+		else { return }
+
+		let prior = selectedTabIDs[browser.windowID].flatMap { tabs[browser.windowID]?[$0] }
+		let current: BrowserExtensionTab
+		if let existing = tabs[browser.windowID]?[selected.id] {
+			current = existing
+		} else {
+			guard let created = extensionTab(for: selected.id, in: browser) else { return }
+			current = created
+			knownTabIDs[browser.windowID, default: []].insert(selected.id)
+			controller.didOpenTab(created)
 		}
+		controller.didActivateTab(current, previousActiveTab: prior)
+		selectedTabIDs[browser.windowID] = selected.id
 	}
 
 	func closeWindow(for browser: Browser) {
