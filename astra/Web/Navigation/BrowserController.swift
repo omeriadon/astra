@@ -300,44 +300,74 @@ final class BrowserController: NSObject, Identifiable {
 	private static let topEdgeScript = """
 	(() => {
 		let scheduled = false;
+		let mutationScheduled = false;
 		let previous;
+		const samples = 16;
+		const threshold = Math.ceil(samples * 0.7);
+		const selector =
+			'header, nav, [role="navigation"], [class*="header" i], [id*="header" i], ' +
+			'[class*="nav" i], [id*="nav" i], [class*="toolbar" i], [id*="toolbar" i]';
+
 		const check = () => {
 			scheduled = false;
-			if (window.scrollY < 0) return;
+			if (window.scrollY < 0 || innerWidth <= 0) return;
+
+			// elementsFromPoint returns much of the same ancestor stack at every
+			// sample. Count first, then perform layout/style reads once per candidate
+			// instead of up to 20 times for the same sticky header.
 			const counts = new Map();
-			const samples = 20;
 			for (let index = 0; index < samples; index++) {
 				const x = innerWidth * (index + 0.5) / samples;
+				const seenAtPoint = new Set();
 				for (const element of document.elementsFromPoint(x, 2)) {
-					if (element === document.body || element === document.documentElement) continue;
-					const rect = element.getBoundingClientRect();
-					const style = getComputedStyle(element);
-					const isPageChrome = element.matches(
-						'header, nav, [role="navigation"], [class*="header" i], [id*="header" i], ' +
-						'[class*="nav" i], [id*="nav" i], [class*="toolbar" i], [id*="toolbar" i]'
-					);
-					if (!isPageChrome && style.position !== 'fixed' && style.position !== 'sticky') continue;
-					if (rect.top > 3 || rect.bottom < 20 || rect.height > 160 ||
-						rect.width < innerWidth * 0.5 || style.visibility === 'hidden' ||
-						Number(style.opacity) < 0.05) continue;
+					if (element === document.body || element === document.documentElement ||
+						seenAtPoint.has(element)) continue;
+					seenAtPoint.add(element);
 					counts.set(element, (counts.get(element) || 0) + 1);
 				}
 			}
-			const occupied = [...counts.values()].some(count => count >= samples * 0.7);
+
+			let occupied = false;
+			for (const [element, count] of counts) {
+				if (count < threshold) continue;
+				const rect = element.getBoundingClientRect();
+				const style = getComputedStyle(element);
+				const isPageChrome = element.matches(selector);
+				if (!isPageChrome && style.position !== 'fixed' && style.position !== 'sticky') continue;
+				if (rect.top > 3 || rect.bottom < 20 || rect.height > 160 ||
+					rect.width < innerWidth * 0.5 || style.visibility === 'hidden' ||
+					Number(style.opacity) < 0.05) continue;
+				occupied = true;
+				break;
+			}
+
 			if (occupied !== previous) {
 				previous = occupied;
 				window.webkit.messageHandlers.topEdgeChanged.postMessage(occupied);
 			}
 		};
+
 		const schedule = () => {
 			if (scheduled) return;
 			scheduled = true;
 			requestAnimationFrame(check);
 		};
+		const scheduleMutation = () => {
+			if (mutationScheduled) return;
+			mutationScheduled = true;
+			setTimeout(() => {
+				mutationScheduled = false;
+				schedule();
+			}, 120);
+		};
+
 		addEventListener('scroll', schedule, { passive: true });
 		addEventListener('resize', schedule);
-		new MutationObserver(schedule).observe(document.documentElement, {
-			subtree: true, childList: true, attributes: true
+		new MutationObserver(scheduleMutation).observe(document.documentElement, {
+			subtree: true,
+			childList: true,
+			attributes: true,
+			attributeFilter: ['class', 'style', 'hidden', 'id', 'role']
 		});
 		schedule();
 	})();
