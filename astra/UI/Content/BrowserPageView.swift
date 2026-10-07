@@ -11,16 +11,17 @@ struct BrowserPageView: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	var body: some View {
-		ZStack(alignment: .top) {
+		let hasActiveDuplicate = hasActiveDuplicate
+		return ZStack(alignment: .top) {
 			BrowserContentView(browser: browser, insets: insets)
 			#if os(macOS)
-				.blur(radius: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser) ? 10 : 0)
-				.allowsHitTesting(!BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
-				.accessibilityHidden(BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
+				.blur(radius: hasActiveDuplicate ? 10 : 0)
+				.allowsHitTesting(!hasActiveDuplicate)
+				.accessibilityHidden(hasActiveDuplicate)
 			#endif
 
 			if let tab = browser.selectedTab,
-			   !BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser),
+			   !hasActiveDuplicate,
 			   !tab.peeks.isEmpty,
 			   tab.activeController !== tab.controller
 			{
@@ -32,7 +33,7 @@ struct BrowserPageView: View {
 		.overlay {
 			if let controller = browser.selectedTab?.activeController,
 			   let html = controller.readerHTML,
-			   !BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
+			   !hasActiveDuplicate
 			{
 				BrowserReaderView(controller: controller, html: html)
 					.id(controller.id)
@@ -40,13 +41,13 @@ struct BrowserPageView: View {
 					.padding(.bottom, insets.obscured.bottom)
 			}
 		}
-		.animation(nil, value: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
-		.allowsHitTesting(!BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
+		.animation(nil, value: hasActiveDuplicate)
+		.allowsHitTesting(!hasActiveDuplicate)
 		#if os(macOS)
 			.overlay {
 				if let controller = browser.selectedTab?.activeController,
 				   controller.readerHTML == nil,
-				   !BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
+				   !hasActiveDuplicate
 				{
 					BrowserAIHoverPreview(browser: browser, controller: controller)
 						.id(controller.id)
@@ -69,7 +70,7 @@ struct BrowserPageView: View {
 				}
 			}
 			.animation(.easeOut(duration: 0.1), value: toastManager.toast != nil)
-			.allowsHitTesting(!BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
+			.allowsHitTesting(!hasActiveDuplicate)
 			.clipShape(RoundedRectangle(cornerRadius: cornerRadius))
 	}
 }
