@@ -426,12 +426,16 @@ private struct ShellSidebarColumn: View {
 				}
 			}
 			.foregroundStyle(theme.foregroundColor)
-			.offset(x: showsDownloads ? BrowserChromeMetrics.expandedSidebarWidth : 0)
+			.visualEffect { content, geometry in
+				content.offset(x: showsDownloads ? geometry.size.width : 0)
+			}
 
 			DownloadsSidebarView(manager: downloads, theme: theme)
 				.sidebarScrollOpacityFade(top: 38, bottom: bottomFadeHeight)
 				.foregroundStyle(theme.foregroundColor)
-				.offset(x: showsDownloads ? 0 : -BrowserChromeMetrics.expandedSidebarWidth)
+				.visualEffect { content, geometry in
+					content.offset(x: showsDownloads ? 0 : -geometry.size.width)
+				}
 		}
 		.safeAreaBar(edge: .bottom, spacing: 0) {
 			sidebarBottomBar
