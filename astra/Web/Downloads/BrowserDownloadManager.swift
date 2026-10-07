@@ -1037,7 +1037,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			])
 			return
 		}
-		let validator = strongValidator(from: http) ?? probe.validator
+		let initialValidator = strongValidator(from: http)
+		let validator = probe.validator ?? (probe.url == url ? initialValidator : nil)
 
 		guard downloads[key] != nil,
 		      let currentIndex = items.firstIndex(where: { $0.id == itemID }),
@@ -1178,6 +1179,12 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		      let response,
 		      response.statusCode == 206
 		else {
+			BrowserLog.error(.downloads, "download.segment-response-rejected", metadata: [
+				"item": BrowserLog.id(itemID),
+				"segment": String(index),
+				"status": String(response?.statusCode ?? -1),
+				"content_range": response?.value(forHTTPHeaderField: "Content-Range") == nil ? "missing" : "present",
+			])
 			try? FileManager.default.removeItem(at: partURL)
 			segmentFailed(itemID)
 			return
@@ -1188,11 +1195,22 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		let responseValidator = validator?.hasPrefix("\"") == true
 			? response.value(forHTTPHeaderField: "ETag")
 			: response.value(forHTTPHeaderField: "Last-Modified")
-		guard response.value(forHTTPHeaderField: "Content-Range") == expectedRange,
-		      [nil, "identity"].contains(response.value(forHTTPHeaderField: "Content-Encoding")?.lowercased()),
+		let actualRange = response.value(forHTTPHeaderField: "Content-Range")
+		let encoding = response.value(forHTTPHeaderField: "Content-Encoding")?.lowercased()
+		let actualSize = try? partURL.resourceValues(forKeys: [.fileSizeKey]).fileSize
+		guard actualRange == expectedRange,
+		      [nil, "identity"].contains(encoding),
 		      responseValidator.map({ $0 == validator }) ?? true,
-		      (try? partURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) == Int(segment.end - segment.start + 1)
+		      actualSize == Int(segment.end - segment.start + 1)
 		else {
+			BrowserLog.error(.downloads, "download.segment-validation-failed", metadata: [
+				"item": BrowserLog.id(itemID),
+				"segment": String(index),
+				"range_matches": String(actualRange == expectedRange),
+				"encoding": encoding ?? "identity",
+				"validator_matches": String(responseValidator.map({ $0 == validator }) ?? true),
+				"size_matches": String(actualSize == Int(segment.end - segment.start + 1)),
+			])
 			try? FileManager.default.removeItem(at: partURL)
 			segmentFailed(itemID)
 			return
