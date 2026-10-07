@@ -803,7 +803,7 @@ private struct TabRowContextMenu: View {
 			.frame(maxWidth: .infinity, alignment: .leading)
 		}
 
-		private static func formatBytes(_ bytes: UInt64) -> String {
+		nonisolated private static func formatBytes(_ bytes: UInt64) -> String {
 			ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
 		}
 	}
