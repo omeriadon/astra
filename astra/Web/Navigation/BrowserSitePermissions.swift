@@ -182,7 +182,7 @@ final class BrowserSitePermissions {
 
 	func decision(origin: String, topOrigin: String, capability: Capability) -> Bool? {
 		BrowserLog.trace(.permissions, "permissions.lookup", metadata: ["origin": BrowserLog.value(origin), "top_origin": BrowserLog.value(topOrigin), "capability": String(describing: capability)])
-		switch effectiveDecision(origin: origin, topOrigin: topOrigin, capability: capability) {
+		return switch effectiveDecision(origin: origin, topOrigin: topOrigin, capability: capability) {
 			case .allowAlways: true
 			case .deny: false
 			case .allowOnce, nil: nil
