@@ -97,6 +97,7 @@ enum BrowserAICLI {
 					}
 					input = try json(["type": "user", "session_id": "", "message": ["role": "user", "content": content], "parent_tool_use_id": NSNull()]) + "\n"
 				}
+				try Task.checkCancellation()
 				try command.start(input: input, closeInput: !codex)
 				var response = BrowserAICommandResponse()
 				for try await line in command.lines {

@@ -16,6 +16,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	private static let unsafeFilenameCharacters = CharacterSet(charactersIn: "/\\:").union(.controlCharacters)
 
 	var aiSuggestedNames: [UUID: String] = [:]
+	@ObservationIgnored private var aiRenameTasks: [UUID: Task<Void, Never>] = [:]
 	private var downloads: [ObjectIdentifier: WKDownload] = [:]
 	private var observations: [ObjectIdentifier: NSKeyValueObservation] = [:]
 	private var destinations: [ObjectIdentifier: URL] = [:]
@@ -450,7 +451,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				}
 				finalDestinations[itemID] = nil
 				showToast(symbol: "arrow.down.circle", message: "Downloaded \(committedURL.lastPathComponent)")
-				Task { @MainActor [weak self] in
+				aiRenameTasks[itemID] = Task { @MainActor [weak self] in
+					defer { self?.aiRenameTasks[itemID] = nil }
 					await self?.renameWithAppleIntelligence(itemID, fileURL: committedURL)
 				}
 			} catch {
@@ -582,6 +584,10 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 	func pauseAllForQuit() async {
 		isClosing = true
+		for task in aiRenameTasks.values {
+			task.cancel()
+		}
+		aiRenameTasks.removeAll()
 		let pendingWrite = downloadPersistTask
 		pendingWrite?.cancel()
 		downloadPersistTask = nil
@@ -650,6 +656,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	func delete(_ itemID: UUID) {
+		aiRenameTasks.removeValue(forKey: itemID)?.cancel()
 		guard let index = items.firstIndex(where: { $0.id == itemID }) else { return }
 		guard deletingItems.insert(itemID).inserted else { return }
 		if let segments = items[index].segments {
@@ -1112,7 +1119,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			updateDockProgress()
 			persist()
 			showToast(symbol: "arrow.down.circle", message: "Downloaded \(committedURL.lastPathComponent)")
-			Task { @MainActor [weak self] in
+			aiRenameTasks[itemID] = Task { @MainActor [weak self] in
+				defer { self?.aiRenameTasks[itemID] = nil }
 				await self?.renameWithAppleIntelligence(itemID, fileURL: committedURL)
 			}
 		} catch {
@@ -1673,7 +1681,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	private func renameWithAppleIntelligence(_ itemID: UUID, fileURL: URL) async {
-		guard privateDataStore == nil,
+		guard !Task.isCancelled, !isClosing, privateDataStore == nil,
 		      Defaults[.aiFeaturesEnabled],
 		      Defaults[.renameDownloadsWithAppleIntelligence],
 		      let index = items.firstIndex(where: {
@@ -1694,7 +1702,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				let ext = fileURL.pathExtension
 				self.aiSuggestedNames[itemID] = ext.isEmpty ? stem : "\(stem).\(ext)"
 			}
-		), Defaults[.aiFeaturesEnabled],
+		), !Task.isCancelled, !isClosing, Defaults[.aiFeaturesEnabled],
 		let currentIndex = items.firstIndex(where: { $0.id == itemID && $0.status == .completed && $0.fileURL == fileURL })
 		else { return }
 		let ext = fileURL.pathExtension

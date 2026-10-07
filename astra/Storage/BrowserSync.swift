@@ -433,53 +433,58 @@ final class BrowserSync {
 		configuration.timeoutIntervalForResource = 90
 		let session = URLSession(configuration: configuration)
 		defer { session.invalidateAndCancel() }
-		let (bytes, response) = try await session.bytes(for: request)
-		try validateAIAuthentication(generation)
-		guard let response = response as? HTTPURLResponse else {
-			throw BrowserAIError.invalidStream
-		}
-		if response.statusCode == 401 {
-			signOut()
-			throw BrowserAIError.signInRequired
-		}
-		guard response.statusCode == 200 else {
-			var message = ""
-			for try await line in bytes.lines {
-				message += String(line.prefix(16384 - min(message.utf8.count, 16384)))
-				if message.utf8.count >= 16384 {
-					break
-				}
-			}
-			throw BrowserAIError.http(response.statusCode, data: Data(message.utf8))
-		}
-		guard response.value(forHTTPHeaderField: "Content-Type")?.lowercased().hasPrefix("text/event-stream") == true else {
-			throw BrowserAIError.invalidStream
-		}
-		var totalBytes = 0
-		for try await line in bytes.lines {
+		return try await withTaskCancellationHandler {
 			try Task.checkCancellation()
+			let (bytes, response) = try await session.bytes(for: request)
 			try validateAIAuthentication(generation)
-			totalBytes += line.utf8.count
-			guard line.utf8.count <= 524_288, totalBytes <= 32 * 1024 * 1024 else {
+			guard let response = response as? HTTPURLResponse else {
 				throw BrowserAIError.invalidStream
 			}
-			guard line.hasPrefix("data: ") else { continue }
-			let event = try JSONDecoder().decode(BrowserAIStreamEvent.self, from: Data(line.dropFirst(6).utf8))
-			if let error = event.error {
-				throw BrowserAIError.server(502, String(error.prefix(300)))
+			if response.statusCode == 401 {
+				signOut()
+				throw BrowserAIError.signInRequired
 			}
-			guard let text = event.text, let isFinal = event.isFinal else {
-				throw BrowserAIError.invalidStream
-			}
-			onSnapshot(text)
-			if isFinal {
-				guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-					throw BrowserAIError.emptyResponse
+			guard response.statusCode == 200 else {
+				var message = ""
+				for try await line in bytes.lines {
+					message += String(line.prefix(16384 - min(message.utf8.count, 16384)))
+					if message.utf8.count >= 16384 {
+						break
+					}
 				}
-				return text
+				throw BrowserAIError.http(response.statusCode, data: Data(message.utf8))
 			}
+			guard response.value(forHTTPHeaderField: "Content-Type")?.lowercased().hasPrefix("text/event-stream") == true else {
+				throw BrowserAIError.invalidStream
+			}
+			var totalBytes = 0
+			for try await line in bytes.lines {
+				try Task.checkCancellation()
+				try validateAIAuthentication(generation)
+				totalBytes += line.utf8.count
+				guard line.utf8.count <= 524_288, totalBytes <= 32 * 1024 * 1024 else {
+					throw BrowserAIError.invalidStream
+				}
+				guard line.hasPrefix("data: ") else { continue }
+				let event = try JSONDecoder().decode(BrowserAIStreamEvent.self, from: Data(line.dropFirst(6).utf8))
+				if let error = event.error {
+					throw BrowserAIError.server(502, String(error.prefix(300)))
+				}
+				guard let text = event.text, let isFinal = event.isFinal else {
+					throw BrowserAIError.invalidStream
+				}
+				onSnapshot(text)
+				if isFinal {
+					guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+						throw BrowserAIError.emptyResponse
+					}
+					return text
+				}
+			}
+			throw BrowserAIError.invalidStream
+		} onCancel: {
+			session.invalidateAndCancel()
 		}
-		throw BrowserAIError.invalidStream
 	}
 
 	private func request<Response: Decodable>(

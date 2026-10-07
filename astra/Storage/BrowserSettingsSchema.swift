@@ -25,6 +25,8 @@ enum BrowserSettingsSchema {
 		"aiWebsiteMonitoring",
 		"deliveredWebsiteMonitors",
 		"aiLinkPreviews",
+		"aiLinkPreviewMode",
+		"aiLinkPreviewShiftOverride",
 		"aiTabGroups",
 		"aiFind",
 		"aiFindContextLimit",
@@ -67,6 +69,8 @@ enum BrowserSettingsSchema {
 		Defaults[.aiBookmarkTitles] = true
 		Defaults[.aiWebsiteMonitoring] = true
 		Defaults[.aiLinkPreviews] = true
+		Defaults[.aiLinkPreviewMode] = "always"
+		Defaults[.aiLinkPreviewShiftOverride] = false
 		Defaults[.aiTabGroups] = true
 		Defaults[.aiFind] = true
 		Defaults[.aiFindContextLimit] = true

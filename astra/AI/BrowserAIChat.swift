@@ -234,26 +234,30 @@ final class BrowserAIChat {
 			}
 		}
 		defer { generation.cancel() }
-		var next = 0
-		while !finished || next < queued.count {
-			try Task.checkCancellation()
-			guard next < queued.count else {
-				try await Task.sleep(for: .milliseconds(30))
-				continue
-			}
-			let call = queued[next]
-			next += 1
-			do {
-				let result = try await BrowserAITools.execute(call, browser: browser, spaceID: spaceID, model: model)
-				results += "\n\(call.name): \(result)\n"
-				await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "success", details: "phase=tool")
-			} catch {
+		return try await withTaskCancellationHandler {
+			var next = 0
+			while !finished || next < queued.count {
 				try Task.checkCancellation()
-				results += "\n\(call.name): Failed. \(error.localizedDescription)\n"
-				await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "failed", details: "phase=tool")
+				guard next < queued.count else {
+					try await Task.sleep(for: .milliseconds(30))
+					continue
+				}
+				let call = queued[next]
+				next += 1
+				do {
+					let result = try await BrowserAITools.execute(call, browser: browser, spaceID: spaceID, model: model)
+					results += "\n\(call.name): \(result)\n"
+					await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "success", details: "phase=tool")
+				} catch {
+					try Task.checkCancellation()
+					results += "\n\(call.name): Failed. \(error.localizedDescription)\n"
+					await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "failed", details: "phase=tool")
+				}
 			}
+			return try await (generation.value, results)
+		} onCancel: {
+			generation.cancel()
 		}
-		return try await (generation.value, results)
 	}
 
 	private func save() async throws {

@@ -14,6 +14,8 @@ struct BrowserAIChatSidebar: View {
 	var isVisible = true
 	@Environment(\.colorScheme) private var colorScheme
 	@State private var hoveredURL: URL?
+	@State private var hoveredLinkSize = CGSize.zero
+	@State private var hoveredLinkShiftPressed = false
 	@State private var requestID: UUID?
 	@State private var showsHistory = false
 	@State private var showsFileImporter = false
@@ -249,7 +251,8 @@ struct BrowserAIChatSidebar: View {
 		#if os(macOS)
 		.overlay(alignment: .bottomLeading) {
 			if isVisible, let hoveredURL {
-				BrowserAIChatLinkPreview(browser: browser, url: hoveredURL)
+				BrowserAIChatLinkPreview(browser: browser, url: hoveredURL, linkSize: hoveredLinkSize, shiftPressed: hoveredLinkShiftPressed)
+					.id(hoveredURL)
 					.padding(8)
 			}
 		}
@@ -302,9 +305,11 @@ struct BrowserAIChatSidebar: View {
 		#if os(macOS)
 			BrowserAIChatMarkdown(text: text, streaming: streaming, open: { url in
 				browser.openHistoryURL(url, inBackground: false)
-			}, hover: { url, previous in
+			}, hover: { url, previous, size, shift in
 				if url != nil || hoveredURL == previous {
 					hoveredURL = url
+					hoveredLinkSize = size
+					hoveredLinkShiftPressed = shift
 				}
 			})
 			.frame(maxWidth: .infinity, alignment: .leading)
@@ -370,7 +375,7 @@ struct BrowserAIChatSidebar: View {
 		let text: String
 		let streaming: Bool
 		let open: (URL) -> Void
-		let hover: (URL?, URL?) -> Void
+		let hover: (URL?, URL?, CGSize, Bool) -> Void
 
 		func makeNSView(context _: Context) -> ChatMarkdownView {
 			let view = ChatMarkdownView()
@@ -411,9 +416,11 @@ struct BrowserAIChatSidebar: View {
 
 	private final class ChatMarkdownView: MarkdownStreamView {
 		var displayedText = ""
-		var hover: ((URL?, URL?) -> Void)?
+		var hover: ((URL?, URL?, CGSize, Bool) -> Void)?
 		private var monitor: Any?
 		private var hoveredURL: URL?
+		private var hoveredSize = CGSize.zero
+		private var hoveredShiftPressed = false
 		private var hoverTrackingArea: NSTrackingArea?
 
 		override func updateTrackingAreas() {
@@ -430,19 +437,24 @@ struct BrowserAIChatSidebar: View {
 			super.viewDidMoveToWindow()
 			stopMonitoring()
 			guard window != nil else { return }
-			monitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .scrollWheel]) { [weak self] event in
+			monitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .scrollWheel, .flagsChanged]) { [weak self] event in
 				MainActor.assumeIsolated {
 					guard let self else { return }
-					let point = self.textLabelView.convert(event.locationInWindow, from: nil)
+					let location = event.type == .flagsChanged ? self.window?.convertPoint(fromScreen: NSEvent.mouseLocation) ?? event.locationInWindow : event.locationInWindow
+					let point = self.textLabelView.convert(location, from: nil)
 					let content = self.window?.contentView
-					let hit = content?.hitTest(content?.convert(event.locationInWindow, from: nil) ?? .zero)
-					let link = event.window === self.window && event.type == .mouseMoved && hit?.isDescendant(of: self) == true
-						? self.textLabelView.highlightRegion(at: point)?.attributes[.link] : nil
-					let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:))
-					if url != self.hoveredURL {
+					let hit = content?.hitTest(content?.convert(location, from: nil) ?? .zero)
+					let region = event.window === self.window && event.type != .scrollWheel && hit?.isDescendant(of: self) == true
+						? self.textLabelView.highlightRegion(at: point) : nil
+					let url = region?.linkURL
+					let size = region?.rects.reduce(CGRect.null) { $0.union($1) }.size ?? .zero
+					let shift = event.modifierFlags.contains(.shift)
+					if url != self.hoveredURL || size != self.hoveredSize || shift != self.hoveredShiftPressed {
 						let previous = self.hoveredURL
 						self.hoveredURL = url
-						self.hover?(url, previous)
+						self.hoveredSize = size
+						self.hoveredShiftPressed = shift
+						self.hover?(url, previous, size, shift)
 					}
 				}
 				return event
@@ -460,6 +472,11 @@ struct BrowserAIChatSidebar: View {
 	private struct BrowserAIChatLinkPreview: View {
 		let browser: Browser
 		let url: URL
+		let linkSize: CGSize
+		let shiftPressed: Bool
+		@Default(.aiLinkPreviewMode) private var previewMode
+		@Default(.aiLinkPreviewShiftOverride) private var shiftOverride
+		@Default(.browserSearchConfiguration) private var searchConfiguration
 		@Default(.aiLinkPreviews) private var enabled
 		@Default(.aiLinkPreviewDelay) private var previewDelay
 		@Default(.aiFeaturesEnabled) private var allFeatures
@@ -468,54 +485,62 @@ struct BrowserAIChatSidebar: View {
 		@State private var error: String?
 		@State private var visible = false
 
+		private var allowed: Bool {
+			allFeatures && !browser.isPrivate && ["https", "http"].contains(url.scheme?.lowercased() ?? "")
+				&& BrowserLinkPreviewPolicy.allows(mode: previewMode, enabled: enabled, shiftOverride: shiftOverride,
+				                                   shiftPressed: shiftPressed, size: linkSize, sourceURL: nil,
+				                                   configuration: .decode(searchConfiguration))
+		}
+
 		var body: some View {
-			VStack(alignment: .leading, spacing: 8) {
-				BrowserLinkPreview(url: url)
-				if visible, enabled, allFeatures, !browser.isPrivate, ["https", "http"].contains(url.scheme?.lowercased() ?? "") {
-					if let summary {
-						Text(summary.title).font(.headline)
-						Text(summary.header).bold()
-						ForEach(Array(summary.bullets.enumerated()), id: \.offset) { _, bullet in
-							Label(bullet.text, systemImage: bullet.symbol)
+			BrowserLinkPreview(url: url, isPrivate: browser.isPrivate)
+				.popover(isPresented: $visible) {
+					VStack(alignment: .leading, spacing: 8) {
+						if let summary {
+							Text(summary.title).font(.headline)
+							Text(summary.header).bold()
+							ForEach(Array(summary.bullets.enumerated()), id: \.offset) { _, bullet in
+								Label(bullet.text, systemImage: bullet.symbol)
+							}
+						} else if !streamedText.isEmpty {
+							Text(streamedText)
+						} else if let error {
+							Text(error).font(.caption).foregroundStyle(.secondary)
+						} else {
+							ProgressView("Summarizing Page")
 						}
-					} else if !streamedText.isEmpty {
-						Text(streamedText)
-					} else if let error {
-						Text(error).font(.caption).foregroundStyle(.secondary)
-					} else {
-						ProgressView("Summarizing Page")
+					}
+					.padding(16)
+					.frame(width: 340, alignment: .leading)
+					.accessibilityIdentifier("ai-chat-link-preview")
+					.task {
+						do {
+							let model = BrowserAISettings.effectiveModel(BrowserAIFeatureID.linkPreview.model)
+							let page = try await BrowserAIPageLoader().page(at: url)
+							let context = try await page.limited(to: model == .appleIntelligence ? 1000 : 26000)
+							summary = try await BrowserAI.shared.performStreaming(BrowserLinkSummaryFeature(), input: .init(sourceURL: url, destinationURL: url, page: context)) { snapshot in
+								guard !Task.isCancelled else { return }
+								streamedText = ["title", "header"].compactMap { BrowserAIOutput.streamedString($0, in: snapshot) }.joined(separator: "\n\n")
+							}
+						} catch {
+							if !Task.isCancelled {
+								self.error = error.localizedDescription
+							}
+						}
 					}
 				}
-			}
-			.padding(12)
-			.frame(maxWidth: 340, alignment: .leading)
-			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
-			.opacity(visible ? 1 : 0)
-			.accessibilityHidden(!visible)
-			.allowsHitTesting(false)
-			.accessibilityIdentifier("ai-chat-link-preview")
-			.task(id: "\(url.absoluteString)|\(previewDelay)|\(enabled)|\(allFeatures)") {
-				visible = false
-				summary = nil
-				streamedText = ""
-				error = nil
-				do {
-					try await Task.sleep(for: .seconds(BrowserAISettings.linkPreviewDelay))
-					try Task.checkCancellation()
-					visible = true
-					guard enabled, allFeatures, !browser.isPrivate, ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return }
-					let model = BrowserAISettings.effectiveModel(BrowserAIFeatureID.linkPreview.model)
-					let page = try await BrowserAIPageLoader().page(at: url)
-					let context = try await page.limited(to: model == .appleIntelligence ? 1000 : 26000)
-					summary = try await BrowserAI.shared.performStreaming(BrowserLinkSummaryFeature(), input: .init(sourceURL: browser.selectedTab?.currentURL ?? url, destinationURL: url, page: context)) { snapshot in
-						streamedText = ["title", "header"].compactMap { BrowserAIOutput.streamedString($0, in: snapshot) }.joined(separator: "\n\n")
-					}
-				} catch {
-					if !Task.isCancelled {
-						self.error = error.localizedDescription
-					}
+				.task(id: "\(url)|\(previewDelay)|\(allowed)|\(previewMode)|\(shiftOverride)") {
+					visible = false
+					summary = nil
+					streamedText = ""
+					error = nil
+					guard allowed else { return }
+					do {
+						try await Task.sleep(for: .seconds(BrowserAISettings.linkPreviewDelay))
+						try Task.checkCancellation()
+						visible = true
+					} catch {}
 				}
-			}
 		}
 	}
 #endif

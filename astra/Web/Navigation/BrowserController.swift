@@ -74,6 +74,7 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var hoveredLinkUsesTrailingCorner = false
 	private(set) var hoveredLinkRect = CGRect.zero
 	private(set) var hoveredLinkID = ""
+	private(set) var hoveredLinkShiftPressed = false
 	private(set) var aiPreviewDismissal = 0
 	private(set) var isReaderAvailable = false
 	private(set) var readerHTML: String?
@@ -583,33 +584,40 @@ final class BrowserController: NSObject, Identifiable {
 
 	private static let linkHoverScript = """
 	(() => {
-		let previous = '', x = 0, y = 0, current = null, sequence = 0;
-		globalThis.astraAIHoverEnabled = false;
+		let previous = '', x = 0, y = 0, current = null, previewLink = null, sequence = 0, shift = false;
 		const report = (link, clientX, clientY) => {
 			let href = '';
 			try { if (link) href = new URL(link.getAttribute('href'), link.baseURI).href; } catch {}
 			if (link !== current) {
-				current?.removeAttribute('data-astra-ai-preview-hover');
+				if (current !== previewLink) current?.removeAttribute('data-astra-ai-preview-hover');
 				current = link;
 				sequence++;
 			}
-			if (current && globalThis.astraAIHoverEnabled && /^https?:/.test(href)) {
+			if (current && /^https?:/.test(href)) {
 				if (!document.getElementById('astra-ai-hover-style')) {
 					const style = document.createElement('style');
 					style.id = 'astra-ai-hover-style';
-					style.textContent = '[data-astra-ai-preview-hover] { background-color: rgba(128,128,128,0.25) !important; border-radius: 3px; }';
+					style.textContent = '[data-astra-ai-preview-hover] { background-color: rgba(128,128,128,0.25); border-radius: 3px; } [data-astra-ai-preview-hover=thinking] { animation: astra-ai-thinking 1s ease-in-out infinite alternate; } @keyframes astra-ai-thinking { from { background-color: rgba(128,128,128,0.12); } to { background-color: rgba(128,128,128,0.4); } } @media (prefers-reduced-motion: reduce) { [data-astra-ai-preview-hover=thinking] { animation: none; } }';
 					(document.head || document.documentElement).append(style);
 				}
-				current.setAttribute('data-astra-ai-preview-hover', '');
-			} else current?.removeAttribute('data-astra-ai-preview-hover');
+			}
 			const trailing = clientX < innerWidth / 2 && clientY > innerHeight - 72;
 			const rect = link?.getBoundingClientRect();
-			const key = href + ':' + trailing + ':' + sequence + ':' + (rect?.top ?? 0);
+			const key = href + ':' + trailing + ':' + sequence + ':' + (rect?.top ?? 0) + ':' + (rect?.width ?? 0) + ':' + (rect?.height ?? 0) + ':' + shift;
 			if (key === previous) return;
 			previous = key;
-			window.webkit.messageHandlers.linkHoverChanged.postMessage({ href, trailing, id: String(sequence), x: rect?.left ?? clientX, y: rect?.top ?? clientY, width: rect?.width ?? 0, height: rect?.height ?? 0 });
+			window.webkit.messageHandlers.linkHoverChanged.postMessage({ href, trailing, id: String(sequence), x: rect?.left ?? clientX, y: rect?.top ?? clientY, width: rect?.width ?? 0, height: rect?.height ?? 0, shift });
 		};
+		globalThis.astraSetAIHover = (enabled, thinking) => {
+			const target = enabled ? (current || previewLink) : null;
+			if (previewLink !== target) previewLink?.removeAttribute('data-astra-ai-preview-hover');
+			previewLink = target;
+			previewLink?.setAttribute('data-astra-ai-preview-hover', thinking ? 'thinking' : '');
+		};
+		document.addEventListener('keydown', event => { shift = event.shiftKey; report(current, x, y); }, true);
+		document.addEventListener('keyup', event => { shift = event.shiftKey; report(current, x, y); }, true);
 		document.addEventListener('pointermove', event => {
+			shift = event.shiftKey;
 			x = event.clientX;
 			y = event.clientY;
 			const link = event.composedPath().find(node => node.matches?.('a[href], area[href]'));
@@ -626,10 +634,9 @@ final class BrowserController: NSObject, Identifiable {
 	})();
 	"""
 
-	func updateAIHoverHighlight() {
-		let enabled = Defaults[.aiFeaturesEnabled] && Defaults[.aiLinkPreviews] && !session.isPrivate
+	func updateAIHoverHighlight(enabled: Bool = false, thinking: Bool = false) {
 		createdWebView?.evaluateJavaScript(
-			"globalThis.astraAIHoverEnabled = \(enabled); if (!globalThis.astraAIHoverEnabled) document.querySelectorAll('[data-astra-ai-preview-hover]').forEach(link => link.removeAttribute('data-astra-ai-preview-hover'));",
+			"globalThis.astraSetAIHover?.(\(enabled), \(thinking));",
 			in: nil,
 			in: .defaultClient
 		) { _ in }
@@ -640,6 +647,7 @@ final class BrowserController: NSObject, Identifiable {
 		hoveredLinkUsesTrailingCorner = false
 		hoveredLinkID = ""
 		hoveredLinkRect = .zero
+		hoveredLinkShiftPressed = false
 	}
 
 	private static let activityScript = """
@@ -1265,7 +1273,7 @@ final class BrowserController: NSObject, Identifiable {
 		#if os(macOS)
 			webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "linkHoverChanged")
 			webView.configuration.userContentController.addUserScript(
-				WKUserScript(source: Self.linkHoverScript + "\nglobalThis.astraAIHoverEnabled = \(Defaults[.aiFeaturesEnabled] && Defaults[.aiLinkPreviews] && !session.isPrivate);", injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient)
+				WKUserScript(source: Self.linkHoverScript, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient)
 			)
 		#endif
 		webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "pageActivityChanged")
@@ -2266,6 +2274,7 @@ extension BrowserController: WKScriptMessageHandler {
 			{
 				hoveredLinkRect = CGRect(x: x, y: y, width: width, height: height)
 				hoveredLinkID = value["id"] as? String ?? ""
+				hoveredLinkShiftPressed = value["shift"] as? Bool == true
 			} else {
 				hoveredLinkID = ""
 			}

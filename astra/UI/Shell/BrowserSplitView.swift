@@ -31,21 +31,26 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View {
 				sidebar
 					.frame(width: width, height: geometry.size.height)
 					.clipped()
-					.mask(alignment: edge == .leading ? .leading : .trailing) {
-						Rectangle().frame(width: visibleWidth)
+					.animation(reduceMotion ? nil : .smooth(duration: 0.3)) { view in
+						view
+							.mask(alignment: edge == .leading ? .leading : .trailing) {
+								Rectangle().frame(width: visibleWidth)
+							}
 					}
 					.offset(x: edge == .leading ? 0 : geometry.size.width - width)
 					.allowsHitTesting(sidebarShown)
 					.accessibilityHidden(!sidebarShown)
 
 				content
-					.frame(width: max(0, geometry.size.width - visibleWidth), height: geometry.size.height)
+					.frame(maxWidth: .infinity, maxHeight: .infinity)
 					.clipped()
-					.offset(x: edge == .leading ? visibleWidth : 0)
+					.animation(reduceMotion ? nil : .smooth(duration: 0.3)) { view in
+						view
+							.padding(edge == .leading ? .leading : .trailing, visibleWidth)
+					}
 			}
 			.frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
 			.clipped()
 		}
-		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: sidebarShown)
 	}
 }

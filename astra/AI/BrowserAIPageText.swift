@@ -101,6 +101,7 @@ final class BrowserAIPageLoader: NSObject, WKNavigationDelegate {
 	func page(at url: URL) async throws -> BrowserAIPageText {
 		guard Self.allowed(url) else { throw BrowserAIError.pageUnavailable }
 		return try await withTaskCancellationHandler {
+			try Task.checkCancellation()
 			defer { webView.stopLoading() }
 			let timeout = Task { [weak self] in
 				do { try await Task.sleep(for: .seconds(20)) } catch { return }

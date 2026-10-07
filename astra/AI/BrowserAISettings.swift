@@ -99,6 +99,8 @@ enum BrowserAISettings {
 extension Defaults.Keys {
 	static let aiFeaturesEnabled = Key<Bool>("aiFeaturesEnabled", default: true)
 	static let aiLinkPreviews = Key<Bool>("aiLinkPreviews", default: true)
+	static let aiLinkPreviewMode = Key<String>("aiLinkPreviewMode", default: "always")
+	static let aiLinkPreviewShiftOverride = Key<Bool>("aiLinkPreviewShiftOverride", default: false)
 	static let aiLinkPreviewDelay = Key<Double>("aiLinkPreviewDelay", default: 2)
 	static let aiTabGroups = Key<Bool>("aiTabGroups", default: true)
 	static let aiFind = Key<Bool>("aiFind", default: true)

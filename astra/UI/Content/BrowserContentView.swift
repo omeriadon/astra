@@ -29,7 +29,7 @@ struct BrowserContentView: View, Animatable {
 					   let controller = browser.selectedTab?.activeController,
 					   let url = controller.hoveredLinkURL
 					{
-						BrowserLinkPreview(url: url)
+						BrowserLinkPreview(url: url, isPrivate: browser.isPrivate)
 							.frame(maxWidth: min(700, proxy.size.width * 0.75), alignment: .leading)
 							.frame(maxWidth: .infinity, alignment: controller.hoveredLinkUsesTrailingCorner ? .trailing : .leading)
 							.padding(8)

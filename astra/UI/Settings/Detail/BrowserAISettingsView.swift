@@ -8,6 +8,8 @@ struct BrowserAISettingsView: View {
 	@Default(.aiFeaturesEnabled) private var allFeatures
 	@Default(.renameDownloadsWithAppleIntelligence) private var downloads
 	@Default(.aiLinkPreviews) private var previews
+	@Default(.aiLinkPreviewMode) private var previewMode
+	@Default(.aiLinkPreviewShiftOverride) private var previewShiftOverride
 	@Default(.aiLinkPreviewDelay) private var previewDelay
 	@Default(.aiTabGroups) private var groups
 	@Default(.aiFind) private var find
@@ -35,8 +37,20 @@ struct BrowserAISettingsView: View {
 				Toggle("Rename Downloads", isOn: $downloads)
 					.accessibilityIdentifier("rename-downloads-with-apple-intelligence")
 					.id("Rename Downloads")
-				Toggle("Link Previews", isOn: $previews)
-					.accessibilityIdentifier("ai-link-previews")
+				Picker("Link Previews", selection: Binding(get: { previews ? previewMode : "never" }, set: {
+					previewMode = $0
+					previews = true
+				})) {
+					Label("Always Show Previews", systemImage: "sparkles").tag("always")
+					Label("Don’t Show Previews", systemImage: "eye.slash").tag("never")
+					Label("Search Engines Only", systemImage: "magnifyingglass").tag("search")
+				}
+				.pickerStyle(.menu)
+				.accessibilityLabel("When to show link previews")
+				.accessibilityIdentifier("ai-link-previews")
+				Toggle("Force a Preview While Holding Shift", isOn: $previewShiftOverride)
+					.accessibilityLabel("Force a preview when holding Shift while hovering over a link")
+					.accessibilityIdentifier("ai-link-preview-shift-override")
 				HStack {
 					Slider(value: $previewDelay, in: 0 ... 10, step: 0.25) {
 						Text("Preview Delay")
@@ -47,8 +61,8 @@ struct BrowserAISettingsView: View {
 						.monospacedDigit()
 						.frame(minWidth: 48, alignment: .trailing)
 				}
-				.disabled(!previews)
-				Text("Hold over a link for the preview delay to summarize its destination. Preview pages load separately and may differ from signed-in pages.")
+				.disabled((!previews || previewMode == "never") && !previewShiftOverride)
+				Text("Hover over a link smaller than 100 × 100 points to summarize its destination. Always showing previews may trigger frequently. Shift overrides the display mode, but keeps the size limit. Preview pages load separately and may differ from signed-in pages.")
 					.font(.caption)
 					.foregroundStyle(.secondary)
 				Toggle("Tidy Today Tabs", isOn: $groups)

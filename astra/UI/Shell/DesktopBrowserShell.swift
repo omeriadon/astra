@@ -161,7 +161,6 @@ struct DesktopBrowserShell: View {
 				.animation(nil, value: browser.canShowAISidebar)
 			}
 		}
-		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: sidebarShown)
 		.background {
 			BrowserThemeBackground(
 				theme: transitionToTheme ?? theme,
@@ -320,11 +319,13 @@ private struct ShellSidebarColumn: View {
 			Group {
 				if browser.isPrivate {
 					PrivateBrowserSidebar(browser: browser)
+						.sidebarBackdropEdgeBlur()
 				} else {
 					ScrollView(.horizontal) {
 						LazyHStack(spacing: 0) {
 							ForEach(browser.workspace.spaces) { space in
 								ShellSidebarListView(browser: browser, space: space, theme: space.theme)
+									.sidebarBackdropEdgeBlur()
 									.foregroundStyle(space.theme.foregroundColor)
 									.containerRelativeFrame(.horizontal)
 									.id(space.id)
@@ -338,8 +339,8 @@ private struct ShellSidebarColumn: View {
 					.onScrollPhaseChange { _, phase in
 						isScrollingSpaces = phase == .interacting || phase == .decelerating
 					}
-					.onChange(of: browser.workspace.selectedSpaceID, initial: true) { _, id in
-						withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+					.onChange(of: browser.workspace.selectedSpaceID, initial: true) { oldID, id in
+						withAnimation(reduceMotion || oldID == id ? nil : .smooth(duration: 0.3)) {
 							scrollSpaceID = id
 						}
 					}
@@ -347,13 +348,6 @@ private struct ShellSidebarColumn: View {
 						guard isScrollingSpaces, let id, id != browser.workspace.selectedSpaceID else { return }
 						browser.selectSpace(id)
 					}
-					.layerEffect(
-						ShaderLibrary.variableBlurVertical(
-							.float(38),
-							.float(6)
-						),
-						maxSampleOffset: CGSize(width: 0, height: 12)
-					)
 					.accessibilityIdentifier("sidebar-space-pages")
 				}
 			}
@@ -380,7 +374,6 @@ private struct ShellSidebarColumn: View {
 		}
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
 		.safeAreaPadding(.top, BrowserChromeMetrics.topBarRegionHeight)
-		.scrollEdgeEffectHidden(true, for: .top)
 //		.overlay(alignment: .top) {
 //			HazeEffect(
 //				maskProvider: LinearGradientMaskProvider(
@@ -397,7 +390,7 @@ private struct ShellSidebarColumn: View {
 //			.allowsHitTesting(false)
 //			.accessibilityHidden(true)
 //		}
-		.compositingGroup()
+//		.compositingGroup()
 	}
 }
 
