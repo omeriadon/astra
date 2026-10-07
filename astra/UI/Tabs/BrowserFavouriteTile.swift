@@ -8,6 +8,7 @@ struct BrowserFavouriteTile: View {
 	@Namespace private var tileTransitions
 	#if os(macOS)
 		@State private var tabDrag = BrowserTabDragCoordinator.shared
+		@State private var hoverFrame = CGRect.zero
 	#endif
 
 	var body: some View {
@@ -57,6 +58,33 @@ struct BrowserFavouriteTile: View {
 					tabDrag.drop()
 				}
 		)
+		#endif
+		#if os(macOS)
+		.onHover { hovering in
+			guard onSelectTab == nil else { return }
+			if hovering {
+				BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
+					tabID: tab.id,
+					windowID: browser.windowID,
+					sourceFrame: hoverFrame
+				)
+			} else {
+				BrowserTabHoverPreviewCoordinator.shared.hoverEnded(
+					tabID: tab.id,
+					windowID: browser.windowID
+				)
+			}
+		}
+		.onGeometryChange(for: CGRect.self) { proxy in
+			proxy.frame(in: .global)
+		} action: { frame in
+			hoverFrame = frame
+			BrowserTabHoverPreviewCoordinator.shared.updateFrame(
+				for: tab.id,
+				windowID: browser.windowID,
+				frame: frame
+			)
+		}
 		#endif
 		.accessibilityLabel(tab.title)
 		.accessibilityAddTraits(browser.selectedTabID == tab.id ? .isSelected : [])
