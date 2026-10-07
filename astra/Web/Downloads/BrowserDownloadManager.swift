@@ -35,6 +35,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	private var restorationStarted = false
 	private var lastPersistedAt = Date.distantPast
 	@ObservationIgnored private var downloadPersistTask: Task<Void, Never>?
+	@ObservationIgnored private var pauseTasks: [UUID: Task<Void, Never>] = [:]
+	@ObservationIgnored private var rateSamples: [UUID: (bytes: Int64, at: Date)] = [:]
 	@ObservationIgnored private var lastProgressForward: [UUID: (fraction: Double, at: Date)] = [:]
 
 	/// Progress chunks arrive far more often than the eye (or dock) can use.
@@ -536,14 +538,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				segmented.start(item)
 			}
 		}
-		for item in items where item.status == .paused && item.resumeData != nil {
-			resume(item.id)
-		}
-		for index in items.indices where items[index].status == .paused && items[index].resumeData == nil {
-			markFailed(at: index)
-			items[index].errorMessage = "This download has no resume data."
-			try? FileManager.default.removeItem(at: items[index].fileURL)
-		}
+
 		persist()
 	}
 
@@ -551,10 +546,20 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		BrowserLog.info(.downloads, "download.resume", metadata: ["item": BrowserLog.id(itemID)])
 		guard !isClosing,
 		      !deletingItems.contains(itemID),
+		      pauseTasks[itemID] == nil,
 		      !itemIDs.values.contains(itemID),
-		      let index = items.firstIndex(where: { $0.id == itemID && $0.canResume }),
-		      let data = items[index].resumeData
+		      let index = items.firstIndex(where: { $0.id == itemID && $0.canResume })
 		else { return }
+		if items[index].segments != nil {
+			items[index].status = .downloading
+			items[index].errorMessage = nil
+			rateSamples[itemID] = nil
+			segmented.start(items[index])
+			updateDockProgress()
+			persist()
+			return
+		}
+		guard let data = items[index].resumeData else { return }
 		if resumeWebView == nil {
 			let configuration = WKWebViewConfiguration()
 			configuration.websiteDataStore = privateDataStore ?? .default()
@@ -574,6 +579,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		BrowserLog.info(.downloads, "download.retry", metadata: ["item": BrowserLog.id(itemID)])
 		guard !isClosing,
 		      !deletingItems.contains(itemID),
+		      pauseTasks[itemID] == nil,
 		      !itemIDs.values.contains(itemID),
 		      let index = items.firstIndex(where: { $0.id == itemID && $0.canRetry }),
 		      let url = items[index].retryURL
@@ -595,6 +601,63 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		}
 	}
 
+	func pause(_ itemID: UUID) {
+		guard !isClosing, pauseTasks[itemID] == nil else { return }
+		pauseTasks[itemID] = Task { @MainActor in
+			await pauseTransfer(itemID)
+			pauseTasks[itemID] = nil
+		}
+	}
+
+	private func pauseTransfer(_ itemID: UUID) async {
+		guard let index = items.firstIndex(where: { $0.id == itemID && $0.status == .downloading }) else { return }
+		items[index].status = .paused
+		items[index].throughput = nil
+		items[index].estimatedTimeRemaining = nil
+		rateSamples[itemID] = nil
+		if items[index].segments != nil {
+			await segmented.pause(itemID)
+		} else if let key = itemIDs.first(where: { $0.value == itemID })?.key,
+		          let download = downloads[key]
+		{
+			finish(download)
+			let data = await download.cancel()
+			if let currentIndex = items.firstIndex(where: { $0.id == itemID && $0.status == .paused }) {
+				items[currentIndex].resumeData = data
+				items[currentIndex].errorMessage = data == nil ? "Cannot resume; restart required." : nil
+			}
+		}
+		updateDockProgress()
+		persist()
+	}
+
+	func cancel(_ itemID: UUID) {
+		guard !isClosing, let item = items.first(where: { $0.id == itemID }),
+		      item.status == .downloading || item.status == .paused else { return }
+		let pendingPause = pauseTasks[itemID]
+		pauseTasks[itemID] = Task { @MainActor in
+			await pendingPause?.value
+			await pauseTransfer(itemID)
+			guard let index = items.firstIndex(where: { $0.id == itemID }) else {
+				pauseTasks[itemID] = nil
+				return
+			}
+			items[index].status = .cancelled
+			items[index].resumeData = nil
+			items[index].errorMessage = nil
+			if let segments = items[index].segments {
+				await segmented.cancelAndWait([itemID])
+				segmented.removeParts(itemID, count: segments.count)
+			}
+			items[index].segments = nil
+			items[index].rangeValidator = nil
+			try? FileManager.default.removeItem(at: items[index].fileURL)
+			releaseScope(for: itemID)
+			pauseTasks[itemID] = nil
+			persist()
+		}
+	}
+
 	func pauseAllForQuit() async {
 		BrowserLog.notice(.downloads, "downloads.pause-for-quit", metadata: ["active": String(downloads.count)])
 		isClosing = true
@@ -607,41 +670,11 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		downloadPersistTask = nil
 		await pendingWrite?.value
 		await downloadHydrationTask?.value
-		let segmentedItemIDs = items
-			.filter { $0.status == .downloading && $0.segments != nil }
-			.map(\.id)
-		if !segmentedItemIDs.isEmpty {
-			await segmented.cancelAndWait(segmentedItemIDs)
+		for task in Array(pauseTasks.values) {
+			await task.value
 		}
-		for index in items.indices where items[index].status == .downloading && items[index].segments != nil {
-			let itemID = items[index].id
-			let segments = items[index].segments ?? []
-			segmented.removeParts(itemID, count: segments.count)
-			try? FileManager.default.removeItem(at: items[index].fileURL)
-			if let previousURL = previousTemporaryURLs.removeValue(forKey: itemID) {
-				try? FileManager.default.removeItem(at: previousURL)
-			}
-			markFailed(at: index)
-			items[index].segments = nil
-			items[index].rangeValidator = nil
-			items[index].totalBytes = nil
-			items[index].receivedBytes = 0
-			items[index].progress = 0
-			items[index].errorMessage = "Download interrupted when Astra quit."
-		}
-		for (key, download) in Array(downloads) {
-			guard let itemID = itemIDs[key] else { continue }
-			let data = await download.cancel()
-			if let index = items.firstIndex(where: { $0.id == itemID && $0.status == .downloading }) {
-				items[index].status = .paused
-				items[index].resumeData = data
-				items[index].errorMessage = data == nil ? "This download cannot resume." : nil
-				items[index].throughput = nil
-				items[index].estimatedTimeRemaining = nil
-			}
-			if downloads[key] === download {
-				finish(download)
-			}
+		for item in items where item.status == .downloading {
+			await pauseTransfer(item.id)
 		}
 		flushDownloads()
 	}
@@ -1033,6 +1066,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		guard shouldForwardProgress(itemID, fraction: fraction) else { return }
 		items[itemIndex].progress = fraction
 		items[itemIndex].receivedBytes = downloaded
+		updateRate(at: itemIndex, received: downloaded)
 		updateDockProgress()
 		if Date.now.timeIntervalSince(lastPersistedAt) > 1 {
 			persist()
@@ -1514,6 +1548,22 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		return components.url
 	}
 
+	private func updateRate(at index: Int, received: Int64) {
+		let itemID = items[index].id
+		let now = Date.now
+		defer { rateSamples[itemID] = (received, now) }
+		guard let previous = rateSamples[itemID], received > previous.bytes else { return }
+		let elapsed = now.timeIntervalSince(previous.at)
+		guard elapsed > 0 else { return }
+		let rate = Double(received - previous.bytes) / elapsed
+		let smoothed = items[index].throughput.map { Double($0) * 0.75 + rate * 0.25 } ?? rate
+		guard smoothed.isFinite, smoothed > 0, smoothed < Double(Int.max) else { return }
+		items[index].throughput = Int(smoothed)
+		if let total = items[index].totalBytes, total > received {
+			items[index].estimatedTimeRemaining = Double(total - received) / smoothed
+		}
+	}
+
 	private func updateProgress(
 		_ itemID: UUID,
 		downloadID: ObjectIdentifier,
@@ -1533,10 +1583,11 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		items[index].progress = clamped
 		items[index].receivedBytes = max(0, received)
 		items[index].totalBytes = total > 0 ? total : items[index].totalBytes
-		items[index].throughput = throughput.flatMap { $0 > 0 ? $0 : nil }
+		updateRate(at: index, received: received)
+		items[index].throughput = throughput.flatMap { $0 > 0 ? $0 : nil } ?? items[index].throughput
 		items[index].estimatedTimeRemaining = estimatedTimeRemaining.flatMap {
 			$0.isFinite && $0 > 0 ? $0 : nil
-		}
+		} ?? items[index].estimatedTimeRemaining
 		updateDockProgress()
 		if Date.now.timeIntervalSince(lastPersistedAt) > 1 {
 			persist()

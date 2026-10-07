@@ -49,7 +49,12 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 				guard let self, startTokens[item.id] == token else { return }
 				for (index, segment) in segments.enumerated() where !segment.completed {
 					let description = "\(item.id.uuidString):\(index)"
-					guard !tasks.contains(where: { $0.taskDescription == description }) else { continue }
+					if let task = tasks.first(where: { $0.taskDescription == description && $0.state != .canceling && $0.state != .completed }) {
+						if task.state == .suspended {
+							task.resume()
+						}
+						continue
+					}
 					var request = URLRequest(url: url)
 					for (field, value) in replayHeaders[item.id] ?? [:] {
 						request.setValue(value, forHTTPHeaderField: field)
@@ -74,6 +79,16 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 			request.setValue(value, forHTTPHeaderField: field)
 		}
 		return request
+	}
+
+	func pause(_ itemID: UUID) async {
+		startTokens[itemID] = UUID()
+		let tasks = await withCheckedContinuation { continuation in
+			session.getAllTasks { continuation.resume(returning: $0) }
+		}
+		for task in tasks where task.taskDescription?.hasPrefix(itemID.uuidString + ":") == true && task.state == .running {
+			task.suspend()
+		}
 	}
 
 	func cancel(_ itemID: UUID) {
