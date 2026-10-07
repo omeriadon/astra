@@ -3,12 +3,16 @@ import SwiftUI
 struct BrowserFavouriteTile: View {
 	let tab: BrowserTab
 	let browser: Browser
+	let isSelected: Bool
 	var onSelectTab: ((UUID) -> Void)?
 	var navigationNamespace: Namespace.ID?
 	@Namespace private var tileTransitions
 	#if os(macOS)
 		@State private var tabDrag = BrowserTabDragCoordinator.shared
 		@State private var hoverFrame = CGRect.zero
+		@State private var hoverPreviewStarted = false
+		@State private var isHovered = false
+		@State private var isMouseDown = false
 	#endif
 
 	var body: some View {
@@ -19,13 +23,26 @@ struct BrowserFavouriteTile: View {
 			FavouriteIconView(tab: tab)
 		}
 		.buttonStyle(.plain)
+		#if os(macOS)
+			.simultaneousGesture(
+				DragGesture(minimumDistance: 0)
+					.onChanged { _ in
+						guard onSelectTab == nil, !isMouseDown else { return }
+						isMouseDown = true
+						browser.selectTab(tab.id)
+					}
+					.onEnded { _ in
+						isMouseDown = false
+					}
+			)
+		#endif
 		.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? tileTransitions)
 		.background {
 			RoundedRectangle(cornerRadius: 10)
-				.fill(browser.selectedTabID == tab.id ? .white.opacity(0.3) : .white.opacity(0.12))
+				.fill(isSelected ? .white.opacity(0.3) : .white.opacity(0.12))
 		}
 		.overlay {
-			if browser.selectedTabID == tab.id, tab.isDeveloperMode {
+			if isSelected, tab.isDeveloperMode {
 				RoundedRectangle(cornerRadius: 10)
 					.strokeBorder(Color(red: 0.55, green: 0.4, blue: 0), lineWidth: 2)
 					.overlay {
@@ -62,32 +79,39 @@ struct BrowserFavouriteTile: View {
 		#if os(macOS)
 		.onHover { hovering in
 			guard onSelectTab == nil else { return }
-			if hovering {
-				BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
-					tabID: tab.id,
-					windowID: browser.windowID,
-					sourceFrame: hoverFrame
-				)
-			} else {
-				BrowserTabHoverPreviewCoordinator.shared.hoverEnded(
-					tabID: tab.id,
-					windowID: browser.windowID
-				)
+			isHovered = hovering
+			if !hovering {
+				if hoverPreviewStarted {
+					BrowserTabHoverPreviewCoordinator.shared.hoverEnded(
+						tabID: tab.id,
+						windowID: browser.windowID
+					)
+				}
+				hoverPreviewStarted = false
 			}
 		}
-		.onGeometryChange(for: CGRect.self) { proxy in
-			proxy.frame(in: .global)
-		} action: { frame in
-			hoverFrame = frame
-			BrowserTabHoverPreviewCoordinator.shared.updateFrame(
-				for: tab.id,
-				windowID: browser.windowID,
-				frame: frame
-			)
-		}
+		.modifier(
+			FavouriteHoverGeometryModifier(enabled: isHovered && onSelectTab == nil) { frame in
+				hoverFrame = frame
+				if hoverPreviewStarted {
+					BrowserTabHoverPreviewCoordinator.shared.updateFrame(
+						for: tab.id,
+						windowID: browser.windowID,
+						frame: frame
+					)
+				} else {
+					hoverPreviewStarted = true
+					BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
+						tabID: tab.id,
+						windowID: browser.windowID,
+						sourceFrame: frame
+					)
+				}
+			}
+		)
 		#endif
 		.accessibilityLabel(tab.title)
-		.accessibilityAddTraits(browser.selectedTabID == tab.id ? .isSelected : [])
+		.accessibilityAddTraits(isSelected ? .isSelected : [])
 		.accessibilityIdentifier("favourite-tab-\(tab.id.uuidString)")
 		.contextMenu {
 			Button("Move to Pinned Tabs", systemImage: "pin") {
@@ -111,6 +135,26 @@ struct BrowserFavouriteTile: View {
 		}
 	}
 }
+
+#if os(macOS)
+private struct FavouriteHoverGeometryModifier: ViewModifier {
+	let enabled: Bool
+	let onFrame: (CGRect) -> Void
+
+	@ViewBuilder
+	func body(content: Content) -> some View {
+		if enabled {
+			content.onGeometryChange(for: CGRect.self) { proxy in
+				proxy.frame(in: .global)
+			} action: { frame in
+				onFrame(frame)
+			}
+		} else {
+			content
+		}
+	}
+}
+#endif
 
 private struct FavouriteIconView: View {
 	let tab: BrowserTab
@@ -136,7 +180,7 @@ extension BrowserFavouriteTile: Equatable {
 	static func == (lhs: BrowserFavouriteTile, rhs: BrowserFavouriteTile) -> Bool {
 		lhs.tab === rhs.tab
 			&& lhs.browser === rhs.browser
-			&& (lhs.browser.selectedTabID == lhs.tab.id) == (rhs.browser.selectedTabID == rhs.tab.id)
+			&& lhs.isSelected == rhs.isSelected
 			&& lhs.tab.title == rhs.tab.title
 			&& (lhs.onSelectTab == nil) == (rhs.onSelectTab == nil)
 			&& lhs.navigationNamespace == rhs.navigationNamespace
