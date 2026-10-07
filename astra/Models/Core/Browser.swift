@@ -506,7 +506,6 @@ final class Browser {
 		if !isMini {
 			BrowserWindowRegistry.shared.register(self)
 		}
-		BrowserController.prewarmSharedProcess()
 		if !isPrivate, !isMini,
 		   let source = BrowserWindowRegistry.shared.openBrowsers.first(where: {
 		   	$0 !== self && !$0.isPrivate && !$0.isMini && $0.isHydrationFinished
@@ -935,13 +934,24 @@ final class Browser {
 	func selectTab(_ id: UUID) {
 		BrowserLog.debug(.tabs, "tab.select", metadata: ["window": BrowserLog.id(windowID), "from": BrowserLog.id(selectedTabID), "to": BrowserLog.id(id)])
 		guard let tab = tabs.first(where: { $0.id == id }) else { return }
+		let previousTab = selectedTab
 		if tab.monitorMatch != nil {
 			tab.setMonitorMatch(nil)
 		}
 		showsQuickSearch = false
-		selectedTab?.activeController?.clearHoveredLink()
+		previousTab?.activeController?.clearHoveredLink()
 		tab.activeController?.clearHoveredLink()
 		tab.clearPictureInPictureReturnController()
+
+		// Mouse-down selection is deliberately followed by the Button's normal
+		// mouse-up action. Make that second selection effectively free, and also
+		// avoid rewriting workspace timestamps/persistence for any repeated click
+		// on an already-active warm tab.
+		if selectedTabID == id, !tab.isHibernated {
+			BrowserWindowRegistry.shared.claimSelectedTab(in: self)
+			return
+		}
+
 		if !workspace.favouriteTabIDs.contains(id),
 		   let ownerIndex = workspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })
 		{
@@ -951,11 +961,9 @@ final class Browser {
 			workspace.selectedSpaceID = workspace.spaces[ownerIndex].id
 		}
 		let didWake = tab.isHibernated
-		if selectedTabID != id {
-			newTabSearchText = ""
-			newTabSearchSelection = nil
-			newTabGoogleSuggestions = []
-		}
+		newTabSearchText = ""
+		newTabSearchSelection = nil
+		newTabGoogleSuggestions = []
 		selectedTabID = id
 		BrowserWindowRegistry.shared.claimSelectedTab(in: self)
 		if didWake {
@@ -978,9 +986,10 @@ final class Browser {
 		recentlyUsedTabIDs.insert(id, at: 0)
 		tab.controller?.loadFaviconIfMissing()
 		#if os(macOS)
-			for tab in tabs {
-				tab.controller?.previewSnapshotRefreshSuspended = tab.id != id
+			if previousTab !== tab {
+				previousTab?.controller?.previewSnapshotRefreshSuspended = true
 			}
+			tab.controller?.previewSnapshotRefreshSuspended = false
 		#endif
 		// Waking rebuilds the controller (open-tabs changed); pure selection
 		// only needs workspace+snapshot.
