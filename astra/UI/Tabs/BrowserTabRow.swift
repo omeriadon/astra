@@ -136,12 +136,14 @@ struct BrowserTabRow: View {
 		}
 		#if os(macOS)
 		.background {
-			BrowserDropZone(
-				browser: browser,
-				area: browser.selectedSpace.pinnedTabIDs.contains(tab.id) ? .pinned : .normal,
-				spaceID: browser.workspace.selectedSpaceID,
-				beforeTabID: tab.id
-			)
+			if tabDrag.activeTabID != nil {
+				BrowserDropZone(
+					browser: browser,
+					area: isPinned ? .pinned : .normal,
+					spaceID: nil,
+					beforeTabID: tab.id
+				)
+			}
 		}
 		.highPriorityGesture(
 			DragGesture(minimumDistance: 8)
