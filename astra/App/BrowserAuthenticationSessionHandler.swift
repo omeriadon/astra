@@ -19,6 +19,7 @@
 		}
 
 		func begin(_ request: ASWebAuthenticationSessionRequest) {
+			BrowserLog.info(.navigation, "auth-session.begin", metadata: ["id": BrowserLog.id(request.uuid), "url": BrowserLog.url(request.url), "ephemeral": String(request.shouldUseEphemeralSession)])
 			if let replaced = sessions.removeValue(forKey: request.uuid) {
 				replaced.request.cancelWithError(Self.cancellationError)
 				closeAndCleanUp(replaced)
@@ -80,12 +81,14 @@
 		}
 
 		func cancel(_ request: ASWebAuthenticationSessionRequest) {
+			BrowserLog.notice(.navigation, "auth-session.cancel", metadata: ["id": BrowserLog.id(request.uuid)])
 			guard let session = sessions[request.uuid], session.request === request else { return }
 			sessions[request.uuid] = nil
 			closeAndCleanUp(session)
 		}
 
 		func cancelAll() async {
+			BrowserLog.notice(.navigation, "auth-session.cancel-all", metadata: ["count": String(sessions.count)])
 			let pending = Array(sessions.values)
 			sessions.removeAll()
 			for session in pending {
@@ -96,6 +99,7 @@
 		}
 
 		private func closeAndCleanUp(_ session: Session) {
+			BrowserLog.debug(.navigation, "auth-session.cleanup", metadata: ["id": BrowserLog.id(session.request.uuid)])
 			session.window.window.close()
 			cleanUpPrivateSession(session.window.browser.session)
 		}

@@ -21,6 +21,7 @@ final class BrowserWebSession {
 	private var cleanupTask: Task<Void, Never>?
 
 	init(isPrivate: Bool = false) {
+		BrowserLog.info(.lifecycle, "web-session.init", metadata: ["private": String(isPrivate)])
 		self.isPrivate = isPrivate
 		let toastManager = isPrivate ? ToastManager() : .shared
 		self.toastManager = toastManager
@@ -90,6 +91,8 @@ final class BrowserWebSession {
 	}
 
 	func clearWebsiteData(since: Date = .distantPast) async {
+		let logStarted = BrowserLog.clock()
+		BrowserLog.notice(.browser, "website-data.clear.begin", metadata: ["private": String(isPrivate), "since": String(since.timeIntervalSince1970)])
 		#if os(macOS)
 			if !isPrivate, since == .distantPast {
 				BrowserWebPushManager.shared.removeDeliveredNotifications()
@@ -103,6 +106,7 @@ final class BrowserWebSession {
 	}
 
 	private func refreshContentBlocking(for origin: String? = nil) {
+		BrowserLog.trace(.contentBlocking, "content-blocking.notify-controllers", metadata: ["origin": BrowserLog.value(origin)])
 		for browser in BrowserWindowRegistry.shared.openBrowsers where browser.session === self {
 			for tab in browser.tabs {
 				let controllers = [tab.controller].compactMap(\.self) + tab.peeks.map(\.controller)
@@ -120,6 +124,7 @@ final class BrowserWebSession {
 	}
 
 	func clearWebsiteData(for record: WKWebsiteDataRecord) async {
+		BrowserLog.notice(.browser, "website-data.clear-record", metadata: ["display_name": BrowserLog.value(record.displayName), "types": String(record.dataTypes.count)])
 		await dataStore.removeData(
 			ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
 			for: [record]
@@ -128,6 +133,7 @@ final class BrowserWebSession {
 	}
 
 	func endPrivateSession() async {
+		BrowserLog.notice(.lifecycle, "private-session.end")
 		guard isPrivate else { return }
 		if let cleanupTask {
 			await cleanupTask.value
