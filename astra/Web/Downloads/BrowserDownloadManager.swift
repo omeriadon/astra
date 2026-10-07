@@ -1130,6 +1130,18 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		}
 	}
 
+	private static func totalLength(fromSingleByteContentRange value: String) -> Int64? {
+		let parts = value.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
+		guard parts.count == 2 else { return nil }
+		let range = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+		let total = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+		guard range.caseInsensitiveCompare("bytes 0-0") == .orderedSame,
+		      let length = Int64(total),
+		      length > 1
+		else { return nil }
+		return length
+	}
+
 	private func strongValidator(from response: HTTPURLResponse) -> String? {
 		if let etag = response.value(forHTTPHeaderField: "ETag"),
 		   !etag.isEmpty,
