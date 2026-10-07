@@ -36,8 +36,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 	func start(_ item: BrowserDownload, originalRequest: URLRequest? = nil) {
 		BrowserLog.info(.downloads, "segmented.start", metadata: ["item": BrowserLog.id(item.id), "request": BrowserLog.request(originalRequest), "url": BrowserLog.url(item.requestURL)])
 		guard let url = item.requestURL,
-		      let segments = item.segments,
-		      let validator = item.rangeValidator
+		      let segments = item.segments
 		else { return }
 		if let originalRequest {
 			replayHeaders[item.id] = Self.safeReplayHeaders(originalRequest)
@@ -61,7 +60,9 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 					}
 					request.cachePolicy = .reloadIgnoringLocalCacheData
 					request.setValue("bytes=\(segment.start)-\(segment.end)", forHTTPHeaderField: "Range")
-					request.setValue(validator, forHTTPHeaderField: "If-Range")
+					if let validator = item.rangeValidator {
+						request.setValue(validator, forHTTPHeaderField: "If-Range")
+					}
 					request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
 					let task = self.session.downloadTask(with: request)
 					task.taskDescription = description
@@ -226,8 +227,8 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		return directory.appendingPathComponent("\(itemID.uuidString)-\(index).part")
 	}
 
-	private static func safeReplayHeaders(_ request: URLRequest) -> [String: String] {
-		guard !BrowserDownload.requestMayCarryCredentials(request) else { return [:] }
+	static func safeReplayHeaders(_ request: URLRequest) -> [String: String] {
+		guard !BrowserDownload.requestHasSensitiveCredentials(request) else { return [:] }
 		return (request.allHTTPHeaderFields ?? [:]).filter { field, _ in
 			!blockedReplayHeaders.contains(field.lowercased())
 		}
