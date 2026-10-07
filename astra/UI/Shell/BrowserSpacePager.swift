@@ -53,6 +53,28 @@
 		}
 	}
 
+	private struct BrowserSpacePageSignature: Equatable {
+		let id: UUID
+		let name: String
+		let symbol: String
+		let theme: BrowserTheme
+		let tabIDs: [UUID]
+		let pinnedTabIDs: [UUID]
+		let todayTabGroups: [BrowserTabGroupingFeature.Group]
+		let pinnedFolders: [PinnedTabFolder]
+
+		init(_ space: BrowserSpace) {
+			id = space.id
+			name = space.name
+			symbol = space.symbol
+			theme = space.theme
+			tabIDs = space.tabIDs
+			pinnedTabIDs = space.pinnedTabIDs
+			todayTabGroups = space.todayTabGroups
+			pinnedFolders = space.pinnedFolders
+		}
+	}
+
 	final class BrowserSpacePageController<Content: View>: NSPageController, NSPageControllerDelegate {
 		private var spaces: [BrowserSpace] = []
 		private var content: (BrowserSpace) -> Content
@@ -117,14 +139,17 @@
 				arrangedObjects = spaces
 			}
 
-			// BrowserSpace is a value type and changes whenever tabs, folders, names,
-			// or themes change. Refresh any pages NSPageController has already
-			// prepared so they never render a stale Space snapshot.
+			// Selection timestamps and selectedTabID mutate BrowserSpace on every tab
+			// switch, but neither changes what an individual sidebar page renders.
+			// Let each prepared page compare a content-only signature before replacing
+			// its NSHostingView root. Replacing every root here was forcing a full
+			// SwiftUI/AttributeGraph layout pass during tab changes and live swipes.
+			let spacesByID = Dictionary(uniqueKeysWithValues: spaces.map { ($0.id, $0) })
 			var staleIdentifiers: [String] = []
 			for (identifier, controller) in contentControllers {
 				guard
 					let id = UUID(uuidString: identifier),
-					let space = spaces.first(where: { $0.id == id })
+					let space = spacesByID[id]
 				else {
 					staleIdentifiers.append(identifier)
 					continue
@@ -196,6 +221,7 @@
 
 	final class BrowserSpacePageContentController<Content: View>: NSViewController {
 		private var hostingView: NSHostingView<Content>?
+		private var signature: BrowserSpacePageSignature?
 
 		override func loadView() {
 			view = NSView()
@@ -205,6 +231,9 @@
 			space: BrowserSpace,
 			content: @escaping (BrowserSpace) -> Content
 		) {
+			let nextSignature = BrowserSpacePageSignature(space)
+			guard hostingView == nil || signature != nextSignature else { return }
+			signature = nextSignature
 			let rootView = content(space)
 
 			if let hostingView {
