@@ -6,6 +6,8 @@ struct ShellSidebarListView: View {
 	let browser: Browser
 	let space: BrowserSpace
 	let theme: BrowserTheme
+	let isActiveSpace: Bool
+	let favouriteTabIDs: [UUID]
 	var onSelectTab: ((UUID) -> Void)?
 	var onNewTab: (() -> Void)?
 	var navigationNamespace: Namespace.ID?
@@ -19,11 +21,11 @@ struct ShellSidebarListView: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	var body: some View {
-		// Single O(n) lookup + filtered lists per sidebar render instead of
-		// O(n²) tabs.first scans inside every row.
-		let space = browser.workspace.spaces.first(where: { $0.id == self.space.id }) ?? space
+		// Page-local values are supplied by BrowserSpacePager. Do not read
+		// Browser.workspace here: it is a single observed value, so any selection
+		// timestamp mutation would otherwise invalidate every prepared space page.
 		let tabsByID = browser.tabsByID
-		let favouriteTabs = browser.isPrivate ? [] : browser.workspace.favouriteTabIDs.compactMap { tabsByID[$0] }
+		let favouriteTabs = browser.isPrivate ? [] : favouriteTabIDs.compactMap { tabsByID[$0] }
 		let pinnedTabs = space.pinnedTabIDs.compactMap { tabsByID[$0] }
 		let folderTabIDs = Set(space.pinnedFolders.flatMap(\.tabIDs))
 		let ungroupedPinnedTabs = pinnedTabs.filter { !folderTabIDs.contains($0.id) }
@@ -33,8 +35,9 @@ struct ShellSidebarListView: View {
 		let normalIndexes = Dictionary(uniqueKeysWithValues: normalTabs.enumerated().map { ($0.element.id, $0.offset) })
 		let groupedIDs = Set(space.todayTabGroups.flatMap(\.tabIDs))
 		let ungroupedNormalTabs = normalTabs.enumerated().filter { !groupedIDs.contains($0.element.id) }
-		let isActiveSpace = space.id == browser.workspace.selectedSpaceID
-		let selectedID = browser.selectedTabID
+		// Only the active page subscribes to selectedTabID. Inactive prepared
+		// pages stay completely still while tabs are switched.
+		let selectedID = isActiveSpace ? browser.selectedTabID : nil
 		return GeometryReader { geometry in
 			ScrollViewReader { reader in
 				ScrollView {
@@ -42,7 +45,7 @@ struct ShellSidebarListView: View {
 						if !favouriteTabs.isEmpty {
 							LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
 								ForEach(favouriteTabs) { tab in
-									BrowserFavouriteTile(tab: tab, browser: browser, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
+									BrowserFavouriteTile(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
 										.equatable()
 								}
 							}
@@ -141,7 +144,7 @@ struct ShellSidebarListView: View {
 						.animation(reduceMotion ? nil : .smooth(duration: 0.35), value: space.todayTabGroups)
 						#if os(macOS)
 							.background {
-								BrowserDropZone(browser: browser, area: .normal, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
+								BrowserDropZone(browser: browser, area: .normal, spaceID: space.id, beforeTabID: nil)
 							}
 						#endif
 					}
