@@ -130,11 +130,16 @@
 			let authentication = ASWebAuthenticationSessionWebBrowserSessionManager.shared
 			authentication.sessionHandler = BrowserAuthenticationSessionHandler.shared
 			Task { await BrowserExtensionManager.shared.prepare() }
-			UpdateManager.shared.start()
-			BrowserDownloadManager.shared.resumeAvailableDownloads()
-			BrowserWebsiteMonitoring.shared.start()
-			BrowserAICLI.startModelCatalogRefresh()
-			BrowserController.prewarmSharedProcess()
+			// Keep non-critical services off the launch/first-frame critical path.
+			// Download hydration itself already runs off-main; this only defers
+			// restoration, update checks, monitoring, and model catalogue work.
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(300))
+				UpdateManager.shared.start()
+				BrowserDownloadManager.shared.resumeAvailableDownloads()
+				BrowserWebsiteMonitoring.shared.start()
+				BrowserAICLI.startModelCatalogRefresh()
+			}
 			let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
 			source.setEventHandler {
 				BrowserLog.warning(.performance, "memory-pressure")
@@ -167,18 +172,25 @@
 				if windows.isEmpty, !wasLaunchedForWebPush {
 					openBrowserWindow(showImmediately: false)
 				}
-				for controller in windows {
-					while !controller.browser.isHydrationFinished {
-						try? await Task.sleep(for: .milliseconds(25))
-					}
-				}
+
+				// Browser intentionally hydrates from disk asynchronously behind a
+				// lightweight placeholder. Show that first frame immediately instead
+				// of hiding every window until all JSON/restoration work has completed.
 				for controller in windows {
 					controller.showWindow()
 				}
 				if !windows.isEmpty {
 					NSApp.activate()
 				}
-				BrowserWindowRegistry.shared.finishWindowRestoration()
+				await Task.yield()
+
+				// Keep the restoration ownership gate until each Browser has actually
+				// merged its persisted state, but do not make visibility depend on it.
+				for controller in windows {
+					while !controller.browser.isHydrationFinished {
+						try? await Task.sleep(for: .milliseconds(25))
+					}
+				}
 			}
 		}
 
