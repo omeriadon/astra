@@ -308,12 +308,13 @@ private struct NoiseRowView: View {
 	}
 }
 
-private struct ThemeControlSlider: View {
+struct ThemeControlSlider: View {
 	@Binding var value: Double
 	let label: String
 	let symbol: String
 	let identifier: String
 	let tickCount: Int
+	var trackColors: [Color]?
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var isDragging = false
 
@@ -332,7 +333,11 @@ private struct ThemeControlSlider: View {
 				}
 			ZStack(alignment: .leading) {
 				Capsule()
-					.fill(.white.opacity(0.18))
+					.fill(LinearGradient(
+						colors: trackColors ?? [.white.opacity(0.18), .white.opacity(0.18)],
+						startPoint: .leading,
+						endPoint: .trailing
+					))
 					.frame(width: trackWidth, height: 20)
 					.overlay(alignment: .leading) {
 						Capsule()

@@ -13,6 +13,9 @@ struct BrowserReaderWebView {
 		configuration.defaultWebpagePreferences.allowsContentJavaScript = false
 		let webView = WKWebView(frame: .zero, configuration: configuration)
 		webView.navigationDelegate = coordinator
+		#if os(macOS)
+			controller.screenshotReaderWebView = webView
+		#endif
 		webView.loadHTMLString(html, baseURL: nil)
 		webView.pageZoom = controller.pageZoom
 		return webView

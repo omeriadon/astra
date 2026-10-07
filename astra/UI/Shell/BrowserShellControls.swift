@@ -295,6 +295,10 @@ private struct ShellWebsiteNavigationControls: View {
 				.buttonStyle(.bordered)
 				.foregroundStyle(.primary)
 				.id(ObjectIdentifier(controller))
+			#if os(macOS)
+				BrowserScreenshotButton(browser: browser, controller: controller)
+					.id(ObjectIdentifier(controller))
+			#endif
 			BrowserWebsiteMonitorButton(browser: browser)
 			BrowserTranslationButton(browser: browser, controller: controller)
 			if allAIFeatures, browser.canShowAISidebar, Defaults[.aiSidebar] {

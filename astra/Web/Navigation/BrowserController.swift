@@ -1785,6 +1785,29 @@ final class BrowserController: NSObject, Identifiable {
 		themeColorIsLight = red + green + blue > 1.5
 	}
 
+	#if os(macOS)
+		weak var screenshotReaderWebView: WKWebView?
+
+		func captureScreenshot() async throws -> BrowserScreenshot {
+			let view = readerHTML == nil ? createdWebView : screenshotReaderWebView
+			guard hasCurrentPageDocument, let view, !view.bounds.isEmpty else {
+				throw CocoaError(.coderInvalidValue)
+			}
+			let documentID = navigationIdentifier
+			let wasReader = readerHTML != nil
+			let configuration = WKSnapshotConfiguration()
+			configuration.rect = view.bounds
+			let scale = view.window?.backingScaleFactor ?? 2
+			let image = try await view.takeSnapshot(configuration: configuration)
+			guard hasCurrentPageDocument, navigationIdentifier == documentID,
+			      wasReader == (readerHTML != nil)
+			else {
+				throw CocoaError(.userCancelled)
+			}
+			return BrowserScreenshot(image: image, scale: scale)
+		}
+	#endif
+
 	private func takeSnapshot(snapshotWidth: CGFloat = 180) async -> SnapshotImage? {
 		guard !isInvalidated, url != nil, let webView = createdWebView, !webView.bounds.isEmpty else { return nil }
 		#if os(macOS)
