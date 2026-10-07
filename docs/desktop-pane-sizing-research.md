@@ -2,6 +2,8 @@
 
 Date: 2026-10-07. Scope: normal and private desktop browser windows.
 
+Implementation follow-up: the retained-shell repair is now applied. Existing sidebar ranges remain 130–330 and 300–600. Window growth precedes presentation, closing retains the old minimum, and visibility/reservation progress drives pane geometry. Hover and insufficient-space states overlay instead of reducing the page below its budget. Settings and toolbar overflow remain reachable, and inner sidebar hosts no longer add competing sizing constraints. Sizing, hover, and animation-data checks pass; application rendering remains unverified because Xcode MCP is unavailable and this project prohibits launching the app through computer-use tools. The investigation below records the pre-repair state.
+
 This is a source and primary-documentation investigation. Application code was not changed. The app was not launched or operated, in accordance with this project's inspection restrictions. The arithmetic findings below were checked against the actual `BrowserChromeMetrics` implementation. Timing, visible centering, and Auto Layout conflicts remain runtime hypotheses, not reproduced findings.
 
 ## Conclusion

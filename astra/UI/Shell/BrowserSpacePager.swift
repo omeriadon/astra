@@ -215,6 +215,7 @@
 			loadViewIfNeeded()
 
 			let hostingView = NSHostingView(rootView: rootView)
+			hostingView.sizingOptions = []
 			hostingView.translatesAutoresizingMaskIntoConstraints = false
 			view.addSubview(hostingView)
 			NSLayoutConstraint.activate([

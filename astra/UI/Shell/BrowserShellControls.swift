@@ -388,11 +388,13 @@ struct ShellTopBarView: View {
 					.scrollIndicators(.hidden)
 				}
 			} else {
-				HStack(spacing: 10) {
-					ShellWebsiteNavigationControls(browser: browser, theme: theme)
-					BrowserAddressField(browser: browser)
-					Spacer(minLength: 0)
-					ShellExtensionControls(browser: browser, theme: theme)
+				ViewThatFits(in: .horizontal) {
+					desktopWebsiteControls
+					ScrollView(.horizontal) {
+						desktopWebsiteControls
+							.fixedSize(horizontal: true, vertical: false)
+					}
+					.accessibilityIdentifier("website-toolbar-overflow")
 				}
 			}
 		}
@@ -418,6 +420,16 @@ struct ShellTopBarView: View {
 					)
 				}
 			}
+	}
+
+	private var desktopWebsiteControls: some View {
+		HStack(spacing: 10) {
+			ShellWebsiteNavigationControls(browser: browser, theme: theme)
+			BrowserAddressField(browser: browser)
+				.frame(minWidth: BrowserChromeMetrics.minimumContentWidth)
+			Spacer(minLength: 0)
+			ShellExtensionControls(browser: browser, theme: theme)
+		}
 	}
 }
 

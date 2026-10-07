@@ -1,5 +1,6 @@
 #if os(macOS)
 	import AppKit
+	import Defaults
 	import SwiftUI
 
 	@MainActor
@@ -72,6 +73,12 @@
 			window.delegate = self
 			window.contentView = contentHost
 			window.contentMinSize = NSSize(width: BrowserChromeMetrics.minimumContentWidth, height: min(480, visibleFrame.height))
+			window.setBrowserMinimumContentWidth(BrowserChromeMetrics.minimumWindowWidth(
+				sidebarShown: browser.sidebarShown,
+				aiSidebarShown: browser.showsAISidebar && browser.canShowAISidebar
+					&& Defaults[.aiFeaturesEnabled] && Defaults[.aiSidebar],
+				minimumContentWidth: BrowserChromeMetrics.minimumPageWidth(isSettings: browser.selectedTab?.internalPage == .settings)
+			))
 			window.title = browser.isPrivate ? "astra — Private Browsing" : "astra"
 			window.isOpaque = false
 			window.backgroundColor = NSColor.white.withAlphaComponent(0.001)
@@ -173,6 +180,25 @@
 			}
 			window.contentView = nil
 			onClose?()
+		}
+	}
+
+	extension NSWindow {
+		func setBrowserMinimumContentWidth(_ requiredWidth: CGFloat) {
+			let screenFrame = screen?.visibleFrame
+			let minimumWidth = min(requiredWidth, screenFrame?.width ?? requiredWidth)
+			contentMinSize.width = minimumWidth
+			guard !styleMask.contains(.fullScreen) else { return }
+			let contentWidth = contentRect(forFrameRect: frame).width
+			let targetWidth = max(minimumWidth, min(contentWidth, screenFrame?.width ?? contentWidth))
+			guard contentWidth != targetWidth else { return }
+			var nextFrame = frame
+			nextFrame.size.width += targetWidth - contentWidth
+			if let screenFrame {
+				nextFrame.origin.x = max(screenFrame.minX, min(nextFrame.minX, screenFrame.maxX - nextFrame.width))
+			}
+			// Establish space before SwiftUI reveals a pane; setFrame does not enforce contentMinSize.
+			setFrame(nextFrame, display: true)
 		}
 	}
 

@@ -6,11 +6,30 @@ enum BrowserChromeMetrics {
 	static let sidebarWidthRange: ClosedRange<CGFloat> = 130 ... 330
 	static let aiSidebarWidthRange: ClosedRange<CGFloat> = 300 ... 600
 	static let minimumContentWidth: CGFloat = 270
+	static let settingsSidebarWidth: CGFloat = 230
+	static let settingsDetailPadding: CGFloat = 16
 
-	static func minimumWindowWidth(sidebarShown: Bool, aiSidebarShown: Bool) -> CGFloat {
+	static func minimumPageWidth(isSettings: Bool) -> CGFloat {
+		minimumContentWidth + shellEdgePadding * 2
+			+ (isSettings ? settingsSidebarWidth + settingsDetailPadding * 2 + 1 : 0)
+	}
+
+	static func minimumWindowWidth(
+		sidebarShown: Bool,
+		aiSidebarShown: Bool,
+		minimumContentWidth: CGFloat = minimumContentWidth
+	) -> CGFloat {
 		minimumContentWidth
 			+ (sidebarShown ? sidebarWidthRange.lowerBound : 0)
 			+ (aiSidebarShown ? aiSidebarWidthRange.lowerBound : 0)
+	}
+
+	static func sidebarFits(
+		availableWidth: CGFloat,
+		minimumContentWidth: CGFloat,
+		limits: ClosedRange<CGFloat>
+	) -> Bool {
+		availableWidth >= minimumContentWidth + limits.lowerBound
 	}
 
 	static func sidebarWidth(

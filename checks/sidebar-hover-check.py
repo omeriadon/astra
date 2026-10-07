@@ -11,8 +11,9 @@ end = shell.index("withAnimation", start)
 width = shell[start:end].replace("geometry.size.width", "windowWidth")
 assignment = next(line.strip() for line in shell.splitlines() if "isSidebarRevealed = !sidebarShown" in line)
 assert "sidebarShown: .constant(isSidebarVisible)" in shell
-assert "sidebarShown || isSidebarRevealed" in shell
-assert "minimumWindowWidth(sidebarShown: sidebarShown," in shell
+assert "isSidebarPinned || isSidebarRevealed" in shell
+assert "sidebarShown: sidebarShown," in shell
+assert "sidebarOverlaysContent: !isSidebarPinned" in shell
 assert "case .ended:" in shell[end:shell.index(".background", end)]
 assert "isSidebarRevealed = false" in shell[end:shell.index(".background", end)]
 
@@ -21,6 +22,7 @@ func revealed(shown: Bool, wasRevealed: Bool, x: CGFloat, windowWidth: CGFloat, 
     let sidebarShown = shown
     var isSidebarRevealed = wasRevealed
     let location = CGPoint(x: x, y: 100)
+    let minimumPageWidth = BrowserChromeMetrics.minimumPageWidth(isSettings: false)
     WIDTH
     ASSIGNMENT
     return isSidebarRevealed
@@ -32,7 +34,7 @@ for showsAI in [false, true] {
             preferred: BrowserChromeMetrics.expandedSidebarWidth,
             limits: BrowserChromeMetrics.sidebarWidthRange,
             availableWidth: windowWidth,
-            minimumContentWidth: BrowserChromeMetrics.minimumContentWidth
+            minimumContentWidth: BrowserChromeMetrics.minimumPageWidth(isSettings: false)
                 + (showsAI ? BrowserChromeMetrics.aiSidebarWidthRange.lowerBound : 0)
         )
         assert(revealed(shown: false, wasRevealed: false, x: 5, windowWidth: windowWidth, showsAI: showsAI))

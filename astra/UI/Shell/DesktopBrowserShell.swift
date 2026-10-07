@@ -3,7 +3,6 @@ import Haze
 import SwiftUI
 import WebKit
 #if os(macOS)
-	import QuartzCore
 	import UniformTypeIdentifiers
 #endif
 
@@ -38,6 +37,10 @@ struct DesktopBrowserShell: View {
 	@State private var showsTopBar = true
 	@State private var isTopBarRevealed = false
 	@State private var isSidebarRevealed = false
+	@State private var presentedSidebarShown = false
+	@State private var presentedAISidebarShown = false
+	@State private var reservedMinimumWidth: CGFloat = 0
+	@State private var paneTransitionGeneration = 0
 	#if os(macOS)
 		@State private var hostWindow: NSWindow?
 		@State private var windowButtonAnimationGeneration = 0
@@ -53,11 +56,35 @@ struct DesktopBrowserShell: View {
 	}
 
 	private var minimumWindowWidth: CGFloat {
-		BrowserChromeMetrics.minimumWindowWidth(sidebarShown: sidebarShown, aiSidebarShown: showsAISidebar)
+		BrowserChromeMetrics.minimumWindowWidth(
+			sidebarShown: sidebarShown,
+			aiSidebarShown: showsAISidebar,
+			minimumContentWidth: minimumPageWidth
+		)
+	}
+
+	private var minimumPageWidth: CGFloat {
+		BrowserChromeMetrics.minimumPageWidth(isSettings: browser.selectedTab?.internalPage == .settings)
+	}
+
+	private var isSidebarPinned: Bool {
+		#if os(macOS)
+			presentedSidebarShown
+		#else
+			sidebarShown
+		#endif
 	}
 
 	private var isSidebarVisible: Bool {
-		sidebarShown || isSidebarRevealed
+		isSidebarPinned || isSidebarRevealed
+	}
+
+	private var isAISidebarVisible: Bool {
+		#if os(macOS)
+			presentedAISidebarShown
+		#else
+			showsAISidebar
+		#endif
 	}
 
 	private var showsTopBarOnPage: Bool {
@@ -65,7 +92,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	private var hasVisibleChrome: Bool {
-		isSidebarVisible || showsAISidebar || (showsTopBarOnPage && (showsTopBar || isTopBarRevealed))
+		isSidebarVisible || isAISidebarVisible || (showsTopBarOnPage && (showsTopBar || isTopBarRevealed))
 	}
 
 	private var contentCornerRadius: CGFloat {
@@ -77,23 +104,18 @@ struct DesktopBrowserShell: View {
 	#if os(macOS)
 		private func updateWindowMinimumSize() {
 			guard let window = hostWindow else { return }
-			window.contentMinSize.width = minimumWindowWidth
-			guard !window.styleMask.contains(.fullScreen) else { return }
-			let contentSize = window.contentRect(forFrameRect: window.frame).size
-			guard contentSize.width < minimumWindowWidth else { return }
-			var frame = window.frame
-			frame.size.width += minimumWindowWidth - contentSize.width
-			if let visibleFrame = window.screen?.visibleFrame {
-				frame.origin.x = max(visibleFrame.minX, min(frame.origin.x, visibleFrame.maxX - frame.width))
-			}
-			guard window.isVisible, !reduceMotion else {
-				window.setFrame(frame, display: true)
-				return
-			}
-			NSAnimationContext.runAnimationGroup { context in
-				context.duration = 0.3
-				context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-				window.animator().setFrame(frame, display: true)
+			paneTransitionGeneration += 1
+			let generation = paneTransitionGeneration
+			reservedMinimumWidth = max(reservedMinimumWidth, minimumWindowWidth)
+			window.setBrowserMinimumContentWidth(reservedMinimumWidth)
+			let animation: Animation? = window.isVisible && !reduceMotion ? .smooth(duration: 0.3) : nil
+			withAnimation(animation, completionCriteria: .removed) {
+				presentedSidebarShown = sidebarShown
+				presentedAISidebarShown = showsAISidebar
+			} completion: {
+				guard generation == paneTransitionGeneration else { return }
+				reservedMinimumWidth = minimumWindowWidth
+				window.setBrowserMinimumContentWidth(reservedMinimumWidth)
 			}
 		}
 
@@ -152,11 +174,12 @@ struct DesktopBrowserShell: View {
 
 	private var windowLayout: some View {
 		GeometryReader { geometry in
-			let showsAI = showsAISidebar
+			let showsAI = isAISidebarVisible
 			BrowserSplitView(
 				sidebarShown: .constant(isSidebarVisible),
-				minimumContentWidth: BrowserChromeMetrics.minimumContentWidth
-					+ (showsAI ? BrowserChromeMetrics.aiSidebarWidthRange.lowerBound : 0)
+				minimumContentWidth: minimumPageWidth,
+				sidebarOverlaysContent: !isSidebarPinned,
+				followingSidebarWidth: showsAI ? BrowserChromeMetrics.aiSidebarWidthRange.lowerBound : 0
 			) {
 				ShellSidebarColumn(
 					browser: browser,
@@ -175,6 +198,7 @@ struct DesktopBrowserShell: View {
 					sidebarShown: .constant(showsAI),
 					sidebarWidth: min(360, geometry.size.width * 0.45) + BrowserChromeMetrics.shellEdgePadding,
 					sidebarWidthRange: BrowserChromeMetrics.aiSidebarWidthRange,
+					minimumContentWidth: minimumPageWidth,
 					edge: .trailing
 				) {
 					BrowserAIChatSidebar(browser: browser, chat: browser.aiChat, isVisible: showsAI)
@@ -199,10 +223,12 @@ struct DesktopBrowserShell: View {
 						isTopBarRevealed: $isTopBarRevealed
 					)
 				}
-				.animation(nil, value: browser.selectedTabID)
-				.animation(nil, value: browser.canShowAISidebar)
+				.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsAI)
 			}
+			#if !os(macOS)
 			.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: isSidebarVisible)
+			.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsAI)
+			#endif
 			.onContinuousHover { phase in
 				switch phase {
 					case let .active(location):
@@ -211,7 +237,7 @@ struct DesktopBrowserShell: View {
 								preferred: BrowserChromeMetrics.expandedSidebarWidth,
 								limits: BrowserChromeMetrics.sidebarWidthRange,
 								availableWidth: geometry.size.width,
-								minimumContentWidth: BrowserChromeMetrics.minimumContentWidth
+								minimumContentWidth: minimumPageWidth
 									+ (showsAI ? BrowserChromeMetrics.aiSidebarWidthRange.lowerBound : 0)
 							)
 							: 6
@@ -258,10 +284,15 @@ struct DesktopBrowserShell: View {
 			}
 			.allowsHitTesting(false)
 		}
-		.task(id: minimumWindowWidth) {
+		.onChange(of: minimumWindowWidth, initial: true) { _, _ in
 			updateWindowMinimumSize()
 		}
 		.onChange(of: hostWindow) { _, _ in
+			isFullScreen = hostWindow?.styleMask.contains(.fullScreen) == true
+			updateWindowMinimumSize()
+		}
+		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeScreenNotification)) { notification in
+			guard notification.object as? NSWindow === hostWindow else { return }
 			updateWindowMinimumSize()
 		}
 		.onChange(of: isSidebarVisible) { _, shown in
@@ -327,12 +358,14 @@ struct DesktopBrowserShell: View {
 			}
 		#if os(macOS)
 			.onAppear {
-				isFullScreen = NSApp.keyWindow?.styleMask.contains(.fullScreen) == true
+				isFullScreen = hostWindow?.styleMask.contains(.fullScreen) == true
 			}
-			.onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+			.onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { notification in
+				guard notification.object as? NSWindow === hostWindow else { return }
 				isFullScreen = true
 			}
-			.onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+			.onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { notification in
+				guard notification.object as? NSWindow === hostWindow else { return }
 				isFullScreen = false
 				updateWindowMinimumSize()
 			}
@@ -360,11 +393,8 @@ private struct ShellNavigationBarControls: View {
 			Spacer()
 				.frame(width: isFullScreen ? 0 : 80)
 		}
-		.frame(
-			width: BrowserChromeMetrics.persistentControlsAreaWidth,
-			height: BrowserChromeMetrics.topBarRegionHeight,
-			alignment: .leading
-		)
+		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
+		.frame(maxWidth: BrowserChromeMetrics.persistentControlsAreaWidth, alignment: .leading)
 		.environment(
 			\.colorScheme,
 			sidebarShown ? colorScheme : topBarColorScheme
