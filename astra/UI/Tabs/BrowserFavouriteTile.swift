@@ -55,12 +55,14 @@ struct BrowserFavouriteTile: View {
 		}
 		#if os(macOS)
 		.background {
-			BrowserDropZone(
-				browser: browser,
-				area: .favourite,
-				spaceID: nil,
-				beforeTabID: tab.id
-			)
+			if tabDrag.activeTabID != nil {
+				BrowserDropZone(
+					browser: browser,
+					area: .favourite,
+					spaceID: nil,
+					beforeTabID: tab.id
+				)
+			}
 		}
 		.highPriorityGesture(
 			DragGesture(minimumDistance: 8)
