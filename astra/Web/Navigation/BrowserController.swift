@@ -774,7 +774,10 @@ final class BrowserController: NSObject, Identifiable {
 				await self?.refreshActivity()
 				guard !Task.isCancelled else { return }
 				do {
-					try await Task.sleep(for: .seconds(1))
+					// Media play/pause/metadata events trigger immediate refreshes through
+					// pageActivityChanged. This slower fallback is only for state WebKit
+					// does not expose as a DOM event (notably capture/metadata edge cases).
+					try await Task.sleep(for: .seconds(5))
 				} catch {
 					return
 				}
@@ -813,8 +816,9 @@ final class BrowserController: NSObject, Identifiable {
 		}
 		mediaTitle = (state["title"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
 		mediaArtist = (state["artist"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
-		await refreshPictureInPictureEligibility(in: webView, documentID: documentID)
 		guard owns(webView), documentID == navigationIdentifier else { return }
+		// pictureInPictureScript reports eligibility/active changes directly on
+		// video lifecycle events; do not run a second DOM query on every poll.
 		webView.configuration.preferences.inactiveSchedulingPolicy = isPictureInPictureActive || isEnteringPictureInPicture || isPlayingMedia || hasActiveVideoPlayback ? .none : .throttle
 	}
 

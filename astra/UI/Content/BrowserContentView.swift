@@ -19,7 +19,7 @@ struct BrowserContentView: View, Animatable {
 			ZStack {
 				KeepAliveWebStack(browser: browser, insets: insets)
 					.zIndex(0)
-				content
+				content(hasActiveDuplicate: hasActiveDuplicate)
 					.zIndex(1)
 			}
 			.animation(nil, value: browser.selectedTabID)
@@ -46,10 +46,10 @@ struct BrowserContentView: View, Animatable {
 	}
 
 	@ViewBuilder
-	private var content: some View {
+	private func content(hasActiveDuplicate: Bool) -> some View {
 		#if os(macOS)
 			if let controller = browser.selectedTab?.activeController, controller.url != nil,
-			   BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
+			   hasActiveDuplicate
 			{
 				BrowserTabMirrorView(controller: controller)
 			} else {

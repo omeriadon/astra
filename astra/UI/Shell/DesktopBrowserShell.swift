@@ -698,7 +698,7 @@ private struct DownloadFlightOverlay: View {
 		var body: some View {
 			GeometryReader { geometry in
 				if let tabID = tabDrag.activeTabID,
-				   let tab = browser.tabs.first(where: { $0.id == tabID }),
+				   let tab = browser.tab(withID: tabID),
 				   let hostWindow
 				{
 					let point = hostWindow.convertPoint(fromScreen: tabDrag.screenPoint)
