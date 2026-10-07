@@ -45,7 +45,7 @@ enum BrowserLog {
 
 	nonisolated static let subsystem = "com.omeriadon.astra"
 
-	nonisolated(unsafe) private static let stateLock = NSLock()
+	nonisolated private static let stateLock = NSLock()
 	nonisolated(unsafe) private static var bootstrapped = false
 	nonisolated(unsafe) private static var watchdogTimer: DispatchSourceTimer?
 	nonisolated(unsafe) private static var lastMainAckNanoseconds = DispatchTime.now().uptimeNanoseconds
