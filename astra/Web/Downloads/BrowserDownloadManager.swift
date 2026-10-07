@@ -1069,6 +1069,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			request.setValue(value, forHTTPHeaderField: field)
 		}
 		request.cachePolicy = .reloadIgnoringLocalCacheData
+		request.timeoutInterval = 8
 		request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
 		request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
 
@@ -1081,9 +1082,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		defer { session.invalidateAndCancel() }
 
 		do {
-			let (data, response) = try await session.data(for: request)
-			guard data.count == 1,
-			      let http = response as? HTTPURLResponse,
+			let (bytes, response) = try await session.bytes(for: request)
+			guard let http = response as? HTTPURLResponse,
 			      http.statusCode == 206,
 			      let finalURL = http.url,
 			      ["http", "https"].contains(finalURL.scheme?.lowercased() ?? ""),
@@ -1091,6 +1091,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			      let contentRange = http.value(forHTTPHeaderField: "Content-Range"),
 			      let total = Self.totalLength(fromSingleByteContentRange: contentRange)
 			else { return nil }
+			var iterator = bytes.makeAsyncIterator()
+			guard try await iterator.next() != nil else { return nil }
 
 			let probeValidator = strongValidator(from: http)
 			if let initialValidator, let probeValidator, initialValidator != probeValidator {
