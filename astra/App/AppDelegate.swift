@@ -130,14 +130,19 @@
 			let authentication = ASWebAuthenticationSessionWebBrowserSessionManager.shared
 			authentication.sessionHandler = BrowserAuthenticationSessionHandler.shared
 			// Keep non-critical services off the launch/first-frame critical path.
-			// Extension package discovery is especially expensive because WebKit's
-			// extension APIs are MainActor-bound; let the first window paint before
-			// asking WebKit to construct those contexts.
+			// Stagger them so one slow subsystem cannot serialize all deferred work
+			// or create a single large post-launch CPU spike.
 			Task { @MainActor in
-				try? await Task.sleep(for: .milliseconds(500))
+				try? await Task.sleep(for: .milliseconds(600))
 				await BrowserExtensionManager.shared.prepare()
+			}
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(1000))
 				UpdateManager.shared.start()
 				BrowserDownloadManager.shared.resumeAvailableDownloads()
+			}
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(1600))
 				BrowserWebsiteMonitoring.shared.start()
 				BrowserAICLI.startModelCatalogRefresh()
 			}

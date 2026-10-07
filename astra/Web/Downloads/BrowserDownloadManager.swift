@@ -106,14 +106,54 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			? directory.appendingPathComponent("download-staging", isDirectory: true)
 			: FileManager.default.temporaryDirectory.appendingPathComponent("astra-private-downloads-\(UUID().uuidString)", isDirectory: true)
 		super.init()
-		selectedDownloadFolderName = (preferredDownloadDirectory() ?? Self.defaultDownloadDirectory).lastPathComponent
+		selectedDownloadFolderName = Self.defaultDownloadDirectory.lastPathComponent
 		if privateDataStore == nil {
+			hydrateSelectedDownloadFolderName()
 			hydrateItems()
 		}
 		#if DEBUG
 			assert(Self.safeStem("../unsafe\\name") == "unsafename")
 		#endif
 		updateDockProgress()
+	}
+
+	#if os(macOS)
+		private nonisolated static func resolvedDownloadFolderDisplay(
+			_ data: Data
+		) -> (name: String, renewedBookmark: Data?)? {
+			var stale = false
+			guard let url = try? URL(
+				resolvingBookmarkData: data,
+				options: [.withSecurityScope, .withoutUI],
+				relativeTo: nil,
+				bookmarkDataIsStale: &stale
+			) else { return nil }
+			let renewed = stale
+				? try? url.bookmarkData(
+					options: [.withSecurityScope],
+					includingResourceValuesForKeys: nil,
+					relativeTo: nil
+				)
+				: nil
+			return (url.lastPathComponent, renewed)
+		}
+	#endif
+
+	private func hydrateSelectedDownloadFolderName() {
+		#if os(macOS)
+			guard let data = Data(base64Encoded: Defaults[.downloadsFolderBookmark]),
+			      !data.isEmpty else { return }
+			let resolveTask = Task.detached(priority: .utility) {
+				Self.resolvedDownloadFolderDisplay(data)
+			}
+			Task { @MainActor [weak self] in
+				guard let result = await resolveTask.value, let self else { return }
+				selectedDownloadFolderName = result.name
+				if let renewed = result.renewedBookmark {
+					Defaults[.downloadsFolderBookmark] = renewed.base64EncodedString()
+				}
+			}
+		#endif
 	}
 
 	private func hydrateItems() {
@@ -162,7 +202,11 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				restorationStarted = false
 				BrowserLog.duration(.downloads, "downloads.hydrate.end", since: logStarted, warnAboveMilliseconds: 250, metadata: ["items": String(items.count)])
 				if !isClosing {
-					resumeAvailableDownloads()
+					Task { @MainActor [weak self] in
+						try? await Task.sleep(for: .milliseconds(750))
+						guard !Task.isCancelled else { return }
+						self?.resumeAvailableDownloads()
+					}
 				}
 				updateDockProgress()
 				if !isClosing {

@@ -436,7 +436,12 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		let logStarted = BrowserLog.clock()
 		BrowserLog.info(.extensions, "extensions.prepare.begin", metadata: ["available": String(availableNames.count), "enabled": String(enabledNames.count)])
 		didPrepare = true
-		for name in availableNames {
+		let orderedNames = availableNames.filter { enabledNames.contains($0) }
+			+ availableNames.filter { !enabledNames.contains($0) }
+		for (index, name) in orderedNames.enumerated() {
+			if index > 0 {
+				await Task.yield()
+			}
 			BrowserLog.debug(.extensions, "extension.prepare-item", metadata: ["name": BrowserLog.value(name), "enabled": String(enabledNames.contains(name))])
 			do {
 				let webExtension: WKWebExtension

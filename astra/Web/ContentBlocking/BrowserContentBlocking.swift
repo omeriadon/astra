@@ -12,6 +12,7 @@ final class BrowserContentBlocking {
 	private let defaults: UserDefaults
 	private var store: WKContentRuleListStore?
 	private var privateStoreDirectory: URL?
+	@ObservationIgnored private var storedRecordData: Data?
 	private var storedSource: BrowserContentBlockingRuleSource.Stored?
 	private var privateSessionIsEnding = false
 	private var idleWaiters: [CheckedContinuation<Void, Never>] = []
@@ -33,21 +34,7 @@ final class BrowserContentBlocking {
 		self.defaults = defaults
 		if !isPrivate {
 			store = WKContentRuleListStore.default()
-			guard let data = defaults.data(forKey: Self.defaultsKey) else { return }
-			guard let stored = BrowserContentBlockingRuleSource.Stored.decodeSupported(data) else {
-				isReadOnly = true
-				errorDescription = "Astra preserved content rules it cannot read. Remove or replace them after updating Astra."
-				return
-			}
-			storedSource = stored
-			isEnabled = stored.isEnabled
-			sourceFileName = stored.fileName
-			updatedAt = stored.updatedAt
-			if let validated = try? BrowserContentBlockingRuleSource.validate(stored.data) {
-				source = validated
-			} else {
-				errorDescription = "Astra preserved a content-rule source it cannot validate. Import a valid list to replace it."
-			}
+			storedRecordData = defaults.data(forKey: Self.defaultsKey)
 		}
 	}
 
@@ -67,7 +54,7 @@ final class BrowserContentBlocking {
 		let logStarted = BrowserLog.clock()
 		BrowserLog.info(.contentBlocking, "content-blocking.prepare.begin")
 		isPrepared = true
-		guard let source else {
+		guard let storedRecordData else {
 			didUpdate?()
 			return
 		}
@@ -78,6 +65,29 @@ final class BrowserContentBlocking {
 			BrowserLog.duration(.contentBlocking, "content-blocking.prepare.end", since: logStarted, warnAboveMilliseconds: 500, metadata: ["enabled": String(isEnabled), "has_rules": String(compiledRuleList != nil), "error": BrowserLog.value(errorDescription)])
 			finishOperation()
 		}
+
+		guard let stored = await Task.detached(priority: .utility, operation: {
+			BrowserContentBlockingRuleSource.Stored.decodeSupported(storedRecordData)
+		}).value else {
+			self.storedRecordData = nil
+			isReadOnly = true
+			errorDescription = "Astra preserved content rules it cannot read. Remove or replace them after updating Astra."
+			return
+		}
+		self.storedRecordData = nil
+		storedSource = stored
+		isEnabled = stored.isEnabled
+		sourceFileName = stored.fileName
+		updatedAt = stored.updatedAt
+
+		guard let source = await Task.detached(priority: .utility, operation: {
+			try? BrowserContentBlockingRuleSource.validate(stored.data)
+		}).value else {
+			errorDescription = "Astra preserved a content-rule source it cannot validate. Import a valid list to replace it."
+			return
+		}
+		self.source = source
+
 		do {
 			guard let store else { throw StoreError.unavailable }
 			let cachedList: WKContentRuleList?
@@ -168,6 +178,7 @@ final class BrowserContentBlocking {
 			if !isPrivate {
 				guard let encoded = try? JSONEncoder().encode(stored) else { throw StoreError.sourceSaveFailed }
 				defaults.set(encoded, forKey: Self.defaultsKey)
+				storedRecordData = nil
 			}
 			let previousIdentifier = source?.identifier
 			source = accepted
@@ -249,6 +260,7 @@ final class BrowserContentBlocking {
 		}
 		if !isPrivate {
 			defaults.removeObject(forKey: Self.defaultsKey)
+			storedRecordData = nil
 		}
 		source = nil
 		storedSource = nil
