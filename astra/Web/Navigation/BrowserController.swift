@@ -1738,12 +1738,15 @@ final class BrowserController: NSObject, Identifiable {
 
 		private static func physicalFootprint(_ processIdentifier: pid_t) -> UInt64? {
 			var usage = rusage_info_v4()
-			let result = withUnsafeMutablePointer(to: &usage) { pointer in
-				proc_pid_rusage(
-					processIdentifier,
-					Int32(RUSAGE_INFO_V4),
-					UnsafeMutableRawPointer(pointer)
-				)
+			let result = withUnsafeMutablePointer(to: &usage) { usagePointer in
+				var info: rusage_info_t? = UnsafeMutableRawPointer(usagePointer)
+				return withUnsafeMutablePointer(to: &info) { infoPointer in
+					proc_pid_rusage(
+						processIdentifier,
+						Int32(RUSAGE_INFO_V4),
+						infoPointer
+					)
+				}
 			}
 			guard result == 0 else { return nil }
 			return usage.ri_phys_footprint
