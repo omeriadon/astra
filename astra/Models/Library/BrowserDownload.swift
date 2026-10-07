@@ -157,7 +157,7 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 		      estimatedTimeRemaining.isFinite,
 		      estimatedTimeRemaining > 0
 		else { return nil }
-		return Date.now.addingTimeInterval(Self.displayTimeRemaining(estimatedTimeRemaining))
+		return Date.now.addingTimeInterval(estimatedTimeRemaining)
 	}
 
 	var statusSummary: String {
