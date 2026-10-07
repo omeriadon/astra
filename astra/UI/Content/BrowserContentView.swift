@@ -15,6 +15,7 @@ struct BrowserContentView: View, Animatable {
 	var body: some View {
 		GeometryReader { proxy in
 			let selectedTab = browser.selectedTab
+			let hasActiveDuplicate = BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
 			ZStack {
 				KeepAliveWebStack(browser: browser, insets: insets)
 					.zIndex(0)
@@ -22,10 +23,10 @@ struct BrowserContentView: View, Animatable {
 					.zIndex(1)
 			}
 			.animation(nil, value: browser.selectedTabID)
-			.animation(nil, value: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
+			.animation(nil, value: hasActiveDuplicate)
 			#if os(macOS)
 				.overlay(alignment: .bottomLeading) {
-					if !BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser),
+					if !hasActiveDuplicate,
 					   let controller = browser.selectedTab?.activeController,
 					   let url = controller.hoveredLinkURL
 					{
