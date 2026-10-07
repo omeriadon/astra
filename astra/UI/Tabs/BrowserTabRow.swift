@@ -16,6 +16,7 @@ struct BrowserTabRow: View {
 	var tabIndex: Int?
 	var normalCount: Int?
 	var pinned: Bool?
+	var rowSpaceID: UUID?
 	var rowTheme: BrowserTheme?
 	var onSelectTab: ((UUID) -> Void)?
 	var navigationNamespace: Namespace.ID?
@@ -140,7 +141,7 @@ struct BrowserTabRow: View {
 				BrowserDropZone(
 					browser: browser,
 					area: isPinned ? .pinned : .normal,
-					spaceID: nil,
+					spaceID: rowSpaceID ?? browser.workspace.selectedSpaceID,
 					beforeTabID: tab.id
 				)
 			}
@@ -250,6 +251,7 @@ extension BrowserTabRow: Equatable {
 			&& lhs.tabIndex == rhs.tabIndex
 			&& lhs.normalCount == rhs.normalCount
 			&& lhs.pinned == rhs.pinned
+			&& lhs.rowSpaceID == rhs.rowSpaceID
 			&& lhs.rowTheme == rhs.rowTheme
 			&& (lhs.onSelectTab == nil) == (rhs.onSelectTab == nil)
 			&& lhs.navigationNamespace == rhs.navigationNamespace
