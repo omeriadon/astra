@@ -479,7 +479,6 @@ private struct TabRowContextMenu: View {
 	}
 }
 
-
 #if os(macOS)
 	@MainActor
 	@Observable
@@ -521,12 +520,12 @@ private struct TabRowContextMenu: View {
 					return
 				}
 				guard let self,
-				      self.hoveredTabID == tabID,
+				      hoveredTabID == tabID,
 				      self.windowID == windowID
 				else { return }
-				self.warmSession = true
-				self.presentedTabID = tabID
-				self.isVisible = true
+				warmSession = true
+				presentedTabID = tabID
+				isVisible = true
 			}
 		}
 
@@ -548,17 +547,17 @@ private struct TabRowContextMenu: View {
 				} catch {
 					return
 				}
-				guard let self, self.hoveredTabID == nil else { return }
-				self.isVisible = false
-				self.presentedTabID = nil
+				guard let self, hoveredTabID == nil else { return }
+				isVisible = false
+				presentedTabID = nil
 
 				do {
 					try await Task.sleep(for: .milliseconds(340))
 				} catch {
 					return
 				}
-				guard self.hoveredTabID == nil else { return }
-				self.warmSession = false
+				guard hoveredTabID == nil else { return }
+				warmSession = false
 				self.windowID = nil
 			}
 		}
