@@ -1,11 +1,11 @@
 import Foundation
 
-struct BrowserDownloadDragCopy: Sendable {
+nonisolated struct BrowserDownloadDragCopy: Sendable {
 	let fileURL: URL
 	let renewedBookmark: Data?
 }
 
-final class BrowserDownloadDragFile: @unchecked Sendable {
+nonisolated final class BrowserDownloadDragFile: @unchecked Sendable {
 	private let lock = NSLock()
 	private var directories: [URL] = []
 
