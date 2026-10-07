@@ -34,6 +34,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 	}()
 
 	func start(_ item: BrowserDownload, originalRequest: URLRequest? = nil) {
+		BrowserLog.info(.downloads, "segmented.start", metadata: ["item": BrowserLog.id(item.id), "request": BrowserLog.request(originalRequest), "url": BrowserLog.url(item.requestURL)])
 		guard let url = item.requestURL,
 		      let segments = item.segments,
 		      let validator = item.rangeValidator
@@ -66,6 +67,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 	}
 
 	func fallbackRequest(for item: BrowserDownload) -> URLRequest? {
+		BrowserLog.debug(.downloads, "segmented.fallback-request", metadata: ["item": BrowserLog.id(item.id)])
 		guard let url = item.requestURL else { return nil }
 		var request = URLRequest(url: url)
 		for (field, value) in replayHeaders[item.id] ?? [:] {
@@ -75,6 +77,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 	}
 
 	func cancel(_ itemID: UUID) {
+		BrowserLog.notice(.downloads, "segmented.cancel", metadata: ["item": BrowserLog.id(itemID)])
 		startTokens[itemID] = UUID()
 		session.getAllTasks { tasks in
 			for task in tasks where task.taskDescription?.hasPrefix(itemID.uuidString + ":") == true {
@@ -84,6 +87,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 	}
 
 	func cancelAndWait(_ itemIDs: [UUID]) async {
+		BrowserLog.notice(.downloads, "segmented.cancel-and-wait", metadata: ["count": String(itemIDs.count)])
 		for itemID in itemIDs {
 			startTokens[itemID] = UUID()
 		}
@@ -215,6 +219,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 	}
 
 	func removeParts(_ itemID: UUID, count: Int) {
+		BrowserLog.debug(.downloads, "segmented.remove-parts", metadata: ["item": BrowserLog.id(itemID), "count": String(count)])
 		for index in 0 ..< count {
 			try? FileManager.default.removeItem(at: Self.partURL(itemID, index: index))
 		}

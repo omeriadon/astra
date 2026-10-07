@@ -59,6 +59,7 @@
 		@ObservationIgnored private var started = false
 
 		func start() {
+			BrowserLog.info(.lifecycle, "updater.start")
 			guard !started else { return }
 			started = true
 
@@ -73,6 +74,7 @@
 		}
 
 		func choose(_ choice: SPUUserUpdateChoice) {
+			BrowserLog.info(.lifecycle, "updater.choice", metadata: ["choice": String(describing: choice)])
 			guard let choiceReply else { return }
 			self.choiceReply = nil
 			if choice == .install {
@@ -88,6 +90,7 @@
 		}
 
 		func dismiss() {
+			BrowserLog.debug(.lifecycle, "updater.dismiss")
 			if choiceReply != nil {
 				choose(.dismiss)
 			} else {
@@ -111,6 +114,7 @@
 		}
 
 		func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {
+			BrowserLog.info(.lifecycle, "updater.check.begin")
 			self.cancellation = cancellation
 			status = .checking
 			isPresented = true
@@ -138,10 +142,12 @@
 		func showUpdateReleaseNotesFailedToDownloadWithError(_: any Error) {}
 
 		func showUpdateNotFoundWithError(_ error: any Error, acknowledgement: @escaping () -> Void) {
+			BrowserLog.info(.lifecycle, "updater.not-found", metadata: ["error": BrowserLog.errorDescription(error)])
 			showMessage(error.localizedDescription, acknowledgement: acknowledgement)
 		}
 
 		func showUpdaterError(_ error: any Error, acknowledgement: @escaping () -> Void) {
+			BrowserLog.error(.lifecycle, "updater.error", metadata: ["error": BrowserLog.errorDescription(error)])
 			showMessage(error.localizedDescription, acknowledgement: acknowledgement)
 		}
 
@@ -154,6 +160,7 @@
 		}
 
 		func showDownloadInitiated(cancellation: @escaping () -> Void) {
+			BrowserLog.info(.lifecycle, "updater.download.begin")
 			self.cancellation = cancellation
 			status = .downloading
 		}
@@ -163,6 +170,7 @@
 		func showDownloadDidReceiveData(ofLength _: UInt64) {}
 
 		func showDownloadDidStartExtractingUpdate() {
+			BrowserLog.info(.lifecycle, "updater.extract.begin")
 			cancellation = nil
 			status = .preparing
 		}
@@ -170,6 +178,7 @@
 		func showExtractionReceivedProgress(_: Double) {}
 
 		func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
+			BrowserLog.notice(.lifecycle, "updater.ready-to-install")
 			choiceReply = reply
 			status = .ready
 			isPresented = true
