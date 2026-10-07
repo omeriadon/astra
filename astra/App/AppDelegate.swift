@@ -343,7 +343,7 @@
 			restorationRecord: BrowserWindowRecord? = nil,
 			showImmediately: Bool = true
 		) -> BrowserWindowController {
-			BrowserLog.info(.lifecycle, "window.open-request", metadata: ["private": String(isPrivate), "url": BrowserLog.url(url)])
+			BrowserLog.info(.lifecycle, "window.open-request", metadata: ["private": String(isPrivate), "restoring": String(restorationRecord != nil), "show_immediately": String(showImmediately)])
 			let record = isPrivate ? nil : restorationRecord
 			let controller = BrowserWindowController(browser: Browser(isPrivate: isPrivate, windowRecord: record))
 			controller.onClose = { [weak self, weak controller] in
