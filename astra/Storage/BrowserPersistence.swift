@@ -167,6 +167,18 @@ final class BrowserPersistence: @unchecked Sendable {
 		let state: BrowserPersistedState
 	}
 
+	/// Minimal launch-time projection. AppDelegate only needs window identities,
+	/// selections, and frames to construct windows; decoding tabs/history/bookmarks
+	/// here duplicated the Browser hydration decode and inflated cold-start work.
+	private nonisolated struct WindowRecordsEnvelope: Decodable {
+		let version: Int
+		let state: WindowRecordsState
+	}
+
+	private nonisolated struct WindowRecordsState: Decodable {
+		let windowRecords: [BrowserWindowRecord]?
+	}
+
 	private nonisolated struct ReadingArchiveEnvelope: Codable {
 		let generation: UUID
 		let url: URL
@@ -282,6 +294,44 @@ final class BrowserPersistence: @unchecked Sendable {
 			throw BrowserPersistenceError.invalidSnapshot
 		}
 		return nil
+	}
+
+	nonisolated func loadWindowRecords() throws -> [BrowserWindowRecord] {
+		let logStarted = BrowserLog.clock()
+		var hasSnapshot = false
+		for name in ["browser-state.json", "browser-state.backup.json"] {
+			let url = directory.appendingPathComponent(name)
+			guard FileManager.default.fileExists(atPath: url.path) else { continue }
+			hasSnapshot = true
+			do {
+				let data = try Data(contentsOf: url)
+				guard data.count <= 64 * 1024 * 1024 else {
+					throw BrowserPersistenceError.invalidSnapshot
+				}
+				let envelope = try JSONDecoder().decode(WindowRecordsEnvelope.self, from: data)
+				guard (1 ... Self.currentVersion).contains(envelope.version) else {
+					throw BrowserPersistenceError.unsupportedVersion
+				}
+				let records = envelope.state.windowRecords ?? []
+				try validateWindowRecords(records)
+				BrowserLog.duration(
+					.persistence,
+					"window-records.load.end",
+					since: logStarted,
+					warnAboveMilliseconds: 100,
+					metadata: ["source": name, "windows": String(records.count)]
+				)
+				return records
+			} catch BrowserPersistenceError.unsupportedVersion {
+				throw BrowserPersistenceError.unsupportedVersion
+			} catch {
+				continue
+			}
+		}
+		if hasSnapshot {
+			throw BrowserPersistenceError.invalidSnapshot
+		}
+		return []
 	}
 
 	nonisolated func loadBookmarks() throws -> [Bookmark] {
