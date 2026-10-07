@@ -323,6 +323,8 @@ private struct ShellWebsiteNavigationControls: View {
 					.accessibilityLabel("Inspect Element")
 					.accessibilityIdentifier("developer-inspect-element")
 				}
+				BrowserScreenshotButton(browser: browser, controller: controller)
+					.id(ObjectIdentifier(controller))
 			#endif
 			BrowserWebsiteMonitorButton(browser: browser)
 			BrowserTranslationButton(browser: browser, controller: controller)
