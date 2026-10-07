@@ -8,6 +8,7 @@ nonisolated enum BrowserProfileImporter {
 	}
 
 	static func profiles(for source: BrowserImportSource, in directory: URL? = nil) throws -> [BrowserImportProfile] {
+		BrowserLog.info(.persistence, "profile-import.scan", metadata: ["source": String(describing: source), "directory": BrowserLog.path(directory)])
 		let root = directory ?? FileManager.default.homeDirectoryForCurrentUser
 			.appendingPathComponent("Library/" + source.libraryPath)
 		let sidebarRoot = root.lastPathComponent == "User Data" ? root.deletingLastPathComponent() : root
@@ -45,6 +46,7 @@ nonisolated enum BrowserProfileImporter {
 	}
 
 	static func read(_ profile: BrowserImportProfile, scope: BrowserImportScope) throws -> Preview {
+		BrowserLog.info(.persistence, "profile-import.read.begin", metadata: ["source": String(describing: profile.source), "profile": BrowserLog.value(profile.name), "directory": BrowserLog.path(profile.directory)])
 		var bookmarks: [Bookmark] = []
 		var history: [BrowserVisit] = []
 		var warnings: [String] = []
@@ -113,10 +115,12 @@ nonisolated enum BrowserProfileImporter {
 		}
 		let document = BrowserUserData(bookmarks: bookmarks, history: history)
 		let validated = try BrowserUserData.decode(JSONEncoder().encode(document), isHTML: false)
+		BrowserLog.info(.persistence, "profile-import.read.end", metadata: ["bookmarks": String(validated.bookmarks.count), "history": String(validated.history.count), "warnings": String(warnings.count)])
 		return Preview(document: validated, warnings: warnings)
 	}
 
 	static func readFile(_ url: URL) throws -> Data {
+		BrowserLog.trace(.persistence, "profile-import.read-file", metadata: ["file": BrowserLog.path(url)])
 		let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
 		guard size <= 16 * 1024 * 1024 else { throw BrowserUserData.ImportError.tooLarge }
 		return try Data(contentsOf: url)

@@ -80,6 +80,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	init(privateDataStore: WKWebsiteDataStore?, toastManager: ToastManager) {
+		BrowserLog.info(.downloads, "downloads.manager-init", metadata: ["private": String(privateDataStore != nil)])
 		self.privateDataStore = privateDataStore
 		self.toastManager = toastManager
 		let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -103,6 +104,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	private func hydrateItems() {
+		let logStarted = BrowserLog.clock()
+		BrowserLog.debug(.downloads, "downloads.hydrate.begin", metadata: ["store": BrowserLog.path(storeURL)])
 		let url = storeURL
 		downloadHydrationTask = Task.detached(priority: .utility) {
 			guard let data = try? Data(contentsOf: url) else {
@@ -144,6 +147,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				}
 				downloadCacheReadCompleted = true
 				restorationStarted = false
+				BrowserLog.duration(.downloads, "downloads.hydrate.end", since: logStarted, warnAboveMilliseconds: 250, metadata: ["items": String(items.count)])
 				if !isClosing {
 					resumeAvailableDownloads()
 				}
@@ -156,6 +160,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	private func preserveUnreadableDownloadCache() {
+		BrowserLog.error(.downloads, "downloads.cache-unreadable", metadata: ["store": BrowserLog.path(storeURL)])
 		downloadCacheReadCompleted = true
 		downloadCacheIsUnreadable = true
 		downloadPersistTask?.cancel()
@@ -164,6 +169,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	func start(_ download: WKDownload, sourceURL: URL? = nil, source: UnitPoint = .center) {
+		BrowserLog.info(.downloads, "download.start", metadata: ["source": BrowserLog.url(sourceURL ?? download.webView?.url), "request": BrowserLog.request(download.originalRequest), "private": String(privateDataStore != nil)])
 		guard !isClosing else {
 			Task { @MainActor in
 				_ = await download.cancel()
@@ -203,6 +209,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	private func attach(_ download: WKDownload, to itemID: UUID) {
+		BrowserLog.debug(.downloads, "download.attach", metadata: ["item": BrowserLog.id(itemID)])
 		guard !isClosing,
 		      !deletingItems.contains(itemID),
 		      items.contains(where: { $0.id == itemID && $0.status == .downloading })
@@ -423,6 +430,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	func downloadDidFinish(_ download: WKDownload) {
+		BrowserLog.info(.downloads, "download.webkit-finished")
 		if let itemID = itemIDs[ObjectIdentifier(download)],
 		   let index = items.firstIndex(where: { $0.id == itemID }),
 		   let temporaryURL = destinations[ObjectIdentifier(download)]
@@ -456,6 +464,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 					await self?.renameWithAppleIntelligence(itemID, fileURL: committedURL)
 				}
 			} catch {
+				BrowserLog.error(.downloads, "download.commit-failed", metadata: ["item": BrowserLog.id(itemID), "error": BrowserLog.errorDescription(error)])
 				markFailed(at: index)
 				items[index].errorMessage = error.localizedDescription
 				items[index].throughput = nil
@@ -473,6 +482,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	func download(_ download: WKDownload, didFailWithError error: any Error, resumeData: Data?) {
+		BrowserLog.error(.downloads, "download.transfer-failed", metadata: ["error": BrowserLog.errorDescription(error), "resume_bytes": String(resumeData?.count ?? 0)])
 		guard downloads[ObjectIdentifier(download)] != nil else { return }
 		if !isClosing {
 			if let itemID = itemIDs[ObjectIdentifier(download)],
@@ -516,6 +526,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	func resumeAvailableDownloads() {
+		BrowserLog.info(.downloads, "downloads.resume-available", metadata: ["items": String(items.count)])
 		guard !isClosing, !restorationStarted else { return }
 		restorationStarted = true
 		for item in items where item.status == .downloading && item.segments != nil {
@@ -537,6 +548,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	func resume(_ itemID: UUID) {
+		BrowserLog.info(.downloads, "download.resume", metadata: ["item": BrowserLog.id(itemID)])
 		guard !isClosing,
 		      !deletingItems.contains(itemID),
 		      !itemIDs.values.contains(itemID),
@@ -559,6 +571,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	func retry(_ itemID: UUID) {
+		BrowserLog.info(.downloads, "download.retry", metadata: ["item": BrowserLog.id(itemID)])
 		guard !isClosing,
 		      !deletingItems.contains(itemID),
 		      !itemIDs.values.contains(itemID),
@@ -583,6 +596,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	func pauseAllForQuit() async {
+		BrowserLog.notice(.downloads, "downloads.pause-for-quit", metadata: ["active": String(downloads.count)])
 		isClosing = true
 		for task in aiRenameTasks.values {
 			task.cancel()
@@ -656,6 +670,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	func delete(_ itemID: UUID) {
+		BrowserLog.info(.downloads, "download.delete", metadata: ["item": BrowserLog.id(itemID)])
 		aiRenameTasks.removeValue(forKey: itemID)?.cancel()
 		guard let index = items.firstIndex(where: { $0.id == itemID }) else { return }
 		guard deletingItems.insert(itemID).inserted else { return }
@@ -1129,6 +1144,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	func segmentFailed(_ itemID: UUID, fileURL: URL? = nil) {
+		BrowserLog.error(.downloads, "download.segment-failed", metadata: ["item": BrowserLog.id(itemID), "file": BrowserLog.path(fileURL)])
 		guard !isClosing,
 		      let index = items.firstIndex(where: { $0.id == itemID }),
 		      items[index].status == .downloading,
@@ -1538,6 +1554,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	/// Encode + atomic write off-main; progress ticks arrive far more often
 	/// than durability requires. Quit path uses flushDownloads() instead.
 	private func persistSoon() {
+		BrowserLog.trace(.downloads, "downloads.persist-schedule", metadata: ["items": String(items.count)])
 		guard privateDataStore == nil,
 		      downloadCacheReadCompleted,
 		      !downloadCacheIsUnreadable,
@@ -1555,6 +1572,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				let data = try JSONEncoder().encode(snapshot)
 				try data.write(to: url, options: .atomic)
 			} catch {
+				BrowserLog.error(.downloads, "downloads.persist-failed", metadata: ["error": BrowserLog.errorDescription(error), "store": BrowserLog.path(url)])
 				let message = error.localizedDescription
 				await MainActor.run {
 					self.showToast(symbol: "exclamationmark.triangle", message: "Could not save downloads: \(message)")

@@ -78,6 +78,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	@objc private func extensionErrorsChanged(_ notification: Notification) {
+		BrowserLog.debug(.extensions, "extension.errors-updated")
 		guard let context = notification.object as? WKWebExtensionContext,
 		      let name = contexts.first(where: { $0.value === context })?.key else { return }
 		if context.errors.isEmpty {
@@ -109,6 +110,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func sync(_ browser: Browser) {
+		BrowserLog.trace(.extensions, "extensions.sync-window", metadata: ["window": BrowserLog.id(browser.windowID), "tabs": String(browser.tabs.count)])
 		guard !browser.isPrivate else { return }
 		_ = extensionWindow(for: browser)
 		let ids = Set(browser.tabs.filter {
@@ -172,6 +174,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func closeWindow(for browser: Browser) {
+		BrowserLog.debug(.extensions, "extensions.close-window", metadata: ["window": BrowserLog.id(browser.windowID)])
 		guard let window = windows.removeValue(forKey: browser.windowID) else { return }
 		for tab in tabs[browser.windowID]?.values ?? [UUID: BrowserExtensionTab]().values {
 			controller.didCloseTab(tab, windowIsClosing: true)
@@ -398,9 +401,15 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func prepare() async {
-		guard !didPrepare else { return }
+		guard !didPrepare else {
+			BrowserLog.trace(.extensions, "extensions.prepare.skip", metadata: ["reason": "already-prepared"])
+			return
+		}
+		let logStarted = BrowserLog.clock()
+		BrowserLog.info(.extensions, "extensions.prepare.begin", metadata: ["available": String(availableNames.count), "enabled": String(enabledNames.count)])
 		didPrepare = true
 		for name in availableNames {
+			BrowserLog.debug(.extensions, "extension.prepare-item", metadata: ["name": BrowserLog.value(name), "enabled": String(enabledNames.contains(name))])
 			do {
 				let webExtension: WKWebExtension
 				if let path = safariBundlePaths[name], let bundle = Bundle(path: path) {
@@ -421,9 +430,11 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 				loadErrors[name] = error.localizedDescription
 			}
 		}
+		BrowserLog.duration(.extensions, "extensions.prepare.end", since: logStarted, warnAboveMilliseconds: 500, metadata: ["contexts": String(contexts.count), "errors": String(loadErrors.count)])
 	}
 
 	func installArchive(from archive: URL, source: Source) async throws -> String {
+		BrowserLog.info(.extensions, "extension.install-archive", metadata: ["source": source.rawValue, "archive": BrowserLog.path(archive)])
 		let access = archive.startAccessingSecurityScopedResource()
 		defer {
 			if access {
@@ -464,6 +475,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func installFromChromeStore(_ listing: URL) async {
+		BrowserLog.info(.extensions, "extension.install-store", metadata: ["listing": BrowserLog.url(listing)])
 		guard !isInstallingFromStore, let id = ChromeExtensionPackage.extensionID(from: listing) else { return }
 		isInstallingFromStore = true
 		defer { isInstallingFromStore = false }
@@ -501,6 +513,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func removeInstalled(_ name: String) {
+		BrowserLog.info(.extensions, "extension.remove", metadata: ["name": BrowserLog.value(name)])
 		guard installedNames.contains(name) else { return }
 		let url = archiveURL(for: name)
 		setEnabled(false, for: name)
@@ -549,6 +562,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func setEnabled(_ enabled: Bool, for name: String) {
+		BrowserLog.info(.extensions, "extension.set-enabled", metadata: ["name": BrowserLog.value(name), "enabled": String(enabled)])
 		if enabled, !bundledNames.contains(name),
 		   UserDefaults.standard.string(forKey: "extension.\(name).approvedPermissions") != permissionSummary(for: name),
 		   let context = contexts[name]
@@ -583,6 +597,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	private func enable(_ name: String) throws {
+		BrowserLog.debug(.extensions, "extension.enable", metadata: ["name": BrowserLog.value(name)])
 		guard let context = contexts[name], !context.isLoaded else { return }
 		guard bundledNames.contains(name)
 			|| UserDefaults.standard.string(forKey: "extension.\(name).approvedPermissions") == permissionSummary(for: name)

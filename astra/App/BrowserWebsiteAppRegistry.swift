@@ -122,6 +122,7 @@
 		}
 
 		func install(name: String, url: URL, icon: NSImage?) throws -> BrowserWebsiteAppInstallation {
+			BrowserLog.info(.websiteApps, "website-app.install", metadata: ["name": BrowserLog.value(name), "url": BrowserLog.url(url), "has_icon": String(icon != nil)])
 			guard let name = BrowserWebsiteAppPolicy.validatedName(name) else { throw RegistryError.invalidName }
 			guard let url = BrowserWebsiteAppPolicy.validatedURL(url) else { throw RegistryError.invalidURL }
 			guard let templateURL = resourceBundle.url(forResource: "AstraWebsiteAppTemplate", withExtension: "app") else {
@@ -155,6 +156,7 @@
 		}
 
 		func uninstall(_ id: UUID) throws {
+			BrowserLog.notice(.websiteApps, "website-app.uninstall", metadata: ["id": BrowserLog.id(id)])
 			guard let index = installations.firstIndex(where: { $0.id == id }) else { return }
 			let installation = installations[index]
 			guard isOwnedInstallation(installation.bundleURL) else { throw RegistryError.installationOutsideOwnedDirectory }
@@ -166,6 +168,7 @@
 		}
 
 		func rename(_ id: UUID, to newName: String) throws {
+			BrowserLog.info(.websiteApps, "website-app.rename", metadata: ["id": BrowserLog.id(id), "name": BrowserLog.value(newName)])
 			guard let name = BrowserWebsiteAppPolicy.validatedName(newName) else { throw RegistryError.invalidName }
 			guard let index = installations.firstIndex(where: { $0.id == id }) else { return }
 			let old = installations[index]
@@ -178,6 +181,7 @@
 		}
 
 		func updateIcon(_ id: UUID, icon: NSImage) throws {
+			BrowserLog.info(.websiteApps, "website-app.update-icon", metadata: ["id": BrowserLog.id(id)])
 			guard let index = installations.firstIndex(where: { $0.id == id }) else { return }
 			let installation = installations[index]
 			guard isOwnedInstallation(installation.bundleURL) else { throw RegistryError.installationOutsideOwnedDirectory }
@@ -187,6 +191,7 @@
 		}
 
 		func launch(_ id: UUID) throws {
+			BrowserLog.info(.websiteApps, "website-app.launch", metadata: ["id": BrowserLog.id(id)])
 			guard let installation = installation(for: id),
 			      isOwnedInstallation(installation.bundleURL),
 			      fileManager.fileExists(atPath: installation.bundlePath)
@@ -276,6 +281,7 @@
 		}
 
 		private func load() {
+			BrowserLog.debug(.websiteApps, "website-app.registry-load")
 			guard let data = try? Data(contentsOf: registryURL),
 			      data.count <= 1_048_576,
 			      let decoded = try? JSONDecoder().decode([BrowserWebsiteAppInstallation].self, from: data)
@@ -288,6 +294,7 @@
 		}
 
 		private func save() throws {
+			BrowserLog.debug(.websiteApps, "website-app.registry-save", metadata: ["count": String(installations.count)])
 			try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
 			let encoder = JSONEncoder()
 			encoder.outputFormatting = [.sortedKeys]

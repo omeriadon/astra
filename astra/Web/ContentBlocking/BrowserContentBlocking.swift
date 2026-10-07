@@ -28,6 +28,7 @@ final class BrowserContentBlocking {
 	@ObservationIgnored var didUpdate: (() -> Void)?
 
 	init(isPrivate: Bool, defaults: UserDefaults = .standard) {
+		BrowserLog.info(.contentBlocking, "content-blocking.init", metadata: ["private": String(isPrivate)])
 		self.isPrivate = isPrivate
 		self.defaults = defaults
 		if !isPrivate {
@@ -59,7 +60,12 @@ final class BrowserContentBlocking {
 	}
 
 	func prepare() async {
-		guard !isPrivate, !isPrepared, !isBusy else { return }
+		guard !isPrivate, !isPrepared, !isBusy else {
+			BrowserLog.trace(.contentBlocking, "content-blocking.prepare.skip", metadata: ["private": String(isPrivate), "prepared": String(isPrepared), "busy": String(isBusy)])
+			return
+		}
+		let logStarted = BrowserLog.clock()
+		BrowserLog.info(.contentBlocking, "content-blocking.prepare.begin")
 		isPrepared = true
 		guard let source else {
 			didUpdate?()
@@ -69,6 +75,7 @@ final class BrowserContentBlocking {
 		isBusy = true
 		defer {
 			isPreparing = false
+			BrowserLog.duration(.contentBlocking, "content-blocking.prepare.end", since: logStarted, warnAboveMilliseconds: 500, metadata: ["enabled": String(isEnabled), "has_rules": String(compiledRuleList != nil), "error": BrowserLog.value(errorDescription)])
 			finishOperation()
 		}
 		do {
@@ -91,6 +98,7 @@ final class BrowserContentBlocking {
 	}
 
 	func importRules(from url: URL) async {
+		BrowserLog.info(.contentBlocking, "content-blocking.import-file", metadata: ["file": BrowserLog.path(url)])
 		guard !isBusy, !privateSessionIsEnding else { return }
 		guard url.pathExtension.lowercased() == "json" else {
 			errorDescription = "Choose a JSON rule list no larger than 2 MB."
@@ -117,6 +125,7 @@ final class BrowserContentBlocking {
 	}
 
 	func importRules(_ data: Data, fileName: String) async {
+		BrowserLog.info(.contentBlocking, "content-blocking.import-data", metadata: ["file": BrowserLog.value(fileName), "bytes": String(data.count)])
 		guard !isBusy, !privateSessionIsEnding else { return }
 		let candidate: BrowserContentBlockingRuleSource.Validated
 		do {
@@ -178,6 +187,7 @@ final class BrowserContentBlocking {
 	}
 
 	func refresh() async {
+		BrowserLog.info(.contentBlocking, "content-blocking.refresh")
 		guard !isBusy, !privateSessionIsEnding, let source else { return }
 		isBusy = true
 		defer { finishOperation() }
@@ -203,6 +213,7 @@ final class BrowserContentBlocking {
 	}
 
 	func setEnabled(_ enabled: Bool) {
+		BrowserLog.notice(.contentBlocking, "content-blocking.set-enabled", metadata: ["enabled": String(enabled)])
 		guard !isBusy, !privateSessionIsEnding,
 		      !enabled || compiledRuleList != nil else { return }
 		guard !isReadOnly else {
@@ -223,6 +234,7 @@ final class BrowserContentBlocking {
 	}
 
 	func removeRules() async {
+		BrowserLog.notice(.contentBlocking, "content-blocking.remove-rules")
 		guard !isBusy, !privateSessionIsEnding, !isReadOnly else { return }
 		isBusy = true
 		defer { finishOperation() }

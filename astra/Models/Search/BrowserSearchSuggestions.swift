@@ -20,6 +20,7 @@ enum BrowserSearchSuggestions {
 		for query: String,
 		provider: BrowserSearchConfiguration.Engine
 	) async throws -> [String] {
+		BrowserLog.debug(.search, "suggestions.fetch", metadata: ["query": BrowserLog.value(query), "provider": String(describing: provider)])
 		guard (2 ... 500).contains(query.count),
 		      provider == .google || provider == .duckDuckGo,
 		      let url = suggestionURL(for: query, provider: provider)
@@ -57,6 +58,7 @@ enum BrowserSearchSuggestions {
 
 	@MainActor
 	static func discoverOpenSearchTemplate(in webView: WKWebView) async throws -> BrowserSearchEngineDiscoveryOutcome {
+		BrowserLog.debug(.search, "opensearch.discover", metadata: ["page": BrowserLog.url(webView.url)])
 		guard let pageURL = webView.url,
 		      let page = URLComponents(url: pageURL, resolvingAgainstBaseURL: false),
 		      page.scheme?.lowercased() == "https",
@@ -114,6 +116,7 @@ enum BrowserSearchSuggestions {
 	}
 
 	static func suggestionURL(for query: String, provider: BrowserSearchConfiguration.Engine) -> URL? {
+		BrowserLog.trace(.search, "suggestions.url", metadata: ["query": BrowserLog.value(query), "provider": String(describing: provider)])
 		var components: URLComponents?
 		switch provider {
 			case .google:

@@ -50,6 +50,7 @@
 		}
 
 		func applicationWillFinishLaunching(_: Notification) {
+			BrowserLog.info(.lifecycle, "app.will-finish-launching")
 			#if DEBUG
 				if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
 					return
@@ -103,6 +104,7 @@
 		}
 
 		@objc private func applicationWillSleep(_: Notification) {
+			BrowserLog.notice(.lifecycle, "system.will-sleep")
 			for controller in windows {
 				controller.saveWindowFrame()
 			}
@@ -112,12 +114,14 @@
 		}
 
 		@objc private func applicationDidWake(_: Notification) {
+			BrowserLog.notice(.lifecycle, "system.did-wake")
 			guard let keyWindow = NSApp.keyWindow,
 			      let browser = windows.first(where: { $0.window === keyWindow })?.browser else { return }
 			BrowserWindowRegistry.shared.activate(browser)
 		}
 
 		func applicationDidFinishLaunching(_: Notification) {
+			BrowserLog.info(.lifecycle, "app.did-finish-launching")
 			#if DEBUG
 				if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
 					return
@@ -133,6 +137,7 @@
 			BrowserController.prewarmSharedProcess()
 			let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
 			source.setEventHandler {
+				BrowserLog.warning(.performance, "memory-pressure")
 				Task { @MainActor in
 					for browser in BrowserWindowRegistry.shared.openBrowsers {
 						for tab in browser.tabs {
@@ -178,6 +183,7 @@
 		}
 
 		func applicationWillTerminate(_: Notification) {
+			BrowserLog.notice(.lifecycle, "app.will-terminate", metadata: ["windows": String(BrowserWindowRegistry.shared.openBrowsers.count)])
 			memoryPressureSource?.cancel()
 			memoryPressureSource = nil
 		}
@@ -280,6 +286,7 @@
 		}
 
 		private func openAfterStartupRestoration(_ url: URL) {
+			BrowserLog.debug(.lifecycle, "startup.open-after-restoration", metadata: ["url": BrowserLog.url(url)])
 			guard startupWindowRestorationFinished else {
 				queuedStartupURLs.append(url)
 				return
@@ -338,6 +345,7 @@
 			restorationRecord: BrowserWindowRecord? = nil,
 			showImmediately: Bool = true
 		) -> BrowserWindowController {
+			BrowserLog.info(.lifecycle, "window.open-request", metadata: ["private": String(isPrivate), "restoring": String(restorationRecord != nil), "show_immediately": String(showImmediately)])
 			let record = isPrivate ? nil : restorationRecord
 			let controller = BrowserWindowController(browser: Browser(isPrivate: isPrivate, windowRecord: record))
 			controller.onClose = { [weak self, weak controller] in

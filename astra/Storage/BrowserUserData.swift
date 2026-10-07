@@ -26,6 +26,7 @@ nonisolated struct BrowserUserData: Codable, Sendable {
 	}
 
 	static func decode(_ data: Data, isHTML: Bool) throws -> Self {
+		BrowserLog.debug(.persistence, "user-data.decode", metadata: ["bytes": String(data.count), "html": String(isHTML)])
 		guard data.count <= 16 * 1024 * 1024 else { throw ImportError.tooLarge }
 		if isHTML {
 			guard let html = String(data: data, encoding: .utf8) else { throw ImportError.invalidFile }
@@ -70,6 +71,7 @@ nonisolated struct BrowserUserData: Codable, Sendable {
 	}
 
 	func encodedHTML() -> Data {
+		BrowserLog.debug(.persistence, "user-data.encode-html", metadata: ["bookmarks": String(bookmarks.count)])
 		let groups = Dictionary(grouping: bookmarks, by: \.folder)
 		let entries = groups.keys.sorted().flatMap { folder in
 			let items = (groups[folder] ?? []).sorted { $0.order == $1.order ? $0.id.uuidString < $1.id.uuidString : $0.order < $1.order }

@@ -47,6 +47,7 @@ final class BrowserWebsiteMonitoring {
 	@ObservationIgnored private var isRefreshing = false
 
 	func start() {
+		BrowserLog.info(.ai, "website-monitoring.start")
 		guard polling == nil else { return }
 		polling = Task {
 			while !Task.isCancelled {
@@ -57,6 +58,7 @@ final class BrowserWebsiteMonitoring {
 	}
 
 	func create(browser: Browser, criterion: String, intervalDays: Int) async throws {
+		BrowserLog.info(.ai, "website-monitor.create", metadata: ["window": BrowserLog.id(browser.windowID), "criterion": BrowserLog.value(criterion), "interval_days": String(intervalDays), "url": BrowserLog.url(browser.selectedTab?.currentURL)])
 		guard browser.canShowAISidebar, Defaults[.aiFeaturesEnabled], Defaults[.aiWebsiteMonitoring],
 		      let tab = browser.selectedTab, let url = tab.currentURL else { throw BrowserAIError.disabled }
 		let input = BrowserWebsiteMonitorInput(spaceID: browser.selectedSpace.id, url: BrowserAddress.withoutCredentials(url).absoluteString, title: String(tab.title.prefix(240)), criterion: criterion, instructions: BrowserAIPrompts.websiteMonitor, intervalDays: intervalDays)
@@ -67,17 +69,20 @@ final class BrowserWebsiteMonitoring {
 	}
 
 	func setEnabled(_ enabled: Bool) async {
+		BrowserLog.notice(.ai, "website-monitoring.set-enabled", metadata: ["enabled": String(enabled)])
 		guard BrowserSync.shared.isSignedIn else { return }
 		do { try await BrowserSync.shared.setWebsiteMonitorsEnabled(enabled); await refresh() }
 		catch { self.error = error.localizedDescription }
 	}
 
 	func remove(_ id: UUID) async {
+		BrowserLog.info(.ai, "website-monitor.remove", metadata: ["id": BrowserLog.id(id)])
 		do { try await BrowserSync.shared.deleteWebsiteMonitor(id); monitors.removeAll { $0.id == id } }
 		catch { self.error = error.localizedDescription }
 	}
 
 	func refresh() async {
+		BrowserLog.debug(.ai, "website-monitoring.refresh")
 		guard !isRefreshing, BrowserSync.shared.isSignedIn else { return }
 		isRefreshing = true
 		defer { isRefreshing = false }
@@ -118,6 +123,7 @@ final class BrowserWebsiteMonitoring {
 	}
 
 	func openNotification(_ id: String) {
+		BrowserLog.info(.ai, "website-monitor.notification-open", metadata: ["id": BrowserLog.value(id)])
 		guard let tabID = Defaults[.deliveredWebsiteMonitors][id].flatMap(UUID.init(uuidString:)),
 		      let browser = BrowserWindowRegistry.shared.openBrowsers.first(where: { !$0.isPrivate && $0.tabs.contains(where: { $0.id == tabID }) }) else { return }
 		browser.selectTab(tabID)
