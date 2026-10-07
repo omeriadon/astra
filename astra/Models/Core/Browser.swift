@@ -952,19 +952,35 @@ final class Browser {
 			return
 		}
 
-		if !workspace.favouriteTabIDs.contains(id),
-		   let ownerIndex = workspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })
+		// BrowserWorkspace is a value type observed throughout the shell. Build
+		// the complete selection mutation locally and publish it once instead of
+		// invalidating observers for every nested field write.
+		var nextWorkspace = workspace
+		if !nextWorkspace.favouriteTabIDs.contains(id),
+		   let ownerIndex = nextWorkspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })
 		{
-			if let currentIndex = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
+			if let currentIndex = nextWorkspace.spaces.firstIndex(where: { $0.id == nextWorkspace.selectedSpaceID }) {
 				spaceSwitchDirection = ownerIndex >= currentIndex ? 1 : -1
 			}
-			workspace.selectedSpaceID = workspace.spaces[ownerIndex].id
+			nextWorkspace.selectedSpaceID = nextWorkspace.spaces[ownerIndex].id
 		}
+
 		let didWake = tab.isHibernated
 		newTabSearchText = ""
 		newTabSearchSelection = nil
 		newTabGoogleSuggestions = []
 		selectedTabID = id
+
+		let selectionDate = nextWorkspaceMutationDate()
+		selectedTabModifiedAt = selectionDate
+		if let index = nextWorkspace.spaces.firstIndex(where: { $0.id == nextWorkspace.selectedSpaceID }) {
+			nextWorkspace.spaces[index].selectedTabID = id
+			nextWorkspace.spaces[index].modifiedAt = selectionDate
+		}
+		nextWorkspace.modifiedAt = selectionDate
+		nextWorkspace.selectionModifiedAt = selectionDate
+		workspace = nextWorkspace
+
 		BrowserWindowRegistry.shared.claimSelectedTab(in: self)
 		if didWake {
 			Task { @MainActor [weak self, weak tab] in
@@ -974,14 +990,7 @@ final class Browser {
 				configure(tab)
 			}
 		}
-		let selectionDate = nextWorkspaceMutationDate()
-		selectedTabModifiedAt = selectionDate
-		if let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
-			workspace.spaces[index].selectedTabID = id
-			workspace.spaces[index].modifiedAt = selectionDate
-		}
-		workspace.modifiedAt = selectionDate
-		workspace.selectionModifiedAt = selectionDate
+
 		recentlyUsedTabIDs.removeAll { $0 == id }
 		recentlyUsedTabIDs.insert(id, at: 0)
 		tab.controller?.loadFaviconIfMissing()
