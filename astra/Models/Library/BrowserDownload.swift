@@ -87,7 +87,7 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 			formatter.allowedUnits = [.hour, .minute, .second]
 			formatter.unitsStyle = .abbreviated
 			formatter.maximumUnitCount = 2
-			if let remaining = formatter.string(from: estimatedTimeRemaining) {
+			if let remaining = formatter.string(from: Self.displayTimeRemaining(estimatedTimeRemaining)) {
 				details.append("\(remaining) remaining")
 			}
 		}
@@ -157,7 +157,7 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 		      estimatedTimeRemaining.isFinite,
 		      estimatedTimeRemaining > 0
 		else { return nil }
-		return Date.now.addingTimeInterval(estimatedTimeRemaining)
+		return Date.now.addingTimeInterval(Self.displayTimeRemaining(estimatedTimeRemaining))
 	}
 
 	var statusSummary: String {
