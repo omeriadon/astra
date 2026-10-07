@@ -11,9 +11,21 @@ struct BrowserSpacePager<Content: View>: NSViewControllerRepresentable {
 	let spaces: [BrowserSpace]
 	let selectedSpaceID: UUID
 	let onSelectSpace: (UUID) -> Void
-	@ViewBuilder let content: (BrowserSpace) -> Content
+	let content: (BrowserSpace) -> Content
 
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+	init(
+		spaces: [BrowserSpace],
+		selectedSpaceID: UUID,
+		onSelectSpace: @escaping (UUID) -> Void,
+		@ViewBuilder content: @escaping (BrowserSpace) -> Content
+	) {
+		self.spaces = spaces
+		self.selectedSpaceID = selectedSpaceID
+		self.onSelectSpace = onSelectSpace
+		self.content = content
+	}
 
 	func makeNSViewController(context: Context) -> BrowserSpacePageController<Content> {
 		let controller = BrowserSpacePageController(content: content)
@@ -106,15 +118,19 @@ final class BrowserSpacePageController<Content: View>: NSPageController, NSPageC
 		// BrowserSpace is a value type and changes whenever tabs, folders, names,
 		// or themes change. Refresh any pages NSPageController has already
 		// prepared so they never render a stale Space snapshot.
+		var staleIdentifiers: [String] = []
 		for (identifier, controller) in contentControllers {
 			guard
 				let id = UUID(uuidString: identifier),
 				let space = spaces.first(where: { $0.id == id })
 			else {
-				contentControllers[identifier] = nil
+				staleIdentifiers.append(identifier)
 				continue
 			}
 			controller.update(space: space, content: content)
+		}
+		for identifier in staleIdentifiers {
+			contentControllers[identifier] = nil
 		}
 
 		guard
@@ -163,10 +179,7 @@ final class BrowserSpacePageController<Content: View>: NSPageController, NSPageC
 	}
 
 	func pageController(_ pageController: NSPageController, didTransitionTo object: Any) {
-		guard
-			spaces.indices.contains(selectedIndex),
-			spaces[selectedIndex].id != nil
-		else { return }
+		guard spaces.indices.contains(selectedIndex) else { return }
 
 		let id = spaces[selectedIndex].id
 		DispatchQueue.main.async { [onSelectSpace] in
