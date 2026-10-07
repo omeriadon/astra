@@ -20,6 +20,20 @@ struct ShellSidebarListView: View {
 	#endif
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+	@ViewBuilder
+	private func favouriteTile(_ tab: BrowserTab, selectedID: UUID?) -> some View {
+		let selected = isActiveSpace && selectedID == tab.id
+		let namespace = navigationNamespace ?? sidebarTransitions
+		BrowserFavouriteTile(
+			tab: tab,
+			browser: browser,
+			isSelected: selected,
+			onSelectTab: onSelectTab,
+			navigationNamespace: namespace
+		)
+		.equatable()
+	}
+
 	var body: some View {
 		// Page-local values are supplied by BrowserSpacePager. Do not read
 		// Browser.workspace here: it is a single observed value, so any selection
@@ -45,8 +59,7 @@ struct ShellSidebarListView: View {
 						if !favouriteTabs.isEmpty {
 							LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
 								ForEach(favouriteTabs) { tab in
-									BrowserFavouriteTile(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
-										.equatable()
+									favouriteTile(tab, selectedID: selectedID)
 								}
 							}
 							.padding(.bottom, 12)
