@@ -943,7 +943,7 @@ final class Browser {
 
 	func selectTab(_ id: UUID) {
 		BrowserLog.debug(.tabs, "tab.select", metadata: ["window": BrowserLog.id(windowID), "from": BrowserLog.id(selectedTabID), "to": BrowserLog.id(id)])
-		guard let tab = tabs.first(where: { $0.id == id }) else { return }
+		guard let tab = tab(withID: id) else { return }
 		let previousTab = selectedTab
 		if tab.monitorMatch != nil {
 			tab.setMonitorMatch(nil)
