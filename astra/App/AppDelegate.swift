@@ -136,6 +136,7 @@
 			BrowserController.prewarmSharedProcess()
 			let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
 			source.setEventHandler {
+				BrowserLog.warning(.performance, "memory-pressure")
 				Task { @MainActor in
 					for browser in BrowserWindowRegistry.shared.openBrowsers {
 						for tab in browser.tabs {
