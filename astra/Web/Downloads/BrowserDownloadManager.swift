@@ -1083,6 +1083,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 		do {
 			let (bytes, response) = try await session.bytes(for: request)
+			defer { bytes.task.cancel() }
 			guard let http = response as? HTTPURLResponse,
 			      http.statusCode == 206,
 			      let finalURL = http.url,
