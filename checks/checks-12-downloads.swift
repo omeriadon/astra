@@ -11,8 +11,15 @@ struct Checks {
 			(0, start),
 			(1000, start.addingTimeInterval(10)),
 			(1200, start.addingTimeInterval(20)),
-		]) == 700.0 / 15)
+		]) == 60)
 		assert(BrowserDownload.averageThroughput(samples: [(1000, start), (1000, start.addingTimeInterval(15))]) == 0)
+
+		let smoothedRate = BrowserDownload.smoothedThroughput(previous: 100, observed: 200, elapsed: 1)
+		assert(smoothedRate > 100 && smoothedRate < 140)
+		let smoothedETA = BrowserDownload.smoothedTimeRemaining(previous: 120, observed: 60, elapsed: 1)!
+		assert(smoothedETA < 119 && smoothedETA > 110)
+		assert(BrowserDownload.displayTimeRemaining(61) == 60)
+		assert(BrowserDownload.displayTimeRemaining(127) == 130)
 
 		let traversal = BrowserDownload.safeFilename("../../folder/escape:name?.pdf")
 		assert(!traversal.contains("/"))
@@ -62,6 +69,10 @@ struct Checks {
 		credentialRequest.setValue("session=private", forHTTPHeaderField: "Cookie")
 		assert(BrowserDownload.requestMayCarryCredentials(credentialRequest))
 		assert(BrowserDownload.requestHasSensitiveCredentials(credentialRequest))
+		var cookieOnlyRequest = URLRequest(url: URL(string: "https://example.com")!)
+		cookieOnlyRequest.setValue("session=private", forHTTPHeaderField: "Cookie")
+		assert(BrowserDownload.requestMayCarryCredentials(cookieOnlyRequest))
+		assert(!BrowserDownload.requestHasSensitiveCredentials(cookieOnlyRequest))
 
 		var semanticHeaderRequest = URLRequest(url: URL(string: "https://example.com/file.bin")!)
 		semanticHeaderRequest.setValue("https://example.com/page", forHTTPHeaderField: "Referer")
@@ -92,7 +103,7 @@ struct Checks {
 
 		projectedDownload.status = .downloading
 		let finish = projectedDownload.estimatedFinish!
-		assert(abs(finish.timeIntervalSinceNow - 61) < 1)
+		assert(abs(finish.timeIntervalSinceNow - 60) < 1)
 		projectedDownload.estimatedTimeRemaining = .infinity
 		assert(projectedDownload.estimatedFinish == nil)
 		projectedDownload.estimatedTimeRemaining = nil
