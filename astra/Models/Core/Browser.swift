@@ -1436,7 +1436,13 @@ final class Browser {
 			if let groupIndex = space.todayTabGroups.firstIndex(where: { $0.tabIDs.contains(source.id) }),
 			   let groupTabIndex = space.todayTabGroups[groupIndex].tabIDs.firstIndex(of: source.id)
 			{
-				workspace.spaces[spaceIndex].todayTabGroups[groupIndex].tabIDs.insert(tab.id, at: groupTabIndex + 1)
+				let group = space.todayTabGroups[groupIndex]
+				var tabIDs = group.tabIDs
+				tabIDs.insert(tab.id, at: groupTabIndex + 1)
+				workspace.spaces[spaceIndex].todayTabGroups[groupIndex] = BrowserTabGroupingFeature.Group(
+					name: group.name,
+					tabIDs: tabIDs
+				)
 			}
 		}
 		markWorkspaceStructureChanged()
