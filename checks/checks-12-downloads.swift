@@ -3,6 +3,17 @@ import Foundation
 @main
 struct Checks {
 	static func main() throws {
+		let start = Date(timeIntervalSince1970: 0)
+		assert(BrowserDownload.averageThroughput(samples: [(0, start)]) == nil)
+		assert(BrowserDownload.averageThroughput(samples: [(0, start), (1000, start.addingTimeInterval(10))]) == 100)
+		// Interpolate the window boundary at second 5; exclude the earlier burst.
+		assert(BrowserDownload.averageThroughput(samples: [
+			(0, start),
+			(1000, start.addingTimeInterval(10)),
+			(1200, start.addingTimeInterval(20)),
+		]) == 700.0 / 15)
+		assert(BrowserDownload.averageThroughput(samples: [(1000, start), (1000, start.addingTimeInterval(15))]) == 0)
+
 		let traversal = BrowserDownload.safeFilename("../../folder/escape:name?.pdf")
 		assert(!traversal.contains("/"))
 		assert(!traversal.contains(":"))

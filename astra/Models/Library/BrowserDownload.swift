@@ -94,6 +94,23 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 		return details.joined(separator: " · ")
 	}
 
+	static func averageThroughput(samples: [(bytes: Int64, at: Date)]) -> Double? {
+		guard let first = samples.first, let last = samples.last else { return nil }
+		let cutoff = last.at.addingTimeInterval(-15)
+		var startBytes = Double(first.bytes)
+		var startTime = first.at
+		if first.at < cutoff, samples.count > 1 {
+			let next = samples[1]
+			let interval = next.at.timeIntervalSince(first.at)
+			guard interval > 0 else { return nil }
+			startBytes += Double(next.bytes - first.bytes) * cutoff.timeIntervalSince(first.at) / interval
+			startTime = cutoff
+		}
+		let elapsed = last.at.timeIntervalSince(startTime)
+		guard elapsed > 0 else { return nil }
+		return max(0, (Double(last.bytes) - startBytes) / elapsed)
+	}
+
 	var estimatedFinish: Date? {
 		guard status == .downloading,
 		      let estimatedTimeRemaining,
