@@ -100,11 +100,53 @@ final class BrowserWindowRegistry {
 
 	func ownsTab(_ id: UUID, in browser: Browser) -> Bool {
 		guard !browser.isPrivate, !browser.isMini else { return true }
-		if let owner = tabOwners[id], openBrowsers.contains(where: { $0.windowID == owner && $0.tab(withID: id) != nil }) {
+		let normalBrowsers = openBrowsers.filter { !$0.isPrivate && !$0.isMini }
+		guard normalBrowsers.count > 1 else { return true }
+
+		if let owner = tabOwners[id],
+		   let ownerBrowser = normalBrowsers.first(where: { $0.windowID == owner }),
+		   ownerBrowser.tabs.contains(where: { $0.id == id })
+		{
 			return owner == browser.windowID
 		}
-		return openBrowsers.first { !$0.isPrivate && !$0.isMini && $0.tab(withID: id) != nil }?.windowID == browser.windowID
-			|| !openBrowsers.contains { !$0.isPrivate && !$0.isMini && $0.tab(withID: id) != nil }
+		return normalBrowsers.first { $0.tabs.contains(where: { $0.id == id }) }?.windowID == browser.windowID
+			|| !normalBrowsers.contains { $0.tabs.contains(where: { $0.id == id }) }
+	}
+
+	/// Resolve ownership for an entire window in one pass. Hot rendering paths
+	/// must use this instead of calling ownsTab once per tab: the fallback owner
+	/// rule otherwise rescans every window's tab array for every row.
+	func ownedTabIDs(in browser: Browser) -> Set<UUID> {
+		let browserIDs = Set(browser.tabs.map(\.id))
+		guard !browser.isPrivate, !browser.isMini else { return browserIDs }
+
+		let normalBrowsers = openBrowsers.filter { !$0.isPrivate && !$0.isMini }
+		guard normalBrowsers.count > 1 else { return browserIDs }
+
+		var idsByWindow: [UUID: Set<UUID>] = [:]
+		idsByWindow.reserveCapacity(normalBrowsers.count)
+		var firstOwner: [UUID: UUID] = [:]
+		firstOwner.reserveCapacity(normalBrowsers.reduce(0) { $0 + $1.tabs.count })
+
+		for candidate in normalBrowsers {
+			let ids = Set(candidate.tabs.map(\.id))
+			idsByWindow[candidate.windowID] = ids
+			for id in ids where firstOwner[id] == nil {
+				firstOwner[id] = candidate.windowID
+			}
+		}
+
+		var result = Set<UUID>()
+		result.reserveCapacity(browserIDs.count)
+		for id in browserIDs {
+			let explicitOwner = tabOwners[id].flatMap { owner in
+				idsByWindow[owner]?.contains(id) == true ? owner : nil
+			}
+			if (explicitOwner ?? firstOwner[id] ?? browser.windowID) == browser.windowID {
+				result.insert(id)
+			}
+		}
+		return result
 	}
 
 	func claimSelectedTab(in browser: Browser) {
