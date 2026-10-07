@@ -92,17 +92,19 @@ struct ShellSidebarListView: View {
 									.accessibilityIdentifier("new-pinned-folder")
 								}
 								ForEach(space.pinnedFolders) { folder in
-									PinnedFolderRow(folder: folder, browser: browser, tabsByID: tabsByID, selectedID: selectedID, isActiveSpace: isActiveSpace, normalCount: normalTabs.count, theme: theme, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
+									PinnedFolderRow(folder: folder, browser: browser, tabsByID: tabsByID, selectedID: selectedID, isActiveSpace: isActiveSpace, normalCount: normalTabs.count, spaceID: space.id, theme: theme, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
 								}
 								ForEach(ungroupedPinnedTabs) { tab in
-									BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalTabs.count, pinned: true, rowTheme: theme, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
+									BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalTabs.count, pinned: true, rowSpaceID: space.id, rowTheme: theme, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
 										.equatable()
 										.id(tab.id)
 								}
 							}
 							#if os(macOS)
 							.background {
-								BrowserDropZone(browser: browser, area: .pinned, spaceID: space.id, beforeTabID: nil)
+								if tabDrag.activeTabID != nil {
+									BrowserDropZone(browser: browser, area: .pinned, spaceID: space.id, beforeTabID: nil)
+								}
 							}
 							#endif
 						}
@@ -136,7 +138,7 @@ struct ShellSidebarListView: View {
 										.accessibilityIdentifier("today-tab-group-\(group.id)")
 										.transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
 									ForEach(groupTabs) { tab in
-										BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowTheme: theme, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
+										BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
 											.equatable()
 											.matchedGeometryEffect(id: tab.id, in: sidebarTransitions, properties: .position)
 											.transition(.identity)
@@ -145,7 +147,7 @@ struct ShellSidebarListView: View {
 								}
 							}
 							ForEach(ungroupedNormalTabs, id: \.element.id) { index, tab in
-								BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: index, normalCount: normalTabs.count, pinned: false, rowTheme: theme, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
+								BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: index, normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
 									.equatable()
 									.matchedGeometryEffect(id: tab.id, in: sidebarTransitions, properties: .position)
 									.transition(.identity)
@@ -157,7 +159,9 @@ struct ShellSidebarListView: View {
 						.animation(reduceMotion ? nil : .smooth(duration: 0.35), value: space.todayTabGroups)
 						#if os(macOS)
 							.background {
-								BrowserDropZone(browser: browser, area: .normal, spaceID: space.id, beforeTabID: nil)
+								if tabDrag.activeTabID != nil {
+									BrowserDropZone(browser: browser, area: .normal, spaceID: space.id, beforeTabID: nil)
+								}
 							}
 						#endif
 					}
@@ -300,6 +304,7 @@ private struct PinnedFolderRow: View {
 	let selectedID: UUID?
 	let isActiveSpace: Bool
 	let normalCount: Int
+	let spaceID: UUID
 	let theme: BrowserTheme
 	var onSelectTab: ((UUID) -> Void)?
 	let navigationNamespace: Namespace.ID
@@ -335,7 +340,7 @@ private struct PinnedFolderRow: View {
 			}
 			if isExpanded {
 				ForEach(folder.tabIDs.compactMap { tabsByID[$0] }) { tab in
-					BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalCount, pinned: true, rowTheme: theme, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace)
+					BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalCount, pinned: true, rowSpaceID: spaceID, rowTheme: theme, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace)
 						.equatable()
 						.padding(.leading, 12)
 						.id(tab.id)
