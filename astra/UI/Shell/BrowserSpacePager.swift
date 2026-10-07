@@ -220,4 +220,60 @@ final class BrowserSpacePageContentController<Content: View>: NSViewController {
 		self.hostingView = hostingView
 	}
 }
+
+#else
+import SwiftUI
+
+/// Non-macOS fallback. The desktop shell is macOS-first, but this keeps the
+/// shared target buildable on iOS without introducing AppKit there.
+struct BrowserSpacePager<Content: View>: View {
+	let spaces: [BrowserSpace]
+	let selectedSpaceID: UUID
+	let onSelectSpace: (UUID) -> Void
+	let content: (BrowserSpace) -> Content
+
+	@State private var scrollSpaceID: UUID?
+	@State private var isScrolling = false
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+	init(
+		spaces: [BrowserSpace],
+		selectedSpaceID: UUID,
+		onSelectSpace: @escaping (UUID) -> Void,
+		@ViewBuilder content: @escaping (BrowserSpace) -> Content
+	) {
+		self.spaces = spaces
+		self.selectedSpaceID = selectedSpaceID
+		self.onSelectSpace = onSelectSpace
+		self.content = content
+	}
+
+	var body: some View {
+		ScrollView(.horizontal) {
+			LazyHStack(spacing: 0) {
+				ForEach(spaces) { space in
+					content(space)
+						.containerRelativeFrame(.horizontal)
+						.id(space.id)
+				}
+			}
+			.scrollTargetLayout()
+		}
+		.scrollIndicators(.hidden)
+		.scrollTargetBehavior(.paging)
+		.scrollPosition(id: $scrollSpaceID, anchor: .center)
+		.onScrollPhaseChange { _, phase in
+			isScrolling = phase == .interacting || phase == .decelerating
+		}
+		.onChange(of: selectedSpaceID, initial: true) { oldID, id in
+			withAnimation(reduceMotion || oldID == id ? nil : .smooth(duration: 0.3)) {
+				scrollSpaceID = id
+			}
+		}
+		.onChange(of: scrollSpaceID) { _, id in
+			guard isScrolling, let id, id != selectedSpaceID else { return }
+			onSelectSpace(id)
+		}
+	}
+}
 #endif
