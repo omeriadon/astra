@@ -3,7 +3,7 @@ import SwiftUI
 struct BrowserFavouriteTile: View {
 	let tab: BrowserTab
 	let browser: Browser
-	let isSelected: Bool
+	var isSelected = false
 	var onSelectTab: ((UUID) -> Void)?
 	var navigationNamespace: Namespace.ID?
 	@Namespace private var tileTransitions
