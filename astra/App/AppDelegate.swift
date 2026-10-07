@@ -129,12 +129,13 @@
 			#endif
 			let authentication = ASWebAuthenticationSessionWebBrowserSessionManager.shared
 			authentication.sessionHandler = BrowserAuthenticationSessionHandler.shared
-			Task { await BrowserExtensionManager.shared.prepare() }
 			// Keep non-critical services off the launch/first-frame critical path.
-			// Download hydration itself already runs off-main; this only defers
-			// restoration, update checks, monitoring, and model catalogue work.
+			// Extension package discovery is especially expensive because WebKit's
+			// extension APIs are MainActor-bound; let the first window paint before
+			// asking WebKit to construct those contexts.
 			Task { @MainActor in
-				try? await Task.sleep(for: .milliseconds(300))
+				try? await Task.sleep(for: .milliseconds(500))
+				await BrowserExtensionManager.shared.prepare()
 				UpdateManager.shared.start()
 				BrowserDownloadManager.shared.resumeAvailableDownloads()
 				BrowserWebsiteMonitoring.shared.start()
