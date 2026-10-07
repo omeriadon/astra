@@ -4,6 +4,8 @@
 	import UIKit
 #endif
 import Defaults
+import Foundation
+import Observation
 import SwiftUI
 
 struct BrowserTabRow: View {
