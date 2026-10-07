@@ -60,6 +60,8 @@
 
 			let hostedRoot = MacBrowserHostedRoot(browser: browser)
 			let hostingView = NSHostingView(rootView: hostedRoot)
+			// Pane visibility controls the window minimum; intrinsic hosting constraints must not compete with it.
+			hostingView.sizingOptions = []
 			let contentHost = BrowserContentHostView(hostingView: hostingView)
 
 			super.init()
@@ -69,7 +71,7 @@
 
 			window.delegate = self
 			window.contentView = contentHost
-			window.contentMinSize = NSSize(width: min(640, visibleFrame.width), height: min(480, visibleFrame.height))
+			window.contentMinSize = NSSize(width: BrowserChromeMetrics.minimumContentWidth, height: min(480, visibleFrame.height))
 			window.title = browser.isPrivate ? "astra — Private Browsing" : "astra"
 			window.isOpaque = false
 			window.backgroundColor = NSColor.white.withAlphaComponent(0.001)

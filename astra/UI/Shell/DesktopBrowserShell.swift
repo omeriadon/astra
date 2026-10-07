@@ -3,6 +3,7 @@ import Haze
 import SwiftUI
 import WebKit
 #if os(macOS)
+	import QuartzCore
 	import UniformTypeIdentifiers
 #endif
 
@@ -20,6 +21,7 @@ struct DesktopBrowserShell: View {
 
 	@Default(.sidebarShown) private var sidebarShown
 	@Default(.aiFeaturesEnabled) private var allAIFeatures
+	@Default(.aiSidebar) private var aiSidebarEnabled
 	private var downloads: BrowserDownloadManager {
 		browser.session.downloads
 	}
@@ -46,7 +48,11 @@ struct DesktopBrowserShell: View {
 	}
 
 	private var showsAISidebar: Bool {
-		allAIFeatures && browser.showsAISidebar && browser.canShowAISidebar && Defaults[.aiSidebar]
+		allAIFeatures && browser.showsAISidebar && browser.canShowAISidebar && aiSidebarEnabled
+	}
+
+	private var minimumWindowWidth: CGFloat {
+		BrowserChromeMetrics.minimumWindowWidth(sidebarShown: sidebarShown, aiSidebarShown: showsAISidebar)
 	}
 
 	private var showsTopBarOnPage: Bool {
@@ -64,6 +70,28 @@ struct DesktopBrowserShell: View {
 	}
 
 	#if os(macOS)
+		private func updateWindowMinimumSize() {
+			guard let window = hostWindow else { return }
+			window.contentMinSize.width = minimumWindowWidth
+			guard !window.styleMask.contains(.fullScreen) else { return }
+			let contentSize = window.contentRect(forFrameRect: window.frame).size
+			guard contentSize.width < minimumWindowWidth else { return }
+			var frame = window.frame
+			frame.size.width += minimumWindowWidth - contentSize.width
+			if let visibleFrame = window.screen?.visibleFrame {
+				frame.origin.x = max(visibleFrame.minX, min(frame.origin.x, visibleFrame.maxX - frame.width))
+			}
+			guard window.isVisible, !reduceMotion else {
+				window.setFrame(frame, display: true)
+				return
+			}
+			NSAnimationContext.runAnimationGroup { context in
+				context.duration = 0.3
+				context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+				window.animator().setFrame(frame, display: true)
+			}
+		}
+
 		private func updateWindowButtons(in window: NSWindow?, animated: Bool = true) {
 			guard let window else { return }
 			let hidden = !sidebarShown && !(showsTopBarOnPage && (showsTopBar || isTopBarRevealed))
@@ -117,10 +145,14 @@ struct DesktopBrowserShell: View {
 		}
 	}
 
-	var body: some View {
+	private var windowLayout: some View {
 		GeometryReader { geometry in
 			let showsAI = showsAISidebar
-			BrowserSplitView(sidebarShown: $browser.sidebarShown) {
+			BrowserSplitView(
+				sidebarShown: $browser.sidebarShown,
+				minimumContentWidth: BrowserChromeMetrics.minimumContentWidth
+					+ (showsAI ? BrowserChromeMetrics.aiSidebarWidthRange.lowerBound : 0)
+			) {
 				ShellSidebarColumn(
 					browser: browser,
 					theme: theme,
@@ -134,7 +166,12 @@ struct DesktopBrowserShell: View {
 				)
 
 			} content: {
-				BrowserSplitView(sidebarShown: .constant(showsAI), sidebarWidth: min(360, geometry.size.width * 0.45) + BrowserChromeMetrics.shellEdgePadding, edge: .trailing) {
+				BrowserSplitView(
+					sidebarShown: .constant(showsAI),
+					sidebarWidth: min(360, geometry.size.width * 0.45) + BrowserChromeMetrics.shellEdgePadding,
+					sidebarWidthRange: BrowserChromeMetrics.aiSidebarWidthRange,
+					edge: .trailing
+				) {
 					BrowserAIChatSidebar(browser: browser, chat: browser.aiChat, isVisible: showsAI)
 						.padding(.vertical, BrowserChromeMetrics.shellEdgePadding)
 						.padding(.trailing, BrowserChromeMetrics.shellEdgePadding)
@@ -191,6 +228,12 @@ struct DesktopBrowserShell: View {
 			}
 			.allowsHitTesting(false)
 		}
+		.task(id: minimumWindowWidth) {
+			updateWindowMinimumSize()
+		}
+		.onChange(of: hostWindow) { _, _ in
+			updateWindowMinimumSize()
+		}
 		.onChange(of: sidebarShown) { _, _ in
 			updateWindowButtons(in: hostWindow)
 		}
@@ -205,50 +248,55 @@ struct DesktopBrowserShell: View {
 			updateWindowButtons(in: hostWindow)
 		}
 		#endif
-		.overlay {
-			DownloadFlightOverlay(
-				flight: flight,
-				flightProgress: flightProgress,
-				sidebarShown: sidebarShown,
-				theme: theme
-			)
-			.allowsHitTesting(false)
-		}
-		#if os(macOS)
-		.overlay {
-			TabDragOverlay(browser: browser, hostWindow: hostWindow)
+	}
+
+	var body: some View {
+		windowLayout
+			.overlay {
+				DownloadFlightOverlay(
+					flight: flight,
+					flightProgress: flightProgress,
+					sidebarShown: sidebarShown,
+					theme: theme
+				)
 				.allowsHitTesting(false)
-		}
-		#endif
-		.onChange(of: downloads.latestStart?.id) { _, _ in
-			guard let start = downloads.latestStart,
-			      let item = downloads.items.first(where: { $0.id == start.id })
-			else { return }
-			flightProgress = 0
-			flight = DownloadFlight(id: start.id, source: start.source, symbol: item.symbol)
-			withAnimation(reduceMotion ? .none : .smooth(duration: 0.7)) {
-				flightProgress = 1
 			}
-		}
-		.task(id: flight?.id) {
-			guard flight != nil else { return }
-			try? await Task.sleep(for: .milliseconds(750))
-			if !Task.isCancelled {
-				flight = nil
-			}
-		}
 		#if os(macOS)
-		.onAppear {
-			isFullScreen = NSApp.keyWindow?.styleMask.contains(.fullScreen) == true
-		}
-		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
-			isFullScreen = true
-		}
-		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
-			isFullScreen = false
-		}
+			.overlay {
+				TabDragOverlay(browser: browser, hostWindow: hostWindow)
+					.allowsHitTesting(false)
+			}
 		#endif
-		.ignoresSafeArea()
+			.onChange(of: downloads.latestStart?.id) { _, _ in
+				guard let start = downloads.latestStart,
+				      let item = downloads.items.first(where: { $0.id == start.id })
+				else { return }
+				flightProgress = 0
+				flight = DownloadFlight(id: start.id, source: start.source, symbol: item.symbol)
+				withAnimation(reduceMotion ? .none : .smooth(duration: 0.7)) {
+					flightProgress = 1
+				}
+			}
+			.task(id: flight?.id) {
+				guard flight != nil else { return }
+				try? await Task.sleep(for: .milliseconds(750))
+				if !Task.isCancelled {
+					flight = nil
+				}
+			}
+		#if os(macOS)
+			.onAppear {
+				isFullScreen = NSApp.keyWindow?.styleMask.contains(.fullScreen) == true
+			}
+			.onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+				isFullScreen = true
+			}
+			.onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+				isFullScreen = false
+				updateWindowMinimumSize()
+			}
+		#endif
+			.ignoresSafeArea()
 	}
 }
 

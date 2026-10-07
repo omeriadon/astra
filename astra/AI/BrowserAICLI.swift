@@ -465,6 +465,12 @@ nonisolated struct BrowserAICommandResponse {
 			(chunks, continuation) = AsyncStream<Data>.makeStream()
 			process.executableURL = URL(fileURLWithPath: path)
 			process.arguments = arguments
+			if name == "codex" {
+				// Browser requests must not inherit tools that launch helpers outside Astra's sandbox.
+				for feature in ["computer_use", "browser_use", "apps", "plugins", "hooks", "shell_snapshot"] {
+					process.arguments?.append(contentsOf: ["-c", "features.\(feature)=false"])
+				}
+			}
 			process.currentDirectoryURL = directory
 			process.standardInput = input
 			process.standardOutput = output

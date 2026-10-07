@@ -2,6 +2,8 @@ import SwiftUI
 
 struct BrowserSplitView<Sidebar: View, Content: View>: View {
 	let sidebarWidth: CGFloat
+	let sidebarWidthRange: ClosedRange<CGFloat>
+	let minimumContentWidth: CGFloat
 	let edge: HorizontalEdge
 
 	@Binding var sidebarShown: Bool
@@ -12,12 +14,16 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View {
 	init(
 		sidebarShown: Binding<Bool>,
 		sidebarWidth: CGFloat = BrowserChromeMetrics.expandedSidebarWidth,
+		sidebarWidthRange: ClosedRange<CGFloat> = BrowserChromeMetrics.sidebarWidthRange,
+		minimumContentWidth: CGFloat = BrowserChromeMetrics.minimumContentWidth,
 		edge: HorizontalEdge = .leading,
 		@ViewBuilder sidebar: () -> Sidebar,
 		@ViewBuilder content: () -> Content
 	) {
 		_sidebarShown = sidebarShown
 		self.sidebarWidth = sidebarWidth
+		self.sidebarWidthRange = sidebarWidthRange
+		self.minimumContentWidth = minimumContentWidth
 		self.edge = edge
 		self.sidebar = sidebar()
 		self.content = content()
@@ -25,7 +31,12 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View {
 
 	var body: some View {
 		GeometryReader { geometry in
-			let width = min(sidebarWidth, geometry.size.width)
+			let width = BrowserChromeMetrics.sidebarWidth(
+				preferred: sidebarWidth,
+				limits: sidebarWidthRange,
+				availableWidth: geometry.size.width,
+				minimumContentWidth: minimumContentWidth
+			)
 			let visibleWidth = sidebarShown ? width : 0
 			ZStack(alignment: .topLeading) {
 				sidebar
@@ -42,10 +53,10 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View {
 					.accessibilityHidden(!sidebarShown)
 
 				content
-					.frame(maxWidth: .infinity, maxHeight: .infinity)
-					.clipped()
 					.animation(reduceMotion ? nil : .smooth(duration: 0.3)) { view in
 						view
+							.frame(width: max(0, geometry.size.width - visibleWidth), height: geometry.size.height)
+							.clipped()
 							.padding(edge == .leading ? .leading : .trailing, visibleWidth)
 					}
 			}

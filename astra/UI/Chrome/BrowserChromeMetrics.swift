@@ -1,8 +1,26 @@
-import SwiftUI
+import Foundation
 
 enum BrowserChromeMetrics {
 	static let topBarRegionHeight: CGFloat = 33
 	static let expandedSidebarWidth: CGFloat = 224
+	static let sidebarWidthRange: ClosedRange<CGFloat> = 130 ... 330
+	static let aiSidebarWidthRange: ClosedRange<CGFloat> = 300 ... 600
+	static let minimumContentWidth: CGFloat = 270
+
+	static func minimumWindowWidth(sidebarShown: Bool, aiSidebarShown: Bool) -> CGFloat {
+		minimumContentWidth
+			+ (sidebarShown ? sidebarWidthRange.lowerBound : 0)
+			+ (aiSidebarShown ? aiSidebarWidthRange.lowerBound : 0)
+	}
+
+	static func sidebarWidth(
+		preferred: CGFloat,
+		limits: ClosedRange<CGFloat>,
+		availableWidth: CGFloat,
+		minimumContentWidth: CGFloat
+	) -> CGFloat {
+		max(limits.lowerBound, min(preferred, limits.upperBound, availableWidth - minimumContentWidth))
+	}
 
 	static let topBarContentHeight: CGFloat = 20
 

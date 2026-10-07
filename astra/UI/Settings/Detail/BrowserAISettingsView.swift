@@ -33,10 +33,18 @@ struct BrowserAISettingsView: View {
 				.accessibilityLabel("All AI Features")
 				.accessibilityIdentifier("ai-all-features")
 				.id("All AI Features")
+			Text("Enable or disable all AI features below. AI features do not run in private windows.")
+				.font(.caption)
+				.foregroundStyle(.secondary)
+				.lineLimit(10)
 			Section("Features") {
 				Toggle("Rename Downloads", isOn: $downloads)
 					.accessibilityIdentifier("rename-downloads-with-apple-intelligence")
 					.id("Rename Downloads")
+				Text("Automatically gives completed downloads descriptive filenames based on the original name, website, and file type. Keeps the file extension.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.lineLimit(10)
 				Picker("Link Previews", selection: Binding(get: { previews ? previewMode : "never" }, set: {
 					previewMode = $0
 					previews = true
@@ -48,42 +56,78 @@ struct BrowserAISettingsView: View {
 				.pickerStyle(.menu)
 				.accessibilityLabel("When to show link previews")
 				.accessibilityIdentifier("ai-link-previews")
+				Text("Hover over a link smaller than 100 × 100 points to summarize its destination. Always showing previews may trigger frequently. Preview pages load separately and may differ from signed-in pages.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.lineLimit(10)
 				Toggle("Force a Preview While Holding Shift", isOn: $previewShiftOverride)
 					.accessibilityLabel("Force a preview when holding Shift while hovering over a link")
 					.accessibilityIdentifier("ai-link-preview-shift-override")
+				Text("Hold Shift while hovering over a link to show its summary, even when previews are disabled for that page. The link size limit still applies.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.lineLimit(10)
 				HStack {
 					Slider(value: $previewDelay, in: 0 ... 10, step: 0.25) {
 						Text("Preview Delay")
+							.lineLimit(10)
 					}
 					.accessibilityLabel("Link preview delay in seconds")
 					.accessibilityIdentifier("ai-link-preview-delay")
 					Text("\(previewDelay, format: .number.precision(.fractionLength(0 ... 2))) s")
+						.lineLimit(10)
 						.monospacedDigit()
 						.frame(minWidth: 48, alignment: .trailing)
 				}
 				.disabled((!previews || previewMode == "never") && !previewShiftOverride)
-				Text("Hover over a link smaller than 100 × 100 points to summarize its destination. Always showing previews may trigger frequently. Shift overrides the display mode, but keeps the size limit. Preview pages load separately and may differ from signed-in pages.")
+				Text("How long to hover over a link before its AI preview appears, in seconds.")
+					.lineLimit(10)
 					.font(.caption)
 					.foregroundStyle(.secondary)
 				Toggle("Tidy Today Tabs", isOn: $groups)
 					.accessibilityIdentifier("ai-tab-groups")
+				Text("Enables the Tidy Today Tabs button above Today tabs when there are more than six. Use it to group those tabs into sections by topic.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.lineLimit(10)
 				Toggle("Clean Tab Titles", isOn: $titles)
 					.accessibilityIdentifier("ai-tab-titles")
+				Text("Enables the Clean Tab Titles button above Today tabs. Use it to shorten their titles and remove repeated site names, notification counts, and other clutter.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.lineLimit(10)
 				Toggle("Clean Bookmark Titles", isOn: $bookmarkTitles)
 					.accessibilityIdentifier("ai-bookmark-titles")
+				Text("Enables title cleanup in Bookmarks. Use it to shorten bookmark names and remove unnecessary wording while keeping their subject.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.lineLimit(10)
 				Toggle("Monitor Websites", isOn: $monitoring)
 					.accessibilityIdentifier("ai-website-monitoring")
+				Text("Use the Monitor Website bell button to set a condition, such as “this item is available to buy,” and a check interval. The server checks the public page even while Astra is closed. Requires an Astra account; results arrive when Astra reconnects, with a pinned tab and a notification if allowed.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.lineLimit(10)
 				Toggle("Ask in Find", isOn: $find)
 					.accessibilityIdentifier("ai-find")
+				Text("Type a question in Find in Page. If no matching text is found, AI reads the page and answers your question.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.lineLimit(10)
 				Toggle("Limit Large Pages to 30,000 Tokens", isOn: $contextLimit)
 					.disabled(!find)
 					.padding(.leading, 16)
 					.accessibilityIdentifier("ai-find-context-limit")
 				Text("When extracted page text exceeds 40,000 tokens, Find uses its first 30,000. Turning this off sends the full text; the provider’s context limit still applies.")
+					.lineLimit(10)
 					.font(.caption)
 					.foregroundStyle(.secondary)
 				Toggle("AI Sidebar", isOn: $sidebar)
 					.accessibilityIdentifier("ai-sidebar-enabled")
+				Text("Enables the AI chat sidebar for questions, linked pages, and attachments. The assistant can also perform the browser actions you allow below.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+					.lineLimit(10)
 			}
 			.disabled(!allFeatures)
 			Section("Browser Actions") {
@@ -92,6 +136,7 @@ struct BrowserAISettingsView: View {
 						.accessibilityIdentifier("ai-action-\(action.rawValue)")
 				}
 				Text("Closing tabs and deleting bookmarks are disabled by default. Disabled actions are checked again before execution.")
+					.lineLimit(10)
 					.font(.caption)
 					.foregroundStyle(.secondary)
 			}
@@ -100,11 +145,14 @@ struct BrowserAISettingsView: View {
 				ForEach(websiteMonitors.monitors) { monitor in
 					HStack {
 						VStack(alignment: .leading, spacing: 4) {
-							Text(monitor.title).lineLimit(1)
+							Text(monitor.title).lineLimit(10)
 							Text(monitor.criterion).font(.caption).foregroundStyle(.secondary)
+								.lineLimit(10)
 							Text(monitor.matchedAt != nil ? "Condition fulfilled" : monitor.enabled ? "Monitoring" : "Paused").font(.caption)
+								.lineLimit(10)
 							if let error = monitor.lastError {
 								Text(error).font(.caption).foregroundStyle(.secondary)
+									.lineLimit(10)
 							}
 						}
 						Spacer()
@@ -115,6 +163,7 @@ struct BrowserAISettingsView: View {
 				}
 				if let error = websiteMonitors.error {
 					Text(error).font(.caption).foregroundStyle(.secondary)
+						.lineLimit(10)
 				}
 			}
 			#if os(macOS)
@@ -159,6 +208,7 @@ struct BrowserAISettingsView: View {
 				#endif
 				if let error = usageLog.errorDescription {
 					Text(error)
+						.lineLimit(10)
 						.font(.caption)
 						.foregroundStyle(.secondary)
 						.accessibilityIdentifier("ai-usage-log-error")
@@ -170,6 +220,7 @@ struct BrowserAISettingsView: View {
 				.foregroundStyle(.secondary)
 				.lineLimit(10)
 		}
+		.lineLimit(10)
 		.listStyle(.sidebar)
 		.scrollContentBackground(.hidden)
 		.task { await websiteMonitors.refresh() }

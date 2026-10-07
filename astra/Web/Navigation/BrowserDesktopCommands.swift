@@ -67,6 +67,7 @@
 			guard webView.responds(to: NSSelectorFromString("_inspector")),
 			      let inspector = webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
 			      inspector.responds(to: NSSelectorFromString("show")),
+			      inspector.responds(to: NSSelectorFromString("close")),
 			      inspector.responds(to: NSSelectorFromString("attach"))
 			else {
 				controller.session.toastManager.show(
@@ -85,11 +86,8 @@
 					inspector.perform(NSSelectorFromString("toggleElementSelection"))
 				}
 			} else {
-				let wasVisible = inspector.value(forKey: "isVisible") as? Bool == true
-				inspector.perform(NSSelectorFromString("show"))
-				if wasVisible {
-					attachWebInspector(inspector)
-				}
+				let isVisible = inspector.value(forKey: "isVisible") as? Bool == true
+				inspector.perform(NSSelectorFromString(isVisible ? "close" : "show"))
 			}
 		}
 
