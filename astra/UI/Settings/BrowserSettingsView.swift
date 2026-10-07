@@ -9,7 +9,7 @@ struct BrowserSettingsView: View {
 		browser.theme
 	}
 
-	enum Page: CaseIterable {
+	nonisolated enum Page: CaseIterable {
 		case ui
 		case ai
 		case account
@@ -26,13 +26,13 @@ struct BrowserSettingsView: View {
 			case failedWebsiteStates
 		#endif
 
-		enum Section: String, CaseIterable {
+		nonisolated enum Section: String, CaseIterable {
 			case ui = "UI"
 			case account = "Account"
 			case advanced = "Advanced"
 		}
 
-		struct Definition {
+		nonisolated struct Definition {
 			let title: String
 			let symbol: String
 			let section: Section?
@@ -40,6 +40,7 @@ struct BrowserSettingsView: View {
 			let terms: [String]
 		}
 
+		@MainActor
 		var definition: Definition {
 			switch self {
 				case .ui:
@@ -147,6 +148,7 @@ struct BrowserSettingsView: View {
 			}
 		}
 
+		@MainActor
 		func matches(_ query: String) -> Bool {
 			guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
 			let metadata = definition
