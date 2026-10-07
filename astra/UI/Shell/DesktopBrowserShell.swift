@@ -443,12 +443,19 @@ private struct ShellSidebarColumn: View {
 					BrowserSpacePager(
 						spaces: browser.workspace.spaces,
 						selectedSpaceID: browser.workspace.selectedSpaceID,
+						favouriteTabIDs: browser.workspace.favouriteTabIDs,
 						onSelectSpace: { id in
 							guard id != browser.workspace.selectedSpaceID else { return }
 							browser.selectSpace(id)
 						}
-					) { space in
-						ShellSidebarListView(browser: browser, space: space, theme: space.theme)
+					) { space, isActiveSpace, favouriteTabIDs in
+						ShellSidebarListView(
+							browser: browser,
+							space: space,
+							theme: space.theme,
+							isActiveSpace: isActiveSpace,
+							favouriteTabIDs: favouriteTabIDs
+						)
 							.sidebarScrollOpacityFade(top: 38, bottom: bottomFadeHeight)
 							.foregroundStyle(space.theme.foregroundColor)
 					}
