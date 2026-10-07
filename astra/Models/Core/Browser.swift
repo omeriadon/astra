@@ -199,6 +199,7 @@ final class Browser {
 	}
 
 	func createSpace() {
+		BrowserLog.info(.spaces, "space.create", metadata: ["window": BrowserLog.id(windowID), "existing": String(workspace.spaces.count)])
 		guard !isPrivate else { return }
 		let space = BrowserSpace()
 		let mutationDate = nextWorkspaceMutationDate()
@@ -212,6 +213,7 @@ final class Browser {
 	}
 
 	func deleteSpace(_ id: UUID) {
+		BrowserLog.info(.spaces, "space.delete", metadata: ["window": BrowserLog.id(windowID), "space": BrowserLog.id(id), "count": String(workspace.spaces.count)])
 		guard workspace.spaces.count > 1,
 		      let removed = workspace.spaces.first(where: { $0.id == id }),
 		      let destinationIndex = workspace.spaces.firstIndex(where: { $0.id != id })
@@ -246,6 +248,7 @@ final class Browser {
 	}
 
 	func selectSpace(_ id: UUID) {
+		BrowserLog.debug(.spaces, "space.select", metadata: ["window": BrowserLog.id(windowID), "from": BrowserLog.id(workspace.selectedSpaceID), "to": BrowserLog.id(id)])
 		guard let nextIndex = workspace.spaces.firstIndex(where: { $0.id == id }) else { return }
 		if let currentIndex = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
 			spaceSwitchDirection = nextIndex >= currentIndex ? 1 : -1
@@ -551,6 +554,7 @@ final class Browser {
 	}
 
 	private func hydrateFromDisk(placeholderID: UUID, placeholderModifiedAt: Date) {
+		BrowserLog.info(.persistence, "browser.hydration.begin", metadata: ["window": BrowserLog.id(windowID), "placeholder": BrowserLog.id(placeholderID)])
 		guard let persistence else { return }
 		if Self.launchMetadataTask == nil {
 			Self.launchMetadataTask = Task.detached(priority: .utility) {
@@ -612,6 +616,7 @@ final class Browser {
 	}
 
 	private func applyHydratedState(_ loaded: HydratedState, placeholderID: UUID, placeholderModifiedAt: Date) {
+		BrowserLog.info(.persistence, "browser.hydration.apply", metadata: ["window": BrowserLog.id(windowID), "placeholder": BrowserLog.id(placeholderID)])
 		defer {
 			didFinishHydration = true
 			previousShutdownWasClean = loaded.previousShutdownWasClean
@@ -780,6 +785,7 @@ final class Browser {
 
 	@discardableResult
 	func addTab(inBackground: Bool = false) -> BrowserTab {
+		BrowserLog.info(.tabs, "tab.create", metadata: ["window": BrowserLog.id(windowID), "background": String(inBackground), "count_before": String(tabs.count)])
 		let tab = BrowserTab(session: session)
 		configure(tab)
 		tabs.append(tab)
@@ -815,6 +821,7 @@ final class Browser {
 	}
 
 	func openInternalPage(_ page: BrowserInternalPage, inNewTab: Bool = false) {
+		BrowserLog.info(.navigation, "internal.open", metadata: ["page": String(describing: page), "new_tab": String(inNewTab)])
 		guard !isPrivate || page == .settings else { return }
 		if isPrivate {
 			settingsPage = .privacyAndSecurity
@@ -926,6 +933,7 @@ final class Browser {
 	#endif
 
 	func selectTab(_ id: UUID) {
+		BrowserLog.debug(.tabs, "tab.select", metadata: ["window": BrowserLog.id(windowID), "from": BrowserLog.id(selectedTabID), "to": BrowserLog.id(id)])
 		guard let tab = tabs.first(where: { $0.id == id }) else { return }
 		if tab.monitorMatch != nil {
 			tab.setMonitorMatch(nil)
@@ -1294,6 +1302,7 @@ final class Browser {
 	}
 
 	func closeTab(_ id: UUID, confirmed: Bool = false) {
+		BrowserLog.info(.tabs, "tab.close", metadata: ["window": BrowserLog.id(windowID), "tab": BrowserLog.id(id), "confirmed": String(confirmed), "count_before": String(tabs.count)])
 		if showsQuickSearch, id == selectedTabID, !confirmed {
 			dismissQuickSearch()
 			return
@@ -1392,6 +1401,7 @@ final class Browser {
 	}
 
 	func hibernateTab(_ id: UUID, onlyIfBackground: Bool = false) {
+		BrowserLog.info(.tabs, "tab.hibernate", metadata: ["tab": BrowserLog.id(id), "background_only": String(onlyIfBackground)])
 		guard let tab = tabs.first(where: { $0.id == id }), !tab.isHibernated, tab.canHibernate else { return }
 		Task { @MainActor [weak self, weak tab] in
 			guard let self, let tab else { return }
@@ -1444,6 +1454,7 @@ final class Browser {
 	}
 
 	func flushPersistence() {
+		BrowserLog.debug(.persistence, "browser.persistence.flush-request", metadata: ["window": BrowserLog.id(windowID)])
 		persistenceTask?.cancel()
 		persistenceTask = nil
 		scrollPersistenceTask?.cancel()
@@ -1470,6 +1481,7 @@ final class Browser {
 	}
 
 	func markCleanShutdown() async {
+		BrowserLog.notice(.persistence, "browser.clean-shutdown", metadata: ["window": BrowserLog.id(windowID)])
 		guard !isPrivate, let persistence else { return }
 		await session.persistenceWriteTask?.value
 		do {
@@ -2092,6 +2104,7 @@ final class Browser {
 	}
 
 	func applySyncDocument(_ incoming: BrowserSyncDocument) {
+		BrowserLog.info(.sync, "browser.sync.apply-document", metadata: ["window": BrowserLog.id(windowID)])
 		guard !isPrivate else { return }
 		let localState = completeLocalSyncDocument(settings: [:])
 		let localPortableTabs = Dictionary(
@@ -2201,6 +2214,7 @@ final class Browser {
 	}
 
 	func receiveSharedState(from source: Browser) {
+		BrowserLog.debug(.sync, "browser.shared-state.receive", metadata: ["window": BrowserLog.id(windowID), "source_window": BrowserLog.id(source.windowID)])
 		guard !isPrivate, !source.isPrivate else { return }
 		persistenceTask?.cancel()
 		persistenceTask = nil
@@ -2329,6 +2343,7 @@ final class Browser {
 	}
 
 	private func schedulePersistence(fullState: Bool = true) {
+		BrowserLog.trace(.persistence, "browser.persistence.schedule", metadata: ["window": BrowserLog.id(windowID), "full": String(fullState), "hydrated": String(didFinishHydration)])
 		guard !isPrivate else { return }
 		BrowserExtensionManager.shared.sync(self)
 		guard persistence != nil else { return }
@@ -2366,6 +2381,7 @@ final class Browser {
 	}
 
 	private func persist() {
+		BrowserLog.debug(.persistence, "browser.persistence.snapshot", metadata: ["window": BrowserLog.id(windowID), "tabs": String(tabs.count), "bookmarks": String(bookmarks.count), "history": String(historyVisits.count)])
 		guard !hydrationFailed else { return }
 		guard let persistence else { return }
 		guard didFinishHydration else {

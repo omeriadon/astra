@@ -53,6 +53,8 @@ final class BrowserController: NSObject, Identifiable {
 	var displayWindowID: UUID?
 	@ObservationIgnored
 	private var isInvalidated = false
+	@ObservationIgnored
+	private var navigationLogStartedAt: TimeInterval?
 	private(set) var isPlayingMedia = false
 	private var hasActiveVideoPlayback = false
 	private(set) var hasPausedMedia = false
@@ -208,6 +210,7 @@ final class BrowserController: NSObject, Identifiable {
 	/// (Since macOS 12 all configurations share one process pool, so merely
 	/// creating a throwaway WKWebView is enough to warm it.)
 	static func prewarmSharedProcess() {
+		BrowserLog.debug(.webKit, "webkit.prewarm")
 		_ = safariUserAgentSuffix()
 		Task { @MainActor in
 			// Thrown away; existence warms the shared WebKit processes.
@@ -1091,6 +1094,7 @@ final class BrowserController: NSObject, Identifiable {
 	#endif
 
 	func toggleReader() {
+		BrowserLog.info(.navigation, "reader.toggle", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		if readerHTML != nil {
 			readerHTML = nil
 			return
@@ -1128,6 +1132,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func stopForClose() {
+		BrowserLog.info(.webKit, "controller.stop-for-close", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		guard !isInvalidated else { return }
 		aiLinkPreviewCache.removeAll()
 		resetReader()
@@ -1229,6 +1234,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func prepareWebView() {
+		BrowserLog.debug(.webKit, "webview.prepare", metadata: ["controller": BrowserLog.id(id), "has_webview": String(createdWebView != nil)])
 		_ = webView
 	}
 
@@ -1241,6 +1247,8 @@ final class BrowserController: NSObject, Identifiable {
 	#endif
 
 	private func makeWebView() -> WKWebView {
+		let webViewLogStarted = BrowserLog.clock()
+		BrowserLog.info(.webKit, "webview.create.begin", metadata: ["controller": BrowserLog.id(id), "private": String(session.isPrivate)])
 		let configuration = suppliedConfiguration ?? WKWebViewConfiguration()
 		if suppliedConfiguration != nil {
 			configuration.userContentController = WKUserContentController()
@@ -1409,6 +1417,7 @@ final class BrowserController: NSObject, Identifiable {
 		extensionWebViewDidChange?()
 		// Start deferred navigation immediately once startup rule restoration is ready.
 		contentBlockingDidBecomeReady()
+		BrowserLog.duration(.webKit, "webview.create.end", since: webViewLogStarted, warnAboveMilliseconds: 150, metadata: ["controller": BrowserLog.id(id)])
 		return webView
 	}
 
@@ -1479,10 +1488,12 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func load(_ url: URL) {
+		BrowserLog.info(.navigation, "navigation.load-url", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		load(url, isExplicitAddressRequest: false)
 	}
 
 	func loadFromAddressBar(_ url: URL) {
+		BrowserLog.info(.navigation, "navigation.address-submit", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		load(url, isExplicitAddressRequest: true)
 	}
 
@@ -1528,6 +1539,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func navigate(_ request: URLRequest) {
+		BrowserLog.info(.navigation, "navigation.request", metadata: ["controller": BrowserLog.id(id), "request": BrowserLog.request(request)])
 		guard !isInvalidated else { return }
 		guard let url = request.url else { return }
 		historyVisitPolicy.userInitiatedNavigation()
@@ -1543,6 +1555,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func goBack() {
+		BrowserLog.debug(.navigation, "navigation.back", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		guard let webView = createdWebView, webView.canGoBack else { return }
 		aiLinkPreviewCache.removeAll()
 		aiPreviewDismissal += 1
@@ -1554,6 +1567,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func goForward() {
+		BrowserLog.debug(.navigation, "navigation.forward", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		guard let webView = createdWebView, webView.canGoForward else { return }
 		aiLinkPreviewCache.removeAll()
 		aiPreviewDismissal += 1
@@ -1583,6 +1597,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func reload() {
+		BrowserLog.info(.navigation, "navigation.reload", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url), "failure": String(navigationFailure != nil)])
 		historyVisitPolicy.userInitiatedNavigation()
 		if let navigationFailure {
 			load(failedRequest ?? URLRequest(url: navigationFailure.url))
@@ -1596,6 +1611,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func stopLoading() {
+		BrowserLog.notice(.navigation, "navigation.stop", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		createdWebView?.stopLoading()
 		pendingRequest = nil
 		pendingLocalFile = nil
@@ -1732,6 +1748,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	private func load(_ request: URLRequest, resetConnectivityRetry: Bool = true) {
+		BrowserLog.debug(.navigation, "navigation.dispatch", metadata: ["controller": BrowserLog.id(id), "request": BrowserLog.request(request), "reset_retry": String(resetConnectivityRetry), "content_blocker_ready": String(session.contentBlocking.isReadyForNavigation)])
 		guard !isInvalidated else { return }
 		pendingWebArchive = nil
 		pendingLocalFile = nil
@@ -2123,6 +2140,7 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	private func handleNavigationFailure(_ navigation: WKNavigation!, error: Error) {
+		BrowserLog.error(.navigation, "navigation.failure.callback", metadata: ["controller": BrowserLog.id(id), "error": BrowserLog.errorDescription(error), "url": BrowserLog.url(url)])
 		guard navigation === currentNavigation else { return }
 		let error = error as NSError
 		if isDownloadHandoff,
@@ -2157,6 +2175,7 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+		BrowserLog.fault(.webKit, "webcontent.terminated", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(webView.url ?? url)])
 		guard owns(webView) else { return }
 		resetReader()
 		pictureInPictureControlUnavailable = false
@@ -2171,6 +2190,8 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+		navigationLogStartedAt = BrowserLog.clock()
+		BrowserLog.info(.navigation, "navigation.did-start", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(webView.url ?? url)])
 		guard owns(webView) else { return }
 		resetReader()
 		clearHoveredLink()
@@ -2221,6 +2242,7 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+		BrowserLog.info(.navigation, "navigation.did-commit", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(webView.url)])
 		guard owns(webView), navigation === currentNavigation else { return }
 		releaseUploadAccess()
 		pictureInPictureControlUnavailable = false
@@ -2253,6 +2275,12 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+		if let navigationLogStartedAt {
+			BrowserLog.duration(.navigation, "navigation.did-finish", since: navigationLogStartedAt, warnAboveMilliseconds: 1500, metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(webView.url)])
+			self.navigationLogStartedAt = nil
+		} else {
+			BrowserLog.info(.navigation, "navigation.did-finish", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(webView.url)])
+		}
 		guard owns(webView), navigation === currentNavigation else { return }
 		refreshContentBlocking(for: webView.url)
 		webView.evaluateJavaScript("globalThis.astraProbeReader?.(true)", in: nil, in: .defaultClient, completionHandler: nil)

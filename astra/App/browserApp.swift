@@ -23,6 +23,7 @@ extension Color {
 		enum browserApp {
 			@MainActor
 			static func main() {
+				BrowserLog.bootstrap()
 				let application = NSApplication.shared
 				let delegate = AppDelegate()
 
@@ -40,6 +41,10 @@ extension Color {
 #else
 	@main
 	struct browserApp: App {
+		init() {
+			BrowserLog.bootstrap()
+		}
+
 		var body: some Scene {
 			WindowGroup {
 				ContentView()
