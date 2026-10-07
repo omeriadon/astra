@@ -293,7 +293,7 @@ enum BrowserLog {
 		line: UInt
 	) {
 		let logger = Logger(subsystem: subsystem, category: category.rawValue)
-		var components = ["[ASTRA]", "[\(event)]"]
+		var components = ["[ASTRA]", "[\(level.rawValue.uppercased())]", "[\(category.rawValue)]", "[\(event)]"]
 		if !message.isEmpty {
 			components.append(clean(message))
 		}
