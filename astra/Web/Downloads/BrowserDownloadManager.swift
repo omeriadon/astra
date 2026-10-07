@@ -1282,13 +1282,14 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			persist()
 			return
 		}
+		let fallbackRequest = segmented.fallbackRequest(for: items[index]) ?? URLRequest(url: url)
 		persist()
 		if resumeWebView == nil {
 			let configuration = WKWebViewConfiguration()
 			configuration.websiteDataStore = privateDataStore ?? .default()
 			resumeWebView = WKWebView(frame: .zero, configuration: configuration)
 		}
-		resumeWebView?.startDownload(using: URLRequest(url: url)) { [weak self] download in
+		resumeWebView?.startDownload(using: fallbackRequest) { [weak self] download in
 			self?.attach(download, to: itemID)
 		}
 	}
