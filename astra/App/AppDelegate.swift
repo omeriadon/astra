@@ -129,6 +129,7 @@
 			UpdateManager.shared.start()
 			BrowserDownloadManager.shared.resumeAvailableDownloads()
 			BrowserWebsiteMonitoring.shared.start()
+			BrowserAICLI.startModelCatalogRefresh()
 			BrowserController.prewarmSharedProcess()
 			let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
 			source.setEventHandler {

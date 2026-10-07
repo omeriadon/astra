@@ -15,6 +15,8 @@ nonisolated struct BrowserAIModelOption: Identifiable, Sendable {
 enum BrowserAICLI {
 	#if os(macOS)
 		private static var requestedAccountAccess = Set<String>()
+		private static var modelCatalogTasks: [String: (requestedAt: ContinuousClock.Instant, task: Task<[BrowserAIModelOption], Error>)] = [:]
+		private static var modelCatalogRefresh: Task<Void, Never>?
 
 		static func shouldRequestAccountAccess(provider: String) -> Bool {
 			UserDefaults.standard.data(forKey: "ai-command-access-\(provider)") == nil
@@ -186,6 +188,7 @@ enum BrowserAICLI {
 				: url.hasDirectoryPath ? url.appendingPathComponent(provider) : url
 			UserDefaults.standard.set(bookmark, forKey: "ai-command-executable-access-\(provider)")
 			UserDefaults.standard.set(executable.path, forKey: "ai-command-executable-\(provider)")
+			modelCatalogTasks[provider] = nil
 			return true
 		}
 
@@ -202,20 +205,21 @@ enum BrowserAICLI {
 			guard await panel.begin() == .OK, let url = panel.url,
 			      let bookmark = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) else { return false }
 			UserDefaults.standard.set(bookmark, forKey: "ai-command-access-\(provider)")
+			modelCatalogTasks[provider] = nil
 			return true
 		}
 	#endif
 
-	/// Catalog queries are read from the installed provider, not a saved model list.
+	/// All model menus share the installed provider catalog for one hour.
 	static func models(provider: String) async throws -> [BrowserAIModelOption] {
 		#if os(macOS)
 			do {
-				return try await modelCatalog(provider: provider)
+				return try await cachedModelCatalog(provider: provider)
 			} catch let error as BrowserAIError {
 				guard case let .commandFailed(_, reason) = error,
 				      reason.contains("permissions"), shouldRequestAccountAccess(provider: provider),
 				      await authorize(provider: provider) else { throw error }
-				return try await modelCatalog(provider: provider)
+				return try await cachedModelCatalog(provider: provider)
 			}
 		#else
 			throw BrowserAIError.cliUnavailable
@@ -223,6 +227,34 @@ enum BrowserAICLI {
 	}
 
 	#if os(macOS)
+		static func startModelCatalogRefresh() {
+			guard modelCatalogRefresh == nil else { return }
+			modelCatalogRefresh = Task {
+				while !Task.isCancelled {
+					// Background refresh must not present account-access panels.
+					for provider in ["codex", "claude"] {
+						_ = try? await cachedModelCatalog(provider: provider)
+					}
+					do {
+						try await Task.sleep(for: .seconds(3600))
+					} catch {
+						break
+					}
+				}
+			}
+		}
+
+		private static func cachedModelCatalog(provider: String) async throws -> [BrowserAIModelOption] {
+			if let cached = modelCatalogTasks[provider],
+			   cached.requestedAt.duration(to: .now) < .seconds(3600)
+			{
+				return try await cached.task.value
+			}
+			let task = Task { try await modelCatalog(provider: provider) }
+			modelCatalogTasks[provider] = (.now, task)
+			return try await task.value
+		}
+
 		private static func modelCatalog(provider: String) async throws -> [BrowserAIModelOption] {
 			let codex = provider == "codex"
 			let command = try BrowserAICommand(
