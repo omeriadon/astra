@@ -587,9 +587,6 @@ final class BrowserController: NSObject, Identifiable {
 			}
 		#endif
 		updateThemeColor(url == nil ? .black : .white)
-		#if os(macOS)
-			startPreviewSnapshotRefresh()
-		#endif
 
 		if let url {
 			#if os(macOS)
@@ -1300,6 +1297,9 @@ final class BrowserController: NSObject, Identifiable {
 			BrowserDesktopCommands.configureWebInspector(webView, enabled: Defaults[.webInspectorEnabled])
 		#endif
 		createdWebView = webView
+		#if os(macOS)
+			startPreviewSnapshotRefresh()
+		#endif
 		let scrollHandler = WeakScriptMessageHandler(delegate: self)
 		webView.configuration.userContentController.add(
 			scrollHandler,
@@ -1952,6 +1952,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	#if os(macOS)
 		private func startPreviewSnapshotRefresh() {
+			guard previewSnapshotRefreshTask == nil else { return }
 			previewSnapshotRefreshTask = Task { @MainActor [weak self] in
 				while !Task.isCancelled {
 					do {
