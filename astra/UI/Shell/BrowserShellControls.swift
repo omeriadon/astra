@@ -52,7 +52,16 @@ struct ShellSidebarListView: View {
 		// Only the active page subscribes to selectedTabID. Inactive prepared
 		// pages stay completely still while tabs are switched.
 		let selectedID = isActiveSpace ? browser.selectedTabID : nil
-		return GeometryReader { geometry in
+		return Group {
+			if !isActiveSpace, onSelectTab == nil {
+				ShellSidebarSwipePreview(
+					space: space,
+					tabsByID: tabsByID,
+					favouriteTabIDs: favouriteTabIDs,
+					theme: theme
+				)
+			} else {
+				GeometryReader { geometry in
 			ScrollViewReader { reader in
 				ScrollView {
 					LazyVStack(spacing: onSelectTab == nil ? 2 : 8) {
@@ -183,9 +192,11 @@ struct ShellSidebarListView: View {
 				}
 			}
 		}
-		// Keep cleanup attached to the sidebar, not the divider's lazy row.
-		.task(id: "\(space.id)|\(cleanupAction ?? "")|\(allFeatures)") {
-			await performTabCleanup(in: space, tabs: normalTabs)
+				// Keep cleanup attached to the interactive sidebar, not the divider's lazy row.
+				.task(id: "\(space.id)|\(cleanupAction ?? "")|\(allFeatures)") {
+					await performTabCleanup(in: space, tabs: normalTabs)
+				}
+			}
 		}
 	}
 
@@ -295,6 +306,143 @@ struct ShellSidebarListView: View {
 				cleanupError = error.localizedDescription
 			}
 		}
+	}
+}
+
+private struct ShellSidebarSwipePreview: View {
+	let space: BrowserSpace
+	let tabsByID: [UUID: BrowserTab]
+	let favouriteTabIDs: [UUID]
+	let theme: BrowserTheme
+
+	var body: some View {
+		let favouriteTabs = favouriteTabIDs.compactMap { tabsByID[$0] }
+		let pinnedTabs = space.pinnedTabIDs.compactMap { tabsByID[$0] }
+		let pinnedSet = Set(space.pinnedTabIDs)
+		let normalTabs = space.tabIDs.filter { !pinnedSet.contains($0) }.compactMap { tabsByID[$0] }
+		let groupedIDs = Set(space.todayTabGroups.flatMap(\.tabIDs))
+		let folderIDs = Set(space.pinnedFolders.flatMap(\.tabIDs))
+
+		ScrollView {
+			LazyVStack(spacing: 2) {
+				if !favouriteTabs.isEmpty {
+					LazyVGrid(
+						columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4),
+						spacing: 6
+					) {
+						ForEach(favouriteTabs) { tab in
+							ShellSidebarSwipeFavourite(tab: tab, selected: space.selectedTabID == tab.id)
+						}
+					}
+					.padding(.bottom, 12)
+				}
+
+				if !pinnedTabs.isEmpty || !space.pinnedFolders.isEmpty {
+					Text("Pinned Tabs")
+						.font(.caption)
+						.frame(maxWidth: .infinity, alignment: .leading)
+						.padding(.horizontal, 8)
+
+					ForEach(space.pinnedFolders) { folder in
+						Label(folder.name, systemImage: "folder.fill")
+							.frame(maxWidth: .infinity, alignment: .leading)
+							.frame(height: 28)
+						ForEach(folder.tabIDs.compactMap { tabsByID[$0] }) { tab in
+							ShellSidebarSwipeRow(tab: tab, selected: space.selectedTabID == tab.id)
+								.padding(.leading, 12)
+						}
+					}
+					ForEach(pinnedTabs.filter { !folderIDs.contains($0.id) }) { tab in
+						ShellSidebarSwipeRow(tab: tab, selected: space.selectedTabID == tab.id)
+					}
+				}
+
+				ForEach(space.todayTabGroups) { group in
+					let tabs = group.tabIDs.compactMap { tabsByID[$0] }.filter { !pinnedSet.contains($0.id) }
+					if !tabs.isEmpty {
+						Text(group.name)
+							.font(.caption.weight(.semibold))
+							.frame(maxWidth: .infinity, alignment: .leading)
+							.padding(.horizontal, 10)
+							.padding(.top, 8)
+						ForEach(tabs) { tab in
+							ShellSidebarSwipeRow(tab: tab, selected: space.selectedTabID == tab.id)
+						}
+					}
+				}
+
+				ForEach(normalTabs.filter { !groupedIDs.contains($0.id) }) { tab in
+					ShellSidebarSwipeRow(tab: tab, selected: space.selectedTabID == tab.id)
+				}
+
+				Label("New Tab", systemImage: "plus")
+					.frame(maxWidth: .infinity, alignment: .leading)
+					.padding(.horizontal, 8)
+					.frame(height: 28)
+			}
+			.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
+			.padding(.top, 4)
+			.padding(.bottom, 48)
+		}
+		.foregroundStyle(theme.foregroundColor)
+		.scrollIndicators(.hidden)
+		.allowsHitTesting(false)
+		.accessibilityHidden(true)
+	}
+}
+
+private struct ShellSidebarSwipeRow: View {
+	let tab: BrowserTab
+	let selected: Bool
+
+	var body: some View {
+		HStack(spacing: 6) {
+			ShellSidebarSwipeIcon(tab: tab)
+			Text(verbatim: tab.title)
+				.lineLimit(1)
+			Spacer(minLength: 0)
+		}
+		.padding(.horizontal, 8)
+		.frame(height: 28)
+		.background {
+			if selected {
+				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+					.fill(.white.opacity(0.12))
+			}
+		}
+	}
+}
+
+private struct ShellSidebarSwipeFavourite: View {
+	let tab: BrowserTab
+	let selected: Bool
+
+	var body: some View {
+		ShellSidebarSwipeIcon(tab: tab)
+			.frame(width: 20, height: 20)
+			.frame(maxWidth: .infinity)
+			.frame(height: 42)
+			.background {
+				RoundedRectangle(cornerRadius: 10)
+					.fill(.white.opacity(selected ? 0.22 : 0.12))
+			}
+	}
+}
+
+private struct ShellSidebarSwipeIcon: View {
+	let tab: BrowserTab
+
+	var body: some View {
+		Group {
+			if let favicon = tab.session.favicons.image(for: tab.currentURL, in: tab.controller?.webViewIfLoaded) {
+				favicon
+					.resizable()
+					.scaledToFit()
+			} else {
+				Image(systemName: tab.internalPage?.symbol ?? "globe")
+			}
+		}
+		.frame(width: 16, height: 16)
 	}
 }
 
