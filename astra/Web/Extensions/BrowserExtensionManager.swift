@@ -113,9 +113,14 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		BrowserLog.trace(.extensions, "extensions.sync-window", metadata: ["window": BrowserLog.id(browser.windowID), "tabs": String(browser.tabs.count)])
 		guard !browser.isPrivate else { return }
 		_ = extensionWindow(for: browser)
-		let ids = Set(browser.tabs.filter {
+		let ownedTabs = browser.tabs.filter {
 			$0.internalPage == nil && BrowserWindowRegistry.shared.ownsTab($0.id, in: browser)
-		}.map(\.id))
+		}
+		let ids = Set(ownedTabs.map(\.id))
+		var pinnedIDs = Set(browser.workspace.favouriteTabIDs)
+		for space in browser.workspace.spaces {
+			pinnedIDs.formUnion(space.pinnedTabIDs)
+		}
 		let previous = knownTabIDs[browser.windowID] ?? []
 		for id in ids.subtracting(previous) {
 			if let tab = extensionTab(for: id, in: browser) {
@@ -130,13 +135,12 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			tabSnapshots[browser.windowID]?.removeValue(forKey: id)
 		}
 		knownTabIDs[browser.windowID] = ids
-		for tab in browser.tabs where ids.contains(tab.id) {
+		for tab in ownedTabs {
 			let snapshot = TabSnapshot(
 				url: tab.currentURL,
 				title: tab.title,
 				loading: tab.controller?.isLoading == true,
-				pinned: browser.workspace.favouriteTabIDs.contains(tab.id)
-					|| browser.workspace.spaces.contains { $0.pinnedTabIDs.contains(tab.id) },
+				pinned: pinnedIDs.contains(tab.id),
 				zoom: tab.controller?.pageZoom ?? 1
 			)
 			if let previousSnapshot = tabSnapshots[browser.windowID]?[tab.id],
