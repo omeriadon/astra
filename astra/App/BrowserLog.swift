@@ -45,11 +45,11 @@ enum BrowserLog {
 
 	nonisolated static let subsystem = "com.omeriadon.astra"
 
-	nonisolated private static let stateLock = NSLock()
-	nonisolated(unsafe) private static var bootstrapped = false
-	nonisolated(unsafe) private static var watchdogTimer: DispatchSourceTimer?
-	nonisolated(unsafe) private static var lastMainAckNanoseconds = DispatchTime.now().uptimeNanoseconds
-	nonisolated(unsafe) private static var lastStallReportNanoseconds: UInt64 = 0
+	private nonisolated static let stateLock = NSLock()
+	private nonisolated(unsafe) static var bootstrapped = false
+	private nonisolated(unsafe) static var watchdogTimer: DispatchSourceTimer?
+	private nonisolated(unsafe) static var lastMainAckNanoseconds = DispatchTime.now().uptimeNanoseconds
+	private nonisolated(unsafe) static var lastStallReportNanoseconds: UInt64 = 0
 
 	nonisolated static func bootstrap() {
 		stateLock.lock()
@@ -282,7 +282,7 @@ enum BrowserLog {
 		#endif
 	}
 
-	nonisolated private static func emit(
+	private nonisolated static func emit(
 		_ level: Level,
 		_ category: Category,
 		_ event: String,
@@ -325,14 +325,14 @@ enum BrowserLog {
 		}
 	}
 
-	nonisolated private static func clean(_ value: String) -> String {
+	private nonisolated static func clean(_ value: String) -> String {
 		value
 			.replacingOccurrences(of: "\n", with: "\\n")
 			.replacingOccurrences(of: "\r", with: "\\r")
 			.replacingOccurrences(of: "\t", with: "\\t")
 	}
 
-	nonisolated private static func startMainThreadWatchdog() {
+	private nonisolated static func startMainThreadWatchdog() {
 		stateLock.lock()
 		guard watchdogTimer == nil else {
 			stateLock.unlock()
@@ -357,7 +357,7 @@ enum BrowserLog {
 		debug(.performance, "watchdog.started", metadata: ["interval_ms": intervalMilliseconds])
 	}
 
-	nonisolated private static func watchdogTick() {
+	private nonisolated static func watchdogTick() {
 		let now = DispatchTime.now().uptimeNanoseconds
 		stateLock.lock()
 		let acknowledged = lastMainAckNanoseconds

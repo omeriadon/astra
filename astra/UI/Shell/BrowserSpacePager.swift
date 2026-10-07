@@ -111,6 +111,8 @@
 			self.content = content
 			self.onSelectSpace = onSelectSpace
 
+			loadViewIfNeeded()
+
 			if oldIDs != newIDs || arrangedObjects.count != spaces.count {
 				arrangedObjects = spaces
 			}
@@ -176,6 +178,10 @@
 			}
 			contentControllers[identifier] = controller
 			return controller
+		}
+
+		func pageControllerDidEndLiveTransition(_: NSPageController) {
+			completeTransition()
 		}
 
 		func pageController(_: NSPageController, didTransitionTo _: Any) {
