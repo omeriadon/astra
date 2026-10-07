@@ -9,7 +9,7 @@ enum BrowserDownloadStatus: String, Codable, Sendable {
 }
 
 struct BrowserDownloadSegment: Codable, Equatable, Sendable {
-	static let minimumSegmentBytes: Int64 = 128 * 1024 * 1024
+	static let minimumSegmentBytes: Int64 = 32 * 1024 * 1024
 	static let maximumConnections = 16
 
 	let start: Int64
@@ -165,13 +165,29 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 		request.httpBody != nil || request.httpBodyStream != nil
 	}
 
-	/// Segmented acceleration and fresh retry can only reproduce a plain GET.
-	/// Treat any explicit header as non-replayable so WebKit keeps ownership of
-	/// requests whose response may depend on Referer, Accept, signatures, or
-	/// other origin-specific request semantics.
+	private static let sensitiveRequestHeaders: Set<String> = [
+		"authorization",
+		"cookie",
+		"cookie2",
+		"proxy-authorization",
+	]
+
+	/// Segmented transfers may replay ordinary request semantics such as Accept,
+	/// Referer and User-Agent, but must never detach browser-managed credentials.
+	static func requestHasSensitiveCredentials(_ request: URLRequest) -> Bool {
+		if request.url?.user != nil || request.url?.password != nil {
+			return true
+		}
+		return (request.allHTTPHeaderFields ?? [:]).keys.contains {
+			sensitiveRequestHeaders.contains($0.lowercased())
+		}
+	}
+
+	/// Fresh retry does not persist arbitrary request headers, so it remains more
+	/// conservative than segmented transfer and leaves any header-bearing request
+	/// owned by WebKit.
 	static func requestMayCarryCredentials(_ request: URLRequest) -> Bool {
-		request.url?.user != nil
-			|| request.url?.password != nil
+		requestHasSensitiveCredentials(request)
 			|| !(request.allHTTPHeaderFields ?? [:]).isEmpty
 	}
 
