@@ -44,20 +44,26 @@ struct Checks {
 
 		var credentialRequest = URLRequest(url: URL(string: "https://example.com")!)
 		assert(!BrowserDownload.requestMayCarryCredentials(credentialRequest))
+		assert(!BrowserDownload.requestHasSensitiveCredentials(credentialRequest))
 		credentialRequest.setValue("Basic dXNlcjpwYXNz", forHTTPHeaderField: "Proxy-Authorization")
 		assert(BrowserDownload.requestMayCarryCredentials(credentialRequest))
+		assert(BrowserDownload.requestHasSensitiveCredentials(credentialRequest))
 		credentialRequest.setValue("session=private", forHTTPHeaderField: "Cookie")
 		assert(BrowserDownload.requestMayCarryCredentials(credentialRequest))
+		assert(BrowserDownload.requestHasSensitiveCredentials(credentialRequest))
 
 		var semanticHeaderRequest = URLRequest(url: URL(string: "https://example.com/file.bin")!)
 		semanticHeaderRequest.setValue("https://example.com/page", forHTTPHeaderField: "Referer")
 		assert(BrowserDownload.requestMayCarryCredentials(semanticHeaderRequest))
+		assert(!BrowserDownload.requestHasSensitiveCredentials(semanticHeaderRequest))
 		semanticHeaderRequest = URLRequest(url: URL(string: "https://example.com/file.bin")!)
 		semanticHeaderRequest.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
 		assert(BrowserDownload.requestMayCarryCredentials(semanticHeaderRequest))
+		assert(!BrowserDownload.requestHasSensitiveCredentials(semanticHeaderRequest))
 		semanticHeaderRequest = URLRequest(url: URL(string: "https://example.com/file.bin")!)
 		semanticHeaderRequest.setValue("signed-value", forHTTPHeaderField: "X-Download-Signature")
 		assert(BrowserDownload.requestMayCarryCredentials(semanticHeaderRequest))
+		assert(!BrowserDownload.requestHasSensitiveCredentials(semanticHeaderRequest))
 
 		var bodyRequest = URLRequest(url: URL(string: "https://example.com")!)
 		bodyRequest.httpBody = Data([1])
@@ -82,9 +88,10 @@ struct Checks {
 		projectedDownload.status = .paused
 		projectedDownload.resumeData = nil
 		projectedDownload.segments = BrowserDownloadSegment.plan(total: 512 * 1024 * 1024)
-		assert(projectedDownload.segments?.count == 4)
+		assert(projectedDownload.segments?.count == 16)
 		assert(projectedDownload.canResume)
-		assert(BrowserDownloadSegment.plan(total: 128 * 1024 * 1024).isEmpty)
+		assert(BrowserDownloadSegment.plan(total: 32 * 1024 * 1024).isEmpty)
+		assert(BrowserDownloadSegment.plan(total: 100 * 1024 * 1024).count == 2)
 		let persisted = try JSONDecoder().decode(BrowserDownload.self, from: JSONEncoder().encode(projectedDownload))
 		assert(persisted.status == .paused && persisted.canResume)
 		projectedDownload.status = .cancelled
