@@ -23,6 +23,7 @@ struct ShellSidebarListView: View {
 		// O(n²) tabs.first scans inside every row.
 		let space = browser.workspace.spaces.first(where: { $0.id == self.space.id }) ?? space
 		let tabsByID = browser.tabsByID
+		let favouriteTabs = browser.isPrivate ? [] : browser.workspace.favouriteTabIDs.compactMap { tabsByID[$0] }
 		let pinnedTabs = space.pinnedTabIDs.compactMap { tabsByID[$0] }
 		let folderTabIDs = Set(space.pinnedFolders.flatMap(\.tabIDs))
 		let ungroupedPinnedTabs = pinnedTabs.filter { !folderTabIDs.contains($0.id) }
@@ -38,9 +39,9 @@ struct ShellSidebarListView: View {
 			ScrollViewReader { reader in
 				ScrollView {
 					LazyVStack(spacing: onSelectTab == nil ? 2 : 8) {
-						if !browser.favouriteTabs.isEmpty {
+						if !favouriteTabs.isEmpty {
 							LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
-								ForEach(browser.favouriteTabs) { tab in
+								ForEach(favouriteTabs) { tab in
 									BrowserFavouriteTile(tab: tab, browser: browser, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
 										.equatable()
 								}
@@ -53,7 +54,7 @@ struct ShellSidebarListView: View {
 							#endif
 						}
 						#if os(macOS)
-							if browser.favouriteTabs.isEmpty, tabDrag.activeTabID != nil {
+							if favouriteTabs.isEmpty, tabDrag.activeTabID != nil {
 								Color.clear
 									.frame(height: 34)
 									.background {
@@ -85,7 +86,7 @@ struct ShellSidebarListView: View {
 							}
 							#if os(macOS)
 							.background {
-								BrowserDropZone(browser: browser, area: .pinned, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
+								BrowserDropZone(browser: browser, area: .pinned, spaceID: space.id, beforeTabID: nil)
 							}
 							#endif
 						}
@@ -101,7 +102,7 @@ struct ShellSidebarListView: View {
 								Color.clear
 									.frame(height: 28)
 									.background {
-										BrowserDropZone(browser: browser, area: .pinned, spaceID: browser.workspace.selectedSpaceID, beforeTabID: nil)
+										BrowserDropZone(browser: browser, area: .pinned, spaceID: space.id, beforeTabID: nil)
 									}
 							}
 						#endif
