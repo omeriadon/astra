@@ -625,7 +625,7 @@ private struct TabRowContextMenu: View {
 			if tab.internalPage != nil {
 				return "Internal Page"
 			}
-			return tab.currentURL?.host(percentEncoded: false) ?? "New Tab"
+			return tab.currentURL?.host ?? "New Tab"
 		}
 
 		private var unavailableMemoryLabel: String {
