@@ -26,6 +26,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	private var scopedDirectories: [UUID: URL] = [:]
 	private var previewScopes: [URL: (directory: URL, count: Int)] = [:]
 	private var accelerationAbandoned: Set<UUID> = []
+	private(set) var accelerationPending: Set<UUID> = []
 	private var resumeWebView: WKWebView?
 	@ObservationIgnored private lazy var segmented = SegmentedDownloadEngine()
 	private var isClosing = false
@@ -75,6 +76,16 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		items.first(where: { $0.status == .downloading })?.symbol
 			?? items.first?.symbol
 			?? "arrow.down.circle"
+	}
+
+	func transferModeDescription(for item: BrowserDownload) -> String {
+		if let segments = item.segments, !segments.isEmpty {
+			return "\(segments.count) download pieces"
+		}
+		if accelerationPending.contains(item.id) {
+			return "Checking connections…"
+		}
+		return "Single connection"
 	}
 
 	override private convenience init() {
@@ -1002,6 +1013,9 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			])
 			return
 		}
+
+		accelerationPending.insert(itemID)
+		defer { accelerationPending.remove(itemID) }
 
 		guard let probe = await probeRangeSupport(
 			url: url,
