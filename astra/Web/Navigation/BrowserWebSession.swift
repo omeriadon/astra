@@ -102,6 +102,7 @@ final class BrowserWebSession {
 			ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
 			modifiedSince: since
 		)
+		BrowserLog.duration(.browser, "website-data.clear.end", since: logStarted, warnAboveMilliseconds: 500, metadata: ["private": String(isPrivate)])
 		favicons.clear()
 	}
 
