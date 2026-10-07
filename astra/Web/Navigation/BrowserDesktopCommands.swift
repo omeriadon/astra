@@ -42,9 +42,6 @@
 		}
 
 		static func configureWebInspector(_ webView: WKWebView, enabled: Bool) {
-			// WebKit's local inspector page group uses these persisted docking preferences.
-			UserDefaults.standard.set(1, forKey: "__WebInspectorPageGroupLevel1__.WebKit2InspectorAttachmentSide")
-			UserDefaults.standard.set(true, forKey: "__WebInspectorPageGroupLevel1__.WebKit2InspectorStartsAttached")
 			webView.isInspectable = enabled
 			let preferences = webView.configuration.preferences
 			if preferences.responds(to: NSSelectorFromString("_setDeveloperExtrasEnabled:")) {
@@ -62,6 +59,9 @@
 		static func showWebInspector(_ controller: BrowserController, selectingElement: Bool = false) {
 			guard let webView = controller.webViewIfLoaded,
 			      controller.hasCurrentPageDocument else { return }
+			// Persist docking preferences only when opening, outside the defaults observer path.
+			UserDefaults.standard.set(1, forKey: "__WebInspectorPageGroupLevel1__.WebKit2InspectorAttachmentSide")
+			UserDefaults.standard.set(true, forKey: "__WebInspectorPageGroupLevel1__.WebKit2InspectorStartsAttached")
 			Defaults[.webInspectorEnabled] = true
 			configureWebInspector(webView, enabled: true)
 			guard webView.responds(to: NSSelectorFromString("_inspector")),
