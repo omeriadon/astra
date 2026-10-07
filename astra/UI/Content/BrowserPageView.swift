@@ -11,7 +11,7 @@ struct BrowserPageView: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	var body: some View {
-		let hasActiveDuplicate = hasActiveDuplicate
+		let hasActiveDuplicate = BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
 		return ZStack(alignment: .top) {
 			BrowserContentView(browser: browser, insets: insets)
 			#if os(macOS)
