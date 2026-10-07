@@ -747,7 +747,7 @@ final class BrowserController: NSObject, Identifiable {
 			};
 		})()
 		"""
-		let value = try? await webView.evaluateJavaScript(script, in: nil, in: .defaultClient)
+		let value = try? await webView.evaluateJavaScript(script)
 		guard owns(webView), documentID == navigationIdentifier,
 		      let state = value as? [String: Any] else { return }
 		isPlayingMedia = state["playing"] as? Bool == true
