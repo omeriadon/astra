@@ -117,17 +117,17 @@
 		override func viewDidLayout() {
 			super.viewDidLayout()
 
-			// NSPageController can retain stale page geometry across live window
-			// resizes. Keep every prepared page pinned to the pager bounds.
+			let currentSize = view.bounds.size
+			guard currentSize != previousBoundsSize else { return }
+			previousBoundsSize = currentSize
+
+			// Repair page geometry only for an actual resize. Writing every
+			// subview's frame on every layout pass fights NSPageController's live
+			// horizontal-strip animation and recursively dirties SwiftUI layout.
 			for subview in view.subviews {
 				subview.frame = view.bounds
 			}
-
-			let currentSize = view.bounds.size
-			if currentSize != previousBoundsSize {
-				previousBoundsSize = currentSize
-				completeTransition()
-			}
+			completeTransition()
 		}
 
 		func update(
