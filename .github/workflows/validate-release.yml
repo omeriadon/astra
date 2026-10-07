@@ -76,6 +76,20 @@ jobs:
           python3 scripts/release/validate_artifact.py --self-test
           python3 checks/website-app-bundle-check.py --self-test
 
+      - name: Check Debug build
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project astra.xcodeproj \
+            -scheme astra \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/AstraDebugDerivedData" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
       - name: Check unsigned release archive
         shell: bash
         run: |
