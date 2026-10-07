@@ -111,20 +111,21 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 			let hydrationGeneration = cacheGeneration
 			Task.detached(priority: .utility) { [persistence] in
 				guard let loaded = try? persistence.loadFavicons(), !loaded.isEmpty else { return }
+				// ImageIO header validation can touch every frame in an .ico/gif.
+				// Do all of that off-main; startup used to validate up to 256 icons
+				// serially inside MainActor.run before the cache became usable.
+				let prepared = loaded.compactMap { storedKey, data -> (String, String, Data)? in
+					guard Self.isValidImage(data) else { return nil }
+					let key = FaviconKey.origin(for: URL(string: storedKey))
+						?? FaviconKey.origin(for: URL(string: "https://\(storedKey)"))
+					guard let key else { return nil }
+					return (storedKey, key, data)
+				}
+				let rejectedOrRewritten = prepared.count != loaded.count
 				await MainActor.run { [weak self] in
 					guard let self, cacheGeneration == hydrationGeneration else { return }
-					var migrationRequired = false
-					for (storedKey, data) in loaded {
-						guard Self.isValidImage(data) else {
-							migrationRequired = true
-							continue
-						}
-						let key = FaviconKey.origin(for: URL(string: storedKey))
-							?? FaviconKey.origin(for: URL(string: "https://\(storedKey)"))
-						guard let key else {
-							migrationRequired = true
-							continue
-						}
+					var migrationRequired = rejectedOrRewritten
+					for (storedKey, key, data) in prepared {
 						guard favicons[key] == nil else {
 							migrationRequired = true
 							continue
@@ -302,7 +303,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		}
 	}
 
-	private static func isValidImage(_ data: Data) -> Bool {
+	private nonisolated static func isValidImage(_ data: Data) -> Bool {
 		guard !data.isEmpty,
 		      data.count <= maximumImageBytes,
 		      let source = CGImageSourceCreateWithData(data as CFData, nil),
@@ -323,7 +324,6 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	}
 
 	private static func makePlatformImage(_ data: Data) -> PlatformImage? {
-		guard isValidImage(data) else { return nil }
 		#if os(macOS)
 			return NSImage(data: data)
 		#elseif os(iOS)
