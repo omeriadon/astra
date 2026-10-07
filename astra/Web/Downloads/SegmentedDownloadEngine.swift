@@ -29,6 +29,9 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		let identifier = (Bundle.main.bundleIdentifier ?? "browser") + ".segmentedDownloads"
 		let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
 		configuration.isDiscretionary = false
+		configuration.httpCookieStorage = nil
+		configuration.httpShouldSetCookies = false
+		configuration.urlCredentialStorage = nil
 		configuration.httpMaximumConnectionsPerHost = BrowserDownloadSegment.maximumConnections
 		return URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
 	}()
