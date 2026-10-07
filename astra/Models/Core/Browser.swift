@@ -1180,25 +1180,26 @@ final class Browser {
 				return
 			}
 			let previousWrite = session.persistenceWriteTask
-			session.persistenceWriteTask = Task.detached(priority: .utility) { [weak self, weak tab, weak controller] in
+			let browser = self
+			let capturedTab = tab
+			let capturedController = controller
+			session.persistenceWriteTask = Task.detached(priority: .utility) { [browser, capturedTab, capturedController] in
 				await previousWrite?.value
 				let generation: UUID
 				do {
 					generation = try persistence.saveReadingArchive(data, id: item.id, url: item.url)
 				} catch {
 					await MainActor.run {
-						guard let self, let tab, let controller,
-						      self.ownsReadingListCapture(tab, controller: controller, item: item),
-						      controller.navigationIdentifier == documentID else { return }
-						self.session.toastManager.show(symbol: "exclamationmark.triangle", message: "Offline copy could not be saved because storage is full or unavailable")
+						guard browser.ownsReadingListCapture(capturedTab, controller: capturedController, item: item),
+						      capturedController.navigationIdentifier == documentID else { return }
+						browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: "Offline copy could not be saved because storage is full or unavailable")
 					}
 					return
 				}
 				let stillCurrent = await MainActor.run {
-					guard let self, let tab, let controller,
-					      self.ownsReadingListCapture(tab, controller: controller, item: item),
-					      controller.navigationIdentifier == documentID else { return false }
-					self.session.toastManager.show(symbol: "checkmark.circle", message: "Saved offline copy")
+					guard browser.ownsReadingListCapture(capturedTab, controller: capturedController, item: item),
+					      capturedController.navigationIdentifier == documentID else { return false }
+					browser.session.toastManager.show(symbol: "checkmark.circle", message: "Saved offline copy")
 					return true
 				}
 				if !stillCurrent {
@@ -1217,7 +1218,8 @@ final class Browser {
 		guard isRegisteredNormalWindow, let persistence else { return }
 		let windowID = windowID
 		let sourceTabID = selectedTabID
-		Task.detached(priority: .userInitiated) { [weak self] in
+		let browser = self
+		Task.detached(priority: .userInitiated) { [browser] in
 			let archive: Result<Data?, Error>
 			do {
 				archive = try .success(persistence.loadReadingArchive(id: item.id, url: item.url))
@@ -1225,25 +1227,25 @@ final class Browser {
 				archive = .failure(error)
 			}
 			await MainActor.run {
-				guard let self, self.windowID == windowID, self.isRegisteredNormalWindow,
-				      self.selectedTabID == sourceTabID, !self.isPrivate,
-				      let currentItem = self.readingList.first(where: { $0.id == item.id }),
-				      ReadingListItem.admitsOfflineOpen(currentItem, id: item.id, url: item.url, isPrivate: self.isPrivate) else { return }
+				guard browser.windowID == windowID, browser.isRegisteredNormalWindow,
+				      browser.selectedTabID == sourceTabID, !browser.isPrivate,
+				      let currentItem = browser.readingList.first(where: { $0.id == item.id }),
+				      ReadingListItem.admitsOfflineOpen(currentItem, id: item.id, url: item.url, isPrivate: browser.isPrivate) else { return }
 				let data: Data
 				switch archive {
 					case let .success(value):
 						guard let value else {
-							self.session.toastManager.show(symbol: "exclamationmark.triangle", message: "No offline copy is available")
+							browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: "No offline copy is available")
 							return
 						}
 						data = value
 					case .failure:
-						self.session.toastManager.show(symbol: "exclamationmark.triangle", message: "Could not read the offline copy")
+						browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: "Could not read the offline copy")
 						return
 				}
-				let tab = self.addTab()
-				guard let controller = tab.activeController, tab.session === self.session,
-				      controller.session === self.session else { return }
+				let tab = browser.addTab()
+				guard let controller = tab.activeController, tab.session === browser.session,
+				      controller.session === browser.session else { return }
 				controller.prepareWebView()
 				controller.loadWebArchive(data, baseURL: item.url)
 			}
