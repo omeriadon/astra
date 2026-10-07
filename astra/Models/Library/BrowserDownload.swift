@@ -4,6 +4,7 @@ enum BrowserDownloadStatus: String, Codable, Sendable {
 	case downloading
 	case paused
 	case completed
+	case cancelled
 	case failed
 }
 
@@ -93,6 +94,15 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 		return details.joined(separator: " · ")
 	}
 
+	var estimatedFinish: Date? {
+		guard status == .downloading,
+		      let estimatedTimeRemaining,
+		      estimatedTimeRemaining.isFinite,
+		      estimatedTimeRemaining > 0
+		else { return nil }
+		return Date.now.addingTimeInterval(estimatedTimeRemaining)
+	}
+
 	var statusSummary: String {
 		switch status {
 			case .downloading:
@@ -104,6 +114,8 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 					return "Downloaded · renewed access needed · \(progressLabel)"
 				}
 				return "Downloaded · \(progressLabel)"
+			case .cancelled:
+				return "Cancelled · \(progressLabel)"
 			case .failed:
 				let error = errorMessage ?? "Download failed."
 				guard (receivedBytes ?? 0) > 0 else { return error }
@@ -112,7 +124,7 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 	}
 
 	var canRetry: Bool {
-		status == .failed
+		[.failed, .cancelled, .paused].contains(status)
 			&& requestMethod?.uppercased() == "GET"
 			&& requestHasBody == false
 			&& requestHasAuthorization == false
@@ -120,7 +132,7 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 	}
 
 	var canResume: Bool {
-		status == .paused && resumeData != nil
+		status == .paused && (resumeData != nil || segments?.isEmpty == false)
 	}
 
 	mutating func markCancellationPending() {

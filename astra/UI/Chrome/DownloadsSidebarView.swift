@@ -104,12 +104,20 @@ private struct DownloadRowView: View {
 						.font(.caption)
 						.opacity(0.65)
 				}
-				if item.status == .downloading {
-					Text(item.progressDetails)
+				if item.status == .downloading || item.status == .paused {
+					Text(item.statusSummary)
 						.font(.caption.monospacedDigit())
 						.foregroundStyle(.secondary)
-					HStack(spacing: 2) {
-						if let segments = item.segments {
+					if let finish = item.estimatedFinish {
+						Text("Estimated finish: \(finish.formatted(date: .omitted, time: .shortened))")
+							.font(.caption.monospacedDigit())
+							.foregroundStyle(.secondary)
+					}
+					Text(item.segments.map { "\($0.count) download pieces" } ?? "Single connection")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+					HStack(spacing: 3) {
+						if let segments = item.segments, !segments.isEmpty {
 							ForEach(segments.indices, id: \.self) { index in
 								let segment = segments[index]
 								let size = Double(segment.end - segment.start + 1)
@@ -122,7 +130,7 @@ private struct DownloadRowView: View {
 							SegmentProgressBar(progress: item.progress, theme: theme)
 						}
 					}
-					.frame(height: 5)
+					.frame(height: 7)
 					.accessibilityElement(children: .ignore)
 					.accessibilityLabel("Download progress")
 					.accessibilityValue("\(Int(item.progress * 100)) percent")
@@ -132,6 +140,32 @@ private struct DownloadRowView: View {
 						.lineLimit(2)
 						.opacity(0.65)
 				}
+				HStack(spacing: 8) {
+					if item.status == .downloading {
+						Button("Pause", systemImage: "pause.fill") {
+							manager.pause(item.id)
+						}
+						.accessibilityIdentifier("download-pause-\(item.id.uuidString)")
+					} else if item.canResume {
+						Button("Resume", systemImage: "play.fill") {
+							manager.resume(item.id)
+						}
+						.accessibilityIdentifier("download-resume-\(item.id.uuidString)")
+					} else if item.canRetry {
+						Button("Restart", systemImage: "arrow.clockwise") {
+							manager.retry(item.id)
+						}
+						.accessibilityIdentifier("download-restart-\(item.id.uuidString)")
+					}
+					if item.status == .downloading || item.status == .paused {
+						Button("Cancel", systemImage: "xmark.circle", role: .destructive) {
+							manager.cancel(item.id)
+						}
+						.accessibilityIdentifier("download-cancel-\(item.id.uuidString)")
+					}
+				}
+				.buttonStyle(.borderless)
+				.font(.caption)
 			}
 			.frame(maxWidth: .infinity, alignment: .leading)
 		}
@@ -183,9 +217,15 @@ private struct DownloadRowView: View {
 				.accessibilityLabel("Retry download")
 				.accessibilityIdentifier("download-retry-\(item.id.uuidString)")
 			}
-			if item.status == .downloading {
+			if item.status == .downloading || item.status == .paused {
+				if item.status == .downloading {
+					Button("Pause", systemImage: "pause.fill") {
+						manager.pause(item.id)
+					}
+					.accessibilityIdentifier("download-pause-menu-\(item.id.uuidString)")
+				}
 				Button("Cancel Download", systemImage: "xmark.circle", role: .destructive) {
-					manager.delete(item.id)
+					manager.cancel(item.id)
 				}
 				.accessibilityLabel("Cancel download")
 				.accessibilityIdentifier("download-cancel-\(item.id.uuidString)")
