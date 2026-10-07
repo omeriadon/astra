@@ -73,6 +73,28 @@ struct Checks {
 		cancellingDownload.markCancellationPending()
 		assert(!cancellingDownload.canResume)
 
+		projectedDownload.status = .downloading
+		let finish = projectedDownload.estimatedFinish!
+		assert(abs(finish.timeIntervalSinceNow - 61) < 1)
+		projectedDownload.estimatedTimeRemaining = .infinity
+		assert(projectedDownload.estimatedFinish == nil)
+		projectedDownload.estimatedTimeRemaining = nil
+		projectedDownload.status = .paused
+		projectedDownload.resumeData = nil
+		projectedDownload.segments = BrowserDownloadSegment.plan(total: 512 * 1024 * 1024)
+		assert(projectedDownload.segments?.count == 4)
+		assert(projectedDownload.canResume)
+		assert(BrowserDownloadSegment.plan(total: 128 * 1024 * 1024).isEmpty)
+		let persisted = try JSONDecoder().decode(BrowserDownload.self, from: JSONEncoder().encode(projectedDownload))
+		assert(persisted.status == .paused && persisted.canResume)
+		projectedDownload.status = .cancelled
+		projectedDownload.requestHasAuthorization = false
+		assert(projectedDownload.canRetry)
+		assert(!projectedDownload.canResume)
+		assert(projectedDownload.statusSummary.hasPrefix("Cancelled"))
+		let cancelled = try JSONDecoder().decode(BrowserDownload.self, from: JSONEncoder().encode(projectedDownload))
+		assert(cancelled.status == .cancelled && cancelled.canRetry)
+
 		let longName = String(repeating: "🧭", count: 300) + ".pdf"
 		let boundedName = BrowserDownload.safeFilename(longName)
 		assert(boundedName.utf8.count <= 180)

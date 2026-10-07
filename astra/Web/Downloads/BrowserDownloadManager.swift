@@ -552,6 +552,10 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		else { return }
 		if items[index].segments != nil {
 			items[index].status = .downloading
+			guard FileManager.default.fileExists(atPath: items[index].fileURL.path) else {
+				segmentFailed(itemID)
+				return
+			}
 			items[index].errorMessage = nil
 			rateSamples[itemID] = nil
 			segmented.start(items[index])
@@ -560,6 +564,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			return
 		}
 		guard let data = items[index].resumeData else { return }
+		rateSamples[itemID] = nil
 		if resumeWebView == nil {
 			let configuration = WKWebViewConfiguration()
 			configuration.websiteDataStore = privateDataStore ?? .default()
@@ -589,6 +594,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			configuration.websiteDataStore = privateDataStore ?? .default()
 			resumeWebView = WKWebView(frame: .zero, configuration: configuration)
 		}
+		rateSamples[itemID] = nil
+		items[index].resumeData = nil
 		items[index].status = .downloading
 		items[index].progress = 0
 		items[index].receivedBytes = 0
@@ -632,11 +639,9 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	func cancel(_ itemID: UUID) {
-		guard !isClosing, let item = items.first(where: { $0.id == itemID }),
+		guard !isClosing, pauseTasks[itemID] == nil, let item = items.first(where: { $0.id == itemID }),
 		      item.status == .downloading || item.status == .paused else { return }
-		let pendingPause = pauseTasks[itemID]
 		pauseTasks[itemID] = Task { @MainActor in
-			await pendingPause?.value
 			await pauseTransfer(itemID)
 			guard let index = items.firstIndex(where: { $0.id == itemID }) else {
 				pauseTasks[itemID] = nil
@@ -648,6 +653,10 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			if let segments = items[index].segments {
 				await segmented.cancelAndWait([itemID])
 				segmented.removeParts(itemID, count: segments.count)
+			}
+			guard let index = items.firstIndex(where: { $0.id == itemID }) else {
+				pauseTasks[itemID] = nil
+				return
 			}
 			items[index].segments = nil
 			items[index].rangeValidator = nil
@@ -705,7 +714,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	func delete(_ itemID: UUID) {
 		BrowserLog.info(.downloads, "download.delete", metadata: ["item": BrowserLog.id(itemID)])
 		aiRenameTasks.removeValue(forKey: itemID)?.cancel()
-		guard let index = items.firstIndex(where: { $0.id == itemID }) else { return }
+		guard pauseTasks[itemID] == nil, let index = items.firstIndex(where: { $0.id == itemID }) else { return }
 		guard deletingItems.insert(itemID).inserted else { return }
 		if let segments = items[index].segments {
 			segmented.cancel(itemID)
@@ -1611,6 +1620,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		      !downloadCacheIsUnreadable,
 		      !isClosing
 		else { return }
+		lastPersistedAt = .now
 		let previousWrite = downloadPersistTask
 		previousWrite?.cancel()
 		let snapshot = items
