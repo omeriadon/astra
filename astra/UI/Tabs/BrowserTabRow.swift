@@ -16,11 +16,12 @@ struct BrowserTabRow: View {
 	var tabIndex: Int?
 	var normalCount: Int?
 	var pinned: Bool?
+	var rowTheme: BrowserTheme?
 	var onSelectTab: ((UUID) -> Void)?
 	var navigationNamespace: Namespace.ID?
 	@Namespace private var rowTransitions
 	private var theme: BrowserTheme {
-		browser.theme
+		rowTheme ?? browser.theme
 	}
 
 	@State private var isRenaming = false
@@ -247,6 +248,7 @@ extension BrowserTabRow: Equatable {
 			&& lhs.tabIndex == rhs.tabIndex
 			&& lhs.normalCount == rhs.normalCount
 			&& lhs.pinned == rhs.pinned
+			&& lhs.rowTheme == rhs.rowTheme
 			&& (lhs.onSelectTab == nil) == (rhs.onSelectTab == nil)
 			&& lhs.navigationNamespace == rhs.navigationNamespace
 	}
