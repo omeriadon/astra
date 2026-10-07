@@ -19,7 +19,13 @@ final class Browser {
 		session.isPrivate
 	}
 
-	private(set) var tabs: [BrowserTab]
+	private(set) var tabs: [BrowserTab] {
+		didSet {
+			tabLookup = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
+		}
+	}
+	@ObservationIgnored
+	private var tabLookup: [UUID: BrowserTab] = [:]
 	private(set) var selectedTabID: UUID
 	private(set) var workspace: BrowserWorkspace
 	private(set) var spaceSwitchDirection = 1
@@ -132,9 +138,13 @@ final class Browser {
 	@ObservationIgnored
 	private var hydrationFailed = false
 
-	/// O(1) tab lookup for sidebar/history rows (avoids O(n²) scans).
+	/// O(1) tab lookup for sidebar/history/rendering hot paths.
+	/// The dictionary is rebuilt only when the tab array itself changes.
 	var tabsByID: [UUID: BrowserTab] {
-		Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
+		if tabLookup.count != tabs.count {
+			tabLookup = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
+		}
+		return tabLookup
 	}
 
 	var recentHistoryVisits: [BrowserVisit] {
@@ -158,11 +168,11 @@ final class Browser {
 	}
 
 	func tab(withID id: UUID) -> BrowserTab? {
-		tabs.first { $0.id == id }
+		tabsByID[id]
 	}
 
 	var selectedTab: BrowserTab? {
-		tabs.first { $0.id == selectedTabID }
+		tabsByID[selectedTabID]
 	}
 
 	var selectedSpace: BrowserSpace {
