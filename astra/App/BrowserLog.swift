@@ -191,11 +191,33 @@ enum BrowserLog {
 		}
 	}
 
-	/// Full URL in Debug; scheme/host plus a path marker in Release.
+	/// Full URL in Debug except embedded credentials and obvious secret/token fields.
+	/// Release logs only scheme/host plus a path marker.
 	nonisolated static func url(_ url: URL?) -> String {
 		guard let url else { return "nil" }
 		#if DEBUG
-			return url.absoluteString
+			if url.isFileURL {
+				return url.absoluteString
+			}
+			guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+				return "\(url.scheme ?? "?")://\(url.host ?? "?")\(url.path)"
+			}
+			components.user = nil
+			components.password = nil
+			let secretNames = ["token", "password", "passwd", "secret", "authorization", "auth", "api_key", "apikey", "credential", "session", "code"]
+			if let items = components.queryItems {
+				components.queryItems = items.map { item in
+					let name = item.name.lowercased()
+					let isSecret = secretNames.contains { name.contains($0) }
+					return URLQueryItem(name: item.name, value: isSecret && item.value != nil ? "<redacted>" : item.value)
+				}
+			}
+			if let fragment = components.fragment?.lowercased(),
+			   secretNames.contains(where: { fragment.contains($0) })
+			{
+				components.fragment = "<redacted>"
+			}
+			return components.url?.absoluteString ?? "\(url.scheme ?? "?")://\(url.host ?? "?")\(url.path)"
 		#else
 			if url.isFileURL {
 				return "file://…/\(url.lastPathComponent)"
@@ -321,12 +343,18 @@ enum BrowserLog {
 		watchdogTimer = timer
 		stateLock.unlock()
 
-		timer.schedule(deadline: .now() + .seconds(1), repeating: .seconds(1), leeway: .milliseconds(100))
+		#if DEBUG
+			timer.schedule(deadline: .now() + .milliseconds(250), repeating: .milliseconds(250), leeway: .milliseconds(50))
+			let intervalMilliseconds = "250"
+		#else
+			timer.schedule(deadline: .now() + .seconds(1), repeating: .seconds(1), leeway: .milliseconds(100))
+			let intervalMilliseconds = "1000"
+		#endif
 		timer.setEventHandler {
 			watchdogTick()
 		}
 		timer.resume()
-		debug(.performance, "watchdog.started", metadata: ["interval_ms": "1000"])
+		debug(.performance, "watchdog.started", metadata: ["interval_ms": intervalMilliseconds])
 	}
 
 	nonisolated private static func watchdogTick() {
@@ -337,7 +365,7 @@ enum BrowserLog {
 		stateLock.unlock()
 
 		#if DEBUG
-			let threshold: UInt64 = 1_000_000_000
+			let threshold: UInt64 = 500_000_000
 		#else
 			let threshold: UInt64 = 2_000_000_000
 		#endif
