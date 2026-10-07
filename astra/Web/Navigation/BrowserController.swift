@@ -643,10 +643,14 @@ final class BrowserController: NSObject, Identifiable {
 	private static let linkHoverScript = """
 	(() => {
 		let previous = '', x = 0, y = 0, current = null, previewLink = null, sequence = 0, shift = false;
-		const report = (link, clientX, clientY) => {
+		let lastHref = '', lastTrailing = false, lastShift = false;
+		let pointerFrame = 0, pendingLink = null, scrollFrame = 0;
+
+		const report = (link, clientX, clientY, forceLayout = false) => {
 			let href = '';
 			try { if (link) href = new URL(link.getAttribute('href'), link.baseURI).href; } catch {}
-			if (link !== current) {
+			const linkChanged = link !== current;
+			if (linkChanged) {
 				if (current !== previewLink) current?.removeAttribute('data-astra-ai-preview-hover');
 				current = link;
 				sequence++;
@@ -660,12 +664,26 @@ final class BrowserController: NSObject, Identifiable {
 				}
 			}
 			const trailing = clientX < innerWidth / 2 && clientY > innerHeight - 72;
+			if (!forceLayout && !linkChanged && href === lastHref && trailing === lastTrailing && shift === lastShift) return;
 			const rect = link?.getBoundingClientRect();
 			const key = href + ':' + trailing + ':' + sequence + ':' + (rect?.top ?? 0) + ':' + (rect?.width ?? 0) + ':' + (rect?.height ?? 0) + ':' + shift;
+			lastHref = href;
+			lastTrailing = trailing;
+			lastShift = shift;
 			if (key === previous) return;
 			previous = key;
 			window.webkit.messageHandlers.linkHoverChanged.postMessage({ href, trailing, id: String(sequence), x: rect?.left ?? clientX, y: rect?.top ?? clientY, width: rect?.width ?? 0, height: rect?.height ?? 0, shift });
 		};
+
+		const schedulePointerReport = link => {
+			pendingLink = link;
+			if (pointerFrame) return;
+			pointerFrame = requestAnimationFrame(() => {
+				pointerFrame = 0;
+				report(pendingLink, x, y);
+			});
+		};
+
 		globalThis.astraSetAIHover = (enabled, thinking) => {
 			const target = enabled ? (current || previewLink) : null;
 			if (previewLink !== target) previewLink?.removeAttribute('data-astra-ai-preview-hover');
@@ -679,15 +697,22 @@ final class BrowserController: NSObject, Identifiable {
 			x = event.clientX;
 			y = event.clientY;
 			const link = event.composedPath().find(node => node.matches?.('a[href], area[href]'));
-			report(link, x, y);
+			schedulePointerReport(link);
 		}, true);
-		document.addEventListener('mouseleave', () => report(null, 0, 0));
-		window.addEventListener('blur', () => report(null, 0, 0));
-		window.addEventListener('pagehide', () => report(null, 0, 0));
+		document.addEventListener('mouseleave', () => {
+			pendingLink = null;
+			report(null, 0, 0, true);
+		});
+		window.addEventListener('blur', () => report(null, 0, 0, true));
+		window.addEventListener('pagehide', () => report(null, 0, 0, true));
 		document.addEventListener('scroll', () => {
-			window.webkit.messageHandlers.linkHoverChanged.postMessage({ dismissPreview: true });
-			const link = document.elementFromPoint(x, y)?.closest('a[href], area[href]');
-			report(link, x, y);
+			if (scrollFrame) return;
+			scrollFrame = requestAnimationFrame(() => {
+				scrollFrame = 0;
+				window.webkit.messageHandlers.linkHoverChanged.postMessage({ dismissPreview: true });
+				const link = document.elementFromPoint(x, y)?.closest('a[href], area[href]');
+				report(link, x, y, true);
+			});
 		}, true);
 	})();
 	"""
@@ -1298,6 +1323,7 @@ final class BrowserController: NSObject, Identifiable {
 	private func makeWebView() -> WKWebView {
 		let webViewLogStarted = BrowserLog.clock()
 		BrowserLog.info(.webKit, "webview.create.begin", metadata: ["controller": BrowserLog.id(id), "private": String(session.isPrivate)])
+		var webViewStageStarted = BrowserLog.clock()
 		let configuration = suppliedConfiguration ?? WKWebViewConfiguration()
 		if suppliedConfiguration != nil {
 			configuration.userContentController = WKUserContentController()
@@ -1322,6 +1348,8 @@ final class BrowserController: NSObject, Identifiable {
 			configuration.applicationNameForUserAgent = suffix
 		}
 		session.favicons.configureFaviconObservation(in: configuration.userContentController)
+		BrowserLog.duration(.webKit, "webview.create.configuration", since: webViewStageStarted, warnAboveMilliseconds: 40, metadata: ["controller": BrowserLog.id(id)])
+		webViewStageStarted = BrowserLog.clock()
 		let webView = PeekSourceWebView(frame: .zero, configuration: configuration)
 		#if os(macOS)
 			BrowserDesktopCommands.configureWebInspector(webView, enabled: Defaults[.webInspectorEnabled])
@@ -1330,6 +1358,8 @@ final class BrowserController: NSObject, Identifiable {
 		#if os(macOS)
 			startPreviewSnapshotRefresh()
 		#endif
+		BrowserLog.duration(.webKit, "webview.create.instance", since: webViewStageStarted, warnAboveMilliseconds: 50, metadata: ["controller": BrowserLog.id(id)])
+		webViewStageStarted = BrowserLog.clock()
 		let scrollHandler = WeakScriptMessageHandler(delegate: self)
 		webView.configuration.userContentController.add(
 			scrollHandler,
@@ -1393,6 +1423,8 @@ final class BrowserController: NSObject, Identifiable {
 		webView.onResetZoom = { [weak self] in self?.resetZoom() }
 		webView.pageZoom = CGFloat(pageZoom)
 		updateThemeColor(url == nil ? .black : webView.underPageBackgroundColor ?? .white)
+		BrowserLog.duration(.webKit, "webview.create.handlers", since: webViewStageStarted, warnAboveMilliseconds: 40, metadata: ["controller": BrowserLog.id(id)])
+		webViewStageStarted = BrowserLog.clock()
 
 		observations = [
 			webView.observe(\.hasOnlySecureContent, options: [.initial, .new]) { [weak self] webView, _ in
@@ -1464,11 +1496,14 @@ final class BrowserController: NSObject, Identifiable {
 				}
 			},
 		]
+		BrowserLog.duration(.webKit, "webview.create.observers", since: webViewStageStarted, warnAboveMilliseconds: 30, metadata: ["controller": BrowserLog.id(id)])
+		webViewStageStarted = BrowserLog.clock()
 		startMediaObservation()
 		isWebViewReady = true
 		extensionWebViewDidChange?()
 		// Start deferred navigation immediately once startup rule restoration is ready.
 		contentBlockingDidBecomeReady()
+		BrowserLog.duration(.webKit, "webview.create.finalize", since: webViewStageStarted, warnAboveMilliseconds: 30, metadata: ["controller": BrowserLog.id(id)])
 		BrowserLog.duration(.webKit, "webview.create.end", since: webViewLogStarted, warnAboveMilliseconds: 150, metadata: ["controller": BrowserLog.id(id)])
 		return webView
 	}
