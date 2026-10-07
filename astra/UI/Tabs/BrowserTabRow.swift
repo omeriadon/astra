@@ -16,8 +16,8 @@ struct BrowserTabRow: View {
 	var tabIndex: Int?
 	var normalCount: Int?
 	var pinned: Bool?
-	var rowSpaceID: UUID?
-	var rowTheme: BrowserTheme?
+	var rowSpaceID: UUID? = nil
+	var rowTheme: BrowserTheme? = nil
 	var onSelectTab: ((UUID) -> Void)?
 	var navigationNamespace: Namespace.ID?
 	@Namespace private var rowTransitions
