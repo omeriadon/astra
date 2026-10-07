@@ -163,7 +163,7 @@
 				guard !authentication.wasLaunchedByAuthenticationServices else { return }
 				let persistence = try? BrowserPersistence()
 				let records = await Task.detached(priority: .utility) {
-					(try? persistence?.loadPersistedState()?.windowRecords) ?? []
+					(try? persistence?.loadWindowRecords()) ?? []
 				}.value
 				BrowserWindowRegistry.shared.beginWindowRestoration(records)
 				for record in records where !windows.contains(where: { $0.browser.windowID == record.windowID }) {
