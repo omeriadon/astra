@@ -1,6 +1,6 @@
 import Foundation
 
-enum BrowserAuthenticationPolicy {
+nonisolated enum BrowserAuthenticationPolicy {
 	static let maximumFailures = 3
 	private static let maximumInitialURLBytes = 16384
 	static let credentialMethods = [
