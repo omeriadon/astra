@@ -105,12 +105,12 @@ final class BrowserWindowRegistry {
 
 		if let owner = tabOwners[id],
 		   let ownerBrowser = normalBrowsers.first(where: { $0.windowID == owner }),
-		   ownerBrowser.tabs.contains(where: { $0.id == id })
+		   ownerBrowser.tab(withID: id) != nil
 		{
 			return owner == browser.windowID
 		}
-		return normalBrowsers.first { $0.tabs.contains(where: { $0.id == id }) }?.windowID == browser.windowID
-			|| !normalBrowsers.contains { $0.tabs.contains(where: { $0.id == id }) }
+		return normalBrowsers.first { $0.tab(withID: id) != nil }?.windowID == browser.windowID
+			|| !normalBrowsers.contains { $0.tab(withID: id) != nil }
 	}
 
 	/// Resolve ownership for an entire window in one pass. Hot rendering paths
@@ -158,13 +158,13 @@ final class BrowserWindowRegistry {
 		let previousOwnerID: UUID? = {
 			if let owner = tabOwners[selectedID],
 			   normalBrowsers.contains(where: {
-			   	$0.windowID == owner && $0.tabs.contains(where: { $0.id == selectedID })
+			   	$0.windowID == owner && $0.tab(withID: selectedID) != nil
 			   })
 			{
 				return owner
 			}
 			return normalBrowsers.first {
-				$0.tabs.contains(where: { $0.id == selectedID })
+				$0.tab(withID: selectedID) != nil
 			}?.windowID
 		}()
 
