@@ -37,6 +37,7 @@ struct DesktopBrowserShell: View {
 	@State private var themeTransitionGeneration = 0
 	@State private var showsTopBar = true
 	@State private var isTopBarRevealed = false
+	@State private var isSidebarRevealed = false
 	#if os(macOS)
 		@State private var hostWindow: NSWindow?
 		@State private var windowButtonAnimationGeneration = 0
@@ -55,12 +56,16 @@ struct DesktopBrowserShell: View {
 		BrowserChromeMetrics.minimumWindowWidth(sidebarShown: sidebarShown, aiSidebarShown: showsAISidebar)
 	}
 
+	private var isSidebarVisible: Bool {
+		sidebarShown || isSidebarRevealed
+	}
+
 	private var showsTopBarOnPage: Bool {
 		!browser.isShowingNewTab && browser.selectedTab?.internalPage == nil
 	}
 
 	private var hasVisibleChrome: Bool {
-		sidebarShown || showsAISidebar || (showsTopBarOnPage && (showsTopBar || isTopBarRevealed))
+		isSidebarVisible || showsAISidebar || (showsTopBarOnPage && (showsTopBar || isTopBarRevealed))
 	}
 
 	private var contentCornerRadius: CGFloat {
@@ -94,7 +99,7 @@ struct DesktopBrowserShell: View {
 
 		private func updateWindowButtons(in window: NSWindow?, animated: Bool = true) {
 			guard let window else { return }
-			let hidden = !sidebarShown && !(showsTopBarOnPage && (showsTopBar || isTopBarRevealed))
+			let hidden = !isSidebarVisible && !(showsTopBarOnPage && (showsTopBar || isTopBarRevealed))
 			let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
 				.compactMap { window.standardWindowButton($0) }
 			windowButtonAnimationGeneration += 1
@@ -149,14 +154,14 @@ struct DesktopBrowserShell: View {
 		GeometryReader { geometry in
 			let showsAI = showsAISidebar
 			BrowserSplitView(
-				sidebarShown: $browser.sidebarShown,
+				sidebarShown: .constant(isSidebarVisible),
 				minimumContentWidth: BrowserChromeMetrics.minimumContentWidth
 					+ (showsAI ? BrowserChromeMetrics.aiSidebarWidthRange.lowerBound : 0)
 			) {
 				ShellSidebarColumn(
 					browser: browser,
 					theme: theme,
-					sidebarShown: sidebarShown,
+					sidebarShown: isSidebarVisible,
 					isFullScreen: isFullScreen,
 					colorScheme: colorScheme,
 					topBarColorScheme: topBarColorScheme,
@@ -181,7 +186,7 @@ struct DesktopBrowserShell: View {
 					ShellContentColumn(
 						browser: browser,
 						theme: theme,
-						sidebarShown: sidebarShown,
+						sidebarShown: isSidebarVisible,
 						isFullScreen: isFullScreen,
 						colorScheme: colorScheme,
 						topBarColorScheme: topBarColorScheme,
@@ -197,6 +202,28 @@ struct DesktopBrowserShell: View {
 				.animation(nil, value: browser.selectedTabID)
 				.animation(nil, value: browser.canShowAISidebar)
 			}
+			.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: isSidebarVisible)
+			.onContinuousHover { phase in
+				switch phase {
+					case let .active(location):
+						let revealWidth = isSidebarRevealed
+							? BrowserChromeMetrics.sidebarWidth(
+								preferred: BrowserChromeMetrics.expandedSidebarWidth,
+								limits: BrowserChromeMetrics.sidebarWidthRange,
+								availableWidth: geometry.size.width,
+								minimumContentWidth: BrowserChromeMetrics.minimumContentWidth
+									+ (showsAI ? BrowserChromeMetrics.aiSidebarWidthRange.lowerBound : 0)
+							)
+							: 6
+						withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+							isSidebarRevealed = !sidebarShown && location.x < revealWidth
+						}
+					case .ended:
+						withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+							isSidebarRevealed = false
+						}
+				}
+			}
 		}
 		.background {
 			BrowserThemeBackground(
@@ -204,6 +231,9 @@ struct DesktopBrowserShell: View {
 				transitionFromTheme: transitionFromTheme,
 				transitionProgress: themeBlend
 			)
+		}
+		.onChange(of: sidebarShown) { _, _ in
+			isSidebarRevealed = false
 		}
 		.onChange(of: browser.workspace.selectedSpaceID) { oldID, newID in
 			completeSpaceThemeTransition(from: oldID, to: newID)
@@ -234,7 +264,7 @@ struct DesktopBrowserShell: View {
 		.onChange(of: hostWindow) { _, _ in
 			updateWindowMinimumSize()
 		}
-		.onChange(of: sidebarShown) { _, shown in
+		.onChange(of: isSidebarVisible) { _, shown in
 			updateWindowButtons(in: hostWindow)
 			if !shown {
 				BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
@@ -259,7 +289,7 @@ struct DesktopBrowserShell: View {
 				DownloadFlightOverlay(
 					flight: flight,
 					flightProgress: flightProgress,
-					sidebarShown: sidebarShown,
+					sidebarShown: isSidebarVisible,
 					theme: theme
 				)
 				.allowsHitTesting(false)

@@ -29,7 +29,7 @@ import WebKit
 		let modelBytes: UInt64?
 
 		var relatedProcessBytes: UInt64? {
-			let values = [webContentBytes, graphicsBytes, networkBytes, modelBytes].compactMap { $0 }
+			let values = [webContentBytes, graphicsBytes, networkBytes, modelBytes].compactMap(\.self)
 			return values.isEmpty ? nil : values.reduce(0, +)
 		}
 
