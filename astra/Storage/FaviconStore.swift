@@ -30,8 +30,8 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 
 	static let shared = FaviconStore()
 	private static let messageHandlerName = "faviconChanged"
-	private static let maximumImageBytes = 1_000_000
-	private static let maximumImageDimension = 512
+	private nonisolated static let maximumImageBytes = 1_000_000
+	private nonisolated static let maximumImageDimension = 512
 	private static let maximumCacheEntries = 256
 	private static let maximumCacheBytes = 16_000_000
 	private static let maximumConcurrentRequests = 4
@@ -212,33 +212,15 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		var request = URLRequest(url: iconURL)
 		request.cachePolicy = .reloadRevalidatingCacheData
 		request.timeoutInterval = 15
-		var data = Data()
 		guard currentNetworkRequests < Self.maximumConcurrentRequests else { return }
 		currentNetworkRequests += 1
 		defer { currentNetworkRequests -= 1 }
-		do {
-			let (bytes, response) = try await networkSession.bytes(for: request)
-			guard let response = response as? HTTPURLResponse,
-			      200 ..< 300 ~= response.statusCode,
-			      response.expectedContentLength <= Int64(Self.maximumImageBytes) || response.expectedContentLength < 0
-			else { return }
+		guard let data = await Self.fetchValidatedFaviconData(
+			session: networkSession,
+			request: request
+		) else { return }
 
-			for try await byte in bytes {
-				guard !Task.isCancelled,
-				      activeRequests[webViewID] === activeRequest,
-				      generation == cacheGeneration,
-				      FaviconKey.origin(for: webView.url) == key,
-				      data.count < Self.maximumImageBytes
-				else { return }
-				data.append(byte)
-			}
-		} catch {
-			return
-		}
-
-		guard !data.isEmpty,
-		      Self.isValidImage(data),
-		      !Task.isCancelled,
+		guard !Task.isCancelled,
 		      activeRequests[webViewID] === activeRequest,
 		      generation == cacheGeneration,
 		      FaviconKey.origin(for: webView.url) == key,
@@ -300,6 +282,36 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 
 		Task { @MainActor in
 			await loadFavicon(for: pageURL, from: webView)
+		}
+	}
+
+	/// Stream and validate favicon bytes away from MainActor. The old byte-by-byte
+	/// loop ran inside FaviconStore's global actor, so a 100–500 KB icon could
+	/// schedule hundreds of thousands of tiny main-thread append operations.
+	private nonisolated static func fetchValidatedFaviconData(
+		session: URLSession,
+		request: URLRequest
+	) async -> Data? {
+		do {
+			let (bytes, response) = try await session.bytes(for: request)
+			guard let response = response as? HTTPURLResponse,
+			      200 ..< 300 ~= response.statusCode,
+			      response.expectedContentLength <= Int64(maximumImageBytes)
+				      || response.expectedContentLength < 0
+			else { return nil }
+
+			var data = Data()
+			if response.expectedContentLength > 0 {
+				data.reserveCapacity(min(Int(response.expectedContentLength), maximumImageBytes))
+			}
+			for try await byte in bytes {
+				guard !Task.isCancelled, data.count < maximumImageBytes else { return nil }
+				data.append(byte)
+			}
+			guard !data.isEmpty, isValidImage(data) else { return nil }
+			return data
+		} catch {
+			return nil
 		}
 	}
 
