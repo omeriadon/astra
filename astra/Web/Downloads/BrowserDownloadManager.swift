@@ -1095,7 +1095,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		} catch {
 			BrowserLog.debug(.downloads, "download.acceleration.probe-failed", metadata: [
 				"url": BrowserLog.url(url),
-				"error": BrowserLog.error(error),
+				"error": BrowserLog.errorDescription(error),
 			])
 			return nil
 		}
