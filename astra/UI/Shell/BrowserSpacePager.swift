@@ -10,19 +10,22 @@
 	struct BrowserSpacePager<Content: View>: NSViewControllerRepresentable {
 		let spaces: [BrowserSpace]
 		let selectedSpaceID: UUID
+		let favouriteTabIDs: [UUID]
 		let onSelectSpace: (UUID) -> Void
-		let content: (BrowserSpace) -> Content
+		let content: (BrowserSpace, Bool, [UUID]) -> Content
 
 		@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 		init(
 			spaces: [BrowserSpace],
 			selectedSpaceID: UUID,
+			favouriteTabIDs: [UUID],
 			onSelectSpace: @escaping (UUID) -> Void,
-			@ViewBuilder content: @escaping (BrowserSpace) -> Content
+			@ViewBuilder content: @escaping (BrowserSpace, Bool, [UUID]) -> Content
 		) {
 			self.spaces = spaces
 			self.selectedSpaceID = selectedSpaceID
+			self.favouriteTabIDs = favouriteTabIDs
 			self.onSelectSpace = onSelectSpace
 			self.content = content
 		}
@@ -32,6 +35,7 @@
 			controller.update(
 				spaces: spaces,
 				selectedSpaceID: selectedSpaceID,
+				favouriteTabIDs: favouriteTabIDs,
 				content: content,
 				onSelectSpace: onSelectSpace,
 				animated: false
@@ -46,6 +50,7 @@
 			controller.update(
 				spaces: spaces,
 				selectedSpaceID: selectedSpaceID,
+				favouriteTabIDs: favouriteTabIDs,
 				content: content,
 				onSelectSpace: onSelectSpace,
 				animated: !reduceMotion
@@ -62,8 +67,10 @@
 		let pinnedTabIDs: [UUID]
 		let todayTabGroups: [BrowserTabGroupingFeature.Group]
 		let pinnedFolders: [PinnedTabFolder]
+		let isSelected: Bool
+		let favouriteTabIDs: [UUID]
 
-		init(_ space: BrowserSpace) {
+		init(_ space: BrowserSpace, isSelected: Bool, favouriteTabIDs: [UUID]) {
 			id = space.id
 			name = space.name
 			symbol = space.symbol
@@ -72,17 +79,21 @@
 			pinnedTabIDs = space.pinnedTabIDs
 			todayTabGroups = space.todayTabGroups
 			pinnedFolders = space.pinnedFolders
+			self.isSelected = isSelected
+			self.favouriteTabIDs = favouriteTabIDs
 		}
 	}
 
 	final class BrowserSpacePageController<Content: View>: NSPageController, NSPageControllerDelegate {
 		private var spaces: [BrowserSpace] = []
-		private var content: (BrowserSpace) -> Content
+		private var selectedSpaceID: UUID?
+		private var favouriteTabIDs: [UUID] = []
+		private var content: (BrowserSpace, Bool, [UUID]) -> Content
 		private var onSelectSpace: (UUID) -> Void = { _ in }
 		private var contentControllers: [String: BrowserSpacePageContentController<Content>] = [:]
 		private var previousBoundsSize: CGSize = .zero
 
-		init(content: @escaping (BrowserSpace) -> Content) {
+		init(content: @escaping (BrowserSpace, Bool, [UUID]) -> Content) {
 			self.content = content
 			super.init(nibName: nil, bundle: nil)
 		}
@@ -122,7 +133,8 @@
 		func update(
 			spaces: [BrowserSpace],
 			selectedSpaceID: UUID,
-			content: @escaping (BrowserSpace) -> Content,
+			favouriteTabIDs: [UUID],
+			content: @escaping (BrowserSpace, Bool, [UUID]) -> Content,
 			onSelectSpace: @escaping (UUID) -> Void,
 			animated: Bool
 		) {
@@ -130,6 +142,8 @@
 			let newIDs = spaces.map(\.id)
 
 			self.spaces = spaces
+			self.selectedSpaceID = selectedSpaceID
+			self.favouriteTabIDs = favouriteTabIDs
 			self.content = content
 			self.onSelectSpace = onSelectSpace
 
@@ -154,7 +168,12 @@
 					staleIdentifiers.append(identifier)
 					continue
 				}
-				controller.update(space: space, content: content)
+				controller.update(
+					space: space,
+					isSelected: space.id == selectedSpaceID,
+					favouriteTabIDs: favouriteTabIDs,
+					content: content
+				)
 			}
 			for identifier in staleIdentifiers {
 				contentControllers[identifier] = nil
@@ -199,7 +218,12 @@
 				let id = UUID(uuidString: identifier),
 				let space = spaces.first(where: { $0.id == id })
 			{
-				controller.update(space: space, content: content)
+				controller.update(
+					space: space,
+					isSelected: space.id == selectedSpaceID,
+					favouriteTabIDs: favouriteTabIDs,
+					content: content
+				)
 			}
 			contentControllers[identifier] = controller
 			return controller
@@ -229,12 +253,18 @@
 
 		func update(
 			space: BrowserSpace,
-			content: @escaping (BrowserSpace) -> Content
+			isSelected: Bool,
+			favouriteTabIDs: [UUID],
+			content: @escaping (BrowserSpace, Bool, [UUID]) -> Content
 		) {
-			let nextSignature = BrowserSpacePageSignature(space)
+			let nextSignature = BrowserSpacePageSignature(
+				space,
+				isSelected: isSelected,
+				favouriteTabIDs: favouriteTabIDs
+			)
 			guard hostingView == nil || signature != nextSignature else { return }
 			signature = nextSignature
-			let rootView = content(space)
+			let rootView = content(space, isSelected, favouriteTabIDs)
 
 			if let hostingView {
 				hostingView.rootView = rootView
@@ -265,8 +295,9 @@
 	struct BrowserSpacePager<Content: View>: View {
 		let spaces: [BrowserSpace]
 		let selectedSpaceID: UUID
+		let favouriteTabIDs: [UUID]
 		let onSelectSpace: (UUID) -> Void
-		let content: (BrowserSpace) -> Content
+		let content: (BrowserSpace, Bool, [UUID]) -> Content
 
 		@State private var scrollSpaceID: UUID?
 		@State private var isScrolling = false
@@ -275,11 +306,13 @@
 		init(
 			spaces: [BrowserSpace],
 			selectedSpaceID: UUID,
+			favouriteTabIDs: [UUID],
 			onSelectSpace: @escaping (UUID) -> Void,
-			@ViewBuilder content: @escaping (BrowserSpace) -> Content
+			@ViewBuilder content: @escaping (BrowserSpace, Bool, [UUID]) -> Content
 		) {
 			self.spaces = spaces
 			self.selectedSpaceID = selectedSpaceID
+			self.favouriteTabIDs = favouriteTabIDs
 			self.onSelectSpace = onSelectSpace
 			self.content = content
 		}
@@ -288,7 +321,7 @@
 			ScrollView(.horizontal) {
 				LazyHStack(spacing: 0) {
 					ForEach(spaces) { space in
-						content(space)
+						content(space, space.id == selectedSpaceID, favouriteTabIDs)
 							.containerRelativeFrame(.horizontal)
 							.id(space.id)
 					}
