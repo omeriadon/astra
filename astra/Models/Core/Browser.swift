@@ -948,7 +948,9 @@ final class Browser {
 		// avoid rewriting workspace timestamps/persistence for any repeated click
 		// on an already-active warm tab.
 		if selectedTabID == id, !tab.isHibernated {
-			BrowserWindowRegistry.shared.claimSelectedTab(in: self)
+			if !BrowserWindowRegistry.shared.ownsTab(id, in: self) {
+				BrowserWindowRegistry.shared.claimSelectedTab(in: self)
+			}
 			return
 		}
 
