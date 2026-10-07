@@ -199,6 +199,25 @@ final class BrowserWindowRegistry {
 		}
 	}
 
+	/// Sidebar rows ask this for every visible tab. Resolve the selected tabs
+	/// owned by other normal windows once instead of rescanning all windows and
+	/// their tab arrays from every row body.
+	func tabIDsOpenInAnotherWindow(than browser: Browser) -> Set<UUID> {
+		guard !browser.isPrivate, !browser.isMini else { return [] }
+		let normalBrowsers = openBrowsers.filter { !$0.isPrivate && !$0.isMini }
+		guard normalBrowsers.count > 1 else { return [] }
+
+		var result = Set<UUID>()
+		result.reserveCapacity(normalBrowsers.count - 1)
+		for other in normalBrowsers where other !== browser {
+			let id = other.selectedTabID
+			if ownsTab(id, in: other) {
+				result.insert(id)
+			}
+		}
+		return result
+	}
+
 	func isReferenced(_ tab: BrowserTab) -> Bool {
 		openBrowsers.contains { $0.tabs.contains { $0 === tab } }
 	}
