@@ -266,6 +266,9 @@ struct DesktopBrowserShell: View {
 				TabDragOverlay(browser: browser, hostWindow: hostWindow)
 					.allowsHitTesting(false)
 			}
+			.overlay {
+				BrowserTabHoverPreviewOverlay(browser: browser)
+			}
 		#endif
 			.onChange(of: downloads.latestStart?.id) { _, _ in
 				guard let start = downloads.latestStart,
