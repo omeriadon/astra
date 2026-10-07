@@ -113,7 +113,7 @@ private struct DownloadRowView: View {
 							.font(.caption.monospacedDigit())
 							.foregroundStyle(.secondary)
 					}
-					Text(item.segments.map { "\($0.count) download pieces" } ?? "Single connection")
+					Text(manager.transferModeDescription(for: item))
 						.font(.caption)
 						.foregroundStyle(.secondary)
 					HStack(spacing: 3) {
