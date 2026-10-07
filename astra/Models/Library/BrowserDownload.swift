@@ -222,21 +222,20 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 		request.httpBody != nil || request.httpBodyStream != nil
 	}
 
-	private static let sensitiveRequestHeaders: Set<String> = [
+	private static let authorizationRequestHeaders: Set<String> = [
 		"authorization",
-		"cookie",
-		"cookie2",
 		"proxy-authorization",
 	]
 
-	/// Segmented transfers may replay ordinary request semantics such as Accept,
-	/// Referer and User-Agent, but must never detach browser-managed credentials.
+	/// Detached segmented transfers never replay browser cookies. Authorization
+	/// credentials and URL credentials are stronger signals that the resource is
+	/// intentionally authenticated, so those remain WebKit-owned.
 	static func requestHasSensitiveCredentials(_ request: URLRequest) -> Bool {
 		if request.url?.user != nil || request.url?.password != nil {
 			return true
 		}
 		return (request.allHTTPHeaderFields ?? [:]).keys.contains {
-			sensitiveRequestHeaders.contains($0.lowercased())
+			authorizationRequestHeaders.contains($0.lowercased())
 		}
 	}
 
