@@ -1797,10 +1797,20 @@ final class Browser {
 	}
 
 	private func configure(_ tab: BrowserTab) {
-		guard BrowserWindowRegistry.shared.ownsTab(tab.id, in: self) else { return }
-		attachPersistence(to: tab)
-		guard let controller = tab.controller else { return }
+		guard BrowserWindowRegistry.shared.ownsTab(tab.id, in: self),
+		      let controller = tab.controller else { return }
 		controller.displayWindowID = windowID
+		controller.navigationIntercept = navigationIntercept
+		if controller.browserConfigurationWindowID == windowID {
+			// Tab selection used to reinstall every callback closure on every click.
+			// Existing controllers only need newly-created peeks checked.
+			for peek in tab.peeks {
+				configure(peek, in: tab)
+			}
+			return
+		}
+		controller.browserConfigurationWindowID = windowID
+		attachPersistence(to: tab)
 		controller.pictureInPictureRestoreRequested = { [weak self, weak tab, weak controller] in
 			guard let self, let tab, let controller else { return }
 			selectTab(tab.id)
@@ -1817,7 +1827,6 @@ final class Browser {
 			      tab.activeController === controller else { return false }
 			return webView.window != nil
 		}
-		controller.navigationIntercept = navigationIntercept
 		controller.extensionStateDidChange = { [weak self] in
 			guard let self else { return }
 			BrowserExtensionManager.shared.sync(self)
@@ -1896,6 +1905,9 @@ final class Browser {
 
 	private func configure(_ peek: BrowserPeek, in tab: BrowserTab) {
 		peek.controller.displayWindowID = windowID
+		peek.controller.navigationIntercept = navigationIntercept
+		guard peek.controller.browserConfigurationWindowID != windowID else { return }
+		peek.controller.browserConfigurationWindowID = windowID
 		peek.controller.pictureInPictureRestoreRequested = { [weak self, weak tab, weak controller = peek.controller] in
 			guard let self, let tab, let controller else { return }
 			selectTab(tab.id)
@@ -1912,7 +1924,6 @@ final class Browser {
 			      tab.activeController === controller else { return false }
 			return webView.window != nil
 		}
-		peek.controller.navigationIntercept = navigationIntercept
 		peek.controller.popupRequested = { [weak self, weak tab, weak peek] configuration, source, inBackground in
 			guard let self, let tab, let peek else { return nil }
 			return createPopup(configuration: configuration, source: source, in: tab, depth: peek.depth + 1, parentZoom: peek.controller.pageZoom, inBackground: inBackground)
