@@ -170,14 +170,15 @@ struct ShellSidebarListView: View {
 					.padding(.bottom, 48)
 					.frame(minHeight: geometry.size.height, alignment: .top)
 				}
-				.onChange(of: selectedID, initial: true) { oldID, id in
+				.onChange(of: selectedID, initial: true) { oldID, newID in
 					// Only scroll the active space's list; the swipe-preview
 					// copy has allowsHitTesting(false) and no reader anchor.
-					guard isActiveSpace else { return }
+					guard isActiveSpace, let newID else { return }
 					// Initial layout and disk restoration should settle without a scroll animation.
-					let animate = !reduceMotion && oldID != id && tabsByID[oldID] != nil
+					let hadPreviousSelection = oldID.flatMap { tabsByID[$0] } != nil
+					let animate = !reduceMotion && oldID != newID && hadPreviousSelection
 					withAnimation(animate ? .smooth(duration: 0.25) : nil) {
-						reader.scrollTo(id, anchor: .center)
+						reader.scrollTo(newID, anchor: .center)
 					}
 				}
 			}
