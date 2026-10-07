@@ -10,6 +10,7 @@ import SwiftUI
 import WebKit
 #if os(macOS)
 	import AppKit
+	import Darwin
 #elseif os(iOS)
 	import UIKit
 #endif
@@ -19,6 +20,22 @@ import WebKit
 	struct BrowserAddressPromptOwner {
 		let browser: Browser
 		let window: NSWindow
+	}
+
+	struct BrowserTabProcessMemorySnapshot: Equatable, Sendable {
+		let webContentBytes: UInt64?
+		let graphicsBytes: UInt64?
+		let networkBytes: UInt64?
+		let modelBytes: UInt64?
+
+		var relatedProcessBytes: UInt64? {
+			let values = [webContentBytes, graphicsBytes, networkBytes, modelBytes].compactMap { $0 }
+			return values.isEmpty ? nil : values.reduce(0, +)
+		}
+
+		var hasSharedProcessMemory: Bool {
+			graphicsBytes != nil || networkBytes != nil || modelBytes != nil
+		}
 	}
 #endif
 
@@ -1688,6 +1705,51 @@ final class BrowserController: NSObject, Identifiable {
 			guard let image = await takeSnapshot() else { return }
 			guard owns(webView), generation == navigationGeneration else { return }
 			previewSnapshot = image
+		}
+
+		func tabProcessMemorySnapshot() -> BrowserTabProcessMemorySnapshot? {
+			guard let webView = createdWebView, owns(webView) else { return nil }
+
+			let webContentPID = Self.privateProcessIdentifier("_webProcessIdentifier", on: webView)
+			let graphicsPID = Self.privateProcessIdentifier("_gpuProcessIdentifier", on: webView)
+			let modelPID = Self.privateProcessIdentifier("_modelProcessIdentifier", on: webView)
+			let networkPID = Self.privateProcessIdentifier(
+				"_networkProcessIdentifier",
+				on: webView.configuration.websiteDataStore
+			)
+
+			let snapshot = BrowserTabProcessMemorySnapshot(
+				webContentBytes: webContentPID.flatMap(Self.physicalFootprint),
+				graphicsBytes: graphicsPID.flatMap(Self.physicalFootprint),
+				networkBytes: networkPID.flatMap(Self.physicalFootprint),
+				modelBytes: modelPID.flatMap(Self.physicalFootprint)
+			)
+			return snapshot.relatedProcessBytes == nil ? nil : snapshot
+		}
+
+		private static func privateProcessIdentifier(_ key: String, on object: NSObject) -> pid_t? {
+			let selector = NSSelectorFromString(key)
+			guard object.responds(to: selector),
+			      let number = object.value(forKey: key) as? NSNumber
+			else { return nil }
+			let processIdentifier = number.int32Value
+			return processIdentifier > 0 ? processIdentifier : nil
+		}
+
+		private static func physicalFootprint(_ processIdentifier: pid_t) -> UInt64? {
+			var usage = rusage_info_v4()
+			let result = withUnsafeMutablePointer(to: &usage) { usagePointer in
+				var info: rusage_info_t? = UnsafeMutableRawPointer(usagePointer)
+				return withUnsafeMutablePointer(to: &info) { infoPointer in
+					proc_pid_rusage(
+						processIdentifier,
+						Int32(RUSAGE_INFO_V4),
+						infoPointer
+					)
+				}
+			}
+			guard result == 0 else { return nil }
+			return usage.ri_phys_footprint
 		}
 	#endif
 

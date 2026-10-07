@@ -234,8 +234,11 @@ struct DesktopBrowserShell: View {
 		.onChange(of: hostWindow) { _, _ in
 			updateWindowMinimumSize()
 		}
-		.onChange(of: sidebarShown) { _, _ in
+		.onChange(of: sidebarShown) { _, shown in
 			updateWindowButtons(in: hostWindow)
+			if !shown {
+				BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
+			}
 		}
 		.onChange(of: showsTopBar) { _, _ in
 			updateWindowButtons(in: hostWindow)
@@ -266,7 +269,15 @@ struct DesktopBrowserShell: View {
 				TabDragOverlay(browser: browser, hostWindow: hostWindow)
 					.allowsHitTesting(false)
 			}
+			.overlay {
+				BrowserTabHoverPreviewOverlay(browser: browser)
+			}
 		#endif
+			.onChange(of: showsDownloads) { _, shown in
+				if shown {
+					BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
+				}
+			}
 			.onChange(of: downloads.latestStart?.id) { _, _ in
 				guard let start = downloads.latestStart,
 				      let item = downloads.items.first(where: { $0.id == start.id })

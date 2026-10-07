@@ -4,6 +4,8 @@
 	import UIKit
 #endif
 import Defaults
+import Foundation
+import Observation
 import SwiftUI
 
 struct BrowserTabRow: View {
@@ -24,6 +26,9 @@ struct BrowserTabRow: View {
 	@State private var isRenaming = false
 	@State private var isHovered = false
 	@State private var showsMonitorDetails = false
+	#if os(macOS)
+		@State private var hoverFrame = CGRect.zero
+	#endif
 	@State private var renameText = ""
 	@FocusState private var isTitleFocused: Bool
 	#if os(macOS)
@@ -150,7 +155,38 @@ struct BrowserTabRow: View {
 				}
 		)
 		#endif
-		.onHover { isHovered = $0 }
+		.onHover { hovering in
+			isHovered = hovering
+			#if os(macOS)
+				guard onSelectTab == nil else { return }
+				if hovering {
+					BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
+						tabID: tab.id,
+						windowID: browser.windowID,
+						sourceFrame: hoverFrame
+					)
+				} else {
+					BrowserTabHoverPreviewCoordinator.shared.hoverEnded(
+						tabID: tab.id,
+						windowID: browser.windowID
+					)
+				}
+			#endif
+		}
+		#if os(macOS)
+		.onGeometryChange(for: CGRect.self) { proxy in
+			proxy.frame(in: .global)
+		} action: { frame in
+			hoverFrame = frame
+			if isHovered, onSelectTab == nil {
+				BrowserTabHoverPreviewCoordinator.shared.updateFrame(
+					for: tab.id,
+					windowID: browser.windowID,
+					frame: frame
+				)
+			}
+		}
+		#endif
 		.contextMenu {
 			TabRowContextMenu(
 				tab: tab,
@@ -442,3 +478,272 @@ private struct TabRowContextMenu: View {
 		}
 	}
 }
+
+
+#if os(macOS)
+	@MainActor
+	@Observable
+	final class BrowserTabHoverPreviewCoordinator {
+		static let shared = BrowserTabHoverPreviewCoordinator()
+
+		private(set) var presentedTabID: UUID?
+		private(set) var windowID: UUID?
+		private(set) var sourceFrame = CGRect.zero
+		private(set) var isVisible = false
+
+		@ObservationIgnored private var hoveredTabID: UUID?
+		@ObservationIgnored private var activationTask: Task<Void, Never>?
+		@ObservationIgnored private var dismissalTask: Task<Void, Never>?
+		@ObservationIgnored private var warmSession = false
+
+		private init() {}
+
+		func hoverBegan(tabID: UUID, windowID: UUID, sourceFrame: CGRect) {
+			dismissalTask?.cancel()
+			dismissalTask = nil
+			hoveredTabID = tabID
+			self.windowID = windowID
+			self.sourceFrame = sourceFrame
+
+			if warmSession {
+				activationTask?.cancel()
+				activationTask = nil
+				presentedTabID = tabID
+				isVisible = true
+				return
+			}
+
+			activationTask?.cancel()
+			activationTask = Task { @MainActor [weak self] in
+				do {
+					try await Task.sleep(for: .seconds(2))
+				} catch {
+					return
+				}
+				guard let self,
+				      self.hoveredTabID == tabID,
+				      self.windowID == windowID
+				else { return }
+				self.warmSession = true
+				self.presentedTabID = tabID
+				self.isVisible = true
+			}
+		}
+
+		func updateFrame(for tabID: UUID, windowID: UUID, frame: CGRect) {
+			guard hoveredTabID == tabID, self.windowID == windowID else { return }
+			sourceFrame = frame
+		}
+
+		func hoverEnded(tabID: UUID, windowID: UUID) {
+			guard hoveredTabID == tabID, self.windowID == windowID else { return }
+			hoveredTabID = nil
+			activationTask?.cancel()
+			activationTask = nil
+
+			dismissalTask?.cancel()
+			dismissalTask = Task { @MainActor [weak self] in
+				do {
+					try await Task.sleep(for: .milliseconds(160))
+				} catch {
+					return
+				}
+				guard let self, self.hoveredTabID == nil else { return }
+				self.isVisible = false
+				self.presentedTabID = nil
+
+				do {
+					try await Task.sleep(for: .milliseconds(340))
+				} catch {
+					return
+				}
+				guard self.hoveredTabID == nil else { return }
+				self.warmSession = false
+				self.windowID = nil
+			}
+		}
+
+		func dismiss(for windowID: UUID) {
+			guard self.windowID == windowID else { return }
+			activationTask?.cancel()
+			dismissalTask?.cancel()
+			activationTask = nil
+			dismissalTask = nil
+			hoveredTabID = nil
+			presentedTabID = nil
+			isVisible = false
+			warmSession = false
+			self.windowID = nil
+		}
+	}
+
+	struct BrowserTabHoverPreviewOverlay: View {
+		let browser: Browser
+		@State private var coordinator = BrowserTabHoverPreviewCoordinator.shared
+
+		private let cardWidth: CGFloat = 320
+		private let cardHeight: CGFloat = 340
+		private let margin: CGFloat = 12
+
+		var body: some View {
+			GeometryReader { geometry in
+				let globalFrame = geometry.frame(in: .global)
+				if coordinator.isVisible,
+				   coordinator.windowID == browser.windowID,
+				   let tabID = coordinator.presentedTabID,
+				   let tab = browser.tabsByID[tabID]
+				{
+					let desiredX = coordinator.sourceFrame.maxX - globalFrame.minX + margin + cardWidth / 2
+					let desiredY = coordinator.sourceFrame.midY - globalFrame.minY
+					let x = min(
+						max(cardWidth / 2 + margin, desiredX),
+						max(cardWidth / 2 + margin, geometry.size.width - cardWidth / 2 - margin)
+					)
+					let y = min(
+						max(cardHeight / 2 + margin, desiredY),
+						max(cardHeight / 2 + margin, geometry.size.height - cardHeight / 2 - margin)
+					)
+
+					BrowserTabHoverPreviewCard(tab: tab)
+						.frame(width: cardWidth, height: cardHeight)
+						.position(x: x, y: y)
+						.id(tab.id)
+						.transition(.opacity)
+				}
+			}
+			.animation(.linear(duration: 0.1), value: coordinator.isVisible)
+			.animation(.linear(duration: 0.1), value: coordinator.presentedTabID)
+			.allowsHitTesting(false)
+			.accessibilityHidden(true)
+		}
+	}
+
+	private struct BrowserTabHoverPreviewCard: View {
+		let tab: BrowserTab
+		@State private var memory: BrowserTabProcessMemorySnapshot?
+		@State private var hasSampledMemory = false
+
+		private var host: String {
+			if tab.internalPage != nil {
+				return "Internal Page"
+			}
+			return tab.currentURL?.host ?? "New Tab"
+		}
+
+		private var unavailableMemoryLabel: String {
+			if tab.isHibernated {
+				return "Hibernated"
+			}
+			return hasSampledMemory ? "Unavailable" : "Measuring…"
+		}
+
+		var body: some View {
+			VStack(alignment: .leading, spacing: 10) {
+				HStack(spacing: 9) {
+					if let favicon = tab.session.favicons.image(for: tab.currentURL, in: tab.controller?.webViewIfLoaded) {
+						favicon
+							.resizable()
+							.scaledToFit()
+							.frame(width: 18, height: 18)
+					} else {
+						Image(systemName: tab.internalPage?.symbol ?? "globe")
+							.frame(width: 18, height: 18)
+					}
+
+					VStack(alignment: .leading, spacing: 1) {
+						Text(verbatim: tab.title)
+							.font(.headline)
+							.lineLimit(1)
+						Text(verbatim: host)
+							.font(.caption)
+							.foregroundStyle(.secondary)
+							.lineLimit(1)
+					}
+				}
+
+				Group {
+					if let page = tab.internalPage {
+						Image(systemName: page.symbol)
+							.font(.system(size: 42))
+							.frame(maxWidth: .infinity, maxHeight: .infinity)
+					} else if let snapshot = tab.controller?.previewSnapshot {
+						Image(nsImage: snapshot)
+							.resizable()
+							.aspectRatio(contentMode: .fill)
+					} else {
+						ZStack {
+							Color.white.opacity(0.06)
+							Image(systemName: tab.isHibernated ? "moon.zzz" : "rectangle.dashed")
+								.font(.system(size: 28))
+								.foregroundStyle(.secondary)
+						}
+					}
+				}
+				.frame(width: 296, height: 166)
+				.clipped()
+				.clipShape(RoundedRectangle(cornerRadius: 10))
+
+				HStack {
+					Text("Memory")
+						.font(.subheadline.weight(.semibold))
+					Spacer()
+					Text(memory?.relatedProcessBytes.map(Self.formatBytes) ?? unavailableMemoryLabel)
+						.font(.subheadline.monospacedDigit())
+						.foregroundStyle(.secondary)
+				}
+
+				HStack(alignment: .top, spacing: 8) {
+					memoryMetric("Web + JS", bytes: memory?.webContentBytes)
+					memoryMetric("Graphics*", bytes: memory?.graphicsBytes)
+					memoryMetric("Network*", bytes: memory?.networkBytes)
+					if memory?.modelBytes != nil {
+						memoryMetric("Model*", bytes: memory?.modelBytes)
+					}
+				}
+
+				Text("* Shared WebKit process; shown for context rather than attributed entirely to this tab.")
+					.font(.system(size: 9))
+					.foregroundStyle(.tertiary)
+					.lineLimit(2)
+			}
+			.padding(12)
+			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
+			.task(id: tab.id) {
+				memory = nil
+				hasSampledMemory = false
+				guard let controller = tab.controller else {
+					hasSampledMemory = true
+					return
+				}
+
+				await controller.refreshPreviewSnapshot()
+				while !Task.isCancelled {
+					memory = controller.tabProcessMemorySnapshot()
+					hasSampledMemory = true
+					do {
+						try await Task.sleep(for: .seconds(1))
+					} catch {
+						return
+					}
+				}
+			}
+		}
+
+		private func memoryMetric(_ label: String, bytes: UInt64?) -> some View {
+			VStack(alignment: .leading, spacing: 2) {
+				Text(label)
+					.font(.system(size: 9))
+					.foregroundStyle(.tertiary)
+				Text(bytes.map(Self.formatBytes) ?? "—")
+					.font(.caption2.monospacedDigit())
+					.lineLimit(1)
+			}
+			.frame(maxWidth: .infinity, alignment: .leading)
+		}
+
+		private static func formatBytes(_ bytes: UInt64) -> String {
+			ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
+		}
+	}
+#endif
