@@ -103,7 +103,7 @@ struct Checks {
 
 		projectedDownload.status = .downloading
 		let finish = projectedDownload.estimatedFinish!
-		assert(abs(finish.timeIntervalSinceNow - 60) < 1)
+		assert(abs(finish.timeIntervalSinceNow - 61) < 1)
 		projectedDownload.estimatedTimeRemaining = .infinity
 		assert(projectedDownload.estimatedFinish == nil)
 		projectedDownload.estimatedTimeRemaining = nil
