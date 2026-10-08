@@ -28,6 +28,31 @@ import WebKit
 @Observable
 final class BrowserController: NSObject, Identifiable {
 	#if os(macOS)
+		static func logReclamation(for before: BrowserTabProcessMemorySnapshot) async -> BrowserMemoryReclamationSnapshot {
+			try? await Task.sleep(for: .seconds(2))
+			let sampled = await BrowserTabProcessMemorySnapshot.resample(before.processes)
+			func after(_ process: BrowserTabProcessMemorySnapshot.Process?) -> BrowserTabProcessMemorySnapshot.Process? {
+				guard let process else { return nil }
+				return sampled[process.identity]
+			}
+			let afterSnapshot: BrowserTabProcessMemorySnapshot? = {
+				let webContent = after(before.webContent)
+				let graphics = after(before.graphics)
+				let network = after(before.network)
+				let model = after(before.model)
+				guard webContent != nil || graphics != nil || network != nil || model != nil else { return nil }
+				return BrowserTabProcessMemorySnapshot(webContent: webContent, graphics: graphics, network: network, model: model)
+			}()
+			let result = BrowserMemoryReclamationSnapshot(before: before, after: afterSnapshot)
+			BrowserLog.info(.diagnostics, "webkit.memory.reclamation", metadata: [
+				"before_bytes": String(result.beforeObservedBytes ?? 0),
+				"after_bytes": String(result.afterObservedBytes ?? 0),
+				"identity_changed": String(result.processIdentityChanged),
+				"processes_missing": String(result.processNoLongerObserved),
+			])
+			return result
+		}
+
 		static func tabProcessMemorySnapshots(for controllers: [BrowserController]) async -> [UUID: BrowserTabProcessMemorySnapshot] {
 			struct Request {
 				let controller: BrowserController
@@ -70,7 +95,7 @@ final class BrowserController: NSObject, Identifiable {
 					network: request.networkPID.flatMap { sampled[$0] },
 					model: request.modelPID.flatMap { sampled[$0] }
 				)
-				guard snapshot.relatedProcessBytes != nil else { continue }
+				guard snapshot.knownProcessBytes != nil else { continue }
 				result[request.controller.id] = snapshot
 			}
 			return result
@@ -1926,7 +1951,7 @@ final class BrowserController: NSObject, Identifiable {
 				network: networkPID.flatMap { sampled[$0] },
 				model: modelPID.flatMap { sampled[$0] }
 			)
-			return snapshot.relatedProcessBytes == nil ? nil : snapshot
+			return snapshot.knownProcessBytes == nil ? nil : snapshot
 		}
 
 		private static func privateProcessIdentifier(_ key: String, on object: NSObject) -> pid_t? {

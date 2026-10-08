@@ -772,13 +772,13 @@ private struct TabRowContextMenu: View {
 					Text("Observed process memory")
 						.font(.subheadline.weight(.semibold))
 					Spacer()
-					Text(memory?.observedProcessBytes.map(Self.formatBytes) ?? unavailableMemoryLabel)
+					Text(memory?.knownProcessBytes.map(Self.formatBytes) ?? unavailableMemoryLabel)
 						.font(.subheadline.monospacedDigit())
 						.foregroundStyle(.secondary)
 				}
 
 				HStack(alignment: .top, spacing: 8) {
-					memoryMetric("Web + JS", bytes: memory?.webContentBytes)
+					memoryMetric("WebContent*", bytes: memory?.webContentBytes)
 					memoryMetric("Graphics*", bytes: memory?.graphicsBytes)
 					memoryMetric("Network*", bytes: memory?.networkBytes)
 					if memory?.modelBytes != nil {
@@ -786,7 +786,7 @@ private struct TabRowContextMenu: View {
 					}
 				}
 
-				Text("* Process footprints are estimates. Shared WebKit processes are shown for context and are not exclusive to this tab.")
+				Text("* Known process footprints are a lower-bound estimate. Shared WebKit processes are shown for context and are not exclusive to this tab.")
 					.font(.system(size: 9))
 					.foregroundStyle(.tertiary)
 					.lineLimit(2)

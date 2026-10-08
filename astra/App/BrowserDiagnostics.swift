@@ -72,6 +72,12 @@
 					controllerCount: controllers.count,
 					uniqueProcessCount: aggregate.processCount,
 					uniqueProcessBytes: aggregate.uniqueBytes,
+					webContentBytes: aggregate.webContentBytes,
+					graphicsBytes: aggregate.graphicsBytes,
+					networkBytes: aggregate.networkBytes,
+					modelBytes: aggregate.modelBytes,
+					webContentMappingCount: aggregate.webContentMappingCount,
+					webContentUnavailableCount: aggregate.webContentUnavailableCount,
 					unavailableControllerCount: controllers.count - snapshotsByController.count
 				),
 				events: base.events

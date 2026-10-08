@@ -24,6 +24,12 @@ struct BrowserDiagnosticReport: Codable, Equatable {
 		let controllerCount: Int
 		let uniqueProcessCount: Int
 		let uniqueProcessBytes: UInt64?
+		let webContentBytes: UInt64?
+		let graphicsBytes: UInt64?
+		let networkBytes: UInt64?
+		let modelBytes: UInt64?
+		let webContentMappingCount: Int
+		let webContentUnavailableCount: Int
 		let unavailableControllerCount: Int
 	}
 

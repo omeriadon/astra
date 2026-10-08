@@ -11,9 +11,16 @@ func snapshot(_ webContent: BrowserTabProcessMemorySnapshot.Process?) -> Browser
 @main
 enum BrowserProcessMemoryCheck {
 	static func main() {
-		precondition(BrowserProcessMemoryAggregate.combining([snapshot(shared), snapshot(shared)]) == .init(processCount: 1, uniqueBytes: 300))
-		precondition(BrowserProcessMemoryAggregate.combining([snapshot(shared), snapshot(replacement)]) == .init(processCount: 2, uniqueBytes: 1_000))
-		precondition(BrowserProcessMemoryAggregate.combining([snapshot(unavailable)]) == .init(processCount: 0, uniqueBytes: nil))
-		precondition(BrowserProcessMemoryAggregate.combining([snapshot(shared), snapshot(unavailable), snapshot(shared)]) == .init(processCount: 1, uniqueBytes: 300))
+		let sharedAggregate = BrowserProcessMemoryAggregate.combining([snapshot(shared), snapshot(shared)])
+		precondition(sharedAggregate.processCount == 1 && sharedAggregate.uniqueBytes == 300)
+		let replacementAggregate = BrowserProcessMemoryAggregate.combining([snapshot(shared), snapshot(replacement)])
+		precondition(replacementAggregate.processCount == 2 && replacementAggregate.uniqueBytes == 1_000)
+		let unavailableAggregate = BrowserProcessMemoryAggregate.combining([snapshot(unavailable)])
+		precondition(unavailableAggregate.processCount == 0 && unavailableAggregate.uniqueBytes == nil)
+		let mixedAggregate = BrowserProcessMemoryAggregate.combining([snapshot(shared), snapshot(unavailable), snapshot(shared)])
+		precondition(mixedAggregate.processCount == 1 && mixedAggregate.uniqueBytes == 300)
+		let sameProcessAcrossRoles = BrowserTabProcessMemorySnapshot(webContent: shared, graphics: shared, network: nil, model: nil)
+		let roleAggregate = BrowserProcessMemoryAggregate.combining([sameProcessAcrossRoles])
+		precondition(roleAggregate.processCount == 1 && roleAggregate.uniqueBytes == 300 && roleAggregate.webContentMappingCount == 1)
 	}
 }
