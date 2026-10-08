@@ -47,6 +47,8 @@ final class Browser {
 	/// The history property observer invalidates this for title edits, imports, sync and deletion.
 	@ObservationIgnored
 	var historySearchIndex: (newestVisit: Date, entries: [(url: URL, visit: BrowserVisit, count: Int)])?
+	@ObservationIgnored private var recentHistoryCache: (revision: Int, value: [BrowserVisit])?
+	@ObservationIgnored private var frequentHistoryCache: (revision: Int, value: [BrowserVisitSummary])?
 	/// Lamport-style local watermark for history tombstones, imports and visits.
 	/// Computing the maximum across thousands of rows on *every navigation*
 	/// made history recording increasingly expensive during long sessions.
@@ -171,15 +173,27 @@ final class Browser {
 	}
 
 	var recentHistoryVisits: [BrowserVisit] {
-		historyVisits.sorted {
+		// Reading the revision preserves SwiftUI Observation dependencies
+		// without sorting a large history collection on every body evaluation.
+		let revision = historyChangeRevision
+		if let cache = recentHistoryCache, cache.revision == revision {
+			return cache.value
+		}
+		let result = historyVisits.sorted {
 			$0.visitedAt == $1.visitedAt
 				? $0.id.uuidString < $1.id.uuidString
 				: $0.visitedAt > $1.visitedAt
 		}
+		recentHistoryCache = (revision, result)
+		return result
 	}
 
 	var frequentHistory: [BrowserVisitSummary] {
-		BrowserVisit.summaries(historyVisits, sortByRecency: false).sorted {
+		let revision = historyChangeRevision
+		if let cache = frequentHistoryCache, cache.revision == revision {
+			return cache.value
+		}
+		let result = BrowserVisit.summaries(historyVisits, sortByRecency: false).sorted {
 			if $0.visitCount != $1.visitCount {
 				return $0.visitCount > $1.visitCount
 			}
@@ -188,6 +202,8 @@ final class Browser {
 			}
 			return $0.url.absoluteString < $1.url.absoluteString
 		}
+		frequentHistoryCache = (revision, result)
+		return result
 	}
 
 	func tab(withID id: UUID) -> BrowserTab? {
