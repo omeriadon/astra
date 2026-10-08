@@ -39,6 +39,15 @@ struct DownloadFileWorkerCheck {
 		let collisionData = try Data(contentsOf: collision)
 		precondition(collisionData == bytes)
 
+		let renamed = try await BrowserDownloadFileWorker.shared.renameExisting(
+			source: collision, fileName: "renamed.bin",
+			bookmark: nil, hasExistingAccess: false
+		)
+		precondition(renamed.lastPathComponent == "renamed.bin")
+		precondition(!manager.fileExists(atPath: collision.path))
+		let renamedData = try Data(contentsOf: renamed)
+		precondition(renamedData == bytes)
+
 		let thirdSource = root.appendingPathComponent("third.part")
 		try bytes.write(to: thirdSource)
 		do {
