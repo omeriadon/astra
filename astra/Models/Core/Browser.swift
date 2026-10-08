@@ -545,6 +545,8 @@ final class Browser {
 			{
 				selectTab(selectedID)
 			}
+			// register(_:) deliberately skipped the pre-hydration placeholder.
+			BrowserExtensionManager.shared.sync(self)
 		} else if persistenceStore != nil {
 			hydrateFromDisk(placeholderID: placeholderID, placeholderModifiedAt: placeholderModifiedAt)
 		}

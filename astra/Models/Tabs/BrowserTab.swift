@@ -563,9 +563,27 @@ final class BrowserTab: Identifiable {
 		didChange?()
 	}
 
+	private func hasSameNavigationState(as baseline: OpenTab) -> Bool {
+		// openTab also captures/encrypts WebKit interactionState. The change
+		// detector only compares URL/history/zoom/scroll, so constructing a full
+		// OpenTab here did expensive restoration-state work for no reason.
+		let url = (controller?.url ?? storedURL).map(BrowserAddress.withoutCredentials)
+		let history = recordsNavigationHistory
+			? (controller?.history ?? storedHistory).map(BrowserAddress.withoutCredentials)
+			: url.map { [$0] } ?? []
+		let historyIndex = recordsNavigationHistory
+			? (controller?.historyIndex ?? storedHistoryIndex)
+			: 0
+		return url == baseline.url
+			&& history == baseline.history
+			&& historyIndex == baseline.historyIndex
+			&& (controller?.pageZoom ?? storedPageZoom) == baseline.pageZoom
+			&& (controller?.scrollPosition ?? storedScrollPosition) == baseline.scrollPosition
+	}
+
 	private func markNavigationModified() {
 		openTabCache = nil
-		if let restorationBaseline, openTab.hasSameNavigationState(as: restorationBaseline) {
+		if let restorationBaseline, hasSameNavigationState(as: restorationBaseline) {
 			return
 		}
 		restorationBaseline = nil
@@ -574,7 +592,7 @@ final class BrowserTab: Identifiable {
 
 	private func markModifiedForScroll() {
 		openTabCache = nil
-		if let restorationBaseline, openTab.hasSameNavigationState(as: restorationBaseline) {
+		if let restorationBaseline, hasSameNavigationState(as: restorationBaseline) {
 			return
 		}
 		restorationBaseline = nil

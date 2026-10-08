@@ -52,7 +52,12 @@ final class BrowserWindowRegistry {
 	func register(_ browser: Browser) {
 		browsers.removeAll { $0.browser == nil }
 		browsers.append(WeakBrowser(browser))
-		BrowserExtensionManager.shared.sync(browser)
+		// Normal startup windows register with a lightweight placeholder before
+		// disk hydration. Syncing that placeholder into WKWebExtensionController
+		// only to replace it moments later adds launch work and duplicate events.
+		if browser.isHydrationFinished {
+			BrowserExtensionManager.shared.sync(browser)
+		}
 	}
 
 	func unregister(_ browser: Browser) {

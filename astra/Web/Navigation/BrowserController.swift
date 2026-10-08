@@ -621,9 +621,9 @@ final class BrowserController: NSObject, Identifiable {
 				MainActor.assumeIsolated {
 					guard let self else { return }
 					let enabled = Defaults[.webInspectorEnabled]
-					guard enabled != observedWebInspectorEnabled else { return }
-					observedWebInspectorEnabled = enabled
-					updateWebInspectorAvailability(enabled)
+					guard enabled != self.observedWebInspectorEnabled else { return }
+					self.observedWebInspectorEnabled = enabled
+					self.updateWebInspectorAvailability(enabled)
 				}
 			}
 		#endif
