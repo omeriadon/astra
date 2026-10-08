@@ -974,7 +974,14 @@ final class BrowserController: NSObject, Identifiable {
 		let script = """
 		(() => {
 			return [...document.querySelectorAll('input:not([type="hidden"]), textarea, select')].some(element => {
-				if (element.tagName === 'SELECT') return [...element.options].some(option => option.selected !== option.defaultSelected);
+				if (element.tagName === 'SELECT') {
+					const options = [...element.options];
+					if (!element.multiple && !options.some(option => option.defaultSelected)) {
+						const initialIndex = element.size > 1 ? -1 : options.findIndex(option => !option.disabled);
+						return element.selectedIndex !== initialIndex;
+					}
+					return options.some(option => option.selected !== option.defaultSelected);
+				}
 				if (element.type === 'checkbox' || element.type === 'radio') return element.checked !== element.defaultChecked;
 				return element.value !== element.defaultValue;
 			});

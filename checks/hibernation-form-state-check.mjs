@@ -12,6 +12,8 @@ assert.equal(dirty([{ tagName: 'INPUT', type: 'text', value: 'draft', defaultVal
 assert.equal(dirty([{ tagName: 'INPUT', type: 'password', value: 'autofilled', defaultValue: '' }]), true);
 assert.equal(dirty([{ tagName: 'INPUT', type: 'checkbox', checked: true, defaultChecked: false }]), true);
 assert.equal(dirty([{ tagName: 'SELECT', options: [{ selected: true, defaultSelected: false }] }]), true);
+assert.equal(dirty([{ tagName: 'SELECT', multiple: false, size: 0, selectedIndex: 0, options: [{ selected: true, defaultSelected: false, disabled: false }] }]), false);
+assert.equal(dirty([{ tagName: 'SELECT', multiple: false, size: 0, selectedIndex: 1, options: [{ selected: false, defaultSelected: false, disabled: false }, { selected: true, defaultSelected: false, disabled: false }] }]), true);
 assert.equal(dirty([{ tagName: 'TEXTAREA', value: 'draft', defaultValue: '' }]), true);
 assert.match(safety, /in: \.defaultClient/);
 assert.match(safety, /value as\? Bool == false/);
