@@ -453,7 +453,7 @@ final class BrowserController: NSObject, Identifiable {
 		const check = () => {
 			scheduled = false;
 			lastCheck = performance.now();
-			if (window.scrollY < 0 || innerWidth <= 0) return;
+			if (document.hidden || window.scrollY < 0 || innerWidth <= 0) return;
 
 			// This probe does multiple hit-tests and layout/style reads. Top-edge
 			// occupancy is browser chrome state, not animation state, so cap it
@@ -491,7 +491,7 @@ final class BrowserController: NSObject, Identifiable {
 		};
 
 		const schedule = (immediate = false) => {
-			if (scheduled) return;
+			if (document.hidden || scheduled) return;
 			scheduled = true;
 			const delay = immediate ? 0 : Math.max(0, minimumInterval - (performance.now() - lastCheck));
 			setTimeout(() => requestAnimationFrame(check), delay);
@@ -507,13 +507,20 @@ final class BrowserController: NSObject, Identifiable {
 
 		addEventListener('scroll', () => schedule(), { passive: true });
 		addEventListener('resize', () => schedule(true));
-		new MutationObserver(scheduleMutation).observe(document.documentElement, {
-			subtree: true,
-			childList: true,
-			attributes: true,
-			attributeFilter: ['class', 'style', 'hidden', 'id', 'role']
-		});
-		schedule(true);
+		const observer = new MutationObserver(scheduleMutation);
+		const updateVisibility = () => {
+			observer.disconnect();
+			if (document.hidden) return;
+			observer.observe(document.documentElement, {
+				subtree: true,
+				childList: true,
+				attributes: true,
+				attributeFilter: ['class', 'style', 'hidden', 'id', 'role']
+			});
+			schedule(true);
+		};
+		document.addEventListener('visibilitychange', updateVisibility);
+		updateVisibility();
 	})();
 	"""
 
