@@ -1630,7 +1630,15 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 					return nil
 				}
 				items[index].destinationIsFileScoped = true
-				items[index].fileAccessBookmark = nil
+				// Preserve authority at selection time. Otherwise a crash
+				// between WebKit transfer completion and final file publication
+				// leaves a resumable staging file but no way to reopen its
+				// chosen security-scoped destination on the next launch.
+				items[index].fileAccessBookmark = try? url.bookmarkData(
+					options: [.withSecurityScope],
+					includingResourceValuesForKeys: nil,
+					relativeTo: nil
+				)
 				items[index].folderBookmark = nil
 				scopedDirectories[itemID] = url
 				return url
