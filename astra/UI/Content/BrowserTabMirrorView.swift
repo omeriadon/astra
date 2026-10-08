@@ -22,7 +22,10 @@
 				while !Task.isCancelled {
 					await controller.refreshWindowMirrorSnapshot()
 					do {
-						try await Task.sleep(for: .milliseconds(500))
+						// A duplicate-window mirror does not need video-rate updates.
+						// One frame per second keeps it visibly live without turning
+						// WKWebView snapshots into a steady CPU/GPU tax.
+						try await Task.sleep(for: .seconds(1))
 					} catch {
 						return
 					}

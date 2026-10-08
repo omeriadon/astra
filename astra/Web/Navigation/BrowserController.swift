@@ -301,20 +301,23 @@ final class BrowserController: NSObject, Identifiable {
 	(() => {
 		let scheduled = false;
 		let mutationScheduled = false;
+		let lastCheck = 0;
 		let previous;
 		const samples = 16;
 		const threshold = Math.ceil(samples * 0.7);
+		const minimumInterval = 100;
 		const selector =
 			'header, nav, [role="navigation"], [class*="header" i], [id*="header" i], ' +
 			'[class*="nav" i], [id*="nav" i], [class*="toolbar" i], [id*="toolbar" i]';
 
 		const check = () => {
 			scheduled = false;
+			lastCheck = performance.now();
 			if (window.scrollY < 0 || innerWidth <= 0) return;
 
-			// elementsFromPoint returns much of the same ancestor stack at every
-			// sample. Count first, then perform layout/style reads once per candidate
-			// instead of up to 20 times for the same sticky header.
+			// This probe does multiple hit-tests and layout/style reads. Top-edge
+			// occupancy is browser chrome state, not animation state, so cap it
+			// around 10 Hz instead of doing the work on every scroll frame.
 			const counts = new Map();
 			for (let index = 0; index < samples; index++) {
 				const x = innerWidth * (index + 0.5) / samples;
@@ -347,10 +350,11 @@ final class BrowserController: NSObject, Identifiable {
 			}
 		};
 
-		const schedule = () => {
+		const schedule = (immediate = false) => {
 			if (scheduled) return;
 			scheduled = true;
-			requestAnimationFrame(check);
+			const delay = immediate ? 0 : Math.max(0, minimumInterval - (performance.now() - lastCheck));
+			setTimeout(() => requestAnimationFrame(check), delay);
 		};
 		const scheduleMutation = () => {
 			if (mutationScheduled) return;
@@ -358,18 +362,18 @@ final class BrowserController: NSObject, Identifiable {
 			setTimeout(() => {
 				mutationScheduled = false;
 				schedule();
-			}, 120);
+			}, 250);
 		};
 
-		addEventListener('scroll', schedule, { passive: true });
-		addEventListener('resize', schedule);
+		addEventListener('scroll', () => schedule(), { passive: true });
+		addEventListener('resize', () => schedule(true));
 		new MutationObserver(scheduleMutation).observe(document.documentElement, {
 			subtree: true,
 			childList: true,
 			attributes: true,
 			attributeFilter: ['class', 'style', 'hidden', 'id', 'role']
 		});
-		schedule();
+		schedule(true);
 	})();
 	"""
 
