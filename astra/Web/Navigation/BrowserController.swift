@@ -603,33 +603,6 @@ final class BrowserController: NSObject, Identifiable {
 		self.scrollPosition = scrollPosition
 		restoredScrollPosition = scrollPosition == .zero ? nil : scrollPosition
 		super.init()
-		_ = BrowserNavigationConnectivity.shared
-		connectivityObserver = NotificationCenter.default.addObserver(
-			forName: BrowserNavigationConnectivity.didChangeNotification,
-			object: nil,
-			queue: .main
-		) { [weak self] notification in
-			guard notification.object as? Bool == true else { return }
-			Task { @MainActor [weak self] in
-				self?.retryOfflineGETAfterConnectivityReturns()
-			}
-		}
-		#if os(macOS)
-			observedWebInspectorEnabled = Defaults[.webInspectorEnabled]
-			webInspectorObserver = NotificationCenter.default.addObserver(
-				forName: UserDefaults.didChangeNotification,
-				object: UserDefaults.standard,
-				queue: .main
-			) { [weak self] _ in
-				MainActor.assumeIsolated {
-					guard let self else { return }
-					let enabled = Defaults[.webInspectorEnabled]
-					guard enabled != self.observedWebInspectorEnabled else { return }
-					self.observedWebInspectorEnabled = enabled
-					self.updateWebInspectorAvailability(enabled)
-				}
-			}
-		#endif
 		updateThemeColor(url == nil ? .black : .white)
 
 		if let url {
@@ -1345,6 +1318,39 @@ final class BrowserController: NSObject, Identifiable {
 		}
 	#endif
 
+	private func startWebViewEventObservations() {
+		guard connectivityObserver == nil else { return }
+		// Restored-but-unopened tabs don't need network notifications or
+		// Web Inspector defaults observation until a WKWebView exists.
+		_ = BrowserNavigationConnectivity.shared
+		connectivityObserver = NotificationCenter.default.addObserver(
+			forName: BrowserNavigationConnectivity.didChangeNotification,
+			object: nil,
+			queue: .main
+		) { [weak self] notification in
+			guard notification.object as? Bool == true else { return }
+			Task { @MainActor [weak self] in
+				self?.retryOfflineGETAfterConnectivityReturns()
+			}
+		}
+		#if os(macOS)
+			observedWebInspectorEnabled = Defaults[.webInspectorEnabled]
+			webInspectorObserver = NotificationCenter.default.addObserver(
+				forName: UserDefaults.didChangeNotification,
+				object: UserDefaults.standard,
+				queue: .main
+			) { [weak self] _ in
+				MainActor.assumeIsolated {
+					guard let self else { return }
+					let enabled = Defaults[.webInspectorEnabled]
+					guard enabled != self.observedWebInspectorEnabled else { return }
+					self.observedWebInspectorEnabled = enabled
+					self.updateWebInspectorAvailability(enabled)
+				}
+			}
+		#endif
+	}
+
 	private func makeWebView() -> WKWebView {
 		let webViewLogStarted = BrowserLog.clock()
 		BrowserLog.info(.webKit, "webview.create.begin", metadata: ["controller": BrowserLog.id(id), "private": String(session.isPrivate)])
@@ -1384,6 +1390,7 @@ final class BrowserController: NSObject, Identifiable {
 			BrowserDesktopCommands.configureWebInspector(webView, enabled: Defaults[.webInspectorEnabled])
 		#endif
 		createdWebView = webView
+		startWebViewEventObservations()
 		#if os(macOS)
 			startPreviewSnapshotRefresh()
 		#endif
