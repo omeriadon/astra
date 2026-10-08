@@ -2471,6 +2471,10 @@ extension BrowserController: WKNavigationDelegate {
 	func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
 		BrowserLog.info(.navigation, "navigation.did-commit", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(webView.url)])
 		guard owns(webView), navigation === currentNavigation else { return }
+		// The document can change without changing origins (reloads and
+		// same-site links). Preview text from the previous page must not
+		// survive a successful main-frame navigation.
+		clearAILinkPreviewCache()
 		releaseUploadAccess()
 		pictureInPictureControlUnavailable = false
 		committedURL = webView.url
