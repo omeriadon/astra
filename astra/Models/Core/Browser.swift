@@ -2534,9 +2534,40 @@ final class Browser {
 		schedulePersistence()
 	}
 
+	/// A source snapshot is created once per publication rather than once per
+	/// destination window. Keep the payload immutable so all windows receive
+	/// the same source revision, even if applying it changes shared tab models.
+	func publishSharedState(to recipients: [Browser]) {
+		guard !isPrivate, !recipients.isEmpty else { return }
+		let started = BrowserLog.clock()
+		let snapshot = completeLocalSyncDocument(settings: [:])
+		let closed = closedHistoryTabs
+		BrowserLog.duration(.sync, "browser.shared-state.snapshot", since: started,
+			warnAboveMilliseconds: 16,
+			metadata: ["tabs": String(snapshot.tabs.count), "windows": String(recipients.count)])
+		for destination in recipients where destination !== self && !destination.isPrivate {
+			destination.receiveSharedState(from: self, sourceSnapshot: snapshot, sourceClosedTabs: closed)
+		}
+	}
+
 	func receiveSharedState(from source: Browser) {
+		guard !isPrivate, !source.isPrivate else { return }
+		receiveSharedState(from: source,
+			sourceSnapshot: source.completeLocalSyncDocument(settings: [:]),
+			sourceClosedTabs: source.closedHistoryTabs)
+	}
+
+	private func receiveSharedState(
+		from source: Browser, sourceSnapshot: BrowserSyncDocument, sourceClosedTabs: [OpenTab]
+	) {
 		BrowserLog.debug(.sync, "browser.shared-state.receive", metadata: ["window": BrowserLog.id(windowID), "source_window": BrowserLog.id(source.windowID)])
 		guard !isPrivate, !source.isPrivate else { return }
+		let started = BrowserLog.clock()
+		defer {
+			BrowserLog.duration(.sync, "browser.shared-state.receive.end", since: started,
+				warnAboveMilliseconds: 24,
+				metadata: ["window": BrowserLog.id(windowID)])
+		}
 		persistenceTask?.cancel()
 		persistenceTask = nil
 
@@ -2548,7 +2579,7 @@ final class Browser {
 		let recentlyUsedBeforeMerge = recentlyUsedTabIDs
 		let closedHistoryBeforeMerge = closedHistoryTabs
 		var localState = completeLocalSyncDocument(settings: [:])
-		var incomingState = source.completeLocalSyncDocument(settings: [:])
+		var incomingState = sourceSnapshot
 		localState.browser.selectedTabID = selectedTabBeforeMerge
 		localState.browser.selectedTabModifiedAt = selectedTabDateBeforeMerge
 		incomingState.browser.selectedTabID = selectedTabBeforeMerge
@@ -2576,8 +2607,11 @@ final class Browser {
 		var merged = localState.merging(incomingState)
 		merged = merged.preservingLocalOnlyData(from: localState)
 		applySyncDocument(merged)
+		// The merge has finalized the tab collection. A hash lookup avoids
+		// rescanning all open tabs for each closed-history record and MRU entry.
+		let openIDs = Set(tabs.map(\.id))
 		closedHistoryTabs = Dictionary(
-			(closedHistoryBeforeMerge + source.closedHistoryTabs).map { ($0.id, $0) },
+			(closedHistoryBeforeMerge + sourceClosedTabs).map { ($0.id, $0) },
 			uniquingKeysWith: { current, incoming in
 				if current.modifiedAt != incoming.modifiedAt {
 					return current.modifiedAt > incoming.modifiedAt ? current : incoming
@@ -2590,7 +2624,7 @@ final class Browser {
 			}
 		).values
 			.filter { saved in
-				!tabs.contains(where: { $0.id == saved.id })
+				!openIDs.contains(saved.id)
 					&& (historyClearedAt == .distantPast || saved.modifiedAt > historyClearedAt)
 			}
 			.sorted {
@@ -2614,7 +2648,7 @@ final class Browser {
 				workspace.spaces[index].selectedTabID = selectedID
 			}
 		}
-		recentlyUsedTabIDs = recentlyUsedBeforeMerge.filter { id in tabs.contains { $0.id == id } }
+		recentlyUsedTabIDs = recentlyUsedBeforeMerge.filter { openIDs.contains($0) }
 		if !recentlyUsedTabIDs.contains(selectedTabID) {
 			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
 		}
