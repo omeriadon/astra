@@ -190,6 +190,13 @@ actor BrowserDownloadFileWorker {
 		}
 	}
 
+	/// One serialized durability boundary for the download index, including
+	/// shutdown. Encoding and atomic file publication never run on MainActor.
+	func persistDownloadIndex(_ snapshot: [BrowserDownload], at url: URL) throws {
+		let data = try JSONEncoder().encode(snapshot)
+		try data.write(to: url, options: .atomic)
+	}
+
 	func removeFiles(_ files: [URL]) {
 		for file in files {
 			try? FileManager.default.removeItem(at: file)
