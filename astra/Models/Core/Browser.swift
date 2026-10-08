@@ -40,6 +40,8 @@ final class Browser {
 	private(set) var historyVisits: [BrowserVisit] {
 		didSet {
 			historySearchIndex = nil
+			recentHistoryCache = nil
+			frequentHistoryCache = nil
 			historyChangeRevision &+= 1
 		}
 	}
