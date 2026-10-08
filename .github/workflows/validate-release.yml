@@ -121,6 +121,7 @@ jobs:
           node checks/favicon-observer-check.mjs
           python3 checks/extension-hot-path-check.py
           python3 checks/window-sync-noop-check.py
+          python3 checks/history-derived-cache-check.py
           python3 checks/startup-hydration-dependencies-check.py
           python3 checks/automatic-hibernation-runtime-check.py
           swiftc -swift-version 6 \
