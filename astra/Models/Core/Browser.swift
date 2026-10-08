@@ -2548,6 +2548,20 @@ final class Browser {
 	/// A source snapshot is created once per publication rather than once per
 	/// destination window. Keep the payload immutable so all windows receive
 	/// the same source revision, even if applying it changes shared tab models.
+	/// Keep closed-history conflict resolution deterministic without forcing
+	/// the Swift type checker through a deeply nested collection expression.
+	private static func preferredClosedHistoryRecord(_ current: OpenTab, _ incoming: OpenTab) -> OpenTab {
+		if current.modifiedAt != incoming.modifiedAt {
+			return current.modifiedAt > incoming.modifiedAt ? current : incoming
+		}
+		if current == incoming { return current }
+		let encoder = JSONEncoder()
+		encoder.outputFormatting = [.sortedKeys]
+		let currentData = (try? encoder.encode(current)) ?? Data()
+		let incomingData = (try? encoder.encode(incoming)) ?? Data()
+		return currentData.lexicographicallyPrecedes(incomingData) ? incoming : current
+	}
+
 	func publishSharedState(to recipients: [Browser]) {
 		guard !isPrivate, !recipients.isEmpty else { return }
 		let started = BrowserLog.clock()
@@ -2624,29 +2638,20 @@ final class Browser {
 		// The merge has finalized the tab collection. A hash lookup avoids
 		// rescanning all open tabs for each closed-history record and MRU entry.
 		let openIDs = Set(tabs.map(\.id))
-		let mergedClosedHistory = Dictionary(
-			(closedHistoryBeforeMerge + sourceClosedTabs).map { ($0.id, $0) },
-			uniquingKeysWith: { current, incoming in
-				if current.modifiedAt != incoming.modifiedAt {
-					return current.modifiedAt > incoming.modifiedAt ? current : incoming
-				}
-				if current == incoming { return current }
-				let encoder = JSONEncoder()
-				encoder.outputFormatting = [.sortedKeys]
-				let currentData = (try? encoder.encode(current)) ?? Data()
-				let incomingData = (try? encoder.encode(incoming)) ?? Data()
-				return currentData.lexicographicallyPrecedes(incomingData) ? incoming : current
-			}
-		).values
-			.filter { saved in
-				!openIDs.contains(saved.id)
-					&& (historyClearedAt == .distantPast || saved.modifiedAt > historyClearedAt)
-			}
-			.sorted {
-				$0.modifiedAt == $1.modifiedAt
-					? $0.id.uuidString < $1.id.uuidString
-					: $0.modifiedAt > $1.modifiedAt
-			}
+		let candidates: [OpenTab] = closedHistoryBeforeMerge + sourceClosedTabs
+		let records: [UUID: OpenTab] = Dictionary(
+			candidates.map { ($0.id, $0) },
+			uniquingKeysWith: Self.preferredClosedHistoryRecord
+		)
+		let survivingRecords: [OpenTab] = records.values.filter { saved in
+			!openIDs.contains(saved.id)
+				&& (historyClearedAt == .distantPast || saved.modifiedAt > historyClearedAt)
+		}
+		let mergedClosedHistory: [OpenTab] = survivingRecords.sorted { left, right in
+			left.modifiedAt == right.modifiedAt
+				? left.id.uuidString < right.id.uuidString
+				: left.modifiedAt > right.modifiedAt
+		}
 		let closedHistoryChanged = mergedClosedHistory != closedHistoryTabs
 		if closedHistoryChanged {
 			closedHistoryTabs = mergedClosedHistory
