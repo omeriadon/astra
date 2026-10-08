@@ -22,7 +22,8 @@ struct DownloadFileWorkerCheck {
 		)
 		precondition(committed == firstDest)
 		precondition(!manager.fileExists(atPath: firstSource.path))
-		precondition(try Data(contentsOf: committed) == bytes)
+		let committedData = try Data(contentsOf: committed)
+		precondition(committedData == bytes)
 
 		let secondSource = root.appendingPathComponent("second.part")
 		try bytes.write(to: secondSource)
@@ -33,8 +34,10 @@ struct DownloadFileWorkerCheck {
 		)
 		precondition(collision != firstDest)
 		precondition(collision.lastPathComponent == "asset (2).bin")
-		precondition(try Data(contentsOf: firstDest) == bytes)
-		precondition(try Data(contentsOf: collision) == bytes)
+		let firstData = try Data(contentsOf: firstDest)
+		precondition(firstData == bytes)
+		let collisionData = try Data(contentsOf: collision)
+		precondition(collisionData == bytes)
 
 		let thirdSource = root.appendingPathComponent("third.part")
 		try bytes.write(to: thirdSource)
@@ -67,7 +70,8 @@ struct DownloadFileWorkerCheck {
 				return false
 			}
 		}
-		precondition(await cancelled.value)
+		let wasCancelled = await cancelled.value
+		precondition(wasCancelled)
 		precondition(manager.fileExists(atPath: fourthSource.path))
 		precondition(!manager.fileExists(atPath: output.appendingPathComponent("cancelled.bin").path))
 
