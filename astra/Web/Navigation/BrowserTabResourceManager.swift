@@ -52,7 +52,9 @@ final class BrowserTabResourceManager {
 				if activeIDs.contains(tab.id), lastActivated[tab.id] == nil {
 					lastActivated[tab.id] = .now
 				}
-				tab.controller?.previewSnapshotRefreshSuspended = !activeIDs.contains(tab.id)
+				let isSelected = activeIDs.contains(tab.id)
+				tab.controller?.previewSnapshotRefreshSuspended = !isSelected
+				tab.controller?.setTopEdgeProbeActive(isSelected)
 			}
 		}
 		lastActivated = lastActivated.filter { seen.contains($0.key) }
@@ -77,6 +79,7 @@ final class BrowserTabResourceManager {
 		let isActive = browsers.contains { $0.isHydrationFinished && $0.selectedTabID == id }
 		guard let tab = browsers.lazy.compactMap({ $0.tab(withID: id) }).first else { return }
 		tab.controller?.previewSnapshotRefreshSuspended = !isActive
+		tab.controller?.setTopEdgeProbeActive(isActive)
 	}
 
 	private func memoryPressureDidChange() {
