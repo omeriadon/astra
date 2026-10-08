@@ -785,15 +785,17 @@ final class BrowserController: NSObject, Identifiable {
 				await self?.refreshActivity()
 				guard !Task.isCancelled else { return }
 				do {
-					// DOM media events perform immediate refreshes. Quiescent pages
-					// need a much slower fallback; with many background tabs the
-					// former 5-second poll woke WebKit processes unnecessarily.
+					// Media DOM events already refresh immediately. Periodic fallback
+					// is still useful if a site mutates media state without an event,
+					// but idle background tabs should not wake WebKit every 20 s.
 					let hasActivity = self?.isPlayingMedia == true
 						|| self?.hasPausedMedia == true
 						|| self?.isCapturing == true
 						|| self?.isPictureInPictureActive == true
 						|| self?.isEnteringPictureInPicture == true
-					try await Task.sleep(for: .seconds(hasActivity ? 5 : 20))
+					let fallbackSeconds = hasActivity ? 5
+						: self?.previewSnapshotRefreshSuspended == true ? 90 : 20
+					try await Task.sleep(for: .seconds(fallbackSeconds))
 				} catch {
 					return
 				}
