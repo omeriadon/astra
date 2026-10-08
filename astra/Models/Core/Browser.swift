@@ -1266,15 +1266,19 @@ final class Browser {
 	}
 
 	func reorderBookmarks(_ ids: [UUID]) {
-		let indexes = Dictionary(bookmarks.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+		var updated = bookmarks
+		let indexes = Dictionary(updated.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+		var changed = false
 		for (order, id) in ids.enumerated() {
-			guard let index = indexes[id], bookmarks[index].order != order else { continue }
-			bookmarks[index].order = order
-			bookmarks[index].modifiedAt = BrowserUserDataMutation.nextDate(after: bookmarks[index].modifiedAt, deletion: deletedBookmarksAt[id] ?? .distantPast)
+			guard let index = indexes[id], updated[index].order != order else { continue }
+			updated[index].order = order
+			updated[index].modifiedAt = BrowserUserDataMutation.nextDate(after: updated[index].modifiedAt, deletion: deletedBookmarksAt[id] ?? .distantPast)
+			changed = true
 		}
+		guard changed else { return }
+		bookmarks = updated
 		scheduleUserDataPersistence()
 	}
-
 	func addToReadingList(_ url: URL, title: String) {
 		guard title.utf8.count <= 16384,
 		      canAddToReadingList(url),
@@ -1901,7 +1905,12 @@ final class Browser {
 
 	func importBookmarks(_ incoming: [Bookmark], replacingDuplicates: Bool = false) {
 		guard !isPrivate else { return }
-		var indexes = Dictionary(bookmarks.enumerated().map { ($1.url, $0) }, uniquingKeysWith: { first, _ in first })
+		// Import batches must not publish a new @Observable array for every
+		// record: a large HTML import otherwise invalidates the whole bookmarks
+		// List thousands of times before the user sees the completed result.
+		var updated = bookmarks
+		var indexes = Dictionary(updated.enumerated().map { ($1.url, $0) }, uniquingKeysWith: { first, _ in first })
+		var changed = false
 		for bookmark in incoming where BrowserHomepage.validURL(bookmark.url.absoluteString) != nil
 			&& bookmark.url.absoluteString.utf8.count <= 16384
 			&& bookmark.name.utf8.count <= 16384
@@ -1910,56 +1919,68 @@ final class Browser {
 		{
 			if let index = indexes[bookmark.url] {
 				guard replacingDuplicates else { continue }
-				let current = bookmarks[index]
+				let current = updated[index]
 				guard current.name != bookmark.name || current.folder != bookmark.folder
 					|| current.isFavorite != bookmark.isFavorite || current.order != bookmark.order else { continue }
-				bookmarks[index] = Bookmark(id: current.id, name: bookmark.name, url: BrowserAddress.withoutCredentials(bookmark.url), modifiedAt: BrowserUserDataMutation.nextDate(after: current.modifiedAt, deletion: deletedBookmarksAt[current.id] ?? .distantPast), folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order == Int.min ? bookmarks.count : bookmark.order)
+				updated[index] = Bookmark(id: current.id, name: bookmark.name, url: BrowserAddress.withoutCredentials(bookmark.url), modifiedAt: BrowserUserDataMutation.nextDate(after: current.modifiedAt, deletion: deletedBookmarksAt[current.id] ?? .distantPast), folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order == Int.min ? updated.count : bookmark.order)
+				changed = true
 			} else {
-				let imported = Bookmark(name: bookmark.name, url: BrowserAddress.withoutCredentials(bookmark.url), modifiedAt: bookmark.modifiedAt, folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order == Int.min ? bookmarks.count : bookmark.order)
-				indexes[bookmark.url] = bookmarks.count
-				bookmarks.append(imported)
+				let imported = Bookmark(name: bookmark.name, url: BrowserAddress.withoutCredentials(bookmark.url), modifiedAt: bookmark.modifiedAt, folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order == Int.min ? updated.count : bookmark.order)
+				indexes[bookmark.url] = updated.count
+				updated.append(imported)
+				changed = true
 			}
 		}
+		guard changed else { return }
+		bookmarks = updated
 		scheduleUserDataPersistence()
 	}
-
 	func importReadingList(_ incoming: [ReadingListItem], replacingDuplicates: Bool = false) {
 		guard !isPrivate else { return }
-		var indexes = Dictionary(readingList.enumerated().map { ($1.url, $0) }, uniquingKeysWith: { first, _ in first })
+		var updated = readingList
+		var indexes = Dictionary(updated.enumerated().map { ($1.url, $0) }, uniquingKeysWith: { first, _ in first })
+		var changed = false
 		for item in incoming where BrowserHomepage.validURL(item.url.absoluteString) != nil
 			&& item.url.absoluteString.utf8.count <= 16384
 			&& item.title.utf8.count <= 16384
 		{
 			if let index = indexes[item.url] {
 				guard replacingDuplicates else { continue }
-				let current = readingList[index]
+				let current = updated[index]
 				guard current.title != item.title || current.isRead != item.isRead else { continue }
-				readingList[index] = ReadingListItem(id: current.id, url: item.url, title: item.title, addedAt: item.addedAt, modifiedAt: BrowserUserDataMutation.nextDate(after: current.modifiedAt, deletion: deletedReadingListAt[current.id] ?? .distantPast), isRead: item.isRead)
+				updated[index] = ReadingListItem(id: current.id, url: item.url, title: item.title, addedAt: item.addedAt, modifiedAt: BrowserUserDataMutation.nextDate(after: current.modifiedAt, deletion: deletedReadingListAt[current.id] ?? .distantPast), isRead: item.isRead)
+				changed = true
 			} else {
 				let imported = ReadingListItem(url: item.url, title: item.title, addedAt: item.addedAt, modifiedAt: item.modifiedAt, isRead: item.isRead)
-				indexes[item.url] = readingList.count
-				readingList.append(imported)
+				indexes[item.url] = updated.count
+				updated.append(imported)
+				changed = true
 			}
 		}
+		guard changed else { return }
+		readingList = updated
 		scheduleUserDataPersistence()
 	}
-
 	func importHistory(_ incoming: [BrowserVisit]) {
 		guard !isPrivate else { return }
-		var existing = Set(historyVisits.map { "\($0.url.absoluteString)\u{1f}\($0.visitedAt.timeIntervalSince1970.bitPattern)" })
-		var existingIDs = Set(historyVisits.map(\.id))
+		var updated = historyVisits
+		var existing = Set(updated.map { "\($0.url.absoluteString)\u{1f}\($0.visitedAt.timeIntervalSince1970.bitPattern)" })
+		var existingIDs = Set(updated.map(\.id))
 		let mutationDate = nextHistoryMutationDate(after: .now)
+		var changed = false
 		for source in BrowserVisit.retained(incoming, days: Defaults[.historyRetentionDays]) {
 			guard var visit = visibleHistoryVisits([source]).first else { continue }
 			let key = "\(visit.url.absoluteString)\u{1f}\(visit.visitedAt.timeIntervalSince1970.bitPattern)"
 			guard existing.insert(key).inserted, existingIDs.insert(visit.id).inserted else { continue }
 			visit.modifiedAt = mutationDate
-			historyVisits.append(visit)
+			updated.append(visit)
+			changed = true
 		}
-		historyVisits.sort { $0.visitedAt > $1.visitedAt }
+		guard changed else { return }
+		updated.sort { $0.visitedAt > $1.visitedAt }
+		historyVisits = updated
 		scheduleUserDataPersistence()
 	}
-
 	private func attachPersistence(to tab: BrowserTab) {
 		tab.didChange = { [weak self, id = tab.id] in
 			guard let self else { return }
