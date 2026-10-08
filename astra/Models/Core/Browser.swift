@@ -445,53 +445,59 @@ final class Browser {
 			? nil
 			: workspace.spaces.firstIndex(where: { $0.id == (spaceID ?? workspace.selectedSpaceID) })
 		guard area == .favourite || destinationIndex != nil else { return }
-		let wasFavourite = workspace.favouriteTabIDs.contains(id)
+		var nextWorkspace = workspace
+		let wasFavourite = nextWorkspace.favouriteTabIDs.contains(id)
 		let mutationDate = nextWorkspaceMutationDate()
 		let destinationDate = mutationDate.addingTimeInterval(0.001)
-		workspace.favouriteTabIDs.removeAll { $0 == id }
-		for index in workspace.spaces.indices {
-			let removedMembership = workspace.spaces[index].tabIDs.contains(id)
-				|| workspace.spaces[index].pinnedTabIDs.contains(id)
-				|| workspace.spaces[index].pinnedFolders.contains(where: { $0.tabIDs.contains(id) })
+		nextWorkspace.favouriteTabIDs.removeAll { $0 == id }
+		for index in nextWorkspace.spaces.indices {
+			let removedMembership = nextWorkspace.spaces[index].tabIDs.contains(id)
+				|| nextWorkspace.spaces[index].pinnedTabIDs.contains(id)
+				|| nextWorkspace.spaces[index].pinnedFolders.contains(where: { $0.tabIDs.contains(id) })
 			if removedMembership {
-				workspace.spaces[index].modifiedAt = mutationDate
+				nextWorkspace.spaces[index].modifiedAt = mutationDate
 			}
-			workspace.spaces[index].tabIDs.removeAll { $0 == id }
-			workspace.spaces[index].pinnedTabIDs.removeAll { $0 == id }
-			for folderIndex in workspace.spaces[index].pinnedFolders.indices {
-				let oldCount = workspace.spaces[index].pinnedFolders[folderIndex].tabIDs.count
-				workspace.spaces[index].pinnedFolders[folderIndex].tabIDs.removeAll { $0 == id }
-				if oldCount != workspace.spaces[index].pinnedFolders[folderIndex].tabIDs.count {
-					workspace.spaces[index].pinnedFolders[folderIndex].modifiedAt = mutationDate
+			nextWorkspace.spaces[index].tabIDs.removeAll { $0 == id }
+			nextWorkspace.spaces[index].pinnedTabIDs.removeAll { $0 == id }
+			for folderIndex in nextWorkspace.spaces[index].pinnedFolders.indices {
+				let oldCount = nextWorkspace.spaces[index].pinnedFolders[folderIndex].tabIDs.count
+				nextWorkspace.spaces[index].pinnedFolders[folderIndex].tabIDs.removeAll { $0 == id }
+				if oldCount != nextWorkspace.spaces[index].pinnedFolders[folderIndex].tabIDs.count {
+					nextWorkspace.spaces[index].pinnedFolders[folderIndex].modifiedAt = mutationDate
 				}
 			}
 		}
 		if area == .favourite {
-			let index = targetID.flatMap { workspace.favouriteTabIDs.firstIndex(of: $0) } ?? workspace.favouriteTabIDs.endIndex
-			workspace.favouriteTabIDs.insert(id, at: index)
-			workspace.favouritesModifiedAt = destinationDate
+			let index = targetID.flatMap { nextWorkspace.favouriteTabIDs.firstIndex(of: $0) } ?? nextWorkspace.favouriteTabIDs.endIndex
+			nextWorkspace.favouriteTabIDs.insert(id, at: index)
+			nextWorkspace.favouritesModifiedAt = destinationDate
 		} else if let index = destinationIndex {
-			let insertion = targetID.flatMap { workspace.spaces[index].tabIDs.firstIndex(of: $0) } ?? workspace.spaces[index].tabIDs.endIndex
-			workspace.spaces[index].tabIDs.insert(id, at: insertion)
+			let insertion = targetID.flatMap { nextWorkspace.spaces[index].tabIDs.firstIndex(of: $0) } ?? nextWorkspace.spaces[index].tabIDs.endIndex
+			nextWorkspace.spaces[index].tabIDs.insert(id, at: insertion)
 			if area == .pinned {
-				let pinnedInsertion = targetID.flatMap { workspace.spaces[index].pinnedTabIDs.firstIndex(of: $0) }
-					?? workspace.spaces[index].pinnedTabIDs.endIndex
-				workspace.spaces[index].pinnedTabIDs.insert(id, at: pinnedInsertion)
+				let pinnedInsertion = targetID.flatMap { nextWorkspace.spaces[index].pinnedTabIDs.firstIndex(of: $0) }
+					?? nextWorkspace.spaces[index].pinnedTabIDs.endIndex
+				nextWorkspace.spaces[index].pinnedTabIDs.insert(id, at: pinnedInsertion)
 			}
-			workspace.spaces[index].modifiedAt = destinationDate
+			nextWorkspace.spaces[index].modifiedAt = destinationDate
 			if wasFavourite {
-				workspace.favouritesModifiedAt = mutationDate
+				nextWorkspace.favouritesModifiedAt = mutationDate
 			}
 		} else {
 			preconditionFailure("Validated tab destination became unavailable")
 		}
-		workspace.modifiedAt = destinationDate
-		if selectedTabID == id,
-		   area != .favourite,
-		   let spaceID,
-		   workspace.selectedSpaceID != spaceID
-		{
-			workspace.selectedSpaceID = spaceID
+		nextWorkspace.modifiedAt = destinationDate
+		let changesSelectedSpace = selectedTabID == id
+			&& area != .favourite
+			&& spaceID != nil
+			&& nextWorkspace.selectedSpaceID != spaceID
+		if changesSelectedSpace, let spaceID {
+			nextWorkspace.selectedSpaceID = spaceID
+		}
+		// One observed update for all folder, pinned, membership and order
+		// changes; SwiftUI never sees an intermediate half-moved tab.
+		workspace = nextWorkspace
+		if changesSelectedSpace {
 			selectTab(id)
 		}
 		schedulePersistence()
@@ -523,9 +529,10 @@ final class Browser {
 		savedWindowFrame = windowRecord?.frame
 		let session = isPrivate ? BrowserWebSession(isPrivate: true) : .shared
 		self.session = session
-		if !isMini, !isPrivate {
-			BrowserWindowRegistry.shared.activeBrowser?.flushPersistence()
-		}
+		// Another normal window reuses the hydrated in-memory browser state.
+		// Do not force a full session snapshot on the main actor just because
+		// the user opened a window; the normal debounced writer still persists
+		// updates and the quit/sleep paths retain their explicit flushes.
 		// Synchronous placeholder only: disk decode happens off-main in
 		// hydrateFromDisk() so the first frame never waits on JSON.
 		let placeholder = BrowserTab(modifiedAt: .distantPast, session: session)
