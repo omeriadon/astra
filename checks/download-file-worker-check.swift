@@ -141,7 +141,8 @@ struct DownloadFileWorkerCheck {
 		// An older debounced save can arrive after a newer save or flush.
 		// It must not replace the already committed newer generation.
 		try await BrowserDownloadFileWorker.shared.persistDownloadIndex([archived], at: downloadIndex, revision: 11)
-		precondition(try JSONDecoder().decode([BrowserDownload].self, from: Data(contentsOf: downloadIndex)) == [newest])
+		let latestRestored = try JSONDecoder().decode([BrowserDownload].self, from: Data(contentsOf: downloadIndex))
+		precondition(latestRestored == [newest])
 		let cancelledWrite = Task {
 			withUnsafeCurrentTask { $0?.cancel() }
 			do {
@@ -153,7 +154,8 @@ struct DownloadFileWorkerCheck {
 				return false
 			}
 		}
-		precondition(await cancelledWrite.value)
+		let cancellationWasObserved = await cancelledWrite.value
+		precondition(cancellationWasObserved)
 		precondition(try JSONDecoder().decode([BrowserDownload].self, from: Data(contentsOf: downloadIndex)) == [newest])
 
 		let staged = try manager.contentsOfDirectory(at: output, includingPropertiesForKeys: nil)
