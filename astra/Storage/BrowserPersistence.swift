@@ -437,9 +437,14 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		guard FileManager.default.fileExists(atPath: url.path) else { return nil }
 		let data = try Data(contentsOf: url)
 		guard data.count <= 512 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
-		let journal = try JSONDecoder().decode(SelectionJournal.self, from: data)
-		guard journal.version == 1 else { throw BrowserPersistenceError.unsupportedVersion }
-		return journal
+		// Inspect the schema version before decoding the shape: a future
+		// version may intentionally have incompatible fields.
+		guard let header = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+		      let version = header["version"] as? Int else {
+			throw BrowserPersistenceError.invalidSnapshot
+		}
+		guard version == 1 else { throw BrowserPersistenceError.unsupportedVersion }
+		return try JSONDecoder().decode(SelectionJournal.self, from: data)
 	}
 
 	private nonisolated func selectionUpdates(newerThan snapshotURL: URL) throws -> SelectionJournal? {
@@ -486,6 +491,13 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 	nonisolated func savePersistedState(_ state: BrowserPersistedState) throws {
 		Self.selectionJournalLock.lock()
 		defer { Self.selectionJournalLock.unlock() }
+		// Never silently overwrite a checkpoint written by a newer release.
+		// A corrupt checkpoint can be ignored: the full snapshot is authoritative.
+		do {
+			_ = try readSelectionJournal()
+		} catch BrowserPersistenceError.unsupportedVersion {
+			throw BrowserPersistenceError.unsupportedVersion
+		} catch {}
 		let logStarted = BrowserLog.clock()
 		BrowserLog.debug(.persistence, "state.save.begin", metadata: ["tabs": String(state.openTabs.count), "bookmarks": String(state.bookmarks.count), "reading_list": String(state.readingList.count), "history": String(state.historyVisits?.count ?? 0)])
 		try validateWindowRecords(state.windowRecords ?? [])
