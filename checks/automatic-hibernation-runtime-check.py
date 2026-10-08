@@ -25,7 +25,7 @@ struct BrowserTabProcessMemorySnapshot: Sendable {}
     var activityResult = true
     var onRefresh: (() -> Void)?
     var onSample: (() -> Void)?
-    func refreshActivity() async -> Bool {
+    func refreshHibernationSafety() async -> Bool {
         onRefresh?()
         return activityResult
     }

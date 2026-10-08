@@ -266,6 +266,7 @@ final class BrowserController: NSObject, Identifiable {
 		      !isOpeningExternalApplication,
 		      !isDownloadHandoff,
 		      pendingLifecycleOperations == 0,
+		      !isPreparingReader,
 		      pendingRequest == nil,
 		      !awaitsNavigationCommit,
 		      canHibernate
@@ -964,6 +965,25 @@ final class BrowserController: NSObject, Identifiable {
 		// video lifecycle events; do not run a second DOM query on every poll.
 		updateInactiveSchedulingPolicy()
 		return true
+	}
+
+	func refreshHibernationSafety() async -> Bool {
+		guard await refreshActivity(), canAutomaticallyHibernate,
+		      let webView = createdWebView else { return false }
+		let documentID = navigationIdentifier
+		let script = """
+		(() => {
+			return [...document.querySelectorAll('input:not([type="hidden"]), textarea, select')].some(element => {
+				if (element.tagName === 'SELECT') return [...element.options].some(option => option.selected !== option.defaultSelected);
+				if (element.type === 'checkbox' || element.type === 'radio') return element.checked !== element.defaultChecked;
+				return element.value !== element.defaultValue;
+			});
+		})()
+		"""
+		let value = try? await webView.evaluateJavaScript(script, in: nil, in: .defaultClient)
+		guard owns(webView), documentID == navigationIdentifier,
+		      value as? Bool == false else { return false }
+		return canAutomaticallyHibernate
 	}
 
 	private func updateInactiveSchedulingPolicy() {

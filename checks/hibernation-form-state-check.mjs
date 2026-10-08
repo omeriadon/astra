@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+
+const source = readFileSync(new URL('../astra/Web/Navigation/BrowserController.swift', import.meta.url), 'utf8');
+const safety = source.split('func refreshHibernationSafety()')[1];
+const script = safety.match(/let script = """\n([\s\S]*?)\n\t\t"""/)[1];
+const dirty = fields => runInNewContext(script, { document: { querySelectorAll: () => fields } });
+assert.equal(dirty([]), false);
+assert.equal(dirty([{ tagName: 'INPUT', type: 'text', value: '', defaultValue: '' }]), false);
+assert.equal(dirty([{ tagName: 'INPUT', type: 'text', value: 'draft', defaultValue: '' }]), true);
+assert.equal(dirty([{ tagName: 'INPUT', type: 'password', value: 'autofilled', defaultValue: '' }]), true);
+assert.equal(dirty([{ tagName: 'INPUT', type: 'checkbox', checked: true, defaultChecked: false }]), true);
+assert.equal(dirty([{ tagName: 'SELECT', options: [{ selected: true, defaultSelected: false }] }]), true);
+assert.equal(dirty([{ tagName: 'TEXTAREA', value: 'draft', defaultValue: '' }]), true);
+assert.match(safety, /in: \.defaultClient/);
+assert.match(safety, /value as\? Bool == false/);
+console.log('Hibernation form-state checks passed');

@@ -98,7 +98,7 @@ final class BrowserHibernationManager {
 				guard let controller = tab.controller else { continue }
 				let activityBefore = tab.lastInteractionAt
 				let navigationBefore = controller.navigationIdentifier
-				guard await controller.refreshActivity(),
+				guard await controller.refreshHibernationSafety(),
 				      tab.controller === controller,
 				      controller.navigationIdentifier == navigationBefore,
 				      tab.lastInteractionAt == activityBefore,
