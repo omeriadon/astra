@@ -414,6 +414,7 @@ private struct ShellSidebarColumn: View {
 	@Binding var showsDownloads: Bool
 	let downloads: BrowserDownloadManager
 	let onSwipeProgress: (UUID?, Double) -> Void
+	@State private var keepsDownloadsMounted = false
 
 	var body: some View {
 		ZStack(alignment: .topLeading) {
@@ -466,18 +467,43 @@ private struct ShellSidebarColumn: View {
 				content.offset(x: showsDownloads ? geometry.size.width : 0)
 			}
 
-			DownloadsSidebarView(
-				manager: downloads,
-				theme: theme
-			)
+			Group {
+				if showsDownloads || keepsDownloadsMounted {
+					DownloadsSidebarView(
+						manager: downloads,
+						theme: theme
+					)
+					.sidebarScrollContentMargins()
+				} else {
+					// When tabs are displayed there is no reason to keep
+					// observing every download progress event or lay out a
+					// second offscreen scroll tree.
+					Color.clear
+				}
+			}
 			.foregroundStyle(theme.foregroundColor)
-			.sidebarScrollContentMargins()
 			.visualEffect { content, geometry in
 				content.offset(x: showsDownloads ? 0 : -geometry.size.width)
 			}
 		}
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
 		.ignoresSafeArea(.container, edges: .vertical)
+		.task(id: showsDownloads) {
+			if showsDownloads {
+				keepsDownloadsMounted = true
+			} else {
+				guard keepsDownloadsMounted else { return }
+				// Preserve the full slide-out before dismantling the hidden
+				// content. The button animates this transition for 0.32 s.
+				do {
+					try await Task.sleep(for: .milliseconds(380))
+				} catch {
+					return
+				}
+				guard !Task.isCancelled else { return }
+				keepsDownloadsMounted = false
+			}
+		}
 		.sidebarScrollOpacityFade(top: 38, bottom: 25 + 8 + 38)
 		.overlay(alignment: .bottom) {
 			if sidebarShown {
