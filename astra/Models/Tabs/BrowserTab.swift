@@ -183,6 +183,8 @@ final class BrowserTab: Identifiable {
 	private var storedScrollPosition: BrowserScrollPosition
 	private var storedPeeks: [OpenPeek]
 	private(set) var modifiedAt: Date
+	/// Transient activity used by automatic hibernation; restored tabs get a fresh window.
+	private(set) var lastInteractionAt: Date
 	@ObservationIgnored
 	private var restorationBaseline: OpenTab?
 	@ObservationIgnored
@@ -268,6 +270,7 @@ final class BrowserTab: Identifiable {
 		storedScrollPosition = scrollPosition
 		storedPeeks = openPeeks
 		self.modifiedAt = modifiedAt
+		lastInteractionAt = .now
 		peeks = isHibernated ? [] : openPeeks.map { BrowserPeek(openPeek: $0, session: session) }
 		controller = if isHibernated || internalPage != nil {
 			nil
@@ -319,6 +322,10 @@ final class BrowserTab: Identifiable {
 
 	var canHibernate: Bool {
 		controller?.canHibernate != false && peeks.allSatisfy(\.controller.canHibernate)
+	}
+
+	func markInteraction() {
+		lastInteractionAt = .now
 	}
 
 	func hibernate() {

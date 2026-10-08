@@ -21,6 +21,7 @@ enum BrowserSettingsSchema {
 		"webInspectorEnabled",
 		"developerModeEnabled",
 		"usageLimitsProvider",
+		"automaticHibernationEnabled",
 		"aiFeaturesEnabled",
 		"aiBrowserActionPermissions",
 		"aiBookmarkTitles",
@@ -98,6 +99,7 @@ enum BrowserSettingsSchema {
 		Defaults[.webInspectorEnabled] = false
 		Defaults[.developerModeEnabled] = false
 		Defaults[.usageLimitsProvider] = .none
+		Defaults[.automaticHibernationEnabled] = true
 		Defaults[.downloadsFolderBookmark] = ""
 	}
 }

@@ -151,9 +151,11 @@
 			}
 			let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
 			source.setEventHandler {
+				let level = BrowserHibernationManager.PressureLevel(rawValue: source.data)
 				BrowserLog.warning(.performance, "memory-pressure")
 				Task { @MainActor in
 					for browser in BrowserWindowRegistry.shared.openBrowsers {
+						browser.handleMemoryPressure(level)
 						for tab in browser.tabs {
 							tab.controller?.discardPreviewSnapshot()
 							for peek in tab.peeks {

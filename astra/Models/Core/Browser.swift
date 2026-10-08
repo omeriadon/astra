@@ -130,6 +130,9 @@ final class Browser {
 	private var scrollPersistenceTask: Task<Void, Never>?
 
 	@ObservationIgnored
+	private var automaticHibernationManager: BrowserHibernationManager?
+
+	@ObservationIgnored
 	private var pendingScrollPersistence = false
 
 	/// False until disk hydration completes; persistence calls before then only
@@ -596,6 +599,9 @@ final class Browser {
 		configure(placeholder)
 		if !isMini {
 			BrowserWindowRegistry.shared.register(self)
+		}
+		if !isMini {
+			automaticHibernationManager = BrowserHibernationManager(browser: self)
 		}
 		if !isPrivate, !isMini,
 		   let source = BrowserWindowRegistry.shared.openBrowsers.first(where: {
@@ -1156,6 +1162,7 @@ final class Browser {
 		newTabGoogleSuggestions = []
 		newTabClipboardURL = nil
 		selectedTabID = id
+		tab.markInteraction()
 
 		let selectionDate = nextWorkspaceMutationDate()
 		selectedTabModifiedAt = selectionDate
@@ -1621,6 +1628,10 @@ final class Browser {
 			BrowserExtensionManager.shared.webViewDidChange(for: id, in: self)
 			schedulePersistence()
 		}
+	}
+
+	func handleMemoryPressure(_ level: BrowserHibernationManager.PressureLevel) {
+		automaticHibernationManager?.handleMemoryPressure(level)
 	}
 
 	func promotePeek(in source: BrowserTab, id: UUID) {
