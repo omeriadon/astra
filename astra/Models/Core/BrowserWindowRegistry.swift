@@ -29,6 +29,7 @@ final class BrowserWindowRegistry {
 				windowID: browser.windowID,
 				tabIDs: browser.tabs.map(\.id),
 				selectedTabID: browser.selectedTabID,
+				selectionModifiedAt: browser.selectedTabModifiedAt,
 				frame: browser.savedWindowFrame
 			)
 		}
