@@ -514,8 +514,9 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		}
 		var state = state
 		state.windowRecords = (state.windowRecords ?? []).sorted { $0.windowID.uuidString < $1.windowID.uuidString }
+		try validatePersistedState(state)
 		let data = try JSONEncoder().encode(Envelope(version: Self.currentVersion, state: state))
-		_ = try decodeSnapshot(data)
+		guard data.count <= 64 * 1024 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
 		let currentURL = directory.appendingPathComponent("browser-state.json")
 		var privateDataWasRemoved = false
 		if FileManager.default.fileExists(atPath: currentURL.path),
@@ -580,18 +581,10 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		try read(BrowserShutdownMetadata.self, named: "browser-shutdown.json")
 	}
 
-	private nonisolated func decodeSnapshot(_ data: Data) throws -> BrowserPersistedState {
-		guard data.count <= 64 * 1024 * 1024 else {
-			throw BrowserPersistenceError.invalidSnapshot
-		}
-		guard let header = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-		      let version = header["version"] as? Int
-		else { throw BrowserPersistenceError.invalidSnapshot }
-		guard (1 ... Self.currentVersion).contains(version) else {
-			throw BrowserPersistenceError.unsupportedVersion
-		}
-		let envelope = try JSONDecoder().decode(Envelope.self, from: data)
-		let state = envelope.state
+	/// Validate the decoded document or the in-memory snapshot before encoding.
+	/// Avoid immediately decoding our own JSON output just to repeat these
+	/// semantic checks a second time.
+	private nonisolated func validatePersistedState(_ state: BrowserPersistedState) throws {
 		try validateWindowRecords(state.windowRecords ?? [])
 		guard Set(state.openTabs.map(\.id)).count == state.openTabs.count,
 		      state.bookmarks.count <= 100_000,
@@ -616,6 +609,21 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		else {
 			throw BrowserPersistenceError.invalidSnapshot
 		}
+	}
+
+	private nonisolated func decodeSnapshot(_ data: Data) throws -> BrowserPersistedState {
+		guard data.count <= 64 * 1024 * 1024 else {
+			throw BrowserPersistenceError.invalidSnapshot
+		}
+		guard let header = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+		      let version = header["version"] as? Int
+		else { throw BrowserPersistenceError.invalidSnapshot }
+		guard (1 ... Self.currentVersion).contains(version) else {
+			throw BrowserPersistenceError.unsupportedVersion
+		}
+		let envelope = try JSONDecoder().decode(Envelope.self, from: data)
+		let state = envelope.state
+		try validatePersistedState(state)
 		return state
 	}
 
