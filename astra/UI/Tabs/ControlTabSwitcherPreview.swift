@@ -40,7 +40,12 @@
 					group.addTask { @MainActor in
 						try? await Task.sleep(for: .milliseconds(Int.random(in: 0 ... 40)))
 						guard !Task.isCancelled else { return }
-						await controller.refreshPreviewSnapshot()
+						// Most tabs already have a retained navigation/sidebar
+						// snapshot. Opening the switcher must not queue a burst
+						// of redundant WebKit captures on every candidate.
+						if controller.previewSnapshot == nil {
+							await controller.refreshPreviewSnapshot()
+						}
 					}
 				}
 			}
