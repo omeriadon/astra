@@ -46,7 +46,7 @@
 			for browser in browsers {
 				for tab in browser.tabs {
 					for controller in [tab.controller].compactMap(\.self) + tab.peeks.map(\.controller)
-					where controllerIDs.insert(controller.id).inserted
+						where controllerIDs.insert(controller.id).inserted
 					{
 						controllers.append(controller)
 					}

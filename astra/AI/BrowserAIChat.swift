@@ -228,7 +228,9 @@ final class BrowserAIChat {
 				// unthrottled final response and immediately showing first text.
 				let now = ContinuousClock.now
 				if lastPreviewPublishedAt.map({ $0.duration(to: now) >= .milliseconds(85) }) ?? true {
-					if preview != latestPreview { preview = latestPreview }
+					if preview != latestPreview {
+						preview = latestPreview
+					}
 					lastPreviewPublishedAt = now
 				}
 				// The JSON actions array comes after response text. Avoid
@@ -247,7 +249,9 @@ final class BrowserAIChat {
 					continuation.yield(call)
 				}
 			}
-			if preview != latestPreview { preview = latestPreview }
+			if preview != latestPreview {
+				preview = latestPreview
+			}
 			return turn
 		}
 		defer { generation.cancel(); continuation.finish() }

@@ -14,7 +14,7 @@ enum BrowserProcessMemoryCheck {
 		let sharedAggregate = BrowserProcessMemoryAggregate.combining([snapshot(shared), snapshot(shared)])
 		precondition(sharedAggregate.processCount == 1 && sharedAggregate.uniqueBytes == 300)
 		let replacementAggregate = BrowserProcessMemoryAggregate.combining([snapshot(shared), snapshot(replacement)])
-		precondition(replacementAggregate.processCount == 2 && replacementAggregate.uniqueBytes == 1_000)
+		precondition(replacementAggregate.processCount == 2 && replacementAggregate.uniqueBytes == 1000)
 		let unavailableAggregate = BrowserProcessMemoryAggregate.combining([snapshot(unavailable)])
 		precondition(unavailableAggregate.processCount == 0 && unavailableAggregate.uniqueBytes == nil)
 		let mixedAggregate = BrowserProcessMemoryAggregate.combining([snapshot(shared), snapshot(unavailable), snapshot(shared)])

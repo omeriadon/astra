@@ -171,7 +171,9 @@ import WebKit
 						guard !Task.isCancelled, activeKey == key, controller.navigationIdentifier == document,
 						      controller.aiPreviewDismissal == dismissal else { return }
 						// All snapshots for this request share the same extracted page.
-						if page == nil { page = extracted }
+						if page == nil {
+							page = extracted
+						}
 						let title = BrowserAIOutput.streamedString("title", in: snapshot)
 						if summary == nil, title?.isEmpty == false || BrowserAIOutput.streamedString("header", in: snapshot)?.isEmpty == false {
 							controller.updateAIHoverHighlight(enabled: true)

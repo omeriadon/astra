@@ -22,7 +22,9 @@ nonisolated enum BrowserStartPageProjection {
 			}
 			if let insertion {
 				recent.insert(visit, at: insertion)
-				if recent.count > limit { recent.removeLast() }
+				if recent.count > limit {
+					recent.removeLast()
+				}
 			} else if recent.count < limit {
 				recent.append(visit)
 			}
@@ -34,8 +36,12 @@ nonisolated enum BrowserStartPageProjection {
 		guard !isPrivate, limit > 0 else { return [] }
 		let summaries = BrowserVisit.summaries(visits, sortByRecency: false)
 		let outranks: (BrowserVisitSummary, BrowserVisitSummary) -> Bool = { lhs, rhs in
-			if lhs.visitCount != rhs.visitCount { return lhs.visitCount > rhs.visitCount }
-			if lhs.lastVisitedAt != rhs.lastVisitedAt { return lhs.lastVisitedAt > rhs.lastVisitedAt }
+			if lhs.visitCount != rhs.visitCount {
+				return lhs.visitCount > rhs.visitCount
+			}
+			if lhs.lastVisitedAt != rhs.lastVisitedAt {
+				return lhs.lastVisitedAt > rhs.lastVisitedAt
+			}
 			return lhs.url.absoluteString < rhs.url.absoluteString
 		}
 		if limit >= 64 {
@@ -48,7 +54,9 @@ nonisolated enum BrowserStartPageProjection {
 		for summary in summaries {
 			if let index = frequent.firstIndex(where: { outranks(summary, $0) }) {
 				frequent.insert(summary, at: index)
-				if frequent.count > limit { frequent.removeLast() }
+				if frequent.count > limit {
+					frequent.removeLast()
+				}
 			} else if frequent.count < limit {
 				frequent.append(summary)
 			}

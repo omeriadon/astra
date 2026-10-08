@@ -90,8 +90,12 @@ final class BrowserWebsiteMonitoring {
 			let latest = try await BrowserSync.shared.websiteMonitors()
 			// The polling response is usually identical. Avoid invalidating all
 			// consumers of this observable array every minute for no state change.
-			if latest != monitors { monitors = latest }
-			if error != nil { error = nil }
+			if latest != monitors {
+				monitors = latest
+			}
+			if error != nil {
+				error = nil
+			}
 			guard Defaults[.aiFeaturesEnabled], Defaults[.aiWebsiteMonitoring] else { return }
 			for monitor in monitors where monitor.matchedAt != nil {
 				let key = monitor.id.uuidString
