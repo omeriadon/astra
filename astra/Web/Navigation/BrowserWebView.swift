@@ -246,6 +246,7 @@ struct BrowserWebView {
 		let pageGestures = BrowserDesktopPageGestures()
 		private let curtain = NSImageView()
 		private var insets: [EdgeInsets]?
+		private var appliedVisibility: Bool?
 		private(set) var refreshPullOffset: CGFloat = 0
 
 		init(specification: BrowserWebView) {
@@ -284,6 +285,7 @@ struct BrowserWebView {
 				x: bounds.minX,
 				y: bounds.minY + (isFlipped ? offset : -offset)
 			)
+			guard webView.frame.origin != origin else { return }
 			if animated {
 				NSAnimationContext.runAnimationGroup { context in
 					context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.25
@@ -300,6 +302,7 @@ struct BrowserWebView {
 			let controller = specification.controller
 			let webView = controller.webView
 			if webView.superview !== self {
+				appliedVisibility = nil
 				handoffTask?.cancel()
 				curtain.frame = bounds
 				curtain.image = controller.windowMirrorSnapshot ?? controller.previewSnapshot
@@ -343,10 +346,11 @@ struct BrowserWebView {
 					webView.frame = targetFrame
 				}
 			}
-			if webView.isHidden == specification.isVisible {
+			if appliedVisibility != specification.isVisible {
 				webView.isHidden = !specification.isVisible
+				webView.setAccessibilityHidden(!specification.isVisible)
+				appliedVisibility = specification.isVisible
 			}
-			webView.setAccessibilityHidden(!specification.isVisible)
 			if specification.isVisible {
 				pageGestures.attach(to: controller, in: self)
 			} else {
