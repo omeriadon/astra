@@ -103,7 +103,7 @@ def _rusage(pid: int) -> dict[str, Any]:
             return {}
         return {
             "footprint_bytes": int(value.value_7),
-            "rusage_cpu_nanoseconds": int(value.value_1 + value.value_2),
+            "rusage_cpu_nanoseconds": int(value.value_0 + value.value_1),
             "rusage_start_abstime": int(value.value_8),
         }
     except (AttributeError, OSError):

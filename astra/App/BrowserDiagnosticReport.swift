@@ -44,7 +44,7 @@ struct BrowserDiagnosticReport: Codable, Equatable {
 	let hibernatedTabCount: Int?
 	let loadingTabCount: Int?
 	let navigationFailures: [String: Int]?
-	let memory: Memory? = nil
+	var memory: Memory? = nil
 	let events: [Event]
 
 	func encoded() -> Data? {

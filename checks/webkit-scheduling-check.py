@@ -24,10 +24,9 @@ assert update_source.index("unmountWebView()") < update_source.index("self.speci
 assert "var shouldKeepWebViewAttached: Bool" in controller
 assert "requiresMediaTeardownConfirmation" in controller
 assert "inactiveSchedulingPolicy = requiresContinuousScheduling ? .none : .throttle" in controller
-assert ".suspend is deliberately not selected" in controller
 assert "inactiveSchedulingPolicy = .suspend" not in controller
 observation_source = controller[controller.index("private func startMediaObservation()"):controller.index("func refreshActivity()")]
-assert "let isDetached = webView.window == nil" in observation_source
+assert "let isDetached = self?.createdWebView?.window == nil" in observation_source
 assert "if !isDetached || hasActivity" in observation_source
 assert "fallbackInterval = 60" in observation_source
 

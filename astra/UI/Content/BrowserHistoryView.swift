@@ -110,9 +110,7 @@ struct BrowserHistoryView: View {
 				: $0.visitedAt > $1.visitedAt
 		}
 		var counts: [URL: Int] = [:]
-		for visit in visits {
-			counts[visit.url, default: 0] += 1
-		}
+		for visit in visits { counts[visit.url, default: 0] += 1 }
 		visitCountsByURL = counts
 		updateVisits()
 	}

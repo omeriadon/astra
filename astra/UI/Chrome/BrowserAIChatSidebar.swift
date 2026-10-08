@@ -529,9 +529,7 @@ private struct BrowserAIChatStreamingResponse: View {
 
 		private final class WeakView {
 			weak var value: ChatMarkdownView?
-			init(_ value: ChatMarkdownView) {
-				self.value = value
-			}
+			init(_ value: ChatMarkdownView) { self.value = value }
 		}
 
 		private var registered: [ObjectIdentifier: WeakView] = [:]

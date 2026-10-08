@@ -176,17 +176,16 @@
 			// Only live/adjacent pages need a current SwiftUI root. When AppKit
 			// asks for a distant cached page, refresh it on demand below.
 			var visibleIdentifiers = Set<String>()
-			for index in [selectedIndex, targetIndex ?? selectedIndex] {
+			for index in [selectedIndex, (targetIndex ?? selectedIndex)] {
 				guard spaces.indices.contains(index) else { continue }
-				for neighbor in max(0, index - 1) ... min(spaces.count - 1, index + 1) {
+				for neighbor in max(0, index - 1)...min(spaces.count - 1, index + 1) {
 					visibleIdentifiers.insert(spaces[neighbor].id.uuidString)
 				}
 			}
 			var staleIdentifiers: [String] = []
 			for (identifier, controller) in contentControllers {
 				guard let id = UUID(uuidString: identifier),
-				      let space = spacesByID[id]
-				else {
+				      let space = spacesByID[id] else {
 					staleIdentifiers.append(identifier)
 					continue
 				}

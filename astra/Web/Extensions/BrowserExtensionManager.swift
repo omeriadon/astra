@@ -190,8 +190,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		      let tab = browser.tab(withID: id),
 		      tab.internalPage == nil else { return }
 		guard let previous = tabSnapshots[browser.windowID]?[id],
-		      let bridge = tabs[browser.windowID]?[id]
-		else {
+		      let bridge = tabs[browser.windowID]?[id] else {
 			sync(browser)
 			return
 		}
@@ -203,18 +202,10 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			zoom: tab.controller?.pageZoom ?? 1
 		)
 		var changed: WKWebExtension.TabChangedProperties = []
-		if previous.title != next.title {
-			changed.insert(.title)
-		}
-		if previous.url != next.url {
-			changed.insert(.URL)
-		}
-		if previous.loading != next.loading {
-			changed.insert(.loading)
-		}
-		if previous.zoom != next.zoom {
-			changed.insert(.zoomFactor)
-		}
+		if previous.title != next.title { changed.insert(.title) }
+		if previous.url != next.url { changed.insert(.URL) }
+		if previous.loading != next.loading { changed.insert(.loading) }
+		if previous.zoom != next.zoom { changed.insert(.zoomFactor) }
 		guard !changed.isEmpty else { return }
 		tabSnapshots[browser.windowID, default: [:]][id] = next
 		controller.didChangeTabProperties(changed, for: bridge)

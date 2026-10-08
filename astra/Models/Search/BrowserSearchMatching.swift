@@ -153,7 +153,7 @@ enum BrowserSearchMatching {
 		var i = 0
 		var j = 0
 		var edits = 0
-		while i < left.count, j < right.count {
+		while i < left.count && j < right.count {
 			if left[i] == right[j] {
 				i += 1
 				j += 1
@@ -177,6 +177,7 @@ enum BrowserSearchMatching {
 		}
 		return true
 	}
+
 }
 
 private final class OpenSearchTemplateParser: NSObject, XMLParserDelegate {

@@ -76,21 +76,21 @@ struct BrowserPageView: View {
 	}
 }
 
-/// The animated split views update their child values each frame.
-/// Page overlays only need a parent-driven refresh when their actual
-/// geometry changes; Browser's @Observable properties still invalidate
-/// the body independently for tab selection, reader, find and peeks.
-extension BrowserPageView: Equatable {
-	static func == (lhs: Self, rhs: Self) -> Bool {
-		lhs.browser === rhs.browser
-			&& lhs.cornerRadius == rhs.cornerRadius
-			&& sameEdges(lhs.insets.obscured, rhs.insets.obscured)
-			&& sameEdges(lhs.insets.minimum, rhs.insets.minimum)
-			&& sameEdges(lhs.insets.maximum, rhs.insets.maximum)
-	}
+	/// The animated split views update their child values each frame.
+	/// Page overlays only need a parent-driven refresh when their actual
+	/// geometry changes; Browser's @Observable properties still invalidate
+	/// the body independently for tab selection, reader, find and peeks.
+	extension BrowserPageView: Equatable {
+		static func == (lhs: Self, rhs: Self) -> Bool {
+			lhs.browser === rhs.browser
+				&& lhs.cornerRadius == rhs.cornerRadius
+				&& sameEdges(lhs.insets.obscured, rhs.insets.obscured)
+				&& sameEdges(lhs.insets.minimum, rhs.insets.minimum)
+				&& sameEdges(lhs.insets.maximum, rhs.insets.maximum)
+		}
 
-	private static func sameEdges(_ lhs: EdgeInsets, _ rhs: EdgeInsets) -> Bool {
-		lhs.top == rhs.top && lhs.bottom == rhs.bottom
-			&& lhs.leading == rhs.leading && lhs.trailing == rhs.trailing
+		private static func sameEdges(_ lhs: EdgeInsets, _ rhs: EdgeInsets) -> Bool {
+			lhs.top == rhs.top && lhs.bottom == rhs.bottom
+				&& lhs.leading == rhs.leading && lhs.trailing == rhs.trailing
+		}
 	}
-}

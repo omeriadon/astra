@@ -45,10 +45,10 @@ final class BrowserController: NSObject, Identifiable {
 			}()
 			let result = BrowserMemoryReclamationSnapshot(before: before, after: afterSnapshot)
 			BrowserLog.info(.diagnostics, "webkit.memory.reclamation", metadata: [
-				"before_bytes": String(result.beforeObservedBytes ?? 0),
-				"after_bytes": String(result.afterObservedBytes ?? 0),
+				"before_bytes": result.beforeObservedBytes.map(String.init) ?? "unavailable",
+				"after_bytes": result.afterObservedBytes.map(String.init) ?? "unavailable",
 				"identity_changed": String(result.processIdentityChanged),
-				"processes_missing": String(result.processNoLongerObserved),
+				"unavailable_processes": String(result.unavailableProcessCount),
 			])
 			return result
 		}
@@ -277,11 +277,11 @@ final class BrowserController: NSObject, Identifiable {
 		return true
 	}
 
-	fileprivate func beginLifecycleOperation() {
+	func beginLifecycleOperation() {
 		pendingLifecycleOperations += 1
 	}
 
-	fileprivate func endLifecycleOperation() {
+	func endLifecycleOperation() {
 		pendingLifecycleOperations = max(0, pendingLifecycleOperations - 1)
 	}
 
@@ -310,6 +310,9 @@ final class BrowserController: NSObject, Identifiable {
 			|| isCapturing
 			|| isLoading
 			|| hasUnsavedChanges
+			|| pendingLifecycleOperations > 0
+			|| isOpeningExternalApplication
+			|| displayCaptureState == true
 	}
 
 	private static var cachedSafariUserAgentSuffix: String?
@@ -888,27 +891,27 @@ final class BrowserController: NSObject, Identifiable {
 	private func startMediaObservation() {
 		mediaObservationTask = Task { @MainActor [weak self] in
 			while !Task.isCancelled {
-				guard let self, let webView = createdWebView else { return }
-				let hasActivity = isPlayingMedia
-					|| hasPausedMedia
-					|| isCapturing
-					|| isPictureInPictureActive
-					|| isEnteringPictureInPicture
-				let isDetached = webView.window == nil
-				// Activity and PiP events refresh immediately. A detached, quiescent
-				// page must not be woken by a DOM query just to rediscover inactivity.
+				guard self?.createdWebView != nil else { return }
+				let hasActivity = self?.isPlayingMedia == true
+					|| self?.hasPausedMedia == true
+					|| self?.isCapturing == true
+					|| self?.isPictureInPictureActive == true
+					|| self?.isEnteringPictureInPicture == true
+				let isDetached = self?.createdWebView?.window == nil
+				// Do not wake a detached idle page merely to rediscover inactivity.
 				if !isDetached || hasActivity {
-					await refreshActivity()
+					await self?.refreshActivity()
 				}
 				guard !Task.isCancelled else { return }
+				let fallbackInterval: TimeInterval
+				if hasActivity {
+					fallbackInterval = 5
+				} else if isDetached {
+					fallbackInterval = 60
+				} else {
+					fallbackInterval = 20
+				}
 				do {
-					let fallbackInterval: TimeInterval = if hasActivity {
-						5
-					} else if isDetached {
-						60
-					} else {
-						20
-					}
 					try await Task.sleep(for: .seconds(fallbackInterval))
 				} catch {
 					return
@@ -2053,47 +2056,11 @@ final class BrowserController: NSObject, Identifiable {
 		}
 
 		private nonisolated static func sampleProcessMemory(for processIdentifiers: [pid_t]) -> [pid_t: BrowserTabProcessMemorySnapshot.Process] {
-			var result: [pid_t: BrowserTabProcessMemorySnapshot.Process] = [:]
-			for processIdentifier in Set(processIdentifiers) {
-				result[processIdentifier] = BrowserTabProcessMemorySnapshot.Process(
-					pid: processIdentifier,
-					startTime: processStartTime(processIdentifier),
-					bytes: physicalFootprint(processIdentifier)
-				)
-			}
-			return result
+			Dictionary(uniqueKeysWithValues: Set(processIdentifiers).map { pid in
+				(pid, BrowserTabProcessMemorySnapshot.sample(pid))
+			})
 		}
 
-		private nonisolated static func processStartTime(_ processIdentifier: pid_t) -> UInt64? {
-			var info = proc_bsdinfo()
-			let result = withUnsafeMutablePointer(to: &info) { pointer in
-				proc_pidinfo(
-					processIdentifier,
-					PROC_PIDTBSDINFO,
-					0,
-					pointer,
-					Int32(MemoryLayout<proc_bsdinfo>.size)
-				)
-			}
-			guard result == Int32(MemoryLayout<proc_bsdinfo>.size) else { return nil }
-			return UInt64(info.pbi_start_tvsec) * 1_000_000 + UInt64(info.pbi_start_tvusec)
-		}
-
-		private nonisolated static func physicalFootprint(_ processIdentifier: pid_t) -> UInt64? {
-			var usage = rusage_info_v4()
-			let result = withUnsafeMutablePointer(to: &usage) { usagePointer in
-				var info: rusage_info_t? = UnsafeMutableRawPointer(usagePointer)
-				return withUnsafeMutablePointer(to: &info) { infoPointer in
-					proc_pid_rusage(
-						processIdentifier,
-						Int32(RUSAGE_INFO_V4),
-						infoPointer
-					)
-				}
-			}
-			guard result == 0 else { return nil }
-			return usage.ri_phys_footprint
-		}
 	#endif
 
 	private func updateHistory(reportSameDocumentVisit: Bool = true) {
