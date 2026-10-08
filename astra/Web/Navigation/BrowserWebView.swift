@@ -302,6 +302,19 @@ struct BrowserWebView {
 			let controller = specification.controller
 			let webView = controller.webView
 			if webView.superview !== self {
+				// Reparenting an existing WKWebView can itself stall AppKit's
+				// main thread independently of WebKit's initial creation.
+				// Time the synchronous host handoff separately so switching
+				// delays can be attributed to the correct lifecycle stage.
+				let attachStarted = BrowserLog.clock()
+				defer {
+					BrowserLog.duration(
+						.webKit, "webview.host.attach",
+						since: attachStarted,
+						warnAboveMilliseconds: 30,
+						metadata: ["controller": BrowserLog.id(controller.id)]
+					)
+				}
 				appliedVisibility = nil
 				handoffTask?.cancel()
 				curtain.frame = bounds
