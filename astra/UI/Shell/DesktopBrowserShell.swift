@@ -414,7 +414,6 @@ private struct ShellSidebarColumn: View {
 	@Binding var showsDownloads: Bool
 	let downloads: BrowserDownloadManager
 	let onSwipeProgress: (UUID?, Double) -> Void
-	@State private var bottomBarHeight: CGFloat = 33
 
 	var body: some View {
 		ZStack(alignment: .topLeading) {
@@ -479,7 +478,7 @@ private struct ShellSidebarColumn: View {
 		}
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
 		.ignoresSafeArea(.container, edges: .vertical)
-		.sidebarScrollOpacityFade(top: 38, bottom: bottomBarHeight + 38)
+		.sidebarScrollOpacityFade(top: 38, bottom: 25 + 8 + 38)
 		.overlay(alignment: .bottom) {
 			if sidebarShown {
 				sidebarBottomBar
@@ -502,9 +501,6 @@ private struct ShellSidebarColumn: View {
 				onSwipeProgress: onSwipeProgress
 			)
 			.foregroundStyle(theme.foregroundColor)
-			.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-				bottomBarHeight = height
-			}
 		}
 	}
 }
