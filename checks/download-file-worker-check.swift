@@ -101,6 +101,24 @@ struct DownloadFileWorkerCheck {
 			precondition(manager.fileExists(atPath: firstDest.path))
 		}
 
+		let downloadIndex = root.appendingPathComponent("downloads.json")
+		let archived = BrowserDownload(
+			id: UUID(),
+			createdAt: .now,
+			sourceURL: nil,
+			requestURL: nil,
+			originalName: "paused.bin",
+			fileURL: thirdSource,
+			status: .paused,
+			progress: 0.5,
+			renamedByAppleIntelligence: false,
+			resumeData: nil,
+			errorMessage: nil
+		)
+		try await BrowserDownloadFileWorker.shared.persistDownloadIndex([archived], at: downloadIndex)
+		let restored = try JSONDecoder().decode([BrowserDownload].self, from: Data(contentsOf: downloadIndex))
+		precondition(restored == [archived])
+
 		let staged = try manager.contentsOfDirectory(at: output, includingPropertiesForKeys: nil)
 		precondition(!staged.contains { $0.lastPathComponent.hasPrefix(".astra-finalizing-") })
 		print("Download finalization worker checks passed")
