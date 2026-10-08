@@ -75,7 +75,7 @@ actor BrowserWebsiteAppFileWorker {
 	func replace(
 		_ installation: BrowserWebsiteAppInstallation,
 		iconData: Data?,
-		nextRegistry: [BrowserWebsiteAppInstallation]
+		nextRegistry: [BrowserWebsiteAppInstallation]?
 	) async throws {
 		let original = installation.bundleURL
 		guard isOwned(original) else { throw BrowserWebsiteAppFileError.outsideOwnedDirectory }
@@ -92,7 +92,7 @@ actor BrowserWebsiteAppFileWorker {
 			_ = try FileManager.default.replaceItemAt(original, withItemAt: staging, backupItemName: backupName)
 			replaced = true
 			try registerGeneratedApp(at: original)
-			try saveRegistry(nextRegistry)
+			if let nextRegistry { try saveRegistry(nextRegistry) }
 			try? FileManager.default.removeItem(at: backupURL)
 		} catch {
 			try? FileManager.default.removeItem(at: staging)
@@ -133,8 +133,7 @@ actor BrowserWebsiteAppFileWorker {
 		let plistURL = url.appendingPathComponent("Contents/Info.plist")
 		let plist = NSDictionary(contentsOf: plistURL) as? [String: Any]
 		if plist?["AstraWebsiteAppRuntimeVersion"] as? Int != 1 {
-			try await replace(installation, iconData: nil, nextRegistry: [])
-			// Migration must not overwrite registry records.
+			try await replace(installation, iconData: nil, nextRegistry: nil)
 		}
 		try registerGeneratedApp(at: url)
 	}
@@ -206,6 +205,7 @@ actor BrowserWebsiteAppFileWorker {
 	}
 
 	private func writeIcon(_ data: Data, to url: URL) throws {
+		try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
 		guard let source = CGImageSourceCreateWithData(data as CFData, nil),
 		      let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
 		      	kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -213,7 +213,6 @@ actor BrowserWebsiteAppFileWorker {
 		      ] as CFDictionary),
 		      let destination = CGImageDestinationCreateWithURL(url as CFURL, "com.apple.icns" as CFString, 1, nil)
 		else { throw BrowserWebsiteAppFileError.templateInvalid }
-		try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
 		CGImageDestinationAddImage(destination, image, nil)
 		guard CGImageDestinationFinalize(destination) else { throw BrowserWebsiteAppFileError.templateInvalid }
 	}
