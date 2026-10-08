@@ -140,6 +140,7 @@
 			var spaceID: UUID?
 			var beforeTabID: UUID?
 			var isWindowFallback = false
+			private var registeredTarget: BrowserTabDragCoordinator.Target?
 
 			override func hitTest(_: NSPoint) -> NSView? {
 				nil
@@ -157,22 +158,30 @@
 
 			func updateTarget() {
 				guard let browser, !browser.isPrivate, !browser.isMini, let window, !bounds.isEmpty else {
+					registeredTarget = nil
 					BrowserTabDragCoordinator.shared.unregister(id)
 					return
 				}
 				let frame = window.convertToScreen(convert(bounds, to: nil))
-				BrowserTabDragCoordinator.shared.register(
-					.init(
-						browser: browser,
-						area: area,
-						spaceID: spaceID,
-						beforeTabID: beforeTabID,
-						frame: frame,
-						window: window,
-						isWindowFallback: isWindowFallback
-					),
-					id: id
+				if let previous = registeredTarget,
+				   previous.browser === browser, previous.window === window,
+				   previous.area == area, previous.spaceID == spaceID,
+				   previous.beforeTabID == beforeTabID, previous.frame == frame,
+				   previous.isWindowFallback == isWindowFallback
+				{
+					return
+				}
+				let target = BrowserTabDragCoordinator.Target(
+					browser: browser,
+					area: area,
+					spaceID: spaceID,
+					beforeTabID: beforeTabID,
+					frame: frame,
+					window: window,
+					isWindowFallback: isWindowFallback
 				)
+				registeredTarget = target
+				BrowserTabDragCoordinator.shared.register(target, id: id)
 			}
 
 			deinit {

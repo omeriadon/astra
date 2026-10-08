@@ -93,7 +93,12 @@ enum BrowserSearchMatching {
 
 	/// Exact > prefix > words > substring > typo/abbreviation.
 	nonisolated static func score(_ query: String, in text: String) -> Double {
-		let query = normalized(query)
+		score(normalizedQuery: normalized(query), in: text)
+	}
+
+	/// The caller can normalize once for an entire search across hundreds of
+	/// candidate titles and URLs rather than repeating it for every candidate.
+	nonisolated static func score(normalizedQuery query: String, in text: String) -> Double {
 		let text = normalized(text)
 		guard !query.isEmpty, !text.isEmpty else { return 0 }
 		if query == text {
