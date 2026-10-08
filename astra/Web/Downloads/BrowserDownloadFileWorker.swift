@@ -21,6 +21,7 @@ actor BrowserDownloadFileWorker {
 	/// observe a half-copied cross-volume download.
 	func commit(
 		source: URL,
+		ownedStagingDirectory: URL,
 		proposed: URL,
 		fileScoped: Bool,
 		bookmark: Data?,
@@ -47,6 +48,11 @@ actor BrowserDownloadFileWorker {
 		#endif
 		defer { scopedURL?.stopAccessingSecurityScopedResource() }
 		try Task.checkCancellation()
+		// Persisted download records may be corrupt or tampered with. A
+		// resumed finalizer is never permitted to delete arbitrary user files.
+		let ownedRoot = ownedStagingDirectory.standardizedFileURL.resolvingSymlinksInPath().path + "/"
+		guard source.standardizedFileURL.resolvingSymlinksInPath().path.hasPrefix(ownedRoot)
+		else { throw FinalizationError.destinationUnavailable }
 
 		guard source.standardizedFileURL != proposed.standardizedFileURL else {
 			throw CocoaError(.fileWriteFileExists)
