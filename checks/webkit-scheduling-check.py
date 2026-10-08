@@ -18,6 +18,8 @@ mount_source = web_view[web_view.index("func mountIfReady()"):]
 assert mount_source.index(hidden_creation_guard) < mount_source.index("let webView = controller.webView")
 assert web_view.count("unmountWebView()") >= 4
 assert "controller.webViewIfLoaded" in web_view
+update_source = web_view[web_view.index("func update(specification:"):web_view.index("func mountIfReady()")]
+assert update_source.index("unmountWebView()") < update_source.index("self.specification = specification")
 
 assert "var shouldKeepWebViewAttached: Bool" in controller
 assert "requiresMediaTeardownConfirmation" in controller

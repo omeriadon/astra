@@ -230,8 +230,7 @@ struct BrowserWebView {
 		}
 
 		func updateNSView(_ host: BrowserWebViewHost, context _: Context) {
-			host.specification = self
-			host.mountIfReady()
+			host.update(specification: self)
 		}
 
 		static func dismantleNSView(_ host: BrowserWebViewHost, coordinator _: ()) {
@@ -296,6 +295,16 @@ struct BrowserWebView {
 			} else {
 				webView.setFrameOrigin(origin)
 			}
+		}
+
+		func update(specification: BrowserWebView) {
+			if self.specification.controller !== specification.controller
+				|| self.specification.windowID != specification.windowID
+			{
+				unmountWebView()
+			}
+			self.specification = specification
+			mountIfReady()
 		}
 
 		func mountIfReady() {
