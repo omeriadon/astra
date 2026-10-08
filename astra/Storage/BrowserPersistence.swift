@@ -70,14 +70,31 @@ nonisolated struct BrowserWindowRecord: Codable, Equatable, Sendable {
 	var windowID: UUID
 	var tabIDs: [UUID]
 	var selectedTabID: UUID
+	var selectionModifiedAt: Date
 	var frame: BrowserWindowFrame?
 
-	init(windowID: UUID, tabIDs: [UUID], selectedTabID: UUID, frame: BrowserWindowFrame? = nil) {
+	init(windowID: UUID, tabIDs: [UUID], selectedTabID: UUID, selectionModifiedAt: Date = .distantPast, frame: BrowserWindowFrame? = nil) {
 		version = 1
 		self.windowID = windowID
 		self.tabIDs = tabIDs
 		self.selectedTabID = selectedTabID
+		self.selectionModifiedAt = selectionModifiedAt
 		self.frame = frame
+	}
+
+	private enum CodingKeys: String, CodingKey {
+		case version, windowID, tabIDs, selectedTabID, selectionModifiedAt, frame
+	}
+
+	// Older session envelopes have no per-window selection timestamp.
+	nonisolated init(from decoder: Decoder) throws {
+		let container = try decoder.container(keyedBy: CodingKeys.self)
+		version = try container.decode(Int.self, forKey: .version)
+		windowID = try container.decode(UUID.self, forKey: .windowID)
+		tabIDs = try container.decode([UUID].self, forKey: .tabIDs)
+		selectedTabID = try container.decode(UUID.self, forKey: .selectedTabID)
+		selectionModifiedAt = try container.decodeIfPresent(Date.self, forKey: .selectionModifiedAt) ?? .distantPast
+		frame = try container.decodeIfPresent(BrowserWindowFrame.self, forKey: .frame)
 	}
 
 	func restoredSelection(availableTabIDs: Set<UUID>) -> UUID? {
