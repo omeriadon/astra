@@ -411,9 +411,8 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		var privateDataWasRemoved = false
 		if FileManager.default.fileExists(atPath: currentURL.path),
 		   let previousData = try? Data(contentsOf: currentURL),
-		   (try? decodeSnapshot(previousData)) != nil
+		   let previous = try? decodeSnapshot(previousData)
 		{
-			let previous = try decodeSnapshot(previousData)
 			let incomingIDs = Set((state.historyVisits ?? []).map(\.id))
 			// Membership checks run on every state save, including sessions with
 			// thousands of visits or tabs. Build hash indexes once per snapshot.
