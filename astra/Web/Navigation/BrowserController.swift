@@ -217,6 +217,8 @@ final class BrowserController: NSObject, Identifiable {
 	@ObservationIgnored
 	private var pendingLifecycleOperations = 0
 	@ObservationIgnored
+	private let livePopupControllers = NSHashTable<BrowserController>.weakObjects()
+	@ObservationIgnored
 	// ponytail: controller-wide two-second throttle; per-origin limits if abuse becomes measurable.
 	private var lastExternalApplicationRequestTime: TimeInterval?
 	@ObservationIgnored
@@ -266,6 +268,7 @@ final class BrowserController: NSObject, Identifiable {
 		      !isOpeningExternalApplication,
 		      !isDownloadHandoff,
 		      pendingLifecycleOperations == 0,
+		      !hasLivePopupDependency,
 		      !isPreparingReader,
 		      pendingRequest == nil,
 		      !awaitsNavigationCommit,
@@ -276,6 +279,10 @@ final class BrowserController: NSObject, Identifiable {
 			guard createdWebView?.window?.attachedSheet == nil else { return false }
 		#endif
 		return true
+	}
+
+	private var hasLivePopupDependency: Bool {
+		livePopupControllers.allObjects.contains { $0.webViewIfLoaded != nil }
 	}
 
 	func beginLifecycleOperation() {
@@ -312,6 +319,7 @@ final class BrowserController: NSObject, Identifiable {
 			|| isLoading
 			|| hasUnsavedChanges
 			|| pendingLifecycleOperations > 0
+			|| hasLivePopupDependency
 			|| isOpeningExternalApplication
 			|| displayCaptureState == true
 	}
@@ -1428,6 +1436,7 @@ final class BrowserController: NSObject, Identifiable {
 		mediaObservationTask?.cancel()
 		mediaObservationTask = nil
 		pendingLifecycleOperations = 0
+		livePopupControllers.removeAllObjects()
 		pictureInPictureControlUnavailable = false
 		faviconTask?.cancel()
 		faviconTask = nil
@@ -3075,10 +3084,11 @@ extension BrowserController: WKUIDelegate {
 		inBackground: Bool?
 	) -> WKWebView? {
 		guard let popup = popupRequested?(configuration, source, inBackground) else { return nil }
-		if isAuthenticationSessionBrowser,
-		   let controller = popup.navigationDelegate as? BrowserController
-		{
-			controller.isAuthenticationSessionBrowser = true
+		if let controller = popup.navigationDelegate as? BrowserController {
+			livePopupControllers.add(controller)
+			if isAuthenticationSessionBrowser {
+				controller.isAuthenticationSessionBrowser = true
+			}
 		}
 		return popup
 	}

@@ -146,7 +146,6 @@ final class BrowserHibernationManager {
 		      BrowserWindowRegistry.shared.ownsTab(tab.id, in: browser),
 		      !isPinned(tab),
 		      tab.peeks.isEmpty,
-		      !hasLivePeek,
 		      tab.controller?.webViewIfLoaded != nil,
 		      tab.controller?.webViewIfLoaded?.window == nil,
 		      browser.session.downloads.activeProgress == nil
@@ -165,11 +164,6 @@ final class BrowserHibernationManager {
 			|| browser?.workspace.spaces.contains { $0.pinnedTabIDs.contains(tab.id) } == true
 	}
 
-	private var hasLivePeek: Bool {
-		BrowserWindowRegistry.shared.openBrowsers.contains { browser in
-			browser.tabs.contains { !$0.peeks.isEmpty }
-		}
-	}
 }
 
 private extension Duration {

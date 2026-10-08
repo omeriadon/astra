@@ -156,6 +156,15 @@ extension BrowserHibernationManager {
             precondition(browser.reclaimed.isEmpty)
         }
         do {
+            let (tab, browser, manager) = make()
+            let unrelatedPeek = BrowserTab(age: 2000)
+            unrelatedPeek.peeks = [1]
+            browser.tabs.append(unrelatedPeek)
+            await manager.exerciseSweep()
+            precondition(browser.reclaimed == [tab.id])
+            precondition(unrelatedPeek.controller != nil)
+        }
+        do {
             let (tab, browser, manager) = make(1)
             let older = BrowserTab(age: 4000)
             browser.tabs.append(older)
