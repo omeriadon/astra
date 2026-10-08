@@ -775,7 +775,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			Task { @MainActor [weak self] in
 				await task.value
 				guard let self,
-				      let current = items.first(where: { $0.id == itemID && $0.status == .cancelled }) else { return }
+				      items.contains(where: { $0.id == itemID && $0.status == .cancelled }) else { return }
 				await BrowserDownloadFileWorker.shared.removeFiles([temporary])
 				releaseScope(for: itemID)
 				updateDockProgress()
