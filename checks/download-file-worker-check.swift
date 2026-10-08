@@ -134,6 +134,27 @@ struct DownloadFileWorkerCheck {
 		try await BrowserDownloadFileWorker.shared.persistDownloadIndex([archived], at: downloadIndex)
 		let restored = try JSONDecoder().decode([BrowserDownload].self, from: Data(contentsOf: downloadIndex))
 		precondition(restored == [archived])
+		var newest = archived
+		newest.status = .completed
+		newest.progress = 1
+		try await BrowserDownloadFileWorker.shared.persistDownloadIndex([newest], at: downloadIndex, revision: 12)
+		// An older debounced save can arrive after a newer save or flush.
+		// It must not replace the already committed newer generation.
+		try await BrowserDownloadFileWorker.shared.persistDownloadIndex([archived], at: downloadIndex, revision: 11)
+		precondition(try JSONDecoder().decode([BrowserDownload].self, from: Data(contentsOf: downloadIndex)) == [newest])
+		let cancelledWrite = Task {
+			withUnsafeCurrentTask { $0?.cancel() }
+			do {
+				try await BrowserDownloadFileWorker.shared.persistDownloadIndex([archived], at: downloadIndex, revision: 13)
+				return false
+			} catch is CancellationError {
+				return true
+			} catch {
+				return false
+			}
+		}
+		precondition(await cancelledWrite.value)
+		precondition(try JSONDecoder().decode([BrowserDownload].self, from: Data(contentsOf: downloadIndex)) == [newest])
 
 		let staged = try manager.contentsOfDirectory(at: output, includingPropertiesForKeys: nil)
 		precondition(!staged.contains { $0.lastPathComponent.hasPrefix(".astra-finalizing-") })
