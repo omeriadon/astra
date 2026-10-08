@@ -47,7 +47,7 @@ struct BrowserTabProcessMemorySnapshot: Sendable {}
 }
 @MainActor final class Browser {
     struct Space { var pinnedTabIDs: [UUID] = [] }
-    struct Workspace { var spaces: [Space] = [] }
+    struct Workspace { var spaces: [Space] = []; var favouriteTabIDs: [UUID] = [] }
     final class Downloads { var activeProgress: Double? }
     final class Session { let downloads = Downloads() }
     var tabs: [BrowserTab]
@@ -73,6 +73,9 @@ struct BrowserTabProcessMemorySnapshot: Sendable {}
     var openBrowsers: [Browser] = []
     var unowned: Set<UUID> = []
     func ownsTab(_ id: UUID, in _: Browser) -> Bool { !unowned.contains(id) }
+    func ownedTabIDs(in browser: Browser) -> Set<UUID> {
+        Set(browser.tabs.map(\.id)).subtracting(unowned)
+    }
 }
 '''
 program += source
@@ -107,7 +110,7 @@ extension BrowserHibernationManager {
             case 0: browser.selectedTabID = tab.id
             case 1: tab.controller!.canAutomaticallyHibernate = false
             case 2: browser.session.downloads.activeProgress = 0.5
-            case 3: browser.favouriteTabs = [tab]
+            case 3: browser.workspace.favouriteTabIDs = [tab.id]
             case 4: browser.workspace.spaces = [.init(pinnedTabIDs: [tab.id])]
             case 5: tab.peeks = [1]
             case 6: tab.controller!.webViewIfLoaded!.window = 1
