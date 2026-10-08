@@ -13,7 +13,8 @@ assert "guard documentChanged || closedHistoryChanged else" in received
 assert "browser.shared-state.no-op" in received
 assert "scheduleUserDataPersistence()" in received
 assert "persistenceTask?.cancel()" not in received, "No-op fanout must not drop local pending writes"
-assert "if current == incoming { return current }" in received
+assert "if current == incoming { return current }" in browser
+assert "uniquingKeysWith: Self.preferredClosedHistoryRecord" in received
 assert "let openIDs = Set(tabs.map(\\.id))" in received
 assert "if first == second { return first }" in sync
 assert "if self == other { return self }" not in sync, "Merge must retain canonicalization"
