@@ -34,7 +34,13 @@ final class Browser {
 	private(set) var recentlyUsedTabIDs: [UUID]
 	private(set) var bookmarks: [Bookmark]
 	private(set) var readingList: [ReadingListItem]
-	private(set) var historyVisits: [BrowserVisit]
+	private(set) var historyVisits: [BrowserVisit] {
+		didSet { historySearchIndex = nil }
+	}
+	/// Reuse the expensive per-URL history aggregation across successive search keystrokes.
+	/// The history property observer invalidates this for title edits, imports, sync and deletion.
+	@ObservationIgnored
+	var historySearchIndex: (newestVisit: Date, entries: [(url: URL, visit: BrowserVisit, count: Int)])?
 	@ObservationIgnored
 	private var lastVisitedURL: [UUID: URL] = [:]
 	@ObservationIgnored
