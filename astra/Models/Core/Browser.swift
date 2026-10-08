@@ -681,9 +681,19 @@ final class Browser {
 		if Self.launchHydrationTask == nil {
 			let launchMetadataTask = Self.launchMetadataTask
 			Self.launchHydrationTask = Task.detached(priority: .userInitiated) { [persistence] in
-				let previousShutdownWasClean = await launchMetadataTask?.value
-				await BrowserRestorationStore.prepare()
-				if let state = try persistence.loadPersistedState() {
+				// Keychain restoration-key preparation and the saved JSON read are
+				// independent. Overlap them instead of paying their startup latency
+				// serially. Both must complete before constructing restored controllers.
+				let restorationPreparation = Task { @MainActor in
+					await BrowserRestorationStore.prepare()
+				}
+				let diskStarted = BrowserLog.clock()
+				let persisted = try persistence.loadPersistedState()
+				BrowserLog.duration(.persistence, "startup.persisted-state-read",
+					since: diskStarted, warnAboveMilliseconds: 250)
+				if let state = persisted {
+					let previousShutdownWasClean = await launchMetadataTask?.value
+					await restorationPreparation.value
 					return HydratedState(
 						tabs: state.openTabs,
 						snapshot: state.snapshot,
@@ -702,6 +712,8 @@ final class Browser {
 				let workspace = try persistence.loadWorkspace()
 				let bookmarks = try persistence.loadBookmarks()
 				let closedTabs = try persistence.loadClosedTabs()
+				let previousShutdownWasClean = await launchMetadataTask?.value
+				await restorationPreparation.value
 				return HydratedState(
 					tabs: tabs,
 					snapshot: snapshot,
