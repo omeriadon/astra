@@ -2524,9 +2524,8 @@ final class Browser {
 			selectedTab.wake()
 			configure(selectedTab)
 		}
-		recentlyUsedTabIDs = recentlyUsedTabIDs.filter { id in
-			tabs.contains { $0.id == id }
-		}
+		let liveTabIDs = Set(tabs.map(\.id))
+		recentlyUsedTabIDs = recentlyUsedTabIDs.filter { liveTabIDs.contains($0) }
 		if !recentlyUsedTabIDs.contains(selectedTabID) {
 			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
 		}
@@ -2619,6 +2618,7 @@ final class Browser {
 				if current.modifiedAt != incoming.modifiedAt {
 					return current.modifiedAt > incoming.modifiedAt ? current : incoming
 				}
+				if current == incoming { return current }
 				let encoder = JSONEncoder()
 				encoder.outputFormatting = [.sortedKeys]
 				let currentData = (try? encoder.encode(current)) ?? Data()
