@@ -4,6 +4,10 @@ import Foundation
 /// Filesystem work executes on this actor, never on BrowserDownloadManager's MainActor.
 actor BrowserDownloadFileWorker {
 	static let shared = BrowserDownloadFileWorker()
+	/// Last committed index generation per destination. Coalesced progress
+	/// writers may reach this actor out of order after cancellation; never
+	/// replace a newer, durable index with an older snapshot.
+	private var committedIndexRevisions: [String: UInt64] = [:]
 
 	enum FinalizationError: LocalizedError {
 		case destinationUnavailable
@@ -198,9 +202,18 @@ actor BrowserDownloadFileWorker {
 
 	/// One serialized durability boundary for the download index, including
 	/// shutdown. Encoding and atomic file publication never run on MainActor.
-	func persistDownloadIndex(_ snapshot: [BrowserDownload], at url: URL) throws {
+	func persistDownloadIndex(_ snapshot: [BrowserDownload], at url: URL, revision: UInt64 = 0) throws {
+		try Task.checkCancellation()
+		let key = url.standardizedFileURL.path
+		if revision > 0, let committed = committedIndexRevisions[key], revision <= committed {
+			return
+		}
 		let data = try JSONEncoder().encode(snapshot)
+		try Task.checkCancellation()
 		try data.write(to: url, options: .atomic)
+		if revision > 0 {
+			committedIndexRevisions[key] = revision
+		}
 	}
 
 	func removeFiles(_ files: [URL]) {
