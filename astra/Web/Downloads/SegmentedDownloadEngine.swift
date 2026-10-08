@@ -248,10 +248,9 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		}
 	}
 
-	func removeParts(_ itemID: UUID, count: Int) {
+	func removeParts(_ itemID: UUID, count: Int) async {
 		BrowserLog.debug(.downloads, "segmented.remove-parts", metadata: ["item": BrowserLog.id(itemID), "count": String(count)])
-		for index in 0 ..< count {
-			try? FileManager.default.removeItem(at: Self.partURL(itemID, index: index))
-		}
+		let paths = (0 ..< count).map { Self.partURL(itemID, index: $0) }
+		await BrowserDownloadFileWorker.shared.removeFiles(paths)
 	}
 }
