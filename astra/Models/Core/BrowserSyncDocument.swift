@@ -270,6 +270,10 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 	}
 
 	nonisolated func merging(_ other: Self) -> Self {
+		// Cross-window publications often contain identical immutable state.
+		// An equality pass is cheaper than rebuilding and sorting every tab,
+		// history visit, bookmark and space on an unchanged merge.
+		if self == other { return self }
 		var result = self
 		result.version = max(version, other.version)
 		result.browser.closedTabIDs.formUnion(other.browser.closedTabIDs)
@@ -463,6 +467,7 @@ private nonisolated func preferredSpace(_ first: BrowserSpace, _ second: Browser
 }
 
 private nonisolated func mergeSpace(_ first: BrowserSpace, _ second: BrowserSpace) -> BrowserSpace {
+	if first == second { return first }
 	var winner = preferredSpace(first, second)
 	winner.deletedPinnedFoldersAt.merge(first.deletedPinnedFoldersAt) { max($0, $1) }
 	winner.deletedPinnedFoldersAt.merge(second.deletedPinnedFoldersAt) { max($0, $1) }
@@ -525,6 +530,9 @@ private nonisolated func preferred<Value: Codable & Equatable>(
 	if firstDate != secondDate {
 		return firstDate > secondDate ? first : second
 	}
+	// Most ties are the same entity replicated across browser windows.
+	// Preserve the deterministic byte-level tie breaker for actual conflicts.
+	if first == second { return first }
 	return stableData(first).lexicographicallyPrecedes(stableData(second)) ? second : first
 }
 
