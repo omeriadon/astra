@@ -336,7 +336,7 @@ final class BrowserController: NSObject, Identifiable {
 		const check = () => {
 			scheduled = false;
 			lastCheck = performance.now();
-			if (window.scrollY < 0 || innerWidth <= 0) return;
+			if (document.hidden || window.scrollY < 0 || innerWidth <= 0) return;
 
 			// This probe does multiple hit-tests and layout/style reads. Top-edge
 			// occupancy is browser chrome state, not animation state, so cap it
@@ -374,7 +374,7 @@ final class BrowserController: NSObject, Identifiable {
 		};
 
 		const schedule = (immediate = false) => {
-			if (scheduled) return;
+			if (document.hidden || scheduled) return;
 			scheduled = true;
 			const delay = immediate ? 0 : Math.max(0, minimumInterval - (performance.now() - lastCheck));
 			setTimeout(() => requestAnimationFrame(check), delay);
@@ -390,13 +390,20 @@ final class BrowserController: NSObject, Identifiable {
 
 		addEventListener('scroll', () => schedule(), { passive: true });
 		addEventListener('resize', () => schedule(true));
-		new MutationObserver(scheduleMutation).observe(document.documentElement, {
-			subtree: true,
-			childList: true,
-			attributes: true,
-			attributeFilter: ['class', 'style', 'hidden', 'id', 'role']
-		});
-		schedule(true);
+		const observer = new MutationObserver(scheduleMutation);
+		const resume = () => {
+			observer.disconnect();
+			if (document.hidden) return;
+			observer.observe(document.documentElement, {
+				subtree: true,
+				childList: true,
+				attributes: true,
+				attributeFilter: ['class', 'style', 'hidden', 'id', 'role']
+			});
+			schedule(true);
+		};
+		document.addEventListener('visibilitychange', resume);
+		resume();
 	})();
 	"""
 
@@ -594,6 +601,18 @@ final class BrowserController: NSObject, Identifiable {
 		/// the background loop. Explicit refreshes (Ctrl-Tab) bypass this.
 		@ObservationIgnored
 		var previewSnapshotRefreshSuspended = false
+
+		/// Memory pressure only drops Astra-owned cached images for inactive tabs.
+		/// The WKWebView, page state and restoration history remain untouched.
+		@discardableResult
+		func discardBackgroundPreviewSnapshots() -> Bool {
+			guard previewSnapshotRefreshSuspended else { return false }
+			let hadImage = previewSnapshot != nil || windowMirrorSnapshot != nil
+			previewSnapshot = nil
+			windowMirrorSnapshot = nil
+			previewSnapshotGeneration = nil
+			return hadImage
+		}
 	#endif
 
 	init(
