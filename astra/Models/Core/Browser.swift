@@ -41,6 +41,11 @@ final class Browser {
 	/// The history property observer invalidates this for title edits, imports, sync and deletion.
 	@ObservationIgnored
 	var historySearchIndex: (newestVisit: Date, entries: [(url: URL, visit: BrowserVisit, count: Int)])?
+	/// Lamport-style local watermark for history tombstones, imports and visits.
+	/// Computing the maximum across thousands of rows on *every navigation*
+	/// made history recording increasingly expensive during long sessions.
+	@ObservationIgnored
+	private var latestHistoryMutationDate: Date?
 	@ObservationIgnored
 	private var lastVisitedURL: [UUID: URL] = [:]
 	@ObservationIgnored
@@ -609,6 +614,7 @@ final class Browser {
 			bookmarks = source.bookmarks
 			readingList = source.readingList
 			historyVisits = source.historyVisits
+			latestHistoryMutationDate = nil
 			closedHistoryTabs = source.closedHistoryTabs
 			closedTabIDs = source.closedTabIDs
 			deletedBookmarkIDs = source.deletedBookmarkIDs
@@ -866,6 +872,7 @@ final class Browser {
 		deletedVisitsAt = loaded.snapshot?.deletedVisitsAt ?? [:]
 		historyClearedAt = loaded.snapshot?.historyClearedAt ?? .distantPast
 		historyVisits = visibleHistoryVisits(historyVisits)
+		latestHistoryMutationDate = nil
 		persistenceErrorDescription = nil
 		reconcileWorkspace()
 		for tab in newTabs {
@@ -1781,16 +1788,24 @@ final class Browser {
 	}
 
 	private func nextHistoryMutationDate(after date: Date) -> Date {
-		// This runs on every recorded visit/title mutation. Avoid building two
-		// temporary date arrays proportional to the entire history.
-		var latest = historyClearedAt
-		for deletedAt in deletedVisitsAt.values where deletedAt > latest {
-			latest = deletedAt
+		let latest: Date
+		if let cached = latestHistoryMutationDate {
+			latest = cached
+		} else {
+			// Only restoration, cross-window synchronization or bulk deletion
+			// can invalidate the cache. The common navigation path is O(1).
+			var maximum = historyClearedAt
+			for deletedAt in deletedVisitsAt.values where deletedAt > maximum {
+				maximum = deletedAt
+			}
+			for visit in historyVisits where visit.modifiedAt > maximum {
+				maximum = visit.modifiedAt
+			}
+			latest = maximum
 		}
-		for visit in historyVisits where visit.modifiedAt > latest {
-			latest = visit.modifiedAt
-		}
-		return date > latest ? date : latest.addingTimeInterval(0.001)
+		let next = date > latest ? date : latest.addingTimeInterval(0.001)
+		latestHistoryMutationDate = next
+		return next
 	}
 
 	private func visibleHistoryVisits(_ visits: [BrowserVisit]) -> [BrowserVisit] {
@@ -1832,6 +1847,7 @@ final class Browser {
 	}
 
 	private func clearLocalHistory(at date: Date) {
+		latestHistoryMutationDate = nil
 		historyVisits.removeAll()
 		historyClearedAt = date
 		deletedVisitsAt.removeAll()
@@ -1887,6 +1903,7 @@ final class Browser {
 	}
 
 	private func removeHistoryLocally(_ ids: Set<UUID>, at date: Date) {
+		latestHistoryMutationDate = nil
 		historyVisits.removeAll { ids.contains($0.id) }
 		for id in ids {
 			deletedVisitsAt[id] = date
@@ -2460,6 +2477,7 @@ final class Browser {
 		historyClearedAt = document.browser.historyClearedAt
 		bookmarks = document.bookmarks
 		historyVisits = visibleHistoryVisits(document.history)
+		latestHistoryMutationDate = nil
 		workspace = document.workspace ?? BrowserWorkspace.migrated(
 			tabs: document.tabs,
 			selectedTabID: document.browser.selectedTabID,
