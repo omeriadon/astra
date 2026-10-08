@@ -38,22 +38,46 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	private static let refreshInterval: TimeInterval = 7 * 24 * 60 * 60
 	private static let observationScript = """
 	(() => {
+		// This runs once per document in the isolated WebKit content world.
+		if (document.__astraFaviconObserverInstalled) return;
+		document.__astraFaviconObserverInstalled = true;
 		const iconSelector = 'link[rel~="icon"]';
+		let pendingWhileHidden = false;
+		let scheduled = false;
+
+		const scheduleNotification = () => {
+			if (document.hidden) {
+				pendingWhileHidden = true;
+				return;
+			}
+			if (scheduled) return;
+			scheduled = true;
+			setTimeout(() => {
+				scheduled = false;
+				if (document.hidden) {
+					pendingWhileHidden = true;
+					return;
+				}
+				pendingWhileHidden = false;
+				window.webkit.messageHandlers.faviconChanged.postMessage(true);
+			}, 250);
+		};
+
+		document.addEventListener('visibilitychange', () => {
+			if (!document.hidden && pendingWhileHidden) scheduleNotification();
+		});
+
 		const observer = new MutationObserver(changes => {
 			const faviconChanged = changes.some(change => {
 				if (change.type === 'attributes') {
 					return change.target.matches(iconSelector)
 						|| (change.attributeName === 'rel' && change.target.tagName === 'LINK');
 				}
-
 				return [...change.addedNodes, ...change.removedNodes].some(node =>
 					node.matches?.(iconSelector)
 				);
 			});
-
-			if (faviconChanged) {
-				window.webkit.messageHandlers.faviconChanged.postMessage(true);
-			}
+			if (faviconChanged) scheduleNotification();
 		});
 
 		observer.observe(document.head, {
