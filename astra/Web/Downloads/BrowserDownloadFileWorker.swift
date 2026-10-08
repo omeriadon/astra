@@ -160,7 +160,15 @@ actor BrowserDownloadFileWorker {
 	/// Deletes staging files on the worker, including after cancellation.
 	/// Failure is reported so a download is not removed from the registry
 	/// while its backing file remains unexpectedly on disk.
-	func deleteTemporaryFiles(_ files: [URL], bookmark: Data?, hasExistingAccess: Bool) throws {
+	func deleteTemporaryFiles(_ files: [URL], in ownedStagingDirectory: URL, bookmark: Data?, hasExistingAccess: Bool) throws {
+		let root = ownedStagingDirectory.standardizedFileURL.resolvingSymlinksInPath().path + "/"
+		// Download-cache records can be stale or damaged. Never use their URLs
+		// to delete arbitrary files outside Astra's temporary download area.
+		guard files.allSatisfy({
+			$0.standardizedFileURL.resolvingSymlinksInPath().path.hasPrefix(root)
+		}) else {
+			throw FinalizationError.destinationUnavailable
+		}
 		var scopedURL: URL?
 		#if os(macOS)
 			if !hasExistingAccess, let bookmark {
