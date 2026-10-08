@@ -217,8 +217,21 @@ final class BrowserAIChat {
 		var results = ""
 		let generation = Task { @MainActor in
 			defer { finished = true }
-			return try await BrowserAI.shared.performStreaming(feature, input: input, model: model) { snapshot in
-				preview = BrowserAIOutput.streamedString("response", in: snapshot) ?? (snapshot.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") ? "" : snapshot)
+			var lastPreviewPublishedAt: ContinuousClock.Instant?
+			var latestPreview = ""
+			let turn = try await BrowserAI.shared.performStreaming(feature, input: input, model: model) { snapshot in
+				latestPreview = BrowserAIOutput.streamedString("response", in: snapshot) ?? (snapshot.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") ? "" : snapshot)
+				// The Markdown view and scroll reader are relatively expensive.
+				// Publish at most ~12 updates per second while retaining the
+				// unthrottled final response and immediately showing first text.
+				let now = ContinuousClock.now
+				if lastPreviewPublishedAt.map({ $0.duration(to: now) >= .milliseconds(85) }) ?? true {
+					if preview != latestPreview { preview = latestPreview }
+					lastPreviewPublishedAt = now
+				}
+				// The JSON actions array comes after response text. Avoid
+				// reparsing all completed JSON objects before it even exists.
+				guard seen.count < 5, snapshot.contains("\"actions\"") else { return }
 				for data in BrowserAIOutput.completedObjects(in: snapshot) {
 					guard seen.count < 5,
 					      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -232,6 +245,8 @@ final class BrowserAIChat {
 					queued.append(call)
 				}
 			}
+			if preview != latestPreview { preview = latestPreview }
+			return turn
 		}
 		defer { generation.cancel() }
 		return try await withTaskCancellationHandler {
