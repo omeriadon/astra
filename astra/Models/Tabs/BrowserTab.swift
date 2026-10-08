@@ -331,8 +331,19 @@ final class BrowserTab: Identifiable {
 	func hibernate() {
 		guard internalPage == nil else { return }
 		guard let controller, canHibernate else { return }
-		storedInteractionState = controller.webViewIfLoaded?.interactionState
 		storedRestorationState = controller.encryptedInteractionState
+		let interactionState = controller.webViewIfLoaded?.interactionState
+		if storedRestorationState == nil {
+			if let data = interactionState as? Data, data.count <= 4 * 1024 * 1024 {
+				storedInteractionState = data
+			} else if interactionState is Data {
+				storedInteractionState = nil
+			} else {
+				storedInteractionState = interactionState
+			}
+		} else {
+			storedInteractionState = nil
+		}
 		storedFileAccessBookmark = controller.fileAccessBookmark
 		storedHistoryPrefix = controller.liveHistoryPrefix
 		storedURL = controller.url

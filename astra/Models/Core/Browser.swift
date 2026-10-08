@@ -1164,6 +1164,7 @@ final class Browser {
 		newTabSearchSelection = nil
 		newTabGoogleSuggestions = []
 		newTabClipboardURL = nil
+		previousTab?.markInteraction()
 		selectedTabID = id
 		tab.markInteraction()
 

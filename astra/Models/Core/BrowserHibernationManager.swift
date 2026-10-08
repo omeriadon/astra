@@ -87,9 +87,13 @@ final class BrowserHibernationManager {
 				      let tab = browser.tab(withID: id),
 				      isEligible(tab, now: .now, idleTime: idleTime)
 				else { continue }
+				guard let controller = tab.controller else { continue }
 				let activityBefore = tab.lastInteractionAt
-				await tab.controller?.refreshActivity()
-				guard tab.lastInteractionAt == activityBefore,
+				let navigationBefore = controller.navigationIdentifier
+				guard await controller.refreshActivity(),
+				      tab.controller === controller,
+				      controller.navigationIdentifier == navigationBefore,
+				      tab.lastInteractionAt == activityBefore,
 				      Defaults[.automaticHibernationEnabled],
 				      isEligible(tab, now: .now, idleTime: idleTime),
 				      pressureLevel == .critical || pressureLevel == .warning || idleTime == Self.normalIdleTime
@@ -110,7 +114,8 @@ final class BrowserHibernationManager {
 	private func isEligible(_ tab: BrowserTab, now: Date, idleTime: Duration) -> Bool {
 		guard !tab.isHibernated,
 		      tab.internalPage == nil,
-			  tab.canHibernate,
+		      tab.canHibernate,
+		      tab.controller?.canAutomaticallyHibernate == true,
 		      !isVisible(tab),
 		      !isPinned(tab),
 		      tab.peeks.isEmpty,
