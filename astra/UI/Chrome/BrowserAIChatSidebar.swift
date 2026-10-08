@@ -417,7 +417,6 @@ struct BrowserAIChatSidebar: View {
 	private final class ChatMarkdownView: MarkdownStreamView {
 		var displayedText = ""
 		var hover: ((URL?, URL?, CGSize, Bool) -> Void)?
-		private var monitor: Any?
 		private var hoveredURL: URL?
 		private var hoveredSize = CGSize.zero
 		private var hoveredShiftPressed = false
@@ -436,36 +435,115 @@ struct BrowserAIChatSidebar: View {
 		override func viewDidMoveToWindow() {
 			super.viewDidMoveToWindow()
 			stopMonitoring()
-			guard window != nil else { return }
-			monitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .scrollWheel, .flagsChanged]) { [weak self] event in
+			if window != nil {
+				ChatMarkdownEventDispatcher.shared.register(self)
+			}
+		}
+
+		/// A conversation can have hundreds of Markdown views. A single shared
+		/// application-local event handler routes pointer events to just the
+		/// view below the cursor instead of one handler per message.
+		func stopMonitoring() {
+			ChatMarkdownEventDispatcher.shared.unregister(self)
+		}
+
+		func updateTrackedHover(for event: NSEvent) {
+			let location = event.type == .flagsChanged
+				? window?.convertPoint(fromScreen: NSEvent.mouseLocation) ?? event.locationInWindow
+				: event.locationInWindow
+			let point = textLabelView.convert(location, from: nil)
+			let region = textLabelView.highlightRegion(at: point)
+			updateTrackedHover(
+				url: region?.linkURL,
+				size: region?.rects.reduce(CGRect.null) { $0.union($1) }.size ?? .zero,
+				shift: event.modifierFlags.contains(.shift)
+			)
+		}
+
+		func clearTrackedHover() {
+			updateTrackedHover(url: nil, size: .zero, shift: false)
+		}
+
+		private func updateTrackedHover(url: URL?, size: CGSize, shift: Bool) {
+			guard url != hoveredURL || size != hoveredSize || shift != hoveredShiftPressed else { return }
+			let previous = hoveredURL
+			hoveredURL = url
+			hoveredSize = size
+			hoveredShiftPressed = shift
+			hover?(url, previous, size, shift)
+		}
+	}
+
+	@MainActor
+	private final class ChatMarkdownEventDispatcher {
+		static let shared = ChatMarkdownEventDispatcher()
+
+		private final class WeakView {
+			weak var value: ChatMarkdownView?
+			init(_ value: ChatMarkdownView) { self.value = value }
+		}
+
+		private var registered: [ObjectIdentifier: WeakView] = [:]
+		private weak var activeView: ChatMarkdownView?
+		private var monitor: Any?
+
+		private init() {}
+
+		func register(_ view: ChatMarkdownView) {
+			registered = registered.filter { $0.value.value != nil }
+			registered[ObjectIdentifier(view)] = WeakView(view)
+			guard monitor == nil else { return }
+			monitor = NSEvent.addLocalMonitorForEvents(
+				matching: [.mouseMoved, .scrollWheel, .flagsChanged]
+			) { [weak self] event in
 				MainActor.assumeIsolated {
-					guard let self else { return }
-					let location = event.type == .flagsChanged ? self.window?.convertPoint(fromScreen: NSEvent.mouseLocation) ?? event.locationInWindow : event.locationInWindow
-					let point = self.textLabelView.convert(location, from: nil)
-					let content = self.window?.contentView
-					let hit = content?.hitTest(content?.convert(location, from: nil) ?? .zero)
-					let region = event.window === self.window && event.type != .scrollWheel && hit?.isDescendant(of: self) == true
-						? self.textLabelView.highlightRegion(at: point) : nil
-					let url = region?.linkURL
-					let size = region?.rects.reduce(CGRect.null) { $0.union($1) }.size ?? .zero
-					let shift = event.modifierFlags.contains(.shift)
-					if url != self.hoveredURL || size != self.hoveredSize || shift != self.hoveredShiftPressed {
-						let previous = self.hoveredURL
-						self.hoveredURL = url
-						self.hoveredSize = size
-						self.hoveredShiftPressed = shift
-						self.hover?(url, previous, size, shift)
-					}
+					self?.route(event)
 				}
 				return event
 			}
 		}
 
-		func stopMonitoring() {
-			if let monitor {
-				NSEvent.removeMonitor(monitor)
+		func unregister(_ view: ChatMarkdownView) {
+			registered.removeValue(forKey: ObjectIdentifier(view))
+			if activeView === view {
+				activeView?.clearTrackedHover()
+				activeView = nil
 			}
-			monitor = nil
+			if registered.isEmpty, let monitor {
+				NSEvent.removeMonitor(monitor)
+				self.monitor = nil
+			}
+		}
+
+		private func route(_ event: NSEvent) {
+			// A scroll ends link hover. Flag changes still use the actual
+			// pointer position, as the event's window coordinates may be stale.
+			let eventWindow = event.window ?? (event.type == .flagsChanged ? activeView?.window : nil)
+			var hit: NSView?
+			if event.type != .scrollWheel, let window = eventWindow,
+			   let content = window.contentView
+			{
+				let pointInWindow = event.type == .flagsChanged
+					? window.convertPoint(fromScreen: NSEvent.mouseLocation)
+					: event.locationInWindow
+				hit = content.hitTest(content.convert(pointInWindow, from: nil))
+			}
+
+			var target: ChatMarkdownView?
+			while let view = hit {
+				if let markdown = view as? ChatMarkdownView,
+				   registered[ObjectIdentifier(markdown)]?.value === markdown
+				{
+					target = markdown
+					break
+				}
+				hit = view.superview
+			}
+			if activeView !== target {
+				activeView?.clearTrackedHover()
+				activeView = target
+			}
+			target?.updateTrackedHover(for: event)
 		}
 	}
 
