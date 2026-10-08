@@ -184,7 +184,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	/// Normal tab metadata and WebKit loading events affect one WebExtension
 	/// bridge, not every bridge in a window. Structural membership changes
 	/// still use sync(_:) from Browser's explicit tab mutation paths.
-	func tabPropertiesDidChange(for id: UUID, in browser: Browser) {
+	func tabPropertiesDidChange(for id: UUID, in browser: Browser, forceWebViewRefresh: Bool = false) {
 		guard !browser.isPrivate,
 		      BrowserWindowRegistry.shared.ownsTab(id, in: browser),
 		      let tab = browser.tab(withID: id),
@@ -201,7 +201,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			pinned: previous.pinned,
 			zoom: tab.controller?.pageZoom ?? 1
 		)
-		var changed: WKWebExtension.TabChangedProperties = []
+		var changed: WKWebExtension.TabChangedProperties = forceWebViewRefresh ? [.URL, .loading] : []
 		if previous.title != next.title { changed.insert(.title) }
 		if previous.url != next.url { changed.insert(.URL) }
 		if previous.loading != next.loading { changed.insert(.loading) }
@@ -260,10 +260,18 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 
 	func webViewDidChange(for id: UUID, in browser: Browser) {
 		guard !browser.isPrivate else { return }
-		sync(browser)
-		if let tab = extensionTab(for: id, in: browser) {
-			controller.didChangeTabProperties([.URL, .loading], for: tab)
+		// A WKWebView replacement does not change the identities of every tab.
+		// A registered bridge must refresh URL/loading even when their values
+		// are unchanged, because its backing WebKit view has changed.
+		guard knownTabIDs[browser.windowID]?.contains(id) == true,
+		      tabs[browser.windowID]?[id] != nil,
+		      BrowserWindowRegistry.shared.ownsTab(id, in: browser) else {
+			// Newly created, transferred or closed tabs still need structural
+			// open/close notifications with correct window ownership.
+			sync(browser)
+			return
 		}
+		tabPropertiesDidChange(for: id, in: browser, forceWebViewRefresh: true)
 	}
 
 	func loadedNames() -> [String] {
