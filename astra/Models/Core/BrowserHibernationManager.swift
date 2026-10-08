@@ -71,8 +71,9 @@ final class BrowserHibernationManager {
 
 		let now = Date.now
 		let idleTime = pressureLevel == .critical ? Duration.zero : (pressureLevel == .warning ? Self.warningIdleTime : Self.normalIdleTime)
+		let eligibility = currentEligibility(in: browser)
 		let eligible = browser.tabs
-			.filter { isEligible($0, now: now, idleTime: idleTime) }
+			.filter { isEligible($0, now: now, idleTime: idleTime, context: eligibility) }
 			.sorted { $0.lastInteractionAt < $1.lastInteractionAt }
 
 		reclaimSequentially(eligible.map(\.id), idleTime: idleTime)
@@ -127,41 +128,70 @@ final class BrowserHibernationManager {
 		}
 	}
 
+
+	/// Snapshot the O(all-windows + all-tabs) membership/visibility inputs once
+	/// per sweep. The reclaim task still rechecks each tab from current state
+	/// after its WebKit suspension safety query completes.
+	private struct EligibilityContext {
+		let browserIsRegistered: Bool
+		let ownedTabIDs: Set<UUID>
+		let visibleTabIDs: Set<UUID>
+		let pinnedTabIDs: Set<UUID>
+		let anyDownloadActive: Bool
+	}
+
+	private func currentEligibility(in browser: Browser) -> EligibilityContext {
+		let registry = BrowserWindowRegistry.shared
+		let windows = registry.openBrowsers
+		let pinnedTabIDs = Set(
+			browser.workspace.favouriteTabIDs
+				+ browser.workspace.spaces.flatMap(\.pinnedTabIDs)
+		)
+		// Treat a selected tab anywhere as visible, even if the ownership map
+		// is changing. Conservative protection prevents a cross-window race.
+		let visibleTabIDs = Set(windows.map(\.selectedTabID))
+		return EligibilityContext(
+			browserIsRegistered: windows.contains(where: { $0 === browser }),
+			ownedTabIDs: registry.ownedTabIDs(in: browser),
+			visibleTabIDs: visibleTabIDs,
+			pinnedTabIDs: pinnedTabIDs,
+			anyDownloadActive: browser.session.downloads.activeProgress != nil
+		)
+	}
+
 	private func nextDeadlineDelay(now: Date, idleTime: Duration, browser: Browser) -> Duration {
+		let eligibility = currentEligibility(in: browser)
 		let seconds = browser.tabs
-			.filter { isEligible($0, now: now, idleTime: .zero) }
+			.filter { isEligible($0, now: now, idleTime: .zero, context: eligibility) }
 			.map { max(1, idleTime.timeInterval - now.timeIntervalSince($0.lastInteractionAt)) }
 			.min() ?? idleTime.timeInterval
 		return .milliseconds(Int64(max(seconds, 60) * 1000))
 	}
 
-	private func isEligible(_ tab: BrowserTab, now: Date, idleTime: Duration) -> Bool {
-		guard let browser, !tab.isHibernated,
-		      BrowserWindowRegistry.shared.openBrowsers.contains(where: { $0 === browser }),
+	private func isEligible(
+		_ tab: BrowserTab, now: Date, idleTime: Duration,
+		context: EligibilityContext? = nil
+	) -> Bool {
+		guard let browser else { return false }
+		let current = context ?? currentEligibility(in: browser)
+		guard !tab.isHibernated,
+		      current.browserIsRegistered,
 		      tab.internalPage == nil,
 		      tab.canHibernate,
-		      browser.tabs.contains(where: { $0 === tab }),
+		      // A batch sweep already traverses this browser's own collection.
+		      // After an await, validate membership again to prevent stale
+		      // decisions when a tab has been closed or moved to another window.
+		      (context != nil || browser.tabs.contains(where: { $0 === tab })),
 		      tab.controller?.canAutomaticallyHibernate == true,
-		      !isVisible(tab),
-		      BrowserWindowRegistry.shared.ownsTab(tab.id, in: browser),
-		      !isPinned(tab),
+		      !current.visibleTabIDs.contains(tab.id),
+		      current.ownedTabIDs.contains(tab.id),
+		      !current.pinnedTabIDs.contains(tab.id),
 		      tab.peeks.isEmpty,
 		      tab.controller?.webViewIfLoaded != nil,
 		      tab.controller?.webViewIfLoaded?.window == nil,
-		      browser.session.downloads.activeProgress == nil
+		      !current.anyDownloadActive
 		else { return false }
 		return idleTime == .zero || now.timeIntervalSince(tab.lastInteractionAt) >= idleTime.timeInterval
-	}
-
-	private func isVisible(_ tab: BrowserTab) -> Bool {
-		BrowserWindowRegistry.shared.openBrowsers.contains { browser in
-			browser.selectedTabID == tab.id && BrowserWindowRegistry.shared.ownsTab(tab.id, in: browser)
-		}
-	}
-
-	private func isPinned(_ tab: BrowserTab) -> Bool {
-		browser?.favouriteTabs.contains { $0.id == tab.id } == true
-			|| browser?.workspace.spaces.contains { $0.pinnedTabIDs.contains(tab.id) } == true
 	}
 
 }
