@@ -14,6 +14,21 @@ import WebKit
 	private typealias PlatformImage = UIImage
 #endif
 
+
+/// Serializes favicon commits. Old snapshots cannot complete after a newer
+/// snapshot has been written, even if one disk operation takes longer.
+private actor FaviconPersistenceWriter {
+	private let persistence: BrowserPersistence
+
+	init(_ persistence: BrowserPersistence) {
+		self.persistence = persistence
+	}
+
+	func save(_ snapshot: [String: Data]) {
+		try? persistence.saveFavicons(snapshot)
+	}
+}
+
 @MainActor
 @Observable
 final class FaviconStore: NSObject, WKScriptMessageHandler {
@@ -99,6 +114,8 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 
 	@ObservationIgnored
 	private let persistence: BrowserPersistence?
+	@ObservationIgnored
+	private let persistenceWriter: FaviconPersistenceWriter?
 
 	@ObservationIgnored
 	private let networkSession: URLSession
@@ -127,6 +144,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 			persistence = nil
 		}
 		self.persistence = persistence
+		persistenceWriter = persistence.map(FaviconPersistenceWriter.init)
 		networkSession = isPrivate ? URLSession(configuration: .ephemeral) : .shared
 		favicons = [:]
 		super.init()
@@ -294,13 +312,19 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	}
 
 	private func scheduleFaviconSave() {
-		guard persistence != nil else { return }
+		guard let writer = persistenceWriter else { return }
 		faviconSaveTask?.cancel()
-		let snapshot = favicons
-		faviconSaveTask = Task.detached(priority: .utility) { [persistence] in
-			try? await Task.sleep(for: .milliseconds(800))
-			guard !Task.isCancelled else { return }
-			try? persistence?.saveFavicons(snapshot)
+		faviconSaveTask = Task { @MainActor [weak self] in
+			do {
+				try await Task.sleep(for: .milliseconds(800))
+			} catch {
+				return
+			}
+			guard !Task.isCancelled, let self else { return }
+			// Do not capture a COW dictionary before the debounce completes:
+			// that forces a full copy on every subsequent favicon mutation.
+			let snapshot = favicons
+			await writer.save(snapshot)
 		}
 	}
 
