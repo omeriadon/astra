@@ -32,12 +32,69 @@
 				hibernatedTabCount: isPrivate ? nil : tabs.filter(\.isHibernated).count,
 				loadingTabCount: isPrivate ? nil : tabs.filter { $0.activeController?.isLoading == true }.count,
 				navigationFailures: isPrivate ? nil : failures,
+				memory: nil,
 				events: isPrivate ? [] : BrowserDiagnosticEventStore.shared.snapshot()
 			)
 		}
 
+		static func reportWithMemory(for browser: Browser?) async -> BrowserDiagnosticReport {
+			let base = report(for: browser)
+			guard browser?.isPrivate != true else { return base }
+			let browsers = BrowserWindowRegistry.shared.openBrowsers.filter { !$0.isPrivate && !$0.isMini }
+			var controllers: [BrowserController] = []
+			var controllerIDs = Set<UUID>()
+			for browser in browsers {
+				for tab in browser.tabs {
+					for controller in [tab.controller].compactMap(\.self) + tab.peeks.map(\.controller)
+					where controllerIDs.insert(controller.id).inserted
+					{
+						controllers.append(controller)
+					}
+				}
+			}
+			var snapshots: [BrowserTabProcessMemorySnapshot] = []
+			var unavailableProcessCount = 0
+			for controller in controllers {
+				if let snapshot = await controller.tabProcessMemorySnapshot() {
+					snapshots.append(snapshot)
+					unavailableProcessCount += snapshot.processes.filter { $0.bytes == nil }.count
+				} else {
+					unavailableProcessCount += 1
+				}
+			}
+			let aggregate = BrowserProcessMemoryAggregate.combining(snapshots)
+			return BrowserDiagnosticReport(
+				schema: base.schema,
+				applicationVersion: base.applicationVersion,
+				applicationBuild: base.applicationBuild,
+				operatingSystem: base.operatingSystem,
+				engine: base.engine,
+				webKitVersion: base.webKitVersion,
+				scope: base.scope,
+				tabCount: base.tabCount,
+				hibernatedTabCount: base.hibernatedTabCount,
+				loadingTabCount: base.loadingTabCount,
+				navigationFailures: base.navigationFailures,
+				memory: BrowserDiagnosticReport.Memory(
+					measuredControllers: snapshots.count,
+					controllerCount: controllers.count,
+					uniqueProcessCount: aggregate.processCount,
+					uniqueProcessBytes: aggregate.uniqueBytes,
+					unavailableProcessCount: unavailableProcessCount
+				),
+				events: base.events
+			)
+		}
+
 		static func copy(for browser: Browser?) {
-			guard let data = report(for: browser).encoded(),
+			Task { @MainActor in
+				let report = await reportWithMemory(for: browser)
+				copyEncoded(report, for: browser)
+			}
+		}
+
+		private static func copyEncoded(_ report: BrowserDiagnosticReport, for browser: Browser?) {
+			guard let data = report.encoded(),
 			      let text = String(data: data, encoding: .utf8)
 			else {
 				(browser?.session.toastManager ?? ToastManager.shared).show(

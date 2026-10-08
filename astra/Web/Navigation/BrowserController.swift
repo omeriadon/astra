@@ -1922,6 +1922,7 @@ final class BrowserController: NSObject, Identifiable {
 
 		func tabProcessMemorySnapshot() async -> BrowserTabProcessMemorySnapshot? {
 			guard let webView = createdWebView, owns(webView) else { return nil }
+			let generation = navigationGeneration
 
 			let webContentPID = Self.privateProcessIdentifier("_webProcessIdentifier", on: webView)
 			let graphicsPID = Self.privateProcessIdentifier("_gpuProcessIdentifier", on: webView)
@@ -1936,6 +1937,12 @@ final class BrowserController: NSObject, Identifiable {
 			let sampled = await Task.detached(priority: .utility) {
 				Self.sampleProcessMemory(for: descriptors)
 			}.value
+			guard owns(webView), generation == navigationGeneration,
+			      Self.privateProcessIdentifier("_webProcessIdentifier", on: webView) == webContentPID,
+			      Self.privateProcessIdentifier("_gpuProcessIdentifier", on: webView) == graphicsPID,
+			      Self.privateProcessIdentifier("_modelProcessIdentifier", on: webView) == modelPID,
+			      Self.privateProcessIdentifier("_networkProcessIdentifier", on: webView.configuration.websiteDataStore) == networkPID
+			else { return nil }
 			let snapshot = BrowserTabProcessMemorySnapshot(
 				webContent: webContentPID.flatMap { sampled[$0] },
 				graphics: graphicsPID.flatMap { sampled[$0] },
