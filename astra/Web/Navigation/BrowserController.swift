@@ -323,6 +323,8 @@ final class BrowserController: NSObject, Identifiable {
 	private static let topEdgeScript = """
 	(() => {
 		let scheduled = false;
+		let probeEnabled = true;
+		const isVisible = () => probeEnabled && !document.hidden;
 		let mutationScheduled = false;
 		let lastCheck = 0;
 		let previous;
@@ -336,7 +338,7 @@ final class BrowserController: NSObject, Identifiable {
 		const check = () => {
 			scheduled = false;
 			lastCheck = performance.now();
-			if (document.hidden || window.scrollY < 0 || innerWidth <= 0) return;
+			if (!isVisible() || window.scrollY < 0 || innerWidth <= 0) return;
 
 			// This probe does multiple hit-tests and layout/style reads. Top-edge
 			// occupancy is browser chrome state, not animation state, so cap it
@@ -374,7 +376,7 @@ final class BrowserController: NSObject, Identifiable {
 		};
 
 		const schedule = (immediate = false) => {
-			if (document.hidden || scheduled) return;
+			if (!isVisible() || scheduled) return;
 			scheduled = true;
 			const delay = immediate ? 0 : Math.max(0, minimumInterval - (performance.now() - lastCheck));
 			setTimeout(() => requestAnimationFrame(check), delay);
@@ -393,7 +395,7 @@ final class BrowserController: NSObject, Identifiable {
 		const observer = new MutationObserver(scheduleMutation);
 		const resume = () => {
 			observer.disconnect();
-			if (document.hidden) return;
+			if (!isVisible()) return;
 			observer.observe(document.documentElement, {
 				subtree: true,
 				childList: true,
@@ -403,6 +405,10 @@ final class BrowserController: NSObject, Identifiable {
 			schedule(true);
 		};
 		document.addEventListener('visibilitychange', resume);
+		window.__astraSetTopEdgeProbeActive = value => {
+			probeEnabled = Boolean(value);
+			resume();
+		};
 		resume();
 	})();
 	"""
@@ -504,6 +510,17 @@ final class BrowserController: NSObject, Identifiable {
 
 	private(set) var scrollPosition: BrowserScrollPosition
 	private(set) var hasTopEdgeContent = false
+	/// Explicitly stop the injected document-wide top-edge MutationObserver
+	/// when this controller is not selected in any window. This is separate
+	/// from WebKit's document.visibilityState, which may lag window ownership.
+	func setTopEdgeProbeActive(_ active: Bool) {
+		guard let webView = createdWebView else { return }
+		webView.evaluateJavaScript(
+			"window.__astraSetTopEdgeProbeActive?.(\(active ? "true" : "false"))",
+			completionHandler: nil
+		)
+	}
+
 	private(set) var themeColor: Color?
 	private(set) var themeColorIsLight: Bool?
 	private var pendingDownloadSource: UnitPoint?
