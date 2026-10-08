@@ -148,6 +148,9 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
 
+      - name: Check download index persistence ordering
+        run: python3 checks/download-index-persistence-check.py
+
       - name: Check asynchronous download file publication
         shell: bash
         run: |
