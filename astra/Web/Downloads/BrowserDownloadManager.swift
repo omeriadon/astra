@@ -873,10 +873,22 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 	func delete(_ itemID: UUID) {
 		BrowserLog.info(.downloads, "download.delete", metadata: ["item": BrowserLog.id(itemID)])
-		aiRenameTasks.removeValue(forKey: itemID)?.cancel()
-		revertRenameTasks.removeValue(forKey: itemID)?.cancel()
+		// A file move may already have begun when the user deletes an entry.
+		// Await that operation before resolving which path needs cleanup.
+		let pendingRenames = [
+			aiRenameTasks.removeValue(forKey: itemID),
+			revertRenameTasks.removeValue(forKey: itemID),
+		].compactMap { $0 }
+		for task in pendingRenames { task.cancel() }
 		guard pauseTasks[itemID] == nil, let index = items.firstIndex(where: { $0.id == itemID }) else { return }
 		guard deletingItems.insert(itemID).inserted else { return }
+		if !pendingRenames.isEmpty, items[index].status == .completed {
+			Task { @MainActor [weak self] in
+				for task in pendingRenames { await task.value }
+				self?.removeStoredItem(itemID)
+			}
+			return
+		}
 		if let task = finalizationTasks[itemID] {
 			task.cancel()
 			items[index].status = .cancelled
