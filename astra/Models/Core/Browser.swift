@@ -9,6 +9,7 @@ import WebKit
 final class Browser {
 	private static var didApplyStartupBehavior = false
 	private static var launchMetadataTask: Task<Bool?, Never>?
+	private static var launchHydrationTask: Task<HydratedState, Error>?
 	let windowID: UUID
 	let isMini: Bool
 	let session: BrowserWebSession
@@ -572,14 +573,18 @@ final class Browser {
 				return previous
 			}
 		}
-		let launchMetadataTask = Self.launchMetadataTask
-		Task.detached(priority: .userInitiated) { [persistence] in
-			do {
+
+		// AppDelegate constructs every restored window back-to-back. Without a
+		// shared task each window independently read and decoded the same complete
+		// browser-state.json, then independently prepared the restoration key.
+		// Share that immutable launch snapshot until startup restoration finishes.
+		if Self.launchHydrationTask == nil {
+			let launchMetadataTask = Self.launchMetadataTask
+			Self.launchHydrationTask = Task.detached(priority: .userInitiated) { [persistence] in
 				let previousShutdownWasClean = await launchMetadataTask?.value
 				await BrowserRestorationStore.prepare()
-				let loaded: HydratedState
 				if let state = try persistence.loadPersistedState() {
-					loaded = HydratedState(
+					return HydratedState(
 						tabs: state.openTabs,
 						snapshot: state.snapshot,
 						workspace: state.workspace,
@@ -590,38 +595,47 @@ final class Browser {
 						previousShutdownWasClean: previousShutdownWasClean,
 						windowRecords: state.windowRecords ?? []
 					)
-				} else {
-					let tabs = try persistence.loadOpenTabs()
-					let snapshot = try persistence.loadBrowserSnapshot()
-					let workspace = try persistence.loadWorkspace()
-					let bookmarks = try persistence.loadBookmarks()
-					let closedTabs = try persistence.loadClosedTabs()
-					loaded = HydratedState(
-						tabs: tabs,
-						snapshot: snapshot,
-						workspace: workspace,
-						bookmarks: Bookmark.preservingLegacyOrder(bookmarks),
-						readingList: [],
-						closedTabs: closedTabs,
-						previousShutdownWasClean: previousShutdownWasClean,
-						windowRecords: []
-					)
 				}
-				await MainActor.run { [weak self] in
-					for tab in self?.tabs ?? [] {
-						tab.invalidateStoredSnapshot()
-					}
-					self?.applyHydratedState(loaded, placeholderID: placeholderID, placeholderModifiedAt: placeholderModifiedAt)
-				}
-			} catch {
-				let message = error.localizedDescription
-				await MainActor.run { [weak self] in
-					self?.hydrationFailed = true
-					self?.didFinishHydration = true
-					self?.persistenceErrorDescription = message
-				}
+
+				let tabs = try persistence.loadOpenTabs()
+				let snapshot = try persistence.loadBrowserSnapshot()
+				let workspace = try persistence.loadWorkspace()
+				let bookmarks = try persistence.loadBookmarks()
+				let closedTabs = try persistence.loadClosedTabs()
+				return HydratedState(
+					tabs: tabs,
+					snapshot: snapshot,
+					workspace: workspace,
+					bookmarks: Bookmark.preservingLegacyOrder(bookmarks),
+					readingList: [],
+					closedTabs: closedTabs,
+					historyVisits: nil,
+					previousShutdownWasClean: previousShutdownWasClean,
+					windowRecords: []
+				)
 			}
 		}
+		guard let hydrationTask = Self.launchHydrationTask else { return }
+
+		Task { @MainActor [weak self] in
+			do {
+				let loaded = try await hydrationTask.value
+				guard let self else { return }
+				for tab in tabs {
+					tab.invalidateStoredSnapshot()
+				}
+				applyHydratedState(loaded, placeholderID: placeholderID, placeholderModifiedAt: placeholderModifiedAt)
+			} catch {
+				guard let self else { return }
+				hydrationFailed = true
+				didFinishHydration = true
+				persistenceErrorDescription = error.localizedDescription
+			}
+		}
+	}
+
+	static func finishLaunchHydrationSharing() {
+		launchHydrationTask = nil
 	}
 
 	private func applyHydratedState(_ loaded: HydratedState, placeholderID: UUID, placeholderModifiedAt: Date) {
@@ -1603,7 +1617,15 @@ final class Browser {
 	}
 
 	private func nextHistoryMutationDate(after date: Date) -> Date {
-		let latest = ([historyClearedAt] + Array(deletedVisitsAt.values) + historyVisits.map(\.modifiedAt)).max() ?? .distantPast
+		// This runs on every recorded visit/title mutation. Avoid building two
+		// temporary date arrays proportional to the entire history.
+		var latest = historyClearedAt
+		for deletedAt in deletedVisitsAt.values where deletedAt > latest {
+			latest = deletedAt
+		}
+		for visit in historyVisits where visit.modifiedAt > latest {
+			latest = visit.modifiedAt
+		}
 		return date > latest ? date : latest.addingTimeInterval(0.001)
 	}
 
@@ -1622,8 +1644,10 @@ final class Browser {
 
 	func applyHistoryRetention() {
 		guard !isPrivate else { return }
-		let retained = BrowserVisit.retained(historyVisits, days: Defaults[.historyRetentionDays])
-		guard retained != historyVisits else { return }
+		let days = Defaults[.historyRetentionDays]
+		guard days > 0 else { return }
+		let retained = BrowserVisit.retained(historyVisits, days: days)
+		guard retained.count != historyVisits.count else { return }
 		let retainedIDs = Set(retained.map(\.id))
 		removeHistory(Set(historyVisits.map(\.id)).subtracting(retainedIDs))
 	}

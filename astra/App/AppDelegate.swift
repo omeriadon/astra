@@ -317,6 +317,10 @@
 		}
 
 		private func finishStartupWindowRestoration() {
+			// Every initial window has completed hydration before this is called,
+			// so the shared launch decode can be released. A later Dock reopen
+			// with no live windows must read the then-current persisted state.
+			Browser.finishLaunchHydrationSharing()
 			BrowserWindowRegistry.shared.finishWindowRestoration()
 			startupWindowRestorationFinished = true
 			BrowserWebPushManager.shared.drainPendingMessages()

@@ -65,6 +65,8 @@ final class BrowserController: NSObject, Identifiable {
 	#if os(macOS)
 		@ObservationIgnored
 		private var webInspectorObserver: NSObjectProtocol?
+		@ObservationIgnored
+		private var observedWebInspectorEnabled = false
 	#endif
 	@ObservationIgnored
 	var displayWindowID: UUID?
@@ -610,13 +612,18 @@ final class BrowserController: NSObject, Identifiable {
 			}
 		}
 		#if os(macOS)
+			observedWebInspectorEnabled = Defaults[.webInspectorEnabled]
 			webInspectorObserver = NotificationCenter.default.addObserver(
 				forName: UserDefaults.didChangeNotification,
-				object: nil,
+				object: UserDefaults.standard,
 				queue: .main
 			) { [weak self] _ in
-				Task { @MainActor [weak self] in
-					self?.updateWebInspectorAvailability(Defaults[.webInspectorEnabled])
+				MainActor.assumeIsolated {
+					guard let self else { return }
+					let enabled = Defaults[.webInspectorEnabled]
+					guard enabled != observedWebInspectorEnabled else { return }
+					observedWebInspectorEnabled = enabled
+					updateWebInspectorAvailability(enabled)
 				}
 			}
 		#endif

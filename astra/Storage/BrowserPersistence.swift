@@ -1,7 +1,15 @@
 import Foundation
 
 @MainActor
+private enum BrowserPersistenceDirectoryCache {
+	static var url: URL?
+}
+
+@MainActor
 private func persistenceDirectory() throws -> URL {
+	if let cached = BrowserPersistenceDirectoryCache.url {
+		return cached
+	}
 	let fileManager = FileManager.default
 	let applicationSupport = try fileManager.url(
 		for: .applicationSupportDirectory,
@@ -14,6 +22,7 @@ private func persistenceDirectory() throws -> URL {
 		isDirectory: true
 	)
 	try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+	BrowserPersistenceDirectoryCache.url = directory
 	return directory
 }
 
