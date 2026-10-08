@@ -17,6 +17,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 	var aiSuggestedNames: [UUID: String] = [:]
 	@ObservationIgnored private var aiRenameTasks: [UUID: Task<Void, Never>] = [:]
+	@ObservationIgnored private var finalizationTasks: [UUID: Task<Void, Never>] = [:]
 	private var downloads: [ObjectIdentifier: WKDownload] = [:]
 	private var observations: [ObjectIdentifier: NSKeyValueObservation] = [:]
 	private var destinations: [ObjectIdentifier: URL] = [:]
@@ -186,6 +187,9 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				if item.status == .downloading, item.segments == nil {
 					item.status = .paused
 					item.errorMessage = "Download interrupted."
+				} else if item.status == .finalizing && !FileManager.default.fileExists(atPath: item.fileURL.path) {
+					item.status = .failed
+					item.errorMessage = "The temporary download disappeared during finalization."
 				}
 				return item
 			}
@@ -193,7 +197,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				guard let self else { return }
 				let liveIDs = Set(items.map(\.id))
 				items = items + restored.filter { !liveIDs.contains($0.id) }
-				for item in items where item.status == .downloading {
+				for item in items where item.status == .downloading || item.status == .finalizing {
 					if let destinationURL = item.destinationURL {
 						finalDestinations[item.id] = destinationURL
 					}
@@ -488,48 +492,108 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	func downloadDidFinish(_ download: WKDownload) {
 		BrowserLog.info(.downloads, "download.webkit-finished")
 		if let itemID = itemIDs[ObjectIdentifier(download)],
-		   let index = items.firstIndex(where: { $0.id == itemID }),
-		   let temporaryURL = destinations[ObjectIdentifier(download)]
-		{
-			let proposedURL = finalDestinations[itemID] ?? items[index].destinationURL ?? temporaryURL.deletingPathExtension()
-			let completedURL = items[index].destinationIsFileScoped == true
-				? proposedURL
-				: collisionSafeDestination(proposedURL, excludingTemporary: temporaryURL, itemID: itemID)
+		   let temporaryURL = destinations[ObjectIdentifier(download)] {
+			beginFinalization(itemID, temporaryURL: temporaryURL)
+		}
+		// The file worker maintains its own scope (or retains the existing
+		// selected-file scope) until publication and bookmark renewal finish.
+		finish(download)
+		persist()
+	}
+
+	/// Both WebKit and segmented transfers use exactly the same finalization
+	/// state machine. The worker owns slow copies and atomic publication.
+	private func beginFinalization(_ itemID: UUID, temporaryURL: URL) {
+		guard !isClosing, finalizationTasks[itemID] == nil,
+		      !deletingItems.contains(itemID),
+		      let index = items.firstIndex(where: {
+		      	$0.id == itemID && $0.fileURL == temporaryURL
+		      		&& ($0.status == .downloading || $0.status == .finalizing)
+		      }) else { return }
+		let proposedURL = finalDestinations[itemID] ?? items[index].destinationURL ?? temporaryURL.deletingPathExtension()
+		items[index].status = .finalizing
+		items[index].destinationURL = proposedURL
+		items[index].throughput = nil
+		items[index].estimatedTimeRemaining = nil
+		let snapshot = items[index]
+		let bookmark = snapshot.fileAccessBookmark ?? snapshot.folderBookmark
+		let hadScope = scopedDirectories[itemID] != nil
+		persist()
+		BrowserLog.info(.downloads, "download.finalization.begin", metadata: ["item": BrowserLog.id(itemID)])
+		finalizationTasks[itemID] = Task { @MainActor [weak self] in
+			defer { self?.finalizationTasks[itemID] = nil }
 			do {
-				let committedURL = try moveToUnoccupiedDestination(
-					from: temporaryURL,
-					proposed: completedURL,
-					itemID: itemID
+				let committedURL = try await BrowserDownloadFileWorker.shared.commit(
+					source: temporaryURL,
+					proposed: proposedURL,
+					fileScoped: snapshot.destinationIsFileScoped == true,
+					bookmark: bookmark,
+					hasExistingAccess: hadScope,
+					downloadURL: snapshot.requestURL,
+					originURL: snapshot.sourceURL
 				)
-				guard let currentIndex = items.firstIndex(where: { $0.id == itemID && $0.fileURL == temporaryURL }) else { return }
+				guard let self else { return }
+				guard !deletingItems.contains(itemID),
+				      let currentIndex = items.firstIndex(where: {
+				      	$0.id == itemID && $0.status == .finalizing && $0.fileURL == temporaryURL
+				      })
+				else {
+					// Cancellation/deletion raced with destination publication.
+					// The committed destination belongs to this operation.
+					await BrowserDownloadFileWorker.shared.removeFiles([committedURL])
+					return
+				}
 				items[currentIndex].fileURL = committedURL
 				items[currentIndex].status = .completed
 				items[currentIndex].progress = 1
 				items[currentIndex].receivedBytes = items[currentIndex].totalBytes ?? items[currentIndex].receivedBytes
 				items[currentIndex].resumeData = nil
+				items[currentIndex].segments = nil
 				items[currentIndex].destinationURL = nil
 				items[currentIndex].throughput = nil
 				items[currentIndex].estimatedTimeRemaining = nil
+				#if os(macOS)
+					if snapshot.destinationIsFileScoped == true {
+						items[currentIndex].fileAccessBookmark = try? committedURL.bookmarkData(
+							options: [.withSecurityScope],
+							includingResourceValuesForKeys: nil,
+							relativeTo: nil
+						)
+						if items[currentIndex].fileAccessBookmark == nil {
+							showFileAccessToast()
+						}
+					}
+				#endif
 				if let oldURL = previousTemporaryURLs.removeValue(forKey: itemID), oldURL != temporaryURL {
-					try? FileManager.default.removeItem(at: oldURL)
+					await BrowserDownloadFileWorker.shared.removeFiles([oldURL])
 				}
 				finalDestinations[itemID] = nil
+				releaseScope(for: itemID)
+				updateDockProgress()
+				persist()
+				BrowserLog.info(.downloads, "download.finalization.end", metadata: ["item": BrowserLog.id(itemID)])
 				showToast(symbol: "arrow.down.circle", message: "Downloaded \(committedURL.lastPathComponent)")
 				aiRenameTasks[itemID] = Task { @MainActor [weak self] in
 					defer { self?.aiRenameTasks[itemID] = nil }
 					await self?.renameWithAppleIntelligence(itemID, fileURL: committedURL)
 				}
 			} catch {
-				BrowserLog.error(.downloads, "download.commit-failed", metadata: ["item": BrowserLog.id(itemID), "error": BrowserLog.errorDescription(error)])
-				markFailed(at: index)
-				items[index].errorMessage = error.localizedDescription
-				items[index].throughput = nil
-				items[index].estimatedTimeRemaining = nil
-				showToast(symbol: "exclamationmark.triangle", message: "Download failed: \(error.localizedDescription)")
+				guard let self,
+				      let currentIndex = items.firstIndex(where: {
+				      	$0.id == itemID && $0.fileURL == temporaryURL && $0.status == .finalizing
+				      }) else { return }
+				BrowserLog.error(.downloads, "download.finalization.failed", metadata: [
+					"item": BrowserLog.id(itemID), "error": BrowserLog.errorDescription(error),
+				])
+				markFailed(at: currentIndex)
+				items[currentIndex].errorMessage = error.localizedDescription
+				finalDestinations[itemID] = nil
+				releaseScope(for: itemID)
+				updateDockProgress()
+				persist()
+				showToast(symbol: "exclamationmark.triangle", message: "Download finalization failed: \(error.localizedDescription)")
 			}
 		}
-		finish(download)
-		persist()
 	}
 
 	private func markFailed(at index: Int) {
@@ -567,7 +631,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		downloads[id] = nil
 		itemIDs[id] = nil
 		destinations[id] = nil
-		if let itemID, items.first(where: { $0.id == itemID })?.segments == nil {
+		if let itemID, finalizationTasks[itemID] == nil,
+		   items.first(where: { $0.id == itemID })?.segments == nil {
 			releaseScope(for: itemID)
 		}
 		updateDockProgress()
@@ -585,8 +650,13 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		BrowserLog.info(.downloads, "downloads.resume-available", metadata: ["items": String(items.count)])
 		guard !isClosing, !restorationStarted else { return }
 		restorationStarted = true
+		for item in items where item.status == .finalizing {
+			beginFinalization(item.id, temporaryURL: item.fileURL)
+		}
 		for item in items where item.status == .downloading && item.segments != nil {
-			if item.destinationIsFileScoped == true, item.fileAccessBookmark == nil {
+			if item.segments?.allSatisfy(\.completed) == true {
+				beginFinalization(item.id, temporaryURL: item.fileURL)
+			} else if item.destinationIsFileScoped == true, item.fileAccessBookmark == nil {
 				segmentFailed(item.id)
 			} else {
 				segmented.start(item)
@@ -1318,38 +1388,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		updateSegmentProgress(itemID, index: index, received: partSize)
 		persist()
 		guard items[itemIndex].segments?.allSatisfy(\.completed) == true else { return }
-		do {
-			let temporaryURL = items[itemIndex].fileURL
-			let proposedURL = finalDestinations[itemID] ?? items[itemIndex].destinationURL ?? temporaryURL.deletingPathExtension()
-			let completedURL = items[itemIndex].destinationIsFileScoped == true
-				? proposedURL
-				: collisionSafeDestination(proposedURL, excludingTemporary: temporaryURL, itemID: itemID)
-			let committedURL = try moveToUnoccupiedDestination(
-				from: temporaryURL,
-				proposed: completedURL,
-				itemID: itemID
-			)
-			guard let currentIndex = items.firstIndex(where: { $0.id == itemID && $0.fileURL == temporaryURL }) else { return }
-			items[currentIndex].fileURL = committedURL
-			items[currentIndex].status = .completed
-			items[currentIndex].progress = 1
-			items[currentIndex].receivedBytes = total
-			items[currentIndex].segments = nil
-			items[currentIndex].destinationURL = nil
-			items[currentIndex].throughput = nil
-			items[currentIndex].estimatedTimeRemaining = nil
-			finalDestinations[itemID] = nil
-			releaseScope(for: itemID)
-			updateDockProgress()
-			persist()
-			showToast(symbol: "arrow.down.circle", message: "Downloaded \(committedURL.lastPathComponent)")
-			aiRenameTasks[itemID] = Task { @MainActor [weak self] in
-				defer { self?.aiRenameTasks[itemID] = nil }
-				await self?.renameWithAppleIntelligence(itemID, fileURL: committedURL)
-			}
-		} catch {
-			segmentFailed(itemID)
-		}
+		beginFinalization(itemID, temporaryURL: fileURL)
 	}
 
 	func segmentFailed(_ itemID: UUID, fileURL: URL? = nil) {
