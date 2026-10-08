@@ -230,13 +230,13 @@ struct BrowserWebView {
 		}
 
 		func updateNSView(_ host: BrowserWebViewHost, context _: Context) {
-			host.specification = self
-			host.mountIfReady()
+			host.update(specification: self)
 		}
 
 		static func dismantleNSView(_ host: BrowserWebViewHost, coordinator _: ()) {
 			host.handoffTask?.cancel()
 			host.pageGestures.detach()
+			host.unmountWebView()
 		}
 	}
 
@@ -273,6 +273,7 @@ struct BrowserWebView {
 			super.viewDidMoveToWindow()
 			if window == nil {
 				pageGestures.detach()
+				unmountWebView()
 			}
 			mountIfReady()
 		}
@@ -296,10 +297,37 @@ struct BrowserWebView {
 			}
 		}
 
+		func update(specification: BrowserWebView) {
+			if self.specification.controller !== specification.controller
+				|| self.specification.windowID != specification.windowID
+			{
+				unmountWebView()
+			}
+			self.specification = specification
+			mountIfReady()
+		}
+
 		func mountIfReady() {
-			guard window != nil, !bounds.isEmpty,
-			      specification.windowID == nil || specification.controller.displayWindowID == specification.windowID else { return }
 			let controller = specification.controller
+			let remainsAttached = specification.isVisible || controller.shouldKeepWebViewAttached
+
+			guard specification.windowID == nil || controller.displayWindowID == specification.windowID else {
+				unmountWebView()
+				return
+			}
+			guard window != nil, !bounds.isEmpty else {
+				if !remainsAttached {
+					unmountWebView()
+				}
+				return
+			}
+			if !remainsAttached {
+				unmountWebView()
+				return
+			}
+			if !specification.isVisible, controller.webViewIfLoaded == nil {
+				return
+			}
 			let webView = controller.webView
 			if webView.superview !== self {
 				// Reparenting an existing WKWebView can itself stall AppKit's
@@ -375,6 +403,18 @@ struct BrowserWebView {
 				webView.setMinimumViewportInset(specification.minimumViewportInsets.nsInsets, maximumViewportInset: specification.maximumViewportInsets.nsInsets)
 				insets = nextInsets
 			}
+		}
+
+		func unmountWebView() {
+			handoffTask?.cancel()
+			handoffTask = nil
+			pageGestures.detach()
+			guard let webView = specification.controller.webViewIfLoaded,
+			      webView.superview === self else { return }
+			webView.removeFromSuperview()
+			webView.isHidden = true
+			webView.setAccessibilityHidden(true)
+			appliedVisibility = nil
 		}
 	}
 

@@ -162,6 +162,8 @@ private struct KeepAliveWebStack: View {
 		if let selectedTab, ownedTabIDs.contains(selectedTab.id) {
 			append(selectedTab.controller)
 		}
+		// Keep the existing four-controller warm budget. Inactive WebViews are
+		// detached from the window, so this does not attach four pages at once.
 		for id in browser.recentlyUsedTabIDs where result.count < 4 {
 			guard ownedTabIDs.contains(id),
 			      let tab = tabsByID[id],
@@ -170,9 +172,9 @@ private struct KeepAliveWebStack: View {
 		}
 		// ponytail: retain all playing or paused media while iframe PiP state is unobservable; narrow this when WebKit exposes a frame-aware callback.
 		for tab in browser.tabs where ownedTabIDs.contains(tab.id) {
-			append(tab.controller?.requiresMediaTeardownConfirmation == true ? tab.controller : nil)
+			append(tab.controller?.shouldKeepWebViewAttached == true ? tab.controller : nil)
 			for peek in tab.id == selectedTab?.id ? [] : tab.peeks {
-				if peek.controller.requiresMediaTeardownConfirmation {
+				if peek.controller.shouldKeepWebViewAttached {
 					append(peek.controller)
 				}
 			}
