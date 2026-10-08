@@ -796,7 +796,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			items[index].errorMessage = nil
 			if let segments = items[index].segments {
 				await segmented.cancelAndWait([itemID])
-				segmented.removeParts(itemID, count: segments.count)
+				await segmented.removeParts(itemID, count: segments.count)
 			}
 			guard let index = items.firstIndex(where: { $0.id == itemID }) else {
 				pauseTasks[itemID] = nil
@@ -804,7 +804,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			}
 			items[index].segments = nil
 			items[index].rangeValidator = nil
-			try? FileManager.default.removeItem(at: items[index].fileURL)
+			await BrowserDownloadFileWorker.shared.removeFiles([items[index].fileURL])
 			releaseScope(for: itemID)
 			pauseTasks[itemID] = nil
 			persist()
@@ -856,16 +856,16 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		for item in items where item.status != .completed {
 			if let segments = item.segments {
 				segmented.cancel(item.id)
-				segmented.removeParts(item.id, count: segments.count)
+				await segmented.removeParts(item.id, count: segments.count)
 			}
-			try? FileManager.default.removeItem(at: item.fileURL)
+			await BrowserDownloadFileWorker.shared.removeFiles([item.fileURL])
 			if let previousURL = previousTemporaryURLs.removeValue(forKey: item.id), previousURL != item.fileURL {
-				try? FileManager.default.removeItem(at: previousURL)
+				await BrowserDownloadFileWorker.shared.removeFiles([previousURL])
 			}
 			releaseScope(for: item.id)
 		}
 		items.removeAll()
-		try? FileManager.default.removeItem(at: stagingDirectory)
+		await BrowserDownloadFileWorker.shared.removeFiles([stagingDirectory])
 		resumeWebView = nil
 	}
 
@@ -885,7 +885,12 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		}
 		if let segments = items[index].segments {
 			segmented.cancel(itemID)
-			segmented.removeParts(itemID, count: segments.count)
+			Task { @MainActor [weak self] in
+				guard let self else { return }
+				await segmented.removeParts(itemID, count: segments.count)
+				removeStoredItem(itemID)
+			}
+			return
 		}
 		if let key = itemIDs.first(where: { $0.value == itemID })?.key,
 		   let download = downloads[key]
@@ -1459,8 +1464,12 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		else { return }
 		segmented.cancel(itemID)
 		accelerationAbandoned.insert(itemID)
-		segmented.removeParts(itemID, count: segments.count)
-		try? FileManager.default.removeItem(at: items[index].fileURL)
+		let failedFileURL = items[index].fileURL
+		Task { @MainActor [weak self] in
+			guard let self else { return }
+			await segmented.removeParts(itemID, count: segments.count)
+			await BrowserDownloadFileWorker.shared.removeFiles([failedFileURL])
+		}
 		items[index].segments = nil
 		releaseScope(for: itemID)
 		items[index].rangeValidator = nil
