@@ -521,26 +521,37 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		}
 		// Only the backup schema version matters here: a full-model decode
 		// would allocate a second history and tab collection on every save.
-		if let backupData = try? Data(contentsOf: backupURL) {
-			try rejectUnsupportedEnvelopeVersion(backupData)
+		let backupData = try? Data(contentsOf: backupURL)
+		if let backupData { try rejectUnsupportedEnvelopeVersion(backupData) }
+		// In the rare case where the primary is corrupted or missing, the
+		// recovery copy becomes our deletion-comparison baseline. Normally
+		// never decode a second large session document during a save.
+		let backupPrevious: BrowserPersistedState?
+		if previous == nil, let backupData {
+			backupPrevious = try? decodeSnapshot(backupData)
+		} else {
+			backupPrevious = nil
 		}
 		var state = state
 		state.windowRecords = (state.windowRecords ?? []).sorted { $0.windowID.uuidString < $1.windowID.uuidString }
 		try validatePersistedState(state)
 		let data = try JSONEncoder().encode(Envelope(version: Self.currentVersion, state: state))
 		guard data.count <= 64 * 1024 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
+		let previousPrimaryWasUnavailable = previous == nil
 		var privateDataWasRemoved = false
-		if let previousData, let previous {
+		if let previous = previous ?? backupPrevious {
 			let incomingIDs = Set((state.historyVisits ?? []).map(\.id))
 			// Membership checks run on every state save, including sessions with
 			// thousands of visits or tabs. Build hash indexes once per snapshot.
 			let readingListIDs = Set(state.readingList.map(\.id))
+			let bookmarkIDs = Set(state.bookmarks.map(\.id))
 			let closedTabIDs = Set(state.closedTabs.map(\.id))
 			let openTabsByID = Dictionary(
 				state.openTabs.map { ($0.id, $0) },
 				uniquingKeysWith: { first, _ in first }
 			)
 			privateDataWasRemoved = (previous.historyVisits ?? []).contains { !incomingIDs.contains($0.id) }
+				|| previous.bookmarks.contains { !bookmarkIDs.contains($0.id) }
 				|| previous.readingList.contains { !readingListIDs.contains($0.id) }
 				|| previous.snapshot.historyClearedAt < state.snapshot.historyClearedAt
 				|| previous.closedTabs.contains { !closedTabIDs.contains($0.id) }
@@ -561,13 +572,20 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 				|| previous.bookmarks.contains { $0.url.user != nil || $0.url.password != nil }
 				|| (previous.historyVisits ?? []).contains { $0.url.user != nil || $0.url.password != nil }
 			if privateDataWasRemoved {
+				// If we restored from the backup because the primary was
+				// damaged, repair the primary first: never remove the last
+				// recoverable copy until another valid one is committed.
+				if previousPrimaryWasUnavailable && backupPrevious != nil,
+				   let backupData {
+					try backupData.write(to: currentURL, options: .atomic)
+				}
 				// Keep a valid current snapshot while removing any stale backup.
 				// Once deletion is committed, restoration can never fall back
 				// to a backup that resurrects the removed private information.
 				if FileManager.default.fileExists(atPath: backupURL.path) {
 					try FileManager.default.removeItem(at: backupURL)
 				}
-			} else {
+			} else if let previousData, previousPrimaryWasUnavailable == false {
 				try previousData.write(to: backupURL, options: .atomic)
 			}
 		}
