@@ -377,6 +377,7 @@ struct BrowserWebView {
 					guard !Task.isCancelled, let self, let webView, webView.superview === self,
 					      specification.windowID == nil || specification.windowID == controller.displayWindowID else { return }
 					curtain.isHidden = true
+					curtain.image = nil
 				}
 			}
 			// WebKit owns the page frame while its inspector is docked in this host.
@@ -406,6 +407,8 @@ struct BrowserWebView {
 		}
 
 		func unmountWebView() {
+			curtain.image = nil
+			curtain.isHidden = true
 			handoffTask?.cancel()
 			handoffTask = nil
 			pageGestures.detach()

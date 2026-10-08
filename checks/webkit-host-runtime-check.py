@@ -127,9 +127,12 @@ struct WebKitHostRuntimeCheck {
         assertMounted(visibleController, in: visibleHost)
         let retainedWebView = visibleController.webView
 
+        let curtain = visibleHost.subviews.compactMap { $0 as? NSImageView }.first!
+        curtain.image = NSImage(size: NSSize(width: 64, height: 64))
         let warmSpecification = BrowserWebView(controller: visibleController, isVisible: false)
         visibleHost.update(specification: warmSpecification)
         assert(retainedWebView.superview == nil)
+        assert(curtain.image == nil)
         visibleHost.update(specification: warmSpecification)
         assert(retainedWebView.superview == nil)
         assert(visibleController.webView === retainedWebView)
