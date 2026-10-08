@@ -19,6 +19,7 @@ struct BrowserGeneralSettingsView: View {
 	@Default(.startupBehavior) private var startupBehavior
 	@Default(.homepageURL) private var homepageURL
 	@Default(.browserSearchConfiguration) private var browserSearchConfigurationValue
+	@Default(.automaticHibernationEnabled) private var automaticHibernationEnabled
 
 	#if os(macOS)
 		@State private var isDefaultBrowser = false
@@ -192,6 +193,17 @@ struct BrowserGeneralSettingsView: View {
 				}
 			}
 			.id("Startup")
+
+			Section("Performance") {
+				Toggle("Automatically hibernate inactive tabs", isOn: $automaticHibernationEnabled)
+					.accessibilityLabel("Automatically hibernate inactive tabs")
+					.accessibilityHint("Releases WebKit resources from inactive tabs after a period of inactivity")
+					.accessibilityIdentifier("automatic-hibernation-enabled")
+				Text("Inactive tabs are released after about 30 minutes. Memory pressure can shorten this period.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+			}
+			.id("Performance")
 
 			#if os(macOS)
 				Section("Mini Astra") {
