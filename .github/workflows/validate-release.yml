@@ -114,6 +114,11 @@ jobs:
             -o "$RUNNER_TEMP/astra-bookmark-projection-check"
           "$RUNNER_TEMP/astra-bookmark-projection-check"
           node checks/favicon-observer-check.mjs
+          swiftc -swift-version 6 \
+            astra/Models/Tabs/BrowserVisit.swift \
+            checks/history-search-cancellation-check.swift \
+            -o "$RUNNER_TEMP/astra-history-search-check"
+          "$RUNNER_TEMP/astra-history-search-check"
 
       - name: Check Debug build
         shell: bash
