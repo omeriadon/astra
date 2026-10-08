@@ -1210,15 +1210,21 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		let segment = items[itemIndex].segments?[index]
 		let segmentSize = segment.map { $0.end - $0.start + 1 } ?? 0
 		let received = min(max(received, 0), segmentSize)
-		items[itemIndex].segments?[index].received = received
-		let downloaded = items[itemIndex].segments?.reduce(Int64(0)) { sum, segment in
+		var item = items[itemIndex]
+		item.segments?[index].received = received
+		let downloaded = item.segments?.reduce(Int64(0)) { sum, segment in
 			sum + (segment.completed ? segment.end - segment.start + 1 : segment.received)
 		} ?? 0
 		let fraction = min(Double(downloaded) / Double(total), 1)
-		guard shouldForwardProgress(itemID, fraction: fraction) else { return }
-		items[itemIndex].progress = fraction
-		items[itemIndex].receivedBytes = downloaded
-		updateRate(at: itemIndex, received: downloaded)
+		guard shouldForwardProgress(itemID, fraction: fraction) else {
+			// Preserve segment receipts between visible progress updates.
+			items[itemIndex] = item
+			return
+		}
+		item.progress = fraction
+		item.receivedBytes = downloaded
+		updateRate(for: &item, received: downloaded)
+		items[itemIndex] = item
 		updateDockProgress()
 		if Date.now.timeIntervalSince(lastPersistedAt) > 1 {
 			persist()
@@ -1718,15 +1724,15 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		return components.url
 	}
 
-	private func updateRate(at index: Int, received: Int64) {
-		let itemID = items[index].id
+	private func updateRate(for item: inout BrowserDownload, received: Int64) {
+		let itemID = item.id
 		let now = Date.now
 		var samples = rateSamples[itemID] ?? []
 		let previousSampleTime = samples.last?.at
 		if let last = samples.last, received < last.bytes {
 			samples.removeAll()
-			items[index].throughput = nil
-			items[index].estimatedTimeRemaining = nil
+			item.throughput = nil
+			item.estimatedTimeRemaining = nil
 		}
 		samples.append((received, now))
 		let cutoff = now.addingTimeInterval(-20)
@@ -1743,25 +1749,25 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		let elapsed = max(previousSampleTime.map { now.timeIntervalSince($0) } ?? 0, 0.05)
 		let sampleAge = now.timeIntervalSince(samples.first?.at ?? now)
 		let smoothedRate = BrowserDownload.smoothedThroughput(
-			previous: items[index].throughput.map(Double.init),
+			previous: item.throughput.map(Double.init),
 			observed: observedRate,
 			elapsed: elapsed
 		)
-		items[index].throughput = smoothedRate < Double(Int.max) ? Int(smoothedRate.rounded()) : nil
+		item.throughput = smoothedRate < Double(Int.max) ? Int(smoothedRate.rounded()) : nil
 
 		guard sampleAge >= 2,
 		      samples.count >= 3,
-		      let total = items[index].totalBytes,
+		      let total = item.totalBytes,
 		      total > received,
 		      smoothedRate > 0
 		else {
-			items[index].estimatedTimeRemaining = nil
+			item.estimatedTimeRemaining = nil
 			return
 		}
 
 		let observedRemaining = Double(total - received) / smoothedRate
-		items[index].estimatedTimeRemaining = BrowserDownload.smoothedTimeRemaining(
-			previous: items[index].estimatedTimeRemaining,
+		item.estimatedTimeRemaining = BrowserDownload.smoothedTimeRemaining(
+			previous: item.estimatedTimeRemaining,
 			observed: observedRemaining,
 			elapsed: elapsed
 		)
@@ -1783,14 +1789,18 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		else { return }
 		let clamped = min(max(fraction, 0), 1)
 		guard shouldForwardProgress(itemID, fraction: clamped) else { return }
-		items[index].progress = clamped
-		items[index].receivedBytes = max(0, received)
-		items[index].totalBytes = total > 0 ? total : items[index].totalBytes
-		updateRate(at: index, received: received)
+		// Publish one observable array mutation instead of one for each
+		// progress, byte count, rate and ETA field.
+		var item = items[index]
+		item.progress = clamped
+		item.receivedBytes = max(0, received)
+		item.totalBytes = total > 0 ? total : item.totalBytes
+		updateRate(for: &item, received: received)
 		if rateSamples[itemID]?.count == 1 {
-			items[index].throughput = throughput.flatMap { $0 > 0 ? $0 : nil }
-			items[index].estimatedTimeRemaining = nil
+			item.throughput = throughput.flatMap { $0 > 0 ? $0 : nil }
+			item.estimatedTimeRemaining = nil
 		}
+		items[index] = item
 		updateDockProgress()
 		if Date.now.timeIntervalSince(lastPersistedAt) > 1 {
 			persist()
