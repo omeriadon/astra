@@ -550,19 +550,34 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		let previousPrimaryWasUnavailable = previous == nil
 		var privateDataWasRemoved = false
 		if let previous = previous ?? backupPrevious {
-			let incomingIDs = Set((state.historyVisits ?? []).map(\.id))
-			// Membership checks run on every state save, including sessions with
-			// thousands of visits or tabs. Build hash indexes once per snapshot.
-			let readingListIDs = Set(state.readingList.map(\.id))
-			let bookmarkIDs = Set(state.bookmarks.map(\.id))
+			// Index old/new URL ownership once. Reusing an ID with a different
+			// URL must not leave the previous private destination in backup.
+			let historyURLsByID = Dictionary(
+				(state.historyVisits ?? []).map { ($0.id, $0.url) },
+				uniquingKeysWith: { first, _ in first }
+			)
+			let readingListURLsByID = Dictionary(
+				state.readingList.map { ($0.id, $0.url) },
+				uniquingKeysWith: { first, _ in first }
+			)
+			let bookmarkURLsByID = Dictionary(
+				state.bookmarks.map { ($0.id, $0.url) },
+				uniquingKeysWith: { first, _ in first }
+			)
 			let closedTabIDs = Set(state.closedTabs.map(\.id))
 			let openTabsByID = Dictionary(
 				state.openTabs.map { ($0.id, $0) },
 				uniquingKeysWith: { first, _ in first }
 			)
-			privateDataWasRemoved = (previous.historyVisits ?? []).contains { !incomingIDs.contains($0.id) }
-				|| previous.bookmarks.contains { !bookmarkIDs.contains($0.id) }
-				|| previous.readingList.contains { !readingListIDs.contains($0.id) }
+			privateDataWasRemoved = (previous.historyVisits ?? []).contains {
+					historyURLsByID[$0.id] != $0.url
+				}
+				|| previous.bookmarks.contains {
+					bookmarkURLsByID[$0.id] != $0.url
+				}
+				|| previous.readingList.contains {
+					readingListURLsByID[$0.id] != $0.url
+				}
 				|| previous.snapshot.historyClearedAt < state.snapshot.historyClearedAt
 				|| previous.closedTabs.contains { !closedTabIDs.contains($0.id) }
 				|| previous.openTabs.contains { old in
