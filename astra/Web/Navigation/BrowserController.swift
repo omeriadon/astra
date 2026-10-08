@@ -22,83 +22,60 @@ import WebKit
 		let window: NSWindow
 	}
 
-	struct BrowserTabProcessMemorySnapshot: Equatable, Sendable {
-		struct Process: Equatable, Sendable {
-			let pid: pid_t
-			let startTime: UInt64?
-			let bytes: UInt64?
-
-			var identity: String {
-				"\(pid):\(startTime.map(String.init) ?? "?")"
-			}
-		}
-
-		let webContent: Process?
-		let graphics: Process?
-		let network: Process?
-		let model: Process?
-
-		var webContentBytes: UInt64? {
-			webContent?.bytes
-		}
-
-		var graphicsBytes: UInt64? {
-			graphics?.bytes
-		}
-
-		var networkBytes: UInt64? {
-			network?.bytes
-		}
-
-		var modelBytes: UInt64? {
-			model?.bytes
-		}
-
-		var relatedProcessBytes: UInt64? {
-			let values = [webContentBytes, graphicsBytes, networkBytes, modelBytes].compactMap(\.self)
-			return values.isEmpty ? nil : values.reduce(0, +)
-		}
-
-		var observedProcessBytes: UInt64? {
-			relatedProcessBytes
-		}
-
-		var processes: [Process] {
-			[webContent, graphics, network, model].compactMap(\.self)
-		}
-
-		var sharedProcessBytes: UInt64? {
-			let values = [graphicsBytes, networkBytes, modelBytes].compactMap(\.self)
-			return values.isEmpty ? nil : values.reduce(0, +)
-		}
-
-		var hasSharedProcessMemory: Bool {
-			sharedProcessBytes != nil
-		}
-	}
-
-	struct BrowserProcessMemoryAggregate: Equatable, Sendable {
-		let processCount: Int
-		let uniqueBytes: UInt64?
-
-		static func combining(_ snapshots: [BrowserTabProcessMemorySnapshot]) -> Self {
-			var processes: [String: UInt64] = [:]
-			for process in snapshots.flatMap(\.processes) {
-				guard let bytes = process.bytes else { continue }
-				processes[process.identity] = bytes
-			}
-			return Self(
-				processCount: processes.count,
-				uniqueBytes: processes.values.isEmpty ? nil : processes.values.reduce(0, +)
-			)
-		}
-	}
 #endif
 
 @MainActor
 @Observable
 final class BrowserController: NSObject, Identifiable {
 	#if os(macOS)
+		static func tabProcessMemorySnapshots(for controllers: [BrowserController]) async -> [UUID: BrowserTabProcessMemorySnapshot] {
+			struct Request {
+				let controller: BrowserController
+				let webView: WKWebView
+				let generation: Int
+				let webContentPID: pid_t?
+				let graphicsPID: pid_t?
+				let networkPID: pid_t?
+				let modelPID: pid_t?
+			}
+
+			let requests = controllers.compactMap { controller -> Request? in
+				guard let webView = controller.createdWebView, controller.owns(webView) else { return nil }
+				return Request(
+					controller: controller,
+					webView: webView,
+					generation: controller.navigationGeneration,
+					webContentPID: privateProcessIdentifier("_webProcessIdentifier", on: webView),
+					graphicsPID: privateProcessIdentifier("_gpuProcessIdentifier", on: webView),
+					networkPID: privateProcessIdentifier("_networkProcessIdentifier", on: webView.configuration.websiteDataStore),
+					modelPID: privateProcessIdentifier("_modelProcessIdentifier", on: webView)
+				)
+			}
+			let processIDs = Set(requests.flatMap { [$0.webContentPID, $0.graphicsPID, $0.networkPID, $0.modelPID].compactMap(\.self) })
+			guard !processIDs.isEmpty else { return [:] }
+			let sampled = await Task.detached(priority: .utility) {
+				Self.sampleProcessMemory(for: Array(processIDs))
+			}.value
+			var result: [UUID: BrowserTabProcessMemorySnapshot] = [:]
+			for request in requests {
+				guard request.controller.owns(request.webView), request.generation == request.controller.navigationGeneration,
+				      privateProcessIdentifier("_webProcessIdentifier", on: request.webView) == request.webContentPID,
+				      privateProcessIdentifier("_gpuProcessIdentifier", on: request.webView) == request.graphicsPID,
+				      privateProcessIdentifier("_networkProcessIdentifier", on: request.webView.configuration.websiteDataStore) == request.networkPID,
+				      privateProcessIdentifier("_modelProcessIdentifier", on: request.webView) == request.modelPID
+				else { continue }
+				let snapshot = BrowserTabProcessMemorySnapshot(
+					webContent: request.webContentPID.flatMap { sampled[$0] },
+					graphics: request.graphicsPID.flatMap { sampled[$0] },
+					network: request.networkPID.flatMap { sampled[$0] },
+					model: request.modelPID.flatMap { sampled[$0] }
+				)
+				guard snapshot.relatedProcessBytes != nil else { continue }
+				result[request.controller.id] = snapshot
+			}
+			return result
+		}
+
 		static var addressPromptOwner: ((BrowserController, WKWebView, Int) -> BrowserAddressPromptOwner?)?
 	#endif
 	let id = UUID()

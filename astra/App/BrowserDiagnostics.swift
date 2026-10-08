@@ -52,16 +52,8 @@
 					}
 				}
 			}
-			var snapshots: [BrowserTabProcessMemorySnapshot] = []
-			var unavailableProcessCount = 0
-			for controller in controllers {
-				if let snapshot = await controller.tabProcessMemorySnapshot() {
-					snapshots.append(snapshot)
-					unavailableProcessCount += snapshot.processes.filter { $0.bytes == nil }.count
-				} else {
-					unavailableProcessCount += 1
-				}
-			}
+			let snapshotsByController = await BrowserController.tabProcessMemorySnapshots(for: controllers)
+			let snapshots = Array(snapshotsByController.values)
 			let aggregate = BrowserProcessMemoryAggregate.combining(snapshots)
 			return BrowserDiagnosticReport(
 				schema: base.schema,
@@ -80,7 +72,7 @@
 					controllerCount: controllers.count,
 					uniqueProcessCount: aggregate.processCount,
 					uniqueProcessBytes: aggregate.uniqueBytes,
-					unavailableProcessCount: unavailableProcessCount
+					unavailableControllerCount: controllers.count - snapshotsByController.count
 				),
 				events: base.events
 			)

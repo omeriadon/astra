@@ -24,7 +24,7 @@ struct BrowserDiagnosticReport: Codable, Equatable {
 		let controllerCount: Int
 		let uniqueProcessCount: Int
 		let uniqueProcessBytes: UInt64?
-		let unavailableProcessCount: Int
+		let unavailableControllerCount: Int
 	}
 
 	let schema: Int
@@ -38,7 +38,7 @@ struct BrowserDiagnosticReport: Codable, Equatable {
 	let hibernatedTabCount: Int?
 	let loadingTabCount: Int?
 	let navigationFailures: [String: Int]?
-	let memory: Memory?
+	let memory: Memory? = nil
 	let events: [Event]
 
 	func encoded() -> Data? {
