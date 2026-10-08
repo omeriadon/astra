@@ -2568,9 +2568,9 @@ final class Browser {
 				warnAboveMilliseconds: 24,
 				metadata: ["window": BrowserLog.id(windowID)])
 		}
-		persistenceTask?.cancel()
-		persistenceTask = nil
-
+		// Never cancel a pending local write just because another window
+		// published an unchanged snapshot. The merge below decides whether
+		// any receiving state actually needs to be applied.
 		let selectedTabBeforeMerge = selectedTabID
 		let selectedTabDateBeforeMerge = selectedTabModifiedAt
 		let selectedSpaceBeforeMerge = workspace.selectedSpaceID
@@ -2606,11 +2606,14 @@ final class Browser {
 		}
 		var merged = localState.merging(incomingState)
 		merged = merged.preservingLocalOnlyData(from: localState)
-		applySyncDocument(merged)
+		let documentChanged = merged != localState
+		if documentChanged {
+			applySyncDocument(merged)
+		}
 		// The merge has finalized the tab collection. A hash lookup avoids
 		// rescanning all open tabs for each closed-history record and MRU entry.
 		let openIDs = Set(tabs.map(\.id))
-		closedHistoryTabs = Dictionary(
+		let mergedClosedHistory = Dictionary(
 			(closedHistoryBeforeMerge + sourceClosedTabs).map { ($0.id, $0) },
 			uniquingKeysWith: { current, incoming in
 				if current.modifiedAt != incoming.modifiedAt {
@@ -2632,7 +2635,19 @@ final class Browser {
 					? $0.id.uuidString < $1.id.uuidString
 					: $0.modifiedAt > $1.modifiedAt
 			}
-
+		let closedHistoryChanged = mergedClosedHistory != closedHistoryTabs
+		if closedHistoryChanged {
+			closedHistoryTabs = mergedClosedHistory
+		}
+		guard documentChanged || closedHistoryChanged else {
+			BrowserLog.trace(.sync, "browser.shared-state.no-op",
+				metadata: ["window": BrowserLog.id(windowID)])
+			return
+		}
+		// Only a changed synchronization document can alter selection and
+		// workspace membership. Closed-history-only changes need durability,
+		// but must not touch the live workspace or extension bridges.
+		if documentChanged {
 		if tabs.contains(where: { $0.id == selectedTabBeforeMerge }) {
 			selectedTabID = selectedTabBeforeMerge
 			selectedTabModifiedAt = selectedTabDateBeforeMerge
@@ -2653,7 +2668,10 @@ final class Browser {
 			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
 		}
 		reconcileWorkspace()
-		schedulePersistence()
+		} else {
+			// applySyncDocument already schedules a full save when needed.
+			scheduleUserDataPersistence()
+		}
 	}
 
 	private func markWorkspaceStructureChanged() {
