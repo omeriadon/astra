@@ -13,6 +13,8 @@ struct BrowserContentBlockingChecks {
 		""".utf8))
 		precondition(first.ruleCount == 1)
 		precondition(first.identifier.hasPrefix("astra.user-content-rules."))
+		let repeatFirst = try BrowserContentBlockingRuleSource.validate(first.data)
+		precondition(repeatFirst.identifier == first.identifier)
 		precondition(BrowserContentBlockingRuleSource.lastGood(
 			current: first,
 			candidate: first,
@@ -27,6 +29,7 @@ struct BrowserContentBlockingChecks {
 		  }
 		]
 		""".utf8))
+		precondition(first.identifier != second.identifier)
 		precondition(BrowserContentBlockingRuleSource.lastGood(
 			current: first,
 			candidate: second,

@@ -138,18 +138,22 @@ final class BrowserContentBlocking {
 	func importRules(_ data: Data, fileName: String) async {
 		BrowserLog.info(.contentBlocking, "content-blocking.import-data", metadata: ["file": BrowserLog.value(fileName), "bytes": String(data.count)])
 		guard !isBusy, !privateSessionIsEnding else { return }
+		isBusy = true
 		let candidate: BrowserContentBlockingRuleSource.Validated
 		do {
-			candidate = try BrowserContentBlockingRuleSource.validate(data)
+			candidate = try await Task.detached(priority: .utility) {
+				try BrowserContentBlockingRuleSource.validate(data)
+			}.value
 		} catch {
 			errorDescription = Self.validationMessage(for: error)
+			finishOperation()
 			return
 		}
 		guard !isReadOnly else {
 			errorDescription = "Astra preserved a content-rule record it cannot rewrite."
+			finishOperation()
 			return
 		}
-		isBusy = true
 		defer { finishOperation() }
 		do {
 			let store = try contentRuleListStore()
