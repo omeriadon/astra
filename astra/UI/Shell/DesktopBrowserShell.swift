@@ -595,6 +595,7 @@ private struct ShellContentColumn: View {
 				Spacer(minLength: 0)
 					.frame(height: topBarHeight)
 				BrowserPageView(browser: browser, cornerRadius: contentCornerRadius)
+					.equatable()
 					.padding(.top, hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
 					.padding([.bottom, .horizontal], hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
