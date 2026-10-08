@@ -791,19 +791,29 @@ final class BrowserController: NSObject, Identifiable {
 	private func startMediaObservation() {
 		mediaObservationTask = Task { @MainActor [weak self] in
 			while !Task.isCancelled {
-				guard self?.createdWebView != nil else { return }
-				await self?.refreshActivity()
+				guard let self, let webView = self.createdWebView else { return }
+				let hasActivity = self.isPlayingMedia
+					|| self.hasPausedMedia
+					|| self.isCapturing
+					|| self.isPictureInPictureActive
+					|| self.isEnteringPictureInPicture
+				let isDetached = webView.window == nil
+				// Activity and PiP events refresh immediately. A detached, quiescent
+				// page must not be woken by a DOM query just to rediscover inactivity.
+				if !isDetached || hasActivity {
+					await self.refreshActivity()
+				}
 				guard !Task.isCancelled else { return }
 				do {
-					// DOM media events perform immediate refreshes. Quiescent pages
-					// need a much slower fallback; with many background tabs the
-					// former 5-second poll woke WebKit processes unnecessarily.
-					let hasActivity = self?.isPlayingMedia == true
-						|| self?.hasPausedMedia == true
-						|| self?.isCapturing == true
-						|| self?.isPictureInPictureActive == true
-						|| self?.isEnteringPictureInPicture == true
-					try await Task.sleep(for: .seconds(hasActivity ? 5 : 20))
+					let fallbackInterval: TimeInterval
+					if hasActivity {
+						fallbackInterval = 5
+					} else if isDetached {
+						fallbackInterval = 60
+					} else {
+						fallbackInterval = 20
+					}
+					try await Task.sleep(for: .seconds(fallbackInterval))
 				} catch {
 					return
 				}

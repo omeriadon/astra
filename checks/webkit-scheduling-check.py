@@ -26,5 +26,9 @@ assert "requiresMediaTeardownConfirmation" in controller
 assert "inactiveSchedulingPolicy = requiresContinuousScheduling ? .none : .throttle" in controller
 assert ".suspend is deliberately not selected" in controller
 assert "inactiveSchedulingPolicy = .suspend" not in controller
+observation_source = controller[controller.index("private func startMediaObservation()"):controller.index("func refreshActivity()")]
+assert "let isDetached = webView.window == nil" in observation_source
+assert "if !isDetached || hasActivity" in observation_source
+assert "fallbackInterval = 60" in observation_source
 
 print("WebKit scheduling source check passed")
