@@ -2,6 +2,7 @@ import Foundation
 
 enum BrowserDownloadStatus: String, Codable, Sendable {
 	case downloading
+	case finalizing
 	case paused
 	case completed
 	case cancelled
@@ -164,6 +165,8 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 		switch status {
 			case .downloading:
 				return progressDetails
+			case .finalizing:
+				return "Finalizing file…"
 			case .paused:
 				return "\(errorMessage ?? "Paused") · \(progressLabel)"
 			case .completed:
