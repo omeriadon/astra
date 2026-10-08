@@ -22,7 +22,17 @@ struct BrowserWindowRecord {
 	let windowID: UUID
 	let tabIDs: [UUID]
 	let selectedTabID: UUID
+	let selectionModifiedAt: Date
 	let frame: String?
+
+	init(windowID: UUID, tabIDs: [UUID], selectedTabID: UUID,
+	     selectionModifiedAt: Date, frame: String? = nil) {
+		self.windowID = windowID
+		self.tabIDs = tabIDs
+		self.selectedTabID = selectedTabID
+		self.selectionModifiedAt = selectionModifiedAt
+		self.frame = frame
+	}
 }
 
 @MainActor
@@ -34,6 +44,7 @@ final class Browser {
 	var tabs: [BrowserTab]
 	var selectedTabID: UUID
 	var savedWindowFrame: String?
+	var selectedTabModifiedAt: Date = .distantPast
 	var isHydrationFinished = true
 
 	var selectedTab: BrowserTab? {
@@ -91,6 +102,23 @@ struct WindowOwnershipChecks {
 		registry.activate(second)
 		assert(registry.ownsTab(tab.id, in: second))
 		assert(!registry.ownsTab(tab.id, in: first))
+		assert(registry.ownedTabIDs(in: second) == [tab.id])
+		assert(registry.ownedTabIDs(in: first).isEmpty)
+		// The batch lookup must have the same ownership semantics as
+		// the single-tab API even for shared and unique tabs at scale.
+		for index in 0..<200 {
+			let shared = BrowserTab()
+			first.tabs.append(shared)
+			if index.isMultiple(of: 2) {
+				second.tabs.append(shared)
+			}
+		}
+		for browser in [first, second] {
+			let expected = Set(browser.tabs.filter {
+				registry.ownsTab($0.id, in: browser)
+			}.map(\.id))
+			assert(registry.ownedTabIDs(in: browser) == expected)
+		}
 		assert(registry.isOpenInAnotherWindow(tab.id, than: first))
 		registry.unregister(second)
 		assert(registry.ownsTab(tab.id, in: first))
