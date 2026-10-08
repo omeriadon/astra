@@ -836,7 +836,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		for item in items where item.status == .downloading {
 			await pauseTransfer(item.id)
 		}
-		flushDownloads()
+		await flushDownloads()
 	}
 
 	func endPrivateSession() async {
@@ -1984,14 +1984,18 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		}
 	}
 
-	/// Synchronous write for app termination, where background work may not finish.
-	private func flushDownloads() {
+	/// Shutdown waits for a durable snapshot, but its encoding and disk I/O
+	/// stay off MainActor. The previous coalesced writer is drained first to
+	/// prevent an older snapshot from overwriting this final version.
+	private func flushDownloads() async {
 		guard privateDataStore == nil, downloadCacheReadCompleted, !downloadCacheIsUnreadable else { return }
-		downloadPersistTask?.cancel()
+		let previousWrite = downloadPersistTask
+		previousWrite?.cancel()
 		downloadPersistTask = nil
+		await previousWrite?.value
+		let snapshot = items
 		do {
-			let data = try JSONEncoder().encode(items)
-			try data.write(to: storeURL, options: .atomic)
+			try await BrowserDownloadFileWorker.shared.persistDownloadIndex(snapshot, at: storeURL)
 			lastPersistedAt = .now
 		} catch {
 			showToast(symbol: "exclamationmark.triangle", message: "Could not save downloads: \(error.localizedDescription)")
