@@ -66,8 +66,13 @@
 						.frame(maxWidth: .infinity, maxHeight: .infinity)
 					}
 				}
-				.task(id: switcher.candidateIDs) {
-					guard !switcher.candidateIDs.isEmpty else { return }
+				// Quick Control-Tab releases never display the switcher. The old
+				// candidateIDs task still captured WebKit screenshots during
+				// those interactions, even though no preview could appear.
+				// Fetch snapshots only once the 200 ms display delay elapses,
+				// and refresh only when the actually visible candidate set changes.
+				.task(id: switcher.isPreviewVisible ? visibleCandidateIDs(fitting: geometry.size.width) : []) {
+					guard switcher.isPreviewVisible, !Task.isCancelled else { return }
 					await refreshVisibleCandidates(fitting: geometry.size.width)
 				}
 			}
