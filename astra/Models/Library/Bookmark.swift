@@ -84,3 +84,58 @@ nonisolated enum BrowserUserDataMutation {
 		return now > latest ? now : latest.addingTimeInterval(0.001)
 	}
 }
+
+
+/// Immutable value projection for the library UI. Build it away from SwiftUI's
+/// main-actor body evaluation and abandon obsolete searches cooperatively.
+nonisolated struct BrowserLibraryProjection: Sendable {
+    let bookmarkGroups: [String: [Bookmark]]
+    let readingItems: [ReadingListItem]
+
+    static let empty = Self(bookmarkGroups: [:], readingItems: [])
+
+    static func build(bookmarks: [Bookmark], readingList: [ReadingListItem], query: String) -> Self? {
+        guard !Task.isCancelled else { return nil }
+        var matchingBookmarks: [Bookmark] = []
+        matchingBookmarks.reserveCapacity(bookmarks.count)
+        for bookmark in bookmarks {
+            guard !Task.isCancelled else { return nil }
+            if query.isEmpty || bookmark.name.localizedCaseInsensitiveContains(query)
+                || bookmark.url.absoluteString.localizedCaseInsensitiveContains(query)
+                || bookmark.folder.localizedCaseInsensitiveContains(query)
+            {
+                matchingBookmarks.append(bookmark)
+            }
+        }
+        matchingBookmarks.sort {
+            if $0.folder != $1.folder {
+                return $0.folder.localizedStandardCompare($1.folder) == .orderedAscending
+            }
+            if $0.order != $1.order {
+                return $0.order < $1.order
+            }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+        guard !Task.isCancelled else { return nil }
+        var matchingReadingItems: [ReadingListItem] = []
+        matchingReadingItems.reserveCapacity(readingList.count)
+        for item in readingList {
+            guard !Task.isCancelled else { return nil }
+            if query.isEmpty || item.title.localizedCaseInsensitiveContains(query)
+                || item.url.absoluteString.localizedCaseInsensitiveContains(query)
+            {
+                matchingReadingItems.append(item)
+            }
+        }
+        matchingReadingItems.sort {
+            $0.addedAt == $1.addedAt
+                ? $0.id.uuidString < $1.id.uuidString
+                : $0.addedAt > $1.addedAt
+        }
+        guard !Task.isCancelled else { return nil }
+        return Self(
+            bookmarkGroups: Dictionary(grouping: matchingBookmarks, by: \.folder),
+            readingItems: matchingReadingItems
+        )
+    }
+}
