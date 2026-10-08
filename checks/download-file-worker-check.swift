@@ -84,6 +84,23 @@ struct DownloadFileWorkerCheck {
 		precondition(manager.fileExists(atPath: fourthSource.path))
 		precondition(!manager.fileExists(atPath: output.appendingPathComponent("cancelled.bin").path))
 
+		let tempRoot = root.appendingPathComponent("download-staging", isDirectory: true)
+		try manager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+		let disposable = tempRoot.appendingPathComponent("disposable.part")
+		try bytes.write(to: disposable)
+		try await BrowserDownloadFileWorker.shared.deleteTemporaryFiles(
+			[disposable], in: tempRoot, bookmark: nil, hasExistingAccess: false
+		)
+		precondition(!manager.fileExists(atPath: disposable.path))
+		do {
+			try await BrowserDownloadFileWorker.shared.deleteTemporaryFiles(
+				[firstDest], in: tempRoot, bookmark: nil, hasExistingAccess: false
+			)
+			preconditionFailure("File outside staging area must not be deleted")
+		} catch {
+			precondition(manager.fileExists(atPath: firstDest.path))
+		}
+
 		let staged = try manager.contentsOfDirectory(at: output, includingPropertiesForKeys: nil)
 		precondition(!staged.contains { $0.lastPathComponent.hasPrefix(".astra-finalizing-") })
 		print("Download finalization worker checks passed")
