@@ -11,6 +11,7 @@ final class TestSession {
 final class BrowserTab {
 	let id: UUID
 	var isHibernated = false
+	func markInteraction() {}
 
 	init(id: UUID = UUID()) {
 		self.id = id

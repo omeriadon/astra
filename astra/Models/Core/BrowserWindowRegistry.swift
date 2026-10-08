@@ -61,6 +61,7 @@ final class BrowserWindowRegistry {
 	}
 
 	func unregister(_ browser: Browser) {
+		browser.selectedTab?.markInteraction()
 		if pendingPublishSource === browser {
 			publishTask?.cancel()
 			publishTask = nil

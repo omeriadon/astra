@@ -126,7 +126,7 @@ extension BrowserHibernationManager {
             await manager.exerciseSweep()
             precondition(browser.reclaimed.isEmpty)
         }
-        for race in 0..<6 {
+        for race in 0..<7 {
             let (tab, browser, manager) = make()
             let controller = tab.controller!
             controller.onRefresh = {
@@ -136,6 +136,7 @@ extension BrowserHibernationManager {
                 case 2: controller.navigationIdentifier += 1
                 case 3: tab.controller = BrowserController()
                 case 4: Defaults.enabled = false
+                case 5: BrowserWindowRegistry.shared.openBrowsers = []
                 default: controller.activityResult = false
                 }
             }

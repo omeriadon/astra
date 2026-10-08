@@ -137,6 +137,7 @@ final class BrowserHibernationManager {
 
 	private func isEligible(_ tab: BrowserTab, now: Date, idleTime: Duration) -> Bool {
 		guard let browser, !tab.isHibernated,
+		      BrowserWindowRegistry.shared.openBrowsers.contains(where: { $0 === browser }),
 		      tab.internalPage == nil,
 		      tab.canHibernate,
 		      browser.tabs.contains(where: { $0 === tab }),
