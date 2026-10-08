@@ -2060,13 +2060,17 @@ final class Browser {
 	}
 
 	func configureOwnedTabs() {
-		for tab in tabs where BrowserWindowRegistry.shared.ownsTab(tab.id, in: self) {
-			configure(tab)
+		// Unregistering one window previously checked each of this window's
+		// tabs against every other window, then repeated the same global scan
+		// inside configure(_:). Resolve ownership once for the entire batch.
+		let ownedIDs = BrowserWindowRegistry.shared.ownedTabIDs(in: self)
+		for tab in tabs where ownedIDs.contains(tab.id) {
+			configure(tab, ownershipVerified: true)
 		}
 	}
 
-	private func configure(_ tab: BrowserTab) {
-		guard BrowserWindowRegistry.shared.ownsTab(tab.id, in: self),
+	private func configure(_ tab: BrowserTab, ownershipVerified: Bool = false) {
+		guard (ownershipVerified || BrowserWindowRegistry.shared.ownsTab(tab.id, in: self)),
 		      let controller = tab.controller else { return }
 		controller.displayWindowID = windowID
 		controller.navigationIntercept = navigationIntercept
