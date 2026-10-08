@@ -503,6 +503,7 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		try validateWindowRecords(state.windowRecords ?? [])
 		let currentURL = directory.appendingPathComponent("browser-state.json")
 		let backupURL = directory.appendingPathComponent("browser-state.backup.json")
+		let previousReadStarted = BrowserLog.clock()
 		// A full-state save needs the old state to detect privacy deletions.
 		// Decode it once; do not reread and decode the same 50,000-visit JSON
 		// document during schema checking and again for backup comparison.
@@ -532,11 +533,20 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		} else {
 			backupPrevious = nil
 		}
+		BrowserLog.duration(.persistence, "state.previous-decode.end",
+			since: previousReadStarted,
+			warnAboveMilliseconds: 125,
+			metadata: ["recovery_baseline": String(backupPrevious != nil)])
+		let encodeStarted = BrowserLog.clock()
 		var state = state
 		state.windowRecords = (state.windowRecords ?? []).sorted { $0.windowID.uuidString < $1.windowID.uuidString }
 		try validatePersistedState(state)
 		let data = try JSONEncoder().encode(Envelope(version: Self.currentVersion, state: state))
 		guard data.count <= 64 * 1024 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
+		BrowserLog.duration(.persistence, "state.encode.end",
+			since: encodeStarted,
+			warnAboveMilliseconds: 125,
+			metadata: ["bytes": String(data.count)])
 		let previousPrimaryWasUnavailable = previous == nil
 		var privateDataWasRemoved = false
 		if let previous = previous ?? backupPrevious {
@@ -589,6 +599,7 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 				try previousData.write(to: backupURL, options: .atomic)
 			}
 		}
+		let commitStarted = BrowserLog.clock()
 		try data.write(to: currentURL, options: .atomic)
 		// The full snapshot includes all window selections captured at commit time.
 		// A crash before this cleanup is safe: loader ignores older journals.
@@ -596,6 +607,10 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		if privateDataWasRemoved {
 			try data.write(to: backupURL, options: .atomic)
 		}
+		BrowserLog.duration(.persistence, "state.commit.end",
+			since: commitStarted,
+			warnAboveMilliseconds: 125,
+			metadata: ["bytes": String(data.count), "private_data_removed": String(privateDataWasRemoved)])
 		BrowserLog.duration(.persistence, "state.save.end", since: logStarted, warnAboveMilliseconds: 250, metadata: ["bytes": String(data.count), "private_data_removed": String(privateDataWasRemoved)])
 		for name in ["bookmarks.json", "favourites.json", "open-tabs.json", "closed-tabs.json", "workspace.json", "browser-snapshot.json"] {
 			let legacyURL = directory.appendingPathComponent(name)
