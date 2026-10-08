@@ -30,6 +30,8 @@ struct BrowserDiagnosticReport: Codable, Equatable {
 		let modelBytes: UInt64?
 		let webContentMappingCount: Int
 		let webContentUnavailableCount: Int
+		let sharedWebContentProcessCount: Int
+		let webContentAttribution: String
 		let unavailableControllerCount: Int
 	}
 

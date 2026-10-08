@@ -78,6 +78,8 @@
 					modelBytes: aggregate.modelBytes,
 					webContentMappingCount: aggregate.webContentMappingCount,
 					webContentUnavailableCount: aggregate.webContentUnavailableCount,
+					sharedWebContentProcessCount: aggregate.sharedWebContentProcessCount,
+					webContentAttribution: "Observed mappings only; exclusive tab bytes and JavaScript heap are unavailable",
 					unavailableControllerCount: controllers.count - snapshotsByController.count
 				),
 				events: base.events

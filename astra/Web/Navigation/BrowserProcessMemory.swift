@@ -94,15 +94,20 @@ struct BrowserProcessMemoryAggregate: Equatable, Sendable {
 	let modelBytes: UInt64?
 	let webContentMappingCount: Int
 	let webContentUnavailableCount: Int
+	let sharedWebContentProcessCount: Int
 
 	static func combining(_ snapshots: [BrowserTabProcessMemorySnapshot]) -> Self {
 		var processes: [String: UInt64] = [:]
 		var roleBytes: [[String: UInt64]] = [[:], [:], [:], [:]]
+		var webContentReferences: [String: Int] = [:]
 		var webContentMappingCount = 0
 		var webContentUnavailableCount = 0
 		for snapshot in snapshots {
 			if let webContent = snapshot.webContent {
 				webContentMappingCount += 1
+				if webContent.startTime != nil {
+					webContentReferences[webContent.identity, default: 0] += 1
+				}
 				if webContent.bytes == nil {
 					webContentUnavailableCount += 1
 				}
@@ -125,7 +130,8 @@ struct BrowserProcessMemoryAggregate: Equatable, Sendable {
 			networkBytes: roleBytes[2].values.isEmpty ? nil : roleBytes[2].values.reduce(0, +),
 			modelBytes: roleBytes[3].values.isEmpty ? nil : roleBytes[3].values.reduce(0, +),
 			webContentMappingCount: webContentMappingCount,
-			webContentUnavailableCount: webContentUnavailableCount
+			webContentUnavailableCount: webContentUnavailableCount,
+			sharedWebContentProcessCount: webContentReferences.values.filter { $0 > 1 }.count
 		)
 	}
 }
