@@ -36,6 +36,8 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	private(set) var actionsRevision = 0
 	private(set) var isInstallingFromStore = false
 	private var contexts: [String: WKWebExtensionContext] = [:]
+	@ObservationIgnored private var contextPreparationTasks: [String: Task<WKWebExtensionContext, Error>] = [:]
+	@ObservationIgnored private var enableIntentRevisions: [String: UInt64] = [:]
 	private var cachedDisplayNames: [String: String] = [:]
 	private var windows: [UUID: BrowserExtensionWindow] = [:]
 	private var tabs: [UUID: [UUID: BrowserExtensionTab]] = [:]
@@ -184,7 +186,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	/// Normal tab metadata and WebKit loading events affect one WebExtension
 	/// bridge, not every bridge in a window. Structural membership changes
 	/// still use sync(_:) from Browser's explicit tab mutation paths.
-	func tabPropertiesDidChange(for id: UUID, in browser: Browser) {
+	func tabPropertiesDidChange(for id: UUID, in browser: Browser, forceWebViewRefresh: Bool = false) {
 		guard !browser.isPrivate,
 		      BrowserWindowRegistry.shared.ownsTab(id, in: browser),
 		      let tab = browser.tab(withID: id),
@@ -201,7 +203,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			pinned: previous.pinned,
 			zoom: tab.controller?.pageZoom ?? 1
 		)
-		var changed: WKWebExtension.TabChangedProperties = []
+		var changed: WKWebExtension.TabChangedProperties = forceWebViewRefresh ? [.URL, .loading] : []
 		if previous.title != next.title { changed.insert(.title) }
 		if previous.url != next.url { changed.insert(.URL) }
 		if previous.loading != next.loading { changed.insert(.loading) }
@@ -260,10 +262,18 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 
 	func webViewDidChange(for id: UUID, in browser: Browser) {
 		guard !browser.isPrivate else { return }
-		sync(browser)
-		if let tab = extensionTab(for: id, in: browser) {
-			controller.didChangeTabProperties([.URL, .loading], for: tab)
+		// A WKWebView replacement does not change the identities of every tab.
+		// A registered bridge must refresh URL/loading even when their values
+		// are unchanged, because its backing WebKit view has changed.
+		guard knownTabIDs[browser.windowID]?.contains(id) == true,
+		      tabs[browser.windowID]?[id] != nil,
+		      BrowserWindowRegistry.shared.ownsTab(id, in: browser) else {
+			// Newly created, transferred or closed tabs still need structural
+			// open/close notifications with correct window ownership.
+			sync(browser)
+			return
 		}
+		tabPropertiesDidChange(for: id, in: browser, forceWebViewRefresh: true)
 	}
 
 	func loadedNames() -> [String] {
@@ -487,6 +497,8 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			BrowserLog.debug(.extensions, "extension.prepare-item", metadata: ["name": BrowserLog.value(name), "enabled": "true"])
 			do {
 				_ = try await prepareContext(for: name)
+				// The user may have disabled the extension during an await.
+				guard enabledNames.contains(name) else { continue }
 				try enable(name)
 			} catch {
 				loadErrors[name] = error.localizedDescription
@@ -517,10 +529,21 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 
 	@discardableResult
 	private func prepareContext(for name: String) async throws -> WKWebExtensionContext {
-		if let existing = contexts[name] {
-			return existing
+		if let existing = contexts[name] { return existing }
+		if let preparing = contextPreparationTasks[name] {
+			return try await preparing.value
 		}
+		// A settings click can overlap the launch-time extension preparation.
+		// Share one in-flight WebKit parse rather than creating duplicate contexts.
+		let preparing = Task { @MainActor in
+			try await createContext(for: name)
+		}
+		contextPreparationTasks[name] = preparing
+		defer { contextPreparationTasks[name] = nil }
+		return try await preparing.value
+	}
 
+	private func createContext(for name: String) async throws -> WKWebExtensionContext {
 		let started = BrowserLog.clock()
 		let webExtension: WKWebExtension
 		if let path = safariBundlePaths[name], let bundle = Bundle(path: path) {
@@ -534,6 +557,10 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 				userInfo: [NSLocalizedDescriptionKey: "Extension package is missing."]
 			)
 		}
+		try Task.checkCancellation()
+		// It may have been uninstalled while WebKit parsed the archive.
+		guard bundledNames.contains(name) || installedNames.contains(name) || safariBundlePaths[name] != nil
+		else { throw CancellationError() }
 		let context = WKWebExtensionContext(for: webExtension)
 		context.uniqueIdentifier = name
 		contexts[name] = context
@@ -640,6 +667,8 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		let url = archiveURL(for: name)
 		setEnabled(false, for: name)
 		guard contexts[name]?.isLoaded != true else { return }
+		contextPreparationTasks[name]?.cancel()
+		contextPreparationTasks[name] = nil
 		contexts.removeValue(forKey: name)
 		cachedDisplayNames.removeValue(forKey: name)
 		UserDefaults.standard.set(cachedDisplayNames, forKey: "extensionDisplayNames")
@@ -687,13 +716,19 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 
 	func setEnabled(_ enabled: Bool, for name: String) {
 		BrowserLog.info(.extensions, "extension.set-enabled", metadata: ["name": BrowserLog.value(name), "enabled": String(enabled)])
+		let revision = (enableIntentRevisions[name] ?? 0) &+ 1
+		enableIntentRevisions[name] = revision
 		if enabled, contexts[name] == nil {
 			Task { @MainActor [weak self] in
 				guard let self else { return }
 				do {
 					_ = try await prepareContext(for: name)
+					// Do not re-enable after a later explicit disable or removal.
+					guard enableIntentRevisions[name] == revision,
+					      bundledNames.contains(name) || installedNames.contains(name) else { return }
 					setEnabled(true, for: name)
 				} catch {
+					guard enableIntentRevisions[name] == revision else { return }
 					loadErrors[name] = error.localizedDescription
 				}
 			}
