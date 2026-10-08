@@ -501,28 +501,36 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		let logStarted = BrowserLog.clock()
 		BrowserLog.debug(.persistence, "state.save.begin", metadata: ["tabs": String(state.openTabs.count), "bookmarks": String(state.bookmarks.count), "reading_list": String(state.readingList.count), "history": String(state.historyVisits?.count ?? 0)])
 		try validateWindowRecords(state.windowRecords ?? [])
-		for name in ["browser-state.json", "browser-state.backup.json"] {
-			let url = directory.appendingPathComponent(name)
-			guard let currentData = try? Data(contentsOf: url) else { continue }
+		let currentURL = directory.appendingPathComponent("browser-state.json")
+		let backupURL = directory.appendingPathComponent("browser-state.backup.json")
+		// A full-state save needs the old state to detect privacy deletions.
+		// Decode it once; do not reread and decode the same 50,000-visit JSON
+		// document during schema checking and again for backup comparison.
+		let previousData = try? Data(contentsOf: currentURL)
+		let previous: BrowserPersistedState?
+		if let previousData {
 			do {
-				_ = try decodeSnapshot(currentData)
+				previous = try decodeSnapshot(previousData)
 			} catch BrowserPersistenceError.unsupportedVersion {
 				throw BrowserPersistenceError.unsupportedVersion
 			} catch {
-				continue
+				previous = nil
 			}
+		} else {
+			previous = nil
+		}
+		// Only the backup schema version matters here: a full-model decode
+		// would allocate a second history and tab collection on every save.
+		if let backupData = try? Data(contentsOf: backupURL) {
+			try rejectUnsupportedEnvelopeVersion(backupData)
 		}
 		var state = state
 		state.windowRecords = (state.windowRecords ?? []).sorted { $0.windowID.uuidString < $1.windowID.uuidString }
 		try validatePersistedState(state)
 		let data = try JSONEncoder().encode(Envelope(version: Self.currentVersion, state: state))
 		guard data.count <= 64 * 1024 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
-		let currentURL = directory.appendingPathComponent("browser-state.json")
 		var privateDataWasRemoved = false
-		if FileManager.default.fileExists(atPath: currentURL.path),
-		   let previousData = try? Data(contentsOf: currentURL),
-		   let previous = try? decodeSnapshot(previousData)
-		{
+		if let previousData, let previous {
 			let incomingIDs = Set((state.historyVisits ?? []).map(\.id))
 			// Membership checks run on every state save, including sessions with
 			// thousands of visits or tabs. Build hash indexes once per snapshot.
@@ -579,6 +587,19 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 
 	nonisolated func loadShutdownMetadata() throws -> BrowserShutdownMetadata? {
 		try read(BrowserShutdownMetadata.self, named: "browser-shutdown.json")
+	}
+
+	private nonisolated struct EnvelopeVersionOnly: Decodable {
+		let version: Int
+	}
+
+	private nonisolated func rejectUnsupportedEnvelopeVersion(_ data: Data) throws {
+		guard data.count <= 64 * 1024 * 1024,
+		      let header = try? JSONDecoder().decode(EnvelopeVersionOnly.self, from: data)
+		else { return }
+		guard (1 ... Self.currentVersion).contains(header.version) else {
+			throw BrowserPersistenceError.unsupportedVersion
+		}
 	}
 
 	/// Validate the decoded document or the in-memory snapshot before encoding.
