@@ -52,6 +52,9 @@ final class BrowserWindowRegistry {
 	func register(_ browser: Browser) {
 		browsers.removeAll { $0.browser == nil }
 		browsers.append(WeakBrowser(browser))
+		#if os(macOS)
+			BrowserTabResourceManager.shared.reconcileWindows()
+		#endif
 		// Normal startup windows register with a lightweight placeholder before
 		// disk hydration. Syncing that placeholder into WKWebExtensionController
 		// only to replace it moments later adds launch work and duplicate events.
@@ -76,6 +79,9 @@ final class BrowserWindowRegistry {
 		if activeBrowserID == browser.windowID {
 			activeBrowserID = browsers.first?.browser?.windowID
 		}
+		#if os(macOS)
+			BrowserTabResourceManager.shared.reconcileWindows()
+		#endif
 	}
 
 	func activate(_ browser: Browser) {
@@ -86,6 +92,9 @@ final class BrowserWindowRegistry {
 			return
 		}
 		activeBrowserID = browser.windowID
+		#if os(macOS)
+			BrowserTabResourceManager.shared.didSelectTab(browser.selectedTabID, previously: nil)
+		#endif
 		claimSelectedTab(in: browser)
 		BrowserExtensionManager.shared.focus(browser)
 		if browser.selectedTab?.isHibernated == true {
