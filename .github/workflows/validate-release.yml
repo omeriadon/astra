@@ -118,6 +118,18 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
 
+      - name: Check asynchronous download file publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc \
+            astra/Models/Library/BrowserDownload.swift \
+            astra/Web/Downloads/BrowserDownloadedFile.swift \
+            astra/Web/Downloads/BrowserDownloadFileWorker.swift \
+            checks/download-file-worker-check.swift \
+            -o "$RUNNER_TEMP/astra-download-file-worker-check"
+          "$RUNNER_TEMP/astra-download-file-worker-check"
+
       - name: Check unsigned release archive
         shell: bash
         run: |
