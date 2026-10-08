@@ -67,7 +67,17 @@ final class Browser {
 		selectedTabID = id
 	}
 
-	func receiveSharedState(from _: Browser) {}
+	var publicationCount = 0
+	var receivedFromWindowIDs: [UUID] = []
+	func receiveSharedState(from source: Browser) {
+		receivedFromWindowIDs.append(source.windowID)
+	}
+	func publishSharedState(to recipients: [Browser]) {
+		publicationCount += 1
+		for recipient in recipients {
+			recipient.receiveSharedState(from: self)
+		}
+	}
 }
 
 @MainActor
@@ -95,6 +105,18 @@ struct WindowOwnershipChecks {
 		registry.register(first)
 		registry.register(second)
 		assert(registry.sharedTab(withID: tab.id, for: second) === tab)
+		registry.publish(from: first)
+		assert(first.publicationCount == 1, "One source publication per fan-out")
+		assert(second.receivedFromWindowIDs == [first.windowID])
+		assert(first.receivedFromWindowIDs.isEmpty, "Do not send to source window")
+		let privateRecipient = Browser(tab: BrowserTab())
+		privateRecipient.isPrivate = true
+		registry.register(privateRecipient)
+		registry.publish(from: first)
+		assert(first.publicationCount == 2)
+		assert(privateRecipient.receivedFromWindowIDs.isEmpty,
+			"Private windows must not receive normal shared state")
+		registry.unregister(privateRecipient)
 		registry.activate(first)
 		assert(registry.ownsTab(tab.id, in: first))
 		assert(!registry.ownsTab(tab.id, in: second))
