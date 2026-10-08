@@ -25,6 +25,7 @@ final class BrowserSync {
 	@ObservationIgnored private var settingVersions: [String: Date]
 	@ObservationIgnored private let deviceID: UUID
 	@ObservationIgnored private var settingsObserver: NSObjectProtocol?
+	@ObservationIgnored private var observedSettingsRefreshTask: Task<Void, Never>?
 	@ObservationIgnored private var observedServerAddress: String?
 	@ObservationIgnored private var authGeneration: UInt64 = 0
 
@@ -53,9 +54,9 @@ final class BrowserSync {
 			object: UserDefaults.standard,
 			queue: .main
 		) { [weak self] _ in
-			Task { @MainActor [weak self] in
+			MainActor.assumeIsolated {
 				self?.serverAddressDidChange()
-				self?.settingsDidChange()
+				self?.scheduleObservedSettingsRefresh()
 			}
 		}
 		networkMonitor.pathUpdateHandler = { path in
@@ -94,6 +95,18 @@ final class BrowserSync {
 		self.browser = browser
 		if isSignedIn, !hadBrowser, browser.isReadyForSync {
 			Task { await syncNow() }
+		}
+	}
+
+	private func scheduleObservedSettingsRefresh() {
+		guard observedSettingsRefreshTask == nil else { return }
+		observedSettingsRefreshTask = Task { @MainActor [weak self] in
+			// UserDefaults emits for unrelated keys too; coalesce notifications
+			// rather than encoding the entire synced settings set for each write.
+			try? await Task.sleep(for: .milliseconds(250))
+			guard !Task.isCancelled, let self else { return }
+			observedSettingsRefreshTask = nil
+			settingsDidChange()
 		}
 	}
 

@@ -785,10 +785,15 @@ final class BrowserController: NSObject, Identifiable {
 				await self?.refreshActivity()
 				guard !Task.isCancelled else { return }
 				do {
-					// Media play/pause/metadata events trigger immediate refreshes through
-					// pageActivityChanged. This slower fallback is only for state WebKit
-					// does not expose as a DOM event (notably capture/metadata edge cases).
-					try await Task.sleep(for: .seconds(5))
+					// DOM media events perform immediate refreshes. Quiescent pages
+					// need a much slower fallback; with many background tabs the
+					// former 5-second poll woke WebKit processes unnecessarily.
+					let hasActivity = self?.isPlayingMedia == true
+						|| self?.hasPausedMedia == true
+						|| self?.isCapturing == true
+						|| self?.isPictureInPictureActive == true
+						|| self?.isEnteringPictureInPicture == true
+					try await Task.sleep(for: .seconds(hasActivity ? 5 : 20))
 				} catch {
 					return
 				}

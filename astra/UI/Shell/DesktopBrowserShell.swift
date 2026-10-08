@@ -581,12 +581,15 @@ private struct ShellContentColumn: View {
 					let revealHeight = isTopBarRevealed
 						? BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding
 						: 6
+					let shouldReveal = browser.selectedTab?.internalPage == nil
+						&& !browser.isShowingNewTab
+						&& !showsTopBar && location.y < revealHeight
+					guard shouldReveal != isTopBarRevealed else { return }
 					withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
-						isTopBarRevealed = browser.selectedTab?.internalPage == nil
-							&& !browser.isShowingNewTab
-							&& !showsTopBar && location.y < revealHeight
+						isTopBarRevealed = shouldReveal
 					}
 				case .ended:
+					guard isTopBarRevealed else { return }
 					withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
 						isTopBarRevealed = false
 					}

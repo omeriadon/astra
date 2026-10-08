@@ -338,9 +338,14 @@ struct BrowserWebView {
 			// WebKit owns the page frame while its inspector is docked in this host.
 			let hasDockedInspector = subviews.contains { $0 is WKWebView && $0 !== webView }
 			if !hasDockedInspector {
-				webView.frame = bounds.offsetBy(dx: 0, dy: isFlipped ? refreshPullOffset : -refreshPullOffset)
+				let targetFrame = bounds.offsetBy(dx: 0, dy: isFlipped ? refreshPullOffset : -refreshPullOffset)
+				if webView.frame != targetFrame {
+					webView.frame = targetFrame
+				}
 			}
-			webView.isHidden = !specification.isVisible
+			if webView.isHidden == specification.isVisible {
+				webView.isHidden = !specification.isVisible
+			}
 			webView.setAccessibilityHidden(!specification.isVisible)
 			if specification.isVisible {
 				pageGestures.attach(to: controller, in: self)

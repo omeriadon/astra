@@ -37,7 +37,6 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	private(set) var isInstallingFromStore = false
 	private var contexts: [String: WKWebExtensionContext] = [:]
 	private var cachedDisplayNames: [String: String] = [:]
-	@ObservationIgnored private var deferredContextPreparationTask: Task<Void, Never>?
 	private var windows: [UUID: BrowserExtensionWindow] = [:]
 	private var tabs: [UUID: [UUID: BrowserExtensionTab]] = [:]
 	private var knownTabIDs: [UUID: Set<UUID>] = [:]
@@ -458,42 +457,19 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		}
 
 		BrowserLog.duration(.extensions, "extensions.prepare.end", since: logStarted, warnAboveMilliseconds: 500, metadata: ["contexts": String(contexts.count), "errors": String(loadErrors.count)])
-		scheduleDeferredContextPreparation()
+		// Disabled extensions are prepared only when the user opens extension
+		// settings or enables one. Background preparation here was creating
+		// WKWebExtension contexts and parsing packages shortly after launch.
 	}
 
 	func prepareAllContexts() async {
 		await prepare()
-		deferredContextPreparationTask?.cancel()
-		deferredContextPreparationTask = nil
-		await prepareMissingContexts(spacingMilliseconds: 0)
+		await prepareMissingContexts()
 	}
 
-	private func scheduleDeferredContextPreparation() {
-		guard deferredContextPreparationTask == nil,
-		      availableNames.contains(where: { contexts[$0] == nil }) else { return }
-		deferredContextPreparationTask = Task { @MainActor [weak self] in
-			do {
-				try await Task.sleep(for: .seconds(2))
-			} catch {
-				return
-			}
-			guard let self else { return }
-			await prepareMissingContexts(spacingMilliseconds: 300)
-			deferredContextPreparationTask = nil
-		}
-	}
-
-	private func prepareMissingContexts(spacingMilliseconds: Int) async {
-		let names = availableNames.filter { contexts[$0] == nil }
-		for (index, name) in names.enumerated() {
+	private func prepareMissingContexts() async {
+		for name in availableNames where contexts[name] == nil {
 			guard !Task.isCancelled else { return }
-			if index > 0, spacingMilliseconds > 0 {
-				do {
-					try await Task.sleep(for: .milliseconds(spacingMilliseconds))
-				} catch {
-					return
-				}
-			}
 			do {
 				_ = try await prepareContext(for: name)
 			} catch {
@@ -675,8 +651,6 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	func setEnabled(_ enabled: Bool, for name: String) {
 		BrowserLog.info(.extensions, "extension.set-enabled", metadata: ["name": BrowserLog.value(name), "enabled": String(enabled)])
 		if enabled, contexts[name] == nil {
-			deferredContextPreparationTask?.cancel()
-			deferredContextPreparationTask = nil
 			Task { @MainActor [weak self] in
 				guard let self else { return }
 				do {
