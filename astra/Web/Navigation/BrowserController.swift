@@ -50,6 +50,8 @@ final class BrowserController: NSObject, Identifiable {
 	private let suppliedConfiguration: WKWebViewConfiguration?
 	private var pendingInteractionState: Data?
 	@ObservationIgnored
+	private var pendingEncryptedInteractionState: (data: Data, url: URL)?
+	@ObservationIgnored
 	private var securityScopedFile: URL?
 	@ObservationIgnored
 	private var uploadSecurityScopedFiles: [URL] = []
@@ -591,7 +593,8 @@ final class BrowserController: NSObject, Identifiable {
 		self.fileAccessBookmark = fileAccessBookmark
 		historyVisitPolicy = BrowserVisitPolicy(suppressInitialVisit: suppressInitialHistoryVisit)
 		if !session.isPrivate, let initialURL, let restorationState {
-			pendingInteractionState = BrowserRestorationStore.open(restorationState, for: initialURL)
+			// Unopened restored tabs shouldn't decrypt WebKit history at launch.
+			pendingEncryptedInteractionState = (restorationState, initialURL)
 		}
 		suppliedConfiguration = configuration
 		liveHistoryPrefix = Array(restoredHistory.entries.prefix(restoredHistory.index))
@@ -637,6 +640,7 @@ final class BrowserController: NSObject, Identifiable {
 						securityScopedFile = resolved.startAccessingSecurityScopedResource() ? resolved : nil
 						pendingLocalFile = resolved
 						if resolved != url {
+							pendingEncryptedInteractionState = nil
 							pendingInteractionState = nil
 							self.url = resolved
 							historyManager = BrowserHistory(initialURL: resolved)
@@ -1053,6 +1057,7 @@ final class BrowserController: NSObject, Identifiable {
 			pendingWebArchive = nil
 			pendingRequest = nil
 			pendingLocalFile = url
+			pendingEncryptedInteractionState = nil
 			pendingInteractionState = nil
 			currentNavigation = nil
 			_ = webView
@@ -1633,6 +1638,7 @@ final class BrowserController: NSObject, Identifiable {
 		currentRequest = nil
 		pendingRequest = nil
 		pendingLocalFile = nil
+		pendingEncryptedInteractionState = nil
 		pendingInteractionState = nil
 		failedRequest = nil
 		retriedAfterConnectivityReturn = true
@@ -1723,7 +1729,7 @@ final class BrowserController: NSObject, Identifiable {
 				load(pendingRequest)
 				return
 			}
-			if pendingWebArchive != nil || pendingLocalFile != nil || pendingInteractionState != nil {
+			if pendingWebArchive != nil || pendingLocalFile != nil || pendingInteractionState != nil || pendingEncryptedInteractionState != nil {
 				loadPendingRequest()
 				return
 			}
@@ -1961,6 +1967,12 @@ final class BrowserController: NSObject, Identifiable {
 
 	private func loadPendingRequest() {
 		guard session.contentBlocking.isReadyForNavigation else { return }
+		if let encrypted = pendingEncryptedInteractionState, createdWebView != nil {
+			pendingEncryptedInteractionState = nil
+			let startedAt = BrowserLog.clock()
+			pendingInteractionState = BrowserRestorationStore.open(encrypted.data, for: encrypted.url)
+			BrowserLog.duration(.webKit, "restoration.decrypt", since: startedAt, warnAboveMilliseconds: 30)
+		}
 		if let state = pendingInteractionState, let webView = createdWebView {
 			pendingInteractionState = nil
 			liveHistoryPrefix = []

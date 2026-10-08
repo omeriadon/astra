@@ -781,7 +781,8 @@ final class Browser {
 				recordsNavigationHistory: saved.recordsNavigationHistory,
 				restorationState: saved.restorationState,
 				fileAccessBookmark: saved.fileAccessBookmark,
-				suppressInitialHistoryVisit: true
+				suppressInitialHistoryVisit: true,
+				initialRestorationBaseline: saved
 			)
 		}
 		var newTabs: [BrowserTab]
