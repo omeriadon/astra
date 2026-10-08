@@ -526,6 +526,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			do {
 				let committedURL = try await BrowserDownloadFileWorker.shared.commit(
 					source: temporaryURL,
+					ownedStagingDirectory: stagingDirectory,
 					proposed: proposedURL,
 					fileScoped: snapshot.destinationIsFileScoped == true,
 					bookmark: bookmark,
