@@ -23,18 +23,74 @@ import WebKit
 	}
 
 	struct BrowserTabProcessMemorySnapshot: Equatable, Sendable {
-		let webContentBytes: UInt64?
-		let graphicsBytes: UInt64?
-		let networkBytes: UInt64?
-		let modelBytes: UInt64?
+		struct Process: Equatable, Sendable {
+			let pid: pid_t
+			let startTime: UInt64?
+			let bytes: UInt64?
+
+			var identity: String {
+				"\(pid):\(startTime.map(String.init) ?? "?")"
+			}
+		}
+
+		let webContent: Process?
+		let graphics: Process?
+		let network: Process?
+		let model: Process?
+
+		var webContentBytes: UInt64? {
+			webContent?.bytes
+		}
+
+		var graphicsBytes: UInt64? {
+			graphics?.bytes
+		}
+
+		var networkBytes: UInt64? {
+			network?.bytes
+		}
+
+		var modelBytes: UInt64? {
+			model?.bytes
+		}
 
 		var relatedProcessBytes: UInt64? {
 			let values = [webContentBytes, graphicsBytes, networkBytes, modelBytes].compactMap(\.self)
 			return values.isEmpty ? nil : values.reduce(0, +)
 		}
 
+		var observedProcessBytes: UInt64? {
+			relatedProcessBytes
+		}
+
+		var processes: [Process] {
+			[webContent, graphics, network, model].compactMap(\.self)
+		}
+
+		var sharedProcessBytes: UInt64? {
+			let values = [graphicsBytes, networkBytes, modelBytes].compactMap(\.self)
+			return values.isEmpty ? nil : values.reduce(0, +)
+		}
+
 		var hasSharedProcessMemory: Bool {
-			graphicsBytes != nil || networkBytes != nil || modelBytes != nil
+			sharedProcessBytes != nil
+		}
+	}
+
+	struct BrowserProcessMemoryAggregate: Equatable, Sendable {
+		let processCount: Int
+		let uniqueBytes: UInt64?
+
+		static func combining(_ snapshots: [BrowserTabProcessMemorySnapshot]) -> Self {
+			var processes: [String: UInt64] = [:]
+			for process in snapshots.flatMap(\.processes) {
+				guard let bytes = process.bytes else { continue }
+				processes[process.identity] = bytes
+			}
+			return Self(
+				processCount: processes.count,
+				uniqueBytes: processes.values.isEmpty ? nil : processes.values.reduce(0, +)
+			)
 		}
 	}
 #endif
@@ -122,6 +178,7 @@ final class BrowserController: NSObject, Identifiable {
 		aiLinkPreviewCache.removeAll()
 		aiLinkPreviewCacheOrder.removeAll()
 	}
+
 	private(set) var isReaderAvailable = false
 	private(set) var readerHTML: String?
 	private(set) var isPreparingReader = false
@@ -511,6 +568,7 @@ final class BrowserController: NSObject, Identifiable {
 		var hasCurrentPreviewSnapshot: Bool {
 			previewSnapshot != nil && previewSnapshotGeneration == navigationGeneration
 		}
+
 		private(set) var windowMirrorSnapshot: NSImage?
 	#endif
 
@@ -1862,7 +1920,7 @@ final class BrowserController: NSObject, Identifiable {
 			previewSnapshotGeneration = generation
 		}
 
-		func tabProcessMemorySnapshot() -> BrowserTabProcessMemorySnapshot? {
+		func tabProcessMemorySnapshot() async -> BrowserTabProcessMemorySnapshot? {
 			guard let webView = createdWebView, owns(webView) else { return nil }
 
 			let webContentPID = Self.privateProcessIdentifier("_webProcessIdentifier", on: webView)
@@ -1873,11 +1931,16 @@ final class BrowserController: NSObject, Identifiable {
 				on: webView.configuration.websiteDataStore
 			)
 
+			let descriptors = [webContentPID, graphicsPID, networkPID, modelPID].compactMap(\.self)
+			guard !descriptors.isEmpty else { return nil }
+			let sampled = await Task.detached(priority: .utility) {
+				Self.sampleProcessMemory(for: descriptors)
+			}.value
 			let snapshot = BrowserTabProcessMemorySnapshot(
-				webContentBytes: webContentPID.flatMap(Self.physicalFootprint),
-				graphicsBytes: graphicsPID.flatMap(Self.physicalFootprint),
-				networkBytes: networkPID.flatMap(Self.physicalFootprint),
-				modelBytes: modelPID.flatMap(Self.physicalFootprint)
+				webContent: webContentPID.flatMap { sampled[$0] },
+				graphics: graphicsPID.flatMap { sampled[$0] },
+				network: networkPID.flatMap { sampled[$0] },
+				model: modelPID.flatMap { sampled[$0] }
 			)
 			return snapshot.relatedProcessBytes == nil ? nil : snapshot
 		}
@@ -1891,7 +1954,34 @@ final class BrowserController: NSObject, Identifiable {
 			return processIdentifier > 0 ? processIdentifier : nil
 		}
 
-		private static func physicalFootprint(_ processIdentifier: pid_t) -> UInt64? {
+		private nonisolated static func sampleProcessMemory(for processIdentifiers: [pid_t]) -> [pid_t: BrowserTabProcessMemorySnapshot.Process] {
+			var result: [pid_t: BrowserTabProcessMemorySnapshot.Process] = [:]
+			for processIdentifier in Set(processIdentifiers) {
+				result[processIdentifier] = BrowserTabProcessMemorySnapshot.Process(
+					pid: processIdentifier,
+					startTime: processStartTime(processIdentifier),
+					bytes: physicalFootprint(processIdentifier)
+				)
+			}
+			return result
+		}
+
+		private nonisolated static func processStartTime(_ processIdentifier: pid_t) -> UInt64? {
+			var info = proc_bsdinfo()
+			let result = withUnsafeMutablePointer(to: &info) { pointer in
+				proc_pidinfo(
+					processIdentifier,
+					PROC_PIDTBSDINFO,
+					0,
+					pointer,
+					Int32(MemoryLayout<proc_bsdinfo>.size)
+				)
+			}
+			guard result == Int32(MemoryLayout<proc_bsdinfo>.size) else { return nil }
+			return UInt64(info.pbi_start_tvsec) * 1_000_000 + UInt64(info.pbi_start_tvusec)
+		}
+
+		private nonisolated static func physicalFootprint(_ processIdentifier: pid_t) -> UInt64? {
 			var usage = rusage_info_v4()
 			let result = withUnsafeMutablePointer(to: &usage) { usagePointer in
 				var info: rusage_info_t? = UnsafeMutableRawPointer(usagePointer)

@@ -769,10 +769,10 @@ private struct TabRowContextMenu: View {
 				.clipShape(RoundedRectangle(cornerRadius: 10))
 
 				HStack {
-					Text("Memory")
+					Text("Observed process memory")
 						.font(.subheadline.weight(.semibold))
 					Spacer()
-					Text(memory?.relatedProcessBytes.map(Self.formatBytes) ?? unavailableMemoryLabel)
+					Text(memory?.observedProcessBytes.map(Self.formatBytes) ?? unavailableMemoryLabel)
 						.font(.subheadline.monospacedDigit())
 						.foregroundStyle(.secondary)
 				}
@@ -786,7 +786,7 @@ private struct TabRowContextMenu: View {
 					}
 				}
 
-				Text("* Shared WebKit process; shown for context rather than attributed entirely to this tab.")
+				Text("* Process footprints are estimates. Shared WebKit processes are shown for context and are not exclusive to this tab.")
 					.font(.system(size: 9))
 					.foregroundStyle(.tertiary)
 					.lineLimit(2)
@@ -809,10 +809,10 @@ private struct TabRowContextMenu: View {
 					await controller.refreshPreviewSnapshot()
 				}
 				while !Task.isCancelled {
-					memory = controller.tabProcessMemorySnapshot()
+					memory = await controller.tabProcessMemorySnapshot()
 					hasSampledMemory = true
 					do {
-						try await Task.sleep(for: .seconds(1))
+						try await Task.sleep(for: .seconds(2))
 					} catch {
 						return
 					}
