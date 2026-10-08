@@ -1,7 +1,7 @@
 import Foundation
 
 struct BrowserDiagnosticReport: Codable, Equatable {
-	static let schemaVersion = 1
+	static let schemaVersion = 2
 	static let maximumEncodedBytes = 32768
 	static let maximumEvents = 64
 
@@ -19,6 +19,20 @@ struct BrowserDiagnosticReport: Codable, Equatable {
 		let ageSeconds: Int
 	}
 
+	struct Memory: Codable, Equatable {
+		let measuredControllers: Int
+		let controllerCount: Int
+		let uniqueProcessCount: Int
+		let uniqueProcessBytes: UInt64?
+		let webContentBytes: UInt64?
+		let graphicsBytes: UInt64?
+		let networkBytes: UInt64?
+		let modelBytes: UInt64?
+		let webContentMappingCount: Int
+		let webContentUnavailableCount: Int
+		let unavailableControllerCount: Int
+	}
+
 	let schema: Int
 	let applicationVersion: String
 	let applicationBuild: String
@@ -30,6 +44,7 @@ struct BrowserDiagnosticReport: Codable, Equatable {
 	let hibernatedTabCount: Int?
 	let loadingTabCount: Int?
 	let navigationFailures: [String: Int]?
+	let memory: Memory? = nil
 	let events: [Event]
 
 	func encoded() -> Data? {
