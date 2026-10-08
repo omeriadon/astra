@@ -119,19 +119,27 @@ struct BrowserHistoryView: View {
 		// browsing history are restored or a visit arrives while History is open.
 		// BrowserVisit is Sendable: build a value-only index off-main.
 		historyIndexTask = Task { @MainActor in
-			let result = await Task.detached(priority: .userInitiated) {
+			let worker = Task.detached(priority: .userInitiated) { () -> ([BrowserVisit], [URL: Int])? in
+				guard !Task.isCancelled else { return nil }
 				let sorted = visits.sorted {
 					$0.visitedAt == $1.visitedAt
 						? $0.id.uuidString < $1.id.uuidString
 						: $0.visitedAt > $1.visitedAt
 				}
+				guard !Task.isCancelled else { return nil }
 				var counts: [URL: Int] = [:]
 				for visit in visits {
+					guard !Task.isCancelled else { return nil }
 					counts[visit.url, default: 0] += 1
 				}
 				return (sorted, counts)
-			}.value
-			guard !Task.isCancelled, revision == historyRevision else { return }
+			}
+			let result = await withTaskCancellationHandler {
+				await worker.value
+			} onCancel: {
+				worker.cancel()
+			}
+			guard !Task.isCancelled, revision == historyRevision, let result else { return }
 			orderedVisits = result.0
 			visitCountsByURL = result.1
 			updateVisits()
@@ -156,12 +164,18 @@ struct BrowserHistoryView: View {
 				}
 			}
 			guard !Task.isCancelled, revision == filterRevision else { return }
-			let filtered = await Task.detached(priority: .userInitiated) {
-				BrowserVisit.matching(visits, query: query)
-			}.value
+			let worker = Task.detached(priority: .userInitiated) {
+				BrowserVisit.matchingUnlessCancelled(visits, query: query)
+			}
+			let filtered = await withTaskCancellationHandler {
+				await worker.value
+			} onCancel: {
+				worker.cancel()
+			}
 			guard !Task.isCancelled,
 			      revision == filterRevision,
-			      indexedRevision == historyRevision else { return }
+			      indexedRevision == historyRevision,
+			      let filtered else { return }
 			filteredVisits = filtered
 		}
 	}
