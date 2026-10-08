@@ -560,17 +560,23 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 				}
 				|| previous.bookmarks.contains { $0.url.user != nil || $0.url.password != nil }
 				|| (previous.historyVisits ?? []).contains { $0.url.user != nil || $0.url.password != nil }
-			try previousData.write(
-				to: directory.appendingPathComponent("browser-state.backup.json"),
-				options: .atomic
-			)
+			if privateDataWasRemoved {
+				// Keep a valid current snapshot while removing any stale backup.
+				// Once deletion is committed, restoration can never fall back
+				// to a backup that resurrects the removed private information.
+				if FileManager.default.fileExists(atPath: backupURL.path) {
+					try FileManager.default.removeItem(at: backupURL)
+				}
+			} else {
+				try previousData.write(to: backupURL, options: .atomic)
+			}
 		}
 		try data.write(to: currentURL, options: .atomic)
 		// The full snapshot includes all window selections captured at commit time.
 		// A crash before this cleanup is safe: loader ignores older journals.
 		try? FileManager.default.removeItem(at: directory.appendingPathComponent("browser-selection.json"))
 		if privateDataWasRemoved {
-			try data.write(to: directory.appendingPathComponent("browser-state.backup.json"), options: .atomic)
+			try data.write(to: backupURL, options: .atomic)
 		}
 		BrowserLog.duration(.persistence, "state.save.end", since: logStarted, warnAboveMilliseconds: 250, metadata: ["bytes": String(data.count), "private_data_removed": String(privateDataWasRemoved)])
 		for name in ["bookmarks.json", "favourites.json", "open-tabs.json", "closed-tabs.json", "workspace.json", "browser-snapshot.json"] {
