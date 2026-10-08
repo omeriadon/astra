@@ -32,6 +32,7 @@ struct DownloadsSidebarView: View {
 				.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
 				#if os(macOS)
 					.padding(.top, 35)
+					.padding(.bottom, 48)
 				#else
 					.padding(.vertical, 16)
 				#endif

@@ -189,7 +189,7 @@ struct BrowserTabGroupingFeature: BrowserAIFeature {
 		try BrowserAIRequest(
 			instructions: BrowserAIPrompts.tabGroups,
 			prompt: String(decoding: JSONEncoder().encode(input), as: UTF8.self),
-			maximumResponseTokens: 2048
+			maximumResponseTokens: nil
 		)
 	}
 
@@ -198,14 +198,23 @@ struct BrowserTabGroupingFeature: BrowserAIFeature {
 			throw BrowserAIError.invalidResponse("The AI did not return tab sections with valid tab identifiers. Retry Tidy Today Tabs.")
 		}
 		guard !groups.isEmpty, Set(groups.map(\.name)).count == groups.count,
-		      groups.allSatisfy({ BrowserAIOutput.validLine($0.name, maximumWords: 40) && !$0.tabIDs.isEmpty }) else { throw BrowserAIError.invalidResponse("The AI returned empty or duplicate tab sections. Retry Tidy Today Tabs.") }
+		      groups.allSatisfy({ Self.validSectionName($0.name) && !$0.tabIDs.isEmpty }) else { throw BrowserAIError.invalidResponse("The AI returned empty or duplicate tab sections. Retry Tidy Today Tabs.") }
 		return groups
 	}
 
 	static func validate(_ groups: [Group], expectedIDs: [UUID]) throws {
 		let ids = groups.flatMap(\.tabIDs)
 		guard ids.count == expectedIDs.count, Set(ids).count == ids.count,
-		      Set(ids) == Set(expectedIDs) else { throw BrowserAIError.invalidResponse("The proposed tab sections omitted or repeated tabs. No final organization was applied.") }
+		      Set(ids) == Set(expectedIDs),
+		      Set(groups.map(\.name)).count == groups.count,
+		      groups.allSatisfy({ validSectionName($0.name) && !$0.tabIDs.isEmpty }) else { throw BrowserAIError.invalidResponse("The proposed tab sections omitted or repeated tabs. No final organization was applied.") }
+	}
+
+	static func validSectionName(_ name: String) -> Bool {
+		!name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+			&& name.count <= 30
+			&& !name.contains(where: \.isNewline)
+			&& !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
 	}
 }
 

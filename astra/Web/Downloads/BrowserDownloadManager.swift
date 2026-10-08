@@ -1220,7 +1220,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				"segment": String(index),
 				"range_matches": String(actualRange == expectedRange),
 				"encoding": encoding ?? "identity",
-				"validator_matches": String(responseValidator.map({ $0 == validator }) ?? true),
+				"validator_matches": String(responseValidator.map { $0 == validator } ?? true),
 				"size_matches": String(actualSize == Int(segment.end - segment.start + 1)),
 			])
 			try? FileManager.default.removeItem(at: partURL)
@@ -1730,7 +1730,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		received: Int64,
 		total: Int64,
 		throughput: Int?,
-		estimatedTimeRemaining: TimeInterval?
+		estimatedTimeRemaining _: TimeInterval?
 	) {
 		guard let index = items.firstIndex(where: { $0.id == itemID }),
 		      items[index].status == .downloading,

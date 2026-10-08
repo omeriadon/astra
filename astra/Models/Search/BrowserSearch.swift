@@ -32,8 +32,19 @@ extension Browser {
 		if query.isEmpty {
 			guard includeActions else { return [] }
 			let shortcuts = ["page-history", "page-bookmarks", "page-settings", "page-themeEditor", "reopen-tab", "new-space"]
-			let results = shortcuts.compactMap { id in
+			var results = shortcuts.compactMap { id in
 				actions.first(where: { $0.id == id }).map { actionResult($0, score: 0) }
+			}
+			if let clipboardURL = newTabClipboardURL {
+				results.insert(
+					BrowserSearchResult(
+						id: "clipboard-url", kind: .typed, title: clipboardURL.absoluteString,
+						detail: "Open Clipboard URL", symbol: "link", score: 2,
+						destination: clipboardURL.absoluteString,
+						perform: { self.openSearchDestination(clipboardURL) }
+					),
+					at: 0
+				)
 			}
 			return results.map { result in
 				BrowserSearchResult(
@@ -114,7 +125,21 @@ extension Browser {
 			))
 		}
 		let ranked = BrowserSearchResult.ranked(results)
-		return ranked.map { result in
+		let ordered: [BrowserSearchResult]
+		if includeActions, let searchURL = configuration.searchURL(for: query, isPrivate: isPrivate) {
+			let exactSearch = BrowserSearchResult(
+				id: "exact-search", kind: .typed, title: query,
+				detail: "Search \(configuration.engine(isPrivate: isPrivate).title)", symbol: "magnifyingglass",
+				score: 0, destination: searchURL.absoluteString,
+				perform: { self.openSearchDestination(searchURL) }
+			)
+			ordered = BrowserSearchResult.enforceExactSearchSecond(
+				ranked, candidate: exactSearch, destination: searchURL.absoluteString
+			)
+		} else {
+			ordered = ranked
+		}
+		return ordered.map { result in
 			BrowserSearchResult(
 				id: result.id, kind: result.kind, title: result.title,
 				detail: result.detail, symbol: result.symbol,

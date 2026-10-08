@@ -297,7 +297,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 			guard let response = response as? HTTPURLResponse,
 			      200 ..< 300 ~= response.statusCode,
 			      response.expectedContentLength <= Int64(maximumImageBytes)
-				      || response.expectedContentLength < 0
+			      || response.expectedContentLength < 0
 			else { return nil }
 
 			var data = Data()

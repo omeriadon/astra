@@ -13,7 +13,7 @@ nonisolated enum BrowserAIModel: Equatable, Sendable {
 nonisolated struct BrowserAIRequest: Codable, Sendable {
 	let instructions: String
 	let prompt: String
-	let maximumResponseTokens: Int
+	let maximumResponseTokens: Int?
 	var images: [BrowserAIImage]? = nil
 	var reasoningEffort: String? = nil
 	var webSearch: Bool? = nil
@@ -28,7 +28,7 @@ nonisolated struct BrowserAICloudRequest: Encodable, Sendable {
 	let modelID: String
 	let instructions: String
 	let prompt: String
-	let maximumResponseTokens: Int
+	let maximumResponseTokens: Int?
 	let images: [BrowserAIImage]?
 	let webSearch: Bool?
 }
@@ -309,9 +309,7 @@ final class BrowserAI {
 
 	private func validate(_ request: BrowserAIRequest) throws {
 		guard !request.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-		      request.instructions.utf8.count <= 32768,
-
-		      (1 ... 2048).contains(request.maximumResponseTokens)
+		      request.maximumResponseTokens.map({ $0 > 0 }) ?? true
 		else {
 			throw BrowserAIError.invalidRequest
 		}

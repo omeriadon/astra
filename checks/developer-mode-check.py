@@ -20,6 +20,11 @@ assert 'toggleElementSelection' in commands
 
 source = '''
 import Foundation
+enum Defaults {
+    enum Key { case developerModeEnabled }
+    static var developerModeEnabled = false
+    static subscript(_ key: Key) -> Bool { developerModeEnabled }
+}
 struct Controller {
     var url: URL?
 }
@@ -36,6 +41,9 @@ for address in ["https://example.com", "https://localhost.example.com", "https:/
     assert(!Tab(currentURL: URL(string: address)).isDeveloperMode, address)
 }
 assert(!Tab().isDeveloperMode)
+Defaults.developerModeEnabled = true
+assert(Tab(currentURL: URL(string: "https://example.com")).isDeveloperMode)
+Defaults.developerModeEnabled = false
 assert(!Tab(internalPage: true, currentURL: URL(string: "http://localhost")).isDeveloperMode)
 assert(!Tab(activeController: Controller(url: URL(string: "https://example.com")), currentURL: URL(string: "http://localhost")).isDeveloperMode)
 assert(Tab(activeController: Controller(url: URL(string: "http://localhost")), currentURL: URL(string: "https://example.com")).isDeveloperMode)

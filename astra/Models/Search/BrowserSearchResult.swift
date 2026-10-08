@@ -57,6 +57,20 @@ struct BrowserSearchResult: Identifiable {
 			return true
 		}
 	}
+
+	static func enforceExactSearchSecond(_ results: [Self], candidate: Self, destination: String) -> [Self] {
+		var results = results
+		guard let index = results.firstIndex(where: {
+			$0.id == candidate.id || ($0.kind == .typed && $0.destination == destination)
+		}) else {
+			results.insert(candidate, at: min(1, results.count))
+			return results
+		}
+		guard index > 1 else { return results }
+		let exactSearch = results.remove(at: index)
+		results.insert(exactSearch, at: 1)
+		return results
+	}
 }
 
 struct BrowserSearchEngineDiscovery: Equatable {

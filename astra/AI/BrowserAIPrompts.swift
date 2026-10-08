@@ -32,7 +32,7 @@ nonisolated enum BrowserAIPrompts {
 	"""
 
 	static let tabGroups = """
-	Group the supplied Today tabs into a few coherent topic sections.
+	Group the supplied Today tabs into a few coherent topic sections. Use concise section names of one to four words, with no more than 30 characters.
 	Return only a JSON array of objects with name (one to four words) and tabIDs (supplied UUID strings), for example [{"name":"Research","tabIDs":["supplied UUID"]}].
 	Complete each section object before starting the next. Never substitute tab titles, indices, or URLs for UUIDs.
 	Assign every tab exactly once. Preserve useful distinctions; do not create one section per tab.

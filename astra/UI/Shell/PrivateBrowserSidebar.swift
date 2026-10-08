@@ -24,6 +24,7 @@ struct PrivateBrowserSidebar: View {
 			.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
 			.padding(.bottom, 48)
 		}
+		.frame(maxWidth: .infinity, maxHeight: .infinity)
 		.accessibilityIdentifier("private-sidebar")
 	}
 }

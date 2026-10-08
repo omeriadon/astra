@@ -1,3 +1,4 @@
+import Defaults
 import SwiftUI
 
 struct BrowserFavouriteTile: View {
@@ -6,6 +7,7 @@ struct BrowserFavouriteTile: View {
 	var isSelected = false
 	var onSelectTab: ((UUID) -> Void)?
 	var navigationNamespace: Namespace.ID?
+	@Default(.developerModeEnabled) private var developerModeEnabled
 	@Namespace private var tileTransitions
 	#if os(macOS)
 		@State private var tabDrag = BrowserTabDragCoordinator.shared
@@ -36,50 +38,50 @@ struct BrowserFavouriteTile: View {
 					}
 			)
 		#endif
-		.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? tileTransitions)
-		.background {
-			RoundedRectangle(cornerRadius: 10)
-				.fill(isSelected ? .white.opacity(0.3) : .white.opacity(0.12))
-		}
-		.overlay {
-			if isSelected, tab.isDeveloperMode {
+			.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? tileTransitions)
+			.background {
 				RoundedRectangle(cornerRadius: 10)
-					.strokeBorder(Color(red: 0.55, green: 0.4, blue: 0), lineWidth: 2)
-					.overlay {
-						RoundedRectangle(cornerRadius: 10)
-							.strokeBorder(.yellow, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
-					}
-					.allowsHitTesting(false)
-					.accessibilityHidden(true)
+					.fill(isSelected ? .white.opacity(0.3) : .white.opacity(0.12))
 			}
-		}
+			.overlay {
+				if isSelected, tab.internalPage == nil, developerModeEnabled || tab.isDeveloperMode {
+					RoundedRectangle(cornerRadius: 10)
+						.strokeBorder(Color(red: 0.55, green: 0.4, blue: 0), lineWidth: 2)
+						.overlay {
+							RoundedRectangle(cornerRadius: 10)
+								.strokeBorder(.yellow, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+						}
+						.allowsHitTesting(false)
+						.accessibilityHidden(true)
+				}
+			}
 		#if os(macOS)
-		.background {
-			if tabDrag.activeTabID != nil {
-				BrowserDropZone(
-					browser: browser,
-					area: .favourite,
-					spaceID: nil,
-					beforeTabID: tab.id
-				)
+			.background {
+				if tabDrag.activeTabID != nil {
+					BrowserDropZone(
+						browser: browser,
+						area: .favourite,
+						spaceID: nil,
+						beforeTabID: tab.id
+					)
+				}
 			}
-		}
-		.highPriorityGesture(
-			DragGesture(minimumDistance: 8)
-				.onChanged { _ in
-					if tabDrag.activeTabID != tab.id {
-						browser.flushPersistence()
-						tabDrag.begin(tab.id, from: browser)
+			.highPriorityGesture(
+				DragGesture(minimumDistance: 8)
+					.onChanged { _ in
+						if tabDrag.activeTabID != tab.id {
+							browser.flushPersistence()
+							tabDrag.begin(tab.id, from: browser)
+						}
+						tabDrag.update()
 					}
-					tabDrag.update()
-				}
-				.onEnded { _ in
-					tabDrag.drop()
-				}
-		)
+					.onEnded { _ in
+						tabDrag.drop()
+					}
+			)
 		#endif
 		#if os(macOS)
-		.onHover { hovering in
+			.onHover { hovering in
 			guard onSelectTab == nil else { return }
 			isHovered = hovering
 			if !hovering {
@@ -139,23 +141,22 @@ struct BrowserFavouriteTile: View {
 }
 
 #if os(macOS)
-private struct FavouriteHoverGeometryModifier: ViewModifier {
-	let enabled: Bool
-	let onFrame: (CGRect) -> Void
+	private struct FavouriteHoverGeometryModifier: ViewModifier {
+		let enabled: Bool
+		let onFrame: (CGRect) -> Void
 
-	@ViewBuilder
-	func body(content: Content) -> some View {
-		if enabled {
-			content.onGeometryChange(for: CGRect.self) { proxy in
-				proxy.frame(in: .global)
-			} action: { frame in
-				onFrame(frame)
+		func body(content: Content) -> some View {
+			if enabled {
+				content.onGeometryChange(for: CGRect.self) { proxy in
+					proxy.frame(in: .global)
+				} action: { frame in
+					onFrame(frame)
+				}
+			} else {
+				content
 			}
-		} else {
-			content
 		}
 	}
-}
 #endif
 
 private struct FavouriteIconView: View {

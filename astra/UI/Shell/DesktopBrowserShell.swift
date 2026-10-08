@@ -1,5 +1,4 @@
 import Defaults
-import Haze
 import SwiftUI
 import WebKit
 #if os(macOS)
@@ -412,7 +411,7 @@ private struct ShellSidebarColumn: View {
 	@Binding var showsDownloads: Bool
 	let downloads: BrowserDownloadManager
 	let onSwipeProgress: (UUID?, Double) -> Void
-	@State private var bottomBarHeight: CGFloat = 38
+	@State private var bottomBarHeight: CGFloat = 33
 
 	var body: some View {
 		ZStack(alignment: .topLeading) {
@@ -432,13 +431,11 @@ private struct ShellSidebarColumn: View {
 	}
 
 	private var sidebarContent: some View {
-		let bottomFadeHeight = max(bottomBarHeight, 38)
-
-		return ZStack(alignment: .top) {
+		ZStack(alignment: .top) {
 			Group {
 				if browser.isPrivate {
 					PrivateBrowserSidebar(browser: browser)
-						.sidebarScrollOpacityFade(top: 38, bottom: bottomFadeHeight)
+						.sidebarScrollContentMargins()
 				} else {
 					BrowserSpacePager(
 						spaces: browser.workspace.spaces,
@@ -456,8 +453,8 @@ private struct ShellSidebarColumn: View {
 							isActiveSpace: isActiveSpace,
 							favouriteTabIDs: favouriteTabIDs
 						)
-							.sidebarScrollOpacityFade(top: 38, bottom: bottomFadeHeight)
-							.foregroundStyle(space.theme.foregroundColor)
+						.foregroundStyle(space.theme.foregroundColor)
+						.sidebarScrollContentMargins()
 					}
 					.accessibilityIdentifier("sidebar-space-pages")
 				}
@@ -467,26 +464,33 @@ private struct ShellSidebarColumn: View {
 				content.offset(x: showsDownloads ? geometry.size.width : 0)
 			}
 
-			DownloadsSidebarView(manager: downloads, theme: theme)
-				.sidebarScrollOpacityFade(top: 38, bottom: bottomFadeHeight)
-				.foregroundStyle(theme.foregroundColor)
-				.visualEffect { content, geometry in
-					content.offset(x: showsDownloads ? 0 : -geometry.size.width)
-				}
-		}
-		.safeAreaBar(edge: .bottom, spacing: 0) {
-			sidebarBottomBar
-		}
-		.onPreferenceChange(SidebarBottomBarHeightPreferenceKey.self) { height in
-			guard height > 0, abs(height - bottomBarHeight) > 0.5 else { return }
-			bottomBarHeight = height
+			DownloadsSidebarView(
+				manager: downloads,
+				theme: theme
+			)
+			.foregroundStyle(theme.foregroundColor)
+			.sidebarScrollContentMargins()
+			.visualEffect { content, geometry in
+				content.offset(x: showsDownloads ? 0 : -geometry.size.width)
+			}
 		}
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
-		.safeAreaPadding(.top, BrowserChromeMetrics.topBarRegionHeight)
+		.ignoresSafeArea(.container, edges: .vertical)
+		.sidebarScrollOpacityFade(top: 38, bottom: bottomBarHeight + 38)
+		.overlay(alignment: .bottom) {
+			if sidebarShown {
+				sidebarBottomBar
+					.fixedSize(horizontal: false, vertical: true)
+			}
+		}
 	}
 
 	private var sidebarBottomBar: some View {
 		VStack(spacing: 8) {
+			BrowserMediaActivityView(browser: browser)
+				.padding(.horizontal, 8)
+				.foregroundStyle(theme.foregroundColor)
+
 			ShellDownloadsBarView(
 				browser: browser,
 				theme: theme,
@@ -495,23 +499,10 @@ private struct ShellSidebarColumn: View {
 				onSwipeProgress: onSwipeProgress
 			)
 			.foregroundStyle(theme.foregroundColor)
-		}
-		.background {
-			GeometryReader { geometry in
-				Color.clear.preference(
-					key: SidebarBottomBarHeightPreferenceKey.self,
-					value: geometry.size.height
-				)
+			.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+				bottomBarHeight = height
 			}
 		}
-	}
-}
-
-private struct SidebarBottomBarHeightPreferenceKey: PreferenceKey {
-	static var defaultValue: CGFloat = 38
-
-	static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-		value = max(value, nextValue())
 	}
 }
 
@@ -545,6 +536,17 @@ private struct ShellContentColumn: View {
 			themeBlend: themeBlend,
 			reservesWindowControls: !sidebarShown && !isFullScreen
 		)
+		#if os(macOS)
+		.onDrop(of: [UTType.url, UTType.plainText], isTargeted: $isAddressDropTargeted, perform: acceptAddressDrop)
+		.overlay {
+			if isAddressDropTargeted {
+				RoundedRectangle(cornerRadius: 10)
+					.stroke(theme.foregroundColor.opacity(0.7), lineWidth: 2)
+					.padding(.horizontal, 10)
+					.allowsHitTesting(false)
+			}
+		}
+		#endif
 	}
 
 	private var topBarHeight: CGFloat {
@@ -564,18 +566,6 @@ private struct ShellContentColumn: View {
 				}
 				.allowsHitTesting(topBarHeight > 0)
 				.accessibilityHidden(topBarHeight == 0)
-			#if os(macOS)
-				.onDrop(of: [UTType.url, UTType.plainText], isTargeted: $isAddressDropTargeted, perform: acceptAddressDrop)
-				.overlay {
-					if isAddressDropTargeted {
-						RoundedRectangle(cornerRadius: 10)
-							.stroke(theme.foregroundColor.opacity(0.7), lineWidth: 2)
-							.padding(.horizontal, 10)
-							.allowsHitTesting(false)
-					}
-				}
-			#endif
-
 			VStack(spacing: 0) {
 				Spacer(minLength: 0)
 					.frame(height: topBarHeight)
@@ -584,11 +574,6 @@ private struct ShellContentColumn: View {
 					.padding([.bottom, .horizontal], hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
-		}
-		.overlay(alignment: .bottomTrailing) {
-			BrowserMediaActivityView(browser: browser)
-				.frame(maxWidth: 360)
-				.padding(12)
 		}
 		.animation(nil, value: browser.selectedTabID)
 		.onContinuousHover { phase in

@@ -17,6 +17,7 @@ final class BrowserWebSession {
 	let permissions: BrowserSitePermissions
 	let sitePreferences: BrowserSitePreferences
 	let contentBlocking: BrowserContentBlocking
+	let usageLimits: BrowserUsageLimitsStore
 	var persistenceWriteTask: Task<Void, Never>?
 	private var cleanupTask: Task<Void, Never>?
 
@@ -37,6 +38,7 @@ final class BrowserWebSession {
 		permissions = BrowserSitePermissions(isPrivate: isPrivate)
 		sitePreferences = isPrivate ? BrowserSitePreferences(isPrivate: true) : .shared
 		contentBlocking = isPrivate ? BrowserContentBlocking(isPrivate: true) : .shared
+		usageLimits = BrowserUsageLimitsStore(dataStore: dataStore)
 		sitePreferences.didUpdateContentBlockingException = { [weak self] origin in
 			self?.refreshContentBlocking(for: origin)
 		}

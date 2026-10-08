@@ -5,7 +5,7 @@ nonisolated struct BrowserDownloadDragCopy: Sendable {
 	let renewedBookmark: Data?
 }
 
-nonisolated final class BrowserDownloadDragFile: @unchecked Sendable {
+final nonisolated class BrowserDownloadDragFile: @unchecked Sendable {
 	private let lock = NSLock()
 	private var directories: [URL] = []
 

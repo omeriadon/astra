@@ -19,6 +19,8 @@ enum BrowserSettingsSchema {
 		"miniAstraWindowAnimation",
 		"miniAstraShortcutEnabled",
 		"webInspectorEnabled",
+		"developerModeEnabled",
+		"usageLimitsProvider",
 		"aiFeaturesEnabled",
 		"aiBrowserActionPermissions",
 		"aiBookmarkTitles",
@@ -94,6 +96,8 @@ enum BrowserSettingsSchema {
 		Defaults[.miniAstraWindowAnimation] = true
 		Defaults[.miniAstraShortcutEnabled] = false
 		Defaults[.webInspectorEnabled] = false
+		Defaults[.developerModeEnabled] = false
+		Defaults[.usageLimitsProvider] = .none
 		Defaults[.downloadsFolderBookmark] = ""
 	}
 }

@@ -42,10 +42,12 @@ feature owns decisions about what data may leave the device. Cloud features
 must be deliberate user actions with clear data disclosure; do not silently
 send private page content or automatically fall back from on-device to cloud.
 
-OpenRouter prompts have a 16 MiB UTF-8 transport ceiling, with instructions limited
-to 32 KiB and a 20 MiB encoded request-body ceiling. There is no app token cap for chat.
-Provider context windows still apply. Output limits are
-1–2,048 tokens. Handle `BrowserAIError`, provider errors, and task cancellation
+OpenRouter prompts have a 16 MiB UTF-8 server ceiling and a 20 MiB client encoded
+request-body ceiling. The client no longer caps instruction size or positive
+response budgets. Today grouping leaves its response budget unset; other features
+retain their requested budgets. The matching server update must be deployed to
+accept omitted response budgets and remove its instruction and output ceilings.
+Provider context windows still apply. Handle `BrowserAIError`, provider errors, and task cancellation
 at the feature's caller. Treat output as untrusted data; validation belongs in
 `output(from:)`, before applying any change.
 

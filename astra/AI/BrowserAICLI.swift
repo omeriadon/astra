@@ -59,7 +59,9 @@ enum BrowserAICLI {
 		) async throws -> String {
 			let images = request.images ?? []
 			let files = request.files ?? []
-			let instructions = request.instructions + "\nKeep the response within \(request.maximumResponseTokens) tokens."
+			let instructions = request.maximumResponseTokens.map {
+				request.instructions + "\nKeep the response within \($0) tokens."
+			} ?? request.instructions
 			let command: BrowserAICommand
 			let codex: Bool
 			switch model {

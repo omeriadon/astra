@@ -108,18 +108,6 @@ struct BrowserAddressField: View {
 					}
 				}
 			)
-			PasteButton(payloadType: String.self) { values in
-				guard let value = values.first,
-				      let destination = BrowserSearchMatching.pastedHTTPURL(value)
-				else {
-					return
-				}
-				addressText = destination.absoluteString
-				isFocused = true
-			}
-			.labelStyle(.iconOnly)
-			.accessibilityLabel("Paste address")
-			.accessibilityIdentifier("paste-address")
 			if let template = availableSearchEngineTemplate {
 				Button {
 					browser.discoverSearchEngineFromAddressBar(template: template)

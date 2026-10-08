@@ -146,7 +146,11 @@ final class BrowserTab: Identifiable {
 	}
 
 	var isDeveloperMode: Bool {
-		guard internalPage == nil, let host = (activeController?.url ?? currentURL)?.host else { return false }
+		guard internalPage == nil else { return false }
+		if Defaults[.developerModeEnabled] {
+			return true
+		}
+		guard let host = (activeController?.url ?? currentURL)?.host else { return false }
 		return host == "localhost"
 			|| host.hasSuffix(".localhost")
 			|| host == "127.0.0.1"

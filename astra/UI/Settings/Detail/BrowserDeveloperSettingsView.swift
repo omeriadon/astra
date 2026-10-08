@@ -3,6 +3,8 @@ import SwiftUI
 
 struct BrowserDeveloperSettingsView: View {
 	@Default(.browserSearchConfiguration) private var searchConfigurationValue
+	@Default(.developerModeEnabled) private var developerModeEnabled
+	@Default(.usageLimitsProvider) private var usageLimitsProvider
 	#if os(macOS)
 		@Default(.webInspectorEnabled) private var webInspectorEnabled
 	#endif
@@ -34,6 +36,22 @@ struct BrowserDeveloperSettingsView: View {
 					.accessibilityLabel("GitHub repository shorthand")
 					.accessibilityIdentifier("github-repository-shorthand-enabled")
 				Text("Open owner/repository directly on GitHub instead of searching for it. Suggestions show the GitHub icon and destination URL.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+			}
+			Section("Developer Mode") {
+				Toggle("Enable Developer Mode", isOn: $developerModeEnabled)
+					.accessibilityLabel("Enable Developer Mode")
+					.accessibilityIdentifier("developer-mode-enabled")
+				Picker("Usage Limits", selection: $usageLimitsProvider) {
+					ForEach(BrowserUsageLimitsProvider.allCases, id: \.self) { provider in
+						Text(provider.title).tag(provider)
+					}
+				}
+				.pickerStyle(.menu)
+				.accessibilityLabel("Usage limits provider")
+				.accessibilityIdentifier("usage-limits-provider")
+				Text("Localhost tabs enter developer mode automatically. Usage limits use your account signed in to ChatGPT or Claude in Astra and update every two minutes.")
 					.font(.caption)
 					.foregroundStyle(.secondary)
 			}

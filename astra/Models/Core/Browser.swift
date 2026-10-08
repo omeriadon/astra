@@ -24,6 +24,7 @@ final class Browser {
 			tabLookup = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
 		}
 	}
+
 	@ObservationIgnored
 	private var tabLookup: [UUID: BrowserTab] = [:]
 	private(set) var selectedTabID: UUID
@@ -80,6 +81,7 @@ final class Browser {
 	var showsQuickSearch = false
 	var quickSearchFocusRequest = 0
 	var newTabSearchSelection: String?
+	var newTabClipboardURL: URL?
 	var newTabSearchGeneration = 0
 	var addressSearchText = "" {
 		didSet {
@@ -277,15 +279,54 @@ final class Browser {
 		schedulePersistence()
 	}
 
-	func applyTodayTabGroups(_ groups: [BrowserTabGroupingFeature.Group], in spaceID: UUID, expectedIDs: [UUID]) {
-		guard !isPrivate, let index = workspace.spaces.firstIndex(where: { $0.id == spaceID }) else { return }
+	@discardableResult
+	func applyTodayTabGroups(_ groups: [BrowserTabGroupingFeature.Group], in spaceID: UUID, expectedIDs: [UUID]) -> Bool {
+		guard !isPrivate, let index = workspace.spaces.firstIndex(where: { $0.id == spaceID }) else { return false }
 		let space = workspace.spaces[index]
 		let normalIDs = space.tabIDs.filter { !space.pinnedTabIDs.contains($0) }
-		guard normalIDs == expectedIDs else { return }
+		guard normalIDs == expectedIDs else { return false }
 		workspace.spaces[index].todayTabGroups = groups
-		workspace.spaces[index].modifiedAt = .now
-		workspace.modifiedAt = .now
+		let mutationDate = nextWorkspaceMutationDate()
+		workspace.spaces[index].modifiedAt = mutationDate
+		workspace.modifiedAt = mutationDate
 		persist()
+		return true
+	}
+
+	nonisolated static func filteredTodayTabGroups(_ groups: [BrowserTabGroupingFeature.Group], normalIDs: [UUID]) -> [BrowserTabGroupingFeature.Group] {
+		let normalIDSet = Set(normalIDs)
+		return groups.compactMap { group in
+			let ids = group.tabIDs.filter { normalIDSet.contains($0) }
+			return ids.isEmpty ? nil : BrowserTabGroupingFeature.Group(name: group.name, tabIDs: ids)
+		}
+	}
+
+	@discardableResult
+	func pinTodayTabGroupAsFolder(_ groupID: String, in spaceID: UUID) -> Bool {
+		guard !isPrivate,
+		      let index = workspace.spaces.firstIndex(where: { $0.id == spaceID }),
+		      let groupIndex = workspace.spaces[index].todayTabGroups.firstIndex(where: { $0.id == groupID })
+		else { return false }
+		let space = workspace.spaces[index]
+		let pinnedIDs = Set(space.pinnedTabIDs)
+		let tabIDs = space.todayTabGroups[groupIndex].tabIDs.filter { space.tabIDs.contains($0) && !pinnedIDs.contains($0) }
+		guard !tabIDs.isEmpty else { return false }
+
+		let mutationDate = nextWorkspaceMutationDate()
+		let group = space.todayTabGroups[groupIndex]
+		workspace.spaces[index].pinnedTabIDs.append(contentsOf: tabIDs)
+		workspace.spaces[index].pinnedFolders.append(
+			PinnedTabFolder(name: group.name, tabIDs: tabIDs, modifiedAt: mutationDate.addingTimeInterval(0.001))
+		)
+		workspace.spaces[index].todayTabGroups = space.todayTabGroups.enumerated().compactMap { currentIndex, currentGroup in
+			let remainingIDs = currentGroup.tabIDs.filter { !tabIDs.contains($0) }
+			guard currentIndex != groupIndex || !remainingIDs.isEmpty else { return nil }
+			return BrowserTabGroupingFeature.Group(name: currentGroup.name, tabIDs: remainingIDs)
+		}
+		workspace.spaces[index].modifiedAt = mutationDate.addingTimeInterval(0.001)
+		workspace.modifiedAt = mutationDate.addingTimeInterval(0.001)
+		schedulePersistence()
+		return true
 	}
 
 	func renameSelectedSpace(_ name: String) {
@@ -776,20 +817,71 @@ final class Browser {
 	}
 
 	func requestNewTab() {
+		let clipboardURL = NSPasteboard.general.string(forType: .string).flatMap(BrowserSearchMatching.pastedHTTPURL)
 		if Defaults[.newTabStyle] == .overlay, !isMini {
+			newTabClipboardURL = clipboardURL
 			newTabSearchText = ""
 			newTabSearchSelection = nil
 			showsQuickSearch = true
 			quickSearchFocusRequest += 1
 		} else {
 			addTab()
+			newTabClipboardURL = clipboardURL
 		}
+	}
+
+	func openHistoryEntry(from controller: BrowserController, offset: Int) {
+		guard offset == -1 || offset == 1,
+		      let source = selectedTab,
+		      source.activeController === controller,
+		      let webView = controller.webViewIfLoaded,
+		      let url = webView.backForwardList.item(at: offset)?.url
+		else { return }
+
+		let tab = addTab(inBackground: true)
+		tab.controller?.navigate(URLRequest(url: url))
+		tab.controller?.prepareWebView()
+
+		if isPrivate {
+			if let tabIndex = tabs.firstIndex(where: { $0.id == tab.id }),
+			   let sourceIndex = tabs.firstIndex(where: { $0.id == source.id })
+			{
+				tabs.remove(at: tabIndex)
+				tabs.insert(tab, at: sourceIndex + 1)
+			}
+			reconcileWorkspace()
+			return
+		}
+
+		let space = workspace.spaces.first { $0.tabIDs.contains(source.id) } ?? selectedSpace
+		let targetID: UUID? = if workspace.favouriteTabIDs.contains(source.id) || space.pinnedTabIDs.contains(source.id) {
+			space.tabIDs.first { !space.pinnedTabIDs.contains($0) && $0 != tab.id }
+		} else {
+			space.tabIDs.drop(while: { $0 != source.id }).dropFirst().first
+		}
+		moveTab(tab.id, to: .normal, in: space.id, before: targetID)
+
+		if let spaceIndex = workspace.spaces.firstIndex(where: { $0.id == space.id }),
+		   let groupIndex = workspace.spaces[spaceIndex].todayTabGroups.firstIndex(where: { $0.tabIDs.contains(source.id) }),
+		   let groupTabIndex = workspace.spaces[spaceIndex].todayTabGroups[groupIndex].tabIDs.firstIndex(of: source.id)
+		{
+			let group = workspace.spaces[spaceIndex].todayTabGroups[groupIndex]
+			var tabIDs = group.tabIDs
+			tabIDs.insert(tab.id, at: groupTabIndex + 1)
+			workspace.spaces[spaceIndex].todayTabGroups[groupIndex] = BrowserTabGroupingFeature.Group(
+				name: group.name,
+				tabIDs: tabIDs
+			)
+		}
+		markWorkspaceStructureChanged()
+		schedulePersistence()
 	}
 
 	func dismissQuickSearch() {
 		showsQuickSearch = false
 		newTabSearchText = ""
 		newTabSearchSelection = nil
+		newTabClipboardURL = nil
 	}
 
 	@discardableResult
@@ -981,6 +1073,7 @@ final class Browser {
 		newTabSearchText = ""
 		newTabSearchSelection = nil
 		newTabGoogleSuggestions = []
+		newTabClipboardURL = nil
 		selectedTabID = id
 
 		let selectionDate = nextWorkspaceMutationDate()

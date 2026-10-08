@@ -22,6 +22,49 @@ enum AddressIntelligenceCheck {
 		precondition(ranked.map(\.id) == ["bookmark-one", "history-one"])
 		precondition(BrowserSearchResult.selected(in: ranked, id: "history-one", automaticallySelectFirst: true)?.id == "history-one")
 		precondition(BrowserSearchResult.selected(in: ranked, id: nil, automaticallySelectFirst: false) == nil)
+		let exactSearch = BrowserSearchResult(
+			id: "exact-search", kind: .typed, title: "swift", detail: "Search Google",
+			symbol: "magnifyingglass", score: 0.79, destination: "https://google.example/?q=swift", perform: {}
+		)
+		let strongerMatch = BrowserSearchResult(
+			id: "history-two", kind: .history, title: "swift", detail: "History",
+			symbol: "clock", score: 1.0, destination: "https://history.example/swift", perform: {}
+		)
+		let guaranteedSearch = BrowserSearchResult.enforceExactSearchSecond(
+			[strongerMatch, bookmark, history], candidate: exactSearch, destination: exactSearch.destination!
+		)
+		precondition(guaranteedSearch.map(\.id).prefix(2).last == exactSearch.id)
+		precondition(BrowserSearchResult.enforceExactSearchSecond(
+			[exactSearch, strongerMatch], candidate: exactSearch, destination: exactSearch.destination!
+		).first?.id == exactSearch.id)
+
+		precondition(BrowserSearchResult.enforceExactSearchSecond(
+			[], candidate: exactSearch, destination: exactSearch.destination!
+		).map(\.id) == [exactSearch.id])
+		precondition(BrowserSearchResult.enforceExactSearchSecond(
+			[strongerMatch, exactSearch, bookmark], candidate: exactSearch, destination: exactSearch.destination!
+		).map(\.id) == [strongerMatch.id, exactSearch.id, bookmark.id])
+		precondition(BrowserSearchResult.enforceExactSearchSecond(
+			[strongerMatch, bookmark, history, exactSearch], candidate: exactSearch, destination: exactSearch.destination!
+		).map(\.id) == [strongerMatch.id, exactSearch.id, bookmark.id, history.id])
+		let typedSearch = BrowserSearchResult(
+			id: "typed", kind: .typed, title: "swift", detail: "Search Google",
+			symbol: "magnifyingglass", score: 0.8, destination: exactSearch.destination, perform: {}
+		)
+		precondition(BrowserSearchResult.enforceExactSearchSecond(
+			[strongerMatch, bookmark, typedSearch], candidate: exactSearch, destination: exactSearch.destination!
+		).map(\.id) == [strongerMatch.id, typedSearch.id, bookmark.id])
+		let remoteResults = (0 ..< 4).map { index in
+			BrowserSearchResult(
+				id: "remote-\(index)", kind: .search, title: "swift \(index)", detail: "Search Google",
+				symbol: "magnifyingglass", score: 0.79 - Double(index) * 0.015,
+				destination: "https://google.example/?q=swift\(index)", perform: {}
+			)
+		}
+		let withExactSearch = BrowserSearchResult.enforceExactSearchSecond(
+			BrowserSearchResult.ranked(remoteResults), candidate: exactSearch, destination: exactSearch.destination!
+		)
+		precondition(withExactSearch.filter { $0.kind == .search }.map(\.id) == remoteResults.map(\.id))
 
 		let request = BrowserSearchSuggestionsRequest(
 			query: "example", generation: 1, scope: "address:one", provider: .google, isPrivate: false,

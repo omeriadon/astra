@@ -1,15 +1,19 @@
 import SwiftUI
+#if os(macOS)
+	import AppKit
+#endif
 
 struct BrowserNavigationControls: View {
 	let controller: BrowserController
+	let browser: Browser
 
 	var body: some View {
 		HStack(spacing: 6) {
 			#if os(macOS)
 				BrowserSiteInformationButton(controller: controller)
 			#endif
-			NavigationBackButton(controller: controller)
-			NavigationForwardButton(controller: controller)
+			NavigationBackButton(controller: controller, browser: browser)
+			NavigationForwardButton(controller: controller, browser: browser)
 			NavigationReloadButton(controller: controller)
 			BrowserZoomControls(controller: controller)
 			if controller.isReaderAvailable || controller.readerHTML != nil {
@@ -90,10 +94,19 @@ private struct NavigationIconLabel: View {
 
 private struct NavigationBackButton: View {
 	let controller: BrowserController
+	let browser: Browser
 
 	var body: some View {
 		Button {
-			controller.goBack()
+			#if os(macOS)
+				if NSApp.currentEvent?.modifierFlags.contains(.command) == true {
+					browser.openHistoryEntry(from: controller, offset: -1)
+				} else {
+					controller.goBack()
+				}
+			#else
+				controller.goBack()
+			#endif
 		} label: {
 			NavigationIconLabel(
 				title: "Back",
@@ -117,10 +130,19 @@ private struct NavigationBackButton: View {
 
 private struct NavigationForwardButton: View {
 	let controller: BrowserController
+	let browser: Browser
 
 	var body: some View {
 		Button {
-			controller.goForward()
+			#if os(macOS)
+				if NSApp.currentEvent?.modifierFlags.contains(.command) == true {
+					browser.openHistoryEntry(from: controller, offset: 1)
+				} else {
+					controller.goForward()
+				}
+			#else
+				controller.goForward()
+			#endif
 		} label: {
 			NavigationIconLabel(
 				title: "Forward",

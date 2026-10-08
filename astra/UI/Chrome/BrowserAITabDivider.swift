@@ -10,6 +10,7 @@ struct BrowserAITabDivider: View {
 	@State private var hovered = false
 	@Binding var action: String?
 	@Binding var error: String?
+	let canUndoGrouping: Bool
 	@Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
 	var body: some View {
@@ -18,13 +19,17 @@ struct BrowserAITabDivider: View {
 				Rectangle()
 					.fill(.secondary.opacity(0.3))
 					.frame(height: 1)
-				if allFeatures, !browser.isPrivate, hovered || voiceOver || action != nil {
-					if tabs.count > 6, groupingEnabled {
+				if canUndoGrouping || (allFeatures && !browser.isPrivate && (hovered || voiceOver || action != nil)) {
+					if canUndoGrouping {
+						Button("Undo Grouping", systemImage: "arrow.uturn.backward") { action = "undo-groups" }
+							.accessibilityIdentifier("ai-undo-today-tab-groups")
+							.help("Undo Today tab grouping")
+					} else if tabs.count > 6, groupingEnabled {
 						Button("Tidy Today Tabs", systemImage: "rectangle.3.group") { action = "groups" }
 							.accessibilityIdentifier("ai-tidy-today-tabs")
 							.help("Group Today tabs by topic")
 					}
-					if !tabs.isEmpty, titlesEnabled {
+					if allFeatures, !browser.isPrivate, !tabs.isEmpty, titlesEnabled {
 						Button("Clean Tab Titles", systemImage: "text.badge.checkmark") { action = "titles" }
 							.accessibilityIdentifier("ai-clean-tab-titles")
 							.help("Remove clutter from Today tab titles")

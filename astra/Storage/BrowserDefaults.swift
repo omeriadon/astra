@@ -6,6 +6,7 @@ extension PeekLevel: Defaults.Serializable {}
 extension BrowserNewTabStyle: Defaults.Serializable {}
 extension BrowserTheme: Defaults.Serializable {}
 extension BrowserReaderAppearance: Defaults.Serializable {}
+extension BrowserUsageLimitsProvider: Defaults.Serializable {}
 
 enum BrowserStartupBehavior: String, CaseIterable {
 	case restore
@@ -31,6 +32,8 @@ extension Defaults.Keys {
 	static let miniAstraWindowAnimation = Key<Bool>("miniAstraWindowAnimation", default: true)
 	static let miniAstraShortcutEnabled = Key<Bool>("miniAstraShortcutEnabled", default: false)
 	static let webInspectorEnabled = Key<Bool>("webInspectorEnabled", default: false)
+	static let developerModeEnabled = Key<Bool>("developerModeEnabled", default: false)
+	static let usageLimitsProvider = Key<BrowserUsageLimitsProvider>("usageLimitsProvider", default: .none)
 
 	static let sidebarShown = Key<Bool>(
 		"sidebarShown",

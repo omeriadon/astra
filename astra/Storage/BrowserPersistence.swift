@@ -149,7 +149,7 @@ nonisolated enum BrowserPersistenceError: LocalizedError, Equatable {
 	}
 }
 
-nonisolated final class BrowserPersistence: @unchecked Sendable {
+final nonisolated class BrowserPersistence: @unchecked Sendable {
 	private let directory: URL
 	private var readingArchiveDirectory: URL {
 		directory.appendingPathComponent("reading-list", isDirectory: true)

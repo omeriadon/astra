@@ -1316,6 +1316,10 @@ final class BrowserController: NSObject, Identifiable {
 			configuration.allowsPictureInPictureMediaPlayback = true
 		#endif
 		#if os(macOS)
+			// macOS WebKit defaults PiP playback off and exposes its opt-in only through SPI.
+			if configuration.preferences.responds(to: NSSelectorFromString("_setAllowsPictureInPictureMediaPlayback:")) {
+				configuration.preferences.setValue(true, forKey: "allowsPictureInPictureMediaPlayback")
+			}
 			_ = AstraConfigureWebPushPreferences(configuration.preferences, !session.isPrivate && BrowserWebPushManager.shared.hasNativeSupport)
 		#endif
 		if let suffix = Self.safariUserAgentSuffix() {
@@ -1655,8 +1659,33 @@ final class BrowserController: NSObject, Identifiable {
 			load(failedRequest ?? URLRequest(url: navigationFailure.url))
 			return
 		}
+		reload(usingOrigin: false)
+	}
+
+	private func reload(usingOrigin: Bool) {
+		if !hasCurrentPageDocument {
+			if let pendingRequest {
+				load(pendingRequest)
+				return
+			}
+			if pendingWebArchive != nil || pendingLocalFile != nil || pendingInteractionState != nil {
+				loadPendingRequest()
+				return
+			}
+		}
 		if let createdWebView {
-			createdWebView.reload()
+			if !hasCurrentPageDocument,
+			   let request = currentRequest ?? url.map({ URLRequest(url: $0) }),
+			   createdWebView.url == nil || createdWebView.url?.absoluteString == "about:blank"
+			{
+				load(request)
+				return
+			}
+			awaitsNavigationCommit = true
+			currentNavigation = usingOrigin ? createdWebView.reloadFromOrigin() : createdWebView.reload()
+			if currentNavigation == nil, let request = currentRequest ?? url.map({ URLRequest(url: $0) }) {
+				load(request)
+			}
 		} else if let url {
 			load(URLRequest(url: url))
 		}
@@ -1681,11 +1710,7 @@ final class BrowserController: NSObject, Identifiable {
 			reload()
 			return
 		}
-		if let createdWebView {
-			createdWebView.reloadFromOrigin()
-		} else if let url {
-			load(URLRequest(url: url))
-		}
+		reload(usingOrigin: true)
 	}
 
 	func zoomIn() {
@@ -1865,7 +1890,17 @@ final class BrowserController: NSObject, Identifiable {
 		}
 		pendingRequest = nil
 		webView.customUserAgent = userAgentOverride(for: request.url)
-		currentNavigation = webView.load(request)
+		guard let navigation = webView.load(request) else {
+			currentNavigation = nil
+			awaitsNavigationCommit = false
+			historyManager.cancelVisit()
+			if let requestURL = request.url {
+				navigationFailure = BrowserNavigationFailure(kind: .other, url: requestURL)
+			}
+			navigationDidChange?()
+			return
+		}
+		currentNavigation = navigation
 	}
 
 	private func loadPendingRequest() {
@@ -2517,6 +2552,14 @@ extension BrowserController: WKScriptMessageHandler {
 }
 
 extension BrowserController: WKUIDelegate {
+	#if os(macOS)
+		@objc(_webViewFullscreenMayReturnToInline:)
+		func webViewFullscreenMayReturnToInline(_ webView: WKWebView) {
+			guard owns(webView) else { return }
+			returnToPictureInPictureSource()
+		}
+	#endif
+
 	#if os(iOS)
 		func webView(
 			_ webView: WKWebView,

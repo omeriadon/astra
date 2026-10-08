@@ -16,8 +16,8 @@ struct BrowserTabRow: View {
 	var tabIndex: Int?
 	var normalCount: Int?
 	var pinned: Bool?
-	var rowSpaceID: UUID? = nil
-	var rowTheme: BrowserTheme? = nil
+	var rowSpaceID: UUID?
+	var rowTheme: BrowserTheme?
 	var onSelectTab: ((UUID) -> Void)?
 	var navigationNamespace: Namespace.ID?
 	@Namespace private var rowTransitions
@@ -33,6 +33,7 @@ struct BrowserTabRow: View {
 		@State private var hoverPreviewStarted = false
 	#endif
 	@State private var renameText = ""
+	@Default(.developerModeEnabled) private var developerModeEnabled
 	@FocusState private var isTitleFocused: Bool
 	#if os(macOS)
 		@State private var tabDrag = BrowserTabDragCoordinator.shared
@@ -85,6 +86,9 @@ struct BrowserTabRow: View {
 				tab: tab,
 				browser: browser,
 				isRenaming: isRenaming,
+				isHovered: isHovered,
+				showsCloseButton: isSelected || onSelectTab != nil || isHovered,
+				closeFadeWidth: onSelectTab != nil ? 64 : (isSelected || isHovered ? 36 : 12),
 				renameText: $renameText,
 				isTitleFocused: $isTitleFocused,
 				onBeginRenaming: beginRenaming,
@@ -92,15 +96,13 @@ struct BrowserTabRow: View {
 				onCancelRenaming: cancelRenaming,
 				onSelectTab: onSelectTab
 			)
-
-			if isSelected || onSelectTab != nil {
-				TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
-					.keyboardShortcut("W", modifiers: .command)
-			} else {
-				TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
-					.opacity(isHovered ? 1 : 0)
-					.allowsHitTesting(isHovered)
-					.accessibilityHidden(!isHovered)
+			.overlay(alignment: .trailing) {
+				if isSelected || onSelectTab != nil {
+					TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
+						.keyboardShortcut("W", modifiers: .command)
+				} else if isHovered {
+					TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
+				}
 			}
 		}
 		.opacity(isOpenElsewhere ? 0.35 : 1)
@@ -125,7 +127,7 @@ struct BrowserTabRow: View {
 			}
 		}
 		.overlay {
-			if isSelected, tab.isDeveloperMode {
+			if isSelected, tab.internalPage == nil, developerModeEnabled || tab.isDeveloperMode {
 				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
 					.strokeBorder(Color(red: 0.55, green: 0.4, blue: 0), lineWidth: 2)
 					.overlay {
@@ -305,7 +307,7 @@ private struct TabIconView: View {
 					}
 			)
 		#endif
-		.accessibilityIdentifier("select-tab-\(tab.id.uuidString)")
+			.accessibilityIdentifier("select-tab-\(tab.id.uuidString)")
 	}
 }
 
@@ -314,6 +316,9 @@ private struct TabTitleView: View {
 	let tab: BrowserTab
 	let browser: Browser
 	let isRenaming: Bool
+	let isHovered: Bool
+	let showsCloseButton: Bool
+	let closeFadeWidth: CGFloat
 	@Binding var renameText: String
 	var isTitleFocused: FocusState<Bool>.Binding
 	let onBeginRenaming: () -> Void
@@ -328,6 +333,7 @@ private struct TabTitleView: View {
 		if isRenaming {
 			TextField("Tab Name", text: $renameText)
 				.textFieldStyle(.plain)
+				.padding(.trailing, showsCloseButton ? closeFadeWidth : 0)
 				.focused(isTitleFocused)
 				.onSubmit(onCommitRenaming)
 				.onKeyPress(.escape) {
@@ -345,15 +351,17 @@ private struct TabTitleView: View {
 				browser.selectTab(tab.id)
 				onSelectTab?(tab.id)
 			} label: {
-				Label {
+				GeometryReader { proxy in
 					Text(verbatim: tab.title)
 						.contentTransition(.opacity)
 						.animation(reduceMotion ? nil : .smooth(duration: 0.2), value: tab.title)
 						.lineLimit(1)
-				} icon: {
-					Image(systemName: tab.internalPage?.symbol ?? "globe")
+						.fixedSize(horizontal: true, vertical: false)
+						.frame(width: proxy.size.width, alignment: .leading)
+						.mask(titleFadeMask(width: proxy.size.width))
+						.frame(height: proxy.size.height, alignment: .leading)
+						.clipped()
 				}
-				.labelStyle(.titleOnly)
 				.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 				.contentShape(Rectangle())
 			}
@@ -371,18 +379,34 @@ private struct TabTitleView: View {
 						}
 				)
 			#endif
-			.simultaneousGesture(
-				TapGesture(count: 2)
-					.onEnded { _ in onBeginRenaming() }
-			)
-			.accessibilityLabel(Text(verbatim: tab.title))
-			.accessibilityActions {
-				if tab.internalPage == nil {
-					Button("Rename", systemImage: "pencil") { onBeginRenaming() }
+				.simultaneousGesture(
+					TapGesture(count: 2)
+						.onEnded { _ in onBeginRenaming() }
+				)
+				.accessibilityLabel(Text(verbatim: tab.title))
+				.accessibilityActions {
+					if tab.internalPage == nil {
+						Button("Rename", systemImage: "pencil") { onBeginRenaming() }
+					}
 				}
-			}
-			.accessibilityIdentifier("tab-title-\(tab.id.uuidString)")
+				.accessibilityIdentifier("tab-title-\(tab.id.uuidString)")
 		}
+	}
+
+	private func titleFadeMask(width: CGFloat) -> some View {
+		let fadeWidth = isHovered ? closeFadeWidth + 28 : closeFadeWidth
+		let fadeStart = max(0, 1 - fadeWidth / max(width, 1))
+		let fadeEnd = isHovered ? max(0, 1 - (onSelectTab == nil ? 20 : 44) / max(width, 1)) : 1
+		return LinearGradient(
+			stops: [
+				.init(color: .white, location: 0),
+				.init(color: .white, location: fadeStart),
+				.init(color: .clear, location: fadeEnd),
+				.init(color: .clear, location: 1),
+			],
+			startPoint: .leading,
+			endPoint: .trailing
+		)
 	}
 }
 
@@ -528,7 +552,6 @@ private struct TabRowContextMenu: View {
 		let enabled: Bool
 		let onFrame: (CGRect) -> Void
 
-		@ViewBuilder
 		func body(content: Content) -> some View {
 			if enabled {
 				content.onGeometryChange(for: CGRect.self) { proxy in
@@ -803,7 +826,7 @@ private struct TabRowContextMenu: View {
 			.frame(maxWidth: .infinity, alignment: .leading)
 		}
 
-		nonisolated private static func formatBytes(_ bytes: UInt64) -> String {
+		private nonisolated static func formatBytes(_ bytes: UInt64) -> String {
 			ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
 		}
 	}
