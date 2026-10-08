@@ -525,6 +525,9 @@ private nonisolated func preferred<Value: Codable & Equatable>(
 	if firstDate != secondDate {
 		return firstDate > secondDate ? first : second
 	}
+	// Most ties are the same entity replicated across browser windows.
+	// Preserve the deterministic byte-level tie breaker for actual conflicts.
+	if first == second { return first }
 	return stableData(first).lexicographicallyPrecedes(stableData(second)) ? second : first
 }
 

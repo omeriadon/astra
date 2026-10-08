@@ -2536,9 +2536,8 @@ final class Browser {
 			selectedTab.wake()
 			configure(selectedTab)
 		}
-		recentlyUsedTabIDs = recentlyUsedTabIDs.filter { id in
-			tabs.contains { $0.id == id }
-		}
+		let liveTabIDs = Set(tabs.map(\.id))
+		recentlyUsedTabIDs = recentlyUsedTabIDs.filter { liveTabIDs.contains($0) }
 		if !recentlyUsedTabIDs.contains(selectedTabID) {
 			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
 		}
@@ -2580,9 +2579,9 @@ final class Browser {
 				warnAboveMilliseconds: 24,
 				metadata: ["window": BrowserLog.id(windowID)])
 		}
-		persistenceTask?.cancel()
-		persistenceTask = nil
-
+		// Never cancel a pending local write just because another window
+		// published an unchanged snapshot. The merge below decides whether
+		// any receiving state actually needs to be applied.
 		let selectedTabBeforeMerge = selectedTabID
 		let selectedTabDateBeforeMerge = selectedTabModifiedAt
 		let selectedSpaceBeforeMerge = workspace.selectedSpaceID
@@ -2618,16 +2617,20 @@ final class Browser {
 		}
 		var merged = localState.merging(incomingState)
 		merged = merged.preservingLocalOnlyData(from: localState)
-		applySyncDocument(merged)
+		let documentChanged = merged != localState
+		if documentChanged {
+			applySyncDocument(merged)
+		}
 		// The merge has finalized the tab collection. A hash lookup avoids
 		// rescanning all open tabs for each closed-history record and MRU entry.
 		let openIDs = Set(tabs.map(\.id))
-		closedHistoryTabs = Dictionary(
+		let mergedClosedHistory = Dictionary(
 			(closedHistoryBeforeMerge + sourceClosedTabs).map { ($0.id, $0) },
 			uniquingKeysWith: { current, incoming in
 				if current.modifiedAt != incoming.modifiedAt {
 					return current.modifiedAt > incoming.modifiedAt ? current : incoming
 				}
+				if current == incoming { return current }
 				let encoder = JSONEncoder()
 				encoder.outputFormatting = [.sortedKeys]
 				let currentData = (try? encoder.encode(current)) ?? Data()
@@ -2644,28 +2647,43 @@ final class Browser {
 					? $0.id.uuidString < $1.id.uuidString
 					: $0.modifiedAt > $1.modifiedAt
 			}
-
-		if tabs.contains(where: { $0.id == selectedTabBeforeMerge }) {
-			selectedTabID = selectedTabBeforeMerge
-			selectedTabModifiedAt = selectedTabDateBeforeMerge
+		let closedHistoryChanged = mergedClosedHistory != closedHistoryTabs
+		if closedHistoryChanged {
+			closedHistoryTabs = mergedClosedHistory
 		}
-		if workspace.spaces.contains(where: { $0.id == selectedSpaceBeforeMerge }) {
-			workspace.selectedSpaceID = selectedSpaceBeforeMerge
-			workspace.selectionModifiedAt = selectionDateBeforeMerge
+		guard documentChanged || closedHistoryChanged else {
+			BrowserLog.trace(.sync, "browser.shared-state.no-op",
+				metadata: ["window": BrowserLog.id(windowID)])
+			return
 		}
-		for index in workspace.spaces.indices {
-			if let selectedID = selectedTabsBySpace[workspace.spaces[index].id] ?? nil,
-			   workspace.spaces[index].tabIDs.contains(selectedID) || workspace.favouriteTabIDs.contains(selectedID)
-			{
-				workspace.spaces[index].selectedTabID = selectedID
+		// Only a changed synchronization document can alter selection and
+		// workspace membership. Closed-history-only changes need durability,
+		// but must not touch the live workspace or extension bridges.
+		if documentChanged {
+			if tabs.contains(where: { $0.id == selectedTabBeforeMerge }) {
+				selectedTabID = selectedTabBeforeMerge
+				selectedTabModifiedAt = selectedTabDateBeforeMerge
 			}
+			if workspace.spaces.contains(where: { $0.id == selectedSpaceBeforeMerge }) {
+				workspace.selectedSpaceID = selectedSpaceBeforeMerge
+				workspace.selectionModifiedAt = selectionDateBeforeMerge
+			}
+			for index in workspace.spaces.indices {
+				if let selectedID = selectedTabsBySpace[workspace.spaces[index].id] ?? nil,
+				   workspace.spaces[index].tabIDs.contains(selectedID) || workspace.favouriteTabIDs.contains(selectedID)
+				{
+					workspace.spaces[index].selectedTabID = selectedID
+				}
+			}
+			recentlyUsedTabIDs = recentlyUsedBeforeMerge.filter { openIDs.contains($0) }
+			if !recentlyUsedTabIDs.contains(selectedTabID) {
+				recentlyUsedTabIDs.insert(selectedTabID, at: 0)
+			}
+			reconcileWorkspace()
+		} else {
+			// No live document changes: persist the updated closed history only.
+			scheduleUserDataPersistence()
 		}
-		recentlyUsedTabIDs = recentlyUsedBeforeMerge.filter { openIDs.contains($0) }
-		if !recentlyUsedTabIDs.contains(selectedTabID) {
-			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
-		}
-		reconcileWorkspace()
-		schedulePersistence()
 	}
 
 	private func markWorkspaceStructureChanged() {
