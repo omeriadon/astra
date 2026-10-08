@@ -104,6 +104,17 @@ jobs:
           python3 scripts/release/validate_artifact.py --self-test
           python3 checks/website-app-bundle-check.py --self-test
 
+      - name: Check library projections and favicon observer lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 6 \
+            astra/Models/Library/Bookmark.swift \
+            checks/bookmark-projection-check.swift \
+            -o "$RUNNER_TEMP/astra-bookmark-projection-check"
+          "$RUNNER_TEMP/astra-bookmark-projection-check"
+          node checks/favicon-observer-check.mjs
+
       - name: Check Debug build
         shell: bash
         run: |
