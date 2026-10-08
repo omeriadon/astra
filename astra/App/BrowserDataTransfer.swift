@@ -27,10 +27,15 @@
 							)
 						}.value
 						guard isCurrent() else { return }
-						let hasDuplicates = document.bookmarks.contains { bookmark in
-							browser.bookmarks.contains { $0.url == bookmark.url }
-						} || document.readingList.contains { item in
-							browser.readingList.contains { $0.url == item.url }
+						// A large import can contain tens of thousands of items.
+						// Build membership indexes once rather than performing
+						// a nested main-thread scan for every imported record.
+						let existingBookmarkURLs = Set(browser.bookmarks.map(\.url))
+						let existingReadingURLs = Set(browser.readingList.map(\.url))
+						let hasDuplicates = document.bookmarks.contains {
+							existingBookmarkURLs.contains($0.url)
+						} || document.readingList.contains {
+							existingReadingURLs.contains($0.url)
 						}
 						var replacingDuplicates = false
 						if hasDuplicates {
