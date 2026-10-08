@@ -17,6 +17,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 	var aiSuggestedNames: [UUID: String] = [:]
 	@ObservationIgnored private var aiRenameTasks: [UUID: Task<Void, Never>] = [:]
+	@ObservationIgnored private var revertRenameTasks: [UUID: Task<Void, Never>] = [:]
 	@ObservationIgnored private var finalizationTasks: [UUID: Task<Void, Never>] = [:]
 	private var downloads: [ObjectIdentifier: WKDownload] = [:]
 	private var observations: [ObjectIdentifier: NSKeyValueObservation] = [:]
@@ -814,10 +815,11 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	func pauseAllForQuit() async {
 		BrowserLog.notice(.downloads, "downloads.pause-for-quit", metadata: ["active": String(downloads.count)])
 		isClosing = true
-		for task in aiRenameTasks.values {
-			task.cancel()
-		}
+		let pendingRenames = Array(aiRenameTasks.values) + Array(revertRenameTasks.values)
+		for task in pendingRenames { task.cancel() }
+		for task in pendingRenames { await task.value }
 		aiRenameTasks.removeAll()
+		revertRenameTasks.removeAll()
 		// Quit awaits existing filesystem commits rather than interrupting the
 		// atomic destination move or persisting a false completion state.
 		for task in Array(finalizationTasks.values) {
@@ -872,6 +874,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	func delete(_ itemID: UUID) {
 		BrowserLog.info(.downloads, "download.delete", metadata: ["item": BrowserLog.id(itemID)])
 		aiRenameTasks.removeValue(forKey: itemID)?.cancel()
+		revertRenameTasks.removeValue(forKey: itemID)?.cancel()
 		guard pauseTasks[itemID] == nil, let index = items.firstIndex(where: { $0.id == itemID }) else { return }
 		guard deletingItems.insert(itemID).inserted else { return }
 		if let task = finalizationTasks[itemID] {
@@ -957,22 +960,30 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	func revertName(_ itemID: UUID) {
-		guard let index = items.firstIndex(where: { $0.id == itemID }),
-		      items[index].status == .completed,
-		      items[index].renamedByAppleIntelligence
-		else { return }
-		let source = items[index].fileURL
-		let destination = uniqueDestination(fileName: items[index].originalName, in: source.deletingLastPathComponent())
-		do {
-			guard try withFolderAccess(for: items[index], perform: {
-				try FileManager.default.moveItem(at: source, to: destination)
-			}) != nil else { throw CocoaError(.fileWriteNoPermission) }
-			guard let currentIndex = items.firstIndex(where: { $0.id == itemID && $0.fileURL == source }) else { return }
-			items[currentIndex].fileURL = destination
-			items[currentIndex].renamedByAppleIntelligence = false
-			persist()
-		} catch {
-			showToast(symbol: "exclamationmark.triangle", message: error.localizedDescription)
+		guard revertRenameTasks[itemID] == nil,
+		      !deletingItems.contains(itemID),
+		      let item = items.first(where: {
+		      	$0.id == itemID && $0.status == .completed && $0.renamedByAppleIntelligence
+		      }) else { return }
+		let source = item.fileURL
+		let bookmark = item.fileAccessBookmark ?? item.folderBookmark
+		let hadScope = scopedDirectories[itemID] != nil
+		revertRenameTasks[itemID] = Task { @MainActor [weak self] in
+			defer { self?.revertRenameTasks[itemID] = nil }
+			do {
+				let destination = try await BrowserDownloadFileWorker.shared.renameExisting(
+					source: source, fileName: item.originalName,
+					bookmark: bookmark, hasExistingAccess: hadScope
+				)
+				guard let self, let index = items.firstIndex(where: {
+					$0.id == itemID && $0.status == .completed && $0.fileURL == source
+				}) else { return }
+				items[index].fileURL = destination
+				items[index].renamedByAppleIntelligence = false
+				persist()
+			} catch {
+				self?.showToast(symbol: "exclamationmark.triangle", message: error.localizedDescription)
+			}
 		}
 	}
 
@@ -1986,89 +1997,6 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		)
 	}
 
-	private func moveToUnoccupiedDestination(from source: URL, proposed: URL, itemID: UUID) throws -> URL {
-		guard let item = items.first(where: { $0.id == itemID }) else {
-			throw CocoaError(.fileNoSuchFile)
-		}
-		guard let destination = try withFolderAccess(for: item, perform: {
-			var destination = item.fileAccessBookmark == nil
-				&& item.destinationIsFileScoped != true
-				? collisionSafeDestination(proposed, excludingTemporary: source, itemID: itemID)
-				: proposed
-			while true {
-				guard !FileManager.default.fileExists(atPath: destination.path) else {
-					guard item.destinationIsFileScoped != true else { throw CocoaError(.fileWriteFileExists) }
-					destination = BrowserDownload.collisionFreeURL(
-						fileName: destination.lastPathComponent,
-						in: destination.deletingLastPathComponent(),
-						reserved: [destination.standardizedFileURL],
-						excluding: source
-					)
-					continue
-				}
-				#if os(macOS)
-					try BrowserDownloadedFile.quarantine(
-						source,
-						downloadURL: item.requestURL,
-						sourceURL: item.sourceURL
-					)
-				#endif
-				do {
-					try FileManager.default.copyItem(at: source, to: destination)
-					#if os(macOS)
-						if item.destinationIsFileScoped == true,
-						   let bookmark = try? destination.bookmarkData(
-						   	options: [.withSecurityScope],
-						   	includingResourceValuesForKeys: nil,
-						   	relativeTo: nil
-						   ),
-						   let currentIndex = items.firstIndex(where: { $0.id == itemID && $0.fileURL == source })
-						{
-							items[currentIndex].fileAccessBookmark = bookmark
-						} else if item.destinationIsFileScoped == true {
-							showFileAccessToast()
-						}
-					#endif
-				} catch {
-					let cocoaError = error as NSError
-					guard item.destinationIsFileScoped != true,
-					      cocoaError.domain == NSCocoaErrorDomain,
-					      cocoaError.code == CocoaError.fileWriteFileExists.rawValue
-					else { throw error }
-					destination = BrowserDownload.collisionFreeURL(
-						fileName: destination.lastPathComponent,
-						in: destination.deletingLastPathComponent(),
-						reserved: [destination.standardizedFileURL],
-						excluding: source
-					)
-					continue
-				}
-				do {
-					#if os(macOS)
-						try BrowserDownloadedFile.quarantine(
-							destination,
-							downloadURL: item.requestURL,
-							sourceURL: item.sourceURL
-						)
-					#endif
-				} catch {
-					try? FileManager.default.removeItem(at: destination)
-					if item.destinationIsFileScoped == true,
-					   let index = items.firstIndex(where: { $0.id == itemID && $0.fileURL == source })
-					{
-						items[index].fileAccessBookmark = nil
-					}
-					throw error
-				}
-				try? FileManager.default.removeItem(at: source)
-				return destination
-			}
-		}) else {
-			throw CocoaError(.fileWriteNoPermission)
-		}
-		return destination
-	}
-
 	private func renameWithAppleIntelligence(_ itemID: UUID, fileURL: URL) async {
 		guard !Task.isCancelled, !isClosing, privateDataStore == nil,
 		      Defaults[.aiFeaturesEnabled],
@@ -2097,12 +2025,22 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		let ext = fileURL.pathExtension
 		let name = BrowserDownload.safeFilename(ext.isEmpty ? stem : "\(stem).\(ext)")
 		guard name != fileURL.lastPathComponent else { return }
-		let destination = uniqueDestination(fileName: name, in: fileURL.deletingLastPathComponent())
-		guard (try? withFolderAccess(for: items[currentIndex], perform: {
-			try FileManager.default.moveItem(at: fileURL, to: destination)
-		})) != nil,
-			let updatedIndex = items.firstIndex(where: { $0.id == itemID && $0.status == .completed && $0.fileURL == fileURL })
-		else { return }
+		let destination: URL
+		do {
+			destination = try await BrowserDownloadFileWorker.shared.renameExisting(
+				source: fileURL, fileName: name,
+				bookmark: items[currentIndex].fileAccessBookmark ?? items[currentIndex].folderBookmark,
+				hasExistingAccess: scopedDirectories[itemID] != nil
+			)
+		} catch {
+			BrowserLog.warning(.downloads, "download.ai-rename.failed", metadata: [
+				"item": BrowserLog.id(itemID), "error": BrowserLog.errorDescription(error),
+			])
+			return
+		}
+		guard let updatedIndex = items.firstIndex(where: {
+			$0.id == itemID && $0.status == .completed && $0.fileURL == fileURL
+		}) else { return }
 		#if os(macOS)
 			let animation: Animation? = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .smooth(duration: 0.25)
 		#else
