@@ -115,6 +115,11 @@ jobs:
           "$RUNNER_TEMP/astra-bookmark-projection-check"
           node checks/favicon-observer-check.mjs
           swiftc -swift-version 6 \
+            astra/Models/Core/BrowserWindowRegistry.swift \
+            checks/window-ownership-check.swift \
+            -o "$RUNNER_TEMP/astra-window-ownership-check"
+          "$RUNNER_TEMP/astra-window-ownership-check"
+          swiftc -swift-version 6 \
             astra/Models/Tabs/BrowserVisit.swift \
             checks/history-search-cancellation-check.swift \
             -o "$RUNNER_TEMP/astra-history-search-check"
