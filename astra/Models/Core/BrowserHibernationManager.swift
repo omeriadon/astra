@@ -69,13 +69,7 @@ final class BrowserHibernationManager {
 			.filter { isEligible($0, now: now, idleTime: pressureLevel == .critical ? .zero : idleTime) }
 			.sorted { $0.lastInteractionAt < $1.lastInteractionAt }
 
-		if pressureLevel == .critical {
-			reclaimSequentially(eligible.map(\.id))
-		} else {
-			for tab in eligible {
-				browser.hibernateTab(tab.id, onlyIfBackground: true)
-			}
-		}
+		reclaimSequentially(eligible.map(\.id), idleTime: pressureLevel == .critical ? .zero : idleTime)
 
 		let nextDelay = eligible.isEmpty
 			? nextDeadlineDelay(now: now, idleTime: idleTime, browser: browser)
@@ -83,23 +77,24 @@ final class BrowserHibernationManager {
 		scheduleSweep(after: nextDelay)
 	}
 
-	private func reclaimSequentially(_ ids: [UUID]) {
+	private func reclaimSequentially(_ ids: [UUID], idleTime: Duration) {
 		reclamationTask?.cancel()
 		reclamationTask = Task { @MainActor [weak self, weak browser] in
 			guard let self, let browser else { return }
 			for id in ids {
 				guard !Task.isCancelled,
-				      pressureLevel == .critical,
 				      Defaults[.automaticHibernationEnabled],
 				      let tab = browser.tab(withID: id),
-				      isEligible(tab, now: .now, idleTime: .zero)
+				      isEligible(tab, now: .now, idleTime: idleTime)
 				else { continue }
 				let activityBefore = tab.lastInteractionAt
 				await tab.controller?.refreshActivity()
 				guard tab.lastInteractionAt == activityBefore,
-				      isEligible(tab, now: .now, idleTime: .zero)
+				      Defaults[.automaticHibernationEnabled],
+				      isEligible(tab, now: .now, idleTime: idleTime),
+				      pressureLevel == .critical || pressureLevel == .warning || idleTime == Self.normalIdleTime
 				else { continue }
-				browser.finishAutomaticHibernation(tab)
+				_ = browser.finishAutomaticHibernation(tab)
 			}
 		}
 	}
@@ -115,10 +110,12 @@ final class BrowserHibernationManager {
 	private func isEligible(_ tab: BrowserTab, now: Date, idleTime: Duration) -> Bool {
 		guard !tab.isHibernated,
 		      tab.internalPage == nil,
-		      tab.canHibernate,
+			  tab.canHibernate,
 		      !isVisible(tab),
 		      !isPinned(tab),
 		      tab.peeks.isEmpty,
+		      !hasLivePeek,
+		      tab.controller?.webViewIfLoaded != nil,
 		      tab.controller?.webViewIfLoaded?.window == nil,
 		      browser?.session.downloads.activeProgress == nil
 		else { return false }
@@ -134,6 +131,12 @@ final class BrowserHibernationManager {
 	private func isPinned(_ tab: BrowserTab) -> Bool {
 		browser?.favouriteTabs.contains { $0.id == tab.id } == true
 			|| browser?.workspace.spaces.contains { $0.pinnedTabIDs.contains(tab.id) } == true
+	}
+
+	private var hasLivePeek: Bool {
+		BrowserWindowRegistry.shared.openBrowsers.contains { browser in
+			browser.tabs.contains { !$0.peeks.isEmpty }
+		}
 	}
 }
 

@@ -1633,11 +1633,14 @@ final class Browser {
 		}
 	}
 
-	func finishAutomaticHibernation(_ tab: BrowserTab) {
-		guard tabs.contains(where: { $0 === tab }), tab.canHibernate else { return }
+	@discardableResult
+	func finishAutomaticHibernation(_ tab: BrowserTab) -> Bool {
+		guard tabs.contains(where: { $0 === tab }), tab.canHibernate else { return false }
 		tab.hibernate()
+		guard tab.isHibernated else { return false }
 		BrowserExtensionManager.shared.webViewDidChange(for: tab.id, in: self)
 		schedulePersistence()
+		return true
 	}
 
 	func handleMemoryPressure(_ level: BrowserHibernationManager.PressureLevel) {
