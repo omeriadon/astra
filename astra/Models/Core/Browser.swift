@@ -641,8 +641,16 @@ final class Browser {
 	}
 
 	private func applyHydratedState(_ loaded: HydratedState, placeholderID: UUID, placeholderModifiedAt: Date) {
+		let applyStartedAt = BrowserLog.clock()
 		BrowserLog.info(.persistence, "browser.hydration.apply", metadata: ["window": BrowserLog.id(windowID), "placeholder": BrowserLog.id(placeholderID)])
 		defer {
+			BrowserLog.duration(
+				.persistence,
+				"browser.hydration.apply.end",
+				since: applyStartedAt,
+				warnAboveMilliseconds: 100,
+				metadata: ["window": BrowserLog.id(windowID), "tabs": String(tabs.count), "history": String(historyVisits.count)]
+			)
 			didFinishHydration = true
 			previousShutdownWasClean = loaded.previousShutdownWasClean
 			applyHistoryRetention()

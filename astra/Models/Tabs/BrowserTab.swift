@@ -179,7 +179,9 @@ final class BrowserTab: Identifiable {
 	private var storedScrollPosition: BrowserScrollPosition
 	private var storedPeeks: [OpenPeek]
 	private(set) var modifiedAt: Date
+	@ObservationIgnored
 	private var restorationBaseline: OpenTab?
+	@ObservationIgnored
 	private var isApplyingSynchronizedMetadata = false
 
 	@ObservationIgnored
@@ -241,7 +243,8 @@ final class BrowserTab: Identifiable {
 		recordsNavigationHistory: Bool = true,
 		restorationState: Data? = nil,
 		fileAccessBookmark: Data? = nil,
-		suppressInitialHistoryVisit: Bool = false
+		suppressInitialHistoryVisit: Bool = false,
+		initialRestorationBaseline: OpenTab? = nil
 	) {
 		let session = existingController?.session ?? session ?? .shared
 		self.id = id
@@ -283,7 +286,9 @@ final class BrowserTab: Identifiable {
 		for peek in peeks {
 			observe(peek)
 		}
-		restorationBaseline = openTab
+		// Restored tabs already have a fully decoded OpenTab. Reusing it avoids
+		// serializing WebKit interaction state again for every startup tab.
+		restorationBaseline = initialRestorationBaseline ?? openTab
 	}
 
 	convenience init(openTab saved: OpenTab) {
@@ -303,7 +308,8 @@ final class BrowserTab: Identifiable {
 			recordsNavigationHistory: saved.recordsNavigationHistory,
 			restorationState: saved.restorationState,
 			fileAccessBookmark: saved.fileAccessBookmark,
-			suppressInitialHistoryVisit: true
+			suppressInitialHistoryVisit: true,
+			initialRestorationBaseline: saved
 		)
 	}
 
