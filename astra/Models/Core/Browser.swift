@@ -744,6 +744,9 @@ final class Browser {
 				metadata: ["window": BrowserLog.id(windowID), "tabs": String(tabs.count), "history": String(historyVisits.count)]
 			)
 			didFinishHydration = true
+			#if os(macOS)
+				BrowserTabResourceManager.shared.reconcileWindows()
+			#endif
 			previousShutdownWasClean = loaded.previousShutdownWasClean
 			applyHistoryRetention()
 			persist()
@@ -1181,6 +1184,9 @@ final class Browser {
 		workspace = nextWorkspace
 
 		BrowserWindowRegistry.shared.claimSelectedTab(in: self)
+		#if os(macOS)
+			BrowserTabResourceManager.shared.didSelectTab(id, previously: previousTab?.id)
+		#endif
 		if didWake {
 			Task { @MainActor [weak self, weak tab] in
 				await Task.yield()
