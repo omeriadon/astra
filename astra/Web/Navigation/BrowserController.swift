@@ -156,6 +156,8 @@ final class BrowserController: NSObject, Identifiable {
 	@ObservationIgnored
 	private var isOpeningExternalApplication = false
 	@ObservationIgnored
+	private var pendingLifecycleOperations = 0
+	@ObservationIgnored
 	// ponytail: controller-wide two-second throttle; per-origin limits if abuse becomes measurable.
 	private var lastExternalApplicationRequestTime: TimeInterval?
 	@ObservationIgnored
@@ -194,7 +196,42 @@ final class BrowserController: NSObject, Identifiable {
 		)
 			&& !isCapturing && !hasUnsavedChanges && !isLoading
 			&& (createdWebView == nil || (createdWebView?.cameraCaptureState == WKMediaCaptureState.none
-					&& createdWebView?.microphoneCaptureState == WKMediaCaptureState.none))
+						&& createdWebView?.microphoneCaptureState == WKMediaCaptureState.none))
+	}
+
+	/// Automatic hibernation must not detach a page that still has an operation
+	/// whose completion handler or prompt can arrive after the view is detached.
+	var canAutomaticallyHibernate: Bool {
+		guard !isAuthenticationSessionBrowser,
+			  suppliedConfiguration == nil,
+			  !isOpeningExternalApplication,
+			  !isDownloadHandoff,
+			  pendingLifecycleOperations == 0,
+			  pendingRequest == nil,
+			  !awaitsNavigationCommit,
+			  canHibernate
+		else { return false }
+		guard createdWebView == nil || displayCaptureState == false else { return false }
+		#if os(macOS)
+			guard createdWebView?.window?.attachedSheet == nil else { return false }
+		#endif
+		return true
+	}
+
+	fileprivate func beginLifecycleOperation() {
+		pendingLifecycleOperations += 1
+	}
+
+	fileprivate func endLifecycleOperation() {
+		pendingLifecycleOperations = max(0, pendingLifecycleOperations - 1)
+	}
+
+	private var displayCaptureState: Bool? {
+		guard let webView = createdWebView,
+			  webView.responds(to: NSSelectorFromString("_displayCaptureState"))
+		else { return createdWebView == nil ? false : nil }
+		guard let value = webView.value(forKey: "_displayCaptureState") as? NSNumber else { return nil }
+		return value.intValue != 0
 	}
 
 	var requiresMediaTeardownConfirmation: Bool {
@@ -801,8 +838,9 @@ final class BrowserController: NSObject, Identifiable {
 		}
 	}
 
-	func refreshActivity() async {
-		guard !isInvalidated, !isRefreshingActivity, let webView = createdWebView else { return }
+	@discardableResult
+	func refreshActivity() async -> Bool {
+		guard !isInvalidated, !isRefreshingActivity, let webView = createdWebView else { return false }
 		isRefreshingActivity = true
 		defer { isRefreshingActivity = false }
 		let documentID = navigationIdentifier
@@ -820,22 +858,31 @@ final class BrowserController: NSObject, Identifiable {
 		"""
 		let value = try? await webView.evaluateJavaScript(script)
 		guard owns(webView), documentID == navigationIdentifier,
-		      let state = value as? [String: Any] else { return }
-		isPlayingMedia = state["playing"] as? Bool == true
-		hasActiveVideoPlayback = state["videoPlaying"] as? Bool == true
-		hasPausedMedia = state["paused"] as? Bool == true
+		      let state = value as? [String: Any],
+		      let videoPlaying = state["videoPlaying"] as? Bool,
+		      let playing = state["playing"] as? Bool,
+		      let paused = state["paused"] as? Bool,
+		      let title = state["title"] as? String,
+		      let artist = state["artist"] as? String
+		else { return false }
+		let playbackState = await webView.mediaPlaybackState()
+		guard owns(webView), documentID == navigationIdentifier else { return false }
+		isPlayingMedia = playing || playbackState == .playing
+		hasActiveVideoPlayback = videoPlaying
+		hasPausedMedia = paused || playbackState == .paused || playbackState == .suspended
 		cameraCaptureState = webView.cameraCaptureState
 		microphoneCaptureState = webView.microphoneCaptureState
 		mediaCaptureStateDocumentID = committedSecurityNavigationID
 		if isPlayingMedia || !hasPausedMedia {
 			pausedFromBrowser = false
 		}
-		mediaTitle = (state["title"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
-		mediaArtist = (state["artist"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
+		mediaTitle = title.isEmpty ? nil : String(title.prefix(500))
+		mediaArtist = artist.isEmpty ? nil : String(artist.prefix(500))
 		guard owns(webView), documentID == navigationIdentifier else { return }
 		// pictureInPictureScript reports eligibility/active changes directly on
 		// video lifecycle events; do not run a second DOM query on every poll.
 		webView.configuration.preferences.inactiveSchedulingPolicy = isPictureInPictureActive || isEnteringPictureInPicture || isPlayingMedia || hasActiveVideoPlayback ? .none : .throttle
+		return true
 	}
 
 	private func refreshPictureInPictureEligibility(in webView: WKWebView, documentID: Int) async {
@@ -1247,6 +1294,7 @@ final class BrowserController: NSObject, Identifiable {
 		#endif
 		currentRequest = nil
 		failedRequest = nil
+		currentNavigation = nil
 		pendingRequest = nil
 		pendingWebArchive = nil
 		navigationFailure = nil
@@ -1261,6 +1309,7 @@ final class BrowserController: NSObject, Identifiable {
 		releaseUploadAccess()
 		mediaObservationTask?.cancel()
 		mediaObservationTask = nil
+		pendingLifecycleOperations = 0
 		pictureInPictureControlUnavailable = false
 		faviconTask?.cancel()
 		faviconTask = nil
@@ -1286,6 +1335,15 @@ final class BrowserController: NSObject, Identifiable {
 			createdWebView?.configuration.userContentController.removeScriptMessageHandler(forName: name, contentWorld: .defaultClient)
 		}
 		createdWebView?.configuration.userContentController.removeAllUserScripts()
+		createdWebView?.removeFromSuperview()
+		createdWebView = nil
+		isWebViewReady = false
+		isRefreshingActivity = false
+		#if os(macOS)
+			screenshotReaderWebView = nil
+			isRefreshingPreviewSnapshot = false
+		#endif
+		appliedContentRuleList = nil
 		navigationDidChange = nil
 		zoomDidChange = nil
 		historyVisitDidCommit = nil
@@ -1381,6 +1439,8 @@ final class BrowserController: NSObject, Identifiable {
 		var webViewStageStarted = BrowserLog.clock()
 		let configuration = suppliedConfiguration ?? WKWebViewConfiguration()
 		if suppliedConfiguration != nil {
+			// Popup configurations inherit the opener's settings; give this page its own
+			// controller before installing handlers that stopForClose will remove.
 			configuration.userContentController = WKUserContentController()
 		}
 		configuration.websiteDataStore = session.dataStore
@@ -2979,20 +3039,25 @@ extension BrowserController: WKUIDelegate {
 				?? origin.url.flatMap(BrowserSitePermissions.origin(for:))
 				?? "This page"
 			isOpeningExternalApplication = true
-			Task { @MainActor in
-				defer { isOpeningExternalApplication = false }
+			Task { @MainActor [weak self, weak webView] in
+				guard let webView, self?.owns(webView) == true else { return }
+				defer { self?.isOpeningExternalApplication = false }
 				let promptWindow: NSWindow
 				let promptOwnerIsCurrent: @MainActor () -> Bool
 				if let explicitOwner {
-					guard ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: explicitOwner) else { return }
+					guard self?.ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: explicitOwner) == true else { return }
 					promptWindow = explicitOwner.window
-					promptOwnerIsCurrent = { [self, webView] in
-						ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: explicitOwner)
+					promptOwnerIsCurrent = { [weak self, weak webView] in
+						guard let self, let webView else { return false }
+						return self.ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: explicitOwner)
 					}
 				} else {
 					guard let window = webView.window else { return }
 					promptWindow = window
-					promptOwnerIsCurrent = { [self, webView] in ownsPrompt(in: webView, documentID: documentID) }
+					promptOwnerIsCurrent = { [weak self, weak webView] in
+						guard let self, let webView else { return false }
+						return self.ownsPrompt(in: webView, documentID: documentID)
+					}
 				}
 				let alert = BrowserWebsiteUI.alert(
 					title: "Open \(applicationName)?",
@@ -3002,13 +3067,13 @@ extension BrowserController: WKUIDelegate {
 				let response = await BrowserWebsiteUI.present(alert, in: promptWindow, isCurrent: promptOwnerIsCurrent)
 				guard promptOwnerIsCurrent(),
 				      response == .alertFirstButtonReturn else { return }
-				lastExternalApplicationRequestTime = ProcessInfo.processInfo.systemUptime
+				self?.lastExternalApplicationRequestTime = ProcessInfo.processInfo.systemUptime
 				let configuration = NSWorkspace.OpenConfiguration()
 				configuration.addsToRecentItems = false
 				do {
 					_ = try await NSWorkspace.shared.open([url], withApplicationAt: applicationURL, configuration: configuration)
 				} catch {
-					session.toastManager.show(symbol: "exclamationmark.triangle", message: "\(applicationName) could not open this link")
+					self?.session.toastManager.show(symbol: "exclamationmark.triangle", message: "\(applicationName) could not open this link")
 				}
 			}
 		#elseif os(iOS)
