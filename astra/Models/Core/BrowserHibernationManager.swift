@@ -1,5 +1,11 @@
 import Defaults
 import Foundation
+import WebKit
+#if os(macOS)
+	import AppKit
+#elseif os(iOS)
+	import UIKit
+#endif
 
 @MainActor
 final class BrowserHibernationManager {
@@ -64,12 +70,12 @@ final class BrowserHibernationManager {
 		}
 
 		let now = Date.now
-		let idleTime = pressureLevel == .warning ? Self.warningIdleTime : Self.normalIdleTime
+		let idleTime = pressureLevel == .critical ? Duration.zero : (pressureLevel == .warning ? Self.warningIdleTime : Self.normalIdleTime)
 		let eligible = browser.tabs
-			.filter { isEligible($0, now: now, idleTime: pressureLevel == .critical ? .zero : idleTime) }
+			.filter { isEligible($0, now: now, idleTime: idleTime) }
 			.sorted { $0.lastInteractionAt < $1.lastInteractionAt }
 
-		reclaimSequentially(eligible.map(\.id), idleTime: pressureLevel == .critical ? .zero : idleTime)
+		reclaimSequentially(eligible.map(\.id), idleTime: idleTime)
 
 		let nextDelay = eligible.isEmpty
 			? nextDeadlineDelay(now: now, idleTime: idleTime, browser: browser)
@@ -79,10 +85,12 @@ final class BrowserHibernationManager {
 
 	private func reclaimSequentially(_ ids: [UUID], idleTime: Duration) {
 		reclamationTask?.cancel()
+		let pressureAtStart = pressureLevel
 		reclamationTask = Task { @MainActor [weak self, weak browser] in
 			guard let self, let browser else { return }
 			for id in ids {
 				guard !Task.isCancelled,
+				      pressureLevel == pressureAtStart,
 				      Defaults[.automaticHibernationEnabled],
 				      let tab = browser.tab(withID: id),
 				      isEligible(tab, now: .now, idleTime: idleTime)
@@ -96,9 +104,25 @@ final class BrowserHibernationManager {
 				      tab.lastInteractionAt == activityBefore,
 				      Defaults[.automaticHibernationEnabled],
 				      isEligible(tab, now: .now, idleTime: idleTime),
-				      pressureLevel == .critical || pressureLevel == .warning || idleTime == Self.normalIdleTime
+				      !Task.isCancelled, pressureLevel == pressureAtStart
 				else { continue }
-				_ = browser.finishAutomaticHibernation(tab)
+				guard let interactionState = controller.webViewIfLoaded?.interactionState as? Data,
+				      interactionState.count <= 4 * 1024 * 1024 else { continue }
+				#if os(macOS)
+					let memory = browser.isPrivate ? nil : await controller.tabProcessMemorySnapshot()
+					guard !Task.isCancelled, pressureLevel == pressureAtStart,
+					      Defaults[.automaticHibernationEnabled],
+					      tab.controller === controller,
+					      controller.navigationIdentifier == navigationBefore,
+					      tab.lastInteractionAt == activityBefore,
+					      isEligible(tab, now: .now, idleTime: idleTime) else { continue }
+				#endif
+				guard browser.finishAutomaticHibernation(tab, interactionState: interactionState) else { continue }
+				#if os(macOS)
+					if let memory {
+						Task { await BrowserController.logReclamation(for: memory) }
+					}
+				#endif
 			}
 		}
 	}
@@ -115,8 +139,10 @@ final class BrowserHibernationManager {
 		guard !tab.isHibernated,
 		      tab.internalPage == nil,
 		      tab.canHibernate,
+		      browser?.tabs.contains(where: { $0 === tab }) == true,
 		      tab.controller?.canAutomaticallyHibernate == true,
 		      !isVisible(tab),
+		      browser.map { BrowserWindowRegistry.shared.ownsTab(tab.id, in: $0) } == true,
 		      !isPinned(tab),
 		      tab.peeks.isEmpty,
 		      !hasLivePeek,

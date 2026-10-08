@@ -1635,9 +1635,9 @@ final class Browser {
 	}
 
 	@discardableResult
-	func finishAutomaticHibernation(_ tab: BrowserTab) -> Bool {
+	func finishAutomaticHibernation(_ tab: BrowserTab, interactionState: Data) -> Bool {
 		guard tabs.contains(where: { $0 === tab }), tab.canHibernate else { return false }
-		tab.hibernate()
+		tab.hibernate(interactionState: interactionState)
 		guard tab.isHibernated else { return false }
 		BrowserExtensionManager.shared.webViewDidChange(for: tab.id, in: self)
 		schedulePersistence()

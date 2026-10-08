@@ -24,7 +24,7 @@ assert "!isOpeningExternalApplication" in source
 assert "!isDownloadHandoff" in source
 assert "pendingLifecycleOperations == 0" in source
 assert "createdWebView?.window?.attachedSheet == nil" in source
-assert "await webView.mediaPlaybackState()" in source
+assert "await webView.requestMediaPlaybackState()" in source
 assert "playbackState == .suspended" in source
 assert "_displayCaptureState" in source
 assert "let videoPlaying = state[\"videoPlaying\"] as? Bool" in source

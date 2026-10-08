@@ -947,7 +947,7 @@ final class BrowserController: NSObject, Identifiable {
 		      let title = state["title"] as? String,
 		      let artist = state["artist"] as? String
 		else { return false }
-		let playbackState = await webView.mediaPlaybackState()
+		let playbackState = await webView.requestMediaPlaybackState()
 		guard owns(webView), documentID == navigationIdentifier else { return false }
 		isPlayingMedia = playing || playbackState == .playing
 		hasActiveVideoPlayback = videoPlaying
@@ -1467,8 +1467,12 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	var encryptedInteractionState: Data? {
+		encryptedInteractionState(from: createdWebView?.interactionState)
+	}
+
+	func encryptedInteractionState(from state: Any?) -> Data? {
 		guard !session.isPrivate, canRecordVisit, let committedURL,
-		      let data = createdWebView?.interactionState as? Data else { return nil }
+		      let data = state as? Data else { return nil }
 		return BrowserRestorationStore.seal(data, for: BrowserAddress.withoutCredentials(committedURL))
 	}
 

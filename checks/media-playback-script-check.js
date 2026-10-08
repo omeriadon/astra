@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 
 const source = readFileSync(new URL("../astra/Web/Navigation/BrowserController.swift", import.meta.url), "utf8");
-const activity = source.split("func refreshActivity() async {")[1].match(/let script = """\n([\s\S]*?)\n\t\t"""/)[1];
+const activity = source.split("func refreshActivity() async -> Bool {")[1].match(/let script = """\n([\s\S]*?)\n\t\t"""/)[1];
 const eligibility = source.split("private func refreshPictureInPictureEligibility")[1].match(/let script = """\n([\s\S]*?)\n\t\t"""/)[1];
 const entry = source.split("func enterPictureInPicture() {")[1].match(/callAsyncJavaScript\("""\n([\s\S]*?)\n\t\t"""/)[1];
 const observation = source.match(/private static let pictureInPictureScript = """\n([\s\S]*?)\n\t"""/)[1];
