@@ -17,7 +17,7 @@ import WebKit
 
 /// Serializes favicon commits. Old snapshots cannot complete after a newer
 /// snapshot has been written, even if one disk operation takes longer.
-private actor FaviconPersistenceWriter {
+private nonisolated actor FaviconPersistenceWriter {
 	private let persistence: BrowserPersistence
 
 	init(_ persistence: BrowserPersistence) {
