@@ -145,7 +145,8 @@ warning thresholds. Critical pressure reclaims eligible tabs sequentially,
 oldest first. Every async boundary rechecks selection across windows, controller
 and navigation identity, activity time, pressure state, and the setting.
 A one-shot form-state query runs before reclamation in the isolated script world;
-changed fields and query failures prevent teardown. This query is not added to
+changed fields and query failures prevent teardown. Trusted file drops and
+canvas interactions also mark the page unsafe to discard. This query is not added to
 the periodic media observer. Pinned/favourite tabs, pending dialogs, captures, media, downloads, live popups,
 weakly tracked popup opener dependencies, unknown activity results, and oversized or unknown interaction-state blobs are
 preserved. A single captured interaction-state blob is reused for teardown;

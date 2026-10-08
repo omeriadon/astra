@@ -868,6 +868,12 @@ final class BrowserController: NSObject, Identifiable {
 		document.addEventListener('input', event => {
 			if (event.isTrusted && (event.target.matches('input:not([type="search"]), textarea, select') || event.target.closest('[contenteditable]'))) report('dirty');
 		}, true);
+		document.addEventListener('drop', event => {
+			if (event.isTrusted && event.dataTransfer?.files?.length) report('dirty');
+		}, true);
+		document.addEventListener('pointerdown', event => {
+			if (event.isTrusted && event.target.closest?.('canvas')) report('dirty');
+		}, true);
 		document.addEventListener('submit', () => report('submitted'), true);
 		for (const event of ['playing', 'pause', 'ended', 'emptied', 'volumechange', 'loadeddata']) {
 			document.addEventListener(event, () => report('media-changed'), true);

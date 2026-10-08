@@ -18,3 +18,17 @@ assert.equal(dirty([{ tagName: 'TEXTAREA', value: 'draft', defaultValue: '' }]),
 assert.match(safety, /in: \.defaultClient/);
 assert.match(safety, /value as\? Bool == false/);
 console.log('Hibernation form-state checks passed');
+
+const activity = source.match(/private static let activityScript = """\n([\s\S]*?)\n\t"""/)[1];
+const handlers = new Map();
+const reports = [];
+runInNewContext(activity, {
+    document: { addEventListener: (name, handler) => handlers.set(name, handler) },
+    window: { webkit: { messageHandlers: { pageActivityChanged: { postMessage: value => reports.push(value) } } } },
+});
+handlers.get('drop')({ isTrusted: true, dataTransfer: { files: [1] } });
+handlers.get('pointerdown')({ isTrusted: true, target: { closest: () => ({}) } });
+assert.deepEqual(reports, ['dirty', 'dirty']);
+handlers.get('drop')({ isTrusted: false, dataTransfer: { files: [1] } });
+handlers.get('pointerdown')({ isTrusted: false, target: { closest: () => ({}) } });
+assert.equal(reports.length, 2);
