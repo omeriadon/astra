@@ -125,7 +125,14 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	@ObservationIgnored
 	private var faviconSaveTask: Task<Void, Never>?
 	@ObservationIgnored
-	private var decodedImages: [String: PlatformImage] = [:]
+	private let decodedImages: NSCache<NSString, PlatformImage> = {
+		let cache = NSCache<NSString, PlatformImage>()
+		// Validated favicons can be 512x512 each. Bounding compressed data
+		// alone does not bound the decoded pixel backing stores.
+		cache.totalCostLimit = 32 * 1024 * 1024
+		cache.countLimit = 64
+		return cache
+	}()
 
 	var isEmpty: Bool {
 		favicons.isEmpty
@@ -208,11 +215,11 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 
 	func image(for pageURL: URL?, in _: WKWebView? = nil) -> Image? {
 		guard let key = FaviconKey.origin(for: pageURL) else { return nil }
-		if let cached = decodedImages[key] {
+		if let cached = decodedImages.object(forKey: key as NSString) {
 			return Self.swiftUIImage(cached)
 		}
 		guard let data = favicons[key], let decoded = Self.makePlatformImage(data) else { return nil }
-		decodedImages[key] = decoded
+		decodedImages.setObject(decoded, forKey: key as NSString, cost: Self.decodedImageCost(decoded))
 		return Self.swiftUIImage(decoded)
 	}
 
@@ -278,7 +285,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 
 		fetchedAt[key] = .now
 		favicons[key] = data
-		decodedImages[key] = platformImage
+		decodedImages.setObject(platformImage, forKey: key as NSString, cost: Self.decodedImageCost(platformImage))
 		trimCache()
 		scheduleFaviconSave()
 	}
@@ -287,7 +294,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		BrowserLog.notice(.favicons, "favicon.clear")
 		cacheGeneration += 1
 		activeRequests.removeAll()
-		decodedImages.removeAll()
+		decodedImages.removeAllObjects()
 		fetchedAt.removeAll()
 		favicons.removeAll()
 		scheduleFaviconSave()
@@ -305,7 +312,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 			guard favicons.count > Self.maximumCacheEntries || totalBytes > Self.maximumCacheBytes else { break }
 			totalBytes -= favicons.removeValue(forKey: key)?.count ?? 0
 			fetchedAt[key] = nil
-			decodedImages[key] = nil
+			decodedImages.removeObject(forKey: key as NSString)
 			removedEntry = true
 		}
 		return removedEntry
@@ -388,6 +395,20 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 			else { return false }
 		}
 		return true
+	}
+
+	/// Approximate decoded pixel cost for eviction (not WebKit or GPU memory).
+	/// NSCache may also evict entries sooner under memory pressure.
+	private static func decodedImageCost(_ image: PlatformImage) -> Int {
+		#if os(macOS)
+			let dimensions = image.representations.map { (max($0.pixelsWide, 1), max($0.pixelsHigh, 1)) }
+			let pixels = dimensions.max { $0.0 * $0.1 < $1.0 * $1.1 } ?? (512, 512)
+			return pixels.0 * pixels.1 * 4
+		#elseif os(iOS)
+			let width = max(Int(image.size.width * image.scale), 1)
+			let height = max(Int(image.size.height * image.scale), 1)
+			return width * height * 4
+		#endif
 	}
 
 	private static func makePlatformImage(_ data: Data) -> PlatformImage? {
