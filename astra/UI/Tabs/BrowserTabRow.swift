@@ -154,7 +154,6 @@ struct BrowserTabRow: View {
 			DragGesture(minimumDistance: 8)
 				.onChanged { _ in
 					if tabDrag.activeTabID != tab.id {
-						browser.flushPersistence()
 						tabDrag.begin(tab.id, from: browser)
 					}
 					tabDrag.update()
