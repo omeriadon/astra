@@ -350,30 +350,43 @@ final class Browser {
 	}
 
 	func renameSelectedSpace(_ name: String) {
-		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) else { return }
+		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }),
+		      workspace.spaces[index].name != name else { return }
+		var next = workspace
 		let mutationDate = nextWorkspaceMutationDate()
-		workspace.spaces[index].name = name
-		workspace.spaces[index].modifiedAt = mutationDate
-		workspace.modifiedAt = mutationDate
-		schedulePersistence()
+		next.spaces[index].name = name
+		next.spaces[index].modifiedAt = mutationDate
+		next.modifiedAt = mutationDate
+		workspace = next
+		// Typing changes metadata, not the extension-tab model.
+		schedulePersistence(fullState: true, syncExtensions: false)
 	}
 
 	func setSelectedSpaceSymbol(_ symbol: String) {
-		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) else { return }
+		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }),
+		      workspace.spaces[index].symbol != symbol else { return }
+		var next = workspace
 		let mutationDate = nextWorkspaceMutationDate()
-		workspace.spaces[index].symbol = symbol
-		workspace.spaces[index].modifiedAt = mutationDate
-		workspace.modifiedAt = mutationDate
-		schedulePersistence()
+		next.spaces[index].symbol = symbol
+		next.spaces[index].modifiedAt = mutationDate
+		next.modifiedAt = mutationDate
+		workspace = next
+		schedulePersistence(fullState: true, syncExtensions: false)
 	}
 
 	func setSelectedSpaceTheme(_ theme: BrowserTheme) {
-		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) else { return }
+		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }),
+		      workspace.spaces[index].theme != theme else { return }
+		// Mesh editing changes continuously during a drag. Commit the complete
+		// value once, without invalidating every SwiftUI observer for separate
+		// nested theme/timestamp updates or syncing unchanged extension tabs.
+		var next = workspace
 		let mutationDate = nextWorkspaceMutationDate()
-		workspace.spaces[index].theme = theme
-		workspace.spaces[index].modifiedAt = mutationDate
-		workspace.modifiedAt = mutationDate
-		schedulePersistence()
+		next.spaces[index].theme = theme
+		next.spaces[index].modifiedAt = mutationDate
+		next.modifiedAt = mutationDate
+		workspace = next
+		schedulePersistence(fullState: true, syncExtensions: false)
 	}
 
 	enum TabArea {
