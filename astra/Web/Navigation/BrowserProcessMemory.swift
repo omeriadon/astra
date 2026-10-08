@@ -141,9 +141,15 @@ struct BrowserMemoryReclamationSnapshot: Equatable, Sendable {
 		after?.knownProcessBytes
 	}
 	var processIdentityChanged: Bool {
-		guard let after else { return true }
-		return Set(before.processes.map(\.identity)) != Set(after.processes.map(\.identity))
+		guard let after else { return false }
+		return before.processes.contains { original in
+			after.processes.contains { current in
+				current.pid == original.pid && original.startTime != nil
+					&& current.startTime != nil && current.startTime != original.startTime
+			}
+		}
 	}
+
 	var unavailableProcessCount: Int {
 		guard let after else { return before.processes.count }
 		return after.processes.filter { $0.bytes == nil }.count

@@ -4,6 +4,11 @@
 from __future__ import annotations
 
 import json
+import importlib.util
+import os
+import platform
+import resource
+import time
 import subprocess
 import sys
 from pathlib import Path
@@ -41,6 +46,20 @@ def main() -> int:
         assert process["rss_bytes"] >= 0
         assert process["pid"] > 0
         assert process["started"]
+    if platform.system() == "Darwin":
+        spec = importlib.util.spec_from_file_location("webkit_benchmark_check", HARNESS)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        before_usage = module._rusage(os.getpid())
+        before_cpu = resource.getrusage(resource.RUSAGE_SELF)
+        deadline = time.monotonic() + 0.03
+        while time.monotonic() < deadline:
+            pass
+        after_usage = module._rusage(os.getpid())
+        after_cpu = resource.getrusage(resource.RUSAGE_SELF)
+        actual = after_usage["rusage_cpu_nanoseconds"] - before_usage["rusage_cpu_nanoseconds"]
+        expected = ((after_cpu.ru_utime + after_cpu.ru_stime) - (before_cpu.ru_utime + before_cpu.ru_stime)) * 1_000_000_000
+        assert 0.7 * expected < actual < 1.3 * expected, "Mach tick conversion must match process CPU time"
     print("webkit benchmark checks passed")
     return 0
 

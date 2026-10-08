@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+from functools import lru_cache
 import json
 import os
 import platform
@@ -94,6 +95,25 @@ class _RUsageInfoV4(ctypes.Structure):
     ] + [("unused", ctypes.c_uint64 * 25)]
 
 
+class _MachTimebaseInfo(ctypes.Structure):
+    _fields_ = [("numer", ctypes.c_uint32), ("denom", ctypes.c_uint32)]
+
+
+@lru_cache(maxsize=1)
+def _mach_timebase() -> tuple[int, int] | None:
+    try:
+        system = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+        call = system.mach_timebase_info
+        call.argtypes = [ctypes.POINTER(_MachTimebaseInfo)]
+        call.restype = ctypes.c_int
+        value = _MachTimebaseInfo()
+        if call(ctypes.byref(value)) == 0 and value.denom > 0:
+            return value.numer, value.denom
+    except (AttributeError, OSError):
+        pass
+    return None
+
+
 def _rusage(pid: int) -> dict[str, Any]:
     """Read public libproc footprint and cumulative CPU for one selected PID."""
     if platform.system() != "Darwin":
@@ -106,12 +126,17 @@ def _rusage(pid: int) -> dict[str, Any]:
         value = _RUsageInfoV4()
         if call(pid, 4, ctypes.byref(value)) != 0:
             return {}
-        return {
+        result = {
             "footprint_bytes": int(value.phys_footprint),
             "rss_bytes": int(value.resident_size),
-            "rusage_cpu_nanoseconds": int(value.user_time + value.system_time),
             "rusage_start_abstime": int(value.proc_start_abstime),
         }
+        timebase = _mach_timebase()
+        if timebase is not None:
+            numer, denom = timebase
+            # libproc CPU counters use Mach ticks, including on Apple Silicon.
+            result["rusage_cpu_nanoseconds"] = (value.user_time + value.system_time) * numer // denom
+        return result
     except (AttributeError, OSError):
         return {}
 
@@ -135,14 +160,14 @@ def _deduplicate(rows: Iterable[dict[str, Any]], selected: dict[int, str]) -> li
 
 def _totals(processes: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     totals = {
-        role: {"rss_bytes": 0, "footprint_bytes": 0, "footprint_processes": 0, "processes": 0}
+        role: {"rss_bytes": 0, "footprint_bytes": None, "footprint_processes": 0, "processes": 0}
         for role in ROLES
     }
     for row in processes:
         total = totals[row["role"]]
         total["rss_bytes"] += row["rss_bytes"]
         if "footprint_bytes" in row:
-            total["footprint_bytes"] += row["footprint_bytes"]
+            total["footprint_bytes"] = (total["footprint_bytes"] or 0) + row["footprint_bytes"]
             total["footprint_processes"] += 1
         total["processes"] += 1
     return totals
@@ -175,7 +200,7 @@ def snapshot(selected: dict[int, str] | None = None) -> dict[str, Any]:
             "python": platform.python_version(),
         },
         "measurement": {
-            "cpu_source": "ps cumulative process time; interval CPU is derived from two samples",
+            "cpu_source": "libproc CPU Mach ticks converted with mach_timebase_info; ps cumulative time fallback; interval deltas",
             "rss_source": "libproc resident size when available; otherwise ps rss; process-level estimates",
             "tab_attribution": "unavailable from public WebKit APIs",
             "ownership": "only explicitly mapped PIDs are attributed; XPC WebKit helpers remain unattributed",
@@ -259,7 +284,7 @@ def _timed(command: list[str], output: str | None, selected: dict[int, str]) -> 
     after = snapshot(selected)
     record = {
         "schema": 1,
-        "command": command,
+        "command_executable": Path(command[0]).name,
         "exit_status": status,
         "elapsed_ms": round(elapsed_ms, 3),
         "before": before,

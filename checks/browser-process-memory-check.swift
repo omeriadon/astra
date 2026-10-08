@@ -21,6 +21,13 @@ enum BrowserProcessMemoryCheck {
 		precondition(mixedAggregate.processCount == 1 && mixedAggregate.uniqueBytes == 300)
 		let sameProcessAcrossRoles = BrowserTabProcessMemorySnapshot(webContent: shared, graphics: shared, network: nil, model: nil)
 		precondition(sameProcessAcrossRoles.knownProcessBytes == 300)
+		let unchanged = BrowserMemoryReclamationSnapshot(before: snapshot(shared), after: snapshot(shared))
+		precondition(!unchanged.processIdentityChanged)
+		let replaced = BrowserMemoryReclamationSnapshot(before: snapshot(shared), after: snapshot(replacement))
+		precondition(replaced.processIdentityChanged)
+		let unknown = BrowserTabProcessMemorySnapshot.Process(pid: shared.pid, startTime: nil, bytes: nil)
+		let unavailableAfter = BrowserMemoryReclamationSnapshot(before: snapshot(shared), after: snapshot(unknown))
+		precondition(!unavailableAfter.processIdentityChanged && unavailableAfter.unavailableProcessCount == 1)
 		let roleAggregate = BrowserProcessMemoryAggregate.combining([sameProcessAcrossRoles])
 		precondition(roleAggregate.processCount == 1 && roleAggregate.uniqueBytes == 300 && roleAggregate.webContentMappingCount == 1)
 	}

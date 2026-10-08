@@ -186,8 +186,14 @@ cleanup/sections, old media eligibility expectations, and hover-script fixtures.
 The reload and window-ownership fixtures needed for this work were repaired.
 The broad suite is not reported as passing.
 
+CPU counters are Mach absolute-time ticks, converted with the public
+`mach_timebase_info` ratio before interval calculations. An executable check
+compares the converted delta with process CPU time on this Mac, including
+Apple Silicon timebase scaling. The binding follows
+[Apple XNU resource accounting](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/bsd_kern.c).
+
 The utility libproc binding was exercised with 100 calls on the benchmark
-process: median 0.0101 ms and maximum 0.1508 ms on this Mac. This measures the
+process: median 0.0097 ms and maximum 0.0186 ms on this Mac. This measures the
 sampler binding only; it excludes WebKit selectors, UI overhead, and website
 workloads. It is not an Astra memory or CPU improvement measurement.
 
