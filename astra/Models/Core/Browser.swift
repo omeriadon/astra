@@ -1230,7 +1230,7 @@ final class Browser {
 		if !Defaults[.bookmarkFolderNames].contains(name) {
 			Defaults[.bookmarkFolderNames].append(name)
 		}
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	func bookmarkSelectedPage() {
@@ -1241,7 +1241,7 @@ final class Browser {
 		let title = tab.activeController?.webViewIfLoaded?.title ?? tab.title
 		guard title.utf8.count <= 16384 else { return }
 		bookmarks.append(Bookmark(name: title, url: url))
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	private var selectedPageBookmarkURL: URL? {
@@ -1262,7 +1262,7 @@ final class Browser {
 		bookmarks[index].isFavorite = isFavorite
 		bookmarks[index].order = order
 		bookmarks[index].modifiedAt = BrowserUserDataMutation.nextDate(after: bookmarks[index].modifiedAt, deletion: deletedBookmarksAt[id] ?? .distantPast)
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	func reorderBookmarks(_ ids: [UUID]) {
@@ -1272,7 +1272,7 @@ final class Browser {
 			bookmarks[index].order = order
 			bookmarks[index].modifiedAt = BrowserUserDataMutation.nextDate(after: bookmarks[index].modifiedAt, deletion: deletedBookmarksAt[id] ?? .distantPast)
 		}
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	func addToReadingList(_ url: URL, title: String) {
@@ -1280,7 +1280,7 @@ final class Browser {
 		      canAddToReadingList(url),
 		      let safe = BrowserHomepage.validURL(url.absoluteString) else { return }
 		readingList.append(ReadingListItem(url: safe, title: title))
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	func canAddToReadingList(_ url: URL) -> Bool {
@@ -1319,7 +1319,7 @@ final class Browser {
 		guard let index = readingList.firstIndex(where: { $0.id == id }), readingList[index].isRead != isRead else { return }
 		readingList[index].isRead = isRead
 		readingList[index].modifiedAt = BrowserUserDataMutation.nextDate(after: readingList[index].modifiedAt, deletion: deletedReadingListAt[id] ?? .distantPast)
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	func removeReadingListItem(_ id: UUID) {
@@ -1333,7 +1333,7 @@ final class Browser {
 				try? persistence.removeReadingArchive(id: id)
 			}
 		}
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	func saveReadingListSnapshot(tabID: UUID) {
@@ -1462,7 +1462,7 @@ final class Browser {
 			deletedBookmarkIDs.insert(id)
 			deletedBookmarksAt[id] = BrowserUserDataMutation.nextDate(after: removed.modifiedAt, deletion: deletedBookmarksAt[id] ?? .distantPast)
 		}
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	@discardableResult
@@ -1754,7 +1754,7 @@ final class Browser {
 		lastVisitID[controller.id] = visit.id
 		historyVisits.insert(visit, at: 0)
 		applyHistoryRetention()
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	private func updateHistoryVisitTitle(from controller: BrowserController, url: URL, title: String, navigationID: Int) {
@@ -1766,7 +1766,7 @@ final class Browser {
 		var visit = historyVisits[index]
 		visit.updateTitle(title, at: nextHistoryMutationDate(after: .now))
 		historyVisits[index] = visit
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	private func ownsHistoryController(_ controller: BrowserController) -> Bool {
@@ -1824,7 +1824,7 @@ final class Browser {
 		for browser in [self] + peers {
 			browser.clearLocalHistory(at: clearDate)
 		}
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	private func clearLocalHistory(at date: Date) {
@@ -1857,7 +1857,7 @@ final class Browser {
 		for browser in browsers {
 			browser.removeHistoryLocally(removedIDs, at: deletionDate)
 		}
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	func removeHistory(from start: Date?, until end: Date?) {
@@ -1888,7 +1888,7 @@ final class Browser {
 			deletedVisitsAt[id] = date
 		}
 		removeHistoryVisitReferences(ids)
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	private func removeHistoryVisitReferences(_ ids: Set<UUID>) {
@@ -1920,7 +1920,7 @@ final class Browser {
 				bookmarks.append(imported)
 			}
 		}
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	func importReadingList(_ incoming: [ReadingListItem], replacingDuplicates: Bool = false) {
@@ -1941,7 +1941,7 @@ final class Browser {
 				readingList.append(imported)
 			}
 		}
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	func importHistory(_ incoming: [BrowserVisit]) {
@@ -1957,7 +1957,7 @@ final class Browser {
 			historyVisits.append(visit)
 		}
 		historyVisits.sort { $0.visitedAt > $1.visitedAt }
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	private func attachPersistence(to tab: BrowserTab) {
@@ -2617,6 +2617,13 @@ final class Browser {
 
 	private func schedulePersistence() {
 		schedulePersistence(fullState: true)
+	}
+
+	/// Bookmarks, reading-list items and history need full durable/cross-window
+	/// saves, but cannot change WebExtension tab membership or pinning. Avoid
+	/// invoking sync(_:) over the entire tab collection for these UI actions.
+	private func scheduleUserDataPersistence() {
+		schedulePersistence(fullState: true, syncExtensions: false)
 	}
 
 	private func scheduleSelectionPersistence() {
