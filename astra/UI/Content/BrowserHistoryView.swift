@@ -4,13 +4,14 @@ struct BrowserHistoryView: View {
 	let browser: Browser
 	@State private var searchText = ""
 	@State private var filteredVisits: [BrowserVisit] = []
+	@State private var orderedVisits: [BrowserVisit] = []
+	@State private var visitCountsByURL: [URL: Int] = [:]
 	@State private var confirmsClear = false
 	@State private var confirmsRangeDelete = false
 	@State private var rangeStart = Date.now
 	@State private var rangeEnd = Date.now
 
 	var body: some View {
-		let visitCountsByURL = Dictionary(grouping: browser.historyVisits, by: \.url).mapValues(\.count)
 		List {
 			Section("Visited Pages") {
 				ForEach(filteredVisits) { visit in
@@ -75,7 +76,7 @@ struct BrowserHistoryView: View {
 			.padding(.horizontal, 24)
 			.padding(.vertical, 14)
 		}
-		.onChange(of: browser.historyVisits, initial: true) { _, _ in updateVisits() }
+		.onChange(of: browser.historyVisits, initial: true) { _, visits in refreshHistoryIndex(visits) }
 		.onChange(of: searchText) { _, _ in updateVisits() }
 		.confirmationDialog("Clear browsing history?", isPresented: $confirmsClear) {
 			Button("Clear History", systemImage: "trash", role: .destructive) {
@@ -100,8 +101,22 @@ struct BrowserHistoryView: View {
 		}
 	}
 
+	private func refreshHistoryIndex(_ visits: [BrowserVisit]) {
+		// Sorting and visit-frequency aggregation should follow history changes,
+		// not every keystroke, hover event or List re-render.
+		orderedVisits = visits.sorted {
+			$0.visitedAt == $1.visitedAt
+				? $0.id.uuidString < $1.id.uuidString
+				: $0.visitedAt > $1.visitedAt
+		}
+		var counts: [URL: Int] = [:]
+		for visit in visits { counts[visit.url, default: 0] += 1 }
+		visitCountsByURL = counts
+		updateVisits()
+	}
+
 	private func updateVisits() {
-		filteredVisits = BrowserVisit.matching(browser.recentHistoryVisits, query: searchText)
+		filteredVisits = BrowserVisit.matching(orderedVisits, query: searchText)
 	}
 
 	private func confirmDeleteRange(seconds: TimeInterval) {

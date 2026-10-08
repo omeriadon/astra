@@ -94,15 +94,30 @@ nonisolated struct BrowserVisit: Codable, Identifiable, Equatable, Sendable {
 	}
 
 	static func summaries(_ visits: [Self]) -> [BrowserVisitSummary] {
-		let groups = Dictionary(grouping: visits, by: \.url)
-		return groups.map { url, visits in
-			let latest = visits.max { lhs, rhs in
-				lhs.visitedAt == rhs.visitedAt
-					? lhs.id.uuidString > rhs.id.uuidString
-					: lhs.visitedAt < rhs.visitedAt
+		// One pass rather than Dictionary(grouping:) allocating an array of
+		// every visit for each URL and then scanning each group for its latest.
+		var summaries: [URL: (latest: Self, count: Int)] = [:]
+		for visit in visits {
+			if var existing = summaries[visit.url] {
+				existing.count += 1
+				if visit.visitedAt > existing.latest.visitedAt
+					|| (visit.visitedAt == existing.latest.visitedAt
+						&& visit.id.uuidString < existing.latest.id.uuidString)
+				{
+					existing.latest = visit
+				}
+				summaries[visit.url] = existing
+			} else {
+				summaries[visit.url] = (visit, 1)
 			}
-			return BrowserVisitSummary(url: url, title: latest?.title ?? url.host ?? url.absoluteString,
-			                           visitCount: visits.count, lastVisitedAt: latest?.visitedAt ?? .distantPast)
+		}
+		return summaries.map { url, summary in
+			BrowserVisitSummary(
+				url: url,
+				title: summary.latest.title,
+				visitCount: summary.count,
+				lastVisitedAt: summary.latest.visitedAt
+			)
 		}.sorted {
 			$0.lastVisitedAt == $1.lastVisitedAt
 				? $0.url.absoluteString < $1.url.absoluteString
