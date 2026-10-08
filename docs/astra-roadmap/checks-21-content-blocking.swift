@@ -2,7 +2,7 @@ import Foundation
 
 @main
 struct BrowserContentBlockingChecks {
-	static func main() throws {
+	static func main() async throws {
 		let first = try BrowserContentBlockingRuleSource.validate(Data("""
 		[
 		  {
@@ -15,6 +15,19 @@ struct BrowserContentBlockingChecks {
 		precondition(first.identifier.hasPrefix("astra.user-content-rules."))
 		let repeatFirst = try BrowserContentBlockingRuleSource.validate(first.data)
 		precondition(repeatFirst.identifier == first.identifier)
+		let concurrentValidationCount = await withTaskGroup(of: Bool.self, returning: Int.self) { group in
+			for _ in 0..<8 {
+				group.addTask {
+					(try? BrowserContentBlockingRuleSource.validate(first.data))?.identifier == first.identifier
+				}
+			}
+			var count = 0
+			for await succeeded in group where succeeded {
+				count += 1
+			}
+			return count
+		}
+		precondition(concurrentValidationCount == 8)
 		precondition(BrowserContentBlockingRuleSource.lastGood(
 			current: first,
 			candidate: first,

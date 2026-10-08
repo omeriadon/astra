@@ -139,6 +139,7 @@ final class BrowserContentBlocking {
 		BrowserLog.info(.contentBlocking, "content-blocking.import-data", metadata: ["file": BrowserLog.value(fileName), "bytes": String(data.count)])
 		guard !isBusy, !privateSessionIsEnding else { return }
 		isBusy = true
+		defer { finishOperation() }
 		let candidate: BrowserContentBlockingRuleSource.Validated
 		do {
 			candidate = try await Task.detached(priority: .utility) {
@@ -146,15 +147,13 @@ final class BrowserContentBlocking {
 			}.value
 		} catch {
 			errorDescription = Self.validationMessage(for: error)
-			finishOperation()
 			return
 		}
+		guard !privateSessionIsEnding, !Task.isCancelled else { return }
 		guard !isReadOnly else {
 			errorDescription = "Astra preserved a content-rule record it cannot rewrite."
-			finishOperation()
 			return
 		}
-		defer { finishOperation() }
 		do {
 			let store = try contentRuleListStore()
 			let cachedList: WKContentRuleList?
