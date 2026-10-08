@@ -156,7 +156,8 @@ struct DownloadFileWorkerCheck {
 		}
 		let cancellationWasObserved = await cancelledWrite.value
 		precondition(cancellationWasObserved)
-		precondition(try JSONDecoder().decode([BrowserDownload].self, from: Data(contentsOf: downloadIndex)) == [newest])
+		let afterCancellation = try JSONDecoder().decode([BrowserDownload].self, from: Data(contentsOf: downloadIndex))
+		precondition(afterCancellation == [newest])
 
 		let staged = try manager.contentsOfDirectory(at: output, includingPropertiesForKeys: nil)
 		precondition(!staged.contains { $0.lastPathComponent.hasPrefix(".astra-finalizing-") })
