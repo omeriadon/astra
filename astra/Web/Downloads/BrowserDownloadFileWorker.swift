@@ -31,7 +31,7 @@ actor BrowserDownloadFileWorker {
 		let manager = FileManager.default
 		var scopedURL: URL?
 		#if os(macOS)
-			if let bookmark {
+			if !hasExistingAccess, let bookmark {
 				var stale = false
 				guard let url = try? URL(
 					resolvingBookmarkData: bookmark,
@@ -110,13 +110,60 @@ actor BrowserDownloadFileWorker {
 		return destination
 	}
 
+	/// Renames a finished download without crossing back to MainActor for
+	/// collision checking or filesystem mutation. The serialized actor avoids
+	/// two simultaneous rename/finalize operations claiming the same name.
+	func renameExisting(
+		source: URL,
+		fileName: String,
+		bookmark: Data?,
+		hasExistingAccess: Bool
+	) throws -> URL {
+		var scope: URL?
+		#if os(macOS)
+			if !hasExistingAccess, let bookmark {
+				var stale = false
+				guard let folder = try? URL(
+					resolvingBookmarkData: bookmark,
+					options: [.withSecurityScope, .withoutUI],
+					relativeTo: nil,
+					bookmarkDataIsStale: &stale
+				), folder.startAccessingSecurityScopedResource()
+				else { throw FinalizationError.destinationUnavailable }
+				scope = folder
+			}
+		#endif
+		defer { scope?.stopAccessingSecurityScopedResource() }
+		try Task.checkCancellation()
+		let directory = source.deletingLastPathComponent()
+		var destination = BrowserDownload.collisionFreeURL(fileName: fileName, in: directory, excluding: source)
+		while true {
+			try Task.checkCancellation()
+			do {
+				try FileManager.default.moveItem(at: source, to: destination)
+				return destination
+			} catch {
+				let nsError = error as NSError
+				guard nsError.domain == NSCocoaErrorDomain,
+				      nsError.code == CocoaError.fileWriteFileExists.rawValue
+				else { throw error }
+				destination = BrowserDownload.collisionFreeURL(
+					fileName: destination.lastPathComponent,
+					in: directory,
+					reserved: [destination.standardizedFileURL],
+					excluding: source
+				)
+			}
+		}
+	}
+
 	/// Deletes staging files on the worker, including after cancellation.
 	/// Failure is reported so a download is not removed from the registry
 	/// while its backing file remains unexpectedly on disk.
 	func deleteTemporaryFiles(_ files: [URL], bookmark: Data?, hasExistingAccess: Bool) throws {
 		var scopedURL: URL?
 		#if os(macOS)
-			if let bookmark {
+			if !hasExistingAccess, let bookmark {
 				var stale = false
 				guard let url = try? URL(
 					resolvingBookmarkData: bookmark,
