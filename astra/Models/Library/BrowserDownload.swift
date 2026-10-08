@@ -1,6 +1,6 @@
 import Foundation
 
-enum BrowserDownloadStatus: String, Codable, Sendable {
+nonisolated enum BrowserDownloadStatus: String, Codable, Sendable {
 	case downloading
 	case finalizing
 	case paused
@@ -9,7 +9,7 @@ enum BrowserDownloadStatus: String, Codable, Sendable {
 	case failed
 }
 
-struct BrowserDownloadSegment: Codable, Equatable, Sendable {
+nonisolated struct BrowserDownloadSegment: Codable, Equatable, Sendable {
 	static let minimumSegmentBytes: Int64 = 32 * 1024 * 1024
 	static let maximumConnections = 16
 
@@ -36,7 +36,7 @@ struct BrowserDownloadSegment: Codable, Equatable, Sendable {
 	}
 }
 
-struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
+nonisolated struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 	let id: UUID
 	let createdAt: Date
 	let sourceURL: URL?
