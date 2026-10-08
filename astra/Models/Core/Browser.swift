@@ -34,8 +34,14 @@ final class Browser {
 	private(set) var recentlyUsedTabIDs: [UUID]
 	private(set) var bookmarks: [Bookmark]
 	private(set) var readingList: [ReadingListItem]
+	/// Lightweight change token so SwiftUI doesn't compare an entire history
+	/// array for equality on every new navigation or title update.
+	private(set) var historyChangeRevision = 0
 	private(set) var historyVisits: [BrowserVisit] {
-		didSet { historySearchIndex = nil }
+		didSet {
+			historySearchIndex = nil
+			historyChangeRevision &+= 1
+		}
 	}
 	/// Reuse the expensive per-URL history aggregation across successive search keystrokes.
 	/// The history property observer invalidates this for title edits, imports, sync and deletion.

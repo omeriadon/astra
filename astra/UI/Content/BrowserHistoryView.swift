@@ -81,7 +81,7 @@ struct BrowserHistoryView: View {
 			.padding(.vertical, 14)
 		}
 		.onAppear { refreshHistoryIndex(browser.historyVisits) }
-		.onChange(of: browser.historyVisits) { _, visits in refreshHistoryIndex(visits) }
+		.onChange(of: browser.historyChangeRevision) { _, _ in refreshHistoryIndex(browser.historyVisits) }
 		.onChange(of: searchText) { _, _ in updateVisits() }
 		.onDisappear {
 			historyIndexTask?.cancel()
@@ -146,6 +146,16 @@ struct BrowserHistoryView: View {
 		let query = searchText
 		historyFilterTask?.cancel()
 		historyFilterTask = Task { @MainActor in
+			// Debounce typing before beginning a full collection scan, so
+			// cancelled queries don't flood the worker pool with stale work.
+			if !query.isEmpty {
+				do {
+					try await Task.sleep(for: .milliseconds(75))
+				} catch {
+					return
+				}
+			}
+			guard !Task.isCancelled, revision == filterRevision else { return }
 			let filtered = await Task.detached(priority: .userInitiated) {
 				BrowserVisit.matching(visits, query: query)
 			}.value
