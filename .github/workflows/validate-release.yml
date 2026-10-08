@@ -113,6 +113,11 @@ jobs:
             checks/bookmark-projection-check.swift \
             -o "$RUNNER_TEMP/astra-bookmark-projection-check"
           "$RUNNER_TEMP/astra-bookmark-projection-check"
+          swiftc -O -swift-version 6 \
+            astra/Models/Library/Bookmark.swift \
+            checks/library-scaling-benchmark.swift \
+            -o "$RUNNER_TEMP/astra-library-scaling-benchmark"
+          "$RUNNER_TEMP/astra-library-scaling-benchmark"
           node checks/favicon-observer-check.mjs
           swiftc -swift-version 6 \
             astra/Models/Tabs/BrowserVisit.swift \
