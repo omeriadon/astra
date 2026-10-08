@@ -37,6 +37,7 @@ final class Browser {
 	private(set) var historyVisits: [BrowserVisit] {
 		didSet { historySearchIndex = nil }
 	}
+
 	/// Reuse the expensive per-URL history aggregation across successive search keystrokes.
 	/// The history property observer invalidates this for title edits, imports, sync and deletion.
 	@ObservationIgnored
@@ -279,7 +280,8 @@ final class Browser {
 		let space = workspace.spaces[nextIndex]
 		let targetID: UUID? = {
 			if let preferred = space.selectedTabID,
-			   space.tabIDs.contains(preferred) || workspace.favouriteTabIDs.contains(preferred) {
+			   space.tabIDs.contains(preferred) || workspace.favouriteTabIDs.contains(preferred)
+			{
 				return preferred
 			}
 			return space.tabIDs.first ?? workspace.favouriteTabIDs.first
@@ -1134,7 +1136,8 @@ final class Browser {
 		// avoid rewriting workspace timestamps/persistence for any repeated click
 		// on an already-active warm tab.
 		if selectedTabID == id, !tab.isHibernated,
-		   requestedSpaceID == nil || requestedSpaceID == workspace.selectedSpaceID {
+		   requestedSpaceID == nil || requestedSpaceID == workspace.selectedSpaceID
+		{
 			if !BrowserWindowRegistry.shared.ownsTab(id, in: self) {
 				BrowserWindowRegistry.shared.claimSelectedTab(in: self)
 			}
@@ -1148,7 +1151,7 @@ final class Browser {
 		if let requestedSpaceID {
 			nextWorkspace.selectedSpaceID = requestedSpaceID
 		} else if !nextWorkspace.favouriteTabIDs.contains(id),
-		   let ownerIndex = nextWorkspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })
+		          let ownerIndex = nextWorkspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })
 		{
 			if let currentIndex = nextWorkspace.spaces.firstIndex(where: { $0.id == nextWorkspace.selectedSpaceID }) {
 				spaceSwitchDirection = ownerIndex >= currentIndex ? 1 : -1
@@ -1628,6 +1631,13 @@ final class Browser {
 			BrowserExtensionManager.shared.webViewDidChange(for: id, in: self)
 			schedulePersistence()
 		}
+	}
+
+	func finishAutomaticHibernation(_ tab: BrowserTab) {
+		guard tabs.contains(where: { $0 === tab }), tab.canHibernate else { return }
+		tab.hibernate()
+		BrowserExtensionManager.shared.webViewDidChange(for: tab.id, in: self)
+		schedulePersistence()
 	}
 
 	func handleMemoryPressure(_ level: BrowserHibernationManager.PressureLevel) {
@@ -2609,7 +2619,7 @@ final class Browser {
 		// Selection-only persistence is a hot path and extension activation is
 		// already handled by BrowserWindowRegistry. Rebuilding every extension-tab
 		// snapshot here made each ordinary tab click walk the entire tab set again.
-		if fullState && syncExtensions {
+		if fullState, syncExtensions {
 			BrowserExtensionManager.shared.sync(self)
 		}
 		guard persistence != nil else { return }

@@ -24,6 +24,7 @@ final class BrowserHibernationManager {
 
 	private weak var browser: Browser?
 	private var sweepTask: Task<Void, Never>?
+	private var reclamationTask: Task<Void, Never>?
 	private var pressureLevel: PressureLevel = .normal
 
 	init(browser: Browser) {
@@ -31,13 +32,14 @@ final class BrowserHibernationManager {
 		scheduleSweep(after: .seconds(60))
 	}
 
+	deinit {
+		sweepTask?.cancel()
+		reclamationTask?.cancel()
+	}
+
 	func handleMemoryPressure(_ level: PressureLevel) {
 		pressureLevel = level
-		if level == .critical {
-			sweep()
-		} else {
-			scheduleSweep(after: .seconds(1))
-		}
+		scheduleSweep(after: level == .critical ? .zero : .seconds(1))
 	}
 
 	private func scheduleSweep(after delay: Duration) {
@@ -64,21 +66,11 @@ final class BrowserHibernationManager {
 		let now = Date.now
 		let idleTime = pressureLevel == .warning ? Self.warningIdleTime : Self.normalIdleTime
 		let eligible = browser.tabs
-			.filter { tab in
-				guard !tab.isHibernated,
-				      tab.internalPage == nil,
-				      tab.canHibernate,
-				      !isVisible(tab),
-				      !isPinned(tab)
-				else { return false }
-				return pressureLevel == .critical || now.timeIntervalSince(tab.lastInteractionAt) >= idleTime.timeInterval
-			}
+			.filter { isEligible($0, now: now, idleTime: pressureLevel == .critical ? .zero : idleTime) }
 			.sorted { $0.lastInteractionAt < $1.lastInteractionAt }
 
 		if pressureLevel == .critical {
-			for tab in eligible {
-				browser.hibernateTab(tab.id, onlyIfBackground: true)
-			}
+			reclaimSequentially(eligible.map(\.id))
 		} else {
 			for tab in eligible {
 				browser.hibernateTab(tab.id, onlyIfBackground: true)
@@ -91,12 +83,46 @@ final class BrowserHibernationManager {
 		scheduleSweep(after: nextDelay)
 	}
 
+	private func reclaimSequentially(_ ids: [UUID]) {
+		reclamationTask?.cancel()
+		reclamationTask = Task { @MainActor [weak self, weak browser] in
+			guard let self, let browser else { return }
+			for id in ids {
+				guard !Task.isCancelled,
+				      pressureLevel == .critical,
+				      Defaults[.automaticHibernationEnabled],
+				      let tab = browser.tab(withID: id),
+				      isEligible(tab, now: .now, idleTime: .zero)
+				else { continue }
+				let activityBefore = tab.lastInteractionAt
+				await tab.controller?.refreshActivity()
+				guard tab.lastInteractionAt == activityBefore,
+				      isEligible(tab, now: .now, idleTime: .zero)
+				else { continue }
+				browser.finishAutomaticHibernation(tab)
+			}
+		}
+	}
+
 	private func nextDeadlineDelay(now: Date, idleTime: Duration, browser: Browser) -> Duration {
 		let seconds = browser.tabs
-			.filter { !$0.isHibernated && !isVisible($0) && !isPinned($0) }
+			.filter { isEligible($0, now: now, idleTime: .zero) }
 			.map { max(1, idleTime.timeInterval - now.timeIntervalSince($0.lastInteractionAt)) }
 			.min() ?? idleTime.timeInterval
-		return .milliseconds(Int64(seconds * 1000))
+		return .milliseconds(Int64(max(seconds, 60) * 1000))
+	}
+
+	private func isEligible(_ tab: BrowserTab, now: Date, idleTime: Duration) -> Bool {
+		guard !tab.isHibernated,
+		      tab.internalPage == nil,
+		      tab.canHibernate,
+		      !isVisible(tab),
+		      !isPinned(tab),
+		      tab.peeks.isEmpty,
+		      tab.controller?.webViewIfLoaded?.window == nil,
+		      browser?.session.downloads.activeProgress == nil
+		else { return false }
+		return idleTime == .zero || now.timeIntervalSince(tab.lastInteractionAt) >= idleTime.timeInterval
 	}
 
 	private func isVisible(_ tab: BrowserTab) -> Bool {

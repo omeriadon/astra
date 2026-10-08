@@ -149,7 +149,7 @@
 				// AI model catalogs are fetched and cached when a model menu opens.
 				// Spawning Codex and Claude CLIs at every launch wastes CPU.
 			}
-			let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+			let source = DispatchSource.makeMemoryPressureSource(eventMask: [.normal, .warning, .critical], queue: .main)
 			source.setEventHandler {
 				let level = BrowserHibernationManager.PressureLevel(rawValue: source.data)
 				BrowserLog.warning(.performance, "memory-pressure")
