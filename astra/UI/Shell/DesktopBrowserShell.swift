@@ -240,10 +240,13 @@ struct DesktopBrowserShell: View {
 									+ (showsAI ? BrowserChromeMetrics.aiSidebarWidthRange.lowerBound : 0)
 							)
 							: 6
+						let shouldReveal = !sidebarShown && location.x < revealWidth
+						guard shouldReveal != isSidebarRevealed else { return }
 						withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
-							isSidebarRevealed = !sidebarShown && location.x < revealWidth
+							isSidebarRevealed = shouldReveal
 						}
 					case .ended:
+						guard isSidebarRevealed else { return }
 						withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
 							isSidebarRevealed = false
 						}
@@ -683,7 +686,7 @@ private struct DownloadFlightOverlay: View {
 		var body: some View {
 			GeometryReader { geometry in
 				if let tabID = tabDrag.activeTabID,
-				   let tab = browser.tabs.first(where: { $0.id == tabID }),
+				   let tab = browser.tab(withID: tabID),
 				   let hostWindow
 				{
 					let point = hostWindow.convertPoint(fromScreen: tabDrag.screenPoint)

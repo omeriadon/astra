@@ -12,7 +12,7 @@ import OSLog
 /// AI API keys, or other credentials in metadata. request(_:) logs header names
 /// and body sizes, not values.
 enum BrowserLog {
-	enum Category: String, Sendable {
+	enum Category: String, CaseIterable, Sendable {
 		case lifecycle
 		case browser
 		case tabs
@@ -44,6 +44,11 @@ enum BrowserLog {
 	}
 
 	nonisolated static let subsystem = "com.omeriadon.astra"
+	private nonisolated static let loggers = Dictionary(
+		uniqueKeysWithValues: Category.allCases.map {
+			($0, Logger(subsystem: subsystem, category: $0.rawValue))
+		}
+	)
 
 	private nonisolated static let stateLock = NSLock()
 	private nonisolated(unsafe) static var bootstrapped = false
@@ -182,13 +187,17 @@ enum BrowserLog {
 		metadata: @autoclosure () -> [String: String] = [:]
 	) {
 		let milliseconds = max(0, (clock() - started) * 1000)
-		var values = metadata()
-		values["elapsed_ms"] = String(format: "%.1f", milliseconds)
 		if milliseconds >= warnAboveMilliseconds {
+			var values = metadata()
+			values["elapsed_ms"] = String(format: "%.1f", milliseconds)
 			warning(category, event, metadata: values)
-		} else {
-			debug(category, event, metadata: values)
+			return
 		}
+		#if DEBUG
+			var values = metadata()
+			values["elapsed_ms"] = String(format: "%.1f", milliseconds)
+			debug(category, event, metadata: values)
+		#endif
 	}
 
 	/// Full URL in Debug except embedded credentials and obvious secret/token fields.
@@ -292,7 +301,7 @@ enum BrowserLog {
 		function: StaticString,
 		line: UInt
 	) {
-		let logger = Logger(subsystem: subsystem, category: category.rawValue)
+		guard let logger = loggers[category] else { return }
 		var components = ["[ASTRA]", "[\(level.rawValue.uppercased())]", "[\(category.rawValue)]", "[\(event)]"]
 		if !message.isEmpty {
 			components.append(clean(message))

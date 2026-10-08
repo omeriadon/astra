@@ -157,6 +157,13 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		)
 	}
 
+	/// Used by tab selection: a cached icon needs no WebKit JavaScript probe or
+	/// network refresh just because the user returned to an existing tab.
+	func hasCachedFavicon(for pageURL: URL?) -> Bool {
+		guard let key = FaviconKey.origin(for: pageURL) else { return false }
+		return favicons[key] != nil
+	}
+
 	func image(for pageURL: URL?, in _: WKWebView? = nil) -> Image? {
 		guard let key = FaviconKey.origin(for: pageURL) else { return nil }
 		if let cached = decodedImages[key] {

@@ -322,7 +322,10 @@ struct BrowserWebView {
 							break
 						}
 						do {
-							try await Task.sleep(for: .milliseconds(20))
+							// Failed snapshot attempts usually mean WebKit is still
+							// attaching or another snapshot is in flight. Polling at
+							// 20 ms only creates contention; 75 ms is still imperceptible.
+							try await Task.sleep(for: .milliseconds(75))
 						} catch {
 							return
 						}

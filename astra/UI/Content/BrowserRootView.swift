@@ -1,8 +1,10 @@
+import Defaults
 import SwiftUI
 
 struct BrowserRootView: View {
 	@Binding var browser: Browser
 	@State private var sync = BrowserSync.shared
+	@Default(.historyRetentionDays) private var historyRetentionDays
 	@Environment(\.scenePhase) private var scenePhase
 
 	#if os(macOS)
@@ -43,7 +45,7 @@ struct BrowserRootView: View {
 			.onAppear {
 				sync.attach(browser)
 			}
-			.onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+			.onChange(of: historyRetentionDays) { _, _ in
 				browser.applyHistoryRetention()
 			}
 			.onChange(of: scenePhase) { _, phase in

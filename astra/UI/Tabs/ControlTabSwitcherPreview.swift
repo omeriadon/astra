@@ -32,7 +32,7 @@
 
 		private func refreshVisibleCandidates(fitting width: CGFloat) async {
 			let controllers = visibleCandidateIDs(fitting: width).compactMap { id in
-				browser.tabs.first(where: { $0.id == id })?.controller
+				browser.tab(withID: id)?.controller
 			}
 
 			await withTaskGroup(of: Void.self) { group in
@@ -78,7 +78,7 @@
 		var body: some View {
 			HStack(spacing: spacing) {
 				ForEach(candidateIDs, id: \.self) { id in
-					if let tab = browser.tabs.first(where: { $0.id == id }) {
+					if let tab = browser.tab(withID: id) {
 						ControlTabSwitcherCandidateView(
 							tab: tab,
 							isSelected: switcher.highlightedTabID == id,

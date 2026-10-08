@@ -23,6 +23,7 @@
 		private var lastClosedNormalWindow: BrowserWindowRecord?
 		private var wasLaunchedForWebPush = false
 		private var startupWindowRestorationFinished = false
+		private var startupStartedAt = BrowserLog.clock()
 		private var queuedStartupURLs: [URL] = []
 		private var shouldReopenAfterStartup = false
 		private var memoryPressureSource: DispatchSourceMemoryPressure?
@@ -50,6 +51,7 @@
 		}
 
 		func applicationWillFinishLaunching(_: Notification) {
+			startupStartedAt = BrowserLog.clock()
 			BrowserLog.info(.lifecycle, "app.will-finish-launching")
 			#if DEBUG
 				if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
@@ -130,14 +132,19 @@
 			let authentication = ASWebAuthenticationSessionWebBrowserSessionManager.shared
 			authentication.sessionHandler = BrowserAuthenticationSessionHandler.shared
 			// Keep non-critical services off the launch/first-frame critical path.
-			// Extension package discovery is especially expensive because WebKit's
-			// extension APIs are MainActor-bound; let the first window paint before
-			// asking WebKit to construct those contexts.
+			// Stagger them so one slow subsystem cannot serialize all deferred work
+			// or create a single large post-launch CPU spike.
 			Task { @MainActor in
-				try? await Task.sleep(for: .milliseconds(500))
+				try? await Task.sleep(for: .milliseconds(600))
 				await BrowserExtensionManager.shared.prepare()
+			}
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(1000))
 				UpdateManager.shared.start()
 				BrowserDownloadManager.shared.resumeAvailableDownloads()
+			}
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(1600))
 				BrowserWebsiteMonitoring.shared.start()
 				BrowserAICLI.startModelCatalogRefresh()
 			}
@@ -183,6 +190,11 @@
 				if !windows.isEmpty {
 					NSApp.activate()
 				}
+				BrowserLog.notice(.lifecycle, "startup.windows-presented", metadata: [
+					"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
+					"windows": String(windows.count),
+					"records": String(records.count),
+				])
 				await Task.yield()
 
 				// Keep the restoration ownership gate until each Browser has actually
@@ -312,6 +324,15 @@
 		}
 
 		private func finishStartupWindowRestoration() {
+			BrowserLog.notice(.lifecycle, "startup.restoration-complete", metadata: [
+				"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
+				"windows": String(windows.count),
+				"tabs": String(windows.reduce(0) { $0 + $1.browser.tabs.count }),
+			])
+			// Every initial window has completed hydration before this is called,
+			// so the shared launch decode can be released. A later Dock reopen
+			// with no live windows must read the then-current persisted state.
+			Browser.finishLaunchHydrationSharing()
 			BrowserWindowRegistry.shared.finishWindowRestoration()
 			startupWindowRestorationFinished = true
 			BrowserWebPushManager.shared.drainPendingMessages()

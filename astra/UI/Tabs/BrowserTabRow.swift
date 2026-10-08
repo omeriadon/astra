@@ -18,6 +18,7 @@ struct BrowserTabRow: View {
 	var pinned: Bool?
 	var rowSpaceID: UUID?
 	var rowTheme: BrowserTheme?
+	var isOpenElsewhere: Bool?
 	var onSelectTab: ((UUID) -> Void)?
 	var navigationNamespace: Namespace.ID?
 	@Namespace private var rowTransitions
@@ -61,7 +62,7 @@ struct BrowserTabRow: View {
 	}
 
 	var body: some View {
-		let isOpenElsewhere = BrowserWindowRegistry.shared.isOpenInAnotherWindow(tab.id, than: browser)
+		let isOpenElsewhere = isOpenElsewhere ?? BrowserWindowRegistry.shared.isOpenInAnotherWindow(tab.id, than: browser)
 		return HStack(spacing: 6) {
 			TabIconView(tab: tab, browser: browser, onSelectTab: onSelectTab)
 			if let match = tab.monitorMatch {
@@ -256,6 +257,7 @@ extension BrowserTabRow: Equatable {
 			&& lhs.pinned == rhs.pinned
 			&& lhs.rowSpaceID == rhs.rowSpaceID
 			&& lhs.rowTheme == rhs.rowTheme
+			&& lhs.isOpenElsewhere == rhs.isOpenElsewhere
 			&& (lhs.onSelectTab == nil) == (rhs.onSelectTab == nil)
 			&& lhs.navigationNamespace == rhs.navigationNamespace
 	}

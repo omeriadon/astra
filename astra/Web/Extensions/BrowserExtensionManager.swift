@@ -36,6 +36,8 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	private(set) var actionsRevision = 0
 	private(set) var isInstallingFromStore = false
 	private var contexts: [String: WKWebExtensionContext] = [:]
+	private var cachedDisplayNames: [String: String] = [:]
+	@ObservationIgnored private var deferredContextPreparationTask: Task<Void, Never>?
 	private var windows: [UUID: BrowserExtensionWindow] = [:]
 	private var tabs: [UUID: [UUID: BrowserExtensionTab]] = [:]
 	private var knownTabIDs: [UUID: Set<UUID>] = [:]
@@ -66,6 +68,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		safariBundlePaths = UserDefaults.standard.dictionary(forKey: "safariExtensionBundles") as? [String: String] ?? [:]
 		unpinnedNames = Set(UserDefaults.standard.stringArray(forKey: "unpinnedExtensions") ?? [])
 		safariNames = Set(UserDefaults.standard.stringArray(forKey: "safariExtensions") ?? [])
+		cachedDisplayNames = UserDefaults.standard.dictionary(forKey: "extensionDisplayNames") as? [String: String] ?? [:]
 		enabledNames = Set((["darkreader-chrome-mv3", "ublock-origin-lite-safari"] + savedNames).filter {
 			UserDefaults.standard.bool(forKey: "extension.\($0).enabled")
 		})
@@ -325,6 +328,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			let context = WKWebExtensionContext(for: extensionObject)
 			context.uniqueIdentifier = name
 			contexts[name] = context
+			cacheDisplayName(extensionObject.displayName, for: name)
 			installedNames.append(name)
 			safariNames.insert(name)
 			safariBundlePaths[name] = candidate.bundleURL.path
@@ -347,7 +351,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func title(for name: String) -> String {
-		if let title = contexts[name]?.webExtension.displayName {
+		if let title = contexts[name]?.webExtension.displayName ?? cachedDisplayNames[name] {
 			return title
 		}
 		switch name {
@@ -436,29 +440,105 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		let logStarted = BrowserLog.clock()
 		BrowserLog.info(.extensions, "extensions.prepare.begin", metadata: ["available": String(availableNames.count), "enabled": String(enabledNames.count)])
 		didPrepare = true
-		for name in availableNames {
-			BrowserLog.debug(.extensions, "extension.prepare-item", metadata: ["name": BrowserLog.value(name), "enabled": String(enabledNames.contains(name))])
+
+		// Only enabled extensions belong on the launch path. Disabled packages are
+		// metadata-only until the user opens extension settings or the staggered
+		// idle preparation below reaches them.
+		for (index, name) in availableNames.filter({ enabledNames.contains($0) }).enumerated() {
+			if index > 0 {
+				await Task.yield()
+			}
+			BrowserLog.debug(.extensions, "extension.prepare-item", metadata: ["name": BrowserLog.value(name), "enabled": "true"])
 			do {
-				let webExtension: WKWebExtension
-				if let path = safariBundlePaths[name], let bundle = Bundle(path: path) {
-					webExtension = try await WKWebExtension(appExtensionBundle: bundle)
-				} else if let url = archiveURL(for: name) {
-					webExtension = try await WKWebExtension(resourceBaseURL: url)
-				} else {
-					loadErrors[name] = "Extension package is missing."
-					continue
-				}
-				let context = WKWebExtensionContext(for: webExtension)
-				context.uniqueIdentifier = name
-				contexts[name] = context
-				if enabledNames.contains(name) {
-					try enable(name)
-				}
+				_ = try await prepareContext(for: name)
+				try enable(name)
 			} catch {
 				loadErrors[name] = error.localizedDescription
 			}
 		}
+
 		BrowserLog.duration(.extensions, "extensions.prepare.end", since: logStarted, warnAboveMilliseconds: 500, metadata: ["contexts": String(contexts.count), "errors": String(loadErrors.count)])
+		scheduleDeferredContextPreparation()
+	}
+
+	func prepareAllContexts() async {
+		await prepare()
+		deferredContextPreparationTask?.cancel()
+		deferredContextPreparationTask = nil
+		await prepareMissingContexts(spacingMilliseconds: 0)
+	}
+
+	private func scheduleDeferredContextPreparation() {
+		guard deferredContextPreparationTask == nil,
+		      availableNames.contains(where: { contexts[$0] == nil }) else { return }
+		deferredContextPreparationTask = Task { @MainActor [weak self] in
+			do {
+				try await Task.sleep(for: .seconds(2))
+			} catch {
+				return
+			}
+			guard let self else { return }
+			await prepareMissingContexts(spacingMilliseconds: 300)
+			deferredContextPreparationTask = nil
+		}
+	}
+
+	private func prepareMissingContexts(spacingMilliseconds: Int) async {
+		let names = availableNames.filter { contexts[$0] == nil }
+		for (index, name) in names.enumerated() {
+			guard !Task.isCancelled else { return }
+			if index > 0, spacingMilliseconds > 0 {
+				do {
+					try await Task.sleep(for: .milliseconds(spacingMilliseconds))
+				} catch {
+					return
+				}
+			}
+			do {
+				_ = try await prepareContext(for: name)
+			} catch {
+				loadErrors[name] = error.localizedDescription
+			}
+		}
+	}
+
+	@discardableResult
+	private func prepareContext(for name: String) async throws -> WKWebExtensionContext {
+		if let existing = contexts[name] {
+			return existing
+		}
+
+		let started = BrowserLog.clock()
+		let webExtension: WKWebExtension
+		if let path = safariBundlePaths[name], let bundle = Bundle(path: path) {
+			webExtension = try await WKWebExtension(appExtensionBundle: bundle)
+		} else if let url = archiveURL(for: name) {
+			webExtension = try await WKWebExtension(resourceBaseURL: url)
+		} else {
+			throw NSError(
+				domain: "astra.extensions",
+				code: 12,
+				userInfo: [NSLocalizedDescriptionKey: "Extension package is missing."]
+			)
+		}
+		let context = WKWebExtensionContext(for: webExtension)
+		context.uniqueIdentifier = name
+		contexts[name] = context
+		cacheDisplayName(webExtension.displayName, for: name)
+		BrowserLog.duration(
+			.extensions,
+			"extension.prepare-item.end",
+			since: started,
+			warnAboveMilliseconds: 150,
+			metadata: ["name": BrowserLog.value(name), "enabled": String(enabledNames.contains(name))]
+		)
+		return context
+	}
+
+	private func cacheDisplayName(_ value: String?, for name: String) {
+		guard let value, !value.isEmpty, cachedDisplayNames[name] != value else { return }
+		cachedDisplayNames[name] = value
+		UserDefaults.standard.set(cachedDisplayNames, forKey: "extensionDisplayNames")
 	}
 
 	func installArchive(from archive: URL, source: Source) async throws -> String {
@@ -489,6 +569,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			let context = WKWebExtensionContext(for: extensionObject)
 			context.uniqueIdentifier = name
 			contexts[name] = context
+			cacheDisplayName(extensionObject.displayName, for: name)
 			installedNames.append(name)
 			UserDefaults.standard.set(installedNames, forKey: "installedExtensions")
 			if source == .safari {
@@ -547,6 +628,8 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		setEnabled(false, for: name)
 		guard contexts[name]?.isLoaded != true else { return }
 		contexts.removeValue(forKey: name)
+		cachedDisplayNames.removeValue(forKey: name)
+		UserDefaults.standard.set(cachedDisplayNames, forKey: "extensionDisplayNames")
 		installedNames.removeAll { $0 == name }
 		safariBundlePaths.removeValue(forKey: name)
 		UserDefaults.standard.set(safariBundlePaths, forKey: "safariExtensionBundles")
@@ -591,6 +674,20 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 
 	func setEnabled(_ enabled: Bool, for name: String) {
 		BrowserLog.info(.extensions, "extension.set-enabled", metadata: ["name": BrowserLog.value(name), "enabled": String(enabled)])
+		if enabled, contexts[name] == nil {
+			deferredContextPreparationTask?.cancel()
+			deferredContextPreparationTask = nil
+			Task { @MainActor [weak self] in
+				guard let self else { return }
+				do {
+					_ = try await prepareContext(for: name)
+					setEnabled(true, for: name)
+				} catch {
+					loadErrors[name] = error.localizedDescription
+				}
+			}
+			return
+		}
 		if enabled, !bundledNames.contains(name),
 		   UserDefaults.standard.string(forKey: "extension.\(name).approvedPermissions") != permissionSummary(for: name),
 		   let context = contexts[name]

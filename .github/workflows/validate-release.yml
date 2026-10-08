@@ -28,10 +28,38 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Select Xcode 27.2 beta
+      - name: Select Xcode 27
         shell: bash
         run: |
-          sudo xcode-select -s /Applications/Xcode_27.2_beta.app/Contents/Developer
+          set -euo pipefail
+
+          candidates=(
+            /Applications/Xcode_27.2_beta.app/Contents/Developer
+            /Applications/Xcode_27.2.app/Contents/Developer
+            /Applications/Xcode_27.1.app/Contents/Developer
+            /Applications/Xcode_27.0.app/Contents/Developer
+          )
+
+          selected=""
+          for developer_dir in "${candidates[@]}"; do
+            if [[ -d "$developer_dir" ]]; then
+              selected="$developer_dir"
+              break
+            fi
+          done
+
+          if [[ -z "$selected" ]]; then
+            current="$(xcode-select -p)"
+            if xcodebuild -version | head -n1 | grep -Eq '^Xcode 27([. ]|$)'; then
+              selected="$current"
+            else
+              echo "::error::No Xcode 27 installation is available on this runner"
+              ls -1 /Applications | grep '^Xcode' || true
+              exit 1
+            fi
+          fi
+
+          sudo xcode-select -s "$selected"
           xcodebuild -version
 
       - name: Install Metal Toolchain

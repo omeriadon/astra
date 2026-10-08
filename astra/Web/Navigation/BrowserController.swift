@@ -65,6 +65,8 @@ final class BrowserController: NSObject, Identifiable {
 	#if os(macOS)
 		@ObservationIgnored
 		private var webInspectorObserver: NSObjectProtocol?
+		@ObservationIgnored
+		private var observedWebInspectorEnabled = false
 	#endif
 	@ObservationIgnored
 	var displayWindowID: UUID?
@@ -301,20 +303,23 @@ final class BrowserController: NSObject, Identifiable {
 	(() => {
 		let scheduled = false;
 		let mutationScheduled = false;
+		let lastCheck = 0;
 		let previous;
 		const samples = 16;
 		const threshold = Math.ceil(samples * 0.7);
+		const minimumInterval = 100;
 		const selector =
 			'header, nav, [role="navigation"], [class*="header" i], [id*="header" i], ' +
 			'[class*="nav" i], [id*="nav" i], [class*="toolbar" i], [id*="toolbar" i]';
 
 		const check = () => {
 			scheduled = false;
+			lastCheck = performance.now();
 			if (window.scrollY < 0 || innerWidth <= 0) return;
 
-			// elementsFromPoint returns much of the same ancestor stack at every
-			// sample. Count first, then perform layout/style reads once per candidate
-			// instead of up to 20 times for the same sticky header.
+			// This probe does multiple hit-tests and layout/style reads. Top-edge
+			// occupancy is browser chrome state, not animation state, so cap it
+			// around 10 Hz instead of doing the work on every scroll frame.
 			const counts = new Map();
 			for (let index = 0; index < samples; index++) {
 				const x = innerWidth * (index + 0.5) / samples;
@@ -347,10 +352,11 @@ final class BrowserController: NSObject, Identifiable {
 			}
 		};
 
-		const schedule = () => {
+		const schedule = (immediate = false) => {
 			if (scheduled) return;
 			scheduled = true;
-			requestAnimationFrame(check);
+			const delay = immediate ? 0 : Math.max(0, minimumInterval - (performance.now() - lastCheck));
+			setTimeout(() => requestAnimationFrame(check), delay);
 		};
 		const scheduleMutation = () => {
 			if (mutationScheduled) return;
@@ -358,18 +364,18 @@ final class BrowserController: NSObject, Identifiable {
 			setTimeout(() => {
 				mutationScheduled = false;
 				schedule();
-			}, 120);
+			}, 250);
 		};
 
-		addEventListener('scroll', schedule, { passive: true });
-		addEventListener('resize', schedule);
+		addEventListener('scroll', () => schedule(), { passive: true });
+		addEventListener('resize', () => schedule(true));
 		new MutationObserver(scheduleMutation).observe(document.documentElement, {
 			subtree: true,
 			childList: true,
 			attributes: true,
 			attributeFilter: ['class', 'style', 'hidden', 'id', 'role']
 		});
-		schedule();
+		schedule(true);
 	})();
 	"""
 
@@ -606,13 +612,18 @@ final class BrowserController: NSObject, Identifiable {
 			}
 		}
 		#if os(macOS)
+			observedWebInspectorEnabled = Defaults[.webInspectorEnabled]
 			webInspectorObserver = NotificationCenter.default.addObserver(
 				forName: UserDefaults.didChangeNotification,
-				object: nil,
+				object: UserDefaults.standard,
 				queue: .main
 			) { [weak self] _ in
-				Task { @MainActor [weak self] in
-					self?.updateWebInspectorAvailability(Defaults[.webInspectorEnabled])
+				MainActor.assumeIsolated {
+					guard let self else { return }
+					let enabled = Defaults[.webInspectorEnabled]
+					guard enabled != self.observedWebInspectorEnabled else { return }
+					self.observedWebInspectorEnabled = enabled
+					self.updateWebInspectorAvailability(enabled)
 				}
 			}
 		#endif
@@ -643,10 +654,14 @@ final class BrowserController: NSObject, Identifiable {
 	private static let linkHoverScript = """
 	(() => {
 		let previous = '', x = 0, y = 0, current = null, previewLink = null, sequence = 0, shift = false;
-		const report = (link, clientX, clientY) => {
+		let lastHref = '', lastTrailing = false, lastShift = false;
+		let pointerFrame = 0, pendingLink = null, scrollFrame = 0;
+
+		const report = (link, clientX, clientY, forceLayout = false) => {
 			let href = '';
 			try { if (link) href = new URL(link.getAttribute('href'), link.baseURI).href; } catch {}
-			if (link !== current) {
+			const linkChanged = link !== current;
+			if (linkChanged) {
 				if (current !== previewLink) current?.removeAttribute('data-astra-ai-preview-hover');
 				current = link;
 				sequence++;
@@ -660,12 +675,26 @@ final class BrowserController: NSObject, Identifiable {
 				}
 			}
 			const trailing = clientX < innerWidth / 2 && clientY > innerHeight - 72;
+			if (!forceLayout && !linkChanged && href === lastHref && trailing === lastTrailing && shift === lastShift) return;
 			const rect = link?.getBoundingClientRect();
 			const key = href + ':' + trailing + ':' + sequence + ':' + (rect?.top ?? 0) + ':' + (rect?.width ?? 0) + ':' + (rect?.height ?? 0) + ':' + shift;
+			lastHref = href;
+			lastTrailing = trailing;
+			lastShift = shift;
 			if (key === previous) return;
 			previous = key;
 			window.webkit.messageHandlers.linkHoverChanged.postMessage({ href, trailing, id: String(sequence), x: rect?.left ?? clientX, y: rect?.top ?? clientY, width: rect?.width ?? 0, height: rect?.height ?? 0, shift });
 		};
+
+		const schedulePointerReport = link => {
+			pendingLink = link;
+			if (pointerFrame) return;
+			pointerFrame = requestAnimationFrame(() => {
+				pointerFrame = 0;
+				report(pendingLink, x, y);
+			});
+		};
+
 		globalThis.astraSetAIHover = (enabled, thinking) => {
 			const target = enabled ? (current || previewLink) : null;
 			if (previewLink !== target) previewLink?.removeAttribute('data-astra-ai-preview-hover');
@@ -679,15 +708,22 @@ final class BrowserController: NSObject, Identifiable {
 			x = event.clientX;
 			y = event.clientY;
 			const link = event.composedPath().find(node => node.matches?.('a[href], area[href]'));
-			report(link, x, y);
+			schedulePointerReport(link);
 		}, true);
-		document.addEventListener('mouseleave', () => report(null, 0, 0));
-		window.addEventListener('blur', () => report(null, 0, 0));
-		window.addEventListener('pagehide', () => report(null, 0, 0));
+		document.addEventListener('mouseleave', () => {
+			pendingLink = null;
+			report(null, 0, 0, true);
+		});
+		window.addEventListener('blur', () => report(null, 0, 0, true));
+		window.addEventListener('pagehide', () => report(null, 0, 0, true));
 		document.addEventListener('scroll', () => {
-			window.webkit.messageHandlers.linkHoverChanged.postMessage({ dismissPreview: true });
-			const link = document.elementFromPoint(x, y)?.closest('a[href], area[href]');
-			report(link, x, y);
+			if (scrollFrame) return;
+			scrollFrame = requestAnimationFrame(() => {
+				scrollFrame = 0;
+				window.webkit.messageHandlers.linkHoverChanged.postMessage({ dismissPreview: true });
+				const link = document.elementFromPoint(x, y)?.closest('a[href], area[href]');
+				report(link, x, y, true);
+			});
 		}, true);
 	})();
 	"""
@@ -749,7 +785,10 @@ final class BrowserController: NSObject, Identifiable {
 				await self?.refreshActivity()
 				guard !Task.isCancelled else { return }
 				do {
-					try await Task.sleep(for: .seconds(1))
+					// Media play/pause/metadata events trigger immediate refreshes through
+					// pageActivityChanged. This slower fallback is only for state WebKit
+					// does not expose as a DOM event (notably capture/metadata edge cases).
+					try await Task.sleep(for: .seconds(5))
 				} catch {
 					return
 				}
@@ -788,8 +827,9 @@ final class BrowserController: NSObject, Identifiable {
 		}
 		mediaTitle = (state["title"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
 		mediaArtist = (state["artist"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
-		await refreshPictureInPictureEligibility(in: webView, documentID: documentID)
 		guard owns(webView), documentID == navigationIdentifier else { return }
+		// pictureInPictureScript reports eligibility/active changes directly on
+		// video lifecycle events; do not run a second DOM query on every poll.
 		webView.configuration.preferences.inactiveSchedulingPolicy = isPictureInPictureActive || isEnteringPictureInPicture || isPlayingMedia || hasActiveVideoPlayback ? .none : .throttle
 	}
 
@@ -1298,6 +1338,7 @@ final class BrowserController: NSObject, Identifiable {
 	private func makeWebView() -> WKWebView {
 		let webViewLogStarted = BrowserLog.clock()
 		BrowserLog.info(.webKit, "webview.create.begin", metadata: ["controller": BrowserLog.id(id), "private": String(session.isPrivate)])
+		var webViewStageStarted = BrowserLog.clock()
 		let configuration = suppliedConfiguration ?? WKWebViewConfiguration()
 		if suppliedConfiguration != nil {
 			configuration.userContentController = WKUserContentController()
@@ -1326,6 +1367,8 @@ final class BrowserController: NSObject, Identifiable {
 			configuration.applicationNameForUserAgent = suffix
 		}
 		session.favicons.configureFaviconObservation(in: configuration.userContentController)
+		BrowserLog.duration(.webKit, "webview.create.configuration", since: webViewStageStarted, warnAboveMilliseconds: 40, metadata: ["controller": BrowserLog.id(id)])
+		webViewStageStarted = BrowserLog.clock()
 		let webView = PeekSourceWebView(frame: .zero, configuration: configuration)
 		#if os(macOS)
 			BrowserDesktopCommands.configureWebInspector(webView, enabled: Defaults[.webInspectorEnabled])
@@ -1334,6 +1377,8 @@ final class BrowserController: NSObject, Identifiable {
 		#if os(macOS)
 			startPreviewSnapshotRefresh()
 		#endif
+		BrowserLog.duration(.webKit, "webview.create.instance", since: webViewStageStarted, warnAboveMilliseconds: 50, metadata: ["controller": BrowserLog.id(id)])
+		webViewStageStarted = BrowserLog.clock()
 		let scrollHandler = WeakScriptMessageHandler(delegate: self)
 		webView.configuration.userContentController.add(
 			scrollHandler,
@@ -1397,6 +1442,8 @@ final class BrowserController: NSObject, Identifiable {
 		webView.onResetZoom = { [weak self] in self?.resetZoom() }
 		webView.pageZoom = CGFloat(pageZoom)
 		updateThemeColor(url == nil ? .black : webView.underPageBackgroundColor ?? .white)
+		BrowserLog.duration(.webKit, "webview.create.handlers", since: webViewStageStarted, warnAboveMilliseconds: 40, metadata: ["controller": BrowserLog.id(id)])
+		webViewStageStarted = BrowserLog.clock()
 
 		observations = [
 			webView.observe(\.hasOnlySecureContent, options: [.initial, .new]) { [weak self] webView, _ in
@@ -1468,11 +1515,14 @@ final class BrowserController: NSObject, Identifiable {
 				}
 			},
 		]
+		BrowserLog.duration(.webKit, "webview.create.observers", since: webViewStageStarted, warnAboveMilliseconds: 30, metadata: ["controller": BrowserLog.id(id)])
+		webViewStageStarted = BrowserLog.clock()
 		startMediaObservation()
 		isWebViewReady = true
 		extensionWebViewDidChange?()
 		// Start deferred navigation immediately once startup rule restoration is ready.
 		contentBlockingDidBecomeReady()
+		BrowserLog.duration(.webKit, "webview.create.finalize", since: webViewStageStarted, warnAboveMilliseconds: 30, metadata: ["controller": BrowserLog.id(id)])
 		BrowserLog.duration(.webKit, "webview.create.end", since: webViewLogStarted, warnAboveMilliseconds: 150, metadata: ["controller": BrowserLog.id(id)])
 		return webView
 	}
@@ -1730,7 +1780,8 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func loadFaviconIfMissing() {
-		guard let url, let webView = createdWebView else { return }
+		guard let url, let webView = createdWebView,
+		      !session.favicons.hasCachedFavicon(for: url) else { return }
 		loadFavicon(for: url, in: webView)
 	}
 

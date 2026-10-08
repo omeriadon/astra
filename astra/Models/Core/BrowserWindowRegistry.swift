@@ -52,7 +52,12 @@ final class BrowserWindowRegistry {
 	func register(_ browser: Browser) {
 		browsers.removeAll { $0.browser == nil }
 		browsers.append(WeakBrowser(browser))
-		BrowserExtensionManager.shared.sync(browser)
+		// Normal startup windows register with a lightweight placeholder before
+		// disk hydration. Syncing that placeholder into WKWebExtensionController
+		// only to replace it moments later adds launch work and duplicate events.
+		if browser.isHydrationFinished {
+			BrowserExtensionManager.shared.sync(browser)
+		}
 	}
 
 	func unregister(_ browser: Browser) {
@@ -105,12 +110,12 @@ final class BrowserWindowRegistry {
 
 		if let owner = tabOwners[id],
 		   let ownerBrowser = normalBrowsers.first(where: { $0.windowID == owner }),
-		   ownerBrowser.tabs.contains(where: { $0.id == id })
+		   ownerBrowser.tab(withID: id) != nil
 		{
 			return owner == browser.windowID
 		}
-		return normalBrowsers.first { $0.tabs.contains(where: { $0.id == id }) }?.windowID == browser.windowID
-			|| !normalBrowsers.contains { $0.tabs.contains(where: { $0.id == id }) }
+		return normalBrowsers.first { $0.tab(withID: id) != nil }?.windowID == browser.windowID
+			|| !normalBrowsers.contains { $0.tab(withID: id) != nil }
 	}
 
 	/// Resolve ownership for an entire window in one pass. Hot rendering paths
@@ -158,13 +163,13 @@ final class BrowserWindowRegistry {
 		let previousOwnerID: UUID? = {
 			if let owner = tabOwners[selectedID],
 			   normalBrowsers.contains(where: {
-			   	$0.windowID == owner && $0.tabs.contains(where: { $0.id == selectedID })
+			   	$0.windowID == owner && $0.tab(withID: selectedID) != nil
 			   })
 			{
 				return owner
 			}
 			return normalBrowsers.first {
-				$0.tabs.contains(where: { $0.id == selectedID })
+				$0.tab(withID: selectedID) != nil
 			}?.windowID
 		}()
 
@@ -197,6 +202,25 @@ final class BrowserWindowRegistry {
 		return openBrowsers.contains {
 			$0 !== browser && !$0.isPrivate && !$0.isMini && $0.selectedTabID == id && ownsTab(id, in: $0)
 		}
+	}
+
+	/// Sidebar rows ask this for every visible tab. Resolve the selected tabs
+	/// owned by other normal windows once instead of rescanning all windows and
+	/// their tab arrays from every row body.
+	func tabIDsOpenInAnotherWindow(than browser: Browser) -> Set<UUID> {
+		guard !browser.isPrivate, !browser.isMini else { return [] }
+		let normalBrowsers = openBrowsers.filter { !$0.isPrivate && !$0.isMini }
+		guard normalBrowsers.count > 1 else { return [] }
+
+		var result = Set<UUID>()
+		result.reserveCapacity(normalBrowsers.count - 1)
+		for other in normalBrowsers where other !== browser {
+			let id = other.selectedTabID
+			if ownsTab(id, in: other) {
+				result.insert(id)
+			}
+		}
+		return result
 	}
 
 	func isReferenced(_ tab: BrowserTab) -> Bool {

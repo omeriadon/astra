@@ -12,6 +12,7 @@ struct BrowserPageView: View {
 
 	var body: some View {
 		let hasActiveDuplicate = BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
+		let selectedTab = browser.selectedTab
 		return ZStack(alignment: .top) {
 			BrowserContentView(browser: browser, insets: insets)
 			#if os(macOS)
@@ -20,7 +21,7 @@ struct BrowserPageView: View {
 				.accessibilityHidden(hasActiveDuplicate)
 			#endif
 
-			if let tab = browser.selectedTab,
+			if let tab = selectedTab,
 			   !hasActiveDuplicate,
 			   !tab.peeks.isEmpty,
 			   tab.activeController !== tab.controller
@@ -29,9 +30,9 @@ struct BrowserPageView: View {
 					.id(tab.id)
 			}
 		}
-		.accessibilityHidden(browser.selectedTab?.activeController?.readerHTML != nil)
+		.accessibilityHidden(selectedTab?.activeController?.readerHTML != nil)
 		.overlay {
-			if let controller = browser.selectedTab?.activeController,
+			if let controller = selectedTab?.activeController,
 			   let html = controller.readerHTML,
 			   !hasActiveDuplicate
 			{
