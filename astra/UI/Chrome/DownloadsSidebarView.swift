@@ -105,7 +105,7 @@ private struct DownloadRowView: View {
 						.font(.caption)
 						.opacity(0.65)
 				}
-				if item.status == .downloading || item.status == .paused {
+				if item.status == .downloading || item.status == .paused || item.status == .finalizing {
 					Text(item.statusSummary)
 						.font(.caption.monospacedDigit())
 						.foregroundStyle(.secondary)
@@ -158,7 +158,7 @@ private struct DownloadRowView: View {
 						}
 						.accessibilityIdentifier("download-restart-\(item.id.uuidString)")
 					}
-					if item.status == .downloading || item.status == .paused {
+					if item.status == .downloading || item.status == .paused || item.status == .finalizing {
 						Button("Cancel", systemImage: "xmark.circle", role: .destructive) {
 							manager.cancel(item.id)
 						}
