@@ -2656,7 +2656,11 @@ final class Browser {
 		persistenceTask = Task { @MainActor [weak self] in
 			try? await Task.sleep(for: .milliseconds(isFull ? 300 : 150))
 			guard !Task.isCancelled, let self else { return }
-			persist()
+			if pendingFullPersistence || pendingScrollPersistence {
+				persist()
+			} else {
+				persistSelectionOnly()
+			}
 		}
 	}
 
@@ -2684,6 +2688,35 @@ final class Browser {
 			try? await Task.sleep(for: .milliseconds(1500))
 			guard !Task.isCancelled, let self else { return }
 			persist()
+		}
+	}
+
+	/// The ordinary tab/space selection path must not reconstruct every OpenTab
+	/// or copy the history collection on MainActor. The full writer clears this
+	/// checkpoint only after its own atomic commit has succeeded.
+	private func persistSelectionOnly() {
+		guard !hydrationFailed, didFinishHydration, !isPrivate, let persistence else { return }
+		let update = BrowserSelectionUpdate(
+			windowID: windowID,
+			selectedTabID: selectedTabID,
+			selectedTabModifiedAt: selectedTabModifiedAt,
+			selectedSpaceID: workspace.selectedSpaceID
+		)
+		let previousWrite = session.persistenceWriteTask
+		session.persistenceWriteTask = Task.detached(priority: .utility) { [persistence, update] in
+			await previousWrite?.value
+			do {
+				try persistence.saveSelectionUpdate(update)
+				await MainActor.run { [weak self] in
+					self?.persistenceErrorDescription = nil
+				}
+			} catch {
+				let message = error.localizedDescription
+				BrowserLog.error(.persistence, "selection.save.failed", metadata: ["error": BrowserLog.errorDescription(error)])
+				await MainActor.run { [weak self] in
+					self?.persistenceErrorDescription = message
+				}
+			}
 		}
 	}
 
