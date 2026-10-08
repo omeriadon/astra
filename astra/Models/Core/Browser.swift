@@ -2025,9 +2025,9 @@ final class Browser {
 			      tab.activeController === controller else { return false }
 			return webView.window != nil
 		}
-		controller.extensionStateDidChange = { [weak self] in
+		controller.extensionStateDidChange = { [weak self, id = tab.id] in
 			guard let self else { return }
-			BrowserExtensionManager.shared.sync(self)
+			BrowserExtensionManager.shared.loadingDidChange(for: id, in: self)
 		}
 		controller.extensionWebViewDidChange = { [weak self, id = tab.id] in
 			guard let self else { return }
