@@ -68,7 +68,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	@ObservationIgnored private var downloadHydrationTask: Task<Void, Never>?
 
 	var activeProgress: Double? {
-		let active = items.filter { $0.status == .downloading }
+		let active = items.filter { $0.status == .downloading || $0.status == .finalizing }
 		guard !active.isEmpty else { return nil }
 		return active.reduce(0) { $0 + $1.progress } / Double(active.count)
 	}
@@ -763,6 +763,26 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	}
 
 	func cancel(_ itemID: UUID) {
+		if !isClosing, let task = finalizationTasks[itemID],
+		   let index = items.firstIndex(where: { $0.id == itemID && $0.status == .finalizing }) {
+			items[index].status = .cancelled
+			items[index].errorMessage = nil
+			items[index].throughput = nil
+			items[index].estimatedTimeRemaining = nil
+			let temporary = items[index].fileURL
+			task.cancel()
+			persist()
+			Task { @MainActor [weak self] in
+				await task.value
+				guard let self,
+				      let current = items.first(where: { $0.id == itemID && $0.status == .cancelled }) else { return }
+				await BrowserDownloadFileWorker.shared.removeFiles([temporary])
+				releaseScope(for: itemID)
+				updateDockProgress()
+				persist()
+			}
+			return
+		}
 		guard !isClosing, pauseTasks[itemID] == nil, let item = items.first(where: { $0.id == itemID }),
 		      item.status == .downloading || item.status == .paused else { return }
 		pauseTasks[itemID] = Task { @MainActor in
@@ -798,6 +818,11 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			task.cancel()
 		}
 		aiRenameTasks.removeAll()
+		// Quit awaits existing filesystem commits rather than interrupting the
+		// atomic destination move or persisting a false completion state.
+		for task in Array(finalizationTasks.values) {
+			await task.value
+		}
 		let pendingWrite = downloadPersistTask
 		pendingWrite?.cancel()
 		downloadPersistTask = nil
@@ -815,6 +840,15 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	func endPrivateSession() async {
 		guard privateDataStore != nil else { return }
 		isClosing = true
+		for item in items where item.status == .finalizing {
+			if let index = items.firstIndex(where: { $0.id == item.id }) {
+				items[index].status = .cancelled
+			}
+		}
+		for task in Array(finalizationTasks.values) {
+			task.cancel()
+			await task.value
+		}
 		for download in Array(downloads.values) {
 			_ = await download.cancel()
 			finish(download)
@@ -840,6 +874,15 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		aiRenameTasks.removeValue(forKey: itemID)?.cancel()
 		guard pauseTasks[itemID] == nil, let index = items.firstIndex(where: { $0.id == itemID }) else { return }
 		guard deletingItems.insert(itemID).inserted else { return }
+		if let task = finalizationTasks[itemID] {
+			task.cancel()
+			items[index].status = .cancelled
+			Task { @MainActor [weak self] in
+				await task.value
+				self?.removeStoredItem(itemID)
+			}
+			return
+		}
 		if let segments = items[index].segments {
 			segmented.cancel(itemID)
 			segmented.removeParts(itemID, count: segments.count)
@@ -869,28 +912,43 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			return
 		}
 		let item = items[index]
-		do {
-			if item.status != .completed, FileManager.default.fileExists(atPath: item.fileURL.path) {
-				try FileManager.default.removeItem(at: item.fileURL)
-			}
-			if let oldURL = previousTemporaryURLs.removeValue(forKey: itemID),
-			   oldURL != item.fileURL,
-			   FileManager.default.fileExists(atPath: oldURL.path)
-			{
-				try FileManager.default.removeItem(at: oldURL)
-			}
-		} catch {
-			deletingItems.remove(itemID)
-			showToast(symbol: "exclamationmark.triangle", message: "Could not delete download: \(error.localizedDescription)")
-			return
+		let older = previousTemporaryURLs[itemID]
+		var files: [URL] = []
+		if item.status != .completed {
+			files.append(item.fileURL)
 		}
-		items.remove(at: index)
-		deletingItems.remove(itemID)
-		releaseScope(for: itemID)
-		finalDestinations[itemID] = nil
-		lastProgressForward[itemID] = nil
-		updateDockProgress()
-		persist()
+		if let older, older != item.fileURL {
+			files.append(older)
+		}
+		// Retain the current security scope while the background actor deletes
+		// the temporary files. Do not remove the model before I/O succeeds.
+		let bookmark = item.fileAccessBookmark ?? item.folderBookmark
+		let hadScope = scopedDirectories[itemID] != nil
+		Task { @MainActor [weak self] in
+			do {
+				try await BrowserDownloadFileWorker.shared.deleteTemporaryFiles(
+					files,
+					bookmark: bookmark,
+					hasExistingAccess: hadScope
+				)
+			} catch {
+				guard let self else { return }
+				deletingItems.remove(itemID)
+				showToast(symbol: "exclamationmark.triangle", message: "Could not delete download: \(error.localizedDescription)")
+				return
+			}
+			guard let self, deletingItems.contains(itemID),
+			      let currentIndex = items.firstIndex(where: { $0.id == itemID && $0.fileURL == item.fileURL })
+			else { return }
+			items.remove(at: currentIndex)
+			previousTemporaryURLs[itemID] = nil
+			deletingItems.remove(itemID)
+			releaseScope(for: itemID)
+			finalDestinations[itemID] = nil
+			lastProgressForward[itemID] = nil
+			updateDockProgress()
+			persist()
+		}
 	}
 
 	func revertName(_ itemID: UUID) {
