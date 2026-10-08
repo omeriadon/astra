@@ -360,8 +360,10 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 				if let journal {
 					for index in records.indices {
 						guard let update = journal.updates[records[index].windowID.uuidString],
+						      update.selectedTabModifiedAt > records[index].selectionModifiedAt,
 						      records[index].tabIDs.contains(update.selectedTabID) else { continue }
 						records[index].selectedTabID = update.selectedTabID
+						records[index].selectionModifiedAt = update.selectedTabModifiedAt
 					}
 				}
 				BrowserLog.duration(
@@ -478,21 +480,37 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 	) throws -> BrowserPersistedState {
 		guard let journal = try? selectionUpdates(newerThan: snapshotURL) else { return original }
 		var state = original
+		mergeSelectionUpdates(journal, into: &state)
+		return state
+	}
+
+	/// Called both when loading a pending checkpoint and before committing a
+	/// full snapshot. A full save in window A must not erase window B's more
+	/// recent selection just because it persisted another structural mutation.
+	private nonisolated func mergeSelectionUpdates(
+		_ journal: SelectionJournal,
+		into state: inout BrowserPersistedState
+	) {
 		let available = Set(state.openTabs.map(\.id))
 		for index in (state.windowRecords ?? []).indices {
 			guard let update = journal.updates[state.windowRecords![index].windowID.uuidString],
+			      update.selectedTabModifiedAt > state.windowRecords![index].selectionModifiedAt,
 			      available.contains(update.selectedTabID),
 			      state.windowRecords![index].tabIDs.contains(update.selectedTabID) else { continue }
 			state.windowRecords![index].selectedTabID = update.selectedTabID
+			state.windowRecords![index].selectionModifiedAt = update.selectedTabModifiedAt
 		}
-		guard let update = journal.updates.values
+		let newerUpdates = journal.updates.values
 			.filter({ $0.selectedTabModifiedAt > state.snapshot.selectedTabModifiedAt })
-			.max(by: { $0.selectedTabModifiedAt < $1.selectedTabModifiedAt }),
-		      available.contains(update.selectedTabID),
-		      let spaceIndex = state.workspace.spaces.firstIndex(where: { $0.id == update.selectedSpaceID }),
-		      state.workspace.favouriteTabIDs.contains(update.selectedTabID)
-		      	|| state.workspace.spaces[spaceIndex].tabIDs.contains(update.selectedTabID)
-		else { return state }
+			.sorted(by: { $0.selectedTabModifiedAt > $1.selectedTabModifiedAt })
+		guard let update = newerUpdates.first(where: { update in
+			guard available.contains(update.selectedTabID),
+			      let spaceIndex = state.workspace.spaces.firstIndex(where: { $0.id == update.selectedSpaceID })
+			else { return false }
+			return state.workspace.favouriteTabIDs.contains(update.selectedTabID)
+				|| state.workspace.spaces[spaceIndex].tabIDs.contains(update.selectedTabID)
+		}), let spaceIndex = state.workspace.spaces.firstIndex(where: { $0.id == update.selectedSpaceID })
+		else { return }
 		state.snapshot.selectedTabID = update.selectedTabID
 		state.snapshot.selectedTabModifiedAt = update.selectedTabModifiedAt
 		state.workspace.selectedSpaceID = update.selectedSpaceID
@@ -502,7 +520,6 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		state.workspace.spaces[spaceIndex].modifiedAt = max(
 			state.workspace.spaces[spaceIndex].modifiedAt, update.selectedTabModifiedAt
 		)
-		return state
 	}
 
 	nonisolated func savePersistedState(_ state: BrowserPersistedState) throws {
@@ -510,11 +527,14 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		defer { Self.selectionJournalLock.unlock() }
 		// Never silently overwrite a checkpoint written by a newer release.
 		// A corrupt checkpoint can be ignored: the full snapshot is authoritative.
+		let selectionJournal: SelectionJournal?
 		do {
-			_ = try readSelectionJournal()
+			selectionJournal = try readSelectionJournal()
 		} catch BrowserPersistenceError.unsupportedVersion {
 			throw BrowserPersistenceError.unsupportedVersion
-		} catch {}
+		} catch {
+			selectionJournal = nil
+		}
 		let logStarted = BrowserLog.clock()
 		BrowserLog.debug(.persistence, "state.save.begin", metadata: ["tabs": String(state.openTabs.count), "bookmarks": String(state.bookmarks.count), "reading_list": String(state.readingList.count), "history": String(state.historyVisits?.count ?? 0)])
 		try validateWindowRecords(state.windowRecords ?? [])
@@ -556,6 +576,9 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 			metadata: ["recovery_baseline": String(backupPrevious != nil)])
 		let encodeStarted = BrowserLog.clock()
 		var state = state
+		if let selectionJournal {
+			mergeSelectionUpdates(selectionJournal, into: &state)
+		}
 		state.windowRecords = (state.windowRecords ?? []).sorted { $0.windowID.uuidString < $1.windowID.uuidString }
 		try validatePersistedState(state)
 		let data = try JSONEncoder().encode(Envelope(version: Self.currentVersion, state: state))
