@@ -169,15 +169,27 @@
 			// its NSHostingView root. Replacing every root here was forcing a full
 			// SwiftUI/AttributeGraph layout pass during tab changes and live swipes.
 			let spacesByID = Dictionary(uniqueKeysWithValues: spaces.map { ($0.id, $0) })
+			let targetIndex = spaces.firstIndex(where: { $0.id == selectedSpaceID })
+			// NSPageController may retain a hosting controller for every space
+			// the user has visited. Updating all of them during each selection,
+			// hover-triggered shell invalidation, or animation is expensive.
+			// Only live/adjacent pages need a current SwiftUI root. When AppKit
+			// asks for a distant cached page, refresh it on demand below.
+			var visibleIdentifiers = Set<String>()
+			for index in [selectedIndex, (targetIndex ?? selectedIndex)] {
+				guard spaces.indices.contains(index) else { continue }
+				for neighbor in max(0, index - 1)...min(spaces.count - 1, index + 1) {
+					visibleIdentifiers.insert(spaces[neighbor].id.uuidString)
+				}
+			}
 			var staleIdentifiers: [String] = []
 			for (identifier, controller) in contentControllers {
-				guard
-					let id = UUID(uuidString: identifier),
-					let space = spacesByID[id]
-				else {
+				guard let id = UUID(uuidString: identifier),
+				      let space = spacesByID[id] else {
 					staleIdentifiers.append(identifier)
 					continue
 				}
+				guard visibleIdentifiers.contains(identifier) else { continue }
 				controller.update(
 					space: space,
 					isSelected: space.id == selectedSpaceID,
@@ -189,10 +201,7 @@
 				contentControllers[identifier] = nil
 			}
 
-			guard
-				let targetIndex = spaces.firstIndex(where: { $0.id == selectedSpaceID }),
-				targetIndex != selectedIndex
-			else { return }
+			guard let targetIndex, targetIndex != selectedIndex else { return }
 
 			if animated, !spaces.isEmpty {
 				NSAnimationContext.runAnimationGroup { context in
@@ -219,15 +228,13 @@
 			_: NSPageController,
 			viewControllerForIdentifier identifier: NSPageController.ObjectIdentifier
 		) -> NSViewController {
-			if let controller = contentControllers[identifier] {
-				return controller
-			}
-
-			let controller = BrowserSpacePageContentController<Content>()
-			if
-				let id = UUID(uuidString: identifier),
-				let space = spaces.first(where: { $0.id == id })
+			let controller = contentControllers[identifier]
+				?? BrowserSpacePageContentController<Content>()
+			if let id = UUID(uuidString: identifier),
+			   let space = spaces.first(where: { $0.id == id })
 			{
+				// A cached offscreen page can have intentionally stale input.
+				// Refresh before it enters NSPageController's live strip.
 				controller.update(
 					space: space,
 					isSelected: space.id == selectedSpaceID,
