@@ -76,6 +76,25 @@ nonisolated struct BrowserVisit: Codable, Identifiable, Equatable, Sendable {
 		}
 	}
 
+	/// The History UI abandons obsolete searches as the user types or closes
+	/// the view. Checking cancellation inside the scan prevents a cancelled
+	/// 50,000-visit search from consuming CPU after its results are irrelevant.
+	static func matchingUnlessCancelled(_ visits: [Self], query: String) -> [Self]? {
+		guard !Task.isCancelled else { return nil }
+		guard !query.isEmpty else { return visits }
+		var result: [Self] = []
+		result.reserveCapacity(min(visits.count, 256))
+		for visit in visits {
+			guard !Task.isCancelled else { return nil }
+			if visit.title.localizedCaseInsensitiveContains(query)
+				|| visit.url.absoluteString.localizedCaseInsensitiveContains(query)
+			{
+				result.append(visit)
+			}
+		}
+		return result
+	}
+
 	static func inRange(_ visits: [Self], from start: Date?, until end: Date?) -> [Self] {
 		visits.filter { visit in
 			(start.map { visit.visitedAt >= $0 } ?? true)
