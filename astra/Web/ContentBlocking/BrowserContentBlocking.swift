@@ -33,7 +33,8 @@ final class BrowserContentBlocking {
 		self.isPrivate = isPrivate
 		self.defaults = defaults
 		if !isPrivate {
-			store = WKContentRuleListStore.default()
+			// WKContentRuleListStore can spin up WebKit-side infrastructure.
+			// Most installs have no imported native list, so keep the store lazy.
 			storedRecordData = defaults.data(forKey: Self.defaultsKey)
 		}
 	}
@@ -89,7 +90,7 @@ final class BrowserContentBlocking {
 		self.source = source
 
 		do {
-			guard let store else { throw StoreError.unavailable }
+			let store = try contentRuleListStore()
 			let cachedList: WKContentRuleList?
 			do {
 				cachedList = try await store.contentRuleList(forIdentifier: source.identifier)
@@ -310,7 +311,11 @@ final class BrowserContentBlocking {
 		if let store {
 			return store
 		}
-		guard isPrivate else { throw StoreError.unavailable }
+		if !isPrivate {
+			guard let store = WKContentRuleListStore.default() else { throw StoreError.unavailable }
+			self.store = store
+			return store
+		}
 		let directory = FileManager.default.temporaryDirectory
 			.appendingPathComponent("astra-content-rules-\(UUID().uuidString)", isDirectory: true)
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

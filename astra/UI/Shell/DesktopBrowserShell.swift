@@ -241,10 +241,13 @@ struct DesktopBrowserShell: View {
 									+ (showsAI ? BrowserChromeMetrics.aiSidebarWidthRange.lowerBound : 0)
 							)
 							: 6
+						let shouldReveal = !sidebarShown && location.x < revealWidth
+						guard shouldReveal != isSidebarRevealed else { return }
 						withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
-							isSidebarRevealed = !sidebarShown && location.x < revealWidth
+							isSidebarRevealed = shouldReveal
 						}
 					case .ended:
+						guard isSidebarRevealed else { return }
 						withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
 							isSidebarRevealed = false
 						}

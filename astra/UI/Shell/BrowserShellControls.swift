@@ -39,22 +39,34 @@ struct ShellSidebarListView: View {
 		// Browser.workspace here: it is a single observed value, so any selection
 		// timestamp mutation would otherwise invalidate every prepared space page.
 		let tabsByID = browser.tabsByID
-		let openElsewhereIDs = BrowserWindowRegistry.shared.tabIDsOpenInAnotherWindow(than: browser)
-		let favouriteTabs = browser.isPrivate ? [] : favouriteTabIDs.compactMap { tabsByID[$0] }
-		let pinnedTabs = space.pinnedTabIDs.compactMap { tabsByID[$0] }
-		let folderTabIDs = Set(space.pinnedFolders.flatMap(\.tabIDs))
+		let isSwipePreviewOnly = !isActiveSpace && onSelectTab == nil
+		// Inactive pager pages render ShellSidebarSwipePreview, which computes
+		// its own lightweight rows. Do not also build the full interactive
+		// sidebar's sets/dictionaries for those prepared offscreen pages.
+		let openElsewhereIDs: Set<UUID> = isSwipePreviewOnly
+			? []
+			: BrowserWindowRegistry.shared.tabIDsOpenInAnotherWindow(than: browser)
+		let favouriteTabs: [BrowserTab] = isSwipePreviewOnly || browser.isPrivate
+			? []
+			: favouriteTabIDs.compactMap { tabsByID[$0] }
+		let pinnedTabs: [BrowserTab] = isSwipePreviewOnly
+			? []
+			: space.pinnedTabIDs.compactMap { tabsByID[$0] }
+		let folderTabIDs: Set<UUID> = isSwipePreviewOnly ? [] : Set(space.pinnedFolders.flatMap(\.tabIDs))
 		let ungroupedPinnedTabs = pinnedTabs.filter { !folderTabIDs.contains($0.id) }
-		let pinnedSet = Set(space.pinnedTabIDs)
-		let normalTabs = space.tabIDs.filter { !pinnedSet.contains($0) }.compactMap { tabsByID[$0] }
+		let pinnedSet: Set<UUID> = isSwipePreviewOnly ? [] : Set(space.pinnedTabIDs)
+		let normalTabs: [BrowserTab] = isSwipePreviewOnly
+			? []
+			: space.tabIDs.filter { !pinnedSet.contains($0) }.compactMap { tabsByID[$0] }
 		let normalIDSet = Set(normalTabs.map(\.id))
 		let normalIndexes = Dictionary(uniqueKeysWithValues: normalTabs.enumerated().map { ($0.element.id, $0.offset) })
-		let groupedIDs = Set(space.todayTabGroups.flatMap(\.tabIDs))
+		let groupedIDs: Set<UUID> = isSwipePreviewOnly ? [] : Set(space.todayTabGroups.flatMap(\.tabIDs))
 		let ungroupedNormalTabs = normalTabs.enumerated().filter { !groupedIDs.contains($0.element.id) }
 		// Only the active page subscribes to selectedTabID. Inactive prepared
 		// pages stay completely still while tabs are switched.
 		let selectedID = isActiveSpace ? browser.selectedTabID : nil
 		return Group {
-			if !isActiveSpace, onSelectTab == nil {
+			if isSwipePreviewOnly {
 				ShellSidebarSwipePreview(
 					space: space,
 					tabsByID: tabsByID,
