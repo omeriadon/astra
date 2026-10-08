@@ -138,6 +138,16 @@
 			onSelectSpace: @escaping (UUID) -> Void,
 			animated: Bool
 		) {
+			let updateStartedAt = BrowserLog.clock()
+			defer {
+				BrowserLog.duration(
+					.performance,
+					"space-pager.update.end",
+					since: updateStartedAt,
+					warnAboveMilliseconds: 40,
+					metadata: ["spaces": String(spaces.count), "prepared": String(contentControllers.count)]
+				)
+			}
 			let oldIDs = self.spaces.map(\.id)
 			let newIDs = spaces.map(\.id)
 

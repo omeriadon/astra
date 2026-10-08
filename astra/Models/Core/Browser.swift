@@ -966,8 +966,18 @@ final class Browser {
 	#endif
 
 	func selectTab(_ id: UUID) {
+		let selectionStartedAt = BrowserLog.clock()
 		BrowserLog.debug(.tabs, "tab.select", metadata: ["window": BrowserLog.id(windowID), "from": BrowserLog.id(selectedTabID), "to": BrowserLog.id(id)])
 		guard let tab = tab(withID: id) else { return }
+		defer {
+			BrowserLog.duration(
+				.performance,
+				"tab.select.end",
+				since: selectionStartedAt,
+				warnAboveMilliseconds: 40,
+				metadata: ["window": BrowserLog.id(windowID), "tab": BrowserLog.id(id), "hibernated": String(tab.isHibernated)]
+			)
+		}
 		let previousTab = selectedTab
 		if tab.monitorMatch != nil {
 			tab.setMonitorMatch(nil)

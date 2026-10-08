@@ -1755,7 +1755,8 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func loadFaviconIfMissing() {
-		guard let url, let webView = createdWebView else { return }
+		guard let url, let webView = createdWebView,
+		      !session.favicons.hasCachedFavicon(for: url) else { return }
 		loadFavicon(for: url, in: webView)
 	}
 
