@@ -93,6 +93,7 @@ final class Controller {
     var pendingWebArchive: (data: Data, baseURL: URL)?
     var pendingLocalFile: URL?
     var pendingInteractionState: Data?
+    var pendingEncryptedInteractionState: Data?
     var isAuthenticationSessionBrowser = false
     var retriedAfterConnectivityReturn = false
     var navigationFailure: BrowserNavigationFailure?

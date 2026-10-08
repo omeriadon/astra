@@ -136,19 +136,19 @@ final class BrowserHibernationManager {
 	}
 
 	private func isEligible(_ tab: BrowserTab, now: Date, idleTime: Duration) -> Bool {
-		guard !tab.isHibernated,
+		guard let browser, !tab.isHibernated,
 		      tab.internalPage == nil,
 		      tab.canHibernate,
-		      browser?.tabs.contains(where: { $0 === tab }) == true,
+		      browser.tabs.contains(where: { $0 === tab }),
 		      tab.controller?.canAutomaticallyHibernate == true,
 		      !isVisible(tab),
-		      browser.map { BrowserWindowRegistry.shared.ownsTab(tab.id, in: $0) } == true,
+		      BrowserWindowRegistry.shared.ownsTab(tab.id, in: browser),
 		      !isPinned(tab),
 		      tab.peeks.isEmpty,
 		      !hasLivePeek,
 		      tab.controller?.webViewIfLoaded != nil,
 		      tab.controller?.webViewIfLoaded?.window == nil,
-		      browser?.session.downloads.activeProgress == nil
+		      browser.session.downloads.activeProgress == nil
 		else { return false }
 		return idleTime == .zero || now.timeIntervalSince(tab.lastInteractionAt) >= idleTime.timeInterval
 	}

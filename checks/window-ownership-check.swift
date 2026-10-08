@@ -62,6 +62,7 @@ final class Browser {
 final class BrowserExtensionManager {
 	static let shared = BrowserExtensionManager()
 	func sync(_: Browser) {}
+	func selectionDidChange(_: Browser) {}
 	func focus(_: Browser) {}
 }
 

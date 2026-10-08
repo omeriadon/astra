@@ -893,7 +893,6 @@ final class BrowserController: NSObject, Identifiable {
 			while !Task.isCancelled {
 				guard self?.createdWebView != nil else { return }
 				let hasActivity = self?.isPlayingMedia == true
-					|| self?.hasPausedMedia == true
 					|| self?.isCapturing == true
 					|| self?.isPictureInPictureActive == true
 					|| self?.isEnteringPictureInPicture == true
@@ -2167,9 +2166,12 @@ final class BrowserController: NSObject, Identifiable {
 		}
 		if let state = pendingInteractionState, let webView = createdWebView {
 			pendingInteractionState = nil
-			liveHistoryPrefix = []
+			let savedHistory = history
+			let savedIndex = historyIndex
 			webView.interactionState = state
 			if webView.backForwardList.currentItem != nil {
+				let prefixCount = max(0, savedIndex - webView.backForwardList.backList.count)
+				liveHistoryPrefix = Array(savedHistory.prefix(prefixCount))
 				pendingRequest = nil
 				pendingLocalFile = nil
 				updateHistory()

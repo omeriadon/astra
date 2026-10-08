@@ -3,7 +3,7 @@
 This protocol records process-level evidence for the WebKit lifecycle work. It
 does not claim a per-tab memory value: WebKit exposes content, GPU and network
 processes, and those processes can be shared by several tabs. The helper keeps
-the process identity (`pid` plus `lstart`) and deduplicates repeated rows. It
+the process identity (`pid` plus kernel start identity, with `lstart` as a fallback) and deduplicates repeated rows. It
 reports RSS as an estimate and derives CPU from cumulative process time across
 two samples.
 
@@ -51,7 +51,7 @@ full URLs, query strings or form contents to the helper.
 The process totals cover only the explicitly mapped browser PIDs and are
 deduplicated within each snapshot. `webcontent`, `gpu`, and `network` totals are
 not exclusive to a tab. A process that cannot be classified is retained under
-`other`; missing processes are reported as zero rather than inferred. Process
+`other`; missing selected processes are reported as unavailable rather than inferred. Process
 replacement is visible as a new `pid@start` identity. Compare identities before
 and after hibernation to check whether WebKit actually released a process.
 
@@ -127,3 +127,89 @@ measurements. CI or a Linux host can run its parser and identity self-checks,
 but cannot certify WebKit process replacement, memory pressure, rendering,
 media, Spaces, or Swift actor/thread-affinity behaviour. No result should be
 invented when those runtime cases cannot be exercised.
+
+## Integrated implementation and verification
+
+The initial release base was `05af54619cbcc4724800889f01e90d948eb37235`.
+Six isolated implementation branches were merged, followed by semantic fixes
+for shared scheduling, activity validation, process identity, and restoration.
+The implementation preserves the existing four-controller warm host budget.
+Ordinary inactive macOS pages detach while their controller retains the same
+WebView; protected pages retain attachment. Detached quiescent pages skip the
+periodic JavaScript activity query. Paused media uses the slower visible-page
+fallback; playback and PiP events still refresh immediately.
+
+Automatic hibernation defaults to enabled, with 30-minute normal and five-minute
+warning thresholds. Critical pressure reclaims eligible tabs sequentially,
+oldest first. Every async boundary rechecks selection across windows, controller
+and navigation identity, activity time, pressure state, and the setting.
+Pinned/favourite tabs, pending dialogs, captures, media, downloads, live popups,
+unknown activity results, and oversized or unknown interaction-state blobs are
+preserved. A single captured interaction-state blob is reused for teardown;
+normal tabs retain its encrypted copy rather than a second raw copy. Historical
+URL prefixes outside WebKit's live back-forward list survive encrypted restore.
+
+Memory diagnostics report observed process footprints, separate shared GPU,
+network and model processes, deduplicate process identities, and do not claim
+JavaScript heap or exclusive tab memory. Reclamation logs resample the original
+process identities after teardown; unavailable information is not reported as
+zero bytes reclaimed. This is a bounded diagnostic task, not a continuous
+browser-wide sampler.
+
+The read-only `_displayCaptureState` probe is a new safety dependency because
+this SDK has no public screen-capture lifecycle query. It is selector guarded;
+unknown state prevents automatic hibernation. It does not change WebKit feature
+flags. Disabling automatic hibernation reverses the policy. Distribution must
+continue to tolerate guarded WebKit SPI already used for process identifiers
+and existing browser features. Process footprint inspection itself uses public
+`proc_pid_rusage`.
+
+Executed checks include the production hibernation manager with isolated
+collaborators under Swift 6 complete concurrency checking, native AppKit/WebKit
+host transitions, process identity aggregation, ownership/transfer/private
+isolation, permission policy, media/PiP scripts, native rule validation including
+concurrent validation, interaction-state history prefixes, navigation reload,
+and diagnostic export limits. The macOS target builds using the Xcode app's
+scheme build API; no `xcodebuild` command was invoked.
+
+The iOS simulator build is blocked by the project's Sparkle module dependency:
+Clang dependency scanning cannot resolve Sparkle for the simulator. This change
+does not modify the existing Sparkle linkage or update manager. Full iOS app
+compilation remains unverified. macOS-specific process inspection and host
+attachment code remain conditionally compiled.
+
+A broader regression sweep reproduced existing failures on the clean baseline
+in AI archive/usage/features, sync, sidebar/window fixture extraction, Today
+cleanup/sections, old media eligibility expectations, and hover-script fixtures.
+The reload and window-ownership fixtures needed for this work were repaired.
+The broad suite is not reported as passing.
+
+The utility libproc binding was exercised with 100 calls on the benchmark
+process: median 0.0101 ms and maximum 0.1508 ms on this Mac. This measures the
+sampler binding only; it excludes WebKit selectors, UI overhead, and website
+workloads. It is not an Astra memory or CPU improvement measurement.
+
+No baseline-versus-final Astra workload measurements are claimed. Computer-use
+access returned `cgWindowNotFound`, and the active user browser was not used as
+an isolated benchmark fixture. Real YouTube, Spaces, restoration rendering,
+media continuity, physical memory recovery and switching latency still require
+the manual scenarios above. The native host runtime check verifies actual
+AppKit attachment with WKWebView, but uses a controller collaborator and does
+not certify an end-to-end website workflow.
+
+Rejected changes: reducing the warm budget without latency evidence; full
+`.suspend` while critical page/extension tasks cannot all be observed; process
+pool sharing (deprecated and without an effect on current WebKit); forced video
+quality changes; Search's private frame-rate/autoplay flags; and blank-page
+navigation as a substitute for destroying a WebView.
+
+Sources: [Apple scheduling policy](https://developer.apple.com/documentation/webkit/wkpreferences/inactiveschedulingpolicy-swift.property),
+[Apple media playback state](https://developer.apple.com/documentation/webkit/wkwebview/requestmediaplaybackstate(completionhandler:)),
+[Apple process-pool deprecation](https://developer.apple.com/documentation/webkit/wkwebviewconfiguration/processpool),
+[Search Sleep.swift](https://github.com/driceroland/Search/blob/main/Sources/Search/Sleep.swift),
+[Search Tab.swift](https://github.com/driceroland/Search/blob/main/Sources/Search/Tab.swift),
+[Search Shield.swift](https://github.com/driceroland/Search/blob/main/Sources/Search/Shield.swift),
+[Search FrameRate.swift](https://github.com/driceroland/Search/blob/main/Sources/Search/FrameRate.swift),
+[Search Browser.swift](https://github.com/driceroland/Search/blob/main/Sources/Search/Browser.swift),
+[Search benchmark](https://github.com/driceroland/Search/blob/main/Sources/Search/Bench.swift),
+[Search changelog](https://github.com/driceroland/Search/blob/main/CHANGELOG.md).

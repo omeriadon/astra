@@ -84,9 +84,14 @@ def _parse_ps_line(line: str) -> dict[str, Any] | None:
 
 
 class _RUsageInfoV4(ctypes.Structure):
+    # Public sys/resource.h v4 layout; the unused tail has 25 uint64_t fields.
     _fields_ = [("uuid", ctypes.c_ubyte * 16)] + [
-        (f"value_{index}", ctypes.c_uint64) for index in range(36)
-    ]
+        (name, ctypes.c_uint64) for name in (
+            "user_time", "system_time", "pkg_idle_wakeups", "interrupt_wakeups",
+            "pageins", "wired_size", "resident_size", "phys_footprint",
+            "proc_start_abstime", "proc_exit_abstime",
+        )
+    ] + [("unused", ctypes.c_uint64 * 25)]
 
 
 def _rusage(pid: int) -> dict[str, Any]:
@@ -102,9 +107,10 @@ def _rusage(pid: int) -> dict[str, Any]:
         if call(pid, 4, ctypes.byref(value)) != 0:
             return {}
         return {
-            "footprint_bytes": int(value.value_7),
-            "rusage_cpu_nanoseconds": int(value.value_0 + value.value_1),
-            "rusage_start_abstime": int(value.value_8),
+            "footprint_bytes": int(value.phys_footprint),
+            "rss_bytes": int(value.resident_size),
+            "rusage_cpu_nanoseconds": int(value.user_time + value.system_time),
+            "rusage_start_abstime": int(value.proc_start_abstime),
         }
     except (AttributeError, OSError):
         return {}
@@ -123,7 +129,6 @@ def _deduplicate(rows: Iterable[dict[str, Any]], selected: dict[int, str]) -> li
         item = dict(row)
         item["identity"] = f"{row['pid']}@{row['started']}"
         item["role"] = selected[row["pid"]]
-        item.update(_rusage(row["pid"]))
         result.append(item)
     return result
 
@@ -147,6 +152,10 @@ def snapshot(selected: dict[int, str] | None = None) -> dict[str, Any]:
     selected = selected or {}
     all_rows = _ps_rows()
     rows = _deduplicate(all_rows, selected)
+    for row in rows:
+        row.update(_rusage(row["pid"]))
+        if "rusage_start_abstime" in row:
+            row["identity"] = f"{row['pid']}@mach:{row['rusage_start_abstime']}"
     processes = [row for row in rows if row["role"] in ROLES]
     totals = _totals(processes)
     unattributed = [
@@ -167,7 +176,7 @@ def snapshot(selected: dict[int, str] | None = None) -> dict[str, Any]:
         },
         "measurement": {
             "cpu_source": "ps cumulative process time; interval CPU is derived from two samples",
-            "rss_source": "ps rss; process level; bytes are estimates",
+            "rss_source": "libproc resident size when available; otherwise ps rss; process-level estimates",
             "tab_attribution": "unavailable from public WebKit APIs",
             "ownership": "only explicitly mapped PIDs are attributed; XPC WebKit helpers remain unattributed",
             "shared_processes": "deduplicated by pid and process start identity",
@@ -189,6 +198,8 @@ def _write(value: Any, destination: str | None) -> None:
 
 
 def _mapping(pids: list[int], webkit_pids: list[str]) -> dict[int, str]:
+    if any(pid <= 0 for pid in pids):
+        raise ValueError("process IDs must be positive")
     selected = {pid: "astra" for pid in pids}
     for value in webkit_pids:
         try:
@@ -196,6 +207,8 @@ def _mapping(pids: list[int], webkit_pids: list[str]) -> dict[int, str]:
             pid = int(pid_text)
         except ValueError:
             raise ValueError(f"--webkit-pid must be PID:role, got {value!r}")
+        if pid <= 0:
+            raise ValueError("process IDs must be positive")
         if role not in ("webcontent", "gpu", "network", "other"):
             raise ValueError(f"unsupported process role {role!r}")
         selected[pid] = role
@@ -296,6 +309,8 @@ def main() -> int:
     subparsers.add_parser("self-test", help="run parser and identity assertions")
     arguments = parser.parse_args()
     if arguments.action == "snapshot":
+        if not 0 <= arguments.interval <= 60:
+            parser.error("interval must be finite and between 0 and 60 seconds")
         try:
             selected = _mapping(arguments.pid, arguments.webkit_pid)
         except ValueError as error:
