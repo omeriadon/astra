@@ -507,6 +507,10 @@ final class BrowserController: NSObject, Identifiable {
 	private var pageURLBeforeDownload: URL?
 	#if os(macOS)
 		private(set) var previewSnapshot: NSImage?
+		@ObservationIgnored private var previewSnapshotGeneration: Int?
+		var hasCurrentPreviewSnapshot: Bool {
+			previewSnapshot != nil && previewSnapshotGeneration == navigationGeneration
+		}
 		private(set) var windowMirrorSnapshot: NSImage?
 	#endif
 
@@ -1264,6 +1268,7 @@ final class BrowserController: NSObject, Identifiable {
 			previewSnapshotRefreshTask?.cancel()
 			previewSnapshotRefreshTask = nil
 			previewSnapshot = nil
+			previewSnapshotGeneration = nil
 			windowMirrorSnapshot = nil
 		#endif
 		createdWebView?.navigationDelegate = nil
@@ -1834,6 +1839,7 @@ final class BrowserController: NSObject, Identifiable {
 	#if os(macOS)
 		func discardPreviewSnapshot() {
 			previewSnapshot = nil
+			previewSnapshotGeneration = nil
 			windowMirrorSnapshot = nil
 		}
 
@@ -1853,6 +1859,7 @@ final class BrowserController: NSObject, Identifiable {
 			guard let image = await takeSnapshot() else { return }
 			guard owns(webView), generation == navigationGeneration else { return }
 			previewSnapshot = image
+			previewSnapshotGeneration = generation
 		}
 
 		func tabProcessMemorySnapshot() -> BrowserTabProcessMemorySnapshot? {
@@ -2106,6 +2113,7 @@ final class BrowserController: NSObject, Identifiable {
 
 		#if os(macOS)
 			previewSnapshot = image
+			previewSnapshotGeneration = generation
 		#endif
 	}
 

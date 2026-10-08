@@ -43,7 +43,7 @@
 						// Most tabs already have a retained navigation/sidebar
 						// snapshot. Opening the switcher must not queue a burst
 						// of redundant WebKit captures on every candidate.
-						if controller.previewSnapshot == nil {
+						if !controller.hasCurrentPreviewSnapshot {
 							await controller.refreshPreviewSnapshot()
 						}
 					}
