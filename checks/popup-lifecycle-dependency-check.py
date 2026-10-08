@@ -17,22 +17,23 @@ import Foundation
 @MainActor final class BrowserController: NSObject {
     let livePopupControllers = NSHashTable<BrowserController>.weakObjects()
     var webViewIfLoaded: NSObject? = NSObject()
+    var isWebViewReady = true
 ''' + predicate + '''
 }
 @main enum PopupDependencyCheck {
     @MainActor static func main() {
         let parent = BrowserController()
         var child: BrowserController? = BrowserController()
-        weak var weakChild = child
+        weak let weakChild = child
         parent.livePopupControllers.add(child!)
-        precondition(parent.hasLivePopupDependency)
+        autoreleasepool { precondition(parent.hasLivePopupDependency) }
         child!.webViewIfLoaded = nil
-        precondition(!parent.hasLivePopupDependency)
+        autoreleasepool { precondition(!parent.hasLivePopupDependency) }
         child!.webViewIfLoaded = NSObject()
-        precondition(parent.hasLivePopupDependency)
+        autoreleasepool { precondition(parent.hasLivePopupDependency) }
         child = nil
         precondition(weakChild == nil)
-        precondition(!parent.hasLivePopupDependency)
+        autoreleasepool { precondition(!parent.hasLivePopupDependency) }
         print("Production weak popup dependency checks passed")
     }
 }

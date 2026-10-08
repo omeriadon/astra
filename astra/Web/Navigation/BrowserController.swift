@@ -216,7 +216,6 @@ final class BrowserController: NSObject, Identifiable {
 	private var isOpeningExternalApplication = false
 	@ObservationIgnored
 	private var pendingLifecycleOperations = 0
-	@ObservationIgnored
 	private let livePopupControllers = NSHashTable<BrowserController>.weakObjects()
 	@ObservationIgnored
 	// ponytail: controller-wide two-second throttle; per-origin limits if abuse becomes measurable.
@@ -282,7 +281,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	private var hasLivePopupDependency: Bool {
-		livePopupControllers.allObjects.contains { $0.webViewIfLoaded != nil }
+		livePopupControllers.allObjects.contains { $0.isWebViewReady && $0.webViewIfLoaded != nil }
 	}
 
 	func beginLifecycleOperation() {
