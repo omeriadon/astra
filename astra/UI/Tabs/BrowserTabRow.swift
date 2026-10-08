@@ -802,7 +802,12 @@ private struct TabRowContextMenu: View {
 					return
 				}
 
-				await controller.refreshPreviewSnapshot()
+				// The switcher and navigation lifecycle already retain a page
+				// snapshot. Showing the hover card must not force a new WebKit
+				// capture every time the pointer crosses a tab row.
+				if controller.previewSnapshot == nil {
+					await controller.refreshPreviewSnapshot()
+				}
 				while !Task.isCancelled {
 					memory = controller.tabProcessMemorySnapshot()
 					hasSampledMemory = true
