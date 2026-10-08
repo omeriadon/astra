@@ -298,11 +298,18 @@ final class Browser {
 		let space = workspace.spaces[index]
 		let normalIDs = space.tabIDs.filter { !space.pinnedTabIDs.contains($0) }
 		guard normalIDs == expectedIDs else { return false }
-		workspace.spaces[index].todayTabGroups = groups
+		// Streaming group suggestions may update repeatedly while the AI
+		// response is still arriving. Publish workspace once, then coalesce
+		// persistence rather than capturing every tab's WebKit interaction
+		// state and rebuilding a full session snapshot for each partial.
+		var nextWorkspace = workspace
+		nextWorkspace.spaces[index].todayTabGroups = groups
 		let mutationDate = nextWorkspaceMutationDate()
-		workspace.spaces[index].modifiedAt = mutationDate
-		workspace.modifiedAt = mutationDate
-		persist()
+		nextWorkspace.spaces[index].modifiedAt = mutationDate
+		nextWorkspace.modifiedAt = mutationDate
+		workspace = nextWorkspace
+		// The grouping changes no extension tab identities or membership.
+		schedulePersistence(fullState: true, syncExtensions: false)
 		return true
 	}
 
@@ -2567,13 +2574,13 @@ final class Browser {
 		}
 	}
 
-	private func schedulePersistence(fullState: Bool = true) {
+	private func schedulePersistence(fullState: Bool = true, syncExtensions: Bool = true) {
 		BrowserLog.trace(.persistence, "browser.persistence.schedule", metadata: ["window": BrowserLog.id(windowID), "full": String(fullState), "hydrated": String(didFinishHydration)])
 		guard !isPrivate else { return }
 		// Selection-only persistence is a hot path and extension activation is
 		// already handled by BrowserWindowRegistry. Rebuilding every extension-tab
 		// snapshot here made each ordinary tab click walk the entire tab set again.
-		if fullState {
+		if fullState && syncExtensions {
 			BrowserExtensionManager.shared.sync(self)
 		}
 		guard persistence != nil else { return }
