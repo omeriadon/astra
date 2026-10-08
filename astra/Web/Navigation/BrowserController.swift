@@ -103,6 +103,25 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var hoveredLinkShiftPressed = false
 	private(set) var aiPreviewDismissal = 0
 	@ObservationIgnored var aiLinkPreviewCache: [URL: (summary: BrowserLinkSummaryFeature.Summary, page: BrowserAIPageText)] = [:]
+	@ObservationIgnored private var aiLinkPreviewCacheOrder: [URL] = []
+
+	/// Page text can be large. Keep a small FIFO cache rather than allowing
+	/// previews of many links on one site to retain unbounded page snapshots.
+	func cacheAILinkPreview(summary: BrowserLinkSummaryFeature.Summary, page: BrowserAIPageText, for url: URL) {
+		if aiLinkPreviewCache[url] == nil {
+			if aiLinkPreviewCacheOrder.count >= 12 {
+				let oldest = aiLinkPreviewCacheOrder.removeFirst()
+				aiLinkPreviewCache.removeValue(forKey: oldest)
+			}
+			aiLinkPreviewCacheOrder.append(url)
+		}
+		aiLinkPreviewCache[url] = (summary, page)
+	}
+
+	private func clearAILinkPreviewCache() {
+		aiLinkPreviewCache.removeAll()
+		aiLinkPreviewCacheOrder.removeAll()
+	}
 	private(set) var isReaderAvailable = false
 	private(set) var readerHTML: String?
 	private(set) var isPreparingReader = false
@@ -458,7 +477,7 @@ final class BrowserController: NSObject, Identifiable {
 	var url: URL? {
 		didSet {
 			if oldValue.flatMap(BrowserSitePermissions.origin(for:)) != url.flatMap(BrowserSitePermissions.origin(for:)) {
-				aiLinkPreviewCache.removeAll()
+				clearAILinkPreviewCache()
 			}
 		}
 	}
@@ -1206,7 +1225,7 @@ final class BrowserController: NSObject, Identifiable {
 	func stopForClose() {
 		BrowserLog.info(.webKit, "controller.stop-for-close", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		guard !isInvalidated else { return }
-		aiLinkPreviewCache.removeAll()
+		clearAILinkPreviewCache()
 		resetReader()
 		clearHoveredLink()
 		isInvalidated = true
@@ -1681,7 +1700,7 @@ final class BrowserController: NSObject, Identifiable {
 	func goBack() {
 		BrowserLog.debug(.navigation, "navigation.back", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		guard let webView = createdWebView, webView.canGoBack else { return }
-		aiLinkPreviewCache.removeAll()
+		clearAILinkPreviewCache()
 		aiPreviewDismissal += 1
 		invalidateFindResults()
 		historyVisitPolicy.userInitiatedNavigation()
@@ -1693,7 +1712,7 @@ final class BrowserController: NSObject, Identifiable {
 	func goForward() {
 		BrowserLog.debug(.navigation, "navigation.forward", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		guard let webView = createdWebView, webView.canGoForward else { return }
-		aiLinkPreviewCache.removeAll()
+		clearAILinkPreviewCache()
 		aiPreviewDismissal += 1
 		invalidateFindResults()
 		historyVisitPolicy.userInitiatedNavigation()
@@ -1704,7 +1723,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	func go(toHistoryIndex index: Int) {
 		guard history.indices.contains(index), index != historyIndex else { return }
-		aiLinkPreviewCache.removeAll()
+		clearAILinkPreviewCache()
 		aiPreviewDismissal += 1
 		historyVisitPolicy.userInitiatedNavigation()
 		if let webView = createdWebView,
@@ -2122,7 +2141,7 @@ extension BrowserController: WKNavigationDelegate {
 			return
 		}
 		if navigationAction.targetFrame?.isMainFrame == true, navigationAction.navigationType == .backForward {
-			aiLinkPreviewCache.removeAll()
+			clearAILinkPreviewCache()
 			aiPreviewDismissal += 1
 		}
 		if navigationAction.targetFrame?.isMainFrame == true,

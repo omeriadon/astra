@@ -188,13 +188,13 @@ import WebKit
 							summary = .init(title: extracted.title, header: snapshot, bullets: [])
 						}
 						if let summary {
-							controller.aiLinkPreviewCache[url] = (summary, extracted)
+							controller.cacheAILinkPreview(summary: summary, page: extracted, for: url)
 						}
 					}
 					try Task.checkCancellation()
 					guard activeKey == key, controller.navigationIdentifier == document,
 					      controller.aiPreviewDismissal == dismissal else { return }
-					controller.aiLinkPreviewCache[url] = result
+					controller.cacheAILinkPreview(summary: result.summary, page: result.page, for: url)
 					page = result.page
 					controller.updateAIHoverHighlight(enabled: true)
 					withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) { summary = result.summary }
