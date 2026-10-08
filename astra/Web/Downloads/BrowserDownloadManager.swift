@@ -948,6 +948,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			do {
 				try await BrowserDownloadFileWorker.shared.deleteTemporaryFiles(
 					files,
+					in: stagingDirectory,
 					bookmark: bookmark,
 					hasExistingAccess: hadScope
 				)
