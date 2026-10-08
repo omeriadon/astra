@@ -905,16 +905,21 @@ final class BrowserController: NSObject, Identifiable {
 					|| self?.isPictureInPictureActive == true
 					|| self?.isEnteringPictureInPicture == true
 				let isDetached = self?.createdWebView?.window == nil
-				// Do not wake a detached idle page merely to rediscover inactivity.
-				if !isDetached || hasActivity {
+				#if os(macOS)
+					let isBackground = isDetached || self?.previewSnapshotRefreshSuspended == true
+				#else
+					let isBackground = isDetached
+				#endif
+				// Do not wake an idle background page merely to rediscover inactivity.
+				if !isBackground || hasActivity {
 					await self?.refreshActivity()
 				}
 				guard !Task.isCancelled else { return }
 				let fallbackInterval: TimeInterval
 				if hasActivity {
 					fallbackInterval = 5
-				} else if isDetached {
-					fallbackInterval = 60
+				} else if isBackground {
+					fallbackInterval = 90
 				} else {
 					fallbackInterval = 20
 				}

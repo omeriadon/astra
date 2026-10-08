@@ -209,10 +209,12 @@
 					animator().selectedIndex = targetIndex
 				} completionHandler: { [weak self] in
 					self?.completeTransition()
+					self?.trimPreparedPages()
 				}
 			} else {
 				selectedIndex = targetIndex
 				completeTransition()
+				trimPreparedPages()
 			}
 		}
 
@@ -248,6 +250,23 @@
 
 		func pageControllerDidEndLiveTransition(_: NSPageController) {
 			completeTransition()
+			trimPreparedPages()
+		}
+
+		private func trimPreparedPages() {
+			guard spaces.indices.contains(selectedIndex) else {
+				contentControllers.removeAll()
+				return
+			}
+			// Keep only a five-page working set. Retaining an NSHostingView
+			// for every previously visited space keeps inactive SwiftUI trees,
+			// their state and layout caches alive for the entire window life.
+			// Trim only after AppKit completes the transition so its animated
+			// source and destination controllers remain valid.
+			let lower = max(0, selectedIndex - 2)
+			let upper = min(spaces.count - 1, selectedIndex + 2)
+			let retained = Set(spaces[lower ... upper].map { $0.id.uuidString })
+			contentControllers = contentControllers.filter { retained.contains($0.key) }
 		}
 
 		func pageController(_: NSPageController, didTransitionTo _: Any) {

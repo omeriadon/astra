@@ -136,8 +136,9 @@ for shared scheduling, activity validation, process identity, and restoration.
 The implementation preserves the existing four-controller warm host budget.
 Ordinary inactive macOS pages detach while their controller retains the same
 WebView; protected pages retain attachment. Detached quiescent pages skip the
-periodic JavaScript activity query. Paused media uses the slower visible-page
-fallback; playback and PiP events still refresh immediately.
+periodic JavaScript activity query. Paused media leaves the fast playback fallback; background quiescent pages
+skip DOM queries and use a 90-second task fallback. Playback and PiP events
+still refresh immediately.
 
 Automatic hibernation defaults to enabled, with 30-minute normal and five-minute
 warning thresholds. Critical pressure reclaims eligible tabs sequentially,
