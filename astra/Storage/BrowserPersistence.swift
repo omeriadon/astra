@@ -415,21 +415,28 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		{
 			let previous = try decodeSnapshot(previousData)
 			let incomingIDs = Set((state.historyVisits ?? []).map(\.id))
+			// Membership checks run on every state save, including sessions with
+			// thousands of visits or tabs. Build hash indexes once per snapshot.
+			let readingListIDs = Set(state.readingList.map(\.id))
+			let closedTabIDs = Set(state.closedTabs.map(\.id))
+			let openTabsByID = Dictionary(
+				state.openTabs.map { ($0.id, $0) },
+				uniquingKeysWith: { first, _ in first }
+			)
 			privateDataWasRemoved = (previous.historyVisits ?? []).contains { !incomingIDs.contains($0.id) }
-				|| previous.readingList.contains { old in !state.readingList.contains(where: { $0.id == old.id }) }
+				|| previous.readingList.contains { !readingListIDs.contains($0.id) }
 				|| previous.snapshot.historyClearedAt < state.snapshot.historyClearedAt
-				|| previous.closedTabs.contains { old in
-					!state.closedTabs.contains(where: { $0.id == old.id })
-				}
+				|| previous.closedTabs.contains { !closedTabIDs.contains($0.id) }
 				|| previous.openTabs.contains { old in
-					guard let updated = state.openTabs.first(where: { $0.id == old.id }) else { return false }
-					return old.history.contains { !updated.history.contains($0) }
+					guard let updated = openTabsByID[old.id] else { return false }
+					let updatedHistory = Set(updated.history)
+					return old.history.contains { !updatedHistory.contains($0) }
 				}
 				|| previous.snapshot.deletedVisitsAt.contains { id, date in
 					state.snapshot.deletedVisitsAt[id].map { $0 > date } ?? false
 				}
 				|| previous.openTabs.contains { old in
-					old.recordsNavigationHistory && state.openTabs.first(where: { $0.id == old.id })?.recordsNavigationHistory == false
+					old.recordsNavigationHistory && openTabsByID[old.id]?.recordsNavigationHistory == false
 				}
 				|| previous.openTabs.contains { tab in
 					(tab.history + [tab.url].compactMap(\.self)).contains { $0.user != nil || $0.password != nil }
