@@ -54,9 +54,9 @@ actor BrowserWebsiteAppFileWorker {
 		guard !FileManager.default.fileExists(atPath: appURL.path),
 		      !FileManager.default.fileExists(atPath: staging.path)
 		else { throw CocoaError(.fileWriteFileExists) }
-		try FileManager.default.copyItem(at: templateURL, to: staging)
 		var published = false
 		do {
+			try FileManager.default.copyItem(at: templateURL, to: staging)
 			try await configureBundle(at: staging, id: installation.id, name: installation.name,
 			                        launchURL: installation.launchURL, iconData: iconData)
 			try Task.checkCancellation()
@@ -83,9 +83,9 @@ actor BrowserWebsiteAppFileWorker {
 		let staging = rootURL.appendingPathComponent(".replacing-\(UUID().uuidString).app", isDirectory: true)
 		let backupName = ".app-backup-\(UUID().uuidString).app"
 		let backupURL = rootURL.appendingPathComponent(backupName, isDirectory: true)
-		try FileManager.default.copyItem(at: original, to: staging)
 		var replaced = false
 		do {
+			try FileManager.default.copyItem(at: original, to: staging)
 			try await configureBundle(at: staging, id: installation.id, name: installation.name,
 			                        launchURL: installation.launchURL, iconData: iconData)
 			try Task.checkCancellation()
