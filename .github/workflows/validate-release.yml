@@ -114,6 +114,7 @@ jobs:
             -o "$RUNNER_TEMP/astra-bookmark-projection-check"
           "$RUNNER_TEMP/astra-bookmark-projection-check"
           node checks/favicon-observer-check.mjs
+          python3 checks/automatic-hibernation-runtime-check.py
           swiftc -swift-version 6 \
             astra/Models/Core/BrowserWindowRegistry.swift \
             checks/window-ownership-check.swift \
