@@ -2751,6 +2751,7 @@ final class Browser {
 			pendingFullPersistence = true
 			return
 		}
+		let preparationStart = BrowserLog.clock()
 		reconcileWorkspace()
 		let isStructural = pendingFullPersistence
 		pendingFullPersistence = false
@@ -2776,6 +2777,14 @@ final class Browser {
 			historyVisits: historyVisits,
 			windowRecords: BrowserWindowRegistry.shared.recordsForPersistence
 		)
+		BrowserLog.duration(.persistence, "state.snapshot-preparation.end",
+			since: preparationStart,
+			warnAboveMilliseconds: 16,
+			metadata: [
+				"tabs": String(tabs.count),
+				"history_entries": String(historyVisits.count),
+				"windows": String(state.windowRecords?.count ?? 0),
+			])
 		// Encode + file IO off-main so Cmd+T / history-open stay instant.
 		// Scroll-only saves skip cross-window fan-out and sync: no structural change.
 		let previousWrite = session.persistenceWriteTask
