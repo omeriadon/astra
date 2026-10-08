@@ -38,6 +38,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	private var restorationStarted = false
 	private var lastPersistedAt = Date.distantPast
 	@ObservationIgnored private var downloadPersistTask: Task<Void, Never>?
+	@ObservationIgnored private var downloadPersistRevision: UInt64 = 0
 	@ObservationIgnored private var pauseTasks: [UUID: Task<Void, Never>] = [:]
 	@ObservationIgnored private var rateSamples: [UUID: [(bytes: Int64, at: Date)]] = [:]
 	@ObservationIgnored private var lastProgressForward: [UUID: (fraction: Double, at: Date)] = [:]
@@ -1964,23 +1965,33 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		      !isClosing
 		else { return }
 		lastPersistedAt = .now
-		let previousWrite = downloadPersistTask
-		previousWrite?.cancel()
-		let snapshot = items
-		let url = storeURL
-		downloadPersistTask = Task.detached(priority: .utility) {
-			await previousWrite?.value
-			try? await Task.sleep(for: .milliseconds(500))
-			guard !Task.isCancelled else { return }
+		downloadPersistRevision &+= 1
+		let revision = downloadPersistRevision
+		downloadPersistTask?.cancel()
+		// Do not capture the full @Observable downloads array until the quiet
+		// period has elapsed. Most progress ticks supersede the pending save;
+		// capturing it eagerly forced a COW copy on the next mutation.
+		downloadPersistTask = Task { @MainActor [weak self] in
 			do {
-				let data = try JSONEncoder().encode(snapshot)
-				try data.write(to: url, options: .atomic)
+				try await Task.sleep(for: .milliseconds(500))
 			} catch {
-				BrowserLog.error(.downloads, "downloads.persist-failed", metadata: ["error": BrowserLog.errorDescription(error), "store": BrowserLog.path(url)])
-				let message = error.localizedDescription
-				await MainActor.run {
-					self.showToast(symbol: "exclamationmark.triangle", message: "Could not save downloads: \(message)")
-				}
+				return
+			}
+			guard !Task.isCancelled, let self, !isClosing else { return }
+			let snapshot = items
+			let url = storeURL
+			do {
+				try await BrowserDownloadFileWorker.shared.persistDownloadIndex(
+					snapshot, at: url, revision: revision
+				)
+			} catch is CancellationError {
+				return
+			} catch {
+				BrowserLog.error(.downloads, "downloads.persist-failed", metadata: [
+					"error": BrowserLog.errorDescription(error), "store": BrowserLog.path(url)
+				])
+				showToast(symbol: "exclamationmark.triangle",
+					message: "Could not save downloads: \(error.localizedDescription)")
 			}
 		}
 	}
@@ -1994,9 +2005,13 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		previousWrite?.cancel()
 		downloadPersistTask = nil
 		await previousWrite?.value
+		downloadPersistRevision &+= 1
+		let revision = downloadPersistRevision
 		let snapshot = items
 		do {
-			try await BrowserDownloadFileWorker.shared.persistDownloadIndex(snapshot, at: storeURL)
+			try await BrowserDownloadFileWorker.shared.persistDownloadIndex(
+				snapshot, at: storeURL, revision: revision
+			)
 			lastPersistedAt = .now
 		} catch {
 			showToast(symbol: "exclamationmark.triangle", message: "Could not save downloads: \(error.localizedDescription)")
