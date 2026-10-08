@@ -1,0 +1,112 @@
+# Astra WebKit benchmark protocol
+
+This protocol records process-level evidence for the WebKit lifecycle work. It
+does not claim a per-tab memory value: WebKit exposes content, GPU and network
+processes, and those processes can be shared by several tabs. The helper keeps
+the process identity (`pid` plus `lstart`) and deduplicates repeated rows. It
+reports RSS as an estimate and derives CPU from cumulative process time across
+two samples.
+
+## Commands
+
+From the repository root:
+
+```sh
+python3 scripts/webkit_benchmark.py self-test
+python3 checks/webkit-benchmark-check.py
+python3 scripts/webkit_benchmark.py snapshot --pid ASTRA_PID \
+  --webkit-pid WEBCONTENT_PID:webcontent --webkit-pid GPU_PID:gpu \
+  --webkit-pid NETWORK_PID:network --output /tmp/astra-before.json
+python3 scripts/webkit_benchmark.py snapshot --pid ASTRA_PID \
+  --webkit-pid WEBCONTENT_PID:webcontent --interval 30 \
+  --output /tmp/astra-idle-cpu.json
+python3 scripts/webkit_benchmark.py snapshot --pid ASTRA_PID \
+  --webkit-pid WEBCONTENT_PID:webcontent --output /tmp/astra-after.json
+```
+
+The helper attributes only PIDs explicitly supplied by the operator. It never
+guesses from executable paths, process descendants, or the current Python PID.
+WebKit XPC helpers commonly have a launchd parent and cannot be safely assigned
+to Astra by ancestry; map each observed helper PID explicitly. Unmapped WebKit
+process identities are listed as `unattributed_webkit_processes` without being
+included in browser totals. The helper records executable basenames only; it
+does not export command arguments, page text, credentials or URLs.
+
+The `time` subcommand is a generic command wall-clock helper and is not an app
+startup measurement. Use Astra's structured performance logs for first-window,
+first-render and navigation boundaries. Do not pass credentials, page text,
+full URLs, query strings or form contents to the helper.
+
+The process totals cover only the explicitly mapped browser PIDs and are
+deduplicated within each snapshot. `webcontent`, `gpu`, and `network` totals are
+not exclusive to a tab. A process that cannot be classified is retained under
+`other`; missing processes are reported as zero rather than inferred. Process
+replacement is visible as a new `pid@start` identity. Compare identities before
+and after hibernation to check whether WebKit actually released a process.
+
+## Baseline and final runs
+
+Record the exact Astra commit, build configuration, macOS build, Mac model and
+memory, WebKit framework build, power mode, network condition, number of
+windows, loaded/hibernated tab counts, and whether Instruments was attached.
+Run baseline on the clean target branch, then repeat after integration with the
+same URLs, ordering, wait time and window state. Use five repetitions for
+startup and switching timings. Keep cold process-launch and warm cache results
+as separate series. Report median and range; keep outliers with their reason.
+
+For idle CPU, use `--interval 30` after a stable idle period. The result derives
+CPU seconds from cumulative `ps time` values and reports percent of one CPU core
+over the interval. It is process CPU, not energy or scheduler wakeups. For a
+stronger interval measure, use Instruments or Activity Monitor and record that
+tool explicitly. The helper itself performs only two `ps` table reads and must
+not run continuously.
+
+## Manual scenarios
+
+Run each scenario on baseline and final builds. Capture before, after-stable,
+and after-close/hibernate snapshots where applicable. Record tab counts,
+visible tabs, protected activity, first usable window, page-load completion,
+switch-to-visible, switch-to-detached, and switch-to-hibernated durations.
+
+1. One empty tab.
+2. One ordinary website.
+3. Ten background tabs.
+4. Fifty restored tabs.
+5. YouTube actively playing.
+6. YouTube paused.
+7. YouTube backgrounded.
+8. Repeated YouTube navigation and closing.
+9. Multiple windows and Spaces.
+10. Tab switching while another tab plays audio.
+11. Memory pressure with an unsaved form and an active download.
+12. Rapid creation, closure and restoration of tabs.
+
+For every case verify visible tabs stay awake, active media/PiP and capture stay
+active, downloads continue, unsaved forms survive, permissions and private
+session boundaries remain unchanged, and back-forward navigation still works.
+For hibernation cases, record whether the WebContent process identity vanished,
+whether a replacement appeared on wake, and whether scroll, zoom, history and
+interaction state were restored.
+
+## Interpretation
+
+Lower mapped browser RSS after hibernation is evidence of reclamation only when
+the relevant WebContent identities disappear or shrink after the workload has
+settled. A lower tab row value alone is not evidence. GPU/network memory is
+shared and should be presented as browser-wide process memory. JavaScript heap,
+video buffers and graphics allocations are not separated by this public
+measurement; use Web Inspector or Instruments for those questions.
+
+The Search reference uses a bounded sleep timer and memory-pressure events,
+then snapshots before releasing a page. Its `bench` tool drives an already open
+browser through a local socket. Astra's protocol borrows the repeatable
+before/after measurement boundary while keeping the helper independent of
+private WebKit APIs.
+
+## Environment limitations
+
+The helper requires macOS `ps` output and a running Astra build for real WebKit
+measurements. CI or a Linux host can run its parser and identity self-checks,
+but cannot certify WebKit process replacement, memory pressure, rendering,
+media, Spaces, or Swift actor/thread-affinity behaviour. No result should be
+invented when those runtime cases cannot be exercised.
