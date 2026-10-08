@@ -162,10 +162,9 @@ private struct KeepAliveWebStack: View {
 		if let selectedTab, ownedTabIDs.contains(selectedTab.id) {
 			append(selectedTab.controller)
 		}
-		// Keep a small warm set for quick switching. Their WebViews are detached
-		// while inactive, so this budget bounds retained host state rather than
-		// keeping four pages attached to the window.
-		for id in browser.recentlyUsedTabIDs where result.count < 2 {
+		// Keep the existing four-controller warm budget. Inactive WebViews are
+		// detached from the window, so this does not attach four pages at once.
+		for id in browser.recentlyUsedTabIDs where result.count < 4 {
 			guard ownedTabIDs.contains(id),
 			      let tab = tabsByID[id],
 			      tab.internalPage == nil else { continue }

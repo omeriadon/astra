@@ -206,6 +206,16 @@ final class BrowserController: NSObject, Identifiable {
 		)
 	}
 
+	/// An inactive page stays attached while WebKit reports activity that a
+	/// detached host could interrupt. Ordinary retained pages can be detached
+	/// by BrowserWebView without rebuilding their WebView.
+	var shouldKeepWebViewAttached: Bool {
+		requiresMediaTeardownConfirmation
+			|| isCapturing
+			|| isLoading
+			|| hasUnsavedChanges
+	}
+
 	private static var cachedSafariUserAgentSuffix: String?
 	@ObservationIgnored
 	private var isApplyingSiteZoom = false
@@ -835,7 +845,19 @@ final class BrowserController: NSObject, Identifiable {
 		guard owns(webView), documentID == navigationIdentifier else { return }
 		// pictureInPictureScript reports eligibility/active changes directly on
 		// video lifecycle events; do not run a second DOM query on every poll.
-		webView.configuration.preferences.inactiveSchedulingPolicy = isPictureInPictureActive || isEnteringPictureInPicture || isPlayingMedia || hasActiveVideoPlayback ? .none : .throttle
+		updateInactiveSchedulingPolicy()
+	}
+
+	private func updateInactiveSchedulingPolicy() {
+		guard let webView = createdWebView else { return }
+		let requiresContinuousScheduling = isPictureInPictureActive
+			|| isEnteringPictureInPicture
+			|| isPlayingMedia
+			|| hasActiveVideoPlayback
+		// .suspend is deliberately not selected. Astra cannot observe every
+		// download, authentication, extension, or page-owned critical task, so
+		// suspension could interrupt work that .throttle safely preserves.
+		webView.configuration.preferences.inactiveSchedulingPolicy = requiresContinuousScheduling ? .none : .throttle
 	}
 
 	private func refreshPictureInPictureEligibility(in webView: WKWebView, documentID: Int) async {
@@ -937,7 +959,7 @@ final class BrowserController: NSObject, Identifiable {
 		if active {
 			pictureInPictureControlUnavailable = false
 		}
-		createdWebView?.configuration.preferences.inactiveSchedulingPolicy = active ? .none : .throttle
+		updateInactiveSchedulingPolicy()
 	}
 
 	private static let findScript = #"""

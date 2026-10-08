@@ -300,11 +300,7 @@ struct BrowserWebView {
 
 		func mountIfReady() {
 			let controller = specification.controller
-			let remainsAttached = specification.isVisible
-			|| controller.requiresMediaTeardownConfirmation
-			|| controller.isCapturing
-			|| controller.isLoading
-			|| controller.hasUnsavedChanges
+			let remainsAttached = specification.isVisible || controller.shouldKeepWebViewAttached
 
 			guard specification.windowID == nil || controller.displayWindowID == specification.windowID else {
 				unmountWebView()
