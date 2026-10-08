@@ -9,6 +9,7 @@ scenario in Astra and take snapshots before and after each lifecycle action.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import os
 import platform
@@ -63,22 +64,50 @@ def _ps_rows() -> list[dict[str, Any]]:
 def _parse_ps_line(line: str) -> dict[str, Any] | None:
     # lstart is five whitespace-separated fields. Keep the executable and
     # cumulative CPU time separate from any command arguments for privacy.
-    fields = line.split(None, 10)
-    if len(fields) != 10:
+    fields = line.split(None, 8)
+    if len(fields) != 9:
         return None
     try:
         pid, ppid = int(fields[0]), int(fields[1])
         rss_kib = float(fields[2])
     except ValueError:
         return None
+    executable, cpu_time = fields[8].rsplit(None, 1)
     return {
         "pid": pid,
         "ppid": ppid,
         "rss_bytes": int(rss_kib * 1024),
         "started": " ".join(fields[3:8]),
-        "executable": fields[8].split("/")[-1][:80],
-        "cpu_seconds": _parse_cpu_time(fields[9]),
+        "executable": executable.split("/")[-1][:80],
+        "cpu_seconds": _parse_cpu_time(cpu_time),
     }
+
+
+class _RUsageInfoV4(ctypes.Structure):
+    _fields_ = [("uuid", ctypes.c_ubyte * 16)] + [
+        (f"value_{index}", ctypes.c_uint64) for index in range(36)
+    ]
+
+
+def _rusage(pid: int) -> dict[str, Any]:
+    """Read public libproc footprint and cumulative CPU for one selected PID."""
+    if platform.system() != "Darwin":
+        return {}
+    try:
+        libproc = ctypes.CDLL("/usr/lib/libproc.dylib")
+        call = libproc.proc_pid_rusage
+        call.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.POINTER(_RUsageInfoV4)]
+        call.restype = ctypes.c_int
+        value = _RUsageInfoV4()
+        if call(pid, 4, ctypes.byref(value)) != 0:
+            return {}
+        return {
+            "footprint_bytes": int(value.value_7),
+            "rusage_cpu_nanoseconds": int(value.value_1 + value.value_2),
+            "rusage_start_abstime": int(value.value_8),
+        }
+    except (AttributeError, OSError):
+        return {}
 
 
 def _deduplicate(rows: Iterable[dict[str, Any]], selected: dict[int, str]) -> list[dict[str, Any]]:
@@ -94,15 +123,22 @@ def _deduplicate(rows: Iterable[dict[str, Any]], selected: dict[int, str]) -> li
         item = dict(row)
         item["identity"] = f"{row['pid']}@{row['started']}"
         item["role"] = selected[row["pid"]]
+        item.update(_rusage(row["pid"]))
         result.append(item)
     return result
 
 
 def _totals(processes: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    totals = {role: {"rss_bytes": 0, "processes": 0} for role in ROLES}
+    totals = {
+        role: {"rss_bytes": 0, "footprint_bytes": 0, "footprint_processes": 0, "processes": 0}
+        for role in ROLES
+    }
     for row in processes:
         total = totals[row["role"]]
         total["rss_bytes"] += row["rss_bytes"]
+        if "footprint_bytes" in row:
+            total["footprint_bytes"] += row["footprint_bytes"]
+            total["footprint_processes"] += 1
         total["processes"] += 1
     return totals
 
@@ -118,6 +154,7 @@ def snapshot(selected: dict[int, str] | None = None) -> dict[str, Any]:
         for row in all_rows
         if row["executable"].lower().startswith("webkit") and row["pid"] not in selected
     ]
+    unavailable = sorted(set(selected) - {row["pid"] for row in processes})
     return {
         "schema": 1,
         "captured_at": time.time(),
@@ -134,10 +171,12 @@ def snapshot(selected: dict[int, str] | None = None) -> dict[str, Any]:
             "tab_attribution": "unavailable from public WebKit APIs",
             "ownership": "only explicitly mapped PIDs are attributed; XPC WebKit helpers remain unattributed",
             "shared_processes": "deduplicated by pid and process start identity",
+            "footprint_source": "public proc_pid_rusage RUSAGE_INFO_V4 when available; otherwise unavailable",
         },
         "totals": totals,
         "processes": processes,
         "unattributed_webkit_processes": unattributed,
+        "unavailable_selected_pids": unavailable,
     }
 
 
@@ -186,7 +225,11 @@ def _cpu_delta(before: list[dict[str, Any]], after: list[dict[str, Any]]) -> dic
     for row in after:
         old = before_by_id.get(row["identity"])
         if old is not None:
-            cpu[row["role"]] += max(0.0, row["cpu_seconds"] - old["cpu_seconds"])
+            if "rusage_cpu_nanoseconds" in row and "rusage_cpu_nanoseconds" in old:
+                delta = (row["rusage_cpu_nanoseconds"] - old["rusage_cpu_nanoseconds"]) / 1_000_000_000
+            else:
+                delta = row["cpu_seconds"] - old["cpu_seconds"]
+            cpu[row["role"]] += max(0.0, delta)
     return cpu
 
 
@@ -217,6 +260,8 @@ def _self_test() -> None:
     parsed = _parse_ps_line("9 1 10 Wed Oct 8 18:00:00 2026 /System/Library/WebKit.WebContent 1:02.50")
     assert parsed is not None and parsed["executable"] == "WebKit.WebContent"
     assert "command" not in parsed
+    spaced = _parse_ps_line("9 1 10 Wed Oct 8 18:00:00 2026 /Applications/Xcode-beta 27.2 beta 2.app/Contents/MacOS/Astra 0:00.01")
+    assert spaced is not None and spaced["executable"] == "Astra"
     rows = [
         {"pid": 9, "ppid": 1, "rss_bytes": 100, "started": "A", "executable": "WebContent", "cpu_seconds": 1.0},
         {"pid": 9, "ppid": 1, "rss_bytes": 200, "started": "A", "executable": "WebContent", "cpu_seconds": 2.0},
