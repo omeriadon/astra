@@ -110,6 +110,31 @@ actor BrowserDownloadFileWorker {
 		return destination
 	}
 
+	/// Deletes staging files on the worker, including after cancellation.
+	/// Failure is reported so a download is not removed from the registry
+	/// while its backing file remains unexpectedly on disk.
+	func deleteTemporaryFiles(_ files: [URL], bookmark: Data?, hasExistingAccess: Bool) throws {
+		var scopedURL: URL?
+		#if os(macOS)
+			if let bookmark {
+				var stale = false
+				guard let url = try? URL(
+					resolvingBookmarkData: bookmark,
+					options: [.withSecurityScope, .withoutUI],
+					relativeTo: nil,
+					bookmarkDataIsStale: &stale
+				), url.startAccessingSecurityScopedResource()
+				else { throw FinalizationError.destinationUnavailable }
+				scopedURL = url
+			}
+		#endif
+		defer { scopedURL?.stopAccessingSecurityScopedResource() }
+		for file in files {
+			guard FileManager.default.fileExists(atPath: file.path) else { continue }
+			try FileManager.default.removeItem(at: file)
+		}
+	}
+
 	func removeFiles(_ files: [URL]) {
 		for file in files {
 			try? FileManager.default.removeItem(at: file)
