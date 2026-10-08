@@ -32,6 +32,17 @@ process identities are listed as `unattributed_webkit_processes` without being
 included in browser totals. The helper records executable basenames only; it
 does not export command arguments, page text, credentials or URLs.
 
+| Value | Source | Meaning |
+| --- | --- | --- |
+| `rss_bytes` | `ps rss` | Resident size estimate; useful for trend comparisons, not physical footprint |
+| `footprint_bytes` | `proc_pid_rusage` `RUSAGE_INFO_V4` | Public macOS physical footprint when the selected PID permits it |
+| `rusage_cpu_nanoseconds` | `proc_pid_rusage` | Cumulative user plus system CPU time for interval deltas |
+| `cpu_seconds` | `ps time` fallback | Cumulative CPU time when libproc is unavailable |
+
+If a selected PID is absent, it appears under `unavailable_selected_pids` and
+its zero total must not be interpreted as zero memory. Permission failures,
+process exit and unsupported hosts are reported through this same absence path.
+
 The `time` subcommand is a generic command wall-clock helper and is not an app
 startup measurement. Use Astra's structured performance logs for first-window,
 first-render and navigation boundaries. Do not pass credentials, page text,
@@ -45,6 +56,12 @@ replacement is visible as a new `pid@start` identity. Compare identities before
 and after hibernation to check whether WebKit actually released a process.
 
 ## Baseline and final runs
+
+The clean baseline branch `release/0.1+3` at `05af546` compiled successfully
+through the Xcode 27.2 beta 2 GUI build workflow. This records compilation only;
+no Astra runtime benchmark was executed against the active debug instance, so
+there are no baseline memory or CPU numbers yet. Repeat the same build and
+runtime protocol after integration before making performance claims.
 
 Record the exact Astra commit, build configuration, macOS build, Mac model and
 memory, WebKit framework build, power mode, network condition, number of
