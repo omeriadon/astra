@@ -61,24 +61,23 @@ struct BrowserAIChatSidebar: View {
 							}
 							.id(message.id)
 						}
-						if chat.isResponding {
-							if chat.preview.isEmpty {
-								ProgressView("Reading and Answering")
-							} else {
-								chatMarkdown(chat.preview, streaming: true)
-							}
-						}
-						if let error = chat.error {
-							Text(error)
-								.foregroundStyle(.secondary)
-								.accessibilityIdentifier("ai-chat-error")
-						}
+						// Streaming responses update many times per second. Keep
+						// that observation in a leaf view so the entire sidebar,
+						// toolbar, composer and historical Markdown views are not
+						// invalidated for each generated token.
+						BrowserAIChatStreamingResponse(
+							chat: chat,
+							browser: browser,
+							hoveredURL: $hoveredURL,
+							hoveredLinkSize: $hoveredLinkSize,
+							hoveredLinkShiftPressed: $hoveredLinkShiftPressed,
+							onPreviewChange: { reader.scrollTo("chat-bottom", anchor: .bottom) }
+						)
 						Color.clear.frame(height: 1).id("chat-bottom")
 					}
 					.padding(.horizontal, 12)
 				}
 				.onChange(of: chat.messages.count) { _, _ in reader.scrollTo("chat-bottom", anchor: .bottom) }
-				.onChange(of: chat.preview) { _, _ in reader.scrollTo("chat-bottom", anchor: .bottom) }
 			}
 		}
 		.safeAreaBar(edge: .top) {
@@ -367,6 +366,56 @@ struct BrowserAIChatSidebar: View {
 	private func send() {
 		guard !chat.isResponding, canSend else { return }
 		requestID = UUID()
+	}
+}
+
+/// Observation boundary for per-token chat streaming. The transcript
+/// and composer never subscribe directly to preview text.
+private struct BrowserAIChatStreamingResponse: View {
+	let chat: BrowserAIChat
+	let browser: Browser
+	@Binding var hoveredURL: URL?
+	@Binding var hoveredLinkSize: CGSize
+	@Binding var hoveredLinkShiftPressed: Bool
+	let onPreviewChange: () -> Void
+
+	var body: some View {
+		Group {
+			if chat.isResponding {
+				if chat.preview.isEmpty {
+					ProgressView("Reading and Answering")
+				} else {
+					#if os(macOS)
+						BrowserAIChatMarkdown(
+							text: chat.preview,
+							streaming: true,
+							open: { browser.openHistoryURL($0, inBackground: false) },
+							hover: { url, previous, size, shift in
+								if url != nil || hoveredURL == previous {
+									hoveredURL = url
+									hoveredLinkSize = size
+									hoveredLinkShiftPressed = shift
+								}
+							}
+						)
+						.frame(maxWidth: .infinity, alignment: .leading)
+					#else
+						Text((try? AttributedString(markdown: chat.preview)) ?? AttributedString(chat.preview))
+							.textSelection(.enabled)
+							.environment(\.openURL, OpenURLAction { url in
+								browser.openHistoryURL(url, inBackground: false)
+								return .handled
+							})
+					#endif
+				}
+			}
+			if let error = chat.error {
+				Text(error)
+					.foregroundStyle(.secondary)
+					.accessibilityIdentifier("ai-chat-error")
+			}
+		}
+		.onChange(of: chat.preview) { _, _ in onPreviewChange() }
 	}
 }
 
