@@ -378,16 +378,17 @@ private struct BrowserAIChatStreamingResponse: View {
 	@Binding var hoveredLinkSize: CGSize
 	@Binding var hoveredLinkShiftPressed: Bool
 	let onPreviewChange: () -> Void
+	@State private var presentedPreview = ""
 
 	var body: some View {
 		Group {
 			if chat.isResponding {
-				if chat.preview.isEmpty {
+				if presentedPreview.isEmpty {
 					ProgressView("Reading and Answering")
 				} else {
 					#if os(macOS)
 						BrowserAIChatMarkdown(
-							text: chat.preview,
+							text: presentedPreview,
 							streaming: true,
 							open: { browser.openHistoryURL($0, inBackground: false) },
 							hover: { url, previous, size, shift in
@@ -400,7 +401,7 @@ private struct BrowserAIChatStreamingResponse: View {
 						)
 						.frame(maxWidth: .infinity, alignment: .leading)
 					#else
-						Text((try? AttributedString(markdown: chat.preview)) ?? AttributedString(chat.preview))
+						Text((try? AttributedString(markdown: presentedPreview)) ?? AttributedString(presentedPreview))
 							.textSelection(.enabled)
 							.environment(\.openURL, OpenURLAction { url in
 								browser.openHistoryURL(url, inBackground: false)
@@ -415,7 +416,31 @@ private struct BrowserAIChatStreamingResponse: View {
 					.accessibilityIdentifier("ai-chat-error")
 			}
 		}
-		.onChange(of: chat.preview) { _, _ in onPreviewChange() }
+		// MarkdownContent reparses the entire accumulated response on each
+		// setContent call. Token-by-token SwiftUI observation therefore causes
+		// repeated layout work that grows with response length. This task reads
+		// the current response without subscribing body to every token, and
+		// publishes at most ten previews per second. It is automatically
+		// cancelled when a reply finishes or the sidebar is dismantled.
+		.task(id: chat.isResponding) {
+			guard chat.isResponding else {
+				presentedPreview = ""
+				return
+			}
+			presentedPreview = chat.preview
+			while !Task.isCancelled && chat.isResponding {
+				do {
+					try await Task.sleep(for: .milliseconds(100))
+				} catch {
+					return
+				}
+				guard !Task.isCancelled else { return }
+				let current = chat.preview
+				guard current != presentedPreview else { continue }
+				presentedPreview = current
+				onPreviewChange()
+			}
+		}
 	}
 }
 
