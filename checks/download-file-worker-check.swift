@@ -8,15 +8,17 @@ struct DownloadFileWorkerCheck {
 			"astra-download-finalize-check-\(UUID().uuidString)", isDirectory: true
 		)
 		let output = root.appendingPathComponent("completed", isDirectory: true)
+		let input = root.appendingPathComponent("download-staging", isDirectory: true)
 		try manager.createDirectory(at: output, withIntermediateDirectories: true)
+		try manager.createDirectory(at: input, withIntermediateDirectories: true)
 		defer { try? manager.removeItem(at: root) }
 
 		let bytes = Data(repeating: 0x6B, count: 2 * 1024 * 1024)
-		let firstSource = root.appendingPathComponent("first.part")
+		let firstSource = input.appendingPathComponent("first.part")
 		let firstDest = output.appendingPathComponent("asset.bin")
 		try bytes.write(to: firstSource)
 		let committed = try await BrowserDownloadFileWorker.shared.commit(
-			source: firstSource, proposed: firstDest, fileScoped: false,
+			source: firstSource, ownedStagingDirectory: input, proposed: firstDest, fileScoped: false,
 			bookmark: nil, hasExistingAccess: false,
 			downloadURL: nil, originURL: nil
 		)
@@ -25,10 +27,10 @@ struct DownloadFileWorkerCheck {
 		let committedData = try Data(contentsOf: committed)
 		precondition(committedData == bytes)
 
-		let secondSource = root.appendingPathComponent("second.part")
+		let secondSource = input.appendingPathComponent("second.part")
 		try bytes.write(to: secondSource)
 		let collision = try await BrowserDownloadFileWorker.shared.commit(
-			source: secondSource, proposed: firstDest, fileScoped: false,
+			source: secondSource, ownedStagingDirectory: input, proposed: firstDest, fileScoped: false,
 			bookmark: nil, hasExistingAccess: false,
 			downloadURL: nil, originURL: nil
 		)
@@ -48,11 +50,26 @@ struct DownloadFileWorkerCheck {
 		let renamedData = try Data(contentsOf: renamed)
 		precondition(renamedData == bytes)
 
-		let thirdSource = root.appendingPathComponent("third.part")
+		// A forged or corrupted index must never be allowed to finalize a file
+		// outside the app-owned transfer staging directory.
+		do {
+			_ = try await BrowserDownloadFileWorker.shared.commit(
+				source: firstDest, ownedStagingDirectory: input,
+				proposed: output.appendingPathComponent("unsafe.bin"),
+				fileScoped: false, bookmark: nil, hasExistingAccess: false,
+				downloadURL: nil, originURL: nil
+			)
+			preconditionFailure("Finalizer accepted source outside owned staging directory")
+		} catch {
+			precondition(manager.fileExists(atPath: firstDest.path))
+			precondition(!manager.fileExists(atPath: output.appendingPathComponent("unsafe.bin").path))
+		}
+
+		let thirdSource = input.appendingPathComponent("third.part")
 		try bytes.write(to: thirdSource)
 		do {
 			_ = try await BrowserDownloadFileWorker.shared.commit(
-				source: thirdSource, proposed: root.appendingPathComponent("missing/asset.bin"),
+				source: thirdSource, ownedStagingDirectory: input, proposed: root.appendingPathComponent("missing/asset.bin"),
 				fileScoped: false, bookmark: nil, hasExistingAccess: false,
 				downloadURL: nil, originURL: nil
 			)
@@ -62,13 +79,13 @@ struct DownloadFileWorkerCheck {
 			precondition(!manager.fileExists(atPath: root.appendingPathComponent("missing").path))
 		}
 
-		let fourthSource = root.appendingPathComponent("fourth.part")
+		let fourthSource = input.appendingPathComponent("fourth.part")
 		try bytes.write(to: fourthSource)
 		let cancelled = Task {
 			withUnsafeCurrentTask { $0?.cancel() }
 			do {
 				_ = try await BrowserDownloadFileWorker.shared.commit(
-					source: fourthSource, proposed: output.appendingPathComponent("cancelled.bin"),
+					source: fourthSource, ownedStagingDirectory: input, proposed: output.appendingPathComponent("cancelled.bin"),
 					fileScoped: false, bookmark: nil, hasExistingAccess: false,
 					downloadURL: nil, originURL: nil
 				)
@@ -84,8 +101,7 @@ struct DownloadFileWorkerCheck {
 		precondition(manager.fileExists(atPath: fourthSource.path))
 		precondition(!manager.fileExists(atPath: output.appendingPathComponent("cancelled.bin").path))
 
-		let tempRoot = root.appendingPathComponent("download-staging", isDirectory: true)
-		try manager.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+		let tempRoot = input
 		let disposable = tempRoot.appendingPathComponent("disposable.part")
 		try bytes.write(to: disposable)
 		try await BrowserDownloadFileWorker.shared.deleteTemporaryFiles(
