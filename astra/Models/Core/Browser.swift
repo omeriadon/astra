@@ -165,7 +165,7 @@ final class Browser {
 	}
 
 	var frequentHistory: [BrowserVisitSummary] {
-		BrowserVisit.summaries(historyVisits).sorted {
+		BrowserVisit.summaries(historyVisits, sortByRecency: false).sorted {
 			if $0.visitCount != $1.visitCount {
 				return $0.visitCount > $1.visitCount
 			}

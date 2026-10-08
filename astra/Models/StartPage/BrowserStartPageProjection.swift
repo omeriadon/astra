@@ -32,14 +32,27 @@ nonisolated enum BrowserStartPageProjection {
 
 	static func frequent(_ visits: [BrowserVisit], isPrivate: Bool, limit: Int = 8) -> [BrowserVisitSummary] {
 		guard !isPrivate, limit > 0 else { return [] }
-		return BrowserVisit.summaries(visits).sorted {
-			if $0.visitCount != $1.visitCount {
-				return $0.visitCount > $1.visitCount
+		let summaries = BrowserVisit.summaries(visits, sortByRecency: false)
+		let outranks: (BrowserVisitSummary, BrowserVisitSummary) -> Bool = { lhs, rhs in
+			if lhs.visitCount != rhs.visitCount { return lhs.visitCount > rhs.visitCount }
+			if lhs.lastVisitedAt != rhs.lastVisitedAt { return lhs.lastVisitedAt > rhs.lastVisitedAt }
+			return lhs.url.absoluteString < rhs.url.absoluteString
+		}
+		if limit >= 64 {
+			return Array(summaries.sorted(by: outranks).prefix(limit))
+		}
+		// Start page normally shows eight sites: maintain a bounded top-K
+		// list instead of sorting every unique history URL twice.
+		var frequent: [BrowserVisitSummary] = []
+		frequent.reserveCapacity(min(limit, summaries.count))
+		for summary in summaries {
+			if let index = frequent.firstIndex(where: { outranks(summary, $0) }) {
+				frequent.insert(summary, at: index)
+				if frequent.count > limit { frequent.removeLast() }
+			} else if frequent.count < limit {
+				frequent.append(summary)
 			}
-			if $0.lastVisitedAt != $1.lastVisitedAt {
-				return $0.lastVisitedAt > $1.lastVisitedAt
-			}
-			return $0.url.absoluteString < $1.url.absoluteString
-		}.prefix(limit).map(\.self)
+		}
+		return frequent
 	}
 }

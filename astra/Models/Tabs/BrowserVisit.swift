@@ -93,7 +93,7 @@ nonisolated struct BrowserVisit: Codable, Identifiable, Equatable, Sendable {
 		visitID != nil && lastURL == url && lastNavigationID == navigationID
 	}
 
-	static func summaries(_ visits: [Self]) -> [BrowserVisitSummary] {
+	static func summaries(_ visits: [Self], sortByRecency: Bool = true) -> [BrowserVisitSummary] {
 		// One pass rather than Dictionary(grouping:) allocating an array of
 		// every visit for each URL and then scanning each group for its latest.
 		var summaries: [URL: (latest: Self, count: Int)] = [:]
@@ -111,14 +111,18 @@ nonisolated struct BrowserVisit: Codable, Identifiable, Equatable, Sendable {
 				summaries[visit.url] = (visit, 1)
 			}
 		}
-		return summaries.map { url, summary in
+		let results = summaries.map { url, summary in
 			BrowserVisitSummary(
 				url: url,
 				title: summary.latest.title,
 				visitCount: summary.count,
 				lastVisitedAt: summary.latest.visitedAt
 			)
-		}.sorted {
+		}
+		// Frequent-site consumers immediately rank by visit count instead.
+		// Sorting by recency first is wasted work for those callers.
+		guard sortByRecency else { return results }
+		return results.sorted {
 			$0.lastVisitedAt == $1.lastVisitedAt
 				? $0.url.absoluteString < $1.url.absoluteString
 				: $0.lastVisitedAt > $1.lastVisitedAt
