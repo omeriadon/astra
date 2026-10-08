@@ -2648,28 +2648,28 @@ final class Browser {
 		// workspace membership. Closed-history-only changes need durability,
 		// but must not touch the live workspace or extension bridges.
 		if documentChanged {
-		if tabs.contains(where: { $0.id == selectedTabBeforeMerge }) {
-			selectedTabID = selectedTabBeforeMerge
-			selectedTabModifiedAt = selectedTabDateBeforeMerge
-		}
-		if workspace.spaces.contains(where: { $0.id == selectedSpaceBeforeMerge }) {
-			workspace.selectedSpaceID = selectedSpaceBeforeMerge
-			workspace.selectionModifiedAt = selectionDateBeforeMerge
-		}
-		for index in workspace.spaces.indices {
-			if let selectedID = selectedTabsBySpace[workspace.spaces[index].id] ?? nil,
-			   workspace.spaces[index].tabIDs.contains(selectedID) || workspace.favouriteTabIDs.contains(selectedID)
-			{
-				workspace.spaces[index].selectedTabID = selectedID
+			if tabs.contains(where: { $0.id == selectedTabBeforeMerge }) {
+				selectedTabID = selectedTabBeforeMerge
+				selectedTabModifiedAt = selectedTabDateBeforeMerge
 			}
-		}
-		recentlyUsedTabIDs = recentlyUsedBeforeMerge.filter { openIDs.contains($0) }
-		if !recentlyUsedTabIDs.contains(selectedTabID) {
-			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
-		}
-		reconcileWorkspace()
+			if workspace.spaces.contains(where: { $0.id == selectedSpaceBeforeMerge }) {
+				workspace.selectedSpaceID = selectedSpaceBeforeMerge
+				workspace.selectionModifiedAt = selectionDateBeforeMerge
+			}
+			for index in workspace.spaces.indices {
+				if let selectedID = selectedTabsBySpace[workspace.spaces[index].id] ?? nil,
+				   workspace.spaces[index].tabIDs.contains(selectedID) || workspace.favouriteTabIDs.contains(selectedID)
+				{
+					workspace.spaces[index].selectedTabID = selectedID
+				}
+			}
+			recentlyUsedTabIDs = recentlyUsedBeforeMerge.filter { openIDs.contains($0) }
+			if !recentlyUsedTabIDs.contains(selectedTabID) {
+				recentlyUsedTabIDs.insert(selectedTabID, at: 0)
+			}
+			reconcileWorkspace()
 		} else {
-			// applySyncDocument already schedules a full save when needed.
+			// No live document changes: persist the updated closed history only.
 			scheduleUserDataPersistence()
 		}
 	}
