@@ -59,7 +59,7 @@
 					.accessibilityIdentifier("website-app-name-\(installation.id)")
 					Button("Save Name") {
 						perform {
-							try registry.rename(installation.id, to: editingNames[installation.id] ?? installation.name)
+							try await registry.rename(installation.id, to: editingNames[installation.id] ?? installation.name)
 							editingNames[installation.id] = nil
 						}
 					}
@@ -73,7 +73,7 @@
 
 				HStack {
 					Button("Launch", systemImage: "play") {
-						perform { try registry.launch(installation.id) }
+						perform { try await registry.launch(installation.id) }
 					}
 					Button("Reveal", systemImage: "folder") {
 						perform { try registry.reveal(installation.id) }
@@ -95,7 +95,7 @@
 					}
 					Spacer()
 					Button("Uninstall", systemImage: "trash", role: .destructive) {
-						perform { try registry.uninstall(installation.id) }
+						perform { try await registry.uninstall(installation.id) }
 					}
 				}
 				.buttonStyle(.borderless)
@@ -112,15 +112,17 @@
 			      let url = panel.url,
 			      let image = NSImage(contentsOf: url)
 			else { return }
-			perform { try registry.updateIcon(id, icon: image) }
+			perform { try await registry.updateIcon(id, icon: image) }
 		}
 
-		private func perform(_ action: () throws -> Void) {
-			do {
-				try action()
-				errorMessage = nil
-			} catch {
-				errorMessage = error.localizedDescription
+		private func perform(_ action: @escaping @MainActor () async throws -> Void) {
+			Task { @MainActor in
+				do {
+					try await action()
+					errorMessage = nil
+				} catch {
+					errorMessage = error.localizedDescription
+				}
 			}
 		}
 	}
