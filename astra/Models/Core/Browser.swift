@@ -1961,8 +1961,13 @@ final class Browser {
 	}
 
 	private func attachPersistence(to tab: BrowserTab) {
-		tab.didChange = { [weak self] in
-			self?.schedulePersistence()
+		tab.didChange = { [weak self, id = tab.id] in
+			guard let self else { return }
+			// Navigation/title/peek metadata changes do not change extension
+			// tab membership. Update the affected tab only, while still
+			// scheduling full cross-window persistence and synchronization.
+			BrowserExtensionManager.shared.tabPropertiesDidChange(for: id, in: self)
+			schedulePersistence(fullState: true, syncExtensions: false)
 		}
 		tab.didRecordHistoryVisit = { [weak self] controller, url, title, navigationID in
 			self?.recordHistoryVisit(from: controller, url: url, title: title, navigationID: navigationID)

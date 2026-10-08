@@ -178,22 +178,37 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	/// extension-tab snapshot on each navigation start/finish made foreground
 	/// and background page loads walk the whole browser tab collection.
 	func loadingDidChange(for id: UUID, in browser: Browser) {
+		tabPropertiesDidChange(for: id, in: browser)
+	}
+
+	/// Normal tab metadata and WebKit loading events affect one WebExtension
+	/// bridge, not every bridge in a window. Structural membership changes
+	/// still use sync(_:) from Browser's explicit tab mutation paths.
+	func tabPropertiesDidChange(for id: UUID, in browser: Browser) {
 		guard !browser.isPrivate,
 		      BrowserWindowRegistry.shared.ownsTab(id, in: browser),
 		      let tab = browser.tab(withID: id),
 		      tab.internalPage == nil else { return }
-		guard var prior = tabSnapshots[browser.windowID]?[id],
+		guard let previous = tabSnapshots[browser.windowID]?[id],
 		      let bridge = tabs[browser.windowID]?[id] else {
-			// Newly-created tabs still need their initial registration and
-			// complete WebExtension state before incremental notifications.
 			sync(browser)
 			return
 		}
-		let loading = tab.controller?.isLoading == true
-		guard prior.loading != loading else { return }
-		prior.loading = loading
-		tabSnapshots[browser.windowID, default: [:]][id] = prior
-		controller.didChangeTabProperties([.loading], for: bridge)
+		let next = TabSnapshot(
+			url: tab.currentURL,
+			title: tab.title,
+			loading: tab.controller?.isLoading == true,
+			pinned: previous.pinned,
+			zoom: tab.controller?.pageZoom ?? 1
+		)
+		var changed: WKWebExtension.TabChangedProperties = []
+		if previous.title != next.title { changed.insert(.title) }
+		if previous.url != next.url { changed.insert(.URL) }
+		if previous.loading != next.loading { changed.insert(.loading) }
+		if previous.zoom != next.zoom { changed.insert(.zoomFactor) }
+		guard !changed.isEmpty else { return }
+		tabSnapshots[browser.windowID, default: [:]][id] = next
+		controller.didChangeTabProperties(changed, for: bridge)
 	}
 
 	/// Selection changes do not require rebuilding every extension-tab snapshot.
