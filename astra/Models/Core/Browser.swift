@@ -268,22 +268,28 @@ final class Browser {
 
 	func selectSpace(_ id: UUID) {
 		BrowserLog.debug(.spaces, "space.select", metadata: ["window": BrowserLog.id(windowID), "from": BrowserLog.id(workspace.selectedSpaceID), "to": BrowserLog.id(id)])
-		guard let nextIndex = workspace.spaces.firstIndex(where: { $0.id == id }) else { return }
+		guard id != workspace.selectedSpaceID,
+		      let nextIndex = workspace.spaces.firstIndex(where: { $0.id == id }) else { return }
 		if let currentIndex = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
 			spaceSwitchDirection = nextIndex >= currentIndex ? 1 : -1
 		}
-		workspace.selectedSpaceID = id
-		let space = selectedSpace
-		if let tabID = space.selectedTabID,
-		   space.tabIDs.contains(tabID) || workspace.favouriteTabIDs.contains(tabID)
-		{
-			selectTab(tabID)
-		} else if let tabID = space.tabIDs.first ?? workspace.favouriteTabIDs.first {
-			selectTab(tabID)
+		let space = workspace.spaces[nextIndex]
+		let targetID: UUID? = {
+			if let preferred = space.selectedTabID,
+			   space.tabIDs.contains(preferred) || workspace.favouriteTabIDs.contains(preferred) {
+				return preferred
+			}
+			return space.tabIDs.first ?? workspace.favouriteTabIDs.first
+		}()
+		if let targetID {
+			// Switch space and tab in one observable workspace mutation.
+			// Selection alone does not require a structural extension sync.
+			selectTab(targetID, inSpace: id)
 		} else {
+			// Creating the first tab in an empty space already persists.
+			workspace.selectedSpaceID = id
 			addTab()
 		}
-		schedulePersistence()
 	}
 
 	@discardableResult
@@ -1065,6 +1071,10 @@ final class Browser {
 	#endif
 
 	func selectTab(_ id: UUID) {
+		selectTab(id, inSpace: nil)
+	}
+
+	private func selectTab(_ id: UUID, inSpace requestedSpaceID: UUID?) {
 		let selectionStartedAt = BrowserLog.clock()
 		BrowserLog.debug(.tabs, "tab.select", metadata: ["window": BrowserLog.id(windowID), "from": BrowserLog.id(selectedTabID), "to": BrowserLog.id(id)])
 		guard let tab = tab(withID: id) else { return }
@@ -1090,7 +1100,8 @@ final class Browser {
 		// mouse-up action. Make that second selection effectively free, and also
 		// avoid rewriting workspace timestamps/persistence for any repeated click
 		// on an already-active warm tab.
-		if selectedTabID == id, !tab.isHibernated {
+		if selectedTabID == id, !tab.isHibernated,
+		   requestedSpaceID == nil || requestedSpaceID == workspace.selectedSpaceID {
 			if !BrowserWindowRegistry.shared.ownsTab(id, in: self) {
 				BrowserWindowRegistry.shared.claimSelectedTab(in: self)
 			}
@@ -1101,7 +1112,9 @@ final class Browser {
 		// the complete selection mutation locally and publish it once instead of
 		// invalidating observers for every nested field write.
 		var nextWorkspace = workspace
-		if !nextWorkspace.favouriteTabIDs.contains(id),
+		if let requestedSpaceID {
+			nextWorkspace.selectedSpaceID = requestedSpaceID
+		} else if !nextWorkspace.favouriteTabIDs.contains(id),
 		   let ownerIndex = nextWorkspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })
 		{
 			if let currentIndex = nextWorkspace.spaces.firstIndex(where: { $0.id == nextWorkspace.selectedSpaceID }) {
