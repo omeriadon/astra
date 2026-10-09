@@ -198,6 +198,108 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 	/// Serializes full-state commits and selection checkpoints across all windows.
 	private nonisolated static let selectionJournalLock = NSLock()
 
+	/// A volatile, memory-bounded process cache of the last committed primary
+	/// checkpoint. The inode/size/mtime tuple is checked before every reuse:
+	/// restores, external edits and atomic replacements cannot reuse stale data.
+	/// The global selectionJournalLock serializes its callers.
+	private nonisolated static let checkpointCache: NSCache<NSString, CachedCheckpoint> = {
+		let cache = NSCache<NSString, CachedCheckpoint>()
+		cache.countLimit = 2
+		cache.totalCostLimit = 24 * 1024 * 1024
+		return cache
+	}()
+
+	private nonisolated struct CheckpointSignature: Equatable {
+		let fileNumber: UInt64
+		let byteCount: UInt64
+		let modifiedAt: Date
+
+		init?(at url: URL) {
+			guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+			      let fileNumber = attributes[.systemFileNumber] as? NSNumber,
+			      let byteCount = attributes[.size] as? NSNumber,
+			      let modifiedAt = attributes[.modificationDate] as? Date
+			else { return nil }
+			self.fileNumber = fileNumber.uint64Value
+			self.byteCount = byteCount.uint64Value
+			self.modifiedAt = modifiedAt
+		}
+	}
+
+	private nonisolated struct OldTabPrivacy {
+		let history: Set<URL>
+		let recordsNavigationHistory: Bool
+	}
+
+	/// Only the fields needed to decide whether the backup would resurrect
+	/// removed private data. Retaining the entire old 50k-visit model would
+	/// double session memory between successive checkpoints.
+	private nonisolated struct PrivacyDeletionIndex {
+		let historyURLs: [UUID: URL]
+		let bookmarkURLs: [UUID: URL]
+		let readingURLs: [UUID: URL]
+		let closedTabIDs: Set<UUID>
+		let openTabPrivacy: [UUID: OldTabPrivacy]
+		let deletedVisitsAt: [UUID: Date]
+		let historyClearedAt: Date
+		let containedCredentialURLs: Bool
+
+		init(_ state: BrowserPersistedState) {
+			historyURLs = Dictionary((state.historyVisits ?? []).map { ($0.id, $0.url) }, uniquingKeysWith: { old, _ in old })
+			bookmarkURLs = Dictionary(state.bookmarks.map { ($0.id, $0.url) }, uniquingKeysWith: { old, _ in old })
+			readingURLs = Dictionary(state.readingList.map { ($0.id, $0.url) }, uniquingKeysWith: { old, _ in old })
+			closedTabIDs = Set(state.closedTabs.map(\.id))
+			openTabPrivacy = Dictionary(
+				state.openTabs.map { ($0.id, OldTabPrivacy(history: Set($0.history), recordsNavigationHistory: $0.recordsNavigationHistory)) },
+				uniquingKeysWith: { old, _ in old }
+			)
+			deletedVisitsAt = state.snapshot.deletedVisitsAt
+			historyClearedAt = state.snapshot.historyClearedAt
+			containedCredentialURLs = state.openTabs.contains { tab in
+				(tab.history + [tab.url].compactMap(\.self)).contains { $0.user != nil || $0.password != nil }
+			} || state.bookmarks.contains { $0.url.user != nil || $0.url.password != nil }
+				|| (state.historyVisits ?? []).contains { $0.url.user != nil || $0.url.password != nil }
+		}
+
+		func hasPrivacyRemoval(comparedTo state: BrowserPersistedState) -> Bool {
+			let newHistory = Dictionary((state.historyVisits ?? []).map { ($0.id, $0.url) }, uniquingKeysWith: { old, _ in old })
+			let newBookmarks = Dictionary(state.bookmarks.map { ($0.id, $0.url) }, uniquingKeysWith: { old, _ in old })
+			let newReading = Dictionary(state.readingList.map { ($0.id, $0.url) }, uniquingKeysWith: { old, _ in old })
+			let currentClosed = Set(state.closedTabs.map(\.id))
+			let currentOpen = Dictionary(state.openTabs.map { ($0.id, $0) }, uniquingKeysWith: { old, _ in old })
+			return historyURLs.contains { newHistory[$0.key] != $0.value }
+				|| bookmarkURLs.contains { newBookmarks[$0.key] != $0.value }
+				|| readingURLs.contains { newReading[$0.key] != $0.value }
+				|| historyClearedAt < state.snapshot.historyClearedAt
+				|| !closedTabIDs.isSubset(of: currentClosed)
+				|| openTabPrivacy.contains { id, previous in
+					guard let updated = currentOpen[id] else { return false }
+					return !previous.history.isSubset(of: Set(updated.history))
+				}
+				|| deletedVisitsAt.contains { id, date in
+					state.snapshot.deletedVisitsAt[id].map { $0 > date } ?? false
+				}
+				|| openTabPrivacy.contains { id, old in
+					old.recordsNavigationHistory && currentOpen[id]?.recordsNavigationHistory == false
+				}
+				|| containedCredentialURLs
+		}
+	}
+
+	private nonisolated final class CachedCheckpoint {
+		let signature: CheckpointSignature
+		let originalData: Data?
+		let privacy: PrivacyDeletionIndex
+
+		init(signature: CheckpointSignature, data: Data, privacy: PrivacyDeletionIndex) {
+			self.signature = signature
+			// The backup bytes are convenient below 8 MiB. Keep no extra copy
+			// of a large JSON payload; the privacy index still avoids decoding it.
+			originalData = data.count <= 8 * 1024 * 1024 ? data : nil
+			self.privacy = privacy
+		}
+	}
+
 	private nonisolated struct SelectionJournal: Codable {
 		let version: Int
 		var updates: [String: BrowserSelectionUpdate]
