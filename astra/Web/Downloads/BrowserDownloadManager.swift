@@ -101,9 +101,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		self.toastManager = toastManager
 		let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
 			.appendingPathComponent(Bundle.main.bundleIdentifier ?? "browser", isDirectory: true)
-		if privateDataStore == nil {
-			try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-		}
+		// Index hydration prepares the directory on its detached IO task.
+		// Launch must not block MainActor on Application Support metadata.
 		storeURL = directory.appendingPathComponent("downloads.json")
 		stagingDirectory = privateDataStore == nil
 			? directory.appendingPathComponent("download-staging", isDirectory: true)
@@ -164,6 +163,9 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		BrowserLog.debug(.downloads, "downloads.hydrate.begin", metadata: ["store": BrowserLog.path(storeURL)])
 		let url = storeURL
 		downloadHydrationTask = Task.detached(priority: .utility) {
+			try? FileManager.default.createDirectory(
+				at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+			)
 			guard let data = try? Data(contentsOf: url) else {
 				if FileManager.default.fileExists(atPath: url.path) {
 					await MainActor.run { [weak self] in self?.preserveUnreadableDownloadCache() }
@@ -380,12 +382,25 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 					completionHandler(nil)
 					return
 				}
-				try FileManager.default.createDirectory(at: stagingDirectory, withIntermediateDirectories: true)
 				let destination = stagingDirectory
 					.appendingPathComponent(UUID().uuidString)
 					.appendingPathExtension("astradownload")
-				if FileManager.default.fileExists(atPath: items[currentIndex].fileURL.path) {
-					previousTemporaryURLs[itemID] = items[currentIndex].fileURL
+				let previousURL = items[currentIndex].fileURL
+				try await BrowserDownloadFileWorker.shared.prepareStagingDirectory(stagingDirectory)
+				let previousFileExists = await BrowserDownloadFileWorker.shared.stagedFileExists(previousURL)
+				// The user may cancel or delete the item while disk preparation is
+				// suspended. Never publish a staging destination to a stale slot.
+				guard !isClosing,
+				      let currentIndex = items.firstIndex(where: {
+				      	$0.id == itemID && $0.status == .downloading
+				      }),
+				      downloads[downloadID] != nil,
+				      items[currentIndex].fileURL == previousURL else {
+					completionHandler(nil)
+					return
+				}
+				if previousFileExists {
+					previousTemporaryURLs[itemID] = previousURL
 				}
 				items[currentIndex].fileURL = destination
 				items[currentIndex].destinationURL = finalURL
@@ -1270,11 +1285,20 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		      	$0.id == itemID && $0.status == .downloading && $0.segments != nil
 		      })
 		else { return }
-		try? FileManager.default.removeItem(at: items[resumedIndex].fileURL)
-		guard FileManager.default.createFile(atPath: items[resumedIndex].fileURL.path, contents: nil) else {
-			segmentFailed(itemID)
+		let segmentURL = items[resumedIndex].fileURL
+		do {
+			try await BrowserDownloadFileWorker.shared.prepareEmptySegmentFile(
+				segmentURL, ownedStagingDirectory: stagingDirectory
+			)
+		} catch {
+			segmentFailed(itemID, fileURL: segmentURL)
 			return
 		}
+		guard !isClosing, !deletingItems.contains(itemID),
+		      let resumedIndex = items.firstIndex(where: {
+		      	$0.id == itemID && $0.status == .downloading && $0.fileURL == segmentURL
+		      }),
+		      items[resumedIndex].segments != nil else { return }
 		persist()
 		segmented.start(items[resumedIndex], originalRequest: request)
 	}
