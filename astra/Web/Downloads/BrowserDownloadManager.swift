@@ -368,7 +368,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 						items[liveIndex].throughput = nil
 						items[liveIndex].estimatedTimeRemaining = nil
 						items[liveIndex].errorMessage = "Download cancelled because no destination was selected."
-						try? FileManager.default.removeItem(at: items[liveIndex].fileURL)
+						let cancelledStagingURL = items[liveIndex].fileURL
+						Task { await BrowserDownloadFileWorker.shared.removeFiles([cancelledStagingURL]) }
 					}
 					finish(download)
 					persist()
@@ -633,7 +634,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				items[index].throughput = nil
 				items[index].estimatedTimeRemaining = nil
 				if resumeData == nil {
-					try? FileManager.default.removeItem(at: items[index].fileURL)
+					let failedStagingURL = items[index].fileURL
+					Task { await BrowserDownloadFileWorker.shared.removeFiles([failedStagingURL]) }
 				}
 			}
 			showToast(symbol: "exclamationmark.triangle", message: "Download failed: \(error.localizedDescription)")
