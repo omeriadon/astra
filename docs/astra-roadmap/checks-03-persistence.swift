@@ -135,6 +135,38 @@ struct BrowserPersistenceCheck {
 			atPath: multiWindowDirectory.appendingPathComponent("browser-selection.json").path
 		))
 
+		// Multiple full saves exercise the warm primary/backup cache. Removing
+		// a history visit must invalidate the old backup: corruption recovery
+		// must never resurrect a deleted browsing record.
+		let privacyDirectory = directory.appendingPathComponent("warm-privacy", isDirectory: true)
+		try FileManager.default.createDirectory(at: privacyDirectory, withIntermediateDirectories: true)
+		let privacyPersistence = BrowserPersistence(directory: privacyDirectory)
+		let privateVisit = BrowserVisit(url: URL(string: "https://sensitive.example/session")!, title: "Sensitive")
+		var withPrivateHistory = state
+		withPrivateHistory.historyVisits = [privateVisit]
+		try privacyPersistence.savePersistedState(withPrivateHistory)
+		try privacyPersistence.savePersistedState(withPrivateHistory)
+		var withoutPrivateHistory = withPrivateHistory
+		withoutPrivateHistory.historyVisits = []
+		withoutPrivateHistory.snapshot.deletedVisitsAt[privateVisit.id] = .now
+		try privacyPersistence.savePersistedState(withoutPrivateHistory)
+		let privacyPrimary = privacyDirectory.appendingPathComponent("browser-state.json")
+		try Data("corrupt".utf8).write(to: privacyPrimary)
+		let privacyRecovered = try privacyPersistence.loadPersistedState()
+		precondition(privacyRecovered?.historyVisits?.isEmpty == true)
+		precondition(privacyRecovered?.snapshot.deletedVisitsAt[privateVisit.id] != nil)
+
+		// Atomic replacement of a valid cached checkpoint by a future schema
+		// must be detected, even if its JSON happens to have similar length.
+		let futureVersion = Data(#"{"version":99,"state":{"unknown":true}}"#.utf8)
+		try futureVersion.write(to: privacyPrimary, options: .atomic)
+		do {
+			try privacyPersistence.savePersistedState(withoutPrivateHistory)
+			preconditionFailure("Warm cache allowed newer schema to be overwritten")
+		} catch BrowserPersistenceError.unsupportedVersion {}
+		let preservedFutureVersion = try Data(contentsOf: privacyPrimary)
+		precondition(preservedFutureVersion == futureVersion)
+
 		try persistence.saveShutdownMetadata(clean: false)
 		let uncleanShutdown = try persistence.loadShutdownMetadata()
 		assert(uncleanShutdown?.clean == false)
