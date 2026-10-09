@@ -122,17 +122,21 @@ struct DownloadFileWorkerCheck {
 		try await BrowserDownloadFileWorker.shared.prepareStagingDirectory(newStage)
 		precondition(manager.fileExists(atPath: newStage.path))
 		let segmentStagingURL = newStage.appendingPathComponent(UUID().uuidString).appendingPathExtension("astradownload")
-		precondition(await !BrowserDownloadFileWorker.shared.stagedFileExists(segmentStagingURL))
+		let initiallyExists = await BrowserDownloadFileWorker.shared.stagedFileExists(segmentStagingURL)
+		precondition(!initiallyExists)
 		try await BrowserDownloadFileWorker.shared.prepareEmptySegmentFile(
 			segmentStagingURL, ownedStagingDirectory: newStage
 		)
-		precondition(await BrowserDownloadFileWorker.shared.stagedFileExists(segmentStagingURL))
-		precondition((try Data(contentsOf: segmentStagingURL)).isEmpty)
+		let existsAfterCreate = await BrowserDownloadFileWorker.shared.stagedFileExists(segmentStagingURL)
+		precondition(existsAfterCreate)
+		let firstSegmentData = try Data(contentsOf: segmentStagingURL)
+		precondition(firstSegmentData.isEmpty)
 		try Data("stale".utf8).write(to: segmentStagingURL)
 		try await BrowserDownloadFileWorker.shared.prepareEmptySegmentFile(
 			segmentStagingURL, ownedStagingDirectory: newStage
 		)
-		precondition((try Data(contentsOf: segmentStagingURL)).isEmpty)
+		let overwrittenSegmentData = try Data(contentsOf: segmentStagingURL)
+		precondition(overwrittenSegmentData.isEmpty)
 		do {
 			try await BrowserDownloadFileWorker.shared.prepareEmptySegmentFile(
 				firstDest, ownedStagingDirectory: newStage
