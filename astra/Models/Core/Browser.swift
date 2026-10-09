@@ -160,6 +160,10 @@ final class Browser {
 
 	@ObservationIgnored
 	private var automaticHibernationManager: BrowserHibernationManager?
+	/// The controller retention policy is isolated from the SwiftUI stack.
+	/// It is lazily initialized only when a window displays WebKit content.
+	@ObservationIgnored
+	lazy var tabResources = BrowserTabResourceManager(browser: self)
 
 	@ObservationIgnored
 	private var pendingScrollPersistence = false
@@ -1703,6 +1707,9 @@ final class Browser {
 	}
 
 	func handleMemoryPressure(_ level: BrowserHibernationManager.PressureLevel) {
+		// Reduce idle mounted WebViews immediately; hibernation then reclaims
+		// full background WebKit resources after safety and activity checks.
+		tabResources.updateMemoryPressure(level)
 		automaticHibernationManager?.handleMemoryPressure(level)
 	}
 
