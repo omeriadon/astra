@@ -7,6 +7,37 @@ import WebKit
 	import UIKit
 #endif
 
+/// Extension archives can be tens of megabytes. Only state transitions and
+/// WebKit APIs belong on the main actor; filesystem operations and CRX parsing
+/// run on utility workers, including error-path cleanup.
+private nonisolated enum BrowserExtensionFileWorker {
+	static func validateArchive(at url: URL) throws {
+		guard url.pathExtension.lowercased() == "zip",
+		      let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+		      size <= 50_000_000 else {
+			throw NSError(domain: "astra.extensions", code: 6)
+		}
+	}
+
+	static func copyArchive(from source: URL, to destination: URL) throws {
+		try FileManager.default.createDirectory(
+			at: destination.deletingLastPathComponent(), withIntermediateDirectories: true
+		)
+		try FileManager.default.copyItem(at: source, to: destination)
+	}
+
+	static func unpackChromeArchive(from download: URL, to destination: URL) throws {
+		guard let size = try download.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+		      size <= 50_000_000 else { throw ChromeExtensionPackage.PackageError.invalid }
+		let archive = try ChromeExtensionPackage.archive(from: Data(contentsOf: download))
+		try archive.write(to: destination, options: .atomic)
+	}
+
+	static func remove(_ url: URL) {
+		try? FileManager.default.removeItem(at: url)
+	}
+}
+
 @MainActor
 @Observable
 final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate {
@@ -589,12 +620,9 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 				archive.stopAccessingSecurityScopedResource()
 			}
 		}
-		guard archive.pathExtension.lowercased() == "zip",
-		      let size = try archive.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-		      size <= 50_000_000
-		else {
-			throw NSError(domain: "astra.extensions", code: 6)
-		}
+		try await Task.detached(priority: .utility) {
+			try BrowserExtensionFileWorker.validateArchive(at: archive)
+		}.value
 		let checked = try await WKWebExtension(resourceBaseURL: archive)
 		guard checked.manifestVersion == 2 || checked.manifestVersion == 3 else {
 			throw NSError(domain: "astra.extensions", code: 4)
@@ -603,7 +631,9 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		guard let destination = archiveURL(for: name, creatingDirectory: true) else {
 			throw NSError(domain: "astra.extensions", code: 5)
 		}
-		try FileManager.default.copyItem(at: archive, to: destination)
+		try await Task.detached(priority: .utility) {
+			try BrowserExtensionFileWorker.copyArchive(from: archive, to: destination)
+		}.value
 		do {
 			let extensionObject = try await WKWebExtension(resourceBaseURL: destination)
 			let context = WKWebExtensionContext(for: extensionObject)
@@ -618,7 +648,9 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			}
 			return name
 		} catch {
-			try? FileManager.default.removeItem(at: destination)
+			await Task.detached(priority: .utility) {
+				BrowserExtensionFileWorker.remove(destination)
+			}.value
 			throw error
 		}
 	}
@@ -637,17 +669,21 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 				URLQueryItem(name: "x", value: "id=\(id)&uc"),
 			]
 			let (download, response) = try await URLSession.shared.download(from: components.url!)
-			defer { try? FileManager.default.removeItem(at: download) }
+			defer {
+				Task.detached(priority: .utility) { BrowserExtensionFileWorker.remove(download) }
+			}
 			guard let response = response as? HTTPURLResponse, response.statusCode == 200,
 			      response.url?.scheme == "https", let host = response.url?.host,
 			      host == "google.com" || host.hasSuffix(".google.com")
-			      || host == "googleusercontent.com" || host.hasSuffix(".googleusercontent.com"),
-			      let size = try download.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-			      size <= 50_000_000 else { throw ChromeExtensionPackage.PackageError.invalid }
-			let archive = try ChromeExtensionPackage.archive(from: Data(contentsOf: download))
+			      || host == "googleusercontent.com" || host.hasSuffix(".googleusercontent.com")
+			else { throw ChromeExtensionPackage.PackageError.invalid }
 			let temporaryZIP = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("zip")
-			defer { try? FileManager.default.removeItem(at: temporaryZIP) }
-			try archive.write(to: temporaryZIP, options: .atomic)
+			defer {
+				Task.detached(priority: .utility) { BrowserExtensionFileWorker.remove(temporaryZIP) }
+			}
+			try await Task.detached(priority: .utility) {
+				try BrowserExtensionFileWorker.unpackChromeArchive(from: download, to: temporaryZIP)
+			}.value
 			let name = try await installArchive(from: temporaryZIP, source: .chrome)
 			if let context = contexts[name] {
 				promptForAccess(to: permissionSummary(for: name), from: context) { [weak self] allowed in
@@ -680,7 +716,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		UserDefaults.standard.set(Array(safariNames), forKey: "safariExtensions")
 		UserDefaults.standard.removeObject(forKey: "extension.\(name).enabled")
 		if let url {
-			try? FileManager.default.removeItem(at: url)
+			Task.detached(priority: .utility) { BrowserExtensionFileWorker.remove(url) }
 		}
 	}
 
@@ -696,9 +732,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		      let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
 		let directory = support.appendingPathComponent(Bundle.main.bundleIdentifier ?? "astra", isDirectory: true)
 			.appendingPathComponent("Extensions", isDirectory: true)
-		if creatingDirectory {
-			try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-		}
+		// Directory creation happens in the detached archive copy worker.
 		return directory.appendingPathComponent(name).appendingPathExtension("zip")
 	}
 
