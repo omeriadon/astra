@@ -3,7 +3,9 @@
 import argparse
 import ctypes
 import plistlib
+import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -11,6 +13,10 @@ from pathlib import Path
 READER_SCRIPTS = ("Readability.js", "Readability-readerable.js", "Reader.js")
 READER_LICENSE = "Readability-LICENSE.txt"
 EXTENSION_ARCHIVES = ("darkreader-chrome-mv3.zip", "ublock-origin-lite-safari.zip")
+PACKAGE_BUNDLES = (
+    "Defaults_Defaults.bundle", "Litext_Litext.bundle", "MarkdownView_MarkdownView.bundle",
+    "Noise_Noise.bundle", "SwiftMath_SwiftMath.bundle",
+)
 
 
 def files_named(root: Path, names: tuple[str, ...]) -> set[str]:
@@ -25,14 +31,34 @@ def validate(app: Path) -> None:
     binary = runtime / "AstraWebsiteAppRuntime"
     if not binary.is_file():
         raise ValueError("AstraWebsiteAppRuntime binary is missing")
-    result = subprocess.run(["nm", "-gU", str(binary)], capture_output=True, text=True, check=True)
+    result = subprocess.run(["nm", "-jgU", str(binary)], capture_output=True, text=True, check=True)
     exported = {
-        line.split()[-1].lstrip("_")
+        line.lstrip("_")
         for line in result.stdout.splitlines()
-        if line.split()
+        if line and not line.endswith(":")
     }
-    if exported != {"AstraWebsiteAppMain"}:
-        raise ValueError(f"Expected only AstraWebsiteAppMain; found {len(exported)} exported symbols")
+    if exported != {"AstraWebsiteAppMain", "AstraBrowserMain"}:
+        raise ValueError(f"Expected two runtime entry points; found {len(exported)} exported symbols")
+    defined = subprocess.run(["nm", "--no-dyldinfo", "-jU", str(binary)], capture_output=True, text=True, check=True)
+    symbols = {line.lstrip("_") for line in defined.stdout.splitlines() if line and not line.endswith(":")}
+    if symbols != exported:
+        raise ValueError("Runtime retains local symbols; keep them in the external dSYM")
+
+    main_binary = app / "Contents/MacOS/astra"
+    if not main_binary.is_file():
+        raise ValueError("Host executable is missing")
+    host_binaries = [main_binary, *main_binary.parent.glob("astra.debug.dylib")]
+    linked_runtime = False
+    for host_binary in host_binaries:
+        # The host only launches the shared implementation; a whole browser copy exceeds this budget.
+        if host_binary.stat().st_size > 1024 * 1024:
+            raise ValueError(f"Host launcher exceeds 1 MiB; browser code may be duplicated: {host_binary.name}")
+        dependencies = subprocess.run(
+            ["otool", "-L", str(host_binary)], capture_output=True, text=True, check=True
+        ).stdout
+        linked_runtime |= "AstraWebsiteAppRuntime.framework" in dependencies
+    if not linked_runtime:
+        raise ValueError("Host launcher does not link AstraWebsiteAppRuntime.framework")
 
     runtime_files = files_named(runtime, (*READER_SCRIPTS, READER_LICENSE, *EXTENSION_ARCHIVES))
     if runtime_files:
@@ -47,6 +73,9 @@ def validate(app: Path) -> None:
         raise ValueError(f"Host bundle is missing resources: {sorted(missing)}")
     if not any(path.name == "Assets.car" for path in host_resources.rglob("*")):
         raise ValueError("Host bundle is missing compiled asset resources")
+    for name in PACKAGE_BUNDLES:
+        if not (host_resources / name).is_dir():
+            raise ValueError(f"Host bundle is missing package resources: {name}")
 
 
 def self_test() -> None:
@@ -74,30 +103,83 @@ def self_test() -> None:
         for name in (*READER_SCRIPTS, READER_LICENSE, *EXTENSION_ARCHIVES):
             (host / name).write_bytes(b"fixture")
         (host / "Assets.car").write_bytes(b"fixture")
+        for name in PACKAGE_BUNDLES:
+            (host / name).mkdir()
         fixture = root / "Runtime.swift"
         fixture.write_text('''import Foundation
 
-final class BrowserController: NSObject {}
-
-@_cdecl("AstraWebsiteAppMain")
 @MainActor
-public func testResources() {
-    precondition(BrowserResources.bundle.bundleIdentifier == "dev.astra.resource-test")
-    precondition(BrowserResources.bundle.url(forResource: "Reader", withExtension: "js") != nil)
-    precondition(BrowserResources.bundle.url(forResource: "ublock-origin-lite-safari", withExtension: "zip") != nil)
-    precondition(BrowserResources.bundle.url(forResource: "Assets", withExtension: "car") != nil)
+enum browserApp {
+    static func main() {
+        precondition(["dev.astra.resource-test", "com.omeriadon.astra"].contains(BrowserResources.bundle.bundleIdentifier ?? ""))
+        precondition(BrowserResources.bundle.url(forResource: "Reader", withExtension: "js") != nil)
+        precondition(BrowserResources.bundle.url(forResource: "ublock-origin-lite-safari", withExtension: "zip") != nil)
+        precondition(BrowserResources.bundle.url(forResource: "Assets", withExtension: "car") != nil)
+    }
+}
+
+@MainActor
+enum BrowserWebsiteAppHelperMain {
+    static func main() {
+        browserApp.main()
+    }
 }
 ''')
         source = Path(__file__).resolve().parents[1] / "astra/App/BrowserResources.swift"
+        runtime_source = Path(__file__).resolve().parents[1] / "AstraWebsiteAppRuntime/AstraWebsiteAppRuntime.swift"
         binary = version / "AstraWebsiteAppRuntime"
         subprocess.run([
             "xcrun", "swiftc", "-emit-library", "-D", "ASTRA_WEBSITE_APP_RUNTIME",
-            "-module-name", "AstraWebsiteAppRuntime", str(source), str(fixture),
+            "-module-name", "AstraWebsiteAppRuntime", str(source), str(fixture), str(runtime_source),
+            "-Xlinker", "-install_name", "-Xlinker",
+            "@rpath/AstraWebsiteAppRuntime.framework/Versions/A/AstraWebsiteAppRuntime",
             "-Xlinker", "-exported_symbol", "-Xlinker", "_AstraWebsiteAppMain",
+            "-Xlinker", "-exported_symbol", "-Xlinker", "_AstraBrowserMain",
             "-o", str(binary),
         ], check=True)
+        subprocess.run(["strip", "-T", "-x", str(binary)], check=True)
         ctypes.CDLL(str(binary)).AstraWebsiteAppMain()
+        ctypes.CDLL(str(binary)).AstraBrowserMain()
+        launcher_source = Path(__file__).resolve().parents[1] / "AstraAppLauncher/AstraAppLauncher.c"
+        executable = app / "Contents/MacOS/astra"
+        executable.parent.mkdir(parents=True)
+        subprocess.run([
+            "xcrun", "clang", str(launcher_source), str(binary),
+            "-Wl,-rpath,@executable_path/../Frameworks",
+            "-o", str(executable),
+        ], check=True)
+        subprocess.run([str(executable)], check=True)
         validate(app)
+        nested_runtime = runtime.parent / "Nested/AstraWebsiteAppRuntime.framework"
+        shutil.copytree(runtime, nested_runtime, symlinks=True)
+        subprocess.run([
+            sys.executable, "-c", "import ctypes, sys; ctypes.CDLL(sys.argv[1]).AstraWebsiteAppMain()",
+            str(nested_runtime / "AstraWebsiteAppRuntime"),
+        ], check=True)
+        main_info = app / "Contents/Info.plist"
+        main_info.write_bytes(plistlib.dumps({
+            "CFBundleIdentifier": "com.omeriadon.astra",
+            "CFBundlePackageType": "APPL",
+        }))
+        subprocess.run([str(executable)], check=True)
+        duplicate_code = executable.parent / "astra.debug.dylib"
+        duplicate_code.write_bytes(bytes(1024 * 1024 + 1))
+        try:
+            validate(app)
+        except ValueError as error:
+            assert "Host launcher exceeds" in str(error)
+        else:
+            raise AssertionError("Duplicated browser code passed")
+        duplicate_code.unlink()
+        package = host / PACKAGE_BUNDLES[0]
+        package.rmdir()
+        try:
+            validate(app)
+        except ValueError as error:
+            assert "missing package resources" in str(error)
+        else:
+            raise AssertionError("Missing package bundle passed")
+        package.mkdir()
         main = root / "Main.swift"
         main.write_text('''import Foundation
 

@@ -227,13 +227,6 @@
 			      let executable = plist["CFBundleExecutable"] as? String,
 			      !executable.isEmpty, !executable.contains("/"), executable != ".", executable != ".."
 			else { throw BrowserWebsiteAppFileError.templateInvalid }
-			let executableURL = url.appendingPathComponent("Contents/MacOS").appendingPathComponent(executable)
-			for path in [url, executableURL] {
-				if removexattr(path.path, "com.apple.quarantine", XATTR_NOFOLLOW) != 0 {
-					let code = errno
-					guard code == ENOATTR else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(code)) }
-				}
-			}
 			let status = LSRegisterURL(url as CFURL, true)
 			guard status == noErr else { throw BrowserWebsiteAppFileError.registrationFailed(status) }
 		}

@@ -16,10 +16,12 @@ extension Color {
 }
 
 #if os(macOS)
-	#if !ASTRA_WEBSITE_APP_HELPER
+	#if !ASTRA_WEBSITE_APP_HELPER || ASTRA_WEBSITE_APP_RUNTIME
 		import AppKit
 
-		@main
+		#if !ASTRA_WEBSITE_APP_RUNTIME
+			@main
+		#endif
 		enum browserApp {
 			@MainActor
 			static func main() {

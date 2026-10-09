@@ -48,6 +48,19 @@
 			[webContent, graphics, network, model].compactMap(\.self)
 		}
 
+		static func exclusiveWebContentProcess(
+			for snapshot: Self,
+			among snapshots: [Self]
+		) -> Process? {
+			guard let webContent = snapshot.webContent, webContent.bytes != nil else { return nil }
+			let references = snapshots.reduce(into: 0) { count, snapshot in
+				if snapshot.webContent?.identity == webContent.identity {
+					count += 1
+				}
+			}
+			return references == 1 ? webContent : nil
+		}
+
 		var sharedProcessBytes: UInt64? {
 			let values = [graphicsBytes, networkBytes, modelBytes].compactMap(\.self)
 			return values.isEmpty ? nil : values.reduce(0, +)
@@ -78,10 +91,8 @@
 		private nonisolated static func physicalFootprint(_ processIdentifier: pid_t) -> (bytes: UInt64, startTime: UInt64)? {
 			var usage = rusage_info_v4()
 			let result = withUnsafeMutablePointer(to: &usage) { usagePointer in
-				var info: rusage_info_t? = UnsafeMutableRawPointer(usagePointer)
-				return withUnsafeMutablePointer(to: &info) { infoPointer in
-					proc_pid_rusage(processIdentifier, Int32(RUSAGE_INFO_V4), infoPointer)
-				}
+				let infoPointer = UnsafeMutableRawPointer(usagePointer).assumingMemoryBound(to: rusage_info_t?.self)
+				return proc_pid_rusage(processIdentifier, Int32(RUSAGE_INFO_V4), infoPointer)
 			}
 			guard result == 0, usage.ri_proc_start_abstime > 0 else { return nil }
 			return (usage.ri_phys_footprint, usage.ri_proc_start_abstime)

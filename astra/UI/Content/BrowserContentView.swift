@@ -130,9 +130,9 @@ private struct KeepAliveWebStack: View {
 					maximumViewportInsets: insets.maximum
 				)
 				.id(controller.id)
-				.opacity(controller === selectedTab?.controller && selectedTab?.internalPage == nil && controller.navigationFailure == nil ? 1 : 0)
-				.allowsHitTesting(controller === selectedTab?.controller && selectedTab?.activeController === controller && controller.navigationFailure == nil)
-				.accessibilityHidden(controller !== selectedTab?.controller || selectedTab?.activeController !== controller || controller.navigationFailure != nil)
+				.opacity(controller === selectedTab?.controller && selectedTab?.internalPage == nil && controller.committedURL != nil && controller.navigationFailure == nil ? 1 : 0)
+				.allowsHitTesting(controller === selectedTab?.controller && selectedTab?.activeController === controller && controller.committedURL != nil && controller.navigationFailure == nil)
+				.accessibilityHidden(controller !== selectedTab?.controller || selectedTab?.activeController !== controller || controller.committedURL == nil || controller.navigationFailure != nil)
 			}
 
 			if let failure = selectedTab?.controller?.navigationFailure, selectedTab?.internalPage == nil {

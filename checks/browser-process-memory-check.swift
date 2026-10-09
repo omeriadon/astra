@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 let shared = BrowserTabProcessMemorySnapshot.Process(pid: 42, startTime: 100, bytes: 300)
@@ -11,6 +12,9 @@ func snapshot(_ webContent: BrowserTabProcessMemorySnapshot.Process?) -> Browser
 @main
 enum BrowserProcessMemoryCheck {
 	static func main() {
+		let currentProcess = BrowserTabProcessMemorySnapshot.sample(getpid())
+		precondition(currentProcess.bytes != nil && currentProcess.startTime != nil)
+		precondition(BrowserTabProcessMemorySnapshot.sample(-1).bytes == nil)
 		let sharedAggregate = BrowserProcessMemoryAggregate.combining([snapshot(shared), snapshot(shared)])
 		precondition(sharedAggregate.processCount == 1 && sharedAggregate.uniqueBytes == 300)
 		precondition(sharedAggregate.sharedWebContentProcessCount == 1)
@@ -32,5 +36,11 @@ enum BrowserProcessMemoryCheck {
 		precondition(!unavailableAfter.processIdentityChanged && unavailableAfter.unavailableProcessCount == 1)
 		let roleAggregate = BrowserProcessMemoryAggregate.combining([sameProcessAcrossRoles])
 		precondition(roleAggregate.processCount == 1 && roleAggregate.uniqueBytes == 300 && roleAggregate.webContentMappingCount == 1)
+		let exclusive = BrowserTabProcessMemorySnapshot.exclusiveWebContentProcess(for: sameProcessAcrossRoles, among: [sameProcessAcrossRoles])
+		precondition(exclusive?.bytes == 300)
+		let sharedWebContent = BrowserTabProcessMemorySnapshot.exclusiveWebContentProcess(for: snapshot(shared), among: [snapshot(shared), snapshot(shared)])
+		precondition(sharedWebContent == nil)
+		let unavailableWebContent = BrowserTabProcessMemorySnapshot.exclusiveWebContentProcess(for: snapshot(unavailable), among: [snapshot(unavailable)])
+		precondition(unavailableWebContent == nil)
 	}
 }

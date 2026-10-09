@@ -657,15 +657,6 @@ private struct TabRowContextMenu: View {
 				guard let self, hoveredTabID == nil else { return }
 				isVisible = false
 				presentedTabID = nil
-
-				do {
-					try await Task.sleep(for: .milliseconds(340))
-				} catch {
-					return
-				}
-				guard hoveredTabID == nil else { return }
-				warmSession = false
-				self.windowID = nil
 			}
 		}
 
@@ -710,15 +701,16 @@ private struct TabRowContextMenu: View {
 						max(cardHeight / 2 + margin, geometry.size.height - cardHeight / 2 - margin)
 					)
 
-					BrowserTabHoverPreviewCard(tab: tab)
+					BrowserTabHoverPreviewCard(tab: tab, browser: browser)
 						.frame(width: cardWidth, height: cardHeight)
 						.position(x: x, y: y)
 						.id(tab.id)
-						.transition(.opacity)
+						.transaction { transaction in
+							transaction.animation = nil
+						}
 				}
 			}
 			.animation(.linear(duration: 0.1), value: coordinator.isVisible)
-			.animation(.linear(duration: 0.1), value: coordinator.presentedTabID)
 			.allowsHitTesting(false)
 			.accessibilityHidden(true)
 		}
@@ -726,7 +718,8 @@ private struct TabRowContextMenu: View {
 
 	private struct BrowserTabHoverPreviewCard: View {
 		let tab: BrowserTab
-		@State private var memory: BrowserTabProcessMemorySnapshot?
+		let browser: Browser
+		@State private var memoryBytes: UInt64?
 		@State private var hasSampledMemory = false
 
 		private var host: String {
@@ -772,13 +765,17 @@ private struct TabRowContextMenu: View {
 						Image(systemName: page.symbol)
 							.font(.system(size: 42))
 							.frame(maxWidth: .infinity, maxHeight: .infinity)
-					} else if let snapshot = tab.controller?.previewSnapshot {
+					} else if let controller = tab.controller,
+					          controller.hasCurrentPreviewSnapshot,
+					          let snapshot = controller.previewSnapshot
+					{
 						Image(nsImage: snapshot)
 							.resizable()
 							.aspectRatio(contentMode: .fill)
 					} else {
 						ZStack {
-							Color.white.opacity(0.06)
+							ThemeSurface(theme: browser.theme)
+								.background(.quaternary)
 							Image(systemName: tab.isHibernated ? "moon.zzz" : "rectangle.dashed")
 								.font(.system(size: 28))
 								.foregroundStyle(.secondary)
@@ -790,32 +787,19 @@ private struct TabRowContextMenu: View {
 				.clipShape(RoundedRectangle(cornerRadius: 10))
 
 				HStack {
-					Text("Observed process memory")
+					Text("Memory")
 						.font(.subheadline.weight(.semibold))
 					Spacer()
-					Text(memory?.knownProcessBytes.map(Self.formatBytes) ?? unavailableMemoryLabel)
+					Text(memoryBytes.map(Self.formatBytes) ?? unavailableMemoryLabel)
 						.font(.subheadline.monospacedDigit())
 						.foregroundStyle(.secondary)
 				}
-				HStack(alignment: .top, spacing: 8) {
-					memoryMetric("WebContent*", bytes: memory?.webContentBytes)
-					memoryMetric("Graphics*", bytes: memory?.graphicsBytes)
-					memoryMetric("Network*", bytes: memory?.networkBytes)
-					if memory?.modelBytes != nil {
-						memoryMetric("Model*", bytes: memory?.modelBytes)
-					}
-				}
-
-				Text("* Known process footprints are a lower-bound estimate. Shared WebKit processes are shown for context and are not exclusive to this tab.")
-					.font(.system(size: 9))
-					.foregroundStyle(.tertiary)
-					.lineLimit(2)
 			}
 			.padding(12)
 			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
 			.task(id: tab.id) {
-				memory = nil
+				memoryBytes = nil
 				hasSampledMemory = false
 				guard let controller = tab.controller else {
 					hasSampledMemory = true
@@ -825,31 +809,36 @@ private struct TabRowContextMenu: View {
 				// The switcher and navigation lifecycle already retain a page
 				// snapshot. Showing the hover card must not force a new WebKit
 				// capture every time the pointer crosses a tab row.
+				memoryBytes = await sampleExclusiveMemory(for: controller)
+				hasSampledMemory = true
 				if !controller.hasCurrentPreviewSnapshot {
 					await controller.refreshPreviewSnapshot()
 				}
 				while !Task.isCancelled {
-					memory = await controller.tabProcessMemorySnapshot()
-					hasSampledMemory = true
 					do {
 						try await Task.sleep(for: .seconds(2))
 					} catch {
 						return
 					}
+					memoryBytes = await sampleExclusiveMemory(for: controller)
+					hasSampledMemory = true
+					if !controller.hasCurrentPreviewSnapshot {
+						await controller.refreshPreviewSnapshot()
+					}
 				}
 			}
 		}
 
-		private func memoryMetric(_ label: String, bytes: UInt64?) -> some View {
-			VStack(alignment: .leading, spacing: 2) {
-				Text(label)
-					.font(.system(size: 9))
-					.foregroundStyle(.tertiary)
-				Text(bytes.map(Self.formatBytes) ?? "—")
-					.font(.caption2.monospacedDigit())
-					.lineLimit(1)
-			}
-			.frame(maxWidth: .infinity, alignment: .leading)
+		private func sampleExclusiveMemory(for controller: BrowserController) async -> UInt64? {
+			let controllers = BrowserWindowRegistry.shared.openBrowsers
+				.flatMap { $0.tabs.compactMap(\.controller) }
+			let snapshots = await BrowserController.tabProcessMemorySnapshots(for: controllers)
+			guard let snapshot = snapshots[controller.id],
+			      let webContent = BrowserTabProcessMemorySnapshot.exclusiveWebContentProcess(
+			      	for: snapshot,
+			      	among: Array(snapshots.values)
+			      ) else { return nil }
+			return webContent.bytes
 		}
 
 		private nonisolated static func formatBytes(_ bytes: UInt64) -> String {

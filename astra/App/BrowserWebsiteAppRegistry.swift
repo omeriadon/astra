@@ -76,6 +76,7 @@
 			case signingFailed(String)
 			case registrationFailed(OSStatus)
 			case dockPinningFailed(String)
+			case launchPreparationFailed(String)
 			case dockPinningUnavailable
 
 			var errorDescription: String? {
@@ -88,6 +89,7 @@
 					case let .signingFailed(message): "The generated website app could not be locally signed: \(message)"
 					case let .registrationFailed(status): "macOS could not register the website app (\(status))."
 					case let .dockPinningFailed(message): "The website app could not be pinned: \(message)"
+					case let .launchPreparationFailed(message): "The website app could not be prepared for launch: \(message)"
 					case .dockPinningUnavailable: "Dock pinning is unavailable on this version of macOS."
 				}
 			}
@@ -212,6 +214,7 @@
 
 		private func openInstalledApp(_ installation: BrowserWebsiteAppInstallation) async throws {
 			try await fileWorker.prepareLaunch(installation)
+			try await runInstaller(operation: "--prepare", installation: installation, failure: RegistryError.launchPreparationFailed)
 			_ = try await NSWorkspace.shared.openApplication(at: installation.bundleURL, configuration: .init())
 		}
 
@@ -233,6 +236,14 @@
 		}
 
 		private func pinToDock(_ installation: BrowserWebsiteAppInstallation) async throws {
+			try await runInstaller(operation: "--pin", installation: installation, failure: RegistryError.dockPinningFailed)
+		}
+
+		private func runInstaller(
+			operation: String,
+			installation: BrowserWebsiteAppInstallation,
+			failure: (String) -> RegistryError
+		) async throws {
 			let helperName = "AstraWebsiteAppInstaller.app"
 			let helperURL = resourceBundle.bundleURL.appendingPathComponent("Contents/Resources").appendingPathComponent(helperName)
 			guard fileManager.fileExists(atPath: helperURL.path) else { throw RegistryError.dockPinningUnavailable }
@@ -242,21 +253,21 @@
 			configuration.activates = false
 			configuration.addsToRecentItems = false
 			configuration.createsNewApplicationInstance = true
-			configuration.arguments = ["--pin", installation.bundlePath, responseURL.path]
+			configuration.arguments = [operation, installation.bundlePath, responseURL.path]
 			let helper = try await NSWorkspace.shared.openApplication(at: helperURL, configuration: configuration)
 			let deadline = ContinuousClock.now.advanced(by: .seconds(15))
 			while ContinuousClock.now < deadline {
 				if let data = try? Data(contentsOf: responseURL) {
 					let message = try JSONDecoder().decode(String.self, from: data)
-					guard message.isEmpty else { throw RegistryError.dockPinningFailed(message) }
+					guard message.isEmpty else { throw failure(message) }
 					return
 				}
 				if helper.isTerminated {
-					throw RegistryError.dockPinningFailed("The Dock installer exited without a result.")
+					throw failure("The Dock installer exited without a result.")
 				}
 				try await Task.sleep(for: .milliseconds(100))
 			}
-			throw RegistryError.dockPinningFailed("The Dock installer did not respond.")
+			throw failure("The Dock installer did not respond.")
 		}
 
 		private func load() {

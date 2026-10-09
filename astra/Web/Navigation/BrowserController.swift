@@ -2310,7 +2310,7 @@ final class BrowserController: NSObject, Identifiable {
 	#endif
 
 	private func takeSnapshot(snapshotWidth: CGFloat = 180) async -> SnapshotImage? {
-		guard !isInvalidated, url != nil, let webView = createdWebView, !webView.bounds.isEmpty else { return nil }
+		guard !isInvalidated, hasCurrentPageDocument, let webView = createdWebView, !webView.bounds.isEmpty else { return nil }
 		#if os(macOS)
 			guard !isRefreshingPreviewSnapshot else { return nil }
 			isRefreshingPreviewSnapshot = true

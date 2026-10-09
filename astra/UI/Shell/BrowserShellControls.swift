@@ -191,6 +191,13 @@ struct ShellSidebarListView: View {
 					.padding(.bottom, 48)
 					.frame(minHeight: geometry.size.height, alignment: .top)
 				}
+				#if os(macOS)
+				.onHover { hovering in
+					if !hovering {
+						BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
+					}
+				}
+				#endif
 				.onChange(of: selectedID, initial: true) { oldID, newID in
 					// Selecting a space leaves its saved vertical position unchanged.
 					guard let newID else { return }

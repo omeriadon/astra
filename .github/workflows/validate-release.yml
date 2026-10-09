@@ -104,6 +104,7 @@ jobs:
           python3 scripts/release/validate_artifact.py --self-test
           python3 checks/website-app-bundle-check.py --self-test
           python3 checks/website-app-runtime-size-check.py --self-test
+          python3 checks/website-app-preparation-check.py
 
       - name: Check library projections and favicon observer lifecycle
         shell: bash
