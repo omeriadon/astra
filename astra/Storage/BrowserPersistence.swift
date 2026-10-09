@@ -454,7 +454,9 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		let primaryURL = directory.appendingPathComponent("browser-state.json")
 		if let signature = CheckpointSignature(at: primaryURL) {
 			let sidecarURL = directory.appendingPathComponent("browser-windows.json")
-			if let bytes = try? Data(contentsOf: sidecarURL), bytes.count <= 256 * 1024,
+			if let byteCount = try? sidecarURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+			   byteCount <= 256 * 1024,
+			   let bytes = try? Data(contentsOf: sidecarURL), bytes.count <= 256 * 1024,
 			   let sidecar = try? JSONDecoder().decode(WindowRecordsSidecar.self, from: bytes),
 			   sidecar.version == 1, sidecar.signature == signature,
 			   (try? validateWindowRecords(sidecar.records)) != nil
