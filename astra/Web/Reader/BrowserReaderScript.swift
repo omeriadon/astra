@@ -4,7 +4,7 @@ import Foundation
 @MainActor
 enum BrowserReaderScript {
 	static let source: String? = {
-		let bundle = Bundle(for: BrowserController.self)
+		let bundle = BrowserResources.bundle
 		var scripts: [String] = []
 		for name in ["Readability", "Readability-readerable", "Reader"] {
 			guard let url = bundle.url(forResource: name, withExtension: "js"),

@@ -189,7 +189,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				if item.status == .downloading, item.segments == nil {
 					item.status = .paused
 					item.errorMessage = "Download interrupted."
-				} else if item.status == .finalizing && !FileManager.default.fileExists(atPath: item.fileURL.path) {
+				} else if item.status == .finalizing, !FileManager.default.fileExists(atPath: item.fileURL.path) {
 					item.status = .failed
 					item.errorMessage = "The temporary download disappeared during finalization."
 				}
@@ -494,7 +494,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	func downloadDidFinish(_ download: WKDownload) {
 		BrowserLog.info(.downloads, "download.webkit-finished")
 		if let itemID = itemIDs[ObjectIdentifier(download)],
-		   let temporaryURL = destinations[ObjectIdentifier(download)] {
+		   let temporaryURL = destinations[ObjectIdentifier(download)]
+		{
 			beginFinalization(itemID, temporaryURL: temporaryURL)
 		}
 		// The file worker maintains its own scope (or retains the existing
@@ -520,6 +521,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		let snapshot = items[index]
 		let bookmark = snapshot.fileAccessBookmark ?? snapshot.folderBookmark
 		let hadScope = scopedDirectories[itemID] != nil
+		let ownedStagingDirectory = stagingDirectory
 		persist()
 		BrowserLog.info(.downloads, "download.finalization.begin", metadata: ["item": BrowserLog.id(itemID)])
 		finalizationTasks[itemID] = Task { @MainActor [weak self] in
@@ -527,7 +529,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			do {
 				let committedURL = try await BrowserDownloadFileWorker.shared.commit(
 					source: temporaryURL,
-					ownedStagingDirectory: stagingDirectory,
+					ownedStagingDirectory: ownedStagingDirectory,
 					proposed: proposedURL,
 					fileScoped: snapshot.destinationIsFileScoped == true,
 					bookmark: bookmark,
@@ -635,7 +637,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		itemIDs[id] = nil
 		destinations[id] = nil
 		if let itemID, finalizationTasks[itemID] == nil,
-		   items.first(where: { $0.id == itemID })?.segments == nil {
+		   items.first(where: { $0.id == itemID })?.segments == nil
+		{
 			releaseScope(for: itemID)
 		}
 		updateDockProgress()
@@ -767,7 +770,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 	func cancel(_ itemID: UUID) {
 		if !isClosing, let task = finalizationTasks[itemID],
-		   let index = items.firstIndex(where: { $0.id == itemID && $0.status == .finalizing }) {
+		   let index = items.firstIndex(where: { $0.id == itemID && $0.status == .finalizing })
+		{
 			items[index].status = .cancelled
 			items[index].errorMessage = nil
 			items[index].throughput = nil
@@ -818,8 +822,12 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		BrowserLog.notice(.downloads, "downloads.pause-for-quit", metadata: ["active": String(downloads.count)])
 		isClosing = true
 		let pendingRenames = Array(aiRenameTasks.values) + Array(revertRenameTasks.values)
-		for task in pendingRenames { task.cancel() }
-		for task in pendingRenames { await task.value }
+		for task in pendingRenames {
+			task.cancel()
+		}
+		for task in pendingRenames {
+			await task.value
+		}
 		aiRenameTasks.removeAll()
 		revertRenameTasks.removeAll()
 		// Quit awaits existing filesystem commits rather than interrupting the
@@ -880,13 +888,17 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		let pendingRenames = [
 			aiRenameTasks.removeValue(forKey: itemID),
 			revertRenameTasks.removeValue(forKey: itemID),
-		].compactMap { $0 }
-		for task in pendingRenames { task.cancel() }
+		].compactMap(\.self)
+		for task in pendingRenames {
+			task.cancel()
+		}
 		guard pauseTasks[itemID] == nil, let index = items.firstIndex(where: { $0.id == itemID }) else { return }
 		guard deletingItems.insert(itemID).inserted else { return }
 		if !pendingRenames.isEmpty, items[index].status == .completed {
 			Task { @MainActor [weak self] in
-				for task in pendingRenames { await task.value }
+				for task in pendingRenames {
+					await task.value
+				}
 				self?.removeStoredItem(itemID)
 			}
 			return
@@ -946,11 +958,12 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		// the temporary files. Do not remove the model before I/O succeeds.
 		let bookmark = item.fileAccessBookmark ?? item.folderBookmark
 		let hadScope = scopedDirectories[itemID] != nil
+		let directory = stagingDirectory
 		Task { @MainActor [weak self] in
 			do {
 				try await BrowserDownloadFileWorker.shared.deleteTemporaryFiles(
 					files,
-					in: stagingDirectory,
+					in: directory,
 					bookmark: bookmark,
 					hasExistingAccess: hadScope
 				)
@@ -1470,7 +1483,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		      items[itemIndex].status == .downloading,
 		      items[itemIndex].fileURL == fileURL,
 		      items[itemIndex].segments?.indices.contains(index) == true,
-		      let total = items[itemIndex].totalBytes
+		      items[itemIndex].totalBytes != nil
 		else { return }
 		items[itemIndex].segments?[index].completed = true
 		items[itemIndex].segments?[index].received = partSize
@@ -1988,10 +2001,10 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				return
 			} catch {
 				BrowserLog.error(.downloads, "downloads.persist-failed", metadata: [
-					"error": BrowserLog.errorDescription(error), "store": BrowserLog.path(url)
+					"error": BrowserLog.errorDescription(error), "store": BrowserLog.path(url),
 				])
 				showToast(symbol: "exclamationmark.triangle",
-					message: "Could not save downloads: \(error.localizedDescription)")
+				          message: "Could not save downloads: \(error.localizedDescription)")
 			}
 		}
 	}

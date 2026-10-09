@@ -103,6 +103,7 @@ jobs:
         run: |
           python3 scripts/release/validate_artifact.py --self-test
           python3 checks/website-app-bundle-check.py --self-test
+          python3 checks/website-app-runtime-size-check.py --self-test
 
       - name: Check library projections and favicon observer lifecycle
         shell: bash
@@ -212,5 +213,6 @@ jobs:
           fi
 
           python3 checks/website-app-bundle-check.py "$APP"
+          python3 checks/website-app-runtime-size-check.py "$APP"
 
           echo "Compiled unsigned Astra $ACTUAL_VERSION (build $ACTUAL_BUILD). Distribution signing and notarization run only for merged release PRs."

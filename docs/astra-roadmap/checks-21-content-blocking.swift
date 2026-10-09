@@ -16,7 +16,7 @@ struct BrowserContentBlockingChecks {
 		let repeatFirst = try BrowserContentBlockingRuleSource.validate(first.data)
 		precondition(repeatFirst.identifier == first.identifier)
 		let concurrentValidationCount = await withTaskGroup(of: Bool.self, returning: Int.self) { group in
-			for _ in 0..<8 {
+			for _ in 0 ..< 8 {
 				group.addTask {
 					(try? BrowserContentBlockingRuleSource.validate(first.data))?.identifier == first.identifier
 				}

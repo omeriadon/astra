@@ -428,7 +428,7 @@ private struct BrowserAIChatStreamingResponse: View {
 				return
 			}
 			presentedPreview = chat.preview
-			while !Task.isCancelled && chat.isResponding {
+			while !Task.isCancelled, chat.isResponding {
 				do {
 					try await Task.sleep(for: .milliseconds(100))
 				} catch {
@@ -554,7 +554,9 @@ private struct BrowserAIChatStreamingResponse: View {
 
 		private final class WeakView {
 			weak var value: ChatMarkdownView?
-			init(_ value: ChatMarkdownView) { self.value = value }
+			init(_ value: ChatMarkdownView) {
+				self.value = value
+			}
 		}
 
 		private var registered: [ObjectIdentifier: WeakView] = [:]

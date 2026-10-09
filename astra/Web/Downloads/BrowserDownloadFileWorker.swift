@@ -46,7 +46,7 @@ actor BrowserDownloadFileWorker {
 				), url.startAccessingSecurityScopedResource()
 				else { throw FinalizationError.destinationUnavailable }
 				scopedURL = url
-			} else if fileScoped && !hasExistingAccess {
+			} else if fileScoped, !hasExistingAccess {
 				throw FinalizationError.destinationUnavailable
 			}
 		#endif

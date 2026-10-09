@@ -409,7 +409,8 @@ private struct ShellSidebarColumn: View {
 	}
 
 	private var sidebarContent: some View {
-		ZStack(alignment: .top) {
+		let downloadsVisible = showsDownloads
+		return ZStack(alignment: .top) {
 			Group {
 				if browser.isPrivate {
 					PrivateBrowserSidebar(browser: browser)
@@ -440,7 +441,7 @@ private struct ShellSidebarColumn: View {
 			}
 			.foregroundStyle(theme.foregroundColor)
 			.visualEffect { content, geometry in
-				content.offset(x: showsDownloads ? geometry.size.width : 0)
+				content.offset(x: downloadsVisible ? geometry.size.width : 0)
 			}
 
 			Group {
@@ -459,7 +460,7 @@ private struct ShellSidebarColumn: View {
 			}
 			.foregroundStyle(theme.foregroundColor)
 			.visualEffect { content, geometry in
-				content.offset(x: showsDownloads ? 0 : -geometry.size.width)
+				content.offset(x: downloadsVisible ? 0 : -geometry.size.width)
 			}
 		}
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -613,20 +614,7 @@ private struct ShellContentColumn: View {
 				? UTType.url.identifier
 				: UTType.plainText.identifier
 			guard provider.hasItemConformingToTypeIdentifier(type) else { return false }
-			provider.loadItem(forTypeIdentifier: type, options: nil) { item, _ in
-				let text: String? = if let url = item as? URL {
-					url.absoluteString
-				} else if let data = item as? Data {
-					String(data: data, encoding: .utf8)
-				} else if let string = item as? String {
-					string
-				} else if let string = item as? NSString {
-					string as String
-				} else if let url = item as? NSURL {
-					url.absoluteString
-				} else {
-					nil
-				}
+			let applyDrop: @Sendable (String?) -> Void = { text in
 				Task { @MainActor in
 					guard browser.selectedTabID == tabID,
 					      browser.selectedTab?.activeController === controller,
@@ -640,6 +628,15 @@ private struct ShellContentColumn: View {
 					      ["http", "https"].contains(destination.scheme?.lowercased() ?? "")
 					else { return }
 					controller.loadFromAddressBar(destination)
+				}
+			}
+			if type == UTType.url.identifier {
+				_ = provider.loadObject(ofClass: URL.self) { object, _ in
+					applyDrop(object?.absoluteString)
+				}
+			} else {
+				_ = provider.loadObject(ofClass: String.self) { object, _ in
+					applyDrop(object)
 				}
 			}
 			return true

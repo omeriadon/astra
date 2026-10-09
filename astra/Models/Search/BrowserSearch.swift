@@ -282,7 +282,7 @@ extension Browser {
 					existing.count += 1
 					if visit.visitedAt > existing.visit.visitedAt ||
 						(visit.visitedAt == existing.visit.visitedAt &&
-						 visit.id.uuidString < existing.visit.id.uuidString)
+							visit.id.uuidString < existing.visit.id.uuidString)
 					{
 						existing.visit = visit
 					}

@@ -25,10 +25,10 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 	private nonisolated(unsafe) var lastProgressHop: [String: Date] = [:]
 	private var startTokens: [UUID: UUID] = [:]
 	private var replayHeaders: [UUID: [String: String]] = [:]
-	// URLSession download completion moves files synchronously before its
-	// delegate callback returns. Never execute those filesystem operations on
-	// the UI thread. The delegate methods already explicitly hop to MainActor
-	// when they publish progress/completion into BrowserDownloadManager.
+	/// URLSession download completion moves files synchronously before its
+	/// delegate callback returns. Never execute those filesystem operations on
+	/// the UI thread. The delegate methods already explicitly hop to MainActor
+	/// when they publish progress/completion into BrowserDownloadManager.
 	private let delegateQueue: OperationQueue = {
 		let queue = OperationQueue()
 		queue.name = "com.omeriadon.astra.segmented-download-delegate"
@@ -36,6 +36,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		queue.maxConcurrentOperationCount = 1
 		return queue
 	}()
+
 	private lazy var session: URLSession = {
 		let identifier = (Bundle.main.bundleIdentifier ?? "browser") + ".segmentedDownloads"
 		let configuration = URLSessionConfiguration.background(withIdentifier: identifier)

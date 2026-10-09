@@ -928,13 +928,12 @@ final class BrowserController: NSObject, Identifiable {
 					await self?.refreshActivity()
 				}
 				guard !Task.isCancelled else { return }
-				let fallbackInterval: TimeInterval
-				if hasActivity {
-					fallbackInterval = 5
+				let fallbackInterval: TimeInterval = if hasActivity {
+					5
 				} else if isBackground {
-					fallbackInterval = 90
+					90
 				} else {
-					fallbackInterval = 20
+					20
 				}
 				do {
 					try await Task.sleep(for: .seconds(fallbackInterval))
@@ -1012,9 +1011,13 @@ final class BrowserController: NSObject, Identifiable {
 			});
 		})()
 		"""
-		let value = try? await webView.evaluateJavaScript(script, in: nil, in: .defaultClient)
+		let value: Bool? = await withCheckedContinuation { continuation in
+			webView.evaluateJavaScript(script, in: nil, in: .defaultClient) { result in
+				continuation.resume(returning: (try? result.get()) as? Bool)
+			}
+		}
 		guard owns(webView), documentID == navigationIdentifier,
-		      value as? Bool == false else { return false }
+		      value == false else { return false }
 		return canAutomaticallyHibernate
 	}
 
@@ -1487,7 +1490,7 @@ final class BrowserController: NSObject, Identifiable {
 			screenshotReaderWebView = nil
 			isRefreshingPreviewSnapshot = false
 		#endif
-		appliedContentRuleList = nil
+		appliedContentRuleLists.removeAll()
 		navigationDidChange = nil
 		zoomDidChange = nil
 		historyVisitDidCommit = nil

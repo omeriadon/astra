@@ -128,7 +128,6 @@ final class BrowserHibernationManager {
 		}
 	}
 
-
 	/// Snapshot the O(all-windows + all-tabs) membership/visibility inputs once
 	/// per sweep. The reclaim task still rechecks each tab from current state
 	/// after its WebKit suspension safety query completes.
@@ -181,7 +180,7 @@ final class BrowserHibernationManager {
 		      // A batch sweep already traverses this browser's own collection.
 		      // After an await, validate membership again to prevent stale
 		      // decisions when a tab has been closed or moved to another window.
-		      (context != nil || browser.tabs.contains(where: { $0 === tab })),
+		      context != nil || browser.tabs.contains(where: { $0 === tab }),
 		      tab.controller?.canAutomaticallyHibernate == true,
 		      !current.visibleTabIDs.contains(tab.id),
 		      current.ownedTabIDs.contains(tab.id),
@@ -193,7 +192,6 @@ final class BrowserHibernationManager {
 		else { return false }
 		return idleTime == .zero || now.timeIntervalSince(tab.lastInteractionAt) >= idleTime.timeInterval
 	}
-
 }
 
 private extension Duration {

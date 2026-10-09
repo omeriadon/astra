@@ -235,7 +235,7 @@ struct ShellSidebarListView: View {
 				defer {
 					if !completed, browser.workspace.spaces.first(where: { $0.id == space.id })?.todayTabGroups == displayedGroups {
 						withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
-							browser.applyTodayTabGroups(originalGroups, in: space.id, expectedIDs: tabs.map(\.id))
+							_ = browser.applyTodayTabGroups(originalGroups, in: space.id, expectedIDs: tabs.map(\.id))
 						}
 					}
 				}
@@ -253,7 +253,7 @@ struct ShellSidebarListView: View {
 					      Set(ids).count == ids.count, Set(ids).isSubset(of: Set(metadata.map(\.id))),
 					      snapshot.enumerated().allSatisfy({ index, tab in tab.title == metadata[index].title && tab.currentURL.map(BrowserAddress.withoutCredentials)?.absoluteString == metadata[index].url }) else { return }
 					withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
-						browser.applyTodayTabGroups(partial, in: space.id, expectedIDs: tabs.map(\.id))
+						_ = browser.applyTodayTabGroups(partial, in: space.id, expectedIDs: tabs.map(\.id))
 					}
 					displayedGroups = partial
 				}

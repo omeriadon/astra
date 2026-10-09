@@ -14,7 +14,6 @@ import WebKit
 	private typealias PlatformImage = UIImage
 #endif
 
-
 /// Serializes favicon commits. Old snapshots cannot complete after a newer
 /// snapshot has been written, even if one disk operation takes longer.
 private actor FaviconPersistenceWriter {

@@ -149,7 +149,6 @@ private struct KeepAliveWebStack: View {
 			}
 		}
 	}
-
 }
 
 /// Per-browser WebKit attachment policy. The normal warm budget is four
@@ -166,11 +165,10 @@ final class BrowserTabResourceManager {
 	}
 
 	func updateMemoryPressure(_ level: BrowserHibernationManager.PressureLevel) {
-		let limit: Int
-		switch level {
-			case .normal: limit = 4
-			case .warning: limit = 2
-			case .critical: limit = 1
+		let limit = switch level {
+			case .normal: 4
+			case .warning: 2
+			case .critical: 1
 		}
 		guard warmControllerLimit != limit else { return }
 		warmControllerLimit = limit
@@ -208,7 +206,6 @@ final class BrowserTabResourceManager {
 		}
 		return result
 	}
-
 }
 
 private struct HibernatedPlaceholder: View {

@@ -16,7 +16,7 @@ assert.equal(dirty([{ tagName: 'SELECT', multiple: false, size: 0, selectedIndex
 assert.equal(dirty([{ tagName: 'SELECT', multiple: false, size: 0, selectedIndex: 1, options: [{ selected: false, defaultSelected: false, disabled: false }, { selected: true, defaultSelected: false, disabled: false }] }]), true);
 assert.equal(dirty([{ tagName: 'TEXTAREA', value: 'draft', defaultValue: '' }]), true);
 assert.match(safety, /in: \.defaultClient/);
-assert.match(safety, /value as\? Bool == false/);
+assert.match(safety, /value == false/);
 console.log('Hibernation form-state checks passed');
 
 const activity = source.match(/private static let activityScript = """\n([\s\S]*?)\n\t"""/)[1];

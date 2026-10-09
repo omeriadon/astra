@@ -32,7 +32,7 @@ struct AboutView: View {
 				VStack(spacing: 30) {
 					Spacer()
 
-					Image("astra")
+					Image("astra", bundle: BrowserResources.bundle)
 						.resizable()
 						.aspectRatio(contentMode: .fit)
 						.frame(width: 200)

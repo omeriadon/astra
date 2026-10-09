@@ -5,7 +5,7 @@ struct BrowserSearchResultIcon: View {
 
 	var body: some View {
 		if result.isGitHubRepository {
-			Image("GitHubFavicon")
+			Image("GitHubFavicon", bundle: BrowserResources.bundle)
 				.renderingMode(.template)
 				.resizable()
 				.scaledToFit()
