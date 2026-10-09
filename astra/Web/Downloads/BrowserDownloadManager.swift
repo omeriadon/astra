@@ -1639,7 +1639,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				guard response == .OK, let url = panel.url else { return nil }
 				guard !isClosing,
 				      downloads[downloadID] != nil,
-				      let index = items.firstIndex(where: { $0.id == itemID && $0.status == .downloading })
+				      items.contains(where: { $0.id == itemID && $0.status == .downloading })
 				else {
 					url.stopAccessingSecurityScopedResource()
 					return nil
