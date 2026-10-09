@@ -50,6 +50,14 @@ def main() -> int:
         spec = importlib.util.spec_from_file_location("webkit_benchmark_check", HARNESS)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        live_rows = module._ps_rows()
+        current = [row for row in live_rows if row["pid"] == os.getpid()]
+        assert current, "live process inventory must include the check process"
+        expected_command = subprocess.run(
+            ["ps", "-wwp", str(os.getpid()), "-o", "comm="],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        assert current[0]["executable"] == expected_command.rsplit("/", 1)[-1][:80]
         before_usage = module._rusage(os.getpid())
         before_cpu = resource.getrusage(resource.RUSAGE_SELF)
         deadline = time.monotonic() + 0.03

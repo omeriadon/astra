@@ -22,6 +22,12 @@ from typing import Any, Iterable
 
 
 ROLES = ("astra", "webcontent", "gpu", "network", "other")
+WEBKIT_HELPER_EXECUTABLES = frozenset({
+    "com.apple.WebKit.GPU",
+    "com.apple.WebKit.Networking",
+    "com.apple.WebKit.WebContent",
+})
+PS_COMMAND = ["ps", "-wwaxo", "pid=,ppid=,rss=,lstart=,time=,comm="]
 SCENARIOS = (
     "one-empty-tab",
     "one-ordinary-website",
@@ -52,8 +58,7 @@ def _parse_cpu_time(value: str) -> float:
 
 def _ps_rows() -> list[dict[str, Any]]:
     """Read one process table without inspecting page content or URLs."""
-    command = ["ps", "-axo", "pid=,ppid=,rss=,lstart=,comm=,time="]
-    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    result = subprocess.run(PS_COMMAND, check=True, capture_output=True, text=True)
     rows: list[dict[str, Any]] = []
     for line in result.stdout.splitlines():
         row = _parse_ps_line(line)
@@ -73,13 +78,13 @@ def _parse_ps_line(line: str) -> dict[str, Any] | None:
         rss_kib = float(fields[2])
     except ValueError:
         return None
-    executable, cpu_time = fields[8].rsplit(None, 1)
+    cpu_time, executable = fields[8].split(None, 1)
     return {
         "pid": pid,
         "ppid": ppid,
         "rss_bytes": int(rss_kib * 1024),
         "started": " ".join(fields[3:8]),
-        "executable": executable.split("/")[-1][:80],
+        "executable": executable.rsplit("/", 1)[-1][:80],
         "cpu_seconds": _parse_cpu_time(cpu_time),
     }
 
@@ -186,7 +191,7 @@ def snapshot(selected: dict[int, str] | None = None) -> dict[str, Any]:
     unattributed = [
         {"pid": row["pid"], "identity": f"{row['pid']}@{row['started']}", "executable": row["executable"]}
         for row in all_rows
-        if row["executable"].lower().startswith("webkit") and row["pid"] not in selected
+        if row["executable"] in WEBKIT_HELPER_EXECUTABLES and row["pid"] not in selected
     ]
     unavailable = sorted(set(selected) - {row["pid"] for row in processes})
     return {
@@ -295,11 +300,17 @@ def _timed(command: list[str], output: str | None, selected: dict[int, str]) -> 
 
 
 def _self_test() -> None:
-    parsed = _parse_ps_line("9 1 10 Wed Oct 8 18:00:00 2026 /System/Library/WebKit.WebContent 1:02.50")
+    assert PS_COMMAND[-1].endswith("comm=")
+    assert "args=" not in PS_COMMAND[-1]
+    parsed = _parse_ps_line("9 1 10 Wed Oct 8 18:00:00 2026 1:02.50 /System/Library/WebKit.WebContent")
     assert parsed is not None and parsed["executable"] == "WebKit.WebContent"
     assert "command" not in parsed
-    spaced = _parse_ps_line("9 1 10 Wed Oct 8 18:00:00 2026 /Applications/Xcode-beta 27.2 beta 2.app/Contents/MacOS/Astra 0:00.01")
+    spaced = _parse_ps_line("9 1 10 Wed Oct 8 18:00:00 2026 0:00.01 /Applications/Xcode-beta 27.2 beta 2.app/Contents/MacOS/Astra")
     assert spaced is not None and spaced["executable"] == "Astra"
+    unbounded = _parse_ps_line("9 1 10 Wed Oct 8 18:00:00 2026 0:00.01 /System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent")
+    assert unbounded is not None and unbounded["executable"] == "com.apple.WebKit.WebContent"
+    assert "com.apple.WebKit.WebContent" in WEBKIT_HELPER_EXECUTABLES
+    assert "WebKit.WebContent" not in WEBKIT_HELPER_EXECUTABLES
     rows = [
         {"pid": 9, "ppid": 1, "rss_bytes": 100, "started": "A", "executable": "WebContent", "cpu_seconds": 1.0},
         {"pid": 9, "ppid": 1, "rss_bytes": 200, "started": "A", "executable": "WebContent", "cpu_seconds": 2.0},
