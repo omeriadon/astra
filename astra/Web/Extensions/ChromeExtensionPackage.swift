@@ -40,7 +40,7 @@ enum ChromeExtensionPackage {
 		}
 	#endif
 
-	enum PackageError: LocalizedError {
+	nonisolated enum PackageError: LocalizedError, Sendable {
 		case invalid
 
 		var errorDescription: String? {
