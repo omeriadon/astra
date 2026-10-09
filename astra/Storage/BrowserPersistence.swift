@@ -763,6 +763,26 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		if privateDataWasRemoved {
 			try data.write(to: backupURL, options: .atomic)
 		}
+		// Write the small projection only after the primary checkpoint has
+		// committed. Failure here cannot invalidate a successful full save;
+		// the startup loader falls back to the original state envelope.
+		if let signature = CheckpointSignature(at: currentURL) {
+			let sidecar = WindowRecordsSidecar(
+				version: 1, signature: signature, records: state.windowRecords ?? []
+			)
+			if let sidecarBytes = try? JSONEncoder().encode(sidecar),
+			   sidecarBytes.count <= 256 * 1024 {
+				do {
+					try sidecarBytes.write(
+						to: directory.appendingPathComponent("browser-windows.json"),
+						options: .atomic
+					)
+				} catch {
+					BrowserLog.warning(.persistence, "window-records.sidecar-write-failed",
+						metadata: ["error": BrowserLog.errorDescription(error)])
+				}
+			}
+		}
 		BrowserLog.duration(.persistence, "state.commit.end",
 			since: commitStarted,
 			warnAboveMilliseconds: 125,
