@@ -288,11 +288,14 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 
 	private nonisolated final class CachedCheckpoint {
 		let signature: CheckpointSignature
+		let backupSignature: CheckpointSignature?
 		let originalData: Data?
 		let privacy: PrivacyDeletionIndex
 
-		init(signature: CheckpointSignature, data: Data, privacy: PrivacyDeletionIndex) {
+		init(signature: CheckpointSignature, backupSignature: CheckpointSignature?,
+		     data: Data, privacy: PrivacyDeletionIndex) {
 			self.signature = signature
+			self.backupSignature = backupSignature
 			// The backup bytes are convenient below 8 MiB. Keep no extra copy
 			// of a large JSON payload; the privacy index still avoids decoding it.
 			originalData = data.count <= 8 * 1024 * 1024 ? data : nil
@@ -672,9 +675,12 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		} else {
 			previousIndex = nil
 		}
-		// The backup is checked for forward-compatible schema versions even if
-		// the primary was cached; never overwrite a newer app's recovery copy.
-		let backupData = try? Data(contentsOf: backupURL)
+		// A backup already validated by the most recent successful commit
+		// needs only an inode/size/mtime check. Unknown or externally replaced
+		// backups are read and schema-checked before any files are overwritten.
+		let backupSignature = CheckpointSignature(at: backupURL)
+		let knownBackupUnchanged = cached != nil && cached?.backupSignature == backupSignature
+		let backupData = knownBackupUnchanged ? nil : (try? Data(contentsOf: backupURL))
 		if let backupData { try rejectUnsupportedEnvelopeVersion(backupData) }
 		let backupPrevious: PrivacyDeletionIndex?
 		if previousIndex == nil, let backupData {
@@ -749,7 +755,10 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 			)
 			if cacheCost <= 24 * 1024 * 1024 {
 				Self.checkpointCache.setObject(
-					CachedCheckpoint(signature: signature, data: data, privacy: PrivacyDeletionIndex(state)),
+					CachedCheckpoint(
+						signature: signature, backupSignature: CheckpointSignature(at: backupURL),
+						data: data, privacy: PrivacyDeletionIndex(state)
+					),
 					forKey: cacheKey,
 					cost: cacheCost
 				)
