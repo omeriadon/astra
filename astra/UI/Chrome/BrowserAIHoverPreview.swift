@@ -170,7 +170,10 @@ import WebKit
 					let result = try await BrowserLinkSummaryFeature.preview(sourceURL: sourceURL, destinationURL: url) { snapshot, extracted in
 						guard !Task.isCancelled, activeKey == key, controller.navigationIdentifier == document,
 						      controller.aiPreviewDismissal == dismissal else { return }
-						page = extracted
+						// All snapshots for this request share the same extracted page.
+						if page == nil {
+							page = extracted
+						}
 						let title = BrowserAIOutput.streamedString("title", in: snapshot)
 						if summary == nil, title?.isEmpty == false || BrowserAIOutput.streamedString("header", in: snapshot)?.isEmpty == false {
 							controller.updateAIHoverHighlight(enabled: true)
@@ -187,14 +190,13 @@ import WebKit
 							}
 							summary = .init(title: extracted.title, header: snapshot, bullets: [])
 						}
-						if let summary {
-							controller.aiLinkPreviewCache[url] = (summary, extracted)
-						}
+						// Cache only the validated final response below. Partial streaming
+						// state may be cancelled or fail validation and must not survive.
 					}
 					try Task.checkCancellation()
 					guard activeKey == key, controller.navigationIdentifier == document,
 					      controller.aiPreviewDismissal == dismissal else { return }
-					controller.aiLinkPreviewCache[url] = result
+					controller.cacheAILinkPreview(summary: result.summary, page: result.page, for: url)
 					page = result.page
 					controller.updateAIHoverHighlight(enabled: true)
 					withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) { summary = result.summary }

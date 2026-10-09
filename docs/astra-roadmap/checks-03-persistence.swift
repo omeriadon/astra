@@ -83,6 +83,90 @@ struct BrowserPersistenceCheck {
 		let preservedFuture = try Data(contentsOf: currentURL)
 		assert(preservedFuture == future)
 
+		// A tab click in window B must survive a subsequent unrelated full
+		// snapshot from window A. Full-session writes consume the checkpoint
+		// under the same lock, not simply delete it.
+		let multiWindowDirectory = directory.appendingPathComponent("multiwindow", isDirectory: true)
+		try FileManager.default.createDirectory(at: multiWindowDirectory, withIntermediateDirectories: true)
+		let multiPersistence = BrowserPersistence(directory: multiWindowDirectory)
+		let secondTab = OpenTab(url: URL(string: "https://second.example")!)
+		let otherSpace = BrowserSpace(
+			id: BrowserSpace.firstID,
+			tabIDs: [tab.id, secondTab.id],
+			selectedTabID: tab.id
+		)
+		let firstWindow = UUID()
+		let secondWindow = UUID()
+		let windowTime = Date.now
+		let multiState = BrowserPersistedState(
+			bookmarks: [],
+			openTabs: [tab, secondTab],
+			closedTabs: [],
+			workspace: BrowserWorkspace(
+				spaces: [otherSpace], favouriteTabIDs: [],
+				selectedSpaceID: otherSpace.id
+			),
+			snapshot: BrowserSnapshot(
+				selectedTabID: tab.id,
+				selectedTabModifiedAt: .distantPast
+			),
+			windowRecords: [
+				BrowserWindowRecord(
+					windowID: firstWindow, tabIDs: [tab.id, secondTab.id],
+					selectedTabID: tab.id, selectionModifiedAt: .distantPast
+				),
+				BrowserWindowRecord(
+					windowID: secondWindow, tabIDs: [tab.id, secondTab.id],
+					selectedTabID: tab.id, selectionModifiedAt: .distantPast
+				),
+			]
+		)
+		try multiPersistence.savePersistedState(multiState)
+		try multiPersistence.saveSelectionUpdate(BrowserSelectionUpdate(
+			windowID: secondWindow, selectedTabID: secondTab.id,
+			selectedTabModifiedAt: windowTime, selectedSpaceID: otherSpace.id
+		))
+		try multiPersistence.savePersistedState(multiState)
+		let merged = try multiPersistence.loadPersistedState()
+		precondition(merged?.windowRecords?.first(where: { $0.windowID == secondWindow })?.selectedTabID == secondTab.id)
+		precondition(merged?.windowRecords?.first(where: { $0.windowID == secondWindow })?.selectionModifiedAt == windowTime)
+		precondition(merged?.snapshot.selectedTabID == secondTab.id)
+		precondition(!FileManager.default.fileExists(
+			atPath: multiWindowDirectory.appendingPathComponent("browser-selection.json").path
+		))
+
+		// Multiple full saves exercise the warm primary/backup cache. Removing
+		// a history visit must invalidate the old backup: corruption recovery
+		// must never resurrect a deleted browsing record.
+		let privacyDirectory = directory.appendingPathComponent("warm-privacy", isDirectory: true)
+		try FileManager.default.createDirectory(at: privacyDirectory, withIntermediateDirectories: true)
+		let privacyPersistence = BrowserPersistence(directory: privacyDirectory)
+		let privateVisit = BrowserVisit(url: URL(string: "https://sensitive.example/session")!, title: "Sensitive")
+		var withPrivateHistory = state
+		withPrivateHistory.historyVisits = [privateVisit]
+		try privacyPersistence.savePersistedState(withPrivateHistory)
+		try privacyPersistence.savePersistedState(withPrivateHistory)
+		var withoutPrivateHistory = withPrivateHistory
+		withoutPrivateHistory.historyVisits = []
+		withoutPrivateHistory.snapshot.deletedVisitsAt[privateVisit.id] = .now
+		try privacyPersistence.savePersistedState(withoutPrivateHistory)
+		let privacyPrimary = privacyDirectory.appendingPathComponent("browser-state.json")
+		try Data("corrupt".utf8).write(to: privacyPrimary)
+		let privacyRecovered = try privacyPersistence.loadPersistedState()
+		precondition(privacyRecovered?.historyVisits?.isEmpty == true)
+		precondition(privacyRecovered?.snapshot.deletedVisitsAt[privateVisit.id] != nil)
+
+		// Atomic replacement of a valid cached checkpoint by a future schema
+		// must be detected, even if its JSON happens to have similar length.
+		let futureVersion = Data(#"{"version":99,"state":{"unknown":true}}"#.utf8)
+		try futureVersion.write(to: privacyPrimary, options: .atomic)
+		do {
+			try privacyPersistence.savePersistedState(withoutPrivateHistory)
+			preconditionFailure("Warm cache allowed newer schema to be overwritten")
+		} catch BrowserPersistenceError.unsupportedVersion {}
+		let preservedFutureVersion = try Data(contentsOf: privacyPrimary)
+		precondition(preservedFutureVersion == futureVersion)
+
 		try persistence.saveShutdownMetadata(clean: false)
 		let uncleanShutdown = try persistence.loadShutdownMetadata()
 		assert(uncleanShutdown?.clean == false)

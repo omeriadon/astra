@@ -76,7 +76,9 @@ final class BrowserSitePreferences {
 				object: defaults,
 				queue: .main
 			) { [weak self] _ in
-				Task { @MainActor [weak self] in
+				// Notification delivery is already on the main queue; avoid a
+				// new main-actor task for every unrelated UserDefaults write.
+				MainActor.assumeIsolated {
 					self?.reloadZoomFromDefaults()
 				}
 			}

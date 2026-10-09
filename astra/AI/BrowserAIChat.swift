@@ -211,14 +211,31 @@ final class BrowserAIChat {
 
 	private func streamTurn(input: BrowserAIChatTurnFeature.Input, model: BrowserAIModel, browser: Browser, spaceID: UUID) async throws -> (BrowserAIChatTurnFeature.Turn, String) {
 		let feature = BrowserAIChatTurnFeature()
-		var queued: [BrowserAIToolCall] = []
+		// Tool calls are pushed as they are decoded. The previous 30 ms
+		// polling loop woke continuously during long model responses even
+		// when no tool had arrived.
+		let (pendingCalls, continuation) = AsyncStream.makeStream(of: BrowserAIToolCall.self)
 		var seen = Set<Data>()
-		var finished = false
 		var results = ""
 		let generation = Task { @MainActor in
-			defer { finished = true }
-			return try await BrowserAI.shared.performStreaming(feature, input: input, model: model) { snapshot in
-				preview = BrowserAIOutput.streamedString("response", in: snapshot) ?? (snapshot.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") ? "" : snapshot)
+			defer { continuation.finish() }
+			var lastPreviewPublishedAt: ContinuousClock.Instant?
+			var latestPreview = ""
+			let turn = try await BrowserAI.shared.performStreaming(feature, input: input, model: model) { snapshot in
+				latestPreview = BrowserAIOutput.streamedString("response", in: snapshot) ?? (snapshot.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") ? "" : snapshot)
+				// The Markdown view and scroll reader are relatively expensive.
+				// Publish at most ~12 updates per second while retaining the
+				// unthrottled final response and immediately showing first text.
+				let now = ContinuousClock.now
+				if lastPreviewPublishedAt.map({ $0.duration(to: now) >= .milliseconds(85) }) ?? true {
+					if preview != latestPreview {
+						preview = latestPreview
+					}
+					lastPreviewPublishedAt = now
+				}
+				// The JSON actions array comes after response text. Avoid
+				// reparsing all completed JSON objects before it even exists.
+				guard seen.count < 5, snapshot.contains("\"actions\"") else { return }
 				for data in BrowserAIOutput.completedObjects(in: snapshot) {
 					guard seen.count < 5,
 					      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -229,21 +246,18 @@ final class BrowserAIChat {
 					let encoder = JSONEncoder()
 					encoder.outputFormatting = .sortedKeys
 					guard let identifier = try? encoder.encode(call), seen.insert(identifier).inserted else { continue }
-					queued.append(call)
+					continuation.yield(call)
 				}
 			}
+			if preview != latestPreview {
+				preview = latestPreview
+			}
+			return turn
 		}
-		defer { generation.cancel() }
+		defer { generation.cancel(); continuation.finish() }
 		return try await withTaskCancellationHandler {
-			var next = 0
-			while !finished || next < queued.count {
+			for await call in pendingCalls {
 				try Task.checkCancellation()
-				guard next < queued.count else {
-					try await Task.sleep(for: .milliseconds(30))
-					continue
-				}
-				let call = queued[next]
-				next += 1
 				do {
 					let result = try await BrowserAITools.execute(call, browser: browser, spaceID: spaceID, model: model)
 					results += "\n\(call.name): \(result)\n"
@@ -257,6 +271,7 @@ final class BrowserAIChat {
 			return try await (generation.value, results)
 		} onCancel: {
 			generation.cancel()
+			continuation.finish()
 		}
 	}
 

@@ -25,6 +25,18 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 	private nonisolated(unsafe) var lastProgressHop: [String: Date] = [:]
 	private var startTokens: [UUID: UUID] = [:]
 	private var replayHeaders: [UUID: [String: String]] = [:]
+	/// URLSession download completion moves files synchronously before its
+	/// delegate callback returns. Never execute those filesystem operations on
+	/// the UI thread. The delegate methods already explicitly hop to MainActor
+	/// when they publish progress/completion into BrowserDownloadManager.
+	private let delegateQueue: OperationQueue = {
+		let queue = OperationQueue()
+		queue.name = "com.omeriadon.astra.segmented-download-delegate"
+		queue.qualityOfService = .utility
+		queue.maxConcurrentOperationCount = 1
+		return queue
+	}()
+
 	private lazy var session: URLSession = {
 		let identifier = (Bundle.main.bundleIdentifier ?? "browser") + ".segmentedDownloads"
 		let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
@@ -33,7 +45,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		configuration.httpShouldSetCookies = false
 		configuration.urlCredentialStorage = nil
 		configuration.httpMaximumConnectionsPerHost = BrowserDownloadSegment.maximumConnections
-		return URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
+		return URLSession(configuration: configuration, delegate: self, delegateQueue: delegateQueue)
 	}()
 
 	func start(_ item: BrowserDownload, originalRequest: URLRequest? = nil) {
@@ -237,10 +249,9 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		}
 	}
 
-	func removeParts(_ itemID: UUID, count: Int) {
+	func removeParts(_ itemID: UUID, count: Int) async {
 		BrowserLog.debug(.downloads, "segmented.remove-parts", metadata: ["item": BrowserLog.id(itemID), "count": String(count)])
-		for index in 0 ..< count {
-			try? FileManager.default.removeItem(at: Self.partURL(itemID, index: index))
-		}
+		let paths = (0 ..< count).map { Self.partURL(itemID, index: $0) }
+		await BrowserDownloadFileWorker.shared.removeFiles(paths)
 	}
 }

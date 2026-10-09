@@ -23,18 +23,57 @@ final class Browser {
 	private(set) var tabs: [BrowserTab] {
 		didSet {
 			tabLookup = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
+			visibleTabMembershipRevision &+= 1
 		}
 	}
 
 	@ObservationIgnored
 	private var tabLookup: [UUID: BrowserTab] = [:]
 	private(set) var selectedTabID: UUID
-	private(set) var workspace: BrowserWorkspace
+	/// A compact dependency for consumers that only need to know whether
+	/// visible tab membership *might* have changed. Comparing the entire
+	/// array of BrowserTab references in each SwiftUI update is unnecessary.
+	private(set) var visibleTabMembershipRevision = 0
+	private(set) var workspace: BrowserWorkspace {
+		didSet { visibleTabMembershipRevision &+= 1 }
+	}
+
 	private(set) var spaceSwitchDirection = 1
 	private(set) var recentlyUsedTabIDs: [UUID]
-	private(set) var bookmarks: [Bookmark]
-	private(set) var readingList: [ReadingListItem]
-	private(set) var historyVisits: [BrowserVisit]
+	/// A scalar Observation token for library projections. Comparing complete
+	/// bookmark and reading-list arrays at every SwiftUI invalidation is O(N).
+	private(set) var libraryChangeRevision = 0
+	private(set) var bookmarks: [Bookmark] {
+		didSet { libraryChangeRevision &+= 1 }
+	}
+
+	private(set) var readingList: [ReadingListItem] {
+		didSet { libraryChangeRevision &+= 1 }
+	}
+
+	/// Lightweight change token so SwiftUI doesn't compare an entire history
+	/// array for equality on every new navigation or title update.
+	private(set) var historyChangeRevision = 0
+	private(set) var historyVisits: [BrowserVisit] {
+		didSet {
+			historySearchIndex = nil
+			recentHistoryCache = nil
+			frequentHistoryCache = nil
+			historyChangeRevision &+= 1
+		}
+	}
+
+	/// Reuse the expensive per-URL history aggregation across successive search keystrokes.
+	/// The history property observer invalidates this for title edits, imports, sync and deletion.
+	@ObservationIgnored
+	var historySearchIndex: (newestVisit: Date, entries: [(url: URL, visit: BrowserVisit, count: Int)])?
+	@ObservationIgnored private var recentHistoryCache: (revision: Int, value: [BrowserVisit])?
+	@ObservationIgnored private var frequentHistoryCache: (revision: Int, value: [BrowserVisitSummary])?
+	/// Lamport-style local watermark for history tombstones, imports and visits.
+	/// Computing the maximum across thousands of rows on *every navigation*
+	/// made history recording increasingly expensive during long sessions.
+	@ObservationIgnored
+	private var latestHistoryMutationDate: Date?
 	@ObservationIgnored
 	private var lastVisitedURL: [UUID: URL] = [:]
 	@ObservationIgnored
@@ -124,6 +163,13 @@ final class Browser {
 	private var scrollPersistenceTask: Task<Void, Never>?
 
 	@ObservationIgnored
+	private var automaticHibernationManager: BrowserHibernationManager?
+	/// The controller retention policy is isolated from the SwiftUI stack.
+	/// It is lazily initialized only when a window displays WebKit content.
+	@ObservationIgnored
+	lazy var tabResources = BrowserTabResourceManager(browser: self)
+
+	@ObservationIgnored
 	private var pendingScrollPersistence = false
 
 	/// False until disk hydration completes; persistence calls before then only
@@ -151,15 +197,27 @@ final class Browser {
 	}
 
 	var recentHistoryVisits: [BrowserVisit] {
-		historyVisits.sorted {
+		// Reading the revision preserves SwiftUI Observation dependencies
+		// without sorting a large history collection on every body evaluation.
+		let revision = historyChangeRevision
+		if let cache = recentHistoryCache, cache.revision == revision {
+			return cache.value
+		}
+		let result = historyVisits.sorted {
 			$0.visitedAt == $1.visitedAt
 				? $0.id.uuidString < $1.id.uuidString
 				: $0.visitedAt > $1.visitedAt
 		}
+		recentHistoryCache = (revision, result)
+		return result
 	}
 
 	var frequentHistory: [BrowserVisitSummary] {
-		BrowserVisit.summaries(historyVisits).sorted {
+		let revision = historyChangeRevision
+		if let cache = frequentHistoryCache, cache.revision == revision {
+			return cache.value
+		}
+		let result = BrowserVisit.summaries(historyVisits, sortByRecency: false).sorted {
 			if $0.visitCount != $1.visitCount {
 				return $0.visitCount > $1.visitCount
 			}
@@ -168,6 +226,8 @@ final class Browser {
 			}
 			return $0.url.absoluteString < $1.url.absoluteString
 		}
+		frequentHistoryCache = (revision, result)
+		return result
 	}
 
 	func tab(withID id: UUID) -> BrowserTab? {
@@ -266,15 +326,23 @@ final class Browser {
 		if let currentIndex = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
 			spaceSwitchDirection = nextIndex >= currentIndex ? 1 : -1
 		}
-		workspace.selectedSpaceID = id
-		let space = selectedSpace
-		if let tabID = space.selectedTabID,
-		   space.tabIDs.contains(tabID) || workspace.favouriteTabIDs.contains(tabID)
-		{
-			selectTab(tabID)
-		} else if let tabID = space.tabIDs.first ?? workspace.favouriteTabIDs.first {
-			selectTab(tabID)
+		let space = workspace.spaces[nextIndex]
+		let targetID: UUID? = {
+			if let preferred = space.selectedTabID,
+			   space.tabIDs.contains(preferred) || workspace.favouriteTabIDs.contains(preferred)
+			{
+				return preferred
+			}
+			return space.tabIDs.first ?? workspace.favouriteTabIDs.first
+		}()
+		if let targetID {
+			// Switch space and tab in one observable workspace mutation.
+			// Selection alone does not require a structural extension sync.
+			workspace.selectedSpaceID = id
+			selectTab(targetID)
 		} else {
+			// Creating the first tab in an empty space already persists.
+			workspace.selectedSpaceID = id
 			addTab()
 		}
 		scheduleSelectionPersistence()
@@ -286,11 +354,18 @@ final class Browser {
 		let space = workspace.spaces[index]
 		let normalIDs = space.tabIDs.filter { !space.pinnedTabIDs.contains($0) }
 		guard normalIDs == expectedIDs else { return false }
-		workspace.spaces[index].todayTabGroups = groups
+		// Streaming group suggestions may update repeatedly while the AI
+		// response is still arriving. Publish workspace once, then coalesce
+		// persistence rather than capturing every tab's WebKit interaction
+		// state and rebuilding a full session snapshot for each partial.
+		var nextWorkspace = workspace
+		nextWorkspace.spaces[index].todayTabGroups = groups
 		let mutationDate = nextWorkspaceMutationDate()
-		workspace.spaces[index].modifiedAt = mutationDate
-		workspace.modifiedAt = mutationDate
-		persist()
+		nextWorkspace.spaces[index].modifiedAt = mutationDate
+		nextWorkspace.modifiedAt = mutationDate
+		workspace = nextWorkspace
+		// The grouping changes no extension tab identities or membership.
+		schedulePersistence(fullState: true, syncExtensions: false)
 		return true
 	}
 
@@ -331,30 +406,43 @@ final class Browser {
 	}
 
 	func renameSelectedSpace(_ name: String) {
-		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) else { return }
+		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }),
+		      workspace.spaces[index].name != name else { return }
+		var next = workspace
 		let mutationDate = nextWorkspaceMutationDate()
-		workspace.spaces[index].name = name
-		workspace.spaces[index].modifiedAt = mutationDate
-		workspace.modifiedAt = mutationDate
-		schedulePersistence()
+		next.spaces[index].name = name
+		next.spaces[index].modifiedAt = mutationDate
+		next.modifiedAt = mutationDate
+		workspace = next
+		// Typing changes metadata, not the extension-tab model.
+		schedulePersistence(fullState: true, syncExtensions: false)
 	}
 
 	func setSelectedSpaceSymbol(_ symbol: String) {
-		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) else { return }
+		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }),
+		      workspace.spaces[index].symbol != symbol else { return }
+		var next = workspace
 		let mutationDate = nextWorkspaceMutationDate()
-		workspace.spaces[index].symbol = symbol
-		workspace.spaces[index].modifiedAt = mutationDate
-		workspace.modifiedAt = mutationDate
-		schedulePersistence()
+		next.spaces[index].symbol = symbol
+		next.spaces[index].modifiedAt = mutationDate
+		next.modifiedAt = mutationDate
+		workspace = next
+		schedulePersistence(fullState: true, syncExtensions: false)
 	}
 
 	func setSelectedSpaceTheme(_ theme: BrowserTheme) {
-		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) else { return }
+		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }),
+		      workspace.spaces[index].theme != theme else { return }
+		// Mesh editing changes continuously during a drag. Commit the complete
+		// value once, without invalidating every SwiftUI observer for separate
+		// nested theme/timestamp updates or syncing unchanged extension tabs.
+		var next = workspace
 		let mutationDate = nextWorkspaceMutationDate()
-		workspace.spaces[index].theme = theme
-		workspace.spaces[index].modifiedAt = mutationDate
-		workspace.modifiedAt = mutationDate
-		schedulePersistence()
+		next.spaces[index].theme = theme
+		next.spaces[index].modifiedAt = mutationDate
+		next.modifiedAt = mutationDate
+		workspace = next
+		schedulePersistence(fullState: true, syncExtensions: false)
 	}
 
 	enum TabArea {
@@ -433,53 +521,59 @@ final class Browser {
 			? nil
 			: workspace.spaces.firstIndex(where: { $0.id == (spaceID ?? workspace.selectedSpaceID) })
 		guard area == .favourite || destinationIndex != nil else { return }
-		let wasFavourite = workspace.favouriteTabIDs.contains(id)
+		var nextWorkspace = workspace
+		let wasFavourite = nextWorkspace.favouriteTabIDs.contains(id)
 		let mutationDate = nextWorkspaceMutationDate()
 		let destinationDate = mutationDate.addingTimeInterval(0.001)
-		workspace.favouriteTabIDs.removeAll { $0 == id }
-		for index in workspace.spaces.indices {
-			let removedMembership = workspace.spaces[index].tabIDs.contains(id)
-				|| workspace.spaces[index].pinnedTabIDs.contains(id)
-				|| workspace.spaces[index].pinnedFolders.contains(where: { $0.tabIDs.contains(id) })
+		nextWorkspace.favouriteTabIDs.removeAll { $0 == id }
+		for index in nextWorkspace.spaces.indices {
+			let removedMembership = nextWorkspace.spaces[index].tabIDs.contains(id)
+				|| nextWorkspace.spaces[index].pinnedTabIDs.contains(id)
+				|| nextWorkspace.spaces[index].pinnedFolders.contains(where: { $0.tabIDs.contains(id) })
 			if removedMembership {
-				workspace.spaces[index].modifiedAt = mutationDate
+				nextWorkspace.spaces[index].modifiedAt = mutationDate
 			}
-			workspace.spaces[index].tabIDs.removeAll { $0 == id }
-			workspace.spaces[index].pinnedTabIDs.removeAll { $0 == id }
-			for folderIndex in workspace.spaces[index].pinnedFolders.indices {
-				let oldCount = workspace.spaces[index].pinnedFolders[folderIndex].tabIDs.count
-				workspace.spaces[index].pinnedFolders[folderIndex].tabIDs.removeAll { $0 == id }
-				if oldCount != workspace.spaces[index].pinnedFolders[folderIndex].tabIDs.count {
-					workspace.spaces[index].pinnedFolders[folderIndex].modifiedAt = mutationDate
+			nextWorkspace.spaces[index].tabIDs.removeAll { $0 == id }
+			nextWorkspace.spaces[index].pinnedTabIDs.removeAll { $0 == id }
+			for folderIndex in nextWorkspace.spaces[index].pinnedFolders.indices {
+				let oldCount = nextWorkspace.spaces[index].pinnedFolders[folderIndex].tabIDs.count
+				nextWorkspace.spaces[index].pinnedFolders[folderIndex].tabIDs.removeAll { $0 == id }
+				if oldCount != nextWorkspace.spaces[index].pinnedFolders[folderIndex].tabIDs.count {
+					nextWorkspace.spaces[index].pinnedFolders[folderIndex].modifiedAt = mutationDate
 				}
 			}
 		}
 		if area == .favourite {
-			let index = targetID.flatMap { workspace.favouriteTabIDs.firstIndex(of: $0) } ?? workspace.favouriteTabIDs.endIndex
-			workspace.favouriteTabIDs.insert(id, at: index)
-			workspace.favouritesModifiedAt = destinationDate
+			let index = targetID.flatMap { nextWorkspace.favouriteTabIDs.firstIndex(of: $0) } ?? nextWorkspace.favouriteTabIDs.endIndex
+			nextWorkspace.favouriteTabIDs.insert(id, at: index)
+			nextWorkspace.favouritesModifiedAt = destinationDate
 		} else if let index = destinationIndex {
-			let insertion = targetID.flatMap { workspace.spaces[index].tabIDs.firstIndex(of: $0) } ?? workspace.spaces[index].tabIDs.endIndex
-			workspace.spaces[index].tabIDs.insert(id, at: insertion)
+			let insertion = targetID.flatMap { nextWorkspace.spaces[index].tabIDs.firstIndex(of: $0) } ?? nextWorkspace.spaces[index].tabIDs.endIndex
+			nextWorkspace.spaces[index].tabIDs.insert(id, at: insertion)
 			if area == .pinned {
-				let pinnedInsertion = targetID.flatMap { workspace.spaces[index].pinnedTabIDs.firstIndex(of: $0) }
-					?? workspace.spaces[index].pinnedTabIDs.endIndex
-				workspace.spaces[index].pinnedTabIDs.insert(id, at: pinnedInsertion)
+				let pinnedInsertion = targetID.flatMap { nextWorkspace.spaces[index].pinnedTabIDs.firstIndex(of: $0) }
+					?? nextWorkspace.spaces[index].pinnedTabIDs.endIndex
+				nextWorkspace.spaces[index].pinnedTabIDs.insert(id, at: pinnedInsertion)
 			}
-			workspace.spaces[index].modifiedAt = destinationDate
+			nextWorkspace.spaces[index].modifiedAt = destinationDate
 			if wasFavourite {
-				workspace.favouritesModifiedAt = mutationDate
+				nextWorkspace.favouritesModifiedAt = mutationDate
 			}
 		} else {
 			preconditionFailure("Validated tab destination became unavailable")
 		}
-		workspace.modifiedAt = destinationDate
-		if selectedTabID == id,
-		   area != .favourite,
-		   let spaceID,
-		   workspace.selectedSpaceID != spaceID
-		{
-			workspace.selectedSpaceID = spaceID
+		nextWorkspace.modifiedAt = destinationDate
+		let changesSelectedSpace = selectedTabID == id
+			&& area != .favourite
+			&& spaceID != nil
+			&& nextWorkspace.selectedSpaceID != spaceID
+		if changesSelectedSpace, let spaceID {
+			nextWorkspace.selectedSpaceID = spaceID
+		}
+		// One observed update for all folder, pinned, membership and order
+		// changes; SwiftUI never sees an intermediate half-moved tab.
+		workspace = nextWorkspace
+		if changesSelectedSpace {
 			selectTab(id)
 		}
 		schedulePersistence()
@@ -511,9 +605,10 @@ final class Browser {
 		savedWindowFrame = windowRecord?.frame
 		let session = isPrivate ? BrowserWebSession(isPrivate: true) : .shared
 		self.session = session
-		if !isMini, !isPrivate {
-			BrowserWindowRegistry.shared.activeBrowser?.flushPersistence()
-		}
+		// Another normal window reuses the hydrated in-memory browser state.
+		// Do not force a full session snapshot on the main actor just because
+		// the user opened a window; the normal debounced writer still persists
+		// updates and the quit/sleep paths retain their explicit flushes.
 		// Synchronous placeholder only: disk decode happens off-main in
 		// hydrateFromDisk() so the first frame never waits on JSON.
 		let placeholder = BrowserTab(modifiedAt: .distantPast, session: session)
@@ -558,6 +653,9 @@ final class Browser {
 		if !isMini {
 			BrowserWindowRegistry.shared.register(self)
 		}
+		if !isMini {
+			automaticHibernationManager = BrowserHibernationManager(browser: self)
+		}
 		if !isPrivate, !isMini,
 		   let source = BrowserWindowRegistry.shared.openBrowsers.first(where: {
 		   	$0 !== self && !$0.isPrivate && !$0.isMini && $0.isHydrationFinished
@@ -570,6 +668,7 @@ final class Browser {
 			bookmarks = source.bookmarks
 			readingList = source.readingList
 			historyVisits = source.historyVisits
+			latestHistoryMutationDate = nil
 			closedHistoryTabs = source.closedHistoryTabs
 			closedTabIDs = source.closedTabIDs
 			deletedBookmarkIDs = source.deletedBookmarkIDs
@@ -624,9 +723,19 @@ final class Browser {
 		if Self.launchHydrationTask == nil {
 			let launchMetadataTask = Self.launchMetadataTask
 			Self.launchHydrationTask = Task.detached(priority: .userInitiated) { [persistence] in
-				let previousShutdownWasClean = await launchMetadataTask?.value
-				await BrowserRestorationStore.prepare()
-				if let state = try persistence.loadPersistedState() {
+				// Keychain restoration-key preparation and the saved JSON read are
+				// independent. Overlap them instead of paying their startup latency
+				// serially. Both must complete before constructing restored controllers.
+				let restorationPreparation = Task { @MainActor in
+					await BrowserRestorationStore.prepare()
+				}
+				let diskStarted = BrowserLog.clock()
+				let persisted = try persistence.loadPersistedState()
+				BrowserLog.duration(.persistence, "startup.persisted-state-read",
+				                    since: diskStarted, warnAboveMilliseconds: 250)
+				if let state = persisted {
+					let previousShutdownWasClean = await launchMetadataTask?.value
+					await restorationPreparation.value
 					return HydratedState(
 						tabs: state.openTabs,
 						snapshot: state.snapshot,
@@ -645,6 +754,8 @@ final class Browser {
 				let workspace = try persistence.loadWorkspace()
 				let bookmarks = try persistence.loadBookmarks()
 				let closedTabs = try persistence.loadClosedTabs()
+				let previousShutdownWasClean = await launchMetadataTask?.value
+				await restorationPreparation.value
 				return HydratedState(
 					tabs: tabs,
 					snapshot: snapshot,
@@ -781,7 +892,8 @@ final class Browser {
 				recordsNavigationHistory: saved.recordsNavigationHistory,
 				restorationState: saved.restorationState,
 				fileAccessBookmark: saved.fileAccessBookmark,
-				suppressInitialHistoryVisit: true
+				suppressInitialHistoryVisit: true,
+				initialRestorationBaseline: saved
 			)
 		}
 		var newTabs: [BrowserTab]
@@ -826,6 +938,7 @@ final class Browser {
 		deletedVisitsAt = loaded.snapshot?.deletedVisitsAt ?? [:]
 		historyClearedAt = loaded.snapshot?.historyClearedAt ?? .distantPast
 		historyVisits = visibleHistoryVisits(historyVisits)
+		latestHistoryMutationDate = nil
 		persistenceErrorDescription = nil
 		reconcileWorkspace()
 		for tab in newTabs {
@@ -1058,6 +1171,10 @@ final class Browser {
 	#endif
 
 	func selectTab(_ id: UUID) {
+		selectTab(id, inSpace: nil)
+	}
+
+	private func selectTab(_ id: UUID, inSpace requestedSpaceID: UUID?) {
 		let selectionStartedAt = BrowserLog.clock()
 		BrowserLog.debug(.tabs, "tab.select", metadata: ["window": BrowserLog.id(windowID), "from": BrowserLog.id(selectedTabID), "to": BrowserLog.id(id)])
 		guard let tab = tab(withID: id) else { return }
@@ -1083,7 +1200,9 @@ final class Browser {
 		// mouse-up action. Make that second selection effectively free, and also
 		// avoid rewriting workspace timestamps/persistence for any repeated click
 		// on an already-active warm tab.
-		if selectedTabID == id, !tab.isHibernated {
+		if selectedTabID == id, !tab.isHibernated,
+		   requestedSpaceID == nil || requestedSpaceID == workspace.selectedSpaceID
+		{
 			if !BrowserWindowRegistry.shared.ownsTab(id, in: self) {
 				BrowserWindowRegistry.shared.claimSelectedTab(in: self)
 			}
@@ -1094,8 +1213,10 @@ final class Browser {
 		// the complete selection mutation locally and publish it once instead of
 		// invalidating observers for every nested field write.
 		var nextWorkspace = workspace
-		if !nextWorkspace.favouriteTabIDs.contains(id),
-		   let ownerIndex = nextWorkspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })
+		if let requestedSpaceID {
+			nextWorkspace.selectedSpaceID = requestedSpaceID
+		} else if !nextWorkspace.favouriteTabIDs.contains(id),
+		          let ownerIndex = nextWorkspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })
 		{
 			if let currentIndex = nextWorkspace.spaces.firstIndex(where: { $0.id == nextWorkspace.selectedSpaceID }) {
 				spaceSwitchDirection = ownerIndex >= currentIndex ? 1 : -1
@@ -1108,7 +1229,9 @@ final class Browser {
 		newTabSearchSelection = nil
 		newTabGoogleSuggestions = []
 		newTabClipboardURL = nil
+		previousTab?.markInteraction()
 		selectedTabID = id
+		tab.markInteraction()
 
 		let selectionDate = nextWorkspaceMutationDate()
 		selectedTabModifiedAt = selectionDate
@@ -1183,7 +1306,7 @@ final class Browser {
 		if !Defaults[.bookmarkFolderNames].contains(name) {
 			Defaults[.bookmarkFolderNames].append(name)
 		}
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	func bookmarkSelectedPage() {
@@ -1194,7 +1317,7 @@ final class Browser {
 		let title = tab.activeController?.webViewIfLoaded?.title ?? tab.title
 		guard title.utf8.count <= 16384 else { return }
 		bookmarks.append(Bookmark(name: title, url: url))
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	private var selectedPageBookmarkURL: URL? {
@@ -1215,17 +1338,22 @@ final class Browser {
 		bookmarks[index].isFavorite = isFavorite
 		bookmarks[index].order = order
 		bookmarks[index].modifiedAt = BrowserUserDataMutation.nextDate(after: bookmarks[index].modifiedAt, deletion: deletedBookmarksAt[id] ?? .distantPast)
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	func reorderBookmarks(_ ids: [UUID]) {
-		let indexes = Dictionary(bookmarks.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+		var updated = bookmarks
+		let indexes = Dictionary(updated.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+		var changed = false
 		for (order, id) in ids.enumerated() {
-			guard let index = indexes[id], bookmarks[index].order != order else { continue }
-			bookmarks[index].order = order
-			bookmarks[index].modifiedAt = BrowserUserDataMutation.nextDate(after: bookmarks[index].modifiedAt, deletion: deletedBookmarksAt[id] ?? .distantPast)
+			guard let index = indexes[id], updated[index].order != order else { continue }
+			updated[index].order = order
+			updated[index].modifiedAt = BrowserUserDataMutation.nextDate(after: updated[index].modifiedAt, deletion: deletedBookmarksAt[id] ?? .distantPast)
+			changed = true
 		}
-		schedulePersistence()
+		guard changed else { return }
+		bookmarks = updated
+		scheduleUserDataPersistence()
 	}
 
 	func addToReadingList(_ url: URL, title: String) {
@@ -1233,7 +1361,7 @@ final class Browser {
 		      canAddToReadingList(url),
 		      let safe = BrowserHomepage.validURL(url.absoluteString) else { return }
 		readingList.append(ReadingListItem(url: safe, title: title))
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	func canAddToReadingList(_ url: URL) -> Bool {
@@ -1272,7 +1400,7 @@ final class Browser {
 		guard let index = readingList.firstIndex(where: { $0.id == id }), readingList[index].isRead != isRead else { return }
 		readingList[index].isRead = isRead
 		readingList[index].modifiedAt = BrowserUserDataMutation.nextDate(after: readingList[index].modifiedAt, deletion: deletedReadingListAt[id] ?? .distantPast)
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	func removeReadingListItem(_ id: UUID) {
@@ -1286,7 +1414,7 @@ final class Browser {
 				try? persistence.removeReadingArchive(id: id)
 			}
 		}
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	func saveReadingListSnapshot(tabID: UUID) {
@@ -1415,7 +1543,7 @@ final class Browser {
 			deletedBookmarkIDs.insert(id)
 			deletedBookmarksAt[id] = BrowserUserDataMutation.nextDate(after: removed.modifiedAt, deletion: deletedBookmarksAt[id] ?? .distantPast)
 		}
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	@discardableResult
@@ -1576,6 +1704,23 @@ final class Browser {
 		}
 	}
 
+	@discardableResult
+	func finishAutomaticHibernation(_ tab: BrowserTab, interactionState: Data) -> Bool {
+		guard tabs.contains(where: { $0 === tab }), tab.canHibernate else { return false }
+		tab.hibernate(interactionState: interactionState)
+		guard tab.isHibernated else { return false }
+		BrowserExtensionManager.shared.webViewDidChange(for: tab.id, in: self)
+		schedulePersistence()
+		return true
+	}
+
+	func handleMemoryPressure(_ level: BrowserHibernationManager.PressureLevel) {
+		// Reduce idle mounted WebViews immediately; hibernation then reclaims
+		// full background WebKit resources after safety and activity checks.
+		tabResources.updateMemoryPressure(level)
+		automaticHibernationManager?.handleMemoryPressure(level)
+	}
+
 	func promotePeek(in source: BrowserTab, id: UUID) {
 		guard let sourceIndex = tabs.firstIndex(where: { $0 === source }),
 		      let peek = source.takePeekForPromotion(id) else { return }
@@ -1707,7 +1852,7 @@ final class Browser {
 		lastVisitID[controller.id] = visit.id
 		historyVisits.insert(visit, at: 0)
 		applyHistoryRetention()
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	private func updateHistoryVisitTitle(from controller: BrowserController, url: URL, title: String, navigationID: Int) {
@@ -1719,7 +1864,7 @@ final class Browser {
 		var visit = historyVisits[index]
 		visit.updateTitle(title, at: nextHistoryMutationDate(after: .now))
 		historyVisits[index] = visit
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	private func ownsHistoryController(_ controller: BrowserController) -> Bool {
@@ -1730,16 +1875,24 @@ final class Browser {
 	}
 
 	private func nextHistoryMutationDate(after date: Date) -> Date {
-		// This runs on every recorded visit/title mutation. Avoid building two
-		// temporary date arrays proportional to the entire history.
-		var latest = historyClearedAt
-		for deletedAt in deletedVisitsAt.values where deletedAt > latest {
-			latest = deletedAt
+		let latest: Date
+		if let cached = latestHistoryMutationDate {
+			latest = cached
+		} else {
+			// Only restoration, cross-window synchronization or bulk deletion
+			// can invalidate the cache. The common navigation path is O(1).
+			var maximum = historyClearedAt
+			for deletedAt in deletedVisitsAt.values where deletedAt > maximum {
+				maximum = deletedAt
+			}
+			for visit in historyVisits where visit.modifiedAt > maximum {
+				maximum = visit.modifiedAt
+			}
+			latest = maximum
 		}
-		for visit in historyVisits where visit.modifiedAt > latest {
-			latest = visit.modifiedAt
-		}
-		return date > latest ? date : latest.addingTimeInterval(0.001)
+		let next = date > latest ? date : latest.addingTimeInterval(0.001)
+		latestHistoryMutationDate = next
+		return next
 	}
 
 	private func visibleHistoryVisits(_ visits: [BrowserVisit]) -> [BrowserVisit] {
@@ -1777,10 +1930,11 @@ final class Browser {
 		for browser in [self] + peers {
 			browser.clearLocalHistory(at: clearDate)
 		}
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	private func clearLocalHistory(at date: Date) {
+		latestHistoryMutationDate = nil
 		historyVisits.removeAll()
 		historyClearedAt = date
 		deletedVisitsAt.removeAll()
@@ -1810,7 +1964,7 @@ final class Browser {
 		for browser in browsers {
 			browser.removeHistoryLocally(removedIDs, at: deletionDate)
 		}
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	func removeHistory(from start: Date?, until end: Date?) {
@@ -1836,12 +1990,13 @@ final class Browser {
 	}
 
 	private func removeHistoryLocally(_ ids: Set<UUID>, at date: Date) {
+		latestHistoryMutationDate = nil
 		historyVisits.removeAll { ids.contains($0.id) }
 		for id in ids {
 			deletedVisitsAt[id] = date
 		}
 		removeHistoryVisitReferences(ids)
-		schedulePersistence()
+		scheduleUserDataPersistence()
 	}
 
 	private func removeHistoryVisitReferences(_ ids: Set<UUID>) {
@@ -1854,7 +2009,12 @@ final class Browser {
 
 	func importBookmarks(_ incoming: [Bookmark], replacingDuplicates: Bool = false) {
 		guard !isPrivate else { return }
-		var indexes = Dictionary(bookmarks.enumerated().map { ($1.url, $0) }, uniquingKeysWith: { first, _ in first })
+		// Import batches must not publish a new @Observable array for every
+		// record: a large HTML import otherwise invalidates the whole bookmarks
+		// List thousands of times before the user sees the completed result.
+		var updated = bookmarks
+		var indexes = Dictionary(updated.enumerated().map { ($1.url, $0) }, uniquingKeysWith: { first, _ in first })
+		var changed = false
 		for bookmark in incoming where BrowserHomepage.validURL(bookmark.url.absoluteString) != nil
 			&& bookmark.url.absoluteString.utf8.count <= 16384
 			&& bookmark.name.utf8.count <= 16384
@@ -1863,59 +2023,79 @@ final class Browser {
 		{
 			if let index = indexes[bookmark.url] {
 				guard replacingDuplicates else { continue }
-				let current = bookmarks[index]
+				let current = updated[index]
 				guard current.name != bookmark.name || current.folder != bookmark.folder
 					|| current.isFavorite != bookmark.isFavorite || current.order != bookmark.order else { continue }
-				bookmarks[index] = Bookmark(id: current.id, name: bookmark.name, url: BrowserAddress.withoutCredentials(bookmark.url), modifiedAt: BrowserUserDataMutation.nextDate(after: current.modifiedAt, deletion: deletedBookmarksAt[current.id] ?? .distantPast), folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order == Int.min ? bookmarks.count : bookmark.order)
+				updated[index] = Bookmark(id: current.id, name: bookmark.name, url: BrowserAddress.withoutCredentials(bookmark.url), modifiedAt: BrowserUserDataMutation.nextDate(after: current.modifiedAt, deletion: deletedBookmarksAt[current.id] ?? .distantPast), folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order == Int.min ? updated.count : bookmark.order)
+				changed = true
 			} else {
-				let imported = Bookmark(name: bookmark.name, url: BrowserAddress.withoutCredentials(bookmark.url), modifiedAt: bookmark.modifiedAt, folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order == Int.min ? bookmarks.count : bookmark.order)
-				indexes[bookmark.url] = bookmarks.count
-				bookmarks.append(imported)
+				let imported = Bookmark(name: bookmark.name, url: BrowserAddress.withoutCredentials(bookmark.url), modifiedAt: bookmark.modifiedAt, folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order == Int.min ? updated.count : bookmark.order)
+				indexes[bookmark.url] = updated.count
+				updated.append(imported)
+				changed = true
 			}
 		}
-		schedulePersistence()
+		guard changed else { return }
+		bookmarks = updated
+		scheduleUserDataPersistence()
 	}
 
 	func importReadingList(_ incoming: [ReadingListItem], replacingDuplicates: Bool = false) {
 		guard !isPrivate else { return }
-		var indexes = Dictionary(readingList.enumerated().map { ($1.url, $0) }, uniquingKeysWith: { first, _ in first })
+		var updated = readingList
+		var indexes = Dictionary(updated.enumerated().map { ($1.url, $0) }, uniquingKeysWith: { first, _ in first })
+		var changed = false
 		for item in incoming where BrowserHomepage.validURL(item.url.absoluteString) != nil
 			&& item.url.absoluteString.utf8.count <= 16384
 			&& item.title.utf8.count <= 16384
 		{
 			if let index = indexes[item.url] {
 				guard replacingDuplicates else { continue }
-				let current = readingList[index]
+				let current = updated[index]
 				guard current.title != item.title || current.isRead != item.isRead else { continue }
-				readingList[index] = ReadingListItem(id: current.id, url: item.url, title: item.title, addedAt: item.addedAt, modifiedAt: BrowserUserDataMutation.nextDate(after: current.modifiedAt, deletion: deletedReadingListAt[current.id] ?? .distantPast), isRead: item.isRead)
+				updated[index] = ReadingListItem(id: current.id, url: item.url, title: item.title, addedAt: item.addedAt, modifiedAt: BrowserUserDataMutation.nextDate(after: current.modifiedAt, deletion: deletedReadingListAt[current.id] ?? .distantPast), isRead: item.isRead)
+				changed = true
 			} else {
 				let imported = ReadingListItem(url: item.url, title: item.title, addedAt: item.addedAt, modifiedAt: item.modifiedAt, isRead: item.isRead)
-				indexes[item.url] = readingList.count
-				readingList.append(imported)
+				indexes[item.url] = updated.count
+				updated.append(imported)
+				changed = true
 			}
 		}
-		schedulePersistence()
+		guard changed else { return }
+		readingList = updated
+		scheduleUserDataPersistence()
 	}
 
 	func importHistory(_ incoming: [BrowserVisit]) {
 		guard !isPrivate else { return }
-		var existing = Set(historyVisits.map { "\($0.url.absoluteString)\u{1f}\($0.visitedAt.timeIntervalSince1970.bitPattern)" })
-		var existingIDs = Set(historyVisits.map(\.id))
+		var updated = historyVisits
+		var existing = Set(updated.map { "\($0.url.absoluteString)\u{1f}\($0.visitedAt.timeIntervalSince1970.bitPattern)" })
+		var existingIDs = Set(updated.map(\.id))
 		let mutationDate = nextHistoryMutationDate(after: .now)
+		var changed = false
 		for source in BrowserVisit.retained(incoming, days: Defaults[.historyRetentionDays]) {
 			guard var visit = visibleHistoryVisits([source]).first else { continue }
 			let key = "\(visit.url.absoluteString)\u{1f}\(visit.visitedAt.timeIntervalSince1970.bitPattern)"
 			guard existing.insert(key).inserted, existingIDs.insert(visit.id).inserted else { continue }
 			visit.modifiedAt = mutationDate
-			historyVisits.append(visit)
+			updated.append(visit)
+			changed = true
 		}
-		historyVisits.sort { $0.visitedAt > $1.visitedAt }
-		schedulePersistence()
+		guard changed else { return }
+		updated.sort { $0.visitedAt > $1.visitedAt }
+		historyVisits = updated
+		scheduleUserDataPersistence()
 	}
 
 	private func attachPersistence(to tab: BrowserTab) {
-		tab.didChange = { [weak self] in
-			self?.schedulePersistence()
+		tab.didChange = { [weak self, id = tab.id] in
+			guard let self else { return }
+			// Navigation/title/peek metadata changes do not change extension
+			// tab membership. Update the affected tab only, while still
+			// scheduling full cross-window persistence and synchronization.
+			BrowserExtensionManager.shared.tabPropertiesDidChange(for: id, in: self)
+			schedulePersistence(fullState: true, syncExtensions: false)
 		}
 		tab.didRecordHistoryVisit = { [weak self] controller, url, title, navigationID in
 			self?.recordHistoryVisit(from: controller, url: url, title: title, navigationID: navigationID)
@@ -1942,13 +2122,17 @@ final class Browser {
 	}
 
 	func configureOwnedTabs() {
-		for tab in tabs where BrowserWindowRegistry.shared.ownsTab(tab.id, in: self) {
-			configure(tab)
+		// Unregistering one window previously checked each of this window's
+		// tabs against every other window, then repeated the same global scan
+		// inside configure(_:). Resolve ownership once for the entire batch.
+		let ownedIDs = BrowserWindowRegistry.shared.ownedTabIDs(in: self)
+		for tab in tabs where ownedIDs.contains(tab.id) {
+			configure(tab, ownershipVerified: true)
 		}
 	}
 
-	private func configure(_ tab: BrowserTab) {
-		guard BrowserWindowRegistry.shared.ownsTab(tab.id, in: self),
+	private func configure(_ tab: BrowserTab, ownershipVerified: Bool = false) {
+		guard ownershipVerified || BrowserWindowRegistry.shared.ownsTab(tab.id, in: self),
 		      let controller = tab.controller else { return }
 		controller.displayWindowID = windowID
 		controller.navigationIntercept = navigationIntercept
@@ -1978,9 +2162,9 @@ final class Browser {
 			      tab.activeController === controller else { return false }
 			return webView.window != nil
 		}
-		controller.extensionStateDidChange = { [weak self] in
+		controller.extensionStateDidChange = { [weak self, id = tab.id] in
 			guard let self else { return }
-			BrowserExtensionManager.shared.sync(self)
+			BrowserExtensionManager.shared.loadingDidChange(for: id, in: self)
 		}
 		controller.extensionWebViewDidChange = { [weak self, id = tab.id] in
 			guard let self else { return }
@@ -2387,6 +2571,7 @@ final class Browser {
 		historyClearedAt = document.browser.historyClearedAt
 		bookmarks = document.bookmarks
 		historyVisits = visibleHistoryVisits(document.history)
+		latestHistoryMutationDate = nil
 		workspace = document.workspace ?? BrowserWorkspace.migrated(
 			tabs: document.tabs,
 			selectedTabID: document.browser.selectedTabID,
@@ -2401,9 +2586,8 @@ final class Browser {
 			selectedTab.wake()
 			configure(selectedTab)
 		}
-		recentlyUsedTabIDs = recentlyUsedTabIDs.filter { id in
-			tabs.contains { $0.id == id }
-		}
+		let liveTabIDs = Set(tabs.map(\.id))
+		recentlyUsedTabIDs = recentlyUsedTabIDs.filter { liveTabIDs.contains($0) }
 		if !recentlyUsedTabIDs.contains(selectedTabID) {
 			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
 		}
@@ -2411,12 +2595,59 @@ final class Browser {
 		schedulePersistence()
 	}
 
+	/// A source snapshot is created once per publication rather than once per
+	/// destination window. Keep the payload immutable so all windows receive
+	/// the same source revision, even if applying it changes shared tab models.
+	/// Keep closed-history conflict resolution deterministic without forcing
+	/// the Swift type checker through a deeply nested collection expression.
+	private static func preferredClosedHistoryRecord(_ current: OpenTab, _ incoming: OpenTab) -> OpenTab {
+		if current.modifiedAt != incoming.modifiedAt {
+			return current.modifiedAt > incoming.modifiedAt ? current : incoming
+		}
+		if current == incoming {
+			return current
+		}
+		let encoder = JSONEncoder()
+		encoder.outputFormatting = [.sortedKeys]
+		let currentData = (try? encoder.encode(current)) ?? Data()
+		let incomingData = (try? encoder.encode(incoming)) ?? Data()
+		return currentData.lexicographicallyPrecedes(incomingData) ? incoming : current
+	}
+
+	func publishSharedState(to recipients: [Browser]) {
+		guard !isPrivate, !recipients.isEmpty else { return }
+		let started = BrowserLog.clock()
+		let snapshot = completeLocalSyncDocument(settings: [:])
+		let closed = closedHistoryTabs
+		BrowserLog.duration(.sync, "browser.shared-state.snapshot", since: started,
+		                    warnAboveMilliseconds: 16,
+		                    metadata: ["tabs": String(snapshot.tabs.count), "windows": String(recipients.count)])
+		for destination in recipients where destination !== self && !destination.isPrivate {
+			destination.receiveSharedState(from: self, sourceSnapshot: snapshot, sourceClosedTabs: closed)
+		}
+	}
+
 	func receiveSharedState(from source: Browser) {
+		guard !isPrivate, !source.isPrivate else { return }
+		receiveSharedState(from: source,
+		                   sourceSnapshot: source.completeLocalSyncDocument(settings: [:]),
+		                   sourceClosedTabs: source.closedHistoryTabs)
+	}
+
+	private func receiveSharedState(
+		from source: Browser, sourceSnapshot: BrowserSyncDocument, sourceClosedTabs: [OpenTab]
+	) {
 		BrowserLog.debug(.sync, "browser.shared-state.receive", metadata: ["window": BrowserLog.id(windowID), "source_window": BrowserLog.id(source.windowID)])
 		guard !isPrivate, !source.isPrivate else { return }
-		persistenceTask?.cancel()
-		persistenceTask = nil
-
+		let started = BrowserLog.clock()
+		defer {
+			BrowserLog.duration(.sync, "browser.shared-state.receive.end", since: started,
+			                    warnAboveMilliseconds: 24,
+			                    metadata: ["window": BrowserLog.id(windowID)])
+		}
+		// Never cancel a pending local write just because another window
+		// published an unchanged snapshot. The merge below decides whether
+		// any receiving state actually needs to be applied.
 		let selectedTabBeforeMerge = selectedTabID
 		let selectedTabDateBeforeMerge = selectedTabModifiedAt
 		let selectedSpaceBeforeMerge = workspace.selectedSpaceID
@@ -2425,7 +2656,7 @@ final class Browser {
 		let recentlyUsedBeforeMerge = recentlyUsedTabIDs
 		let closedHistoryBeforeMerge = closedHistoryTabs
 		var localState = completeLocalSyncDocument(settings: [:])
-		var incomingState = source.completeLocalSyncDocument(settings: [:])
+		var incomingState = sourceSnapshot
 		localState.browser.selectedTabID = selectedTabBeforeMerge
 		localState.browser.selectedTabModifiedAt = selectedTabDateBeforeMerge
 		incomingState.browser.selectedTabID = selectedTabBeforeMerge
@@ -2452,51 +2683,64 @@ final class Browser {
 		}
 		var merged = localState.merging(incomingState)
 		merged = merged.preservingLocalOnlyData(from: localState)
-		applySyncDocument(merged)
-		closedHistoryTabs = Dictionary(
-			(closedHistoryBeforeMerge + source.closedHistoryTabs).map { ($0.id, $0) },
-			uniquingKeysWith: { current, incoming in
-				if current.modifiedAt != incoming.modifiedAt {
-					return current.modifiedAt > incoming.modifiedAt ? current : incoming
+		let documentChanged = merged != localState
+		if documentChanged {
+			applySyncDocument(merged)
+		}
+		// The merge has finalized the tab collection. A hash lookup avoids
+		// rescanning all open tabs for each closed-history record and MRU entry.
+		let openIDs = Set(tabs.map(\.id))
+		let candidates: [OpenTab] = closedHistoryBeforeMerge + sourceClosedTabs
+		let records: [UUID: OpenTab] = Dictionary(
+			candidates.map { ($0.id, $0) },
+			uniquingKeysWith: Self.preferredClosedHistoryRecord
+		)
+		let survivingRecords: [OpenTab] = records.values.filter { saved in
+			!openIDs.contains(saved.id)
+				&& (historyClearedAt == .distantPast || saved.modifiedAt > historyClearedAt)
+		}
+		let mergedClosedHistory: [OpenTab] = survivingRecords.sorted { left, right in
+			left.modifiedAt == right.modifiedAt
+				? left.id.uuidString < right.id.uuidString
+				: left.modifiedAt > right.modifiedAt
+		}
+		let closedHistoryChanged = mergedClosedHistory != closedHistoryTabs
+		if closedHistoryChanged {
+			closedHistoryTabs = mergedClosedHistory
+		}
+		guard documentChanged || closedHistoryChanged else {
+			BrowserLog.trace(.sync, "browser.shared-state.no-op",
+			                 metadata: ["window": BrowserLog.id(windowID)])
+			return
+		}
+		// Only a changed synchronization document can alter selection and
+		// workspace membership. Closed-history-only changes need durability,
+		// but must not touch the live workspace or extension bridges.
+		if documentChanged {
+			if tabs.contains(where: { $0.id == selectedTabBeforeMerge }) {
+				selectedTabID = selectedTabBeforeMerge
+				selectedTabModifiedAt = selectedTabDateBeforeMerge
+			}
+			if workspace.spaces.contains(where: { $0.id == selectedSpaceBeforeMerge }) {
+				workspace.selectedSpaceID = selectedSpaceBeforeMerge
+				workspace.selectionModifiedAt = selectionDateBeforeMerge
+			}
+			for index in workspace.spaces.indices {
+				if let selectedID = selectedTabsBySpace[workspace.spaces[index].id] ?? nil,
+				   workspace.spaces[index].tabIDs.contains(selectedID) || workspace.favouriteTabIDs.contains(selectedID)
+				{
+					workspace.spaces[index].selectedTabID = selectedID
 				}
-				let encoder = JSONEncoder()
-				encoder.outputFormatting = [.sortedKeys]
-				let currentData = (try? encoder.encode(current)) ?? Data()
-				let incomingData = (try? encoder.encode(incoming)) ?? Data()
-				return currentData.lexicographicallyPrecedes(incomingData) ? incoming : current
 			}
-		).values
-			.filter { saved in
-				!tabs.contains(where: { $0.id == saved.id })
-					&& (historyClearedAt == .distantPast || saved.modifiedAt > historyClearedAt)
+			recentlyUsedTabIDs = recentlyUsedBeforeMerge.filter { openIDs.contains($0) }
+			if !recentlyUsedTabIDs.contains(selectedTabID) {
+				recentlyUsedTabIDs.insert(selectedTabID, at: 0)
 			}
-			.sorted {
-				$0.modifiedAt == $1.modifiedAt
-					? $0.id.uuidString < $1.id.uuidString
-					: $0.modifiedAt > $1.modifiedAt
-			}
-
-		if tabs.contains(where: { $0.id == selectedTabBeforeMerge }) {
-			selectedTabID = selectedTabBeforeMerge
-			selectedTabModifiedAt = selectedTabDateBeforeMerge
+			reconcileWorkspace()
+		} else {
+			// No live document changes: persist the updated closed history only.
+			scheduleUserDataPersistence()
 		}
-		if workspace.spaces.contains(where: { $0.id == selectedSpaceBeforeMerge }) {
-			workspace.selectedSpaceID = selectedSpaceBeforeMerge
-			workspace.selectionModifiedAt = selectionDateBeforeMerge
-		}
-		for index in workspace.spaces.indices {
-			if let selectedID = selectedTabsBySpace[workspace.spaces[index].id] ?? nil,
-			   workspace.spaces[index].tabIDs.contains(selectedID) || workspace.favouriteTabIDs.contains(selectedID)
-			{
-				workspace.spaces[index].selectedTabID = selectedID
-			}
-		}
-		recentlyUsedTabIDs = recentlyUsedBeforeMerge.filter { id in tabs.contains { $0.id == id } }
-		if !recentlyUsedTabIDs.contains(selectedTabID) {
-			recentlyUsedTabIDs.insert(selectedTabID, at: 0)
-		}
-		reconcileWorkspace()
-		schedulePersistence()
 	}
 
 	private func markWorkspaceStructureChanged() {
@@ -2540,13 +2784,13 @@ final class Browser {
 		}
 	}
 
-	private func schedulePersistence(fullState: Bool = true) {
+	private func schedulePersistence(fullState: Bool = true, syncExtensions: Bool = true) {
 		BrowserLog.trace(.persistence, "browser.persistence.schedule", metadata: ["window": BrowserLog.id(windowID), "full": String(fullState), "hydrated": String(didFinishHydration)])
 		guard !isPrivate else { return }
 		// Selection-only persistence is a hot path and extension activation is
 		// already handled by BrowserWindowRegistry. Rebuilding every extension-tab
 		// snapshot here made each ordinary tab click walk the entire tab set again.
-		if fullState {
+		if fullState, syncExtensions {
 			BrowserExtensionManager.shared.sync(self)
 		}
 		guard persistence != nil else { return }
@@ -2559,12 +2803,23 @@ final class Browser {
 		persistenceTask = Task { @MainActor [weak self] in
 			try? await Task.sleep(for: .milliseconds(isFull ? 300 : 150))
 			guard !Task.isCancelled, let self else { return }
-			persist()
+			if pendingFullPersistence || pendingScrollPersistence {
+				persist()
+			} else {
+				persistSelectionOnly()
+			}
 		}
 	}
 
 	private func schedulePersistence() {
 		schedulePersistence(fullState: true)
+	}
+
+	/// Bookmarks, reading-list items and history need full durable/cross-window
+	/// saves, but cannot change WebExtension tab membership or pinning. Avoid
+	/// invoking sync(_:) over the entire tab collection for these UI actions.
+	private func scheduleUserDataPersistence() {
+		schedulePersistence(fullState: true, syncExtensions: false)
 	}
 
 	private func scheduleSelectionPersistence() {
@@ -2583,6 +2838,36 @@ final class Browser {
 		}
 	}
 
+	/// Avoid rebuilding every tab, history entry and window record on the
+	/// ordinary tab selection path. The checkpoint is merged during hydration.
+	private func persistSelectionOnly() {
+		guard !hydrationFailed, didFinishHydration, !isPrivate, let persistence else { return }
+		let update = BrowserSelectionUpdate(
+			windowID: windowID,
+			selectedTabID: selectedTabID,
+			selectedTabModifiedAt: selectedTabModifiedAt,
+			selectedSpaceID: workspace.selectedSpaceID
+		)
+		let previousWrite = session.persistenceWriteTask
+		session.persistenceWriteTask = Task.detached(priority: .utility) { [persistence, update] in
+			await previousWrite?.value
+			do {
+				try persistence.saveSelectionUpdate(update)
+				await MainActor.run { [weak self] in
+					self?.persistenceErrorDescription = nil
+				}
+			} catch {
+				let message = error.localizedDescription
+				BrowserLog.error(.persistence, "selection.save.failed", metadata: [
+					"error": BrowserLog.errorDescription(error),
+				])
+				await MainActor.run { [weak self] in
+					self?.persistenceErrorDescription = message
+				}
+			}
+		}
+	}
+
 	private func persist() {
 		BrowserLog.debug(.persistence, "browser.persistence.snapshot", metadata: ["window": BrowserLog.id(windowID), "tabs": String(tabs.count), "bookmarks": String(bookmarks.count), "history": String(historyVisits.count)])
 		guard !hydrationFailed else { return }
@@ -2591,6 +2876,7 @@ final class Browser {
 			pendingFullPersistence = true
 			return
 		}
+		let preparationStart = BrowserLog.clock()
 		reconcileWorkspace()
 		let isStructural = pendingFullPersistence
 		pendingFullPersistence = false
@@ -2616,6 +2902,14 @@ final class Browser {
 			historyVisits: historyVisits,
 			windowRecords: BrowserWindowRegistry.shared.recordsForPersistence
 		)
+		BrowserLog.duration(.persistence, "state.snapshot-preparation.end",
+		                    since: preparationStart,
+		                    warnAboveMilliseconds: 16,
+		                    metadata: [
+		                    	"tabs": String(tabs.count),
+		                    	"history_entries": String(historyVisits.count),
+		                    	"windows": String(state.windowRecords?.count ?? 0),
+		                    ])
 		// Encode + file IO off-main so Cmd+T / history-open stay instant.
 		// Scroll-only saves skip cross-window fan-out and sync: no structural change.
 		let previousWrite = session.persistenceWriteTask

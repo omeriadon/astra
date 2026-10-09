@@ -61,24 +61,23 @@ struct BrowserAIChatSidebar: View {
 							}
 							.id(message.id)
 						}
-						if chat.isResponding {
-							if chat.preview.isEmpty {
-								ProgressView("Reading and Answering")
-							} else {
-								chatMarkdown(chat.preview, streaming: true)
-							}
-						}
-						if let error = chat.error {
-							Text(error)
-								.foregroundStyle(.secondary)
-								.accessibilityIdentifier("ai-chat-error")
-						}
+						// Streaming responses update many times per second. Keep
+						// that observation in a leaf view so the entire sidebar,
+						// toolbar, composer and historical Markdown views are not
+						// invalidated for each generated token.
+						BrowserAIChatStreamingResponse(
+							chat: chat,
+							browser: browser,
+							hoveredURL: $hoveredURL,
+							hoveredLinkSize: $hoveredLinkSize,
+							hoveredLinkShiftPressed: $hoveredLinkShiftPressed,
+							onPreviewChange: { reader.scrollTo("chat-bottom", anchor: .bottom) }
+						)
 						Color.clear.frame(height: 1).id("chat-bottom")
 					}
 					.padding(.horizontal, 12)
 				}
 				.onChange(of: chat.messages.count) { _, _ in reader.scrollTo("chat-bottom", anchor: .bottom) }
-				.onChange(of: chat.preview) { _, _ in reader.scrollTo("chat-bottom", anchor: .bottom) }
 			}
 		}
 		.safeAreaBar(edge: .top) {
@@ -370,6 +369,81 @@ struct BrowserAIChatSidebar: View {
 	}
 }
 
+/// Observation boundary for per-token chat streaming. The transcript
+/// and composer never subscribe directly to preview text.
+private struct BrowserAIChatStreamingResponse: View {
+	let chat: BrowserAIChat
+	let browser: Browser
+	@Binding var hoveredURL: URL?
+	@Binding var hoveredLinkSize: CGSize
+	@Binding var hoveredLinkShiftPressed: Bool
+	let onPreviewChange: () -> Void
+	@State private var presentedPreview = ""
+
+	var body: some View {
+		Group {
+			if chat.isResponding {
+				if presentedPreview.isEmpty {
+					ProgressView("Reading and Answering")
+				} else {
+					#if os(macOS)
+						BrowserAIChatMarkdown(
+							text: presentedPreview,
+							streaming: true,
+							open: { browser.openHistoryURL($0, inBackground: false) },
+							hover: { url, previous, size, shift in
+								if url != nil || hoveredURL == previous {
+									hoveredURL = url
+									hoveredLinkSize = size
+									hoveredLinkShiftPressed = shift
+								}
+							}
+						)
+						.frame(maxWidth: .infinity, alignment: .leading)
+					#else
+						Text((try? AttributedString(markdown: presentedPreview)) ?? AttributedString(presentedPreview))
+							.textSelection(.enabled)
+							.environment(\.openURL, OpenURLAction { url in
+								browser.openHistoryURL(url, inBackground: false)
+								return .handled
+							})
+					#endif
+				}
+			}
+			if let error = chat.error {
+				Text(error)
+					.foregroundStyle(.secondary)
+					.accessibilityIdentifier("ai-chat-error")
+			}
+		}
+		// MarkdownContent reparses the entire accumulated response on each
+		// setContent call. Token-by-token SwiftUI observation therefore causes
+		// repeated layout work that grows with response length. This task reads
+		// the current response without subscribing body to every token, and
+		// publishes at most ten previews per second. It is automatically
+		// cancelled when a reply finishes or the sidebar is dismantled.
+		.task(id: chat.isResponding) {
+			guard chat.isResponding else {
+				presentedPreview = ""
+				return
+			}
+			presentedPreview = chat.preview
+			while !Task.isCancelled, chat.isResponding {
+				do {
+					try await Task.sleep(for: .milliseconds(100))
+				} catch {
+					return
+				}
+				guard !Task.isCancelled else { return }
+				let current = chat.preview
+				guard current != presentedPreview else { continue }
+				presentedPreview = current
+				onPreviewChange()
+			}
+		}
+	}
+}
+
 #if os(macOS)
 	private struct BrowserAIChatMarkdown: NSViewRepresentable {
 		let text: String
@@ -417,7 +491,6 @@ struct BrowserAIChatSidebar: View {
 	private final class ChatMarkdownView: MarkdownStreamView {
 		var displayedText = ""
 		var hover: ((URL?, URL?, CGSize, Bool) -> Void)?
-		private var monitor: Any?
 		private var hoveredURL: URL?
 		private var hoveredSize = CGSize.zero
 		private var hoveredShiftPressed = false
@@ -436,36 +509,117 @@ struct BrowserAIChatSidebar: View {
 		override func viewDidMoveToWindow() {
 			super.viewDidMoveToWindow()
 			stopMonitoring()
-			guard window != nil else { return }
-			monitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .scrollWheel, .flagsChanged]) { [weak self] event in
+			if window != nil {
+				ChatMarkdownEventDispatcher.shared.register(self)
+			}
+		}
+
+		/// A conversation can have hundreds of Markdown views. A single shared
+		/// application-local event handler routes pointer events to just the
+		/// view below the cursor instead of one handler per message.
+		func stopMonitoring() {
+			ChatMarkdownEventDispatcher.shared.unregister(self)
+		}
+
+		func updateTrackedHover(for event: NSEvent) {
+			let location = event.type == .flagsChanged
+				? window?.convertPoint(fromScreen: NSEvent.mouseLocation) ?? event.locationInWindow
+				: event.locationInWindow
+			let point = textLabelView.convert(location, from: nil)
+			let region = textLabelView.highlightRegion(at: point)
+			updateTrackedHover(
+				url: region?.linkURL,
+				size: region?.rects.reduce(CGRect.null) { $0.union($1) }.size ?? .zero,
+				shift: event.modifierFlags.contains(.shift)
+			)
+		}
+
+		func clearTrackedHover() {
+			updateTrackedHover(url: nil, size: .zero, shift: false)
+		}
+
+		private func updateTrackedHover(url: URL?, size: CGSize, shift: Bool) {
+			guard url != hoveredURL || size != hoveredSize || shift != hoveredShiftPressed else { return }
+			let previous = hoveredURL
+			hoveredURL = url
+			hoveredSize = size
+			hoveredShiftPressed = shift
+			hover?(url, previous, size, shift)
+		}
+	}
+
+	@MainActor
+	private final class ChatMarkdownEventDispatcher {
+		static let shared = ChatMarkdownEventDispatcher()
+
+		private final class WeakView {
+			weak var value: ChatMarkdownView?
+			init(_ value: ChatMarkdownView) {
+				self.value = value
+			}
+		}
+
+		private var registered: [ObjectIdentifier: WeakView] = [:]
+		private weak var activeView: ChatMarkdownView?
+		private var monitor: Any?
+
+		private init() {}
+
+		func register(_ view: ChatMarkdownView) {
+			registered = registered.filter { $0.value.value != nil }
+			registered[ObjectIdentifier(view)] = WeakView(view)
+			guard monitor == nil else { return }
+			monitor = NSEvent.addLocalMonitorForEvents(
+				matching: [.mouseMoved, .scrollWheel, .flagsChanged]
+			) { [weak self] event in
 				MainActor.assumeIsolated {
-					guard let self else { return }
-					let location = event.type == .flagsChanged ? self.window?.convertPoint(fromScreen: NSEvent.mouseLocation) ?? event.locationInWindow : event.locationInWindow
-					let point = self.textLabelView.convert(location, from: nil)
-					let content = self.window?.contentView
-					let hit = content?.hitTest(content?.convert(location, from: nil) ?? .zero)
-					let region = event.window === self.window && event.type != .scrollWheel && hit?.isDescendant(of: self) == true
-						? self.textLabelView.highlightRegion(at: point) : nil
-					let url = region?.linkURL
-					let size = region?.rects.reduce(CGRect.null) { $0.union($1) }.size ?? .zero
-					let shift = event.modifierFlags.contains(.shift)
-					if url != self.hoveredURL || size != self.hoveredSize || shift != self.hoveredShiftPressed {
-						let previous = self.hoveredURL
-						self.hoveredURL = url
-						self.hoveredSize = size
-						self.hoveredShiftPressed = shift
-						self.hover?(url, previous, size, shift)
-					}
+					self?.route(event)
 				}
 				return event
 			}
 		}
 
-		func stopMonitoring() {
-			if let monitor {
-				NSEvent.removeMonitor(monitor)
+		func unregister(_ view: ChatMarkdownView) {
+			registered.removeValue(forKey: ObjectIdentifier(view))
+			if activeView === view {
+				activeView?.clearTrackedHover()
+				activeView = nil
 			}
-			monitor = nil
+			if registered.isEmpty, let monitor {
+				NSEvent.removeMonitor(monitor)
+				self.monitor = nil
+			}
+		}
+
+		private func route(_ event: NSEvent) {
+			// A scroll ends link hover. Flag changes still use the actual
+			// pointer position, as the event's window coordinates may be stale.
+			let eventWindow = event.window ?? (event.type == .flagsChanged ? activeView?.window : nil)
+			var hit: NSView?
+			if event.type != .scrollWheel, let window = eventWindow,
+			   let content = window.contentView
+			{
+				let pointInWindow = event.type == .flagsChanged
+					? window.convertPoint(fromScreen: NSEvent.mouseLocation)
+					: event.locationInWindow
+				hit = content.hitTest(content.convert(pointInWindow, from: nil))
+			}
+
+			var target: ChatMarkdownView?
+			while let view = hit {
+				if let markdown = view as? ChatMarkdownView,
+				   registered[ObjectIdentifier(markdown)]?.value === markdown
+				{
+					target = markdown
+					break
+				}
+				hit = view.superview
+			}
+			if activeView !== target {
+				activeView?.clearTrackedHover()
+				activeView = target
+			}
+			target?.updateTrackedHover(for: event)
 		}
 	}
 

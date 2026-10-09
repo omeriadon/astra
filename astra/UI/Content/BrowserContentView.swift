@@ -1,5 +1,6 @@
 import Defaults
 import Haze
+import Observation
 import SwiftUI
 
 struct BrowserContentView: View, Animatable {
@@ -119,7 +120,7 @@ private struct KeepAliveWebStack: View {
 	var body: some View {
 		let selectedTab = browser.selectedTab
 		ZStack {
-			ForEach(keepAliveControllers()) { controller in
+			ForEach(browser.tabResources.controllersForDisplay()) { controller in
 				BrowserWebView(
 					controller: controller,
 					windowID: browser.windowID,
@@ -148,8 +149,34 @@ private struct KeepAliveWebStack: View {
 			}
 		}
 	}
+}
 
-	private func keepAliveControllers() -> [BrowserController] {
+/// Per-browser WebKit attachment policy. The normal warm budget is four
+/// controllers; pressure reduces idle retention without overriding media,
+/// capture, unsaved-form or active lifecycle protection from WebKit.
+@MainActor
+@Observable
+final class BrowserTabResourceManager {
+	@ObservationIgnored private weak var browser: Browser?
+	private(set) var warmControllerLimit = 4
+
+	init(browser: Browser) {
+		self.browser = browser
+	}
+
+	func updateMemoryPressure(_ level: BrowserHibernationManager.PressureLevel) {
+		let limit = switch level {
+			case .normal: 4
+			case .warning: 2
+			case .critical: 1
+		}
+		guard warmControllerLimit != limit else { return }
+		warmControllerLimit = limit
+		BrowserLog.debug(.performance, "webkit.warm-controller-budget", metadata: ["count": String(limit)])
+	}
+
+	func controllersForDisplay() -> [BrowserController] {
+		guard let browser else { return [] }
 		let selectedTab = browser.selectedTab
 		let ownedTabIDs = BrowserWindowRegistry.shared.ownedTabIDs(in: browser)
 		let tabsByID = browser.tabsByID
@@ -162,17 +189,17 @@ private struct KeepAliveWebStack: View {
 		if let selectedTab, ownedTabIDs.contains(selectedTab.id) {
 			append(selectedTab.controller)
 		}
-		for id in browser.recentlyUsedTabIDs where result.count < 4 {
+		// Pressure applies only to idle recency retention. Independently
+		// protected controllers are always included below regardless of budget.
+		for id in browser.recentlyUsedTabIDs where result.count < warmControllerLimit {
 			guard ownedTabIDs.contains(id),
-			      let tab = tabsByID[id],
-			      tab.internalPage == nil else { continue }
+			      let tab = tabsByID[id], tab.internalPage == nil else { continue }
 			append(tab.controller)
 		}
-		// ponytail: retain all playing or paused media while iframe PiP state is unobservable; narrow this when WebKit exposes a frame-aware callback.
 		for tab in browser.tabs where ownedTabIDs.contains(tab.id) {
-			append(tab.controller?.requiresMediaTeardownConfirmation == true ? tab.controller : nil)
+			append(tab.controller?.shouldKeepWebViewAttached == true ? tab.controller : nil)
 			for peek in tab.id == selectedTab?.id ? [] : tab.peeks {
-				if peek.controller.requiresMediaTeardownConfirmation {
+				if peek.controller.shouldKeepWebViewAttached {
 					append(peek.controller)
 				}
 			}

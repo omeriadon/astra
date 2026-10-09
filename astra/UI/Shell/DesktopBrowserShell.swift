@@ -389,6 +389,8 @@ private struct ShellSidebarColumn: View {
 		sidebarMediaHeight > 0 ? sidebarMediaHeight + 8 + 33 : 34
 	}
 
+	@State private var keepsDownloadsMounted = false
+
 	var body: some View {
 		ZStack(alignment: .topLeading) {
 			sidebarContent
@@ -441,12 +443,21 @@ private struct ShellSidebarColumn: View {
 				content.offset(x: showsDownloads ? geometry.size.width : 0)
 			}
 
-			DownloadsSidebarView(
-				manager: downloads,
-				theme: theme
-			)
+			Group {
+				if showsDownloads || keepsDownloadsMounted {
+					DownloadsSidebarView(
+						manager: downloads,
+						theme: theme
+					)
+					.sidebarScrollContentMargins()
+				} else {
+					// When tabs are displayed there is no reason to keep
+					// observing every download progress event or lay out a
+					// second offscreen scroll tree.
+					Color.clear
+				}
+			}
 			.foregroundStyle(theme.foregroundColor)
-			.sidebarScrollContentMargins()
 			.visualEffect { content, geometry in
 				content.offset(x: showsDownloads ? 0 : -geometry.size.width)
 			}
@@ -458,6 +469,22 @@ private struct ShellSidebarColumn: View {
 			bottom: bottomOpacityHeight + 11,
 			bottomOpacityHeight: bottomOpacityHeight
 		)
+		.task(id: showsDownloads) {
+			if showsDownloads {
+				keepsDownloadsMounted = true
+			} else {
+				guard keepsDownloadsMounted else { return }
+				// Preserve the full slide-out before dismantling the hidden
+				// content. The button animates this transition for 0.32 s.
+				do {
+					try await Task.sleep(for: .milliseconds(380))
+				} catch {
+					return
+				}
+				guard !Task.isCancelled else { return }
+				keepsDownloadsMounted = false
+			}
+		}
 		.overlay(alignment: .bottom) {
 			if sidebarShown {
 				sidebarBottomBar
@@ -544,6 +571,7 @@ private struct ShellContentColumn: View {
 				Spacer(minLength: 0)
 					.frame(height: topBarHeight)
 				BrowserPageView(browser: browser, cornerRadius: contentCornerRadius)
+					.equatable()
 					.padding(.top, hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
 					.padding([.bottom, .horizontal], hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -556,12 +584,15 @@ private struct ShellContentColumn: View {
 					let revealHeight = isTopBarRevealed
 						? BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding
 						: 6
+					let shouldReveal = browser.selectedTab?.internalPage == nil
+						&& !browser.isShowingNewTab
+						&& !showsTopBar && location.y < revealHeight
+					guard shouldReveal != isTopBarRevealed else { return }
 					withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
-						isTopBarRevealed = browser.selectedTab?.internalPage == nil
-							&& !browser.isShowingNewTab
-							&& !showsTopBar && location.y < revealHeight
+						isTopBarRevealed = shouldReveal
 					}
 				case .ended:
+					guard isTopBarRevealed else { return }
 					withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
 						isTopBarRevealed = false
 					}

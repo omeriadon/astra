@@ -85,7 +85,7 @@ struct BrowserRootView: View {
 			.onAppear {
 				controlTabSwitcher.start()
 			}
-			.onChange(of: browser.visibleTabs.map(\.id)) { _, _ in
+			.onChange(of: browser.visibleTabMembershipRevision) { _, _ in
 				controlTabSwitcher.tabsDidChange()
 			}
 			.onDisappear {

@@ -14,6 +14,20 @@ import WebKit
 	private typealias PlatformImage = UIImage
 #endif
 
+/// Serializes favicon commits. Old snapshots cannot complete after a newer
+/// snapshot has been written, even if one disk operation takes longer.
+private actor FaviconPersistenceWriter {
+	private let persistence: BrowserPersistence
+
+	init(_ persistence: BrowserPersistence) {
+		self.persistence = persistence
+	}
+
+	func save(_ snapshot: [String: Data]) {
+		try? persistence.saveFavicons(snapshot)
+	}
+}
+
 @MainActor
 @Observable
 final class FaviconStore: NSObject, WKScriptMessageHandler {
@@ -38,22 +52,46 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	private static let refreshInterval: TimeInterval = 7 * 24 * 60 * 60
 	private static let observationScript = """
 	(() => {
+		// This runs once per document in the isolated WebKit content world.
+		if (document.__astraFaviconObserverInstalled) return;
+		document.__astraFaviconObserverInstalled = true;
 		const iconSelector = 'link[rel~="icon"]';
+		let pendingWhileHidden = false;
+		let scheduled = false;
+
+		const scheduleNotification = () => {
+			if (document.hidden) {
+				pendingWhileHidden = true;
+				return;
+			}
+			if (scheduled) return;
+			scheduled = true;
+			setTimeout(() => {
+				scheduled = false;
+				if (document.hidden) {
+					pendingWhileHidden = true;
+					return;
+				}
+				pendingWhileHidden = false;
+				window.webkit.messageHandlers.faviconChanged.postMessage(true);
+			}, 250);
+		};
+
+		document.addEventListener('visibilitychange', () => {
+			if (!document.hidden && pendingWhileHidden) scheduleNotification();
+		});
+
 		const observer = new MutationObserver(changes => {
 			const faviconChanged = changes.some(change => {
 				if (change.type === 'attributes') {
 					return change.target.matches(iconSelector)
 						|| (change.attributeName === 'rel' && change.target.tagName === 'LINK');
 				}
-
 				return [...change.addedNodes, ...change.removedNodes].some(node =>
 					node.matches?.(iconSelector)
 				);
 			});
-
-			if (faviconChanged) {
-				window.webkit.messageHandlers.faviconChanged.postMessage(true);
-			}
+			if (faviconChanged) scheduleNotification();
 		});
 
 		observer.observe(document.head, {
@@ -75,6 +113,8 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 
 	@ObservationIgnored
 	private let persistence: BrowserPersistence?
+	@ObservationIgnored
+	private let persistenceWriter: FaviconPersistenceWriter?
 
 	@ObservationIgnored
 	private let networkSession: URLSession
@@ -84,7 +124,14 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	@ObservationIgnored
 	private var faviconSaveTask: Task<Void, Never>?
 	@ObservationIgnored
-	private var decodedImages: [String: PlatformImage] = [:]
+	private let decodedImages: NSCache<NSString, PlatformImage> = {
+		let cache = NSCache<NSString, PlatformImage>()
+		// Validated favicons can be 512x512 each. Bounding compressed data
+		// alone does not bound the decoded pixel backing stores.
+		cache.totalCostLimit = 32 * 1024 * 1024
+		cache.countLimit = 64
+		return cache
+	}()
 
 	var isEmpty: Bool {
 		favicons.isEmpty
@@ -103,6 +150,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 			persistence = nil
 		}
 		self.persistence = persistence
+		persistenceWriter = persistence.map(FaviconPersistenceWriter.init)
 		networkSession = isPrivate ? URLSession(configuration: .ephemeral) : .shared
 		favicons = [:]
 		super.init()
@@ -166,11 +214,11 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 
 	func image(for pageURL: URL?, in _: WKWebView? = nil) -> Image? {
 		guard let key = FaviconKey.origin(for: pageURL) else { return nil }
-		if let cached = decodedImages[key] {
+		if let cached = decodedImages.object(forKey: key as NSString) {
 			return Self.swiftUIImage(cached)
 		}
 		guard let data = favicons[key], let decoded = Self.makePlatformImage(data) else { return nil }
-		decodedImages[key] = decoded
+		decodedImages.setObject(decoded, forKey: key as NSString, cost: Self.decodedImageCost(decoded))
 		return Self.swiftUIImage(decoded)
 	}
 
@@ -236,7 +284,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 
 		fetchedAt[key] = .now
 		favicons[key] = data
-		decodedImages[key] = platformImage
+		decodedImages.setObject(platformImage, forKey: key as NSString, cost: Self.decodedImageCost(platformImage))
 		trimCache()
 		scheduleFaviconSave()
 	}
@@ -245,7 +293,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		BrowserLog.notice(.favicons, "favicon.clear")
 		cacheGeneration += 1
 		activeRequests.removeAll()
-		decodedImages.removeAll()
+		decodedImages.removeAllObjects()
 		fetchedAt.removeAll()
 		favicons.removeAll()
 		scheduleFaviconSave()
@@ -263,20 +311,26 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 			guard favicons.count > Self.maximumCacheEntries || totalBytes > Self.maximumCacheBytes else { break }
 			totalBytes -= favicons.removeValue(forKey: key)?.count ?? 0
 			fetchedAt[key] = nil
-			decodedImages[key] = nil
+			decodedImages.removeObject(forKey: key as NSString)
 			removedEntry = true
 		}
 		return removedEntry
 	}
 
 	private func scheduleFaviconSave() {
-		guard persistence != nil else { return }
+		guard let writer = persistenceWriter else { return }
 		faviconSaveTask?.cancel()
-		let snapshot = favicons
-		faviconSaveTask = Task.detached(priority: .utility) { [persistence] in
-			try? await Task.sleep(for: .milliseconds(800))
-			guard !Task.isCancelled else { return }
-			try? persistence?.saveFavicons(snapshot)
+		faviconSaveTask = Task { @MainActor [weak self] in
+			do {
+				try await Task.sleep(for: .milliseconds(800))
+			} catch {
+				return
+			}
+			guard !Task.isCancelled, let self else { return }
+			// Do not capture a COW dictionary before the debounce completes:
+			// that forces a full copy on every subsequent favicon mutation.
+			let snapshot = favicons
+			await writer.save(snapshot)
 		}
 	}
 
@@ -340,6 +394,20 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 			else { return false }
 		}
 		return true
+	}
+
+	/// Approximate decoded pixel cost for eviction (not WebKit or GPU memory).
+	/// NSCache may also evict entries sooner under memory pressure.
+	private static func decodedImageCost(_ image: PlatformImage) -> Int {
+		#if os(macOS)
+			let dimensions = image.representations.map { (max($0.pixelsWide, 1), max($0.pixelsHigh, 1)) }
+			let pixels = dimensions.max { $0.0 * $0.1 < $1.0 * $1.1 } ?? (512, 512)
+			return pixels.0 * pixels.1 * 4
+		#elseif os(iOS)
+			let width = max(Int(image.size.width * image.scale), 1)
+			let height = max(Int(image.size.height * image.scale), 1)
+			return width * height * 4
+		#endif
 	}
 
 	private static func makePlatformImage(_ data: Data) -> PlatformImage? {

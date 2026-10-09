@@ -154,7 +154,6 @@ struct BrowserTabRow: View {
 			DragGesture(minimumDistance: 8)
 				.onChanged { _ in
 					if tabDrag.activeTabID != tab.id {
-						browser.flushPersistence()
 						tabDrag.begin(tab.id, from: browser)
 					}
 					tabDrag.update()
@@ -791,13 +790,26 @@ private struct TabRowContextMenu: View {
 				.clipShape(RoundedRectangle(cornerRadius: 10))
 
 				HStack {
-					Text("Memory")
+					Text("Observed process memory")
 						.font(.subheadline.weight(.semibold))
 					Spacer()
-					Text(memory?.relatedProcessBytes.map(Self.formatBytes) ?? unavailableMemoryLabel)
+					Text(memory?.knownProcessBytes.map(Self.formatBytes) ?? unavailableMemoryLabel)
 						.font(.subheadline.monospacedDigit())
 						.foregroundStyle(.secondary)
 				}
+				HStack(alignment: .top, spacing: 8) {
+					memoryMetric("WebContent*", bytes: memory?.webContentBytes)
+					memoryMetric("Graphics*", bytes: memory?.graphicsBytes)
+					memoryMetric("Network*", bytes: memory?.networkBytes)
+					if memory?.modelBytes != nil {
+						memoryMetric("Model*", bytes: memory?.modelBytes)
+					}
+				}
+
+				Text("* Known process footprints are a lower-bound estimate. Shared WebKit processes are shown for context and are not exclusive to this tab.")
+					.font(.system(size: 9))
+					.foregroundStyle(.tertiary)
+					.lineLimit(2)
 			}
 			.padding(12)
 			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -810,16 +822,32 @@ private struct TabRowContextMenu: View {
 					return
 				}
 
-				await controller.refreshPreviewSnapshot()
+				// The switcher and navigation lifecycle already retain a page
+				// snapshot. Showing the hover card must not force a new WebKit
+				// capture every time the pointer crosses a tab row.
+				if !controller.hasCurrentPreviewSnapshot {
+					await controller.refreshPreviewSnapshot()
+				}
 				while !Task.isCancelled {
-					memory = controller.tabProcessMemorySnapshot()
+					memory = await controller.tabProcessMemorySnapshot()
 					hasSampledMemory = true
 					do {
-						try await Task.sleep(for: .seconds(1))
+						try await Task.sleep(for: .seconds(2))
 					} catch {
 						return
 					}
 				}
+			}
+		}
+
+		private func memoryMetric(_ label: String, bytes: UInt64?) -> some View {
+			VStack(alignment: .leading, spacing: 2) {
+				Text(label)
+					.font(.system(size: 9))
+					.foregroundStyle(.tertiary)
+				Text(bytes.map(Self.formatBytes) ?? "—")
+					.font(.caption2.monospacedDigit())
+					.lineLimit(1)
 			}
 		}
 

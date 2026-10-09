@@ -40,7 +40,12 @@
 					group.addTask { @MainActor in
 						try? await Task.sleep(for: .milliseconds(Int.random(in: 0 ... 40)))
 						guard !Task.isCancelled else { return }
-						await controller.refreshPreviewSnapshot()
+						// Most tabs already have a retained navigation/sidebar
+						// snapshot. Opening the switcher must not queue a burst
+						// of redundant WebKit captures on every candidate.
+						if !controller.hasCurrentPreviewSnapshot {
+							await controller.refreshPreviewSnapshot()
+						}
 					}
 				}
 			}
@@ -61,8 +66,13 @@
 						.frame(maxWidth: .infinity, maxHeight: .infinity)
 					}
 				}
-				.task(id: switcher.candidateIDs) {
-					guard !switcher.candidateIDs.isEmpty else { return }
+				// Quick Control-Tab releases never display the switcher. The old
+				// candidateIDs task still captured WebKit screenshots during
+				// those interactions, even though no preview could appear.
+				// Fetch snapshots only once the 200 ms display delay elapses,
+				// and refresh only when the actually visible candidate set changes.
+				.task(id: switcher.isPreviewVisible ? visibleCandidateIDs(fitting: geometry.size.width) : []) {
+					guard switcher.isPreviewVisible, !Task.isCancelled else { return }
 					await refreshVisibleCandidates(fitting: geometry.size.width)
 				}
 			}

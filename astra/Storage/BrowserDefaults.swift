@@ -35,6 +35,7 @@ extension Defaults.Keys {
 	static let webInspectorEnabled = Key<Bool>("webInspectorEnabled", default: false)
 	static let developerModeEnabled = Key<Bool>("developerModeEnabled", default: false)
 	static let usageLimitsProvider = Key<BrowserUsageLimitsProvider>("usageLimitsProvider", default: .none)
+	static let automaticHibernationEnabled = Key<Bool>("automaticHibernationEnabled", default: true)
 
 	static let sidebarShown = Key<Bool>(
 		"sidebarShown",

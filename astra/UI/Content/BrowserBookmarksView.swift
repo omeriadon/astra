@@ -16,36 +16,15 @@ struct BrowserBookmarksView: View {
 	@Default(.aiBookmarkTitles) private var aiTitles
 	@State private var cleanupRequested = false
 	@State private var cleanupError: String?
-
-	private var visibleBookmarks: [Bookmark] {
-		browser.bookmarks
-			.filter { searchText.isEmpty || [$0.name, $0.url.absoluteString, $0.folder].contains { $0.localizedCaseInsensitiveContains(searchText) } }
-			.sorted {
-				if $0.folder != $1.folder {
-					return $0.folder.localizedStandardCompare($1.folder) == .orderedAscending
-				}
-				if $0.order != $1.order {
-					return $0.order < $1.order
-				}
-				return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-			}
-	}
-
-	private var visibleReadingList: [ReadingListItem] {
-		browser.readingList
-			.filter { searchText.isEmpty || [$0.title, $0.url.absoluteString].contains { $0.localizedCaseInsensitiveContains(searchText) } }
-			.sorted {
-				$0.addedAt == $1.addedAt
-					? $0.id.uuidString < $1.id.uuidString
-					: $0.addedAt > $1.addedAt
-			}
-	}
+	@State private var libraryProjection = BrowserLibraryProjection.empty
+	@State private var libraryTask: Task<Void, Never>?
+	@State private var libraryRevision = 0
 
 	var body: some View {
-		let bookmarkGroups = Dictionary(grouping: visibleBookmarks, by: \.folder)
+		let bookmarkGroups = libraryProjection.bookmarkGroups
 		let bookmarkFolders = Set(Array(bookmarkGroups.keys) + emptyFolders.filter { searchText.isEmpty || $0.localizedCaseInsensitiveContains(searchText) }).sorted()
 		let bookmarkCount = bookmarkGroups.values.reduce(0) { $0 + $1.count }
-		let readingItems = visibleReadingList
+		let readingItems = libraryProjection.readingItems
 		List {
 			if showingReadingList {
 				Section("Reading List") {
@@ -129,6 +108,10 @@ struct BrowserBookmarksView: View {
 			.padding(.horizontal, 24)
 			.padding(.vertical, 14)
 		}
+		.onAppear { updateLibraryProjection() }
+		.onChange(of: browser.libraryChangeRevision) { _, _ in updateLibraryProjection() }
+		.onChange(of: searchText) { _, _ in updateLibraryProjection() }
+		.onDisappear { libraryTask?.cancel() }
 		.sheet(item: $editingBookmark) { bookmark in
 			BookmarkEditor(bookmark: bookmark) { name, folder, favorite in
 				browser.updateBookmark(bookmark.id, name: name, folder: folder, isFavorite: favorite, order: bookmark.order)
@@ -187,6 +170,38 @@ struct BrowserBookmarksView: View {
 			} else if !showingReadingList, bookmarkCount == 0, bookmarkFolders.isEmpty {
 				ContentUnavailableView(searchText.isEmpty ? "No Bookmarks" : "No Search Results", systemImage: searchText.isEmpty ? "bookmark" : "magnifyingglass")
 			}
+		}
+	}
+
+	private func updateLibraryProjection() {
+		libraryRevision &+= 1
+		let revision = libraryRevision
+		let query = searchText
+		libraryTask?.cancel()
+		libraryTask = Task { @MainActor in
+			// Search typing should not queue multiple full-library scans.
+			if !query.isEmpty {
+				do {
+					try await Task.sleep(for: .milliseconds(100))
+				} catch {
+					return
+				}
+			}
+			guard !Task.isCancelled, revision == libraryRevision else { return }
+			// Capture the COW arrays only after search debouncing. Rapid typing
+			// should not pin successive library buffers before they are needed.
+			let bookmarks = browser.bookmarks
+			let readingList = browser.readingList
+			let worker = Task.detached(priority: .userInitiated) {
+				BrowserLibraryProjection.build(bookmarks: bookmarks, readingList: readingList, query: query)
+			}
+			let result = await withTaskCancellationHandler {
+				await worker.value
+			} onCancel: {
+				worker.cancel()
+			}
+			guard !Task.isCancelled, revision == libraryRevision, let result else { return }
+			libraryProjection = result
 		}
 	}
 

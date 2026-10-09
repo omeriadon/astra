@@ -22,33 +22,93 @@ import WebKit
 		let window: NSWindow
 	}
 
-	struct BrowserTabProcessMemorySnapshot: Equatable, Sendable {
-		let webContentBytes: UInt64?
-		let graphicsBytes: UInt64?
-		let networkBytes: UInt64?
-		let modelBytes: UInt64?
-
-		var relatedProcessBytes: UInt64? {
-			let values = [webContentBytes, graphicsBytes, networkBytes, modelBytes].compactMap(\.self)
-			return values.isEmpty ? nil : values.reduce(0, +)
-		}
-
-		var hasSharedProcessMemory: Bool {
-			graphicsBytes != nil || networkBytes != nil || modelBytes != nil
-		}
-	}
 #endif
 
 @MainActor
 @Observable
 final class BrowserController: NSObject, Identifiable {
 	#if os(macOS)
+		static func logReclamation(for before: BrowserTabProcessMemorySnapshot) async -> BrowserMemoryReclamationSnapshot {
+			try? await Task.sleep(for: .seconds(2))
+			let sampled = await BrowserTabProcessMemorySnapshot.resample(before.processes)
+			func after(_ process: BrowserTabProcessMemorySnapshot.Process?) -> BrowserTabProcessMemorySnapshot.Process? {
+				guard let process else { return nil }
+				return sampled[process.identity]
+			}
+			let afterSnapshot: BrowserTabProcessMemorySnapshot? = {
+				let webContent = after(before.webContent)
+				let graphics = after(before.graphics)
+				let network = after(before.network)
+				let model = after(before.model)
+				guard webContent != nil || graphics != nil || network != nil || model != nil else { return nil }
+				return BrowserTabProcessMemorySnapshot(webContent: webContent, graphics: graphics, network: network, model: model)
+			}()
+			let result = BrowserMemoryReclamationSnapshot(before: before, after: afterSnapshot)
+			BrowserLog.info(.diagnostics, "webkit.memory.reclamation", metadata: [
+				"before_bytes": result.beforeObservedBytes.map(String.init) ?? "unavailable",
+				"after_bytes": result.afterObservedBytes.map(String.init) ?? "unavailable",
+				"identity_changed": String(result.processIdentityChanged),
+				"unavailable_processes": String(result.unavailableProcessCount),
+			])
+			return result
+		}
+
+		static func tabProcessMemorySnapshots(for controllers: [BrowserController]) async -> [UUID: BrowserTabProcessMemorySnapshot] {
+			struct Request {
+				let controller: BrowserController
+				let webView: WKWebView
+				let generation: Int
+				let webContentPID: pid_t?
+				let graphicsPID: pid_t?
+				let networkPID: pid_t?
+				let modelPID: pid_t?
+			}
+
+			let requests = controllers.compactMap { controller -> Request? in
+				guard let webView = controller.createdWebView, controller.owns(webView) else { return nil }
+				return Request(
+					controller: controller,
+					webView: webView,
+					generation: controller.navigationGeneration,
+					webContentPID: privateProcessIdentifier("_webProcessIdentifier", on: webView),
+					graphicsPID: privateProcessIdentifier("_gpuProcessIdentifier", on: webView),
+					networkPID: privateProcessIdentifier("_networkProcessIdentifier", on: webView.configuration.websiteDataStore),
+					modelPID: privateProcessIdentifier("_modelProcessIdentifier", on: webView)
+				)
+			}
+			let processIDs = Set(requests.flatMap { [$0.webContentPID, $0.graphicsPID, $0.networkPID, $0.modelPID].compactMap(\.self) })
+			guard !processIDs.isEmpty else { return [:] }
+			let sampled = await Task.detached(priority: .utility) {
+				Self.sampleProcessMemory(for: Array(processIDs))
+			}.value
+			var result: [UUID: BrowserTabProcessMemorySnapshot] = [:]
+			for request in requests {
+				guard request.controller.owns(request.webView), request.generation == request.controller.navigationGeneration,
+				      privateProcessIdentifier("_webProcessIdentifier", on: request.webView) == request.webContentPID,
+				      privateProcessIdentifier("_gpuProcessIdentifier", on: request.webView) == request.graphicsPID,
+				      privateProcessIdentifier("_networkProcessIdentifier", on: request.webView.configuration.websiteDataStore) == request.networkPID,
+				      privateProcessIdentifier("_modelProcessIdentifier", on: request.webView) == request.modelPID
+				else { continue }
+				let snapshot = BrowserTabProcessMemorySnapshot(
+					webContent: request.webContentPID.flatMap { sampled[$0] },
+					graphics: request.graphicsPID.flatMap { sampled[$0] },
+					network: request.networkPID.flatMap { sampled[$0] },
+					model: request.modelPID.flatMap { sampled[$0] }
+				)
+				guard snapshot.knownProcessBytes != nil else { continue }
+				result[request.controller.id] = snapshot
+			}
+			return result
+		}
+
 		static var addressPromptOwner: ((BrowserController, WKWebView, Int) -> BrowserAddressPromptOwner?)?
 	#endif
 	let id = UUID()
 	let session: BrowserWebSession
 	private let suppliedConfiguration: WKWebViewConfiguration?
 	private var pendingInteractionState: Data?
+	@ObservationIgnored
+	private var pendingEncryptedInteractionState: (data: Data, url: URL)?
 	@ObservationIgnored
 	private var securityScopedFile: URL?
 	@ObservationIgnored
@@ -101,6 +161,26 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var hoveredLinkShiftPressed = false
 	private(set) var aiPreviewDismissal = 0
 	@ObservationIgnored var aiLinkPreviewCache: [URL: (summary: BrowserLinkSummaryFeature.Summary, page: BrowserAIPageText)] = [:]
+	@ObservationIgnored private var aiLinkPreviewCacheOrder: [URL] = []
+
+	/// Page text can be large. Keep a small FIFO cache rather than allowing
+	/// previews of many links on one site to retain unbounded page snapshots.
+	func cacheAILinkPreview(summary: BrowserLinkSummaryFeature.Summary, page: BrowserAIPageText, for url: URL) {
+		if aiLinkPreviewCache[url] == nil {
+			if aiLinkPreviewCacheOrder.count >= 12 {
+				let oldest = aiLinkPreviewCacheOrder.removeFirst()
+				aiLinkPreviewCache.removeValue(forKey: oldest)
+			}
+			aiLinkPreviewCacheOrder.append(url)
+		}
+		aiLinkPreviewCache[url] = (summary, page)
+	}
+
+	private func clearAILinkPreviewCache() {
+		aiLinkPreviewCache.removeAll()
+		aiLinkPreviewCacheOrder.removeAll()
+	}
+
 	private(set) var isReaderAvailable = false
 	private(set) var readerHTML: String?
 	private(set) var isPreparingReader = false
@@ -134,6 +214,9 @@ final class BrowserController: NSObject, Identifiable {
 	var promptOwnership: ((WKWebView) -> Bool)?
 	@ObservationIgnored
 	private var isOpeningExternalApplication = false
+	@ObservationIgnored
+	private var pendingLifecycleOperations = 0
+	private let livePopupControllers = NSHashTable<BrowserController>.weakObjects()
 	@ObservationIgnored
 	// ponytail: controller-wide two-second throttle; per-origin limits if abuse becomes measurable.
 	private var lastExternalApplicationRequestTime: TimeInterval?
@@ -176,6 +259,47 @@ final class BrowserController: NSObject, Identifiable {
 					&& createdWebView?.microphoneCaptureState == WKMediaCaptureState.none))
 	}
 
+	/// Automatic hibernation must not detach a page that still has an operation
+	/// whose completion handler or prompt can arrive after the view is detached.
+	var canAutomaticallyHibernate: Bool {
+		guard !isAuthenticationSessionBrowser,
+		      suppliedConfiguration == nil,
+		      !isOpeningExternalApplication,
+		      !isDownloadHandoff,
+		      pendingLifecycleOperations == 0,
+		      !hasLivePopupDependency,
+		      !isPreparingReader,
+		      pendingRequest == nil,
+		      !awaitsNavigationCommit,
+		      canHibernate
+		else { return false }
+		guard createdWebView == nil || displayCaptureState == false else { return false }
+		#if os(macOS)
+			guard createdWebView?.window?.attachedSheet == nil else { return false }
+		#endif
+		return true
+	}
+
+	private var hasLivePopupDependency: Bool {
+		livePopupControllers.allObjects.contains { $0.isWebViewReady && $0.webViewIfLoaded != nil }
+	}
+
+	func beginLifecycleOperation() {
+		pendingLifecycleOperations += 1
+	}
+
+	func endLifecycleOperation() {
+		pendingLifecycleOperations = max(0, pendingLifecycleOperations - 1)
+	}
+
+	private var displayCaptureState: Bool? {
+		guard let webView = createdWebView,
+		      webView.responds(to: NSSelectorFromString("_displayCaptureState"))
+		else { return createdWebView == nil ? false : nil }
+		guard let value = webView.value(forKey: "_displayCaptureState") as? NSNumber else { return nil }
+		return value.intValue != 0
+	}
+
 	var requiresMediaTeardownConfirmation: Bool {
 		BrowserPictureInPicturePolicy.preventsDestructiveTeardown(
 			isActive: isPictureInPictureActive,
@@ -183,6 +307,20 @@ final class BrowserController: NSObject, Identifiable {
 			isPlayingMedia: isPlayingMedia || hasActiveVideoPlayback,
 			hasPausedMedia: hasPausedMedia
 		)
+	}
+
+	/// An inactive page stays attached while WebKit reports activity that a
+	/// detached host could interrupt. Ordinary retained pages can be detached
+	/// by BrowserWebView without rebuilding their WebView.
+	var shouldKeepWebViewAttached: Bool {
+		requiresMediaTeardownConfirmation
+			|| isCapturing
+			|| isLoading
+			|| hasUnsavedChanges
+			|| pendingLifecycleOperations > 0
+			|| hasLivePopupDependency
+			|| isOpeningExternalApplication
+			|| displayCaptureState == true
 	}
 
 	private static var cachedSafariUserAgentSuffix: String?
@@ -315,7 +453,7 @@ final class BrowserController: NSObject, Identifiable {
 		const check = () => {
 			scheduled = false;
 			lastCheck = performance.now();
-			if (window.scrollY < 0 || innerWidth <= 0) return;
+			if (document.hidden || window.scrollY < 0 || innerWidth <= 0) return;
 
 			// This probe does multiple hit-tests and layout/style reads. Top-edge
 			// occupancy is browser chrome state, not animation state, so cap it
@@ -353,7 +491,7 @@ final class BrowserController: NSObject, Identifiable {
 		};
 
 		const schedule = (immediate = false) => {
-			if (scheduled) return;
+			if (document.hidden || scheduled) return;
 			scheduled = true;
 			const delay = immediate ? 0 : Math.max(0, minimumInterval - (performance.now() - lastCheck));
 			setTimeout(() => requestAnimationFrame(check), delay);
@@ -369,13 +507,20 @@ final class BrowserController: NSObject, Identifiable {
 
 		addEventListener('scroll', () => schedule(), { passive: true });
 		addEventListener('resize', () => schedule(true));
-		new MutationObserver(scheduleMutation).observe(document.documentElement, {
-			subtree: true,
-			childList: true,
-			attributes: true,
-			attributeFilter: ['class', 'style', 'hidden', 'id', 'role']
-		});
-		schedule(true);
+		const observer = new MutationObserver(scheduleMutation);
+		const updateVisibility = () => {
+			observer.disconnect();
+			if (document.hidden) return;
+			observer.observe(document.documentElement, {
+				subtree: true,
+				childList: true,
+				attributes: true,
+				attributeFilter: ['class', 'style', 'hidden', 'id', 'role']
+			});
+			schedule(true);
+		};
+		document.addEventListener('visibilitychange', updateVisibility);
+		updateVisibility();
 	})();
 	"""
 
@@ -456,7 +601,7 @@ final class BrowserController: NSObject, Identifiable {
 	var url: URL? {
 		didSet {
 			if oldValue.flatMap(BrowserSitePermissions.origin(for:)) != url.flatMap(BrowserSitePermissions.origin(for:)) {
-				aiLinkPreviewCache.removeAll()
+				clearAILinkPreviewCache()
 			}
 		}
 	}
@@ -486,6 +631,11 @@ final class BrowserController: NSObject, Identifiable {
 	private var pageURLBeforeDownload: URL?
 	#if os(macOS)
 		private(set) var previewSnapshot: NSImage?
+		@ObservationIgnored private var previewSnapshotGeneration: Int?
+		var hasCurrentPreviewSnapshot: Bool {
+			previewSnapshot != nil && previewSnapshotGeneration == navigationGeneration
+		}
+
 		private(set) var windowMirrorSnapshot: NSImage?
 	#endif
 
@@ -591,7 +741,8 @@ final class BrowserController: NSObject, Identifiable {
 		self.fileAccessBookmark = fileAccessBookmark
 		historyVisitPolicy = BrowserVisitPolicy(suppressInitialVisit: suppressInitialHistoryVisit)
 		if !session.isPrivate, let initialURL, let restorationState {
-			pendingInteractionState = BrowserRestorationStore.open(restorationState, for: initialURL)
+			// Unopened restored tabs shouldn't decrypt WebKit history at launch.
+			pendingEncryptedInteractionState = (restorationState, initialURL)
 		}
 		suppliedConfiguration = configuration
 		liveHistoryPrefix = Array(restoredHistory.entries.prefix(restoredHistory.index))
@@ -600,33 +751,6 @@ final class BrowserController: NSObject, Identifiable {
 		self.scrollPosition = scrollPosition
 		restoredScrollPosition = scrollPosition == .zero ? nil : scrollPosition
 		super.init()
-		_ = BrowserNavigationConnectivity.shared
-		connectivityObserver = NotificationCenter.default.addObserver(
-			forName: BrowserNavigationConnectivity.didChangeNotification,
-			object: nil,
-			queue: .main
-		) { [weak self] notification in
-			guard notification.object as? Bool == true else { return }
-			Task { @MainActor [weak self] in
-				self?.retryOfflineGETAfterConnectivityReturns()
-			}
-		}
-		#if os(macOS)
-			observedWebInspectorEnabled = Defaults[.webInspectorEnabled]
-			webInspectorObserver = NotificationCenter.default.addObserver(
-				forName: UserDefaults.didChangeNotification,
-				object: UserDefaults.standard,
-				queue: .main
-			) { [weak self] _ in
-				MainActor.assumeIsolated {
-					guard let self else { return }
-					let enabled = Defaults[.webInspectorEnabled]
-					guard enabled != self.observedWebInspectorEnabled else { return }
-					self.observedWebInspectorEnabled = enabled
-					self.updateWebInspectorAvailability(enabled)
-				}
-			}
-		#endif
 		updateThemeColor(url == nil ? .black : .white)
 
 		if let url {
@@ -637,6 +761,7 @@ final class BrowserController: NSObject, Identifiable {
 						securityScopedFile = resolved.startAccessingSecurityScopedResource() ? resolved : nil
 						pendingLocalFile = resolved
 						if resolved != url {
+							pendingEncryptedInteractionState = nil
 							pendingInteractionState = nil
 							self.url = resolved
 							historyManager = BrowserHistory(initialURL: resolved)
@@ -750,6 +875,12 @@ final class BrowserController: NSObject, Identifiable {
 		document.addEventListener('input', event => {
 			if (event.isTrusted && (event.target.matches('input:not([type="search"]), textarea, select') || event.target.closest('[contenteditable]'))) report('dirty');
 		}, true);
+		document.addEventListener('drop', event => {
+			if (event.isTrusted && event.dataTransfer?.files?.length) report('dirty');
+		}, true);
+		document.addEventListener('pointerdown', event => {
+			if (event.isTrusted && event.target.closest?.('canvas')) report('dirty');
+		}, true);
 		document.addEventListener('submit', () => report('submitted'), true);
 		for (const event of ['playing', 'pause', 'ended', 'emptied', 'volumechange', 'loadeddata']) {
 			document.addEventListener(event, () => report('media-changed'), true);
@@ -782,13 +913,30 @@ final class BrowserController: NSObject, Identifiable {
 		mediaObservationTask = Task { @MainActor [weak self] in
 			while !Task.isCancelled {
 				guard self?.createdWebView != nil else { return }
-				await self?.refreshActivity()
+				let hasActivity = self?.isPlayingMedia == true
+					|| self?.isCapturing == true
+					|| self?.isPictureInPictureActive == true
+					|| self?.isEnteringPictureInPicture == true
+				let isDetached = self?.createdWebView?.window == nil
+				#if os(macOS)
+					let isBackground = isDetached || self?.previewSnapshotRefreshSuspended == true
+				#else
+					let isBackground = isDetached
+				#endif
+				// Do not wake an idle background page merely to rediscover inactivity.
+				if !isBackground || hasActivity {
+					await self?.refreshActivity()
+				}
 				guard !Task.isCancelled else { return }
+				let fallbackInterval: TimeInterval = if hasActivity {
+					5
+				} else if isBackground {
+					90
+				} else {
+					20
+				}
 				do {
-					// Media play/pause/metadata events trigger immediate refreshes through
-					// pageActivityChanged. This slower fallback is only for state WebKit
-					// does not expose as a DOM event (notably capture/metadata edge cases).
-					try await Task.sleep(for: .seconds(5))
+					try await Task.sleep(for: .seconds(fallbackInterval))
 				} catch {
 					return
 				}
@@ -796,8 +944,9 @@ final class BrowserController: NSObject, Identifiable {
 		}
 	}
 
-	func refreshActivity() async {
-		guard !isInvalidated, !isRefreshingActivity, let webView = createdWebView else { return }
+	@discardableResult
+	func refreshActivity() async -> Bool {
+		guard !isInvalidated, !isRefreshingActivity, let webView = createdWebView else { return false }
 		isRefreshingActivity = true
 		defer { isRefreshingActivity = false }
 		let documentID = navigationIdentifier
@@ -815,22 +964,67 @@ final class BrowserController: NSObject, Identifiable {
 		"""
 		let value = try? await webView.evaluateJavaScript(script)
 		guard owns(webView), documentID == navigationIdentifier,
-		      let state = value as? [String: Any] else { return }
-		isPlayingMedia = state["playing"] as? Bool == true
-		hasActiveVideoPlayback = state["videoPlaying"] as? Bool == true
-		hasPausedMedia = state["paused"] as? Bool == true
+		      let state = value as? [String: Any],
+		      let videoPlaying = state["videoPlaying"] as? Bool,
+		      let playing = state["playing"] as? Bool,
+		      let paused = state["paused"] as? Bool,
+		      let title = state["title"] as? String,
+		      let artist = state["artist"] as? String
+		else { return false }
+		let playbackState = await webView.requestMediaPlaybackState()
+		guard owns(webView), documentID == navigationIdentifier else { return false }
+		isPlayingMedia = playing || playbackState == .playing
+		hasActiveVideoPlayback = videoPlaying
+		hasPausedMedia = paused || playbackState == .paused || playbackState == .suspended
 		cameraCaptureState = webView.cameraCaptureState
 		microphoneCaptureState = webView.microphoneCaptureState
 		mediaCaptureStateDocumentID = committedSecurityNavigationID
 		if isPlayingMedia || !hasPausedMedia {
 			pausedFromBrowser = false
 		}
-		mediaTitle = (state["title"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
-		mediaArtist = (state["artist"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
-		guard owns(webView), documentID == navigationIdentifier else { return }
+		mediaTitle = title.isEmpty ? nil : String(title.prefix(500))
+		mediaArtist = artist.isEmpty ? nil : String(artist.prefix(500))
+		guard owns(webView), documentID == navigationIdentifier else { return false }
 		// pictureInPictureScript reports eligibility/active changes directly on
 		// video lifecycle events; do not run a second DOM query on every poll.
-		webView.configuration.preferences.inactiveSchedulingPolicy = isPictureInPictureActive || isEnteringPictureInPicture || isPlayingMedia || hasActiveVideoPlayback ? .none : .throttle
+		updateInactiveSchedulingPolicy()
+		return true
+	}
+
+	func refreshHibernationSafety() async -> Bool {
+		guard await refreshActivity(), canAutomaticallyHibernate,
+		      let webView = createdWebView else { return false }
+		let documentID = navigationIdentifier
+		let script = """
+		(() => {
+			return [...document.querySelectorAll('input:not([type="hidden"]), textarea, select')].some(element => {
+				if (element.tagName === 'SELECT') {
+					const options = [...element.options];
+					if (!element.multiple && !options.some(option => option.defaultSelected)) {
+						const initialIndex = element.size > 1 ? -1 : options.findIndex(option => !option.disabled);
+						return element.selectedIndex !== initialIndex;
+					}
+					return options.some(option => option.selected !== option.defaultSelected);
+				}
+				if (element.type === 'checkbox' || element.type === 'radio') return element.checked !== element.defaultChecked;
+				return element.value !== element.defaultValue;
+			});
+		})()
+		"""
+		let value = try? await webView.evaluateJavaScript(script, in: nil, in: .defaultClient)
+		guard owns(webView), documentID == navigationIdentifier,
+		      value as? Bool == false else { return false }
+		return canAutomaticallyHibernate
+	}
+
+	private func updateInactiveSchedulingPolicy() {
+		guard let webView = createdWebView else { return }
+		let requiresContinuousScheduling = isPictureInPictureActive
+			|| isEnteringPictureInPicture
+			|| isPlayingMedia
+			|| hasActiveVideoPlayback
+		// Suspension could interrupt unobservable page or extension operations.
+		webView.configuration.preferences.inactiveSchedulingPolicy = requiresContinuousScheduling ? .none : .throttle
 	}
 
 	private func refreshPictureInPictureEligibility(in webView: WKWebView, documentID: Int) async {
@@ -932,7 +1126,7 @@ final class BrowserController: NSObject, Identifiable {
 		if active {
 			pictureInPictureControlUnavailable = false
 		}
-		createdWebView?.configuration.preferences.inactiveSchedulingPolicy = active ? .none : .throttle
+		updateInactiveSchedulingPolicy()
 	}
 
 	private static let findScript = #"""
@@ -1048,6 +1242,7 @@ final class BrowserController: NSObject, Identifiable {
 			pendingWebArchive = nil
 			pendingRequest = nil
 			pendingLocalFile = url
+			pendingEncryptedInteractionState = nil
 			pendingInteractionState = nil
 			currentNavigation = nil
 			_ = webView
@@ -1223,7 +1418,7 @@ final class BrowserController: NSObject, Identifiable {
 	func stopForClose() {
 		BrowserLog.info(.webKit, "controller.stop-for-close", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		guard !isInvalidated else { return }
-		aiLinkPreviewCache.removeAll()
+		clearAILinkPreviewCache()
 		resetReader()
 		clearHoveredLink()
 		isInvalidated = true
@@ -1241,6 +1436,7 @@ final class BrowserController: NSObject, Identifiable {
 		#endif
 		currentRequest = nil
 		failedRequest = nil
+		currentNavigation = nil
 		pendingRequest = nil
 		pendingWebArchive = nil
 		navigationFailure = nil
@@ -1255,6 +1451,8 @@ final class BrowserController: NSObject, Identifiable {
 		releaseUploadAccess()
 		mediaObservationTask?.cancel()
 		mediaObservationTask = nil
+		pendingLifecycleOperations = 0
+		livePopupControllers.removeAllObjects()
 		pictureInPictureControlUnavailable = false
 		faviconTask?.cancel()
 		faviconTask = nil
@@ -1262,6 +1460,7 @@ final class BrowserController: NSObject, Identifiable {
 			previewSnapshotRefreshTask?.cancel()
 			previewSnapshotRefreshTask = nil
 			previewSnapshot = nil
+			previewSnapshotGeneration = nil
 			windowMirrorSnapshot = nil
 		#endif
 		createdWebView?.navigationDelegate = nil
@@ -1279,6 +1478,15 @@ final class BrowserController: NSObject, Identifiable {
 			createdWebView?.configuration.userContentController.removeScriptMessageHandler(forName: name, contentWorld: .defaultClient)
 		}
 		createdWebView?.configuration.userContentController.removeAllUserScripts()
+		createdWebView?.removeFromSuperview()
+		createdWebView = nil
+		isWebViewReady = false
+		isRefreshingActivity = false
+		#if os(macOS)
+			screenshotReaderWebView = nil
+			isRefreshingPreviewSnapshot = false
+		#endif
+		appliedContentRuleList = nil
 		navigationDidChange = nil
 		zoomDidChange = nil
 		historyVisitDidCommit = nil
@@ -1310,8 +1518,12 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	var encryptedInteractionState: Data? {
+		encryptedInteractionState(from: createdWebView?.interactionState)
+	}
+
+	func encryptedInteractionState(from state: Any?) -> Data? {
 		guard !session.isPrivate, canRecordVisit, let committedURL,
-		      let data = createdWebView?.interactionState as? Data else { return nil }
+		      let data = state as? Data else { return nil }
 		return BrowserRestorationStore.seal(data, for: BrowserAddress.withoutCredentials(committedURL))
 	}
 
@@ -1335,12 +1547,47 @@ final class BrowserController: NSObject, Identifiable {
 		}
 	#endif
 
+	private func startWebViewEventObservations() {
+		guard connectivityObserver == nil else { return }
+		// Restored-but-unopened tabs don't need network notifications or
+		// Web Inspector defaults observation until a WKWebView exists.
+		_ = BrowserNavigationConnectivity.shared
+		connectivityObserver = NotificationCenter.default.addObserver(
+			forName: BrowserNavigationConnectivity.didChangeNotification,
+			object: nil,
+			queue: .main
+		) { [weak self] notification in
+			guard notification.object as? Bool == true else { return }
+			Task { @MainActor [weak self] in
+				self?.retryOfflineGETAfterConnectivityReturns()
+			}
+		}
+		#if os(macOS)
+			observedWebInspectorEnabled = Defaults[.webInspectorEnabled]
+			webInspectorObserver = NotificationCenter.default.addObserver(
+				forName: UserDefaults.didChangeNotification,
+				object: UserDefaults.standard,
+				queue: .main
+			) { [weak self] _ in
+				MainActor.assumeIsolated {
+					guard let self else { return }
+					let enabled = Defaults[.webInspectorEnabled]
+					guard enabled != self.observedWebInspectorEnabled else { return }
+					self.observedWebInspectorEnabled = enabled
+					self.updateWebInspectorAvailability(enabled)
+				}
+			}
+		#endif
+	}
+
 	private func makeWebView() -> WKWebView {
 		let webViewLogStarted = BrowserLog.clock()
 		BrowserLog.info(.webKit, "webview.create.begin", metadata: ["controller": BrowserLog.id(id), "private": String(session.isPrivate)])
 		var webViewStageStarted = BrowserLog.clock()
 		let configuration = suppliedConfiguration ?? WKWebViewConfiguration()
 		if suppliedConfiguration != nil {
+			// Popup configurations inherit the opener's settings; give this page its own
+			// controller before installing handlers that stopForClose will remove.
 			configuration.userContentController = WKUserContentController()
 		}
 		configuration.websiteDataStore = session.dataStore
@@ -1374,6 +1621,7 @@ final class BrowserController: NSObject, Identifiable {
 			BrowserDesktopCommands.configureWebInspector(webView, enabled: Defaults[.webInspectorEnabled])
 		#endif
 		createdWebView = webView
+		startWebViewEventObservations()
 		#if os(macOS)
 			startPreviewSnapshotRefresh()
 		#endif
@@ -1629,6 +1877,7 @@ final class BrowserController: NSObject, Identifiable {
 		currentRequest = nil
 		pendingRequest = nil
 		pendingLocalFile = nil
+		pendingEncryptedInteractionState = nil
 		pendingInteractionState = nil
 		failedRequest = nil
 		retriedAfterConnectivityReturn = true
@@ -1664,7 +1913,7 @@ final class BrowserController: NSObject, Identifiable {
 	func goBack() {
 		BrowserLog.debug(.navigation, "navigation.back", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		guard let webView = createdWebView, webView.canGoBack else { return }
-		aiLinkPreviewCache.removeAll()
+		clearAILinkPreviewCache()
 		aiPreviewDismissal += 1
 		invalidateFindResults()
 		historyVisitPolicy.userInitiatedNavigation()
@@ -1676,7 +1925,7 @@ final class BrowserController: NSObject, Identifiable {
 	func goForward() {
 		BrowserLog.debug(.navigation, "navigation.forward", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		guard let webView = createdWebView, webView.canGoForward else { return }
-		aiLinkPreviewCache.removeAll()
+		clearAILinkPreviewCache()
 		aiPreviewDismissal += 1
 		invalidateFindResults()
 		historyVisitPolicy.userInitiatedNavigation()
@@ -1687,7 +1936,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	func go(toHistoryIndex index: Int) {
 		guard history.indices.contains(index), index != historyIndex else { return }
-		aiLinkPreviewCache.removeAll()
+		clearAILinkPreviewCache()
 		aiPreviewDismissal += 1
 		historyVisitPolicy.userInitiatedNavigation()
 		if let webView = createdWebView,
@@ -1719,7 +1968,7 @@ final class BrowserController: NSObject, Identifiable {
 				load(pendingRequest)
 				return
 			}
-			if pendingWebArchive != nil || pendingLocalFile != nil || pendingInteractionState != nil {
+			if pendingWebArchive != nil || pendingLocalFile != nil || pendingInteractionState != nil || pendingEncryptedInteractionState != nil {
 				loadPendingRequest()
 				return
 			}
@@ -1798,6 +2047,7 @@ final class BrowserController: NSObject, Identifiable {
 	#if os(macOS)
 		func discardPreviewSnapshot() {
 			previewSnapshot = nil
+			previewSnapshotGeneration = nil
 			windowMirrorSnapshot = nil
 		}
 
@@ -1817,10 +2067,12 @@ final class BrowserController: NSObject, Identifiable {
 			guard let image = await takeSnapshot() else { return }
 			guard owns(webView), generation == navigationGeneration else { return }
 			previewSnapshot = image
+			previewSnapshotGeneration = generation
 		}
 
-		func tabProcessMemorySnapshot() -> BrowserTabProcessMemorySnapshot? {
+		func tabProcessMemorySnapshot() async -> BrowserTabProcessMemorySnapshot? {
 			guard let webView = createdWebView, owns(webView) else { return nil }
+			let generation = navigationGeneration
 
 			let webContentPID = Self.privateProcessIdentifier("_webProcessIdentifier", on: webView)
 			let graphicsPID = Self.privateProcessIdentifier("_gpuProcessIdentifier", on: webView)
@@ -1830,13 +2082,24 @@ final class BrowserController: NSObject, Identifiable {
 				on: webView.configuration.websiteDataStore
 			)
 
+			let descriptors = [webContentPID, graphicsPID, networkPID, modelPID].compactMap(\.self)
+			guard !descriptors.isEmpty else { return nil }
+			let sampled = await Task.detached(priority: .utility) {
+				Self.sampleProcessMemory(for: descriptors)
+			}.value
+			guard owns(webView), generation == navigationGeneration,
+			      Self.privateProcessIdentifier("_webProcessIdentifier", on: webView) == webContentPID,
+			      Self.privateProcessIdentifier("_gpuProcessIdentifier", on: webView) == graphicsPID,
+			      Self.privateProcessIdentifier("_modelProcessIdentifier", on: webView) == modelPID,
+			      Self.privateProcessIdentifier("_networkProcessIdentifier", on: webView.configuration.websiteDataStore) == networkPID
+			else { return nil }
 			let snapshot = BrowserTabProcessMemorySnapshot(
-				webContentBytes: webContentPID.flatMap(Self.physicalFootprint),
-				graphicsBytes: graphicsPID.flatMap(Self.physicalFootprint),
-				networkBytes: networkPID.flatMap(Self.physicalFootprint),
-				modelBytes: modelPID.flatMap(Self.physicalFootprint)
+				webContent: webContentPID.flatMap { sampled[$0] },
+				graphics: graphicsPID.flatMap { sampled[$0] },
+				network: networkPID.flatMap { sampled[$0] },
+				model: modelPID.flatMap { sampled[$0] }
 			)
-			return snapshot.relatedProcessBytes == nil ? nil : snapshot
+			return snapshot.knownProcessBytes == nil ? nil : snapshot
 		}
 
 		private static func privateProcessIdentifier(_ key: String, on object: NSObject) -> pid_t? {
@@ -1848,21 +2111,12 @@ final class BrowserController: NSObject, Identifiable {
 			return processIdentifier > 0 ? processIdentifier : nil
 		}
 
-		private static func physicalFootprint(_ processIdentifier: pid_t) -> UInt64? {
-			var usage = rusage_info_v4()
-			let result = withUnsafeMutablePointer(to: &usage) { usagePointer in
-				var info: rusage_info_t? = UnsafeMutableRawPointer(usagePointer)
-				return withUnsafeMutablePointer(to: &info) { infoPointer in
-					proc_pid_rusage(
-						processIdentifier,
-						Int32(RUSAGE_INFO_V4),
-						infoPointer
-					)
-				}
-			}
-			guard result == 0 else { return nil }
-			return usage.ri_phys_footprint
+		private nonisolated static func sampleProcessMemory(for processIdentifiers: [pid_t]) -> [pid_t: BrowserTabProcessMemorySnapshot.Process] {
+			Dictionary(uniqueKeysWithValues: Set(processIdentifiers).map { pid in
+				(pid, BrowserTabProcessMemorySnapshot.sample(pid))
+			})
 		}
+
 	#endif
 
 	private func updateHistory(reportSameDocumentVisit: Bool = true) {
@@ -1957,11 +2211,20 @@ final class BrowserController: NSObject, Identifiable {
 
 	private func loadPendingRequest() {
 		guard session.contentBlocking.isReadyForNavigation else { return }
+		if let encrypted = pendingEncryptedInteractionState, createdWebView != nil {
+			pendingEncryptedInteractionState = nil
+			let startedAt = BrowserLog.clock()
+			pendingInteractionState = BrowserRestorationStore.open(encrypted.data, for: encrypted.url)
+			BrowserLog.duration(.webKit, "restoration.decrypt", since: startedAt, warnAboveMilliseconds: 30)
+		}
 		if let state = pendingInteractionState, let webView = createdWebView {
 			pendingInteractionState = nil
-			liveHistoryPrefix = []
+			let savedHistory = history
+			let savedIndex = historyIndex
 			webView.interactionState = state
 			if webView.backForwardList.currentItem != nil {
+				let prefixCount = max(0, savedIndex - webView.backForwardList.backList.count)
+				liveHistoryPrefix = Array(savedHistory.prefix(prefixCount))
 				pendingRequest = nil
 				pendingLocalFile = nil
 				updateHistory()
@@ -2064,6 +2327,7 @@ final class BrowserController: NSObject, Identifiable {
 
 		#if os(macOS)
 			previewSnapshot = image
+			previewSnapshotGeneration = generation
 		#endif
 	}
 
@@ -2099,7 +2363,7 @@ extension BrowserController: WKNavigationDelegate {
 			return
 		}
 		if navigationAction.targetFrame?.isMainFrame == true, navigationAction.navigationType == .backForward {
-			aiLinkPreviewCache.removeAll()
+			clearAILinkPreviewCache()
 			aiPreviewDismissal += 1
 		}
 		if navigationAction.targetFrame?.isMainFrame == true,
@@ -2429,6 +2693,10 @@ extension BrowserController: WKNavigationDelegate {
 	func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
 		BrowserLog.info(.navigation, "navigation.did-commit", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(webView.url)])
 		guard owns(webView), navigation === currentNavigation else { return }
+		// The document can change without changing origins (reloads and
+		// same-site links). Preview text from the previous page must not
+		// survive a successful main-frame navigation.
+		clearAILinkPreviewCache()
 		releaseUploadAccess()
 		pictureInPictureControlUnavailable = false
 		committedURL = webView.url
@@ -2833,10 +3101,11 @@ extension BrowserController: WKUIDelegate {
 		inBackground: Bool?
 	) -> WKWebView? {
 		guard let popup = popupRequested?(configuration, source, inBackground) else { return nil }
-		if isAuthenticationSessionBrowser,
-		   let controller = popup.navigationDelegate as? BrowserController
-		{
-			controller.isAuthenticationSessionBrowser = true
+		if let controller = popup.navigationDelegate as? BrowserController {
+			livePopupControllers.add(controller)
+			if isAuthenticationSessionBrowser {
+				controller.isAuthenticationSessionBrowser = true
+			}
 		}
 		return popup
 	}
@@ -2925,20 +3194,25 @@ extension BrowserController: WKUIDelegate {
 				?? origin.url.flatMap(BrowserSitePermissions.origin(for:))
 				?? "This page"
 			isOpeningExternalApplication = true
-			Task { @MainActor in
-				defer { isOpeningExternalApplication = false }
+			Task { @MainActor [weak self, weak webView] in
+				guard let webView, self?.owns(webView) == true else { return }
+				defer { self?.isOpeningExternalApplication = false }
 				let promptWindow: NSWindow
 				let promptOwnerIsCurrent: @MainActor () -> Bool
 				if let explicitOwner {
-					guard ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: explicitOwner) else { return }
+					guard self?.ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: explicitOwner) == true else { return }
 					promptWindow = explicitOwner.window
-					promptOwnerIsCurrent = { [self, webView] in
-						ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: explicitOwner)
+					promptOwnerIsCurrent = { [weak self, weak webView] in
+						guard let self, let webView else { return false }
+						return ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: explicitOwner)
 					}
 				} else {
 					guard let window = webView.window else { return }
 					promptWindow = window
-					promptOwnerIsCurrent = { [self, webView] in ownsPrompt(in: webView, documentID: documentID) }
+					promptOwnerIsCurrent = { [weak self, weak webView] in
+						guard let self, let webView else { return false }
+						return ownsPrompt(in: webView, documentID: documentID)
+					}
 				}
 				let alert = BrowserWebsiteUI.alert(
 					title: "Open \(applicationName)?",
@@ -2948,13 +3222,13 @@ extension BrowserController: WKUIDelegate {
 				let response = await BrowserWebsiteUI.present(alert, in: promptWindow, isCurrent: promptOwnerIsCurrent)
 				guard promptOwnerIsCurrent(),
 				      response == .alertFirstButtonReturn else { return }
-				lastExternalApplicationRequestTime = ProcessInfo.processInfo.systemUptime
+				self?.lastExternalApplicationRequestTime = ProcessInfo.processInfo.systemUptime
 				let configuration = NSWorkspace.OpenConfiguration()
 				configuration.addsToRecentItems = false
 				do {
 					_ = try await NSWorkspace.shared.open([url], withApplicationAt: applicationURL, configuration: configuration)
 				} catch {
-					session.toastManager.show(symbol: "exclamationmark.triangle", message: "\(applicationName) could not open this link")
+					self?.session.toastManager.show(symbol: "exclamationmark.triangle", message: "\(applicationName) could not open this link")
 				}
 			}
 		#elseif os(iOS)

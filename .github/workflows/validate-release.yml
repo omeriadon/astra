@@ -104,6 +104,42 @@ jobs:
           python3 scripts/release/validate_artifact.py --self-test
           python3 checks/website-app-bundle-check.py --self-test
 
+      - name: Check library projections and favicon observer lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 6 \
+            astra/Models/Library/Bookmark.swift \
+            checks/bookmark-projection-check.swift \
+            -o "$RUNNER_TEMP/astra-bookmark-projection-check"
+          "$RUNNER_TEMP/astra-bookmark-projection-check"
+          swiftc -O -swift-version 6 \
+            astra/Models/Library/Bookmark.swift \
+            checks/library-scaling-benchmark.swift \
+            -o "$RUNNER_TEMP/astra-library-scaling-benchmark"
+          "$RUNNER_TEMP/astra-library-scaling-benchmark"
+          node checks/favicon-observer-check.mjs
+          python3 checks/extension-hot-path-check.py
+          python3 checks/window-sync-noop-check.py
+          python3 checks/history-derived-cache-check.py
+          python3 checks/control-tab-observation-check.py
+          python3 checks/checkpoint-privacy-cache-check.py
+          python3 checks/library-observation-check.py
+          python3 checks/webkit-resource-policy-check.py
+          python3 checks/noise-lifecycle-check.py
+          python3 checks/startup-hydration-dependencies-check.py
+          python3 checks/automatic-hibernation-runtime-check.py
+          swiftc -swift-version 6 \
+            astra/Models/Core/BrowserWindowRegistry.swift \
+            checks/window-ownership-check.swift \
+            -o "$RUNNER_TEMP/astra-window-ownership-check"
+          "$RUNNER_TEMP/astra-window-ownership-check"
+          swiftc -swift-version 6 \
+            astra/Models/Tabs/BrowserVisit.swift \
+            checks/history-search-cancellation-check.swift \
+            -o "$RUNNER_TEMP/astra-history-search-check"
+          "$RUNNER_TEMP/astra-history-search-check"
+
       - name: Check Debug build
         shell: bash
         run: |
@@ -117,6 +153,21 @@ jobs:
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
+
+      - name: Check download index persistence ordering
+        run: python3 checks/download-index-persistence-check.py
+
+      - name: Check asynchronous download file publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc \
+            astra/Models/Library/BrowserDownload.swift \
+            astra/Web/Downloads/BrowserDownloadedFile.swift \
+            astra/Web/Downloads/BrowserDownloadFileWorker.swift \
+            checks/download-file-worker-check.swift \
+            -o "$RUNNER_TEMP/astra-download-file-worker-check"
+          "$RUNNER_TEMP/astra-download-file-worker-check"
 
       - name: Check unsigned release archive
         shell: bash
