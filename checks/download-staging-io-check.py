@@ -4,6 +4,7 @@ from pathlib import Path
 manager = Path("astra/Web/Downloads/BrowserDownloadManager.swift").read_text()
 worker = Path("astra/Web/Downloads/BrowserDownloadFileWorker.swift").read_text()
 tests = Path("checks/download-file-worker-check.swift").read_text()
+tests = Path("checks/download-file-worker-check.swift").read_text()
 
 init = manager.split("init(privateDataStore:", 1)[1].split("private func hydrateSelectedDownloadFolderName()", 1)[0]
 assert "try? FileManager.default.createDirectory(at: directory" not in init
