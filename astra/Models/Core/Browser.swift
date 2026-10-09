@@ -23,13 +23,20 @@ final class Browser {
 	private(set) var tabs: [BrowserTab] {
 		didSet {
 			tabLookup = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
+			visibleTabMembershipRevision &+= 1
 		}
 	}
 
 	@ObservationIgnored
 	private var tabLookup: [UUID: BrowserTab] = [:]
 	private(set) var selectedTabID: UUID
-	private(set) var workspace: BrowserWorkspace
+	/// A compact dependency for consumers that only need to know whether
+	/// visible tab membership *might* have changed. Comparing the entire
+	/// array of BrowserTab references in each SwiftUI update is unnecessary.
+	private(set) var visibleTabMembershipRevision = 0
+	private(set) var workspace: BrowserWorkspace {
+		didSet { visibleTabMembershipRevision &+= 1 }
+	}
 	private(set) var spaceSwitchDirection = 1
 	private(set) var recentlyUsedTabIDs: [UUID]
 	private(set) var bookmarks: [Bookmark]
