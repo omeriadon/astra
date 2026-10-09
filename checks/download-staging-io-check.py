@@ -7,8 +7,9 @@ tests = Path("checks/download-file-worker-check.swift").read_text()
 
 init = manager.split("init(privateDataStore:", 1)[1].split("private func hydrateSelectedDownloadFolderName()", 1)[0]
 assert "try? FileManager.default.createDirectory(at: directory" not in init
-assert "downloadHydrationTask = Task.detached(priority: .utility)" in init
-assert "try? FileManager.default.createDirectory(" in init
+hydration = manager.split("private func hydrateItems()", 1)[1].split("private func preserveUnreadableDownloadCache", 1)[0]
+assert "downloadHydrationTask = Task.detached(priority: .utility)" in hydration
+assert "try? FileManager.default.createDirectory(" in hydration
 
 destination = manager.split("func decideDestination", 1)[-1]
 assert "await BrowserDownloadFileWorker.shared.prepareStagingDirectory(stagingDirectory)" in manager
