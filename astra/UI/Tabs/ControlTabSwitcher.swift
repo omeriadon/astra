@@ -81,6 +81,9 @@
 		}
 
 		func tabsDidChange() {
+			// No active switch session: avoid rebuilding tab membership for
+			// every background mutation in every open window.
+			guard !candidateIDs.isEmpty else { return }
 			let validTabIDs = Set(browser.visibleTabs.map(\.id))
 			candidateIDs.removeAll { !validTabIDs.contains($0) }
 			guard !candidateIDs.isEmpty else {
