@@ -165,6 +165,12 @@ final class BrowserTab: Identifiable {
 		controller?.url ?? storedURL
 	}
 
+	/// Scroll journaling needs the saved navigation index without allocating
+	/// an OpenTab (and potentially encrypting WKWebView restoration state).
+	var scrollHistoryIndex: Int {
+		recordsNavigationHistory ? (controller?.historyIndex ?? storedHistoryIndex) : 0
+	}
+
 	var copyableURL: URL? {
 		internalPage == nil ? activeController?.url ?? currentURL : nil
 	}
@@ -199,7 +205,7 @@ final class BrowserTab: Identifiable {
 
 	/// Scroll-only updates (persisted on a slow debounce, no cross-window fan-out).
 	@ObservationIgnored
-	var didScrollChange: (@MainActor () -> Void)?
+	var didScrollChange: (@MainActor (_ isPeek: Bool) -> Void)?
 
 	@ObservationIgnored
 	private var openTabCache: OpenTab?
@@ -546,7 +552,7 @@ final class BrowserTab: Identifiable {
 			markNavigationModified()
 		}
 		peek.controller.scrollPositionDidChange = { [weak self] in
-			self?.markModifiedForScroll()
+			self?.markModifiedForScroll(isPeek: true)
 		}
 	}
 
@@ -608,7 +614,7 @@ final class BrowserTab: Identifiable {
 		markModified()
 	}
 
-	private func markModifiedForScroll() {
+	private func markModifiedForScroll(isPeek: Bool = false) {
 		openTabCache = nil
 		if let restorationBaseline, hasSameNavigationState(as: restorationBaseline) {
 			return
@@ -616,6 +622,6 @@ final class BrowserTab: Identifiable {
 		restorationBaseline = nil
 		modifiedAt = .now
 		openTabCache = nil
-		didScrollChange?()
+		didScrollChange?(isPeek)
 	}
 }

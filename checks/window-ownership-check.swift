@@ -1,5 +1,17 @@
 import Foundation
 
+// The runtime registry emits timing diagnostics. The standalone ownership
+// fixture intentionally omits OSLog and the app's full BrowserLog dependency.
+enum BrowserLog {
+	enum Category { case performance }
+	static func clock() -> TimeInterval { ProcessInfo.processInfo.systemUptime }
+	static func duration(
+		_ category: Category, _ event: String,
+		since start: TimeInterval, warnAboveMilliseconds: Double,
+		metadata: [String: String]
+	) {}
+}
+
 /// Minimal collaborators for executing the production window registry without
 /// launching Astra or touching a user's persistence, WebKit or sync account.
 @MainActor

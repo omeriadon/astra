@@ -117,6 +117,55 @@ struct DownloadFileWorkerCheck {
 			precondition(manager.fileExists(atPath: firstDest.path))
 		}
 
+		// Directory creation, existence and segment reset stay on the IO actor.
+		let newStage = root.appendingPathComponent("new-staging", isDirectory: true)
+		try await BrowserDownloadFileWorker.shared.prepareStagingDirectory(newStage)
+		precondition(manager.fileExists(atPath: newStage.path))
+		let segmentStagingURL = newStage.appendingPathComponent(UUID().uuidString).appendingPathExtension("astradownload")
+		let initiallyExists = await BrowserDownloadFileWorker.shared.stagedFileExists(segmentStagingURL)
+		precondition(!initiallyExists)
+		try await BrowserDownloadFileWorker.shared.prepareEmptySegmentFile(
+			segmentStagingURL, ownedStagingDirectory: newStage
+		)
+		let existsAfterCreate = await BrowserDownloadFileWorker.shared.stagedFileExists(segmentStagingURL)
+		precondition(existsAfterCreate)
+		let firstSegmentData = try Data(contentsOf: segmentStagingURL)
+		precondition(firstSegmentData.isEmpty)
+		try Data("stale".utf8).write(to: segmentStagingURL)
+		try await BrowserDownloadFileWorker.shared.prepareEmptySegmentFile(
+			segmentStagingURL, ownedStagingDirectory: newStage
+		)
+		let overwrittenSegmentData = try Data(contentsOf: segmentStagingURL)
+		precondition(overwrittenSegmentData.isEmpty)
+		do {
+			try await BrowserDownloadFileWorker.shared.prepareEmptySegmentFile(
+				firstDest, ownedStagingDirectory: newStage
+			)
+			preconditionFailure("Segment worker accepted a file outside owned staging")
+		} catch {
+			precondition(manager.fileExists(atPath: firstDest.path))
+		}
+
+		// Collision scanning is performed on the file worker, including saved
+		// names and reservations owned by other concurrent downloads.
+		let choiceFolder = output
+		let originalChoice = choiceFolder.appendingPathComponent("report.pdf")
+		try Data("occupied".utf8).write(to: originalChoice)
+		let firstChoice = await BrowserDownloadFileWorker.shared.availableDownloadDestination(
+			fileName: "report.pdf", folder: choiceFolder, saved: nil, reserved: []
+		)
+		precondition(firstChoice.lastPathComponent == "report (2).pdf")
+		let reservedChoice = await BrowserDownloadFileWorker.shared.availableDownloadDestination(
+			fileName: "report.pdf", folder: choiceFolder, saved: nil,
+			reserved: [firstChoice.standardizedFileURL]
+		)
+		precondition(reservedChoice.lastPathComponent == "report (3).pdf")
+		let savedChoice = choiceFolder.appendingPathComponent("previous.pdf")
+		let reused = await BrowserDownloadFileWorker.shared.availableDownloadDestination(
+			fileName: "report.pdf", folder: choiceFolder, saved: savedChoice, reserved: []
+		)
+		precondition(reused == savedChoice)
+
 		let downloadIndex = root.appendingPathComponent("downloads.json")
 		let archived = BrowserDownload(
 			id: UUID(),
@@ -141,6 +190,9 @@ struct DownloadFileWorkerCheck {
 		// An older debounced save can arrive after a newer save or flush.
 		// It must not replace the already committed newer generation.
 		try await BrowserDownloadFileWorker.shared.persistDownloadIndex([archived], at: downloadIndex, revision: 11)
+		// A legacy generation-zero writer must also respect the most recent
+		// numbered publication rather than rolling it back.
+		try await BrowserDownloadFileWorker.shared.persistDownloadIndex([archived], at: downloadIndex)
 		let latestRestored = try JSONDecoder().decode([BrowserDownload].self, from: Data(contentsOf: downloadIndex))
 		precondition(latestRestored == [newest])
 		let cancelledWrite = Task {
@@ -159,6 +211,10 @@ struct DownloadFileWorkerCheck {
 		let afterCancellation = try JSONDecoder().decode([BrowserDownload].self, from: Data(contentsOf: downloadIndex))
 		precondition(afterCancellation == [newest])
 
+		let freshIndexURL = root.appendingPathComponent("auto-created-index", isDirectory: true)
+			.appendingPathComponent("downloads.json")
+		try await BrowserDownloadFileWorker.shared.persistDownloadIndex([archived], at: freshIndexURL, revision: 1)
+		precondition(manager.fileExists(atPath: freshIndexURL.path))
 		let staged = try manager.contentsOfDirectory(at: output, includingPropertiesForKeys: nil)
 		precondition(!staged.contains { $0.lastPathComponent.hasPrefix(".astra-finalizing-") })
 		print("Download finalization worker checks passed")

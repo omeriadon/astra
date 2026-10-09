@@ -152,6 +152,16 @@ nonisolated struct BrowserSelectionUpdate: Codable, Sendable {
 	let selectedSpaceID: UUID
 }
 
+/// A bounded, URL-scoped scroll checkpoint. Its parent full checkpoint is
+/// identified separately on disk, so a stale sidecar cannot change a newer tab.
+nonisolated struct BrowserScrollUpdate: Codable, Sendable {
+	let tabID: UUID
+	let url: URL?
+	let historyIndex: Int
+	let position: BrowserScrollPosition
+	let modifiedAt: Date
+}
+
 nonisolated enum BrowserHomepage {
 	static func validURL(_ value: String) -> URL? {
 		guard let components = URLComponents(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
@@ -324,6 +334,14 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		let writtenAt: Date
 	}
 
+	/// Tiny, atomic overlay for scroll-only mutations. Full saves absorb these
+	/// updates under the same lock before committing the primary checkpoint.
+	private nonisolated struct ScrollJournal: Codable {
+		let version: Int
+		let baseSignature: CheckpointSignature
+		var updates: [String: BrowserScrollUpdate]
+	}
+
 	private nonisolated struct Envelope: Codable {
 		let version: Int
 		let state: BrowserPersistedState
@@ -451,7 +469,7 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 			guard FileManager.default.fileExists(atPath: url.path) else { continue }
 			hasSnapshot = true
 			do {
-				let state = try applyingSelectionUpdates(to: decodeSnapshot(Data(contentsOf: url)), loadedFrom: url)
+				let state = try applyingScrollUpdates(to: applyingSelectionUpdates(to: decodeSnapshot(Data(contentsOf: url)), loadedFrom: url), loadedFrom: url)
 				BrowserLog.duration(.persistence, "state.load.end", since: logStarted, warnAboveMilliseconds: 250, metadata: ["source": name, "tabs": String(state.openTabs.count), "bookmarks": String(state.bookmarks.count)])
 				return state
 			} catch BrowserPersistenceError.unsupportedVersion {
@@ -619,6 +637,83 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		return try JSONDecoder().decode(SelectionJournal.self, from: data)
 	}
 
+	/// A scroll writes a small atomic JSON overlay rather than serializing
+	/// bookmarks, every tab, history, and all window records on the main actor.
+	/// Updates share the full-checkpoint lock, so a structural save can safely
+	/// absorb them without losing scrolls from a different window.
+	nonisolated func saveScrollUpdates(_ changes: [BrowserScrollUpdate]) throws {
+		guard !changes.isEmpty else { return }
+		let started = BrowserLog.clock()
+		Self.selectionJournalLock.lock()
+		defer { Self.selectionJournalLock.unlock() }
+		let primary = directory.appendingPathComponent("browser-state.json")
+		guard let signature = CheckpointSignature(at: primary) else {
+			throw BrowserPersistenceError.invalidSnapshot
+		}
+		let existing = try readScrollJournal()
+		var updates = existing?.baseSignature == signature ? (existing?.updates ?? [:]) : [:]
+		for change in changes {
+			guard change.position.x.isFinite, change.position.y.isFinite,
+			      abs(change.position.x) <= 1_000_000_000,
+			      abs(change.position.y) <= 1_000_000_000 else { continue }
+			let key = change.tabID.uuidString
+			if let old = updates[key], old.modifiedAt > change.modifiedAt { continue }
+			updates[key] = change
+		}
+		guard updates.count <= 4_096 else { throw BrowserPersistenceError.invalidSnapshot }
+		let encoded = try JSONEncoder().encode(ScrollJournal(
+			version: 1, baseSignature: signature, updates: updates
+		))
+		guard encoded.count <= 512 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
+		try encoded.write(to: directory.appendingPathComponent("browser-scroll.json"), options: .atomic)
+		BrowserLog.duration(.persistence, "scroll.save.end", since: started,
+			warnAboveMilliseconds: 40,
+			metadata: ["bytes": String(encoded.count), "tabs": String(changes.count)])
+	}
+
+	private nonisolated func readScrollJournal() throws -> ScrollJournal? {
+		let url = directory.appendingPathComponent("browser-scroll.json")
+		guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+		let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+		guard size <= 512 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
+		let data = try Data(contentsOf: url)
+		guard data.count <= 512 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
+		let header = try JSONDecoder().decode(EnvelopeVersionOnly.self, from: data)
+		guard header.version == 1 else { throw BrowserPersistenceError.unsupportedVersion }
+		let journal = try JSONDecoder().decode(ScrollJournal.self, from: data)
+		guard journal.updates.count <= 4_096 else { throw BrowserPersistenceError.invalidSnapshot }
+		return journal
+	}
+
+	private nonisolated func applyingScrollUpdates(
+		to original: BrowserPersistedState, loadedFrom snapshotURL: URL
+	) throws -> BrowserPersistedState {
+		Self.selectionJournalLock.lock()
+		defer { Self.selectionJournalLock.unlock() }
+		guard let signature = CheckpointSignature(at: snapshotURL),
+		      let journal = try? readScrollJournal(),
+		      journal.baseSignature == signature else { return original }
+		var state = original
+		mergeScrollUpdates(journal, into: &state)
+		return state
+	}
+
+	private nonisolated func mergeScrollUpdates(
+		_ journal: ScrollJournal, into state: inout BrowserPersistedState
+	) {
+		for index in state.openTabs.indices {
+			let tab = state.openTabs[index]
+			guard let update = journal.updates[tab.id.uuidString],
+			      tab.url == update.url, tab.historyIndex == update.historyIndex,
+		      update.modifiedAt >= tab.modifiedAt,
+		      update.position.x.isFinite, update.position.y.isFinite,
+		      abs(update.position.x) <= 1_000_000_000,
+		      abs(update.position.y) <= 1_000_000_000 else { continue }
+			state.openTabs[index].scrollPosition = update.position
+			state.openTabs[index].modifiedAt = update.modifiedAt
+		}
+	}
+
 	private nonisolated func selectionUpdates(newerThan snapshotURL: URL) throws -> SelectionJournal? {
 		Self.selectionJournalLock.lock()
 		defer { Self.selectionJournalLock.unlock() }
@@ -688,6 +783,14 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		} catch {
 			selectionJournal = nil
 		}
+		let scrollJournal: ScrollJournal?
+		do {
+			scrollJournal = try readScrollJournal()
+		} catch BrowserPersistenceError.unsupportedVersion {
+			throw BrowserPersistenceError.unsupportedVersion
+		} catch {
+			scrollJournal = nil
+		}
 		let logStarted = BrowserLog.clock()
 		BrowserLog.debug(.persistence, "state.save.begin", metadata: ["tabs": String(state.openTabs.count), "bookmarks": String(state.bookmarks.count), "reading_list": String(state.readingList.count), "history": String(state.historyVisits?.count ?? 0)])
 		try validateWindowRecords(state.windowRecords ?? [])
@@ -746,6 +849,9 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		if let selectionJournal {
 			mergeSelectionUpdates(selectionJournal, into: &state)
 		}
+		if let scrollJournal, scrollJournal.baseSignature == currentSignature {
+			mergeScrollUpdates(scrollJournal, into: &state)
+		}
 		state.windowRecords = (state.windowRecords ?? []).sorted { $0.windowID.uuidString < $1.windowID.uuidString }
 		try validatePersistedState(state)
 		let data = try JSONEncoder().encode(Envelope(version: Self.currentVersion, state: state))
@@ -782,6 +888,9 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		// The full snapshot includes all window selections captured at commit time.
 		// A crash before this cleanup is safe: loader ignores older journals.
 		try? FileManager.default.removeItem(at: directory.appendingPathComponent("browser-selection.json"))
+		// The primary now contains every valid pending scroll change. A crash
+		// before removal is harmless because the sidecar signature is stale.
+		try? FileManager.default.removeItem(at: directory.appendingPathComponent("browser-scroll.json"))
 		if privateDataWasRemoved {
 			try data.write(to: backupURL, options: .atomic)
 		}

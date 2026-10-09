@@ -205,14 +205,65 @@ actor BrowserDownloadFileWorker {
 	func persistDownloadIndex(_ snapshot: [BrowserDownload], at url: URL, revision: UInt64 = 0) throws {
 		try Task.checkCancellation()
 		let key = url.standardizedFileURL.path
-		if revision > 0, let committed = committedIndexRevisions[key], revision <= committed {
+		if let committed = committedIndexRevisions[key], revision <= committed {
+			// Legacy unversioned callers must never overwrite a versioned
+			// checkpoint that reached this actor later in the process.
 			return
 		}
 		let data = try JSONEncoder().encode(snapshot)
 		try Task.checkCancellation()
+		try FileManager.default.createDirectory(
+			at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+		)
+		try Task.checkCancellation()
 		try data.write(to: url, options: .atomic)
 		if revision > 0 {
 			committedIndexRevisions[key] = revision
+		}
+	}
+
+	/// These staging operations may hit slow disks or disconnected volumes.
+	/// Keep directory creation, existence probes and segment preparation off
+	/// the AppKit main actor. No user-chosen final path is mutated here.
+	func prepareStagingDirectory(_ directory: URL) throws {
+		try Task.checkCancellation()
+		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+	}
+
+	func stagedFileExists(_ file: URL) -> Bool {
+		FileManager.default.fileExists(atPath: file.path)
+	}
+
+	/// Filename collision searches can probe thousands of files on slow or
+	/// disconnected disks. Keep every candidate check on the filesystem actor.
+	func availableDownloadDestination(
+		fileName: String, folder: URL, saved: URL?, reserved: Set<URL>
+	) -> URL {
+		if let saved,
+		   saved.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL,
+		   BrowserDownload.safeFilename(saved.lastPathComponent) == saved.lastPathComponent,
+		   !FileManager.default.fileExists(atPath: saved.path),
+		   !reserved.contains(saved.standardizedFileURL) {
+			return saved
+		}
+		return BrowserDownload.collisionFreeURL(fileName: fileName, in: folder, reserved: reserved)
+	}
+
+	func prepareEmptySegmentFile(_ file: URL, ownedStagingDirectory: URL) throws {
+		try Task.checkCancellation()
+		let root = ownedStagingDirectory.standardizedFileURL.resolvingSymlinksInPath().path + "/"
+		guard file.standardizedFileURL.deletingLastPathComponent().resolvingSymlinksInPath().path + "/" == root,
+		      file.pathExtension == "astradownload" else {
+			throw FinalizationError.destinationUnavailable
+		}
+		let manager = FileManager.default
+		try manager.createDirectory(at: ownedStagingDirectory, withIntermediateDirectories: true)
+		if manager.fileExists(atPath: file.path) {
+			try manager.removeItem(at: file)
+		}
+		try Task.checkCancellation()
+		guard manager.createFile(atPath: file.path, contents: nil) else {
+			throw CocoaError(.fileWriteUnknown)
 		}
 	}
 

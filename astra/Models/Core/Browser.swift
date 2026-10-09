@@ -171,6 +171,8 @@ final class Browser {
 
 	@ObservationIgnored
 	private var pendingScrollPersistence = false
+	@ObservationIgnored
+	private var pendingScrollTabIDs = Set<UUID>()
 
 	/// False until disk hydration completes; persistence calls before then only
 	/// stash flags so a placeholder window never saves or broadcasts itself.
@@ -1023,6 +1025,17 @@ final class Browser {
 
 	@discardableResult
 	func addTab(inBackground: Bool = false) -> BrowserTab {
+		let workflowStart = BrowserLog.clock()
+		let countBefore = tabs.count
+		defer {
+			BrowserLog.duration(.performance, "workflow.tab.create-to-model-commit",
+				since: workflowStart, warnAboveMilliseconds: 16,
+				metadata: [
+					"background": String(inBackground),
+					"tabs_before": String(countBefore),
+					"tabs_after": String(tabs.count),
+				])
+		}
 		BrowserLog.info(.tabs, "tab.create", metadata: ["window": BrowserLog.id(windowID), "background": String(inBackground), "count_before": String(tabs.count)])
 		let tab = BrowserTab(session: session)
 		configure(tab)
@@ -2103,8 +2116,14 @@ final class Browser {
 		tab.didUpdateHistoryVisitTitle = { [weak self] controller, url, title, navigationID in
 			self?.updateHistoryVisitTitle(from: controller, url: url, title: title, navigationID: navigationID)
 		}
-		tab.didScrollChange = { [weak self] in
-			self?.scheduleScrollPersistence()
+		tab.didScrollChange = { [weak self, id = tab.id] isPeek in
+			if isPeek {
+				// OpenPeek scroll state lives inside the parent tab snapshot;
+				// do not silently lose it through the parent-only scroll journal.
+				self?.schedulePersistence(fullState: true, syncExtensions: false)
+			} else {
+				self?.scheduleScrollPersistence(for: id)
+			}
 		}
 	}
 
@@ -2339,6 +2358,16 @@ final class Browser {
 	}
 
 	private func removeTabs(_ ids: Set<UUID>, selecting selectedID: UUID, confirmed: Bool = false) {
+		let workflowStart = BrowserLog.clock()
+		defer {
+			BrowserLog.duration(.performance, "workflow.tabs.close-to-model-commit",
+				since: workflowStart, warnAboveMilliseconds: 24,
+				metadata: [
+					"requested": String(ids.count),
+					"confirmed": String(confirmed),
+					"tabs_remaining": String(tabs.count),
+				])
+		}
 		let protectedIDs = Set(workspace.favouriteTabIDs + workspace.spaces.flatMap(\.pinnedTabIDs))
 		let ids = ids.subtracting(protectedIDs)
 		guard !ids.isEmpty else { return }
@@ -2826,15 +2855,60 @@ final class Browser {
 		schedulePersistence(fullState: false)
 	}
 
-	private func scheduleScrollPersistence() {
-		guard persistence != nil else { return }
+	private func scheduleScrollPersistence(for tabID: UUID) {
+		guard !isPrivate, persistence != nil else { return }
+		pendingScrollTabIDs.insert(tabID)
 		pendingScrollPersistence = true
 		guard didFinishHydration else { return }
 		scrollPersistenceTask?.cancel()
 		scrollPersistenceTask = Task { @MainActor [weak self] in
 			try? await Task.sleep(for: .milliseconds(1500))
-			guard !Task.isCancelled, let self else { return }
-			persist()
+			guard !Task.isCancelled else { return }
+			self?.persistScrollOnly()
+		}
+	}
+
+	/// Only snapshot a handful of changed scroll positions on the main actor.
+	/// Expensive JSON IO is serialized with all other session writes off-main.
+	private func persistScrollOnly() {
+		guard !hydrationFailed, didFinishHydration, !isPrivate,
+		      let persistence, !pendingFullPersistence else { return }
+		let changedIDs = pendingScrollTabIDs
+		pendingScrollTabIDs.removeAll()
+		pendingScrollPersistence = false
+		let updates: [BrowserScrollUpdate] = changedIDs.compactMap { id in
+			guard let tab = tab(withID: id), !tab.isHibernated,
+			      let controller = tab.controller,
+			      tab.internalPage == nil else { return nil }
+			return BrowserScrollUpdate(
+				tabID: id,
+				url: tab.currentURL.map(BrowserAddress.withoutCredentials),
+				historyIndex: tab.scrollHistoryIndex,
+				position: controller.scrollPosition,
+				modifiedAt: tab.modifiedAt
+			)
+		}
+		guard !updates.isEmpty else { return }
+		let previousWrite = session.persistenceWriteTask
+		session.persistenceWriteTask = Task.detached(priority: .utility) { [persistence, updates] in
+			await previousWrite?.value
+			do {
+				try persistence.saveScrollUpdates(updates)
+				await MainActor.run { [weak self] in
+					self?.persistenceErrorDescription = nil
+				}
+			} catch {
+				let reason = error.localizedDescription
+				BrowserLog.warning(.persistence, "scroll.save.failed",
+					metadata: ["error": BrowserLog.errorDescription(error)])
+				await MainActor.run { [weak self] in
+					guard let self else { return }
+					persistenceErrorDescription = reason
+					// Missing initial checkpoint: create a full one so subsequent
+					// scrolls can use the much smaller journal safely.
+					schedulePersistence(fullState: true, syncExtensions: false)
+				}
+			}
 		}
 	}
 
@@ -2881,6 +2955,9 @@ final class Browser {
 		let isStructural = pendingFullPersistence
 		pendingFullPersistence = false
 		pendingScrollPersistence = false
+		pendingScrollTabIDs.removeAll()
+		scrollPersistenceTask?.cancel()
+		scrollPersistenceTask = nil
 		let state = BrowserPersistedState(
 			bookmarks: bookmarks,
 			readingList: readingList,
