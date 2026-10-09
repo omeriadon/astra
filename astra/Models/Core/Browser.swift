@@ -39,8 +39,15 @@ final class Browser {
 	}
 	private(set) var spaceSwitchDirection = 1
 	private(set) var recentlyUsedTabIDs: [UUID]
-	private(set) var bookmarks: [Bookmark]
-	private(set) var readingList: [ReadingListItem]
+	/// A scalar Observation token for library projections. Comparing complete
+	/// bookmark and reading-list arrays at every SwiftUI invalidation is O(N).
+	private(set) var libraryChangeRevision = 0
+	private(set) var bookmarks: [Bookmark] {
+		didSet { libraryChangeRevision &+= 1 }
+	}
+	private(set) var readingList: [ReadingListItem] {
+		didSet { libraryChangeRevision &+= 1 }
+	}
 	/// Lightweight change token so SwiftUI doesn't compare an entire history
 	/// array for equality on every new navigation or title update.
 	private(set) var historyChangeRevision = 0
