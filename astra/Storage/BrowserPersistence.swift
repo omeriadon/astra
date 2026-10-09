@@ -267,22 +267,20 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 			let newReading = Dictionary(state.readingList.map { ($0.id, $0.url) }, uniquingKeysWith: { old, _ in old })
 			let currentClosed = Set(state.closedTabs.map(\.id))
 			let currentOpen = Dictionary(state.openTabs.map { ($0.id, $0) }, uniquingKeysWith: { old, _ in old })
-			return historyURLs.contains { newHistory[$0.key] != $0.value }
-				|| bookmarkURLs.contains { newBookmarks[$0.key] != $0.value }
-				|| readingURLs.contains { newReading[$0.key] != $0.value }
-				|| historyClearedAt < state.snapshot.historyClearedAt
-				|| !closedTabIDs.isSubset(of: currentClosed)
-				|| openTabPrivacy.contains { id, previous in
-					guard let updated = currentOpen[id] else { return false }
-					return !previous.history.isSubset(of: Set(updated.history))
-				}
-				|| deletedVisitsAt.contains { id, date in
-					state.snapshot.deletedVisitsAt[id].map { $0 > date } ?? false
-				}
-				|| openTabPrivacy.contains { id, old in
-					old.recordsNavigationHistory && currentOpen[id]?.recordsNavigationHistory == false
-				}
-				|| containedCredentialURLs
+			if historyURLs.contains(where: { newHistory[$0.key] != $0.value }) { return true }
+			if bookmarkURLs.contains(where: { newBookmarks[$0.key] != $0.value }) { return true }
+			if readingURLs.contains(where: { newReading[$0.key] != $0.value }) { return true }
+			if historyClearedAt < state.snapshot.historyClearedAt { return true }
+			if !closedTabIDs.isSubset(of: currentClosed) { return true }
+			for (id, previous) in openTabPrivacy {
+				guard let updated = currentOpen[id] else { continue }
+				if !previous.history.isSubset(of: Set(updated.history)) { return true }
+				if previous.recordsNavigationHistory && !updated.recordsNavigationHistory { return true }
+			}
+			if deletedVisitsAt.contains(where: { id, date in
+				state.snapshot.deletedVisitsAt[id].map { $0 > date } ?? false
+			}) { return true }
+			return containedCredentialURLs
 		}
 	}
 
