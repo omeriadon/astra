@@ -146,6 +146,26 @@ struct DownloadFileWorkerCheck {
 			precondition(manager.fileExists(atPath: firstDest.path))
 		}
 
+		// Collision scanning is performed on the file worker, including saved
+		// names and reservations owned by other concurrent downloads.
+		let choiceFolder = output
+		let originalChoice = choiceFolder.appendingPathComponent("report.pdf")
+		try Data("occupied".utf8).write(to: originalChoice)
+		let firstChoice = await BrowserDownloadFileWorker.shared.availableDownloadDestination(
+			fileName: "report.pdf", folder: choiceFolder, saved: nil, reserved: []
+		)
+		precondition(firstChoice.lastPathComponent == "report (2).pdf")
+		let reservedChoice = await BrowserDownloadFileWorker.shared.availableDownloadDestination(
+			fileName: "report.pdf", folder: choiceFolder, saved: nil,
+			reserved: [firstChoice.standardizedFileURL]
+		)
+		precondition(reservedChoice.lastPathComponent == "report (3).pdf")
+		let savedChoice = choiceFolder.appendingPathComponent("previous.pdf")
+		let reused = await BrowserDownloadFileWorker.shared.availableDownloadDestination(
+			fileName: "report.pdf", folder: choiceFolder, saved: savedChoice, reserved: []
+		)
+		precondition(reused == savedChoice)
+
 		let downloadIndex = root.appendingPathComponent("downloads.json")
 		let archived = BrowserDownload(
 			id: UUID(),
