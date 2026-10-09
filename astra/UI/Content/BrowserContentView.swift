@@ -179,6 +179,7 @@ final class BrowserTabResourceManager {
 
 	func controllersForDisplay() -> [BrowserController] {
 		guard let browser else { return [] }
+		let started = BrowserLog.clock()
 		let selectedTab = browser.selectedTab
 		let ownedTabIDs = BrowserWindowRegistry.shared.ownedTabIDs(in: browser)
 		let tabsByID = browser.tabsByID
@@ -206,6 +207,13 @@ final class BrowserTabResourceManager {
 				}
 			}
 		}
+		BrowserLog.duration(.performance, "workflow.webview-hosts.resolve",
+			since: started, warnAboveMilliseconds: 8,
+			metadata: [
+				"tab_count": String(browser.tabs.count),
+				"host_count": String(result.count),
+				"warm_budget": String(warmControllerLimit),
+			])
 		return result
 	}
 
