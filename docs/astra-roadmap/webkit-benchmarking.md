@@ -223,3 +223,41 @@ Sources: [Apple scheduling policy](https://developer.apple.com/documentation/web
 [Search Browser.swift](https://github.com/driceroland/Search/blob/main/Sources/Search/Browser.swift),
 [Search benchmark](https://github.com/driceroland/Search/blob/main/Sources/Search/Bench.swift),
 [Search changelog](https://github.com/driceroland/Search/blob/main/CHANGELOG.md).
+
+## 2026-10-09 workflow instrumentation and report
+
+Synchronous UI stage timings are recorded under Astra's existing structured
+logger (performance, persistence and WebKit categories). The measured stages
+include tab creation, tab selection, tab closure, cross-window sync fanout,
+WebKit host resolution and attachment, session serialization and checkpoint
+commit, and lightweight scroll-journal disk writes. Each measurement carries
+a defined warning threshold. These timestamps **do not** claim to include
+first paint, website readiness, GPU frame pacing or end-to-end input-to-pixel
+latency. They identify blocking stages for further Instruments attribution.
+
+Capture two equivalent runs using Debug builds (Release logs only durations
+above their warning thresholds):
+
+```sh
+log stream --style compact --level debug --predicate 'subsystem == "com.omeriadon.astra"' > /tmp/astra-debug.log
+python3 scripts/astra_workflow_report.py /tmp/astra-debug.log
+python3 scripts/astra_workflow_report.py /tmp/astra-before.log --compare /tmp/astra-after.log --json
+```
+
+Do not publish unredacted Debug log files; they can contain detailed identifiers,
+visited URLs or file paths from unrelated diagnostic events. The reporter emits
+only timing stage names and numerical aggregates; it ignores unmatched events.
+At least five samples of each stage must exist in both comparable runs.
+Measure on the same OS, power mode, browser version, tabs and sites and repeat
+cold and warm launch separately. For WebKit physical footprint, process identity
+and background CPU, continue using `scripts/webkit_benchmark.py` with **explicit**
+WebContent/GPU/network PID mapping. The current integration cannot claim any
+physical-memory or energy improvement until those workloads are measured on a
+running app.
+
+Extension ZIP validation, CRX extraction, copying, temporary-file deletion and
+uninstallation cleanup now execute on utility tasks; WebKit extension context
+creation and state transitions remain on the main actor. Profile both the
+synchronous UI handlers and the asynchronous installation wall-clock interval
+before and after this change, and test cancellation, corrupt archives, partial
+copies and security-scoped archive access.
