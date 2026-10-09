@@ -1675,7 +1675,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 			if let folderBookmark = savedItem.folderBookmark {
 				if let folder = resolveDownloadFolderBookmark(folderBookmark, itemID: itemID) {
-					return beginFolderScopedDownload(
+					return await beginFolderScopedDownload(
 						fileName: fileName,
 						folder: folder,
 						savedDestination: savedDestination,
@@ -1695,7 +1695,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			let defaultFolder = Self.defaultDownloadDirectory
 			if let previousFolder = savedDestination?.deletingLastPathComponent() {
 				if previousFolder.standardizedFileURL == defaultFolder.standardizedFileURL {
-					return beginFolderScopedDownload(
+					return await beginFolderScopedDownload(
 						fileName: fileName,
 						folder: defaultFolder,
 						savedDestination: savedDestination,
@@ -1712,7 +1712,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				)
 			}
 			if let preferredFolder = preferredDownloadDirectory() {
-				return beginFolderScopedDownload(
+				return await beginFolderScopedDownload(
 					fileName: fileName,
 					folder: preferredFolder,
 					savedDestination: nil,
@@ -1734,7 +1734,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				items[index].folderBookmark = nil
 				items[index].fileAccessBookmark = nil
 			}
-			return preferredDestination(fileName: fileName, in: defaultFolder, itemID: itemID, saved: nil)
+			return await preferredDestination(fileName: fileName, in: defaultFolder, itemID: itemID, saved: nil)
 		#else
 			return uniqueDestination(fileName: fileName, in: Self.defaultDownloadDirectory)
 		#endif
@@ -1777,7 +1777,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			items[index].destinationIsFileScoped = false
 			items[index].fileAccessBookmark = nil
 			scopedDirectories[itemID] = folder
-			return preferredDestination(fileName: fileName, in: folder, itemID: itemID, saved: savedDestination)
+			return await preferredDestination(fileName: fileName, in: folder, itemID: itemID, saved: savedDestination)
 		}
 
 		private func beginFolderScopedDownload(
@@ -1785,7 +1785,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			folder: URL,
 			savedDestination: URL?,
 			itemID: UUID
-		) -> URL? {
+		) async -> URL? {
 			let selectedBookmark = items.first(where: { $0.id == itemID })?.folderBookmark
 			let usesDownloadsCapability = folder.standardizedFileURL == Self.defaultDownloadDirectory.standardizedFileURL
 				&& selectedBookmark == nil
@@ -1804,23 +1804,17 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 					items[index].folderBookmark = bookmark
 				}
 			}
-			return preferredDestination(fileName: fileName, in: folder, itemID: itemID, saved: savedDestination)
+			return await preferredDestination(fileName: fileName, in: folder, itemID: itemID, saved: savedDestination)
 		}
 
-		private func preferredDestination(fileName: String, in folder: URL, itemID: UUID, saved: URL?) -> URL {
+		private func preferredDestination(fileName: String, in folder: URL, itemID: UUID, saved: URL?) async -> URL {
 			let reservations = Set(finalDestinations
 				.filter { $0.key != itemID }
 				.values
 				.map(\.standardizedFileURL))
-			if let saved,
-			   saved.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL,
-			   BrowserDownload.safeFilename(saved.lastPathComponent) == saved.lastPathComponent,
-			   !FileManager.default.fileExists(atPath: saved.path),
-			   !reservations.contains(saved.standardizedFileURL)
-			{
-				return saved
-			}
-			return BrowserDownload.collisionFreeURL(fileName: fileName, in: folder, reserved: reservations)
+			return await BrowserDownloadFileWorker.shared.availableDownloadDestination(
+				fileName: fileName, folder: folder, saved: saved, reserved: reservations
+			)
 		}
 	#endif
 
