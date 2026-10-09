@@ -109,8 +109,7 @@ struct BrowserBookmarksView: View {
 			.padding(.vertical, 14)
 		}
 		.onAppear { updateLibraryProjection() }
-		.onChange(of: browser.bookmarks) { _, _ in updateLibraryProjection() }
-		.onChange(of: browser.readingList) { _, _ in updateLibraryProjection() }
+		.onChange(of: browser.libraryChangeRevision) { _, _ in updateLibraryProjection() }
 		.onChange(of: searchText) { _, _ in updateLibraryProjection() }
 		.onDisappear { libraryTask?.cancel() }
 		.sheet(item: $editingBookmark) { bookmark in
