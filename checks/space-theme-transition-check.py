@@ -74,6 +74,8 @@ struct ThemeTransitionCheck {
     static func main() {
         NSApplication.shared.setActivationPolicy(.prohibited)
         var red = BrowserTheme()
+        red.shaderNoiseEnabled = true
+        red.shaderNoiseAmount = 0.2
         red.meshColorPoints = [ThemeColorPoint(color: BrowserColor(red: 1, green: 0, blue: 0), x: 0.5, y: 0.5)]
         var blue = red
         blue.meshColorPoints = (0..<4).map { index in

@@ -26,8 +26,7 @@ struct BrowserWindowRecord {
 	let frame: String?
 
 	init(windowID: UUID, tabIDs: [UUID], selectedTabID: UUID,
-	     selectionModifiedAt: Date, frame: String? = nil)
-	{
+	     selectionModifiedAt: Date, frame: String? = nil) {
 		self.windowID = windowID
 		self.tabIDs = tabIDs
 		self.selectedTabID = selectedTabID
@@ -73,7 +72,6 @@ final class Browser {
 	func receiveSharedState(from source: Browser) {
 		receivedFromWindowIDs.append(source.windowID)
 	}
-
 	func publishSharedState(to recipients: [Browser]) {
 		publicationCount += 1
 		for recipient in recipients {
@@ -117,7 +115,7 @@ struct WindowOwnershipChecks {
 		registry.publish(from: first)
 		assert(first.publicationCount == 2)
 		assert(privateRecipient.receivedFromWindowIDs.isEmpty,
-		       "Private windows must not receive normal shared state")
+			"Private windows must not receive normal shared state")
 		registry.unregister(privateRecipient)
 		registry.activate(first)
 		assert(registry.ownsTab(tab.id, in: first))
@@ -130,7 +128,7 @@ struct WindowOwnershipChecks {
 		assert(registry.ownedTabIDs(in: first).isEmpty)
 		// The batch lookup must have the same ownership semantics as
 		// the single-tab API even for shared and unique tabs at scale.
-		for index in 0 ..< 200 {
+		for index in 0..<200 {
 			let shared = BrowserTab()
 			first.tabs.append(shared)
 			if index.isMultiple(of: 2) {

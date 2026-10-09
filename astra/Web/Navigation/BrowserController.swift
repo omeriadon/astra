@@ -928,12 +928,13 @@ final class BrowserController: NSObject, Identifiable {
 					await self?.refreshActivity()
 				}
 				guard !Task.isCancelled else { return }
-				let fallbackInterval: TimeInterval = if hasActivity {
-					5
+				let fallbackInterval: TimeInterval
+				if hasActivity {
+					fallbackInterval = 5
 				} else if isBackground {
-					90
+					fallbackInterval = 90
 				} else {
-					20
+					fallbackInterval = 20
 				}
 				do {
 					try await Task.sleep(for: .seconds(fallbackInterval))

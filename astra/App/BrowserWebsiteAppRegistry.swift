@@ -128,6 +128,7 @@
 			installations.first(where: { $0.id == id })
 		}
 
+
 		/// MainActor owns input validation and UI observation only. The file
 		/// worker owns the signed-bundle transaction and persisted registry.
 		private func serialized<T>(_ action: () async throws -> T) async throws -> T {
@@ -277,5 +278,6 @@
 			let candidatePath = url.standardizedFileURL.resolvingSymlinksInPath().path
 			return candidatePath.hasPrefix(rootPath + "/")
 		}
+
 	}
 #endif

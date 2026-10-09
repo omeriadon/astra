@@ -192,8 +192,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		      let tab = browser.tab(withID: id),
 		      tab.internalPage == nil else { return }
 		guard let previous = tabSnapshots[browser.windowID]?[id],
-		      let bridge = tabs[browser.windowID]?[id]
-		else {
+		      let bridge = tabs[browser.windowID]?[id] else {
 			sync(browser)
 			return
 		}
@@ -205,18 +204,10 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			zoom: tab.controller?.pageZoom ?? 1
 		)
 		var changed: WKWebExtension.TabChangedProperties = forceWebViewRefresh ? [.URL, .loading] : []
-		if previous.title != next.title {
-			changed.insert(.title)
-		}
-		if previous.url != next.url {
-			changed.insert(.URL)
-		}
-		if previous.loading != next.loading {
-			changed.insert(.loading)
-		}
-		if previous.zoom != next.zoom {
-			changed.insert(.zoomFactor)
-		}
+		if previous.title != next.title { changed.insert(.title) }
+		if previous.url != next.url { changed.insert(.URL) }
+		if previous.loading != next.loading { changed.insert(.loading) }
+		if previous.zoom != next.zoom { changed.insert(.zoomFactor) }
 		guard !changed.isEmpty else { return }
 		tabSnapshots[browser.windowID, default: [:]][id] = next
 		controller.didChangeTabProperties(changed, for: bridge)
@@ -276,8 +267,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		// are unchanged, because its backing WebKit view has changed.
 		guard knownTabIDs[browser.windowID]?.contains(id) == true,
 		      tabs[browser.windowID]?[id] != nil,
-		      BrowserWindowRegistry.shared.ownsTab(id, in: browser)
-		else {
+		      BrowserWindowRegistry.shared.ownsTab(id, in: browser) else {
 			// Newly created, transferred or closed tabs still need structural
 			// open/close notifications with correct window ownership.
 			sync(browser)
@@ -539,9 +529,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 
 	@discardableResult
 	private func prepareContext(for name: String) async throws -> WKWebExtensionContext {
-		if let existing = contexts[name] {
-			return existing
-		}
+		if let existing = contexts[name] { return existing }
 		if let preparing = contextPreparationTasks[name] {
 			return try await preparing.value
 		}
