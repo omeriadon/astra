@@ -205,10 +205,16 @@ actor BrowserDownloadFileWorker {
 	func persistDownloadIndex(_ snapshot: [BrowserDownload], at url: URL, revision: UInt64 = 0) throws {
 		try Task.checkCancellation()
 		let key = url.standardizedFileURL.path
-		if revision > 0, let committed = committedIndexRevisions[key], revision <= committed {
+		if let committed = committedIndexRevisions[key], revision <= committed {
+			// Legacy unversioned callers must never overwrite a versioned
+			// checkpoint that reached this actor later in the process.
 			return
 		}
 		let data = try JSONEncoder().encode(snapshot)
+		try Task.checkCancellation()
+		try FileManager.default.createDirectory(
+			at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+		)
 		try Task.checkCancellation()
 		try data.write(to: url, options: .atomic)
 		if revision > 0 {
