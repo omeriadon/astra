@@ -165,6 +165,12 @@ final class BrowserTab: Identifiable {
 		controller?.url ?? storedURL
 	}
 
+	/// Scroll journaling needs the saved navigation index without allocating
+	/// an OpenTab (and potentially encrypting WKWebView restoration state).
+	var scrollHistoryIndex: Int {
+		recordsNavigationHistory ? (controller?.historyIndex ?? storedHistoryIndex) : 0
+	}
+
 	var copyableURL: URL? {
 		internalPage == nil ? activeController?.url ?? currentURL : nil
 	}
