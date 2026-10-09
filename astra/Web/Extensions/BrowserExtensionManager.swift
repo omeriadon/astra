@@ -18,7 +18,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	static let shared = BrowserExtensionManager()
 
 	let controller = WKWebExtensionController()
-	private let bundledNames = ["darkreader-chrome-mv3", "ublock-origin-lite-safari"]
+	private let bundledNames = ["darkreader-chrome-mv3"]
 	private(set) var loadErrors: [String: String] = [:] {
 		didSet {
 			if loadErrors.contains(where: { oldValue[$0.key] != $0.value }) {
@@ -69,7 +69,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		unpinnedNames = Set(UserDefaults.standard.stringArray(forKey: "unpinnedExtensions") ?? [])
 		safariNames = Set(UserDefaults.standard.stringArray(forKey: "safariExtensions") ?? [])
 		cachedDisplayNames = UserDefaults.standard.dictionary(forKey: "extensionDisplayNames") as? [String: String] ?? [:]
-		enabledNames = Set((["darkreader-chrome-mv3", "ublock-origin-lite-safari"] + savedNames).filter {
+		enabledNames = Set((["darkreader-chrome-mv3"] + savedNames).filter {
 			UserDefaults.standard.bool(forKey: "extension.\($0).enabled")
 		})
 		super.init()

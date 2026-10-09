@@ -168,7 +168,24 @@ struct BrowserTabRow: View {
 			isHovered = hovering
 			#if os(macOS)
 				guard onSelectTab == nil else { return }
-				if !hovering {
+				if hovering {
+					// Frame arrives via the always-on geometry observer below;
+					// if we already have one, begin immediately so short hovers register.
+					if hoverPreviewStarted {
+						BrowserTabHoverPreviewCoordinator.shared.updateFrame(
+							for: tab.id,
+							windowID: browser.windowID,
+							frame: hoverFrame
+						)
+					} else if hoverFrame != .zero {
+						hoverPreviewStarted = true
+						BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
+							tabID: tab.id,
+							windowID: browser.windowID,
+							sourceFrame: hoverFrame
+						)
+					}
+				} else {
 					if hoverPreviewStarted {
 						BrowserTabHoverPreviewCoordinator.shared.hoverEnded(
 							tabID: tab.id,
@@ -180,25 +197,45 @@ struct BrowserTabRow: View {
 			#endif
 		}
 		#if os(macOS)
-		.modifier(
-			TabHoverGeometryModifier(enabled: isHovered && onSelectTab == nil) { frame in
-				hoverFrame = frame
-				if hoverPreviewStarted {
-					BrowserTabHoverPreviewCoordinator.shared.updateFrame(
-						for: tab.id,
-						windowID: browser.windowID,
-						frame: frame
-					)
-				} else {
-					hoverPreviewStarted = true
-					BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
-						tabID: tab.id,
-						windowID: browser.windowID,
-						sourceFrame: frame
-					)
-				}
+		.onGeometryChange(for: CGRect.self) { proxy in
+			proxy.frame(in: .global)
+		} action: { frame in
+			guard onSelectTab == nil else { return }
+			hoverFrame = frame
+			guard isHovered else { return }
+			if hoverPreviewStarted {
+				BrowserTabHoverPreviewCoordinator.shared.updateFrame(
+					for: tab.id,
+					windowID: browser.windowID,
+					frame: frame
+				)
+			} else {
+				hoverPreviewStarted = true
+				BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
+					tabID: tab.id,
+					windowID: browser.windowID,
+					sourceFrame: frame
+				)
 			}
-		)
+		}
+		.onChange(of: tab.id) { oldID, _ in
+			if hoverPreviewStarted {
+				BrowserTabHoverPreviewCoordinator.shared.hoverEnded(
+					tabID: oldID,
+					windowID: browser.windowID
+				)
+			}
+			hoverPreviewStarted = false
+		}
+		.onDisappear {
+			if hoverPreviewStarted {
+				BrowserTabHoverPreviewCoordinator.shared.hoverEnded(
+					tabID: tab.id,
+					windowID: browser.windowID
+				)
+			}
+			hoverPreviewStarted = false
+		}
 		#endif
 		.contextMenu {
 			TabRowContextMenu(
@@ -550,23 +587,6 @@ private struct TabRowContextMenu: View {
 }
 
 #if os(macOS)
-	private struct TabHoverGeometryModifier: ViewModifier {
-		let enabled: Bool
-		let onFrame: (CGRect) -> Void
-
-		func body(content: Content) -> some View {
-			if enabled {
-				content.onGeometryChange(for: CGRect.self) { proxy in
-					proxy.frame(in: .global)
-				} action: { frame in
-					onFrame(frame)
-				}
-			} else {
-				content
-			}
-		}
-	}
-
 	@MainActor
 	@Observable
 	final class BrowserTabHoverPreviewCoordinator {
@@ -587,22 +607,23 @@ private struct TabRowContextMenu: View {
 		func hoverBegan(tabID: UUID, windowID: UUID, sourceFrame: CGRect) {
 			dismissalTask?.cancel()
 			dismissalTask = nil
+			// Already showing this tab: just refresh the anchor, don't restart timers.
+			if isVisible, presentedTabID == tabID, self.windowID == windowID {
+				hoveredTabID = tabID
+				self.sourceFrame = sourceFrame
+				return
+			}
 			hoveredTabID = tabID
 			self.windowID = windowID
 			self.sourceFrame = sourceFrame
 
-			if warmSession {
-				activationTask?.cancel()
-				activationTask = nil
-				presentedTabID = tabID
-				isVisible = true
-				return
-			}
-
+			// Short debounce in both cases: instant warm shows flicker while
+			// sweeping across tabs, and the old 2s cold delay felt broken.
+			let delay: Duration = warmSession ? .milliseconds(250) : .milliseconds(600)
 			activationTask?.cancel()
 			activationTask = Task { @MainActor [weak self] in
 				do {
-					try await Task.sleep(for: .seconds(2))
+					try await Task.sleep(for: delay)
 				} catch {
 					return
 				}
@@ -668,7 +689,7 @@ private struct TabRowContextMenu: View {
 		@State private var coordinator = BrowserTabHoverPreviewCoordinator.shared
 
 		private let cardWidth: CGFloat = 320
-		private let cardHeight: CGFloat = 340
+		private let cardHeight: CGFloat = 284
 		private let margin: CGFloat = 12
 
 		var body: some View {
@@ -777,20 +798,6 @@ private struct TabRowContextMenu: View {
 						.font(.subheadline.monospacedDigit())
 						.foregroundStyle(.secondary)
 				}
-
-				HStack(alignment: .top, spacing: 8) {
-					memoryMetric("Web + JS", bytes: memory?.webContentBytes)
-					memoryMetric("Graphics*", bytes: memory?.graphicsBytes)
-					memoryMetric("Network*", bytes: memory?.networkBytes)
-					if memory?.modelBytes != nil {
-						memoryMetric("Model*", bytes: memory?.modelBytes)
-					}
-				}
-
-				Text("* Shared WebKit process; shown for context rather than attributed entirely to this tab.")
-					.font(.system(size: 9))
-					.foregroundStyle(.tertiary)
-					.lineLimit(2)
 			}
 			.padding(12)
 			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -814,18 +821,6 @@ private struct TabRowContextMenu: View {
 					}
 				}
 			}
-		}
-
-		private func memoryMetric(_ label: String, bytes: UInt64?) -> some View {
-			VStack(alignment: .leading, spacing: 2) {
-				Text(label)
-					.font(.system(size: 9))
-					.foregroundStyle(.tertiary)
-				Text(bytes.map(Self.formatBytes) ?? "—")
-					.font(.caption2.monospacedDigit())
-					.lineLimit(1)
-			}
-			.frame(maxWidth: .infinity, alignment: .leading)
 		}
 
 		private nonisolated static func formatBytes(_ bytes: UInt64) -> String {

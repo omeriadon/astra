@@ -69,7 +69,7 @@ private struct SidebarChromeHarness: View {
 					}
 				}
 				.frame(width: sidebarWidth, height: geometry.size.height)
-				.sidebarScrollContentMargins(bottomBarHeight: $layout.barHeight)
+				.sidebarScrollContentMargins()
 				.sidebarScrollOpacityFade(top: 38, bottom: layout.barHeight + 38)
 				.overlay(alignment: .bottom) {
 					ChromeProbe(state: barState)

@@ -277,7 +277,7 @@ final class Browser {
 		} else {
 			addTab()
 		}
-		schedulePersistence()
+		scheduleSelectionPersistence()
 	}
 
 	@discardableResult

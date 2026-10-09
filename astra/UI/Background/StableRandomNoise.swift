@@ -4,32 +4,27 @@ import SwiftUI
 struct StableRandomNoise: View {
 	let isMonochrome: Bool
 	let opacity: Double
+	var colorAmount: Double?
 
 	@State private var textureSize = CGSize.zero
 
 	var body: some View {
 		GeometryReader { geometry in
-			Group {
-				if isMonochrome {
-					Noise(style: .random)
-						.monochrome()
-				} else {
-					Noise(style: .random)
+			Noise(style: .random)
+				.saturation(colorAmount ?? (isMonochrome ? 0 : 1))
+				.frame(
+					width: max(textureSize.width, geometry.size.width),
+					height: max(textureSize.height, geometry.size.height),
+					alignment: .topLeading
+				)
+				.opacity(opacity)
+				.accessibilityHidden(true)
+				.onAppear {
+					ensureTextureCovers(geometry.size)
 				}
-			}
-			.frame(
-				width: max(textureSize.width, geometry.size.width),
-				height: max(textureSize.height, geometry.size.height),
-				alignment: .topLeading
-			)
-			.opacity(opacity)
-			.accessibilityHidden(true)
-			.onAppear {
-				ensureTextureCovers(geometry.size)
-			}
-			.onChange(of: geometry.size) { _, size in
-				ensureTextureCovers(size)
-			}
+				.onChange(of: geometry.size) { _, size in
+					ensureTextureCovers(size)
+				}
 		}
 		.clipped()
 	}

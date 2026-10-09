@@ -81,37 +81,15 @@ struct BrowserFavouriteTile: View {
 			)
 		#endif
 		#if os(macOS)
-			.onHover { hovering in
-			guard onSelectTab == nil else { return }
-			isHovered = hovering
-			if !hovering {
-				if hoverPreviewStarted {
-					BrowserTabHoverPreviewCoordinator.shared.hoverEnded(
-						tabID: tab.id,
-						windowID: browser.windowID
-					)
-				}
-				hoverPreviewStarted = false
-			}
-		}
-		.modifier(
-			FavouriteHoverGeometryModifier(enabled: isHovered && onSelectTab == nil) { frame in
-				hoverFrame = frame
-				if hoverPreviewStarted {
-					BrowserTabHoverPreviewCoordinator.shared.updateFrame(
-						for: tab.id,
-						windowID: browser.windowID,
-						frame: frame
-					)
-				} else {
-					hoverPreviewStarted = true
-					BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
-						tabID: tab.id,
-						windowID: browser.windowID,
-						sourceFrame: frame
-					)
-				}
-			}
+			.modifier(
+			FavouriteHoverPreviewModifier(
+				tabID: tab.id,
+				windowID: browser.windowID,
+				previewEnabled: onSelectTab == nil,
+				isHovered: $isHovered,
+				hoverFrame: $hoverFrame,
+				hoverPreviewStarted: $hoverPreviewStarted
+			)
 		)
 		#endif
 		.accessibilityLabel(tab.title)
@@ -141,20 +119,65 @@ struct BrowserFavouriteTile: View {
 }
 
 #if os(macOS)
-	private struct FavouriteHoverGeometryModifier: ViewModifier {
-		let enabled: Bool
-		let onFrame: (CGRect) -> Void
+	private struct FavouriteHoverPreviewModifier: ViewModifier {
+		let tabID: UUID
+		let windowID: UUID
+		let previewEnabled: Bool
+		@Binding var isHovered: Bool
+		@Binding var hoverFrame: CGRect
+		@Binding var hoverPreviewStarted: Bool
 
 		func body(content: Content) -> some View {
-			if enabled {
-				content.onGeometryChange(for: CGRect.self) { proxy in
+			content
+				.onHover { hovering in
+					guard previewEnabled else { return }
+					isHovered = hovering
+					if hovering {
+						if hoverPreviewStarted {
+							BrowserTabHoverPreviewCoordinator.shared.updateFrame(
+								for: tabID,
+								windowID: windowID,
+								frame: hoverFrame
+							)
+						} else if hoverFrame != .zero {
+							hoverPreviewStarted = true
+							BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
+								tabID: tabID,
+								windowID: windowID,
+								sourceFrame: hoverFrame
+							)
+						}
+					} else {
+						if hoverPreviewStarted {
+							BrowserTabHoverPreviewCoordinator.shared.hoverEnded(tabID: tabID, windowID: windowID)
+						}
+						hoverPreviewStarted = false
+					}
+				}
+				.onGeometryChange(for: CGRect.self) { proxy in
 					proxy.frame(in: .global)
 				} action: { frame in
-					onFrame(frame)
+					hoverFrame = frame
+					guard previewEnabled, isHovered else { return }
+					if hoverPreviewStarted {
+						BrowserTabHoverPreviewCoordinator.shared.updateFrame(for: tabID, windowID: windowID, frame: frame)
+					} else {
+						hoverPreviewStarted = true
+						BrowserTabHoverPreviewCoordinator.shared.hoverBegan(tabID: tabID, windowID: windowID, sourceFrame: frame)
+					}
 				}
-			} else {
-				content
-			}
+				.onChange(of: tabID) { oldID, _ in
+					if hoverPreviewStarted {
+						BrowserTabHoverPreviewCoordinator.shared.hoverEnded(tabID: oldID, windowID: windowID)
+					}
+					hoverPreviewStarted = false
+				}
+				.onDisappear {
+					if hoverPreviewStarted {
+						BrowserTabHoverPreviewCoordinator.shared.hoverEnded(tabID: tabID, windowID: windowID)
+					}
+					hoverPreviewStarted = false
+				}
 		}
 	}
 #endif

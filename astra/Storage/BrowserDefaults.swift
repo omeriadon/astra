@@ -23,6 +23,7 @@ extension Defaults.Keys {
 	static let homepageURL = Key<String>("homepageURL", default: "https://www.google.com")
 	static let tryHTTPSFirst = Key<Bool>("tryHTTPSFirst", default: true)
 	static let globalPrivacyControl = Key<Bool>("globalPrivacyControl", default: true)
+	static let adBlockingEnabled = Key<Bool>("adBlockingEnabled", default: true)
 	static let historyRetentionDays = Key<Int>("historyRetentionDays", default: 0)
 	static let searchSuggestionsEnabled = Key<Bool>("searchSuggestionsEnabled", default: true)
 	static let browserSearchConfiguration = Key<String>("browserSearchConfiguration", default: BrowserSearchConfiguration.default.encoded)

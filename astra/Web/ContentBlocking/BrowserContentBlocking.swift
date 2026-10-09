@@ -1,3 +1,4 @@
+import Defaults
 import Foundation
 import Observation
 import WebKit
@@ -14,6 +15,7 @@ final class BrowserContentBlocking {
 	private var privateStoreDirectory: URL?
 	@ObservationIgnored private var storedRecordData: Data?
 	private var storedSource: BrowserContentBlockingRuleSource.Stored?
+	private(set) var builtInCompiledRuleList: WKContentRuleList?
 	private var privateSessionIsEnding = false
 	private var idleWaiters: [CheckedContinuation<Void, Never>] = []
 	private(set) var source: BrowserContentBlockingRuleSource.Validated?
@@ -33,46 +35,57 @@ final class BrowserContentBlocking {
 		self.isPrivate = isPrivate
 		self.defaults = defaults
 		if !isPrivate {
-			// WKContentRuleListStore can spin up WebKit-side infrastructure.
-			// Most installs have no imported native list, so keep the store lazy.
+			// Defer WebKit infrastructure until rule preparation.
 			storedRecordData = defaults.data(forKey: Self.defaultsKey)
 		}
+		#if DEBUG
+			_ = BrowserContentBlockingRuleSource.builtInRulesAreValid
+		#endif
 	}
 
 	var isActive: Bool {
-		isEnabled && compiledRuleList != nil
+		Defaults[.adBlockingEnabled] && builtInCompiledRuleList != nil
 	}
 
 	var isReadyForNavigation: Bool {
-		isPrivate || (isPrepared && !isPreparing)
+		isPrepared && !isPreparing
 	}
 
 	func prepare() async {
-		guard !isPrivate, !isPrepared, !isBusy else {
+		guard !isPrepared, !isBusy, !privateSessionIsEnding else {
 			BrowserLog.trace(.contentBlocking, "content-blocking.prepare.skip", metadata: ["private": String(isPrivate), "prepared": String(isPrepared), "busy": String(isBusy)])
 			return
 		}
 		let logStarted = BrowserLog.clock()
 		BrowserLog.info(.contentBlocking, "content-blocking.prepare.begin")
 		isPrepared = true
-		guard let storedRecordData else {
-			didUpdate?()
-			return
-		}
 		isPreparing = true
 		isBusy = true
 		defer {
 			isPreparing = false
-			BrowserLog.duration(.contentBlocking, "content-blocking.prepare.end", since: logStarted, warnAboveMilliseconds: 500, metadata: ["enabled": String(isEnabled), "has_rules": String(compiledRuleList != nil), "error": BrowserLog.value(errorDescription)])
+			BrowserLog.duration(.contentBlocking, "content-blocking.prepare.end", since: logStarted, warnAboveMilliseconds: 500, metadata: ["enabled": String(Defaults[.adBlockingEnabled]), "has_rules": String(builtInCompiledRuleList != nil), "error": BrowserLog.value(errorDescription)])
 			finishOperation()
 		}
 
+		do {
+			let store = try contentRuleListStore()
+			let builtIn = try BrowserContentBlockingRuleSource.validate(BrowserContentBlockingRuleSource.builtInData)
+			if let cached = try? await store.contentRuleList(forIdentifier: builtIn.identifier) {
+				builtInCompiledRuleList = cached
+			} else {
+				builtInCompiledRuleList = try await compile(builtIn, using: store)
+			}
+		} catch {
+			errorDescription = error.localizedDescription
+		}
+
+		guard let storedRecordData else { return }
 		guard let stored = await Task.detached(priority: .utility, operation: {
 			BrowserContentBlockingRuleSource.Stored.decodeSupported(storedRecordData)
 		}).value else {
 			self.storedRecordData = nil
 			isReadOnly = true
-			errorDescription = "Astra preserved content rules it cannot read. Remove or replace them after updating Astra."
+			errorDescription = "Astra preserved content rules it cannot read."
 			return
 		}
 		self.storedRecordData = nil
@@ -84,25 +97,18 @@ final class BrowserContentBlocking {
 		guard let source = await Task.detached(priority: .utility, operation: {
 			try? BrowserContentBlockingRuleSource.validate(stored.data)
 		}).value else {
-			errorDescription = "Astra preserved a content-rule source it cannot validate. Import a valid list to replace it."
+			errorDescription = "Astra preserved a content-rule source it cannot validate."
 			return
 		}
 		self.source = source
 
 		do {
 			let store = try contentRuleListStore()
-			let cachedList: WKContentRuleList?
-			do {
-				cachedList = try await store.contentRuleList(forIdentifier: source.identifier)
-			} catch {
-				cachedList = nil
-			}
-			if let cachedList {
-				compiledRuleList = cachedList
+			if let cached = try? await store.contentRuleList(forIdentifier: source.identifier) {
+				compiledRuleList = cached
 			} else {
 				compiledRuleList = try await compile(source, using: store)
 			}
-			errorDescription = nil
 		} catch {
 			errorDescription = error.localizedDescription
 		}
@@ -164,11 +170,8 @@ final class BrowserContentBlocking {
 			} else {
 				try await compile(candidate, using: store)
 			}
-			guard let accepted = BrowserContentBlockingRuleSource.lastGood(
-				current: source,
-				candidate: candidate,
-				compiledIdentifier: list.identifier
-			) else { throw StoreError.staleCompile }
+			guard list.identifier == candidate.identifier else { throw StoreError.staleCompile }
+			let accepted = candidate
 			let updatedAt = Date.now
 			let stored = BrowserContentBlockingRuleSource.Stored(
 				fileName: Self.safeFileName(fileName),
@@ -226,22 +229,8 @@ final class BrowserContentBlocking {
 
 	func setEnabled(_ enabled: Bool) {
 		BrowserLog.notice(.contentBlocking, "content-blocking.set-enabled", metadata: ["enabled": String(enabled)])
-		guard !isBusy, !privateSessionIsEnding,
-		      !enabled || compiledRuleList != nil else { return }
-		guard !isReadOnly else {
-			errorDescription = "Astra preserved a content-rule record it cannot rewrite."
-			return
-		}
-		isEnabled = enabled
-		if !isPrivate, var storedSource {
-			storedSource.isEnabled = enabled
-			guard let data = try? JSONEncoder().encode(storedSource) else {
-				errorDescription = StoreError.sourceSaveFailed.localizedDescription
-				return
-			}
-			defaults.set(data, forKey: Self.defaultsKey)
-			self.storedSource = storedSource
-		}
+		guard !privateSessionIsEnding else { return }
+		Defaults[.adBlockingEnabled] = enabled
 		didUpdate?()
 	}
 
@@ -284,6 +273,7 @@ final class BrowserContentBlocking {
 		source = nil
 		storedSource = nil
 		compiledRuleList = nil
+		builtInCompiledRuleList = nil
 		sourceFileName = nil
 		updatedAt = nil
 		store = nil
@@ -298,13 +288,18 @@ final class BrowserContentBlocking {
 		}
 	}
 
-	func ruleList(for origin: String?, sitePreferences: BrowserSitePreferences) -> WKContentRuleList? {
-		guard BrowserContentBlockingRuleSource.shouldApply(
-			enabled: isEnabled,
-			hasCompiledList: compiledRuleList != nil,
-			isSiteException: origin.map(sitePreferences.disablesNativeContentBlocking(for:)) ?? false
-		) else { return nil }
-		return compiledRuleList
+	func ruleLists(for origin: String?, sitePreferences: BrowserSitePreferences) -> [WKContentRuleList] {
+		guard Defaults[.adBlockingEnabled],
+		      !(origin.map(sitePreferences.disablesNativeContentBlocking(for:)) ?? false)
+		else { return [] }
+		var lists = [WKContentRuleList]()
+		if let builtInCompiledRuleList {
+			lists.append(builtInCompiledRuleList)
+		}
+		if isEnabled, let compiledRuleList {
+			lists.append(compiledRuleList)
+		}
+		return lists
 	}
 
 	private func contentRuleListStore() throws -> WKContentRuleListStore {

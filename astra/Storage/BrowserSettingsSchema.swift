@@ -27,6 +27,7 @@ enum BrowserSettingsSchema {
 		"aiWebsiteMonitoring",
 		"deliveredWebsiteMonitors",
 		"aiLinkPreviews",
+		"adBlockingEnabled",
 		"aiLinkPreviewMode",
 		"aiLinkPreviewShiftOverride",
 		"aiTabGroups",
@@ -60,6 +61,7 @@ enum BrowserSettingsSchema {
 		Defaults[.homepageURL] = "https://www.google.com"
 		Defaults[.tryHTTPSFirst] = true
 		Defaults[.globalPrivacyControl] = true
+		Defaults[.adBlockingEnabled] = true
 		Defaults[.historyRetentionDays] = 0
 		Defaults[.searchSuggestionsEnabled] = true
 		Defaults[.browserSearchConfiguration] = BrowserSearchConfiguration.default.encoded

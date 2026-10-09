@@ -53,7 +53,6 @@
 							ToolbarItem(placement: .bottomBar) {
 								BrowserSpacesBar(
 									browser: browser,
-									onSwipeProgress: { _, _ in },
 									onOpenPage: { showPage(from: "sidebar") }
 								)
 							}
@@ -99,6 +98,11 @@
 					.ignoresSafeArea(.container, edges: isWebsite ? .vertical : [])
 				}
 				.toolbar {
+					ToolbarItem(placement: .topBarTrailing) {
+						if let controller = browser.selectedTab?.activeController, browser.selectedTab?.internalPage == nil {
+							BrowserAdBlockingButton(controller: controller)
+						}
+					}
 					ToolbarItem(placement: .bottomBar) {
 						HStack(spacing: 8) {
 							Button("Sidebar", systemImage: "sidebar.leading") {

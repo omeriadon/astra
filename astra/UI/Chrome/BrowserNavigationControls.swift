@@ -15,6 +15,7 @@ struct BrowserNavigationControls: View {
 			NavigationBackButton(controller: controller, browser: browser)
 			NavigationForwardButton(controller: controller, browser: browser)
 			NavigationReloadButton(controller: controller)
+			BrowserAdBlockingButton(controller: controller)
 			BrowserZoomControls(controller: controller)
 			if controller.isReaderAvailable || controller.readerHTML != nil {
 				Button(controller.readerHTML == nil ? "Show Reader" : "Hide Reader", systemImage: "doc.text") {

@@ -188,7 +188,7 @@ final class BrowserController: NSObject, Identifiable {
 	private static var cachedSafariUserAgentSuffix: String?
 	@ObservationIgnored
 	private var isApplyingSiteZoom = false
-	private var appliedContentRuleList: WKContentRuleList?
+	private var appliedContentRuleLists: [WKContentRuleList] = []
 
 	private static func compatibilityUserAgentOverride(for url: URL?) -> String? {
 		guard let url,
@@ -1544,19 +1544,20 @@ final class BrowserController: NSObject, Identifiable {
 
 	private func refreshContentBlocking(forOrigin origin: String?) {
 		guard let webView = createdWebView, owns(webView) else { return }
-		let nextRuleList = session.contentBlocking.ruleList(for: origin, sitePreferences: session.sitePreferences)
-		guard appliedContentRuleList?.identifier != nextRuleList?.identifier else { return }
+		let nextRuleLists = session.contentBlocking.ruleLists(for: origin, sitePreferences: session.sitePreferences)
+		guard appliedContentRuleLists.map(\.identifier) != nextRuleLists.map(\.identifier) else { return }
 		removeAppliedContentRuleList()
-		if let nextRuleList {
+		for nextRuleList in nextRuleLists {
 			webView.configuration.userContentController.add(nextRuleList)
-			appliedContentRuleList = nextRuleList
 		}
+		appliedContentRuleLists = nextRuleLists
 	}
 
 	private func removeAppliedContentRuleList() {
-		guard let appliedContentRuleList else { return }
-		createdWebView?.configuration.userContentController.remove(appliedContentRuleList)
-		self.appliedContentRuleList = nil
+		for list in appliedContentRuleLists {
+			createdWebView?.configuration.userContentController.remove(list)
+		}
+		appliedContentRuleLists.removeAll()
 	}
 
 	private func updateContentBlocking(

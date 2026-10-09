@@ -5,7 +5,6 @@ import SwiftUI
 
 struct BrowserSpacesBar: View {
 	let browser: Browser
-	let onSwipeProgress: (UUID?, Double) -> Void
 	var onOpenPage: (() -> Void)?
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var spaceToDelete: BrowserSpace?

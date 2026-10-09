@@ -20,6 +20,7 @@ final class BrowserWebSession {
 	let usageLimits: BrowserUsageLimitsStore
 	var persistenceWriteTask: Task<Void, Never>?
 	private var cleanupTask: Task<Void, Never>?
+	private var contentBlockingUpdatesTask: Task<Void, Never>?
 
 	init(isPrivate: Bool = false) {
 		BrowserLog.info(.lifecycle, "web-session.init", metadata: ["private": String(isPrivate)])
@@ -44,6 +45,12 @@ final class BrowserWebSession {
 		}
 		contentBlocking.didUpdate = { [weak self] in
 			self?.refreshContentBlocking()
+		}
+		contentBlockingUpdatesTask = Task { @MainActor [weak self] in
+			for await _ in Defaults.updates(.adBlockingEnabled) {
+				guard let self else { return }
+				refreshContentBlocking()
+			}
 		}
 		sitePreferences.didUpdateZoom = { [weak sitePreferences] origin, zoom in
 			guard let sitePreferences else { return }
@@ -87,9 +94,7 @@ final class BrowserWebSession {
 			assert(dataStore.isPersistent != isPrivate)
 			assert(isPrivate ? toastManager !== ToastManager.shared : toastManager === ToastManager.shared)
 		#endif
-		if !isPrivate {
-			Task { await contentBlocking.prepare() }
-		}
+		Task { await contentBlocking.prepare() }
 	}
 
 	func clearWebsiteData(since: Date = .distantPast) async {
@@ -143,6 +148,7 @@ final class BrowserWebSession {
 			return
 		}
 		let task = Task { @MainActor in
+			contentBlockingUpdatesTask?.cancel()
 			await downloads.endPrivateSession()
 			await clearWebsiteData()
 			permissions.reset()
