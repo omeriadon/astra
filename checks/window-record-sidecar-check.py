@@ -8,6 +8,8 @@ window = source.split("nonisolated func loadWindowRecords()", 1)[1].split("priva
 for marker in (
     'directory.appendingPathComponent("browser-state.json")',
     'directory.appendingPathComponent("browser-windows.json")',
+    "byteCount <= 256 * 1024",
+    "sidecarURL.resourceValues(forKeys: [.fileSizeKey])",
     "bytes.count <= 256 * 1024",
     "sidecar.version == 1, sidecar.signature == signature",
     "validateWindowRecords(sidecar.records)",
