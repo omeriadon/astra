@@ -646,29 +646,39 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		// A full-state save needs the old state to detect privacy deletions.
 		// Decode it once; do not reread and decode the same 50,000-visit JSON
 		// document during schema checking and again for backup comparison.
-		let previousData = try? Data(contentsOf: currentURL)
-		let previous: BrowserPersistedState?
-		if let previousData {
+		let cacheKey = currentURL.standardizedFileURL.path as NSString
+		let currentSignature = CheckpointSignature(at: currentURL)
+		let cached = currentSignature.flatMap { signature -> CachedCheckpoint? in
+			guard let candidate = Self.checkpointCache.object(forKey: cacheKey),
+			      candidate.signature == signature else { return nil }
+			return candidate
+		}
+		// A cold start or an externally replaced checkpoint still receives the
+		// original full schema/privacy validation. Normal consecutive saves
+		// reuse only the confirmed prior checkpoint's compact privacy index.
+		let previousData = cached?.originalData ?? (try? Data(contentsOf: currentURL))
+		let previousIndex: PrivacyDeletionIndex?
+		if let cached {
+			previousIndex = cached.privacy
+			BrowserLog.trace(.persistence, "state.previous-cache.hit")
+		} else if let previousData {
 			do {
-				previous = try decodeSnapshot(previousData)
+				previousIndex = PrivacyDeletionIndex(try decodeSnapshot(previousData))
 			} catch BrowserPersistenceError.unsupportedVersion {
 				throw BrowserPersistenceError.unsupportedVersion
 			} catch {
-				previous = nil
+				previousIndex = nil
 			}
 		} else {
-			previous = nil
+			previousIndex = nil
 		}
-		// Only the backup schema version matters here: a full-model decode
-		// would allocate a second history and tab collection on every save.
+		// The backup is checked for forward-compatible schema versions even if
+		// the primary was cached; never overwrite a newer app's recovery copy.
 		let backupData = try? Data(contentsOf: backupURL)
 		if let backupData { try rejectUnsupportedEnvelopeVersion(backupData) }
-		// In the rare case where the primary is corrupted or missing, the
-		// recovery copy becomes our deletion-comparison baseline. Normally
-		// never decode a second large session document during a save.
-		let backupPrevious: BrowserPersistedState?
-		if previous == nil, let backupData {
-			backupPrevious = try? decodeSnapshot(backupData)
+		let backupPrevious: PrivacyDeletionIndex?
+		if previousIndex == nil, let backupData {
+			backupPrevious = (try? decodeSnapshot(backupData)).map(PrivacyDeletionIndex.init)
 		} else {
 			backupPrevious = nil
 		}
@@ -689,55 +699,10 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 			since: encodeStarted,
 			warnAboveMilliseconds: 125,
 			metadata: ["bytes": String(data.count)])
-		let previousPrimaryWasUnavailable = previous == nil
+		let previousPrimaryWasUnavailable = previousIndex == nil
 		var privateDataWasRemoved = false
-		if let previous = previous ?? backupPrevious {
-			// Index old/new URL ownership once. Reusing an ID with a different
-			// URL must not leave the previous private destination in backup.
-			let historyURLsByID = Dictionary(
-				(state.historyVisits ?? []).map { ($0.id, $0.url) },
-				uniquingKeysWith: { first, _ in first }
-			)
-			let readingListURLsByID = Dictionary(
-				state.readingList.map { ($0.id, $0.url) },
-				uniquingKeysWith: { first, _ in first }
-			)
-			let bookmarkURLsByID = Dictionary(
-				state.bookmarks.map { ($0.id, $0.url) },
-				uniquingKeysWith: { first, _ in first }
-			)
-			let closedTabIDs = Set(state.closedTabs.map(\.id))
-			let openTabsByID = Dictionary(
-				state.openTabs.map { ($0.id, $0) },
-				uniquingKeysWith: { first, _ in first }
-			)
-			privateDataWasRemoved = (previous.historyVisits ?? []).contains {
-					historyURLsByID[$0.id] != $0.url
-				}
-				|| previous.bookmarks.contains {
-					bookmarkURLsByID[$0.id] != $0.url
-				}
-				|| previous.readingList.contains {
-					readingListURLsByID[$0.id] != $0.url
-				}
-				|| previous.snapshot.historyClearedAt < state.snapshot.historyClearedAt
-				|| previous.closedTabs.contains { !closedTabIDs.contains($0.id) }
-				|| previous.openTabs.contains { old in
-					guard let updated = openTabsByID[old.id] else { return false }
-					let updatedHistory = Set(updated.history)
-					return old.history.contains { !updatedHistory.contains($0) }
-				}
-				|| previous.snapshot.deletedVisitsAt.contains { id, date in
-					state.snapshot.deletedVisitsAt[id].map { $0 > date } ?? false
-				}
-				|| previous.openTabs.contains { old in
-					old.recordsNavigationHistory && openTabsByID[old.id]?.recordsNavigationHistory == false
-				}
-				|| previous.openTabs.contains { tab in
-					(tab.history + [tab.url].compactMap(\.self)).contains { $0.user != nil || $0.password != nil }
-				}
-				|| previous.bookmarks.contains { $0.url.user != nil || $0.url.password != nil }
-				|| (previous.historyVisits ?? []).contains { $0.url.user != nil || $0.url.password != nil }
+		if let previous = previousIndex ?? backupPrevious {
+			privateDataWasRemoved = previous.hasPrivacyRemoval(comparedTo: state)
 			if privateDataWasRemoved {
 				// If we restored from the backup because the primary was
 				// damaged, repair the primary first: never remove the last
@@ -773,6 +738,23 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 			let legacyURL = directory.appendingPathComponent(name)
 			if FileManager.default.fileExists(atPath: legacyURL.path) {
 				try FileManager.default.removeItem(at: legacyURL)
+			}
+		}
+		if let signature = CheckpointSignature(at: currentURL) {
+			let cacheCost = min(
+				Int.max / 2,
+				data.count + (state.historyVisits?.count ?? 0) * 144
+					+ state.openTabs.count * 512 + state.bookmarks.count * 128
+					+ state.readingList.count * 128
+			)
+			if cacheCost <= 24 * 1024 * 1024 {
+				Self.checkpointCache.setObject(
+					CachedCheckpoint(signature: signature, data: data, privacy: PrivacyDeletionIndex(state)),
+					forKey: cacheKey,
+					cost: cacheCost
+				)
+			} else {
+				Self.checkpointCache.removeObject(forKey: cacheKey)
 			}
 		}
 	}
