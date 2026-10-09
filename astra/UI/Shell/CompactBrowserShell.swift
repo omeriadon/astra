@@ -20,6 +20,7 @@
 								browser: browser,
 								space: browser.selectedSpace,
 								theme: browser.theme,
+								favouriteTabIDs: browser.workspace.favouriteTabIDs,
 								onSelectTab: { id in showPage(from: id.uuidString) },
 								onNewTab: { showPage(from: "sidebar-new-tab") },
 								navigationNamespace: presentations

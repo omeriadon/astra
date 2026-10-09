@@ -34,11 +34,14 @@ struct BrowserSpacePager<Content: View>: View {
 		ScrollView(.horizontal) {
 			HStack(spacing: 0) {
 				ForEach(spaces) { space in
+					// The page container is the horizontal target around its native vertical scroll view.
 					VStack(spacing: 0) {
 						content(space, space.id == selectedSpaceID, favouriteTabIDs)
 					}
 					.containerRelativeFrame(.horizontal)
 					.id(space.id)
+					.allowsHitTesting(space.id == selectedSpaceID)
+					.accessibilityHidden(space.id != selectedSpaceID)
 				}
 			}
 			.scrollTargetLayout()
@@ -66,6 +69,11 @@ struct BrowserSpacePager<Content: View>: View {
 			selectSettledSpace(at: Self.pagePosition(in: context.geometry))
 		}
 		.onChange(of: selectedSpaceID, initial: true) { oldID, id in
+			if oldID != id, let index = spaces.firstIndex(where: { $0.id == id }),
+			   let position = scrollState.position, abs(position - Double(index)) < 0.001
+			{
+				return
+			}
 			withAnimation(reduceMotion || oldID == id ? nil : .smooth(duration: 0.3)) {
 				scrollPosition.scrollTo(id: id, anchor: .center)
 			}
