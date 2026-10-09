@@ -234,6 +234,21 @@ actor BrowserDownloadFileWorker {
 		FileManager.default.fileExists(atPath: file.path)
 	}
 
+	/// Filename collision searches can probe thousands of files on slow or
+	/// disconnected disks. Keep every candidate check on the filesystem actor.
+	func availableDownloadDestination(
+		fileName: String, folder: URL, saved: URL?, reserved: Set<URL>
+	) -> URL {
+		if let saved,
+		   saved.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL,
+		   BrowserDownload.safeFilename(saved.lastPathComponent) == saved.lastPathComponent,
+		   !FileManager.default.fileExists(atPath: saved.path),
+		   !reserved.contains(saved.standardizedFileURL) {
+			return saved
+		}
+		return BrowserDownload.collisionFreeURL(fileName: fileName, in: folder, reserved: reserved)
+	}
+
 	func prepareEmptySegmentFile(_ file: URL, ownedStagingDirectory: URL) throws {
 		try Task.checkCancellation()
 		let root = ownedStagingDirectory.standardizedFileURL.resolvingSymlinksInPath().path + "/"
