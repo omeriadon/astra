@@ -177,8 +177,6 @@ struct BrowserBookmarksView: View {
 		libraryRevision &+= 1
 		let revision = libraryRevision
 		let query = searchText
-		let bookmarks = browser.bookmarks
-		let readingList = browser.readingList
 		libraryTask?.cancel()
 		libraryTask = Task { @MainActor in
 			// Search typing should not queue multiple full-library scans.
@@ -190,6 +188,10 @@ struct BrowserBookmarksView: View {
 				}
 			}
 			guard !Task.isCancelled, revision == libraryRevision else { return }
+			// Capture the COW arrays only after search debouncing. Rapid typing
+			// should not pin successive library buffers before they are needed.
+			let bookmarks = browser.bookmarks
+			let readingList = browser.readingList
 			let worker = Task.detached(priority: .userInitiated) {
 				BrowserLibraryProjection.build(bookmarks: bookmarks, readingList: readingList, query: query)
 			}
