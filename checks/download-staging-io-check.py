@@ -19,6 +19,8 @@ assert "try FileManager.default.createDirectory(at: stagingDirectory" not in man
 
 assert "await BrowserDownloadFileWorker.shared.prepareEmptySegmentFile(" in manager
 assert "FileManager.default.createFile(atPath: items[resumedIndex].fileURL.path" not in manager
+assert "Task { await BrowserDownloadFileWorker.shared.removeFiles([cancelledStagingURL]) }" in manager
+assert "Task { await BrowserDownloadFileWorker.shared.removeFiles([failedStagingURL]) }" in manager
 assert "func prepareEmptySegmentFile(" in worker
 assert 'file.pathExtension == "astradownload"' in worker
 assert "FinalizationError.destinationUnavailable" in worker
