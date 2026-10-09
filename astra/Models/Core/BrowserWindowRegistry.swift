@@ -253,8 +253,17 @@ final class BrowserWindowRegistry {
 
 	private func publishNow(from source: Browser) {
 		guard !source.isPrivate else { return }
+		let started = BrowserLog.clock()
 		browsers.removeAll { $0.browser == nil }
 		let recipients = browsers.compactMap(\.browser).filter { $0 !== source && !$0.isPrivate }
+		defer {
+			BrowserLog.duration(.performance, "workflow.windows.shared-state-fanout",
+				since: started, warnAboveMilliseconds: 30,
+				metadata: [
+					"recipients": String(recipients.count),
+					"source_tabs": String(source.tabs.count),
+				])
+		}
 		// Construct the full source document only once for the whole fan-out.
 		// Each recipient still performs its own conflict-preserving local merge.
 		source.publishSharedState(to: recipients)
