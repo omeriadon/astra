@@ -117,6 +117,31 @@ struct DownloadFileWorkerCheck {
 			precondition(manager.fileExists(atPath: firstDest.path))
 		}
 
+		// Directory creation, existence and segment reset stay on the IO actor.
+		let newStage = root.appendingPathComponent("new-staging", isDirectory: true)
+		try await BrowserDownloadFileWorker.shared.prepareStagingDirectory(newStage)
+		precondition(manager.fileExists(atPath: newStage.path))
+		let segmentStagingURL = newStage.appendingPathComponent(UUID().uuidString).appendingPathExtension("astradownload")
+		precondition(await !BrowserDownloadFileWorker.shared.stagedFileExists(segmentStagingURL))
+		try await BrowserDownloadFileWorker.shared.prepareEmptySegmentFile(
+			segmentStagingURL, ownedStagingDirectory: newStage
+		)
+		precondition(await BrowserDownloadFileWorker.shared.stagedFileExists(segmentStagingURL))
+		precondition((try Data(contentsOf: segmentStagingURL)).isEmpty)
+		try Data("stale".utf8).write(to: segmentStagingURL)
+		try await BrowserDownloadFileWorker.shared.prepareEmptySegmentFile(
+			segmentStagingURL, ownedStagingDirectory: newStage
+		)
+		precondition((try Data(contentsOf: segmentStagingURL)).isEmpty)
+		do {
+			try await BrowserDownloadFileWorker.shared.prepareEmptySegmentFile(
+				firstDest, ownedStagingDirectory: newStage
+			)
+			preconditionFailure("Segment worker accepted a file outside owned staging")
+		} catch {
+			precondition(manager.fileExists(atPath: firstDest.path))
+		}
+
 		let downloadIndex = root.appendingPathComponent("downloads.json")
 		let archived = BrowserDownload(
 			id: UUID(),
