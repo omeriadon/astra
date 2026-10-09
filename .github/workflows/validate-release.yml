@@ -126,6 +126,7 @@ jobs:
           python3 checks/checkpoint-privacy-cache-check.py
           python3 checks/library-observation-check.py
           python3 checks/webkit-resource-policy-check.py
+          python3 checks/window-record-sidecar-check.py
           python3 checks/noise-lifecycle-check.py
           python3 checks/startup-hydration-dependencies-check.py
           python3 checks/automatic-hibernation-runtime-check.py
