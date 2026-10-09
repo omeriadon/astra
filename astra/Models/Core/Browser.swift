@@ -2850,7 +2850,7 @@ final class Browser {
 			return BrowserScrollUpdate(
 				tabID: id,
 				url: tab.currentURL.map(BrowserAddress.withoutCredentials),
-				historyIndex: tab.openTab.historyIndex,
+				historyIndex: tab.recordsNavigationHistory ? controller.historyIndex : 0,
 				position: controller.scrollPosition,
 				modifiedAt: tab.modifiedAt
 			)
