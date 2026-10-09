@@ -123,6 +123,7 @@ jobs:
           python3 checks/window-sync-noop-check.py
           python3 checks/history-derived-cache-check.py
           python3 checks/control-tab-observation-check.py
+          python3 checks/checkpoint-privacy-cache-check.py
           python3 checks/noise-lifecycle-check.py
           python3 checks/startup-hydration-dependencies-check.py
           python3 checks/automatic-hibernation-runtime-check.py
