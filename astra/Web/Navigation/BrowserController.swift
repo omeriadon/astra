@@ -1487,7 +1487,7 @@ final class BrowserController: NSObject, Identifiable {
 			screenshotReaderWebView = nil
 			isRefreshingPreviewSnapshot = false
 		#endif
-		appliedContentRuleList = nil
+		appliedContentRuleLists.removeAll()
 		navigationDidChange = nil
 		zoomDidChange = nil
 		historyVisitDidCommit = nil
