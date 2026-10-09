@@ -152,6 +152,16 @@ nonisolated struct BrowserSelectionUpdate: Codable, Sendable {
 	let selectedSpaceID: UUID
 }
 
+/// A bounded, URL-scoped scroll checkpoint. Its parent full checkpoint is
+/// identified separately on disk, so a stale sidecar cannot change a newer tab.
+nonisolated struct BrowserScrollUpdate: Codable, Sendable {
+	let tabID: UUID
+	let url: URL?
+	let historyIndex: Int
+	let position: BrowserScrollPosition
+	let modifiedAt: Date
+}
+
 nonisolated enum BrowserHomepage {
 	static func validURL(_ value: String) -> URL? {
 		guard let components = URLComponents(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
@@ -305,6 +315,14 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		let version: Int
 		var updates: [String: BrowserSelectionUpdate]
 		let writtenAt: Date
+	}
+
+	/// Tiny, atomic overlay for scroll-only mutations. Full saves absorb these
+	/// updates under the same lock before committing the primary checkpoint.
+	private nonisolated struct ScrollJournal: Codable {
+		let version: Int
+		let baseSignature: CheckpointSignature
+		var updates: [String: BrowserScrollUpdate]
 	}
 
 	private nonisolated struct Envelope: Codable {
