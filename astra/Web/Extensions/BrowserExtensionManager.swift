@@ -23,7 +23,13 @@ private nonisolated enum BrowserExtensionFileWorker {
 		try FileManager.default.createDirectory(
 			at: destination.deletingLastPathComponent(), withIntermediateDirectories: true
 		)
-		try FileManager.default.copyItem(at: source, to: destination)
+		do {
+			try FileManager.default.copyItem(at: source, to: destination)
+		} catch {
+			// A cancelled/failed copy must not leave an installable partial ZIP.
+			try? FileManager.default.removeItem(at: destination)
+			throw error
+		}
 	}
 
 	static func unpackChromeArchive(from download: URL, to destination: URL) throws {
