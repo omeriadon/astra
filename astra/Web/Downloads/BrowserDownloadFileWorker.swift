@@ -216,6 +216,36 @@ actor BrowserDownloadFileWorker {
 		}
 	}
 
+	/// These staging operations may hit slow disks or disconnected volumes.
+	/// Keep directory creation, existence probes and segment preparation off
+	/// the AppKit main actor. No user-chosen final path is mutated here.
+	func prepareStagingDirectory(_ directory: URL) throws {
+		try Task.checkCancellation()
+		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+	}
+
+	func stagedFileExists(_ file: URL) -> Bool {
+		FileManager.default.fileExists(atPath: file.path)
+	}
+
+	func prepareEmptySegmentFile(_ file: URL, ownedStagingDirectory: URL) throws {
+		try Task.checkCancellation()
+		let root = ownedStagingDirectory.standardizedFileURL.resolvingSymlinksInPath().path + "/"
+		guard file.standardizedFileURL.deletingLastPathComponent().resolvingSymlinksInPath().path + "/" == root,
+		      file.pathExtension == "astradownload" else {
+			throw FinalizationError.destinationUnavailable
+		}
+		let manager = FileManager.default
+		try manager.createDirectory(at: ownedStagingDirectory, withIntermediateDirectories: true)
+		if manager.fileExists(atPath: file.path) {
+			try manager.removeItem(at: file)
+		}
+		try Task.checkCancellation()
+		guard manager.createFile(atPath: file.path, contents: nil) else {
+			throw CocoaError(.fileWriteUnknown)
+		}
+	}
+
 	func removeFiles(_ files: [URL]) {
 		for file in files {
 			try? FileManager.default.removeItem(at: file)
