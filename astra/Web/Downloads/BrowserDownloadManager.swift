@@ -1648,7 +1648,15 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 					url.stopAccessingSecurityScopedResource()
 					return nil
 				}
-				guard !FileManager.default.fileExists(atPath: url.path) else {
+				let destinationExists = await BrowserDownloadFileWorker.shared.stagedFileExists(url)
+				guard !isClosing, downloads[downloadID] != nil,
+				      let index = items.firstIndex(where: {
+				      	$0.id == itemID && $0.status == .downloading
+				      }) else {
+					url.stopAccessingSecurityScopedResource()
+					return nil
+				}
+				guard !destinationExists else {
 					url.stopAccessingSecurityScopedResource()
 					showToast(symbol: "exclamationmark.triangle", message: "That file already exists. Choose a new name.")
 					return nil
