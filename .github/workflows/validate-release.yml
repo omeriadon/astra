@@ -130,6 +130,7 @@ jobs:
           python3 checks/scroll-journal-check.py
           python3 checks/extension-file-worker-check.py
           python3 checks/workflow-diagnostics-check.py
+          python3 checks/download-staging-io-check.py
           python3 scripts/webkit_benchmark.py self-test
           python3 checks/noise-lifecycle-check.py
           python3 checks/startup-hydration-dependencies-check.py
