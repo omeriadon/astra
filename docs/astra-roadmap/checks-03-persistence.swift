@@ -175,6 +175,45 @@ struct BrowserPersistenceCheck {
 		let preservedFutureVersion = try Data(contentsOf: privacyPrimary)
 		precondition(preservedFutureVersion == futureVersion)
 
+		// Scroll journal durability, stale snapshot merge, and navigation
+		// invalidation without rebuilding the full session for every scroll.
+		let scrollDirectory = directory.appendingPathComponent("scroll-journal", isDirectory: true)
+		try FileManager.default.createDirectory(at: scrollDirectory, withIntermediateDirectories: true)
+		let scrollPersistence = BrowserPersistence(directory: scrollDirectory)
+		try scrollPersistence.savePersistedState(state)
+		let scrollPosition = BrowserScrollPosition(x: 18, y: 450)
+		let update = BrowserScrollUpdate(
+			tabID: tab.id, url: tab.url, historyIndex: tab.historyIndex,
+			position: scrollPosition,
+			modifiedAt: max(.now, tab.modifiedAt.addingTimeInterval(1))
+		)
+		try scrollPersistence.saveScrollUpdates([update])
+		let scrollRestored = try scrollPersistence.loadPersistedState()
+		precondition(scrollRestored?.openTabs[0].scrollPosition == scrollPosition)
+		// Full saves from another window must absorb a newer scroll journal
+		// even when that window captured its full snapshot earlier.
+		try scrollPersistence.savePersistedState(state)
+		let mergedScroll = try scrollPersistence.loadPersistedState()
+		precondition(mergedScroll?.openTabs[0].scrollPosition == scrollPosition)
+		precondition(!FileManager.default.fileExists(
+			atPath: scrollDirectory.appendingPathComponent("browser-scroll.json").path
+		))
+		// URL and back/forward changes cannot replay the old scroll coordinate.
+		var navigated = state
+		navigated.openTabs[0].url = URL(string: "https://navigated.example")!
+		try scrollPersistence.saveScrollUpdates([update])
+		try scrollPersistence.savePersistedState(navigated)
+		let navigatedResult = try scrollPersistence.loadPersistedState()
+		precondition(navigatedResult?.openTabs[0].url == navigated.openTabs[0].url)
+		precondition(navigatedResult?.openTabs[0].scrollPosition == .zero)
+		// Future journal versions are never silently overwritten.
+		let futureScroll = Data(#"{"version":99,"baseSignature":{},"updates":{}}"#.utf8)
+		try futureScroll.write(to: scrollDirectory.appendingPathComponent("browser-scroll.json"), options: .atomic)
+		do {
+			try scrollPersistence.saveScrollUpdates([update])
+			preconditionFailure("Future scroll journal was overwritten")
+		} catch BrowserPersistenceError.unsupportedVersion {}
+
 		try persistence.saveShutdownMetadata(clean: false)
 		let uncleanShutdown = try persistence.loadShutdownMetadata()
 		assert(uncleanShutdown?.clean == false)
