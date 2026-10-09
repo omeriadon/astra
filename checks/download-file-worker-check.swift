@@ -170,6 +170,9 @@ struct DownloadFileWorkerCheck {
 		// An older debounced save can arrive after a newer save or flush.
 		// It must not replace the already committed newer generation.
 		try await BrowserDownloadFileWorker.shared.persistDownloadIndex([archived], at: downloadIndex, revision: 11)
+		// A legacy generation-zero writer must also respect the most recent
+		// numbered publication rather than rolling it back.
+		try await BrowserDownloadFileWorker.shared.persistDownloadIndex([archived], at: downloadIndex)
 		let latestRestored = try JSONDecoder().decode([BrowserDownload].self, from: Data(contentsOf: downloadIndex))
 		precondition(latestRestored == [newest])
 		let cancelledWrite = Task {
@@ -188,6 +191,10 @@ struct DownloadFileWorkerCheck {
 		let afterCancellation = try JSONDecoder().decode([BrowserDownload].self, from: Data(contentsOf: downloadIndex))
 		precondition(afterCancellation == [newest])
 
+		let freshIndexURL = root.appendingPathComponent("auto-created-index", isDirectory: true)
+			.appendingPathComponent("downloads.json")
+		try await BrowserDownloadFileWorker.shared.persistDownloadIndex([archived], at: freshIndexURL, revision: 1)
+		precondition(manager.fileExists(atPath: freshIndexURL.path))
 		let staged = try manager.contentsOfDirectory(at: output, includingPropertiesForKeys: nil)
 		precondition(!staged.contains { $0.lastPathComponent.hasPrefix(".astra-finalizing-") })
 		print("Download finalization worker checks passed")
