@@ -31,7 +31,8 @@ assert "tabs.map(\\.openTab)" not in quick
 assert "BrowserPersistedState(" not in quick
 assert "saveScrollUpdates(updates)" in quick
 assert "controller.scrollPosition" in quick
-assert "tab.recordsNavigationHistory ? controller.historyIndex : 0" in quick
+assert "historyIndex: tab.scrollHistoryIndex" in quick
+assert "var scrollHistoryIndex: Int" in tab
 assert "historyIndex: tab.openTab.historyIndex" not in quick
 assert "didScrollChange: (@MainActor (_ isPeek: Bool) -> Void)?" in tab
 assert "markModifiedForScroll(isPeek: true)" in tab
