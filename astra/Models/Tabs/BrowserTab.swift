@@ -199,7 +199,7 @@ final class BrowserTab: Identifiable {
 
 	/// Scroll-only updates (persisted on a slow debounce, no cross-window fan-out).
 	@ObservationIgnored
-	var didScrollChange: (@MainActor () -> Void)?
+	var didScrollChange: (@MainActor (_ isPeek: Bool) -> Void)?
 
 	@ObservationIgnored
 	private var openTabCache: OpenTab?
@@ -546,7 +546,7 @@ final class BrowserTab: Identifiable {
 			markNavigationModified()
 		}
 		peek.controller.scrollPositionDidChange = { [weak self] in
-			self?.markModifiedForScroll()
+			self?.markModifiedForScroll(isPeek: true)
 		}
 	}
 
@@ -608,7 +608,7 @@ final class BrowserTab: Identifiable {
 		markModified()
 	}
 
-	private func markModifiedForScroll() {
+	private func markModifiedForScroll(isPeek: Bool = false) {
 		openTabCache = nil
 		if let restorationBaseline, hasSameNavigationState(as: restorationBaseline) {
 			return
@@ -616,6 +616,6 @@ final class BrowserTab: Identifiable {
 		restorationBaseline = nil
 		modifiedAt = .now
 		openTabCache = nil
-		didScrollChange?()
+		didScrollChange?(isPeek)
 	}
 }
