@@ -1020,6 +1020,17 @@ final class Browser {
 
 	@discardableResult
 	func addTab(inBackground: Bool = false) -> BrowserTab {
+		let workflowStart = BrowserLog.clock()
+		let countBefore = tabs.count
+		defer {
+			BrowserLog.duration(.performance, "workflow.tab.create-to-model-commit",
+				since: workflowStart, warnAboveMilliseconds: 16,
+				metadata: [
+					"background": String(inBackground),
+					"tabs_before": String(countBefore),
+					"tabs_after": String(tabs.count),
+				])
+		}
 		BrowserLog.info(.tabs, "tab.create", metadata: ["window": BrowserLog.id(windowID), "background": String(inBackground), "count_before": String(tabs.count)])
 		let tab = BrowserTab(session: session)
 		configure(tab)
@@ -2337,6 +2348,16 @@ final class Browser {
 	}
 
 	private func removeTabs(_ ids: Set<UUID>, selecting selectedID: UUID, confirmed: Bool = false) {
+		let workflowStart = BrowserLog.clock()
+		defer {
+			BrowserLog.duration(.performance, "workflow.tabs.close-to-model-commit",
+				since: workflowStart, warnAboveMilliseconds: 24,
+				metadata: [
+					"requested": String(ids.count),
+					"confirmed": String(confirmed),
+					"tabs_remaining": String(tabs.count),
+				])
+		}
 		let protectedIDs = Set(workspace.favouriteTabIDs + workspace.spaces.flatMap(\.pinnedTabIDs))
 		let ids = ids.subtracting(protectedIDs)
 		guard !ids.isEmpty else { return }
