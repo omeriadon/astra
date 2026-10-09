@@ -37,7 +37,6 @@ final class Browser {
 	private(set) var workspace: BrowserWorkspace {
 		didSet { visibleTabMembershipRevision &+= 1 }
 	}
-
 	private(set) var spaceSwitchDirection = 1
 	private(set) var recentlyUsedTabIDs: [UUID]
 	/// A scalar Observation token for library projections. Comparing complete
@@ -46,11 +45,9 @@ final class Browser {
 	private(set) var bookmarks: [Bookmark] {
 		didSet { libraryChangeRevision &+= 1 }
 	}
-
 	private(set) var readingList: [ReadingListItem] {
 		didSet { libraryChangeRevision &+= 1 }
 	}
-
 	/// Lightweight change token so SwiftUI doesn't compare an entire history
 	/// array for equality on every new navigation or title update.
 	private(set) var historyChangeRevision = 0
@@ -62,7 +59,6 @@ final class Browser {
 			historyChangeRevision &+= 1
 		}
 	}
-
 	/// Reuse the expensive per-URL history aggregation across successive search keystrokes.
 	/// The history property observer invalidates this for title edits, imports, sync and deletion.
 	@ObservationIgnored
@@ -322,15 +318,15 @@ final class Browser {
 
 	func selectSpace(_ id: UUID) {
 		BrowserLog.debug(.spaces, "space.select", metadata: ["window": BrowserLog.id(windowID), "from": BrowserLog.id(workspace.selectedSpaceID), "to": BrowserLog.id(id)])
-		guard let nextIndex = workspace.spaces.firstIndex(where: { $0.id == id }) else { return }
+		guard id != workspace.selectedSpaceID,
+		      let nextIndex = workspace.spaces.firstIndex(where: { $0.id == id }) else { return }
 		if let currentIndex = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
 			spaceSwitchDirection = nextIndex >= currentIndex ? 1 : -1
 		}
 		let space = workspace.spaces[nextIndex]
 		let targetID: UUID? = {
 			if let preferred = space.selectedTabID,
-			   space.tabIDs.contains(preferred) || workspace.favouriteTabIDs.contains(preferred)
-			{
+			   space.tabIDs.contains(preferred) || workspace.favouriteTabIDs.contains(preferred) {
 				return preferred
 			}
 			return space.tabIDs.first ?? workspace.favouriteTabIDs.first
@@ -338,8 +334,7 @@ final class Browser {
 		if let targetID {
 			// Switch space and tab in one observable workspace mutation.
 			// Selection alone does not require a structural extension sync.
-			workspace.selectedSpaceID = id
-			selectTab(targetID)
+			selectTab(targetID, inSpace: id)
 		} else {
 			// Creating the first tab in an empty space already persists.
 			workspace.selectedSpaceID = id
@@ -732,7 +727,7 @@ final class Browser {
 				let diskStarted = BrowserLog.clock()
 				let persisted = try persistence.loadPersistedState()
 				BrowserLog.duration(.persistence, "startup.persisted-state-read",
-				                    since: diskStarted, warnAboveMilliseconds: 250)
+					since: diskStarted, warnAboveMilliseconds: 250)
 				if let state = persisted {
 					let previousShutdownWasClean = await launchMetadataTask?.value
 					await restorationPreparation.value
@@ -1201,8 +1196,7 @@ final class Browser {
 		// avoid rewriting workspace timestamps/persistence for any repeated click
 		// on an already-active warm tab.
 		if selectedTabID == id, !tab.isHibernated,
-		   requestedSpaceID == nil || requestedSpaceID == workspace.selectedSpaceID
-		{
+		   requestedSpaceID == nil || requestedSpaceID == workspace.selectedSpaceID {
 			if !BrowserWindowRegistry.shared.ownsTab(id, in: self) {
 				BrowserWindowRegistry.shared.claimSelectedTab(in: self)
 			}
@@ -1216,7 +1210,7 @@ final class Browser {
 		if let requestedSpaceID {
 			nextWorkspace.selectedSpaceID = requestedSpaceID
 		} else if !nextWorkspace.favouriteTabIDs.contains(id),
-		          let ownerIndex = nextWorkspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })
+		   let ownerIndex = nextWorkspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })
 		{
 			if let currentIndex = nextWorkspace.spaces.firstIndex(where: { $0.id == nextWorkspace.selectedSpaceID }) {
 				spaceSwitchDirection = ownerIndex >= currentIndex ? 1 : -1
@@ -1355,7 +1349,6 @@ final class Browser {
 		bookmarks = updated
 		scheduleUserDataPersistence()
 	}
-
 	func addToReadingList(_ url: URL, title: String) {
 		guard title.utf8.count <= 16384,
 		      canAddToReadingList(url),
@@ -2039,7 +2032,6 @@ final class Browser {
 		bookmarks = updated
 		scheduleUserDataPersistence()
 	}
-
 	func importReadingList(_ incoming: [ReadingListItem], replacingDuplicates: Bool = false) {
 		guard !isPrivate else { return }
 		var updated = readingList
@@ -2066,7 +2058,6 @@ final class Browser {
 		readingList = updated
 		scheduleUserDataPersistence()
 	}
-
 	func importHistory(_ incoming: [BrowserVisit]) {
 		guard !isPrivate else { return }
 		var updated = historyVisits
@@ -2087,7 +2078,6 @@ final class Browser {
 		historyVisits = updated
 		scheduleUserDataPersistence()
 	}
-
 	private func attachPersistence(to tab: BrowserTab) {
 		tab.didChange = { [weak self, id = tab.id] in
 			guard let self else { return }
@@ -2132,7 +2122,7 @@ final class Browser {
 	}
 
 	private func configure(_ tab: BrowserTab, ownershipVerified: Bool = false) {
-		guard ownershipVerified || BrowserWindowRegistry.shared.ownsTab(tab.id, in: self),
+		guard (ownershipVerified || BrowserWindowRegistry.shared.ownsTab(tab.id, in: self)),
 		      let controller = tab.controller else { return }
 		controller.displayWindowID = windowID
 		controller.navigationIntercept = navigationIntercept
@@ -2604,9 +2594,7 @@ final class Browser {
 		if current.modifiedAt != incoming.modifiedAt {
 			return current.modifiedAt > incoming.modifiedAt ? current : incoming
 		}
-		if current == incoming {
-			return current
-		}
+		if current == incoming { return current }
 		let encoder = JSONEncoder()
 		encoder.outputFormatting = [.sortedKeys]
 		let currentData = (try? encoder.encode(current)) ?? Data()
@@ -2620,8 +2608,8 @@ final class Browser {
 		let snapshot = completeLocalSyncDocument(settings: [:])
 		let closed = closedHistoryTabs
 		BrowserLog.duration(.sync, "browser.shared-state.snapshot", since: started,
-		                    warnAboveMilliseconds: 16,
-		                    metadata: ["tabs": String(snapshot.tabs.count), "windows": String(recipients.count)])
+			warnAboveMilliseconds: 16,
+			metadata: ["tabs": String(snapshot.tabs.count), "windows": String(recipients.count)])
 		for destination in recipients where destination !== self && !destination.isPrivate {
 			destination.receiveSharedState(from: self, sourceSnapshot: snapshot, sourceClosedTabs: closed)
 		}
@@ -2630,8 +2618,8 @@ final class Browser {
 	func receiveSharedState(from source: Browser) {
 		guard !isPrivate, !source.isPrivate else { return }
 		receiveSharedState(from: source,
-		                   sourceSnapshot: source.completeLocalSyncDocument(settings: [:]),
-		                   sourceClosedTabs: source.closedHistoryTabs)
+			sourceSnapshot: source.completeLocalSyncDocument(settings: [:]),
+			sourceClosedTabs: source.closedHistoryTabs)
 	}
 
 	private func receiveSharedState(
@@ -2642,8 +2630,8 @@ final class Browser {
 		let started = BrowserLog.clock()
 		defer {
 			BrowserLog.duration(.sync, "browser.shared-state.receive.end", since: started,
-			                    warnAboveMilliseconds: 24,
-			                    metadata: ["window": BrowserLog.id(windowID)])
+				warnAboveMilliseconds: 24,
+				metadata: ["window": BrowserLog.id(windowID)])
 		}
 		// Never cancel a pending local write just because another window
 		// published an unchanged snapshot. The merge below decides whether
@@ -2710,7 +2698,7 @@ final class Browser {
 		}
 		guard documentChanged || closedHistoryChanged else {
 			BrowserLog.trace(.sync, "browser.shared-state.no-op",
-			                 metadata: ["window": BrowserLog.id(windowID)])
+				metadata: ["window": BrowserLog.id(windowID)])
 			return
 		}
 		// Only a changed synchronization document can alter selection and
@@ -2790,7 +2778,7 @@ final class Browser {
 		// Selection-only persistence is a hot path and extension activation is
 		// already handled by BrowserWindowRegistry. Rebuilding every extension-tab
 		// snapshot here made each ordinary tab click walk the entire tab set again.
-		if fullState, syncExtensions {
+		if fullState && syncExtensions {
 			BrowserExtensionManager.shared.sync(self)
 		}
 		guard persistence != nil else { return }
@@ -2903,13 +2891,13 @@ final class Browser {
 			windowRecords: BrowserWindowRegistry.shared.recordsForPersistence
 		)
 		BrowserLog.duration(.persistence, "state.snapshot-preparation.end",
-		                    since: preparationStart,
-		                    warnAboveMilliseconds: 16,
-		                    metadata: [
-		                    	"tabs": String(tabs.count),
-		                    	"history_entries": String(historyVisits.count),
-		                    	"windows": String(state.windowRecords?.count ?? 0),
-		                    ])
+			since: preparationStart,
+			warnAboveMilliseconds: 16,
+			metadata: [
+				"tabs": String(tabs.count),
+				"history_entries": String(historyVisits.count),
+				"windows": String(state.windowRecords?.count ?? 0),
+			])
 		// Encode + file IO off-main so Cmd+T / history-open stay instant.
 		// Scroll-only saves skip cross-window fan-out and sync: no structural change.
 		let previousWrite = session.persistenceWriteTask

@@ -849,6 +849,7 @@ private struct TabRowContextMenu: View {
 					.font(.caption2.monospacedDigit())
 					.lineLimit(1)
 			}
+			.frame(maxWidth: .infinity, alignment: .leading)
 		}
 
 		private nonisolated static func formatBytes(_ bytes: UInt64) -> String {

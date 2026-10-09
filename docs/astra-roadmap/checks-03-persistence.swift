@@ -20,6 +20,14 @@ struct BrowserPersistenceCheck {
 			windowRecords: [BrowserWindowRecord(windowID: UUID(), tabIDs: [tab.id], selectedTabID: tab.id)]
 		)
 		try persistence.savePersistedState(state)
+		let windowSidecar = directory.appendingPathComponent("browser-windows.json")
+		precondition(FileManager.default.fileExists(atPath: windowSidecar.path))
+		let indexedRecords = try persistence.loadWindowRecords()
+		precondition(indexedRecords == (state.windowRecords ?? []))
+		// Missing or unreadable sidecars must fall back to the full envelope.
+		try Data("invalid-sidecar".utf8).write(to: windowSidecar)
+		let fallbackRecords = try persistence.loadWindowRecords()
+		precondition(fallbackRecords == (state.windowRecords ?? []))
 		let restored = try persistence.loadPersistedState()
 		assert(restored?.openTabs.map(\.id) == [tab.id])
 		assert(restored?.windowRecords?.first?.tabIDs == [tab.id])

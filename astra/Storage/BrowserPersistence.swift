@@ -209,7 +209,7 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		return cache
 	}()
 
-	private nonisolated struct CheckpointSignature: Equatable {
+	private nonisolated struct CheckpointSignature: Equatable, Codable {
 		let fileNumber: UInt64
 		let byteCount: UInt64
 		let modifiedAt: Date
@@ -341,6 +341,14 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		let windowRecords: [BrowserWindowRecord]?
 	}
 
+	/// Compact startup index, explicitly tied to the *primary* atomic
+	/// checkpoint. A mismatched sidecar must never override backup recovery.
+	private nonisolated struct WindowRecordsSidecar: Codable {
+		let version: Int
+		let signature: CheckpointSignature
+		let records: [BrowserWindowRecord]
+	}
+
 	private nonisolated struct ReadingArchiveEnvelope: Codable {
 		let generation: UUID
 		let url: URL
@@ -460,6 +468,23 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 
 	nonisolated func loadWindowRecords() throws -> [BrowserWindowRecord] {
 		let logStarted = BrowserLog.clock()
+		let primaryURL = directory.appendingPathComponent("browser-state.json")
+		if let signature = CheckpointSignature(at: primaryURL) {
+			let sidecarURL = directory.appendingPathComponent("browser-windows.json")
+			if let byteCount = try? sidecarURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+			   byteCount <= 256 * 1024,
+			   let bytes = try? Data(contentsOf: sidecarURL), bytes.count <= 256 * 1024,
+			   let sidecar = try? JSONDecoder().decode(WindowRecordsSidecar.self, from: bytes),
+			   sidecar.version == 1, sidecar.signature == signature,
+			   (try? validateWindowRecords(sidecar.records)) != nil
+			{
+				let records = applyingWindowSelectionUpdates(sidecar.records, loadedFrom: primaryURL)
+				BrowserLog.duration(.persistence, "window-records.load.end",
+				                    since: logStarted, warnAboveMilliseconds: 100,
+				                    metadata: ["source": "sidecar", "windows": String(records.count)])
+				return records
+			}
+		}
 		var hasSnapshot = false
 		for name in ["browser-state.json", "browser-state.backup.json"] {
 			let url = directory.appendingPathComponent(name)
@@ -474,18 +499,9 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 				guard (1 ... Self.currentVersion).contains(envelope.version) else {
 					throw BrowserPersistenceError.unsupportedVersion
 				}
-				var records = envelope.state.windowRecords ?? []
-				try validateWindowRecords(records)
-				let journal = try? selectionUpdates(newerThan: url)
-				if let journal {
-					for index in records.indices {
-						guard let update = journal.updates[records[index].windowID.uuidString],
-						      update.selectedTabModifiedAt > records[index].selectionModifiedAt,
-						      records[index].tabIDs.contains(update.selectedTabID) else { continue }
-						records[index].selectedTabID = update.selectedTabID
-						records[index].selectionModifiedAt = update.selectedTabModifiedAt
-					}
-				}
+				let recorded = envelope.state.windowRecords ?? []
+				try validateWindowRecords(recorded)
+				let records = applyingWindowSelectionUpdates(recorded, loadedFrom: url)
 				BrowserLog.duration(
 					.persistence,
 					"window-records.load.end",
@@ -504,6 +520,22 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 			throw BrowserPersistenceError.invalidSnapshot
 		}
 		return []
+	}
+
+	private nonisolated func applyingWindowSelectionUpdates(
+		_ original: [BrowserWindowRecord], loadedFrom url: URL
+	) -> [BrowserWindowRecord] {
+		var records = original
+		if let journal = try? selectionUpdates(newerThan: url) {
+			for index in records.indices {
+				guard let update = journal.updates[records[index].windowID.uuidString],
+				      update.selectedTabModifiedAt > records[index].selectionModifiedAt,
+				      records[index].tabIDs.contains(update.selectedTabID) else { continue }
+				records[index].selectedTabID = update.selectedTabID
+				records[index].selectionModifiedAt = update.selectedTabModifiedAt
+			}
+		}
+		return records
 	}
 
 	nonisolated func loadBookmarks() throws -> [Bookmark] {
@@ -752,6 +784,27 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		try? FileManager.default.removeItem(at: directory.appendingPathComponent("browser-selection.json"))
 		if privateDataWasRemoved {
 			try data.write(to: backupURL, options: .atomic)
+		}
+		// Write the small projection only after the primary checkpoint has
+		// committed. Failure here cannot invalidate a successful full save;
+		// the startup loader falls back to the original state envelope.
+		if let signature = CheckpointSignature(at: currentURL) {
+			let sidecar = WindowRecordsSidecar(
+				version: 1, signature: signature, records: state.windowRecords ?? []
+			)
+			if let sidecarBytes = try? JSONEncoder().encode(sidecar),
+			   sidecarBytes.count <= 256 * 1024
+			{
+				do {
+					try sidecarBytes.write(
+						to: directory.appendingPathComponent("browser-windows.json"),
+						options: .atomic
+					)
+				} catch {
+					BrowserLog.warning(.persistence, "window-records.sidecar-write-failed",
+					                   metadata: ["error": BrowserLog.errorDescription(error)])
+				}
+			}
 		}
 		BrowserLog.duration(.persistence, "state.commit.end",
 		                    since: commitStarted,

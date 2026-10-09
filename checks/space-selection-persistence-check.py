@@ -65,7 +65,10 @@ final class Browser {
         self.workspace = workspace
     }
 
-    func selectTab(_: UUID) {
+    func selectTab(_: UUID, inSpace: UUID? = nil) {
+        if let inSpace {
+            workspace.selectedSpaceID = inSpace
+        }
         tabSelections += 1
     }
 
@@ -133,7 +136,7 @@ func run() {
     assert((browser.tabSelections, browser.tabCreations, browser.fullPersistenceCalls, browser.selectionPersistenceCalls) == actions)
 
     browser.selectSpace(favouriteSpace.id)
-    assert(browser.selectionPersistenceCalls == 3)
+    assert(browser.selectionPersistenceCalls == 2)
     print("Space selection persistence check passed")
 }
 
