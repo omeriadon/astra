@@ -63,8 +63,20 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		controller.delegate = self
 		NotificationCenter.default.addObserver(self, selector: #selector(extensionErrorsChanged(_:)), name: WKWebExtensionContext.errorsDidUpdateNotification, object: nil)
 		didInitializeController = true
+		BrowserLog.notice(.extensions, "startup.extension-controller-created")
 		for window in windows.values {
 			controller.didOpenWindow(window)
+		}
+		// Defer replay until the lazy initializer has returned, otherwise
+		// sync() would recursively access the property being initialized.
+		Task { @MainActor [weak self] in
+			guard let self else { return }
+			for browser in BrowserWindowRegistry.shared.openBrowsers where browser.isHydrationFinished && !browser.isPrivate {
+				self.sync(browser)
+			}
+			if let focused = BrowserWindowRegistry.shared.activeBrowser, !focused.isPrivate {
+				self.focus(focused)
+			}
 		}
 		return controller
 	}()
@@ -166,6 +178,9 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	func sync(_ browser: Browser) {
 		BrowserLog.trace(.extensions, "extensions.sync-window", metadata: ["window": BrowserLog.id(browser.windowID), "tabs": String(browser.tabs.count)])
 		guard !browser.isPrivate else { return }
+		// A restored window may complete hydration before first display.
+		// Its extension model is replayed when WebKit actually needs the controller.
+		guard didInitializeController else { return }
 		_ = extensionWindow(for: browser)
 		let ownedIDs = BrowserWindowRegistry.shared.ownedTabIDs(in: browser)
 		let ownedTabs = browser.tabs.filter {
@@ -275,7 +290,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	/// Selection changes do not require rebuilding every extension-tab snapshot.
 	/// This is the hot path for ordinary tab clicks.
 	func selectionDidChange(_ browser: Browser) {
-		guard !browser.isPrivate else { return }
+		guard !browser.isPrivate, didInitializeController else { return }
 		let ownedIDs = BrowserWindowRegistry.shared.ownedTabIDs(in: browser)
 		selectionDidChange(browser, ownedIDs: ownedIDs)
 	}
@@ -320,6 +335,9 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 
 	func focus(_ browser: Browser) {
 		guard !browser.isPrivate else { return }
+		// NSWindow activation occurs before the first frame; it must not
+		// create an otherwise-unused WKWebExtensionController.
+		guard didInitializeController else { return }
 		controller.didFocusWindow(extensionWindow(for: browser))
 	}
 
