@@ -23,7 +23,7 @@
 		private var lastClosedNormalWindow: BrowserWindowRecord?
 		private var wasLaunchedForWebPush = false
 		private var startupWindowRestorationFinished = false
-		private var startupStartedAt = BrowserLog.clock()
+		private var startupStartedAt = BrowserLog.mainEntryUptime ?? BrowserLog.clock()
 		private var queuedStartupURLs: [URL] = []
 		private var shouldReopenAfterStartup = false
 		private var memoryPressureSource: DispatchSourceMemoryPressure?
@@ -52,8 +52,10 @@
 		}
 
 		func applicationWillFinishLaunching(_: Notification) {
-			startupStartedAt = BrowserLog.clock()
-			BrowserLog.info(.lifecycle, "app.will-finish-launching")
+			startupStartedAt = BrowserLog.mainEntryUptime ?? BrowserLog.clock()
+			BrowserLog.info(.lifecycle, "app.will-finish-launching", metadata: [
+				"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
+			])
 			#if DEBUG
 				if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
 					return
