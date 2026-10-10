@@ -4,8 +4,10 @@ on:
   push:
     branches:
       - astra/roadmap/integration
+      - 'release/**'
     paths:
       - 'astra/**'
+      - '.github/workflows/roadmap-mac-build.yml'
       - 'astra.xcodeproj/**'
       - 'Packages/**'
       - '*.xcconfig'
