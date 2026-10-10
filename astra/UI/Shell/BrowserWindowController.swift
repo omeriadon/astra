@@ -8,6 +8,9 @@
 		let browser: Browser
 		let window: NSWindow
 		var onClose: (() -> Void)?
+		/// Fires after AppKit first updates a visible window, not merely after orderFront.
+		var onFirstVisibleUpdate: (() -> Void)?
+		private var didReportFirstVisibleUpdate = false
 		private var allowsClosing = false
 		private var closeApprovalInFlight = false
 
@@ -106,6 +109,17 @@
 			// AppKit performs layout and display during its normal update pass.
 			// Forcing both synchronously here blocks the startup main thread.
 			window.makeKeyAndOrderFront(nil)
+		}
+
+		func windowDidUpdate(_: Notification) {
+			guard !didReportFirstVisibleUpdate, window.isVisible else { return }
+			didReportFirstVisibleUpdate = true
+			BrowserLog.notice(.lifecycle, "startup.window-first-appkit-update", metadata: [
+				"window": BrowserLog.id(browser.windowID),
+			])
+			let callback = onFirstVisibleUpdate
+			onFirstVisibleUpdate = nil
+			callback?()
 		}
 
 		func windowDidBecomeKey(_: Notification) {
