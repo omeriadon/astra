@@ -43,5 +43,99 @@
     "explicit_launch_or_relaunch_commands": 0,
     "production_code_changed": false,
     "conclusion": "Runtime availability remains unresolved. The OS reported nonresponse to an open event. No crash, deadlock, healthy idle state, or attributable app defect established. No further UI requests or recovery loop performed."
-  }
+  },
+  "continued_follow_up": {
+    "user_requested_continuation": true,
+    "read_only_system_inventory_authorized": true,
+    "user_enabled_accessibility_permission": true,
+    "system_inventory_timestamp_utc": "2026-10-10T05:04:46Z",
+    "candidate_pid": 42628,
+    "candidate_finished_launching": true,
+    "candidate_hidden": false,
+    "candidate_active": false,
+    "normal_astra_pids": [],
+    "candidate_owned_cg_window_count": 10,
+    "candidate_onscreen_window": {
+      "id": 16161,
+      "width": 1280,
+      "height": 821
+    },
+    "window_interpretation": "A registered onscreen window is established; usable rendering and interaction are not established",
+    "cua_existing_window_binding": "Rejected: macOS getApp requires an app name, path, or bundle ID",
+    "accessibility_control_before_trust": "Caller was not trusted; results were not accepted as a responsiveness comparison",
+    "accessibility_control_after_trust": {
+      "accessibility_trusted": true,
+      "results": [
+        {
+          "bundle_id": "com.omeriadon.astra.performance.candidate",
+          "elapsed_seconds": 2.015738010406494,
+          "pid": 42628,
+          "status": -25204
+        },
+        {
+          "bundle_id": "com.apple.dt.Instruments",
+          "elapsed_seconds": 0.03630197048187256,
+          "pid": 41713,
+          "status": 0,
+          "window_count": 1
+        }
+      ]
+    },
+    "profiling_cleanup": "Saved and closed astra-final-leaks.trace; quit the task-owned Instruments process through its UI",
+    "accessibility_after_instruments_quit": {
+      "accessibility_trusted": true,
+      "results": [
+        {
+          "bundle_id": "com.omeriadon.astra.performance.candidate",
+          "elapsed_seconds": 2.0153039693832397,
+          "pid": 42628,
+          "status": -25204
+        },
+        {
+          "bundle_id": "com.apple.dt.Instruments",
+          "process_exists": false
+        }
+      ]
+    },
+    "post_cleanup_sample": {
+      "duration_seconds": 2,
+      "interval_milliseconds": 10,
+      "main_thread_sample_count": 181,
+      "main_thread_observed": "All samples in AppKit event-loop wait",
+      "injected_profiler_thread": "Still waiting in _OAAttachAndInitialize -> pas_root_enumerate_for_libmalloc_with_root_after_zone",
+      "raw_path": "/tmp/astra-runtime-after-instruments-quit.txt"
+    },
+    "targeted_unified_log_query": "No matching records returned; not evidence that no runtime error occurred",
+    "candidate_bundle_signature_verification": "codesign --verify --strict passed",
+    "candidate_recovery": "Explicitly authorized one SIGTERM to verified PID 42628, which exited, and one clean launch of the same isolated build. No force-kill escalation or restart loop.",
+    "conclusion": "Runtime availability restored in the isolated candidate after one explicitly authorized restart without profiler injection. Navigation, tab switching, and retained form smoke checks passed. Prior nonresponse remains unexplained; association with instrumentation is not causal proof. No production-code defect or fix established.",
+    "recovery_process_signals_sent": 1,
+    "recovery_launches": 1,
+    "fresh_candidate_pid": 10665,
+    "fresh_candidate_start_local": "2026-10-10 13:08:35 +0800",
+    "fresh_candidate_bundle_id": "com.omeriadon.astra.performance.candidate",
+    "fresh_accessibility_windows_status": 0,
+    "fresh_accessibility_window_count": 1,
+    "fresh_inventory_timestamp_utc": "2026-10-10T05:09:51Z",
+    "fresh_sample": {
+      "duration_seconds": 2,
+      "interval_milliseconds": 10,
+      "liboainject_present": false,
+      "OAAttachAndInitialize_present": false,
+      "raw_path": "/tmp/astra-runtime-fresh-sample.txt"
+    },
+    "smoke_test": {
+      "navigation": "PASS: new tab loaded http://127.0.0.1:18765/second.html and exposed the Second page heading",
+      "tab_switching": "PASS: selected form tab after visiting the second-page tab",
+      "retained_form_state": "PASS: fresh marker astra-smoke-20261010-1309 survived the tab switch and was verified in accessibility and screenshot",
+      "restored_form_at_clean_launch": "Observed pre-existing unsaved-test-123 value before writing the fresh marker; this is one endpoint, not comprehensive interrupted-write recovery coverage",
+      "local_fixture_server": "Existing task-owned fixture files, loopback-only Python HTTP server; second.html returned HTTP 200",
+      "screenshot": "Visually verified through Computer Use; no screenshot committed",
+      "input_to_pixel_latency": "NOT MEASURED",
+      "stability": "NOT MEASURED: short smoke check only",
+      "local_fixture_server_cleanup": "Task-owned server PID 11780 stopped after the smoke check; candidate remained running and final accessibility tree still showed the fresh marker"
+    },
+    "final_endpoint": "PID 10665 left running with usable UI and the retained test form; normal Astra was not launched"
+  },
+  "current_status": "RECOVERED: isolated candidate UI usable; short smoke check passed. Full performance mission remains incomplete."
 }

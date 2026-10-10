@@ -1,6 +1,6 @@
 # Astra runtime validation, 9–10 October 2026
 
-**Status: incomplete. No browser-wide performance improvement or release-readiness claim is established.**
+**Status: incomplete. Isolated runtime availability recovered and a short smoke check passed; no browser-wide performance improvement or release-readiness claim is established.**
 
 PR: https://github.com/omeriadon/astra/pull/13. The release branch remains intact and the PR remains open. This dataset records successful checks, failed tools, exploratory results, and unexecuted acceptance criteria separately.
 
@@ -122,11 +122,11 @@ After the later profiling run, Computer Use returned timeouts and an AppleEvent 
 
 ## Bounded follow-up and handoff, 10 October
 
-The follow-up started at approximately 12:58 local time with a 30-minute execution budget and stopped early when safe UI access remained blocked. Scope was runtime identification, one conditional navigation/tab-switching/form-state smoke test, and this handoff. Personal profiles, credentials, sessions, unrelated apps, and the existing `BrowserResources.swift` edit were protected. No production code, architecture, or benchmark infrastructure was changed.
+The initial follow-up started at approximately 12:58 local time with a 30-minute execution budget and produced a handoff while safe UI access remained blocked. The user then requested continued recovery work within that budget. Scope was runtime identification, one conditional navigation/tab-switching/form-state smoke test, and this handoff. Personal profiles, credentials, sessions, unrelated apps, and the existing `BrowserResources.swift` edit were protected. No production code, architecture, or benchmark infrastructure was changed.
 
 Read-only process inspection confirmed candidate PID 42628 still had its original 12:07:43 start time. The app bundle identified itself as `com.omeriadon.astra.performance.candidate`. Computer Use inventory listed that isolated candidate and no normal Astra. This distinguishes the remaining test process from a usable normal Astra session; it does not establish which windows exist.
 
-One attempt to bind Computer Use to the verified running candidate failed with `NSCocoaErrorDomain 256` and AppleEvent `-1712` in `LSOpenCore.mm`. Despite process existence, `getApp` issued an open event. The user then supplied a macOS dialog stating: “You can’t open the application ‘astra.app’ because it is not responding.” This establishes the OS-reported failure of the open request, not its root cause. No additional UI attempts, explicit launches/relaunches, process termination, or recovery loop followed. Future inventory-only checks must not assume `getApp` is free of open-event side effects.
+One attempt to bind Computer Use to the verified running candidate failed with `NSCocoaErrorDomain 256` and AppleEvent `-1712` in `LSOpenCore.mm`. Despite process existence, `getApp` issued an open event. The user then supplied a macOS dialog stating: “You can’t open the application ‘astra.app’ because it is not responding.” This establishes the OS-reported failure of the open request, not its root cause. At that checkpoint, no additional UI attempts, explicit launches/relaunches, process termination, or recovery loop followed. Future inventory-only checks must not assume `getApp` is free of open-event side effects.
 
 A three-second `/usr/bin/sample` capture at 12:59:01, using a 10 ms interval, placed all 272 main-thread samples in AppKit's event-loop wait ending in `mach_msg2_trap`. A profiler-injected `liboainject` initialization thread was also waiting in JavaScriptCore allocation enumeration. Neither observation establishes a crash, deadlock, healthy idle state, or attributable application defect. Raw stacks remain at `/tmp/astra-runtime-handoff-sample.txt` and are not published. Disk availability was approximately 8.8 GiB; no new Instruments capture was attempted.
 
@@ -144,5 +144,29 @@ A three-second `/usr/bin/sample` capture at 12:59:01, using a 10 ms interval, pl
 The two checks validate the measurement helpers only. Previous successful form checks remain historical observations. Runtime availability is unresolved, and the full performance mission has not passed. No code fix was made because no attributable defect was established. No build was needed for these report-only changes.
 
 GitHub status was rechecked through `gh`: PR #13 is OPEN on `release/0.1+3`, with remote HEAD `32459315a7d5ce03c4bdcfb2c0bd51cf001e4d33`. Both [run 38022007785](https://github.com/omeriadon/astra/actions/runs/38022007785) and [run 38022010302](https://github.com/omeriadon/astra/actions/runs/38022010302) remain completed/success on that exact remote HEAD. Local report changes have no new CI result. No push or merge was performed.
+
+### Authorized isolated recovery and smoke check
+
+The continued read-only system inventory, explicitly authorized by the user, confirmed that PID 42628 owned ten Core Graphics window records, including an onscreen 1280×821 window (ID 16161). The candidate was registered as a foreground app, had finished launching, and was not hidden; normal Astra had no running process. Window existence did not establish usable interaction. Computer Use rejected direct selection by window ID on macOS.
+
+The first direct accessibility comparison was invalid because its caller lacked accessibility trust. After the user enabled permission, the candidate's bounded window request failed after approximately two seconds with `kAXErrorCannotComplete` (`-25204`), while Instruments returned its window list successfully in 36 ms. This establishes a candidate-specific accessibility failure under that probe. The task's Leaks trace was saved and closed, and its Instruments process was quit through the UI. The same candidate's accessibility request still failed. A subsequent two-second sample retained the injected profiler thread's allocation-enumeration wait; cleanup did not restore access.
+
+The user explicitly authorized **one** termination and **one** isolated clean launch, accepting loss of the candidate's in-memory test form state. Before signaling, the process start time and executable path were checked again. One SIGTERM was sent to PID 42628; it exited without escalation. The same signed isolated build was launched once, producing PID 10665 at 13:08:35 local time. No force-kill or repeated restart loop was used. Personal profiles, credentials, sessions, unrelated applications, and `BrowserResources.swift` were not modified.
+
+The fresh candidate returned its accessibility tree and an existing test form containing `unsaved-test-123`. That is one restoration endpoint, not comprehensive interrupted-write recovery certification. The smoke check set a fresh marker, `astra-smoke-20261010-1309`, opened one new tab, navigated to the existing loopback fixture's second page, selected the form tab again, and verified the marker in both the accessibility tree and a screenshot. The local fixture server returned HTTP 200 for the second page. No form was submitted. The task-owned fixture server was stopped afterward; the final accessibility check still showed the fresh marker. Candidate PID 10665 was left running, and normal Astra was not launched.
+
+| Recovered-runtime check | Result |
+|---|---|
+| Candidate UI access after single authorized restart | PASS |
+| New-tab navigation to controlled second page | PASS |
+| Tab selection back to edited form | PASS |
+| Fresh form marker retained after tab switching | PASS |
+| Visible form rendering | Verified by screenshot |
+| Fresh candidate accessibility window query | Success; one AX window |
+| Profiler injection in two-second fresh sample | `liboainject` and `_OAAttachAndInitialize` absent |
+| Input-to-pixel latency | NOT MEASURED |
+| New stability interval or matched performance comparison | NOT MEASURED |
+
+Current isolated runtime availability is restored. The prior nonresponse remains unexplained. Its occurrence after profiling and the absence of injection in the recovered process are an association, not proof of an Instruments or Astra root cause. No production-code fix or architecture change was made. The original 33-minute stability interval remains incomplete, and the missing performance comparisons retain their NOT MEASURED status. No additional build was needed; the two existing measurement self-checks, benchmark JSON validation, and scoped diff validation passed. Raw diagnostic samples remain under `/tmp` and were not committed.
 
 The mission remains incomplete. Remaining acceptance criteria are not marked passed, the PR is not merged, and no unsupported memory-reclamation change is introduced.
