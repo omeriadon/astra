@@ -1,0 +1,16 @@
+{
+  "scenario": "Post-video-closure live candidate process",
+  "pid": 42628,
+  "tool": "/usr/bin/leaks",
+  "tool_exit_code": 1,
+  "malloc_nodes": 500316,
+  "malloc_kib": 63042,
+  "reported_leak_count": 3,
+  "reported_leaked_bytes": 96,
+  "reported_class": "_NSMenuIntelligentAssistantConfiguration",
+  "physical_footprint_report": "169.7M",
+  "peak_footprint_report": "843.8M",
+  "instruments_trace": "/tmp/astra-final-leaks.trace",
+  "instruments_result": "Recording completed; UI shows failed leak check and empty allocation table",
+  "conclusion": "Small reported AppKit-class allocations; no WKWebView leak reported by this scan. Does not certify no retain cycles or WebKit helper leaks."
+}

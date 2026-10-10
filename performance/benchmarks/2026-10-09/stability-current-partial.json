@@ -1,0 +1,1688 @@
+{
+  "schema": 1,
+  "duration_seconds": 3600.0,
+  "interval_seconds": 60.0,
+  "processes": [
+    {
+      "pid": 42628,
+      "role": "astra"
+    },
+    {
+      "pid": 42702,
+      "role": "network"
+    },
+    {
+      "pid": 42703,
+      "role": "gpu"
+    },
+    {
+      "pid": 42712,
+      "role": "webcontent"
+    }
+  ],
+  "samples": [
+    {
+      "monotonic": 254945.113359166,
+      "wall_time": "2026-10-10T04:17:27.138276+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 167069904,
+          "rss_bytes": 67354624,
+          "rusage_cpu_nanoseconds": 35605535333
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 26509888,
+          "rss_bytes": 6291456,
+          "rusage_cpu_nanoseconds": 334773125
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 9503368,
+          "rss_bytes": 8732672,
+          "rusage_cpu_nanoseconds": 752648500
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 18990040,
+          "rss_bytes": 19070976,
+          "rusage_cpu_nanoseconds": 966317916
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {},
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255005.11699725,
+      "wall_time": "2026-10-10T04:18:27.142114+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 169560296,
+          "rss_bytes": 115605504,
+          "rusage_cpu_nanoseconds": 36217209208
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 26526272,
+          "rss_bytes": 5226496,
+          "rusage_cpu_nanoseconds": 336176750
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 9536136,
+          "rss_bytes": 5177344,
+          "rusage_cpu_nanoseconds": 783885833
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19088344,
+          "rss_bytes": 11747328,
+          "rusage_cpu_nanoseconds": 970886583
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 611673875,
+        "network": 1403625,
+        "gpu": 31237333,
+        "webcontent": 4568667
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255065.124568416,
+      "wall_time": "2026-10-10T04:19:27.149930+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 221186448,
+          "rss_bytes": 1131610112,
+          "rusage_cpu_nanoseconds": 48120429666
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 26427968,
+          "rss_bytes": 8060928,
+          "rusage_cpu_nanoseconds": 350506916
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 9634440,
+          "rss_bytes": 4784128,
+          "rusage_cpu_nanoseconds": 866665708
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 31425496,
+          "rss_bytes": 25346048,
+          "rusage_cpu_nanoseconds": 1162891125
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 11903220458,
+        "network": 14330166,
+        "gpu": 82779875,
+        "webcontent": 192004542
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255125.131594916,
+      "wall_time": "2026-10-10T04:20:27.158812+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 216844640,
+          "rss_bytes": 405438464,
+          "rusage_cpu_nanoseconds": 49716049416
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 26411584,
+          "rss_bytes": 7782400,
+          "rusage_cpu_nanoseconds": 351596875
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 9618056,
+          "rss_bytes": 4866048,
+          "rusage_cpu_nanoseconds": 869493375
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 31409088,
+          "rss_bytes": 25329664,
+          "rusage_cpu_nanoseconds": 1167852083
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 1595619750,
+        "network": 1089959,
+        "gpu": 2827667,
+        "webcontent": 4960958
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255185.150721125,
+      "wall_time": "2026-10-10T04:21:27.178562+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 228231496,
+          "rss_bytes": 155779072,
+          "rusage_cpu_nanoseconds": 51619039000
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 34079488,
+          "rss_bytes": 23330816,
+          "rusage_cpu_nanoseconds": 1013845583
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 44844112,
+          "rss_bytes": 40976384,
+          "rusage_cpu_nanoseconds": 1300018500
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 31409088,
+          "rss_bytes": 25280512,
+          "rusage_cpu_nanoseconds": 1170926291
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 1902989584,
+        "network": 662248708,
+        "gpu": 430525125,
+        "webcontent": 3074208
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255245.16032025,
+      "wall_time": "2026-10-10T04:22:27.188391+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 228346184,
+          "rss_bytes": 98418688,
+          "rusage_cpu_nanoseconds": 51976935041
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 34226944,
+          "rss_bytes": 20873216,
+          "rusage_cpu_nanoseconds": 1083162916
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 45925456,
+          "rss_bytes": 30474240,
+          "rusage_cpu_nanoseconds": 1450276000
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 31409088,
+          "rss_bytes": 10698752,
+          "rusage_cpu_nanoseconds": 1171388166
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 357896041,
+        "network": 69317333,
+        "gpu": 150257500,
+        "webcontent": 461875
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255305.1696285,
+      "wall_time": "2026-10-10T04:23:27.197908+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 234785120,
+          "rss_bytes": 117702656,
+          "rusage_cpu_nanoseconds": 65071585958
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 34341632,
+          "rss_bytes": 28639232,
+          "rusage_cpu_nanoseconds": 1861928791
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 54707352,
+          "rss_bytes": 47529984,
+          "rusage_cpu_nanoseconds": 3879490500
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 31409088,
+          "rss_bytes": 11583488,
+          "rusage_cpu_nanoseconds": 1175558750
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 13094650917,
+        "network": 778765875,
+        "gpu": 2429214500,
+        "webcontent": 4170584
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255365.178890583,
+      "wall_time": "2026-10-10T04:24:27.207391+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 159566104,
+          "rss_bytes": 92176384,
+          "rusage_cpu_nanoseconds": 72571609750
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 34276096,
+          "rss_bytes": 10502144,
+          "rusage_cpu_nanoseconds": 2134541250
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 67995232,
+          "rss_bytes": 36470784,
+          "rusage_cpu_nanoseconds": 5775966583
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 24888256,
+          "rss_bytes": 28049408,
+          "rusage_cpu_nanoseconds": 1212904875
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 7500023792,
+        "network": 272612459,
+        "gpu": 1896476083,
+        "webcontent": 37346125
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255425.188445625,
+      "wall_time": "2026-10-10T04:25:27.217192+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 159926552,
+          "rss_bytes": 97910784,
+          "rusage_cpu_nanoseconds": 73498589916
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 34046720,
+          "rss_bytes": 14516224,
+          "rusage_cpu_nanoseconds": 2236303708
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 67602040,
+          "rss_bytes": 41156608,
+          "rusage_cpu_nanoseconds": 8568324000
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 24642496,
+          "rss_bytes": 9994240,
+          "rusage_cpu_nanoseconds": 1214365000
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 926980166,
+        "network": 101762458,
+        "gpu": 2792357417,
+        "webcontent": 1460125
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255485.199883,
+      "wall_time": "2026-10-10T04:26:27.228915+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 158714112,
+          "rss_bytes": 82493440,
+          "rusage_cpu_nanoseconds": 73766747375
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33981160,
+          "rss_bytes": 15024128,
+          "rusage_cpu_nanoseconds": 2340622791
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 64587384,
+          "rss_bytes": 38600704,
+          "rusage_cpu_nanoseconds": 10073351458
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 24560576,
+          "rss_bytes": 19939328,
+          "rusage_cpu_nanoseconds": 1254052791
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 268157459,
+        "network": 104319083,
+        "gpu": 1505027458,
+        "webcontent": 39687791
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255545.209419333,
+      "wall_time": "2026-10-10T04:27:27.238566+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 166283616,
+          "rss_bytes": 134316032,
+          "rusage_cpu_nanoseconds": 77735070916
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 34161384,
+          "rss_bytes": 14843904,
+          "rusage_cpu_nanoseconds": 2469091750
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 70928160,
+          "rss_bytes": 45203456,
+          "rusage_cpu_nanoseconds": 11374050041
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19383232,
+          "rss_bytes": 12730368,
+          "rusage_cpu_nanoseconds": 1287462083
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 3968323541,
+        "network": 128468959,
+        "gpu": 1300698583,
+        "webcontent": 33409292
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255605.218625208,
+      "wall_time": "2026-10-10T04:28:27.247974+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 140216600,
+          "rss_bytes": 135512064,
+          "rusage_cpu_nanoseconds": 78789133541
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33522408,
+          "rss_bytes": 15138816,
+          "rusage_cpu_nanoseconds": 2500203125
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 77235976,
+          "rss_bytes": 55869440,
+          "rusage_cpu_nanoseconds": 13212893000
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19350464,
+          "rss_bytes": 18497536,
+          "rusage_cpu_nanoseconds": 1305987958
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 1054062625,
+        "network": 31111375,
+        "gpu": 1838842959,
+        "webcontent": 18525875
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255665.242722791,
+      "wall_time": "2026-10-10T04:29:27.272262+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 140347648,
+          "rss_bytes": 101974016,
+          "rusage_cpu_nanoseconds": 80229970583
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33571560,
+          "rss_bytes": 10436608,
+          "rusage_cpu_nanoseconds": 2516776291
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 78120712,
+          "rss_bytes": 31801344,
+          "rusage_cpu_nanoseconds": 15076886791
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19448768,
+          "rss_bytes": 11583488,
+          "rusage_cpu_nanoseconds": 1314769666
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 1440837042,
+        "network": 16573166,
+        "gpu": 1863993791,
+        "webcontent": 8781708
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255725.248403375,
+      "wall_time": "2026-10-10T04:30:27.278191+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 140232960,
+          "rss_bytes": 73973760,
+          "rusage_cpu_nanoseconds": 80729433583
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33538792,
+          "rss_bytes": 8699904,
+          "rusage_cpu_nanoseconds": 2525942125
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 76728072,
+          "rss_bytes": 37142528,
+          "rusage_cpu_nanoseconds": 16512653041
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19497920,
+          "rss_bytes": 15024128,
+          "rusage_cpu_nanoseconds": 1321104041
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 499463000,
+        "network": 9165834,
+        "gpu": 1435766250,
+        "webcontent": 6334375
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255785.258923708,
+      "wall_time": "2026-10-10T04:31:27.288915+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 141215976,
+          "rss_bytes": 117506048,
+          "rusage_cpu_nanoseconds": 82526317750
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33391336,
+          "rss_bytes": 13680640,
+          "rusage_cpu_nanoseconds": 2582575666
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 64374560,
+          "rss_bytes": 41467904,
+          "rusage_cpu_nanoseconds": 17546661500
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19497920,
+          "rss_bytes": 10665984,
+          "rusage_cpu_nanoseconds": 1333956125
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 1796884167,
+        "network": 56633541,
+        "gpu": 1034008459,
+        "webcontent": 12852084
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255845.267981541,
+      "wall_time": "2026-10-10T04:32:27.298167+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 141150440,
+          "rss_bytes": 91258880,
+          "rusage_cpu_nanoseconds": 83077009166
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33374952,
+          "rss_bytes": 12779520,
+          "rusage_cpu_nanoseconds": 2644689416
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 64161544,
+          "rss_bytes": 38436864,
+          "rusage_cpu_nanoseconds": 18078208000
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19612608,
+          "rss_bytes": 14548992,
+          "rusage_cpu_nanoseconds": 1343060833
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 550691416,
+        "network": 62113750,
+        "gpu": 531546500,
+        "webcontent": 9104708
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255905.275629041,
+      "wall_time": "2026-10-10T04:33:27.306018+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 141068520,
+          "rss_bytes": 96157696,
+          "rusage_cpu_nanoseconds": 83717485375
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33538792,
+          "rss_bytes": 10944512,
+          "rusage_cpu_nanoseconds": 2665795333
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 64456504,
+          "rss_bytes": 26329088,
+          "rusage_cpu_nanoseconds": 18832160958
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19481536,
+          "rss_bytes": 15171584,
+          "rusage_cpu_nanoseconds": 1351114250
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 640476209,
+        "network": 21105917,
+        "gpu": 753952958,
+        "webcontent": 8053417
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 255965.282809291,
+      "wall_time": "2026-10-10T04:34:27.313424+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 141592808,
+          "rss_bytes": 86491136,
+          "rusage_cpu_nanoseconds": 84799658083
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33587944,
+          "rss_bytes": 9224192,
+          "rusage_cpu_nanoseconds": 2679999041
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 71010128,
+          "rss_bytes": 21479424,
+          "rusage_cpu_nanoseconds": 20070851833
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19579840,
+          "rss_bytes": 9191424,
+          "rusage_cpu_nanoseconds": 1359691458
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 1082172708,
+        "network": 14203708,
+        "gpu": 1238690875,
+        "webcontent": 8577208
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 256025.293773291,
+      "wall_time": "2026-10-10T04:35:27.324650+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 141150440,
+          "rss_bytes": 87179264,
+          "rusage_cpu_nanoseconds": 85952741541
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33587944,
+          "rss_bytes": 9388032,
+          "rusage_cpu_nanoseconds": 2689312625
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 70354768,
+          "rss_bytes": 33013760,
+          "rusage_cpu_nanoseconds": 22205516750
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19399616,
+          "rss_bytes": 16400384,
+          "rusage_cpu_nanoseconds": 1375512000
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 1153083458,
+        "network": 9313584,
+        "gpu": 2134664917,
+        "webcontent": 15820542
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 256085.306189041,
+      "wall_time": "2026-10-10T04:36:27.338612+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 141363432,
+          "rss_bytes": 54444032,
+          "rusage_cpu_nanoseconds": 86506560416
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33211112,
+          "rss_bytes": 5079040,
+          "rusage_cpu_nanoseconds": 2705028625
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 69862840,
+          "rss_bytes": 38289408,
+          "rusage_cpu_nanoseconds": 23598689208
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19497920,
+          "rss_bytes": 10600448,
+          "rusage_cpu_nanoseconds": 1393092833
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 553818875,
+        "network": 15716000,
+        "gpu": 1393172458,
+        "webcontent": 17580833
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 256145.317903541,
+      "wall_time": "2026-10-10T04:37:27.350915+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 141330640,
+          "rss_bytes": 76316672,
+          "rusage_cpu_nanoseconds": 87805383541
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33489640,
+          "rss_bytes": 5865472,
+          "rusage_cpu_nanoseconds": 2784188458
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 65242552,
+          "rss_bytes": 29868032,
+          "rusage_cpu_nanoseconds": 25889856666
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19563456,
+          "rss_bytes": 9666560,
+          "rusage_cpu_nanoseconds": 1404823333
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 1298823125,
+        "network": 79159833,
+        "gpu": 2291167458,
+        "webcontent": 11730500
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 256205.326836208,
+      "wall_time": "2026-10-10T04:38:27.360060+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 141396176,
+          "rss_bytes": 74416128,
+          "rusage_cpu_nanoseconds": 89062298208
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33522408,
+          "rss_bytes": 6914048,
+          "rusage_cpu_nanoseconds": 2874351750
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 59540896,
+          "rss_bytes": 17760256,
+          "rusage_cpu_nanoseconds": 26893144750
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19383232,
+          "rss_bytes": 9732096,
+          "rusage_cpu_nanoseconds": 1422898458
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 1256914667,
+        "network": 90163292,
+        "gpu": 1003288084,
+        "webcontent": 18075125
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 256265.336049458,
+      "wall_time": "2026-10-10T04:39:27.369512+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 141199568,
+          "rss_bytes": 80625664,
+          "rusage_cpu_nanoseconds": 89208742291
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33440488,
+          "rss_bytes": 12435456,
+          "rusage_cpu_nanoseconds": 2949982750
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 59491744,
+          "rss_bytes": 30490624,
+          "rusage_cpu_nanoseconds": 26972015791
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19383232,
+          "rss_bytes": 13795328,
+          "rusage_cpu_nanoseconds": 1429156250
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 146444083,
+        "network": 75631000,
+        "gpu": 78871041,
+        "webcontent": 6257792
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 256325.344168541,
+      "wall_time": "2026-10-10T04:40:27.377833+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 141215952,
+          "rss_bytes": 80887808,
+          "rusage_cpu_nanoseconds": 89340319375
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33391336,
+          "rss_bytes": 12517376,
+          "rusage_cpu_nanoseconds": 2960579250
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 58803616,
+          "rss_bytes": 38813696,
+          "rusage_cpu_nanoseconds": 27077317583
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19399616,
+          "rss_bytes": 13877248,
+          "rusage_cpu_nanoseconds": 1433407333
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 131577084,
+        "network": 10596500,
+        "gpu": 105301792,
+        "webcontent": 4251083
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 256385.351611416,
+      "wall_time": "2026-10-10T04:41:27.385505+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 141199568,
+          "rss_bytes": 80953344,
+          "rusage_cpu_nanoseconds": 89460928916
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33358568,
+          "rss_bytes": 12517376,
+          "rusage_cpu_nanoseconds": 2979443958
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 58328456,
+          "rss_bytes": 39911424,
+          "rusage_cpu_nanoseconds": 27167421333
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19350464,
+          "rss_bytes": 16072704,
+          "rusage_cpu_nanoseconds": 1445195541
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 120609541,
+        "network": 18864708,
+        "gpu": 90103750,
+        "webcontent": 11788208
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 256445.360176291,
+      "wall_time": "2026-10-10T04:42:27.394339+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 141314256,
+          "rss_bytes": 58048512,
+          "rusage_cpu_nanoseconds": 89672440000
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33391336,
+          "rss_bytes": 10436608,
+          "rusage_cpu_nanoseconds": 3020195250
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 59442568,
+          "rss_bytes": 17186816,
+          "rusage_cpu_nanoseconds": 27603088750
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19563456,
+          "rss_bytes": 9912320,
+          "rusage_cpu_nanoseconds": 1449298708
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 211511084,
+        "network": 40751292,
+        "gpu": 435667417,
+        "webcontent": 4103167
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 256505.381119708,
+      "wall_time": "2026-10-10T04:43:27.415669+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 141396152,
+          "rss_bytes": 35471360,
+          "rusage_cpu_nanoseconds": 90060123333
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 33391336,
+          "rss_bytes": 3096576,
+          "rusage_cpu_nanoseconds": 3039242833
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 59540872,
+          "rss_bytes": 6488064,
+          "rusage_cpu_nanoseconds": 27701488583
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19530688,
+          "rss_bytes": 6029312,
+          "rusage_cpu_nanoseconds": 1456714833
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 387683333,
+        "network": 19047583,
+        "gpu": 98399833,
+        "webcontent": 7416125
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 256565.403088833,
+      "wall_time": "2026-10-10T04:44:27.437703+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 145361200,
+          "rss_bytes": 132366336,
+          "rusage_cpu_nanoseconds": 92615800208
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 31474408,
+          "rss_bytes": 16007168,
+          "rusage_cpu_nanoseconds": 3131915041
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 51561768,
+          "rss_bytes": 45793280,
+          "rusage_cpu_nanoseconds": 28954380625
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 19497920,
+          "rss_bytes": 8454144,
+          "rusage_cpu_nanoseconds": 1474822333
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 2555676875,
+        "network": 92672208,
+        "gpu": 1252892042,
+        "webcontent": 18107500
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 256625.414123875,
+      "wall_time": "2026-10-10T04:45:27.448953+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 177949000,
+          "rss_bytes": 133464064,
+          "rusage_cpu_nanoseconds": 95189997708
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 31032040,
+          "rss_bytes": 4374528,
+          "rusage_cpu_nanoseconds": 3170472791
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 29689056,
+          "rss_bytes": 9895936,
+          "rusage_cpu_nanoseconds": 29101733583
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 50070464,
+          "rss_bytes": 13418496,
+          "rusage_cpu_nanoseconds": 1652868125
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 2574197500,
+        "network": 38557750,
+        "gpu": 147352958,
+        "webcontent": 178045792
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 256685.417042,
+      "wall_time": "2026-10-10T04:46:27.452100+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 177949000,
+          "rss_bytes": 85950464,
+          "rusage_cpu_nanoseconds": 95190085541
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 31032040,
+          "rss_bytes": 4620288,
+          "rusage_cpu_nanoseconds": 3181602125
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 29705440,
+          "rss_bytes": 7159808,
+          "rusage_cpu_nanoseconds": 29196933750
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 50119616,
+          "rss_bytes": 6619136,
+          "rusage_cpu_nanoseconds": 1653636166
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 87833,
+        "network": 11129334,
+        "gpu": 95200167,
+        "webcontent": 768041
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 256745.427168125,
+      "wall_time": "2026-10-10T04:47:27.462497+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 177932616,
+          "rss_bytes": 24477696,
+          "rusage_cpu_nanoseconds": 95190128291
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 31081192,
+          "rss_bytes": 2539520,
+          "rusage_cpu_nanoseconds": 3187573250
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 29574368,
+          "rss_bytes": 6930432,
+          "rusage_cpu_nanoseconds": 29320747250
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 50119616,
+          "rss_bytes": 3981312,
+          "rusage_cpu_nanoseconds": 1654665916
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 42750,
+        "network": 5971125,
+        "gpu": 123813500,
+        "webcontent": 1029750
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 256805.439004916,
+      "wall_time": "2026-10-10T04:48:27.474535+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 144541976,
+          "rss_bytes": 22577152,
+          "rusage_cpu_nanoseconds": 95198995750
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 31097576,
+          "rss_bytes": 5242880,
+          "rusage_cpu_nanoseconds": 3205347333
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 29574368,
+          "rss_bytes": 5750784,
+          "rusage_cpu_nanoseconds": 29401847916
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 50070464,
+          "rss_bytes": 3899392,
+          "rusage_cpu_nanoseconds": 1658215416
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 8867459,
+        "network": 17774083,
+        "gpu": 81100666,
+        "webcontent": 3549500
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 256865.450428916,
+      "wall_time": "2026-10-10T04:49:27.486203+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 144574744,
+          "rss_bytes": 18087936,
+          "rusage_cpu_nanoseconds": 95209696541
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 30720744,
+          "rss_bytes": 4866048,
+          "rusage_cpu_nanoseconds": 3231739875
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 22480000,
+          "rss_bytes": 6553600,
+          "rusage_cpu_nanoseconds": 29541990458
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 67503040,
+          "rss_bytes": 5292032,
+          "rusage_cpu_nanoseconds": 1789325291
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 10700791,
+        "network": 26392542,
+        "gpu": 140142542,
+        "webcontent": 131109875
+      },
+      "unavailable_pids": []
+    },
+    {
+      "monotonic": 256925.463658625,
+      "wall_time": "2026-10-10T04:50:27.499642+00:00",
+      "processes": [
+        {
+          "pid": 42628,
+          "role": "astra",
+          "available": true,
+          "rusage_start_abstime": 6104686505540,
+          "footprint_bytes": 144640280,
+          "rss_bytes": 18022400,
+          "rusage_cpu_nanoseconds": 95211428458
+        },
+        {
+          "pid": 42702,
+          "role": "network",
+          "available": true,
+          "rusage_start_abstime": 6104724643988,
+          "footprint_bytes": 30655184,
+          "rss_bytes": 3719168,
+          "rusage_cpu_nanoseconds": 3237849958
+        },
+        {
+          "pid": 42703,
+          "role": "gpu",
+          "available": true,
+          "rusage_start_abstime": 6104724815119,
+          "footprint_bytes": 22365312,
+          "rss_bytes": 5799936,
+          "rusage_cpu_nanoseconds": 29659080333
+        },
+        {
+          "pid": 42712,
+          "role": "webcontent",
+          "available": true,
+          "rusage_start_abstime": 6104736891862,
+          "footprint_bytes": 67503040,
+          "rss_bytes": 5488640,
+          "rusage_cpu_nanoseconds": 1843475583
+        }
+      ],
+      "interval_cpu_nanoseconds_by_role": {
+        "astra": 1731917,
+        "network": 6110083,
+        "gpu": 117089875,
+        "webcontent": 54150292
+      },
+      "unavailable_pids": []
+    }
+  ],
+  "stopped_reason": "Operator stopped monitor after UI availability failure; no signal sent to Astra",
+  "runtime_status": "INCOMPLETE: UI availability failed; requested 60 minutes not completed"
+}

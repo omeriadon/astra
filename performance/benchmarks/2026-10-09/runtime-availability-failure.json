@@ -1,0 +1,13 @@
+{
+  "pid": 42628,
+  "sample_time_local": "2026-10-10 12:49:48 +0800",
+  "sample_count_main_thread": 4227,
+  "main_thread_observed": "AppKit event loop -> mach_msg2_trap in all main-thread samples",
+  "computer_use_errors": [
+    "timeoutReached",
+    "NSCocoaErrorDomain 256, NSOSStatusErrorDomain -1712 errAETimeout"
+  ],
+  "user_report": "App is not alive",
+  "app_inventory": "Only isolated candidate listed; normal Astra not listed",
+  "conclusion": "Process existence is not UI availability. No sampled CPU-bound main-thread hang established. Runtime availability unverified; no automatic relaunch."
+}

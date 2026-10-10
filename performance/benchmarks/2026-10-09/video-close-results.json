@@ -1,0 +1,23 @@
+{
+  "scenario": "One public YouTube video in the isolated candidate profile; normal UI closure with media-stop confirmation",
+  "candidate_app_source": "8fc6600d421c4566191fa982940d5d6f139f56ea",
+  "process_mapping": "Activity Monitor YouTube domain and service-worker rows; existing mapped shared services",
+  "exited_pids": [
+    63246,
+    66865
+  ],
+  "footprint_delta_bytes_by_role": {
+    "astra": 1409096,
+    "gpu": -28967104,
+    "network": -2342912,
+    "webcontent": -571313080
+  },
+  "mapped_footprint_delta_bytes": -601214000,
+  "unsaved_form_retained_after_close": true,
+  "caveats": [
+    "One closure only; no baseline comparison",
+    "Shared services are deduplicated; their footprint is not exclusively owned by the video",
+    "Brief playback verified by player clock advancing to 57 seconds; sustained playback not certified",
+    "No JavaScript heap or decoder allocation attribution"
+  ]
+}

@@ -19,7 +19,7 @@ Disk availability repeatedly fell to approximately 100 MiB. Instruments and the 
 
 ## Actual execution
 
-Computer Use launched both isolated builds, loaded public websites and unsigned-in YouTube pages, created/persisted 100 tabs, exercised repeated Control-Tab switching, toggled the sidebar, scrolled a long local page, entered a form, downloaded files, and tested extension error handling.
+Computer Use launched both isolated builds, loaded public websites and unsigned-in YouTube pages, created/persisted 100 tabs, exercised repeated Control-Tab switching, toggled the sidebar, scrolled a long local page, entered a form, downloaded files, and tested extension error handling, installed and removed the bundled uBlock Origin Lite extension, and closed a public YouTube video through the media warning.
 
 The controlled 4 KiB and 16 MiB downloads matched their source SHA-256 values. Automatic AI naming was active and renamed the large payload; filename equality was not used as an integrity test. The automatic-download permission dialog was exercised with Allow Once.
 
@@ -42,7 +42,7 @@ Five observations do not support a useful p95 estimate. The following numerical 
 | Matched idle CPU workload | NOT MEASURED | NOT MEASURED | — | Unverified |
 | Matched active YouTube memory | NOT MEASURED | NOT MEASURED | — | Playback not certified |
 | Matched background WebKit memory | NOT MEASURED | NOT MEASURED | — | No matched series |
-| Tab-close memory reclamation | NOT MEASURED | NOT MEASURED | — | Unverified |
+| Tab-close memory reclamation | NOT MEASURED | Mapped footprint −573.4 MiB | — | One candidate closure observed |
 
 Recovery milestone ranges, in milliseconds:
 
@@ -89,15 +89,17 @@ These scenarios differ and must not be used as build comparisons. YouTube player
 
 Mapped process footprints at the overnight endpoint were approximately 129.4 MiB for Astra, 52.6 MiB for the protected local-page WebContent process, 10.2 MiB for GPU, and 25.8 MiB for networking. The Astra footprint at the first passive sample was approximately 127.0 MiB. Process identities remained available. This mapped subset does not include every possible browser process and does not establish a leak or tab-close reclamation.
 
+A later normal closure of the public YouTube tab terminated its mapped WebContent and service-worker processes (PIDs 63246 and 66865). Across the six explicitly mapped processes, physical footprint fell by 601,214,000 bytes (573.4 MiB). Shared GPU footprint fell by 28,967,104 bytes (27.6 MiB); networking fell by 2,342,912 bytes, while Astra increased by 1,409,096 bytes. Shared services remained alive. The edited local form was still present afterward. This is one candidate observation, without a matched baseline or a leak conclusion. The native player clock advanced to 57 seconds earlier in the session; sustained playback was not certified. Raw snapshots and deltas are in `video-before-close.json`, `video-after-close.json`, and `video-close-results.json`.
+
 Activity Monitor was operated independently. Its energy rows could not be reliably attributed between identically named test instances. Physical watts and a comparative energy result are **NOT MEASURED**.
 
 ## Failed and incomplete checks
 
-- Leaks: initial recording failed with kperf/ktrace errors; no valid leak result.
-- Rendering: sequential Animation Hitches recording aborted while saving with `No space left on device`; no valid frame-pacing result.
-- The 60-minute passive monitor stopped after ten samples spanning 540 seconds because the result write failed with errno 28. It did not restart Astra. The saved samples are marked incomplete.
+- Leaks: initial recording failed with kperf/ktrace errors. A later 20-second recording saved, but its UI displayed a failed leak check and empty allocation table. The independent `/usr/bin/leaks` scan reported three 32-byte `_NSMenuIntelligentAssistantConfiguration` allocations (96 bytes total), with no WKWebView leak reported. This is a limited live-process scan, not a browser-wide leak-free certification; see `leak-observation.json`.
+- Rendering: the first sequential Animation Hitches recording aborted while saving with `No space left on device`. A later 20-second recording saved at `/tmp/astra-final-hitches.trace`, but Computer Use timed out before the intended scrolling workload could be executed. It is not a scrolling-performance result.
+- The first 60-minute passive monitor stopped after ten samples spanning 540 seconds because the result write failed with errno 28. A later attempt collected 34 samples spanning 1,980.35 seconds before the monitor was stopped after UI availability failed. Neither attempt completed 60 minutes. Neither restarted or signaled Astra. Both are marked incomplete. The later mapped Astra footprint ranged from 133.7 to 223.9 MiB, ending at 137.9 MiB; mixed-workload average CPU was 3.01% of one core. These are not idle or leak benchmarks; see `stability-current-partial.json` and `stability-current-summary.json`.
 - Computer Use coordinate actions subsequently returned `noWindowsAvailable` even while the app process and accessibility tree remained available. Indexed interaction still verified the retained form.
-- The corrupt extension archive was rejected. The bundled uBlock archive passed `unzip -t` but was rejected by Astra during the low-storage session. A later import retest was blocked by coordinate interaction errors. A standalone WebKit constructor probe terminated in Foundation and is not a valid app-context test. Valid extension installation/removal remains unverified.
+- The corrupt extension archive was rejected. The bundled uBlock archive passed `unzip -t` but was initially rejected during low storage. After storage and coordinate control recovered, installation, enable/disable toggles, and removal succeeded in the disposable profile. The installed archive was removed and Astra remained alive. The initial rejection is confounded; no architectural cause is established. The standalone WebKit constructor probe terminated in Foundation and is not a valid app-context test.
 - Multi-window/private browsing, PiP/capture continuity, active background audio, sustained playback, hibernation/wake reclamation, interrupted-write recovery, large history/bookmark UI workloads, and download pause/resume/segmentation/external-volume workflows were not comprehensively executed.
 
 ## Implemented corrections and verification
@@ -108,12 +110,14 @@ The passive sampler retains process-start identities, stops on unavailable/reuse
 
 The non-build regression sweep recorded 34 unique passing checks and 35 successful invocations, including isolated hibernation, filesystem/download publication, ownership, history cancellation, and library checks. This is not a claim that every repository check or runtime scenario passed.
 
-The macOS Debug build completed through Xcode MCP on 10 October with no reported errors. The macOS Release build completed through Xcode's Build For Profiling action on 9 October. No local `xcodebuild` command was used. Xcode reported zero scheme tests; executable regression checks are recorded separately. CI on the artifact integration commit must be verified separately from the earlier green run on `8fc6600`.
+The macOS Debug build completed through Xcode MCP on 10 October with no reported errors. The macOS Release build completed through Xcode's Build For Profiling action on 9 October. No local `xcodebuild` command was used. Xcode reported zero scheme tests; executable regression checks are recorded separately. Both required CI runs passed on exact pushed HEAD `32459315a7d5ce03c4bdcfb2c0bd51cf001e4d33`: [run 38022007785](https://github.com/omeriadon/astra/actions/runs/38022007785) and [run 38022010302](https://github.com/omeriadon/astra/actions/runs/38022010302). Subsequent local results updates are not included in that CI claim.
 
 ## Artifacts and privacy
 
 JSON files contain raw numeric samples, process identities, aggregate metrics, fixture definitions, and explicit caveats. Debug logs and successful raw Instruments traces remain outside the repository under `/tmp`; they can contain environment information and should not be published unredacted. Failed traces were removed to recover space.
 
 The pre-commit hook unexpectedly ran whole-repository formatting and staged unrelated files during the first checkpoint. Those changes were removed from the unpublished checkpoint, and the original `BrowserResources.swift` edit was restored. Subsequent scoped commits bypass that hook for the individual command; repository hook configuration was not changed.
+
+After the later profiling run, Computer Use returned timeouts and an AppleEvent error (-1712). The user reported that the app was not alive. Inventory listed only the isolated candidate; normal Astra was absent. A five-second sample of candidate PID 42628 placed all 4,227 main-thread samples in the AppKit event-loop wait. This does not establish usable UI or a crash-free stability interval. See `runtime-availability-failure.json`. No automatic relaunch was performed.
 
 The mission remains incomplete. Remaining acceptance criteria are not marked passed, the PR is not merged, and no unsupported memory-reclamation change is introduced.
