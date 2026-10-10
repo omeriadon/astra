@@ -32,6 +32,8 @@ assert {
     "App/BrowserAuthenticationSessionHandler.swift",
     "App/browserApp.swift",
     "UI/Shell/BrowserWindowController.swift",
+    "UI/Chrome/BrowserAIChatSidebar.swift",
+    "UI/Tabs/BrowserTabHoverPreviewCoordinator.swift",
     "App/BrowserDataTransfer.swift",
     "App/BrowserDiagnostics.swift",
     "App/BrowserWebsiteAppMenuIntegration.swift",

@@ -102,6 +102,8 @@
             "UI/Tabs/ControlTabSwitcherPreview.swift",
             "UI/Shell/BrowserSidebarControls.swift",
             "UI/Shell/BrowserDownloadsBarView.swift",
+            "UI/Chrome/BrowserAIChatSidebar.swift",
+            "UI/Tabs/BrowserTabHoverPreviewCoordinator.swift",
             "UI/Tabs/BrowserTabRow.swift",
             "UI/Tabs/ControlTabSwitcherCandidateView.swift",
           ],
