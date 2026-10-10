@@ -75,11 +75,12 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 				self.sync(browser)
 			}
 			if let focused = BrowserWindowRegistry.shared.activeBrowser, !focused.isPrivate {
-				self.focus(focused)
+				focus(focused)
 			}
 		}
 		return controller
 	}()
+
 	private let bundledNames = ["darkreader-chrome-mv3"]
 	private(set) var loadErrors: [String: String] = [:] {
 		didSet {

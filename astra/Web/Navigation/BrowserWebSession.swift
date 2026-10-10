@@ -12,7 +12,7 @@ final class BrowserWebSession {
 	let isPrivate: Bool
 	let dataStore: WKWebsiteDataStore
 	let toastManager: ToastManager
-	// Downloads are not required to construct the browser shell.
+	/// Downloads are not required to construct the browser shell.
 	lazy var downloads: BrowserDownloadManager = isPrivate
 		? BrowserDownloadManager(privateDataStore: dataStore, toastManager: toastManager)
 		: .shared
@@ -22,7 +22,7 @@ final class BrowserWebSession {
 	let sitePreferences: BrowserSitePreferences
 	let contentBlocking: BrowserContentBlocking
 	// Only initialize usage limits when navigation actually needs them.
-	lazy var usageLimits: BrowserUsageLimitsStore = BrowserUsageLimitsStore(dataStore: dataStore)
+	lazy var usageLimits: BrowserUsageLimitsStore = .init(dataStore: dataStore)
 	var persistenceWriteTask: Task<Void, Never>?
 	private var cleanupTask: Task<Void, Never>?
 	private var contentBlockingUpdatesTask: Task<Void, Never>?

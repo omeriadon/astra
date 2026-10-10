@@ -1,14 +1,17 @@
 import Foundation
 
-// The runtime registry emits timing diagnostics. The standalone ownership
-// fixture intentionally omits OSLog and the app's full BrowserLog dependency.
+/// The runtime registry emits timing diagnostics. The standalone ownership
+/// fixture intentionally omits OSLog and the app's full BrowserLog dependency.
 enum BrowserLog {
 	enum Category { case performance }
-	static func clock() -> TimeInterval { ProcessInfo.processInfo.systemUptime }
+	static func clock() -> TimeInterval {
+		ProcessInfo.processInfo.systemUptime
+	}
+
 	static func duration(
-		_ category: Category, _ event: String,
-		since start: TimeInterval, warnAboveMilliseconds: Double,
-		metadata: [String: String]
+		_: Category, _: String,
+		since _: TimeInterval, warnAboveMilliseconds _: Double,
+		metadata _: [String: String]
 	) {}
 }
 

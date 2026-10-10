@@ -217,7 +217,9 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 
 	private func visibleOrigin(for url: URL?) -> String? {
 		guard let url else { return nil }
-		if let cached = visibleOriginCache[url] { return cached }
+		if let cached = visibleOriginCache[url] {
+			return cached
+		}
 		guard let origin = FaviconKey.origin(for: url) else { return nil }
 		if visibleOriginCache.count >= 512 {
 			visibleOriginCache.removeAll(keepingCapacity: true)

@@ -191,9 +191,9 @@
 							continuation.finish()
 							guard let self else { return }
 							BrowserLog.notice(.lifecycle, "startup.first-visible-window-update", metadata: [
-								"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - self.startupStartedAt) * 1000),
+								"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
 							])
-							self.scheduleDeferredStartupServices(trigger: "first-window-update")
+							scheduleDeferredStartupServices(trigger: "first-window-update")
 						}
 					}
 					foreground.showWindow()
@@ -204,7 +204,9 @@
 					])
 					let didUpdate = await withTaskGroup(of: Bool.self) { group in
 						group.addTask {
-							for await _ in firstWindowUpdates { return true }
+							for await _ in firstWindowUpdates {
+								return true
+							}
 							return false
 						}
 						group.addTask {

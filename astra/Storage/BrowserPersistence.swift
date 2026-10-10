@@ -455,13 +455,15 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		self.directory = directory
 	}
 
-	// The session, favicon cache, and window restorer share immutable
-	// directory state instead of independently resolving Application Support.
+	/// The session, favicon cache, and window restorer share immutable
+	/// directory state instead of independently resolving Application Support.
 	@MainActor private static var sessionStore: BrowserPersistence?
 
 	@MainActor
 	static func makeShared() throws -> BrowserPersistence {
-		if let sessionStore { return sessionStore }
+		if let sessionStore {
+			return sessionStore
+		}
 		let store = try BrowserPersistence()
 		sessionStore = store
 		return store
