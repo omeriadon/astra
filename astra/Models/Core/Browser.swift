@@ -623,6 +623,9 @@ final class Browser {
 		// Synchronous placeholder only: disk decode happens off-main in
 		// hydrateFromDisk() so the first frame never waits on JSON.
 		let placeholder = BrowserTab(modifiedAt: .distantPast, session: session)
+		// Read this preference once for all cached tab shells rather than
+		// once per BrowserTab initializer (up to 256 on a typical restore).
+		let cachedDefaultPageZoom = launchCache == nil ? nil : Defaults[.defaultPageZoom]
 		let placeholderID = placeholder.id
 		let placeholderModifiedAt = placeholder.modifiedAt
 		let cachedTabs = launchCache?.tabs.sorted { $0.order < $1.order }.map { cached in
@@ -630,6 +633,7 @@ final class Browser {
 				id: cached.id,
 				pageTitle: cached.title,
 				initialURL: cached.url,
+				pageZoom: cachedDefaultPageZoom,
 				isHibernated: true,
 				modifiedAt: .distantPast,
 				session: session
@@ -940,6 +944,7 @@ final class Browser {
 		let foregroundSavedID = savedWindow?.restoredSelection(availableTabIDs: availableSavedIDs)
 			?? loaded.snapshot?.selectedTabID.flatMap { availableSavedIDs.contains($0) ? $0 : nil }
 			?? loaded.tabs.first?.id
+		let restoredDefaultPageZoom = Defaults[.defaultPageZoom]
 		let restoredTabs = loaded.tabs.compactMap { saved -> BrowserTab? in
 			let internalPage = saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:))
 			guard saved.internalPage == nil || internalPage != nil else { return nil }
@@ -956,7 +961,7 @@ final class Browser {
 				history: saved.history,
 				historyIndex: saved.historyIndex,
 				openPeeks: saved.peeks,
-				pageZoom: saved.pageZoom,
+				pageZoom: saved.pageZoom ?? restoredDefaultPageZoom,
 				scrollPosition: saved.scrollPosition,
 				isHibernated: saved.isHibernated || startupBehavior != .restore || saved.id != foregroundSavedID,
 				modifiedAt: saved.modifiedAt,
