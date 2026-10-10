@@ -32,7 +32,36 @@ assert {
     "App/BrowserAuthenticationSessionHandler.swift",
     "App/browserApp.swift",
     "UI/Shell/BrowserWindowController.swift",
+    "App/BrowserDataTransfer.swift",
+    "App/BrowserDiagnostics.swift",
+    "App/BrowserWebsiteAppMenuIntegration.swift",
+    "Web/Navigation/BrowserDesktopCommands.swift",
+    "Web/Navigation/BrowserDesktopCommands+ExportFormat.swift",
+    "UI/Content/BrowserSourceViewer.swift",
+    "UI/Content/ContentView.swift",
+    "UI/Content/BrowserRootView.swift",
+    "UI/Shell/DesktopBrowserShell.swift",
+    "UI/Shell/CompactBrowserShell.swift",
+    "UI/Shell/BrowserSplitView.swift",
+    "UI/Shell/PrivateBrowserSidebar.swift",
+    "UI/Shell/BrowserSpacePager.swift",
+    "UI/Shell/BrowserSpaceScrollState.swift",
+    "UI/Shell/MiniAstraWindowController.swift",
+    "UI/Shell/MiniAstraView.swift",
+    "UI/Shell/MiniAstraOpeningAnimation.swift",
+    "UI/Tabs/ControlTabSwitcher.swift",
+    "UI/Tabs/ControlTabSwitcherPreview.swift",
+    "UI/Tabs/ControlTabSwitcherCandidateView.swift",
 }.issubset(runtime_excluded)
+assert not (runtime_excluded & {
+    "UI/Shell/BrowserWebsiteAppView.swift",
+    "UI/Shell/BrowserWebsiteAppWindowController.swift",
+    "UI/Shell/BrowserContentHostView.swift",
+    "UI/Content/BrowserPageView.swift",
+    "UI/Shell/BrowserShellControls.swift",
+    "Models/Core/Browser.swift",
+    "Web/Navigation/BrowserController.swift",
+}), "Website-app rendering or navigation sources accidentally excluded"
 extensions = (root / "astra/Web/Extensions/BrowserExtensionManager.swift").read_text()
 assert "#if os(macOS) && !ASTRA_WEBSITE_APP_RUNTIME" in extensions
 assert not any(x.get("product-name") == "Sparkle" for x in website["package-product-members"])
