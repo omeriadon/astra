@@ -362,6 +362,7 @@ struct BrowserWebView {
 				}
 				appliedVisibility = nil
 				handoffTask?.cancel()
+				handoffTask = nil
 				curtain.frame = bounds
 				curtain.image = controller.windowMirrorSnapshot ?? controller.previewSnapshot
 				curtain.isHidden = !specification.isVisible || curtain.image == nil
@@ -376,25 +377,27 @@ struct BrowserWebView {
 				{
 					BrowserDesktopCommands.attachWebInspector(inspector)
 				}
-				handoffTask = Task { @MainActor [weak self, weak webView] in
-					let deadline = ContinuousClock.now + .seconds(1)
-					while !Task.isCancelled, ContinuousClock.now < deadline {
-						if await controller.refreshWindowMirrorSnapshot() {
-							break
+				// A freshly constructed WebView usually has no snapshot
+				// curtain. Polling WebKit screenshots in that case wastes GPU/CPU
+				// and competes with the first page load for no visual benefit.
+				if !curtain.isHidden {
+					handoffTask = Task { @MainActor [weak self, weak webView] in
+						let deadline = ContinuousClock.now + .seconds(1)
+						while !Task.isCancelled, ContinuousClock.now < deadline {
+							if await controller.refreshWindowMirrorSnapshot() {
+								break
+							}
+							do {
+								try await Task.sleep(for: .milliseconds(75))
+							} catch {
+								return
+							}
 						}
-						do {
-							// Failed snapshot attempts usually mean WebKit is still
-							// attaching or another snapshot is in flight. Polling at
-							// 20 ms only creates contention; 75 ms is still imperceptible.
-							try await Task.sleep(for: .milliseconds(75))
-						} catch {
-							return
-						}
+						guard !Task.isCancelled, let self, let webView, webView.superview === self,
+						      specification.windowID == nil || specification.windowID == controller.displayWindowID else { return }
+						curtain.isHidden = true
+						curtain.image = nil
 					}
-					guard !Task.isCancelled, let self, let webView, webView.superview === self,
-					      specification.windowID == nil || specification.windowID == controller.displayWindowID else { return }
-					curtain.isHidden = true
-					curtain.image = nil
 				}
 			}
 			// WebKit owns the page frame while its inspector is docked in this host.
