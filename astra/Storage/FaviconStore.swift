@@ -106,6 +106,9 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	private(set) var favicons: [String: Data]
 	@ObservationIgnored
 	private var fetchedAt: [String: Date] = [:]
+	/// Bounded URL-to-origin cache: sidebar rows can be reevaluated frequently
+	/// without reparsing every unchanged URL into URLComponents.
+	@ObservationIgnored private var visibleOriginCache: [URL: String] = [:]
 	@ObservationIgnored
 	private var activeRequests: [ObjectIdentifier: ActiveRequest] = [:]
 	@ObservationIgnored
@@ -212,15 +215,26 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		)
 	}
 
+	private func visibleOrigin(for url: URL?) -> String? {
+		guard let url else { return nil }
+		if let cached = visibleOriginCache[url] { return cached }
+		guard let origin = FaviconKey.origin(for: url) else { return nil }
+		if visibleOriginCache.count >= 512 {
+			visibleOriginCache.removeAll(keepingCapacity: true)
+		}
+		visibleOriginCache[url] = origin
+		return origin
+	}
+
 	/// Used by tab selection: a cached icon needs no WebKit JavaScript probe or
 	/// network refresh just because the user returned to an existing tab.
 	func hasCachedFavicon(for pageURL: URL?) -> Bool {
-		guard let key = FaviconKey.origin(for: pageURL) else { return false }
+		guard let key = visibleOrigin(for: pageURL) else { return false }
 		return favicons[key] != nil
 	}
 
 	func image(for pageURL: URL?, in _: WKWebView? = nil) -> Image? {
-		guard let key = FaviconKey.origin(for: pageURL) else { return nil }
+		guard let key = visibleOrigin(for: pageURL) else { return nil }
 		if let cached = decodedImages.object(forKey: key as NSString) {
 			return Self.swiftUIImage(cached)
 		}
