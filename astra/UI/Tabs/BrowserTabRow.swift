@@ -600,8 +600,15 @@ private struct TabRowContextMenu: View {
 		@ObservationIgnored private var activationTask: Task<Void, Never>?
 		@ObservationIgnored private var dismissalTask: Task<Void, Never>?
 		@ObservationIgnored private var warmSession = false
+		@ObservationIgnored private var escapeMonitor: Any?
 
-		private init() {}
+		private init() {
+			escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+				guard event.keyCode == 53, let self, isVisible, let windowID else { return event }
+				dismiss(for: windowID)
+				return event
+			}
+		}
 
 		func hoverBegan(tabID: UUID, windowID: UUID, sourceFrame: CGRect) {
 			dismissalTask?.cancel()
@@ -615,10 +622,13 @@ private struct TabRowContextMenu: View {
 			hoveredTabID = tabID
 			self.windowID = windowID
 			self.sourceFrame = sourceFrame
+			if isVisible {
+				presentedTabID = tabID
+			}
 
 			// Short debounce in both cases: instant warm shows flicker while
 			// sweeping across tabs, and the old 2s cold delay felt broken.
-			let delay: Duration = warmSession ? .milliseconds(250) : .milliseconds(600)
+			let delay: Duration = warmSession ? .milliseconds(250) : .seconds(1)
 			activationTask?.cancel()
 			activationTask = Task { @MainActor [weak self] in
 				do {
@@ -809,18 +819,18 @@ private struct TabRowContextMenu: View {
 				// The switcher and navigation lifecycle already retain a page
 				// snapshot. Showing the hover card must not force a new WebKit
 				// capture every time the pointer crosses a tab row.
-				memoryBytes = await sampleExclusiveMemory(for: controller)
-				hasSampledMemory = true
 				if !controller.hasCurrentPreviewSnapshot {
 					await controller.refreshPreviewSnapshot()
 				}
+				memoryBytes = await sampleWebContentMemory(for: controller)
+				hasSampledMemory = true
 				while !Task.isCancelled {
 					do {
 						try await Task.sleep(for: .seconds(2))
 					} catch {
 						return
 					}
-					memoryBytes = await sampleExclusiveMemory(for: controller)
+					memoryBytes = await sampleWebContentMemory(for: controller)
 					hasSampledMemory = true
 					if !controller.hasCurrentPreviewSnapshot {
 						await controller.refreshPreviewSnapshot()
@@ -829,16 +839,9 @@ private struct TabRowContextMenu: View {
 			}
 		}
 
-		private func sampleExclusiveMemory(for controller: BrowserController) async -> UInt64? {
-			let controllers = BrowserWindowRegistry.shared.openBrowsers
-				.flatMap { $0.tabs.compactMap(\.controller) }
-			let snapshots = await BrowserController.tabProcessMemorySnapshots(for: controllers)
-			guard let snapshot = snapshots[controller.id],
-			      let webContent = BrowserTabProcessMemorySnapshot.exclusiveWebContentProcess(
-			      	for: snapshot,
-			      	among: Array(snapshots.values)
-			      ) else { return nil }
-			return webContent.bytes
+		private func sampleWebContentMemory(for controller: BrowserController) async -> UInt64? {
+			let snapshots = await BrowserController.tabProcessMemorySnapshots(for: [controller])
+			return snapshots[controller.id]?.webContentBytes
 		}
 
 		private nonisolated static func formatBytes(_ bytes: UInt64) -> String {

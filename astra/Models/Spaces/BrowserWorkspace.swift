@@ -186,13 +186,10 @@ struct BrowserWorkspace: Codable, Equatable, Sendable {
 
 	static func tabSwitchCandidates(
 		visibleTabIDs: [UUID],
-		recentlyUsedTabIDs: [UUID],
 		selectedTabID: UUID,
 		forward: Bool
 	) -> [UUID] {
-		var seen = Set<UUID>()
-		let ids = recentlyUsedTabIDs.filter { visibleTabIDs.contains($0) && seen.insert($0).inserted }
-			+ visibleTabIDs.filter { seen.insert($0).inserted }
+		let ids = visibleTabIDs
 		guard ids.count > 1, let selectedIndex = ids.firstIndex(of: selectedTabID) else { return [] }
 		return (1 ... ids.count).map { offset in
 			let direction = forward ? offset : ids.count - offset

@@ -36,8 +36,6 @@ struct BrowserAdBlockingButton: View {
 			origin == nil
 				|| !adBlockingEnabled
 				|| !controller.hasCurrentPageDocument
-				|| !controller.session.contentBlocking.isReadyForNavigation
-				|| controller.session.contentBlocking.builtInCompiledRuleList == nil
 				|| controller.session.sitePreferences.isLocalDataReadOnly
 		)
 		.accessibilityLabel(isBlocked ? "Turn off ad blocking for this site" : "Turn on ad blocking for this site")

@@ -9,25 +9,17 @@
 		private let padding: CGFloat = 12
 		private let horizontalMargin: CGFloat = 20
 
+		private func visibleCount(fitting width: CGFloat) -> Int {
+			let availableWidth = max(0, width - horizontalMargin * 2 - padding * 2)
+			return max(
+				1,
+				Int((availableWidth + spacing) / (ControlTabSwitcherCandidateView.totalWidth + spacing))
+			)
+		}
+
 		private func visibleCandidateIDs(fitting width: CGFloat) -> [UUID] {
 			let ids = switcher.candidateIDs
-			let availableWidth = max(0, width - horizontalMargin * 2 - padding * 2)
-			let visibleCount = min(
-				ids.count,
-				max(1, Int((availableWidth + spacing) / (ControlTabSwitcherCandidateView.totalWidth + spacing)))
-			)
-			guard ids.count > visibleCount,
-			      let anchorID = switcher.candidateWindowAnchorID,
-			      let anchorIndex = ids.firstIndex(of: anchorID)
-			else {
-				return ids
-			}
-
-			let startIndex = min(
-				max(0, anchorIndex - visibleCount / 2),
-				ids.count - visibleCount
-			)
-			return Array(ids[startIndex ..< startIndex + visibleCount])
+			return Array(ids.prefix(visibleCount(fitting: width)))
 		}
 
 		private func refreshVisibleCandidates(fitting width: CGFloat) async {
@@ -65,6 +57,9 @@
 						.accessibilityIdentifier("control-tab-switcher-preview")
 						.frame(maxWidth: .infinity, maxHeight: .infinity)
 					}
+				}
+				.onChange(of: visibleCount(fitting: geometry.size.width), initial: true) { _, count in
+					switcher.setVisibleCandidateCount(count)
 				}
 				// Quick Control-Tab releases never display the switcher. The old
 				// candidateIDs task still captured WebKit screenshots during

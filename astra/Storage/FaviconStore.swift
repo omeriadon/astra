@@ -152,11 +152,13 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		self.persistence = persistence
 		persistenceWriter = persistence.map(FaviconPersistenceWriter.init)
 		networkSession = isPrivate ? URLSession(configuration: .ephemeral) : .shared
-		favicons = [:]
+		let cachedFavicons = isPrivate ? [:] : BrowserLaunchCache.load()?.favicons ?? [:]
+		favicons = cachedFavicons
 		super.init()
 
 		if let persistence {
 			let hydrationGeneration = cacheGeneration
+			let cachedFaviconKeys = Set(cachedFavicons.keys)
 			Task.detached(priority: .utility) { [persistence] in
 				guard let loaded = try? persistence.loadFavicons(), !loaded.isEmpty else { return }
 				// ImageIO header validation can touch every frame in an .ico/gif.
@@ -174,6 +176,11 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 					guard let self, cacheGeneration == hydrationGeneration else { return }
 					var migrationRequired = rejectedOrRewritten
 					for (storedKey, key, data) in prepared {
+						if cachedFaviconKeys.contains(key) {
+							favicons[key] = data
+							migrationRequired = true
+							continue
+						}
 						guard favicons[key] == nil else {
 							migrationRequired = true
 							continue
@@ -330,6 +337,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 			// Do not capture a COW dictionary before the debounce completes:
 			// that forces a full copy on every subsequent favicon mutation.
 			let snapshot = favicons
+			BrowserLaunchCache.updateFavicons(snapshot)
 			await writer.save(snapshot)
 		}
 	}

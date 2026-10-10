@@ -52,16 +52,17 @@ final class BrowserContentBlocking {
 	}
 
 	func prepare() async {
-		guard !isPrepared, !isBusy, !privateSessionIsEnding else {
+		guard !isPrepared || builtInCompiledRuleList == nil, !isBusy, !privateSessionIsEnding else {
 			BrowserLog.trace(.contentBlocking, "content-blocking.prepare.skip", metadata: ["private": String(isPrivate), "prepared": String(isPrepared), "busy": String(isBusy)])
 			return
 		}
 		let logStarted = BrowserLog.clock()
 		BrowserLog.info(.contentBlocking, "content-blocking.prepare.begin")
-		isPrepared = true
 		isPreparing = true
 		isBusy = true
 		defer {
+			// Keep navigation available while allowing a failed compilation to retry.
+			isPrepared = true
 			isPreparing = false
 			BrowserLog.duration(.contentBlocking, "content-blocking.prepare.end", since: logStarted, warnAboveMilliseconds: 500, metadata: ["enabled": String(Defaults[.adBlockingEnabled]), "has_rules": String(builtInCompiledRuleList != nil), "error": BrowserLog.value(errorDescription)])
 			finishOperation()

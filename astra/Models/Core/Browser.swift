@@ -188,6 +188,12 @@ final class Browser {
 
 	@ObservationIgnored
 	private var hydrationFailed = false
+	@ObservationIgnored
+	private var launchCacheSelectedTabID: UUID?
+	@ObservationIgnored
+	private var launchCacheSeeded = false
+	@ObservationIgnored
+	private var launchCacheWasModified = false
 
 	/// O(1) tab lookup for sidebar/history/rendering hot paths.
 	/// The dictionary is rebuilt only when the tab array itself changes.
@@ -607,6 +613,9 @@ final class Browser {
 		savedWindowFrame = windowRecord?.frame
 		let session = isPrivate ? BrowserWebSession(isPrivate: true) : .shared
 		self.session = session
+		let launchCache = !isMini && !isPrivate && Defaults[.startupBehavior] == .restore
+			? BrowserLaunchCache.load()
+			: nil
 		// Another normal window reuses the hydrated in-memory browser state.
 		// Do not force a full session snapshot on the main actor just because
 		// the user opened a window; the normal debounced writer still persists
@@ -616,6 +625,48 @@ final class Browser {
 		let placeholder = BrowserTab(modifiedAt: .distantPast, session: session)
 		let placeholderID = placeholder.id
 		let placeholderModifiedAt = placeholder.modifiedAt
+		let cachedTabs = launchCache?.tabs.sorted { $0.order < $1.order }.map { cached in
+			BrowserTab(
+				id: cached.id,
+				pageTitle: cached.title,
+				initialURL: cached.url,
+				isHibernated: true,
+				modifiedAt: .distantPast,
+				session: session
+			)
+		} ?? []
+		let initialTabs = cachedTabs.isEmpty ? [placeholder] : cachedTabs
+		let initialSelectedTabID = launchCache?.selectedTabID.flatMap { id in initialTabs.contains(where: { $0.id == id }) ? id : nil }
+			?? initialTabs[0].id
+		let cachedSpaceIDs = Set(initialTabs.map(\.id))
+		let initialWorkspace: BrowserWorkspace
+		if let launchCache, !launchCache.spaces.isEmpty {
+			let spaces = launchCache.spaces.map { cached in
+				BrowserSpace(
+					id: cached.id,
+					name: cached.name,
+					symbol: cached.symbol,
+					theme: cached.theme,
+					tabIDs: cached.tabIDs.filter(cachedSpaceIDs.contains),
+					selectedTabID: cached.selectedTabID,
+					modifiedAt: .distantPast
+				)
+			}
+			initialWorkspace = BrowserWorkspace(
+				spaces: spaces,
+				favouriteTabIDs: launchCache.favouriteTabIDs.filter(cachedSpaceIDs.contains),
+				selectedSpaceID: launchCache.selectedSpaceID.flatMap { id in spaces.contains(where: { $0.id == id }) ? id : nil }
+					?? spaces[0].id,
+				modifiedAt: .distantPast,
+				selectionModifiedAt: .distantPast
+			)
+		} else {
+			initialWorkspace = BrowserWorkspace.migrated(
+				tabs: initialTabs.map(\.openTab),
+				selectedTabID: initialSelectedTabID,
+				theme: Defaults[.browserTheme]
+			)
+		}
 		var persistenceStore: BrowserPersistence?
 		var persistenceError: String?
 		do {
@@ -625,14 +676,12 @@ final class Browser {
 		} catch {
 			persistenceError = error.localizedDescription
 		}
-		tabs = [placeholder]
-		selectedTabID = placeholderID
-		workspace = BrowserWorkspace.migrated(
-			tabs: [placeholder.openTab],
-			selectedTabID: placeholderID,
-			theme: Defaults[.browserTheme]
-		)
-		recentlyUsedTabIDs = [placeholderID]
+		tabs = initialTabs
+		selectedTabID = initialSelectedTabID
+		launchCacheSelectedTabID = launchCache?.selectedTabID
+		launchCacheSeeded = launchCache != nil
+		workspace = initialWorkspace
+		recentlyUsedTabIDs = [initialSelectedTabID]
 		bookmarks = []
 		readingList = []
 		historyVisits = []
@@ -651,7 +700,9 @@ final class Browser {
 		persistenceTask = nil
 		didFinishHydration = persistenceStore == nil
 		reconcileWorkspace()
-		configure(placeholder)
+		for tab in initialTabs {
+			configure(tab)
+		}
 		if !isMini {
 			BrowserWindowRegistry.shared.register(self)
 		}
@@ -815,8 +866,11 @@ final class Browser {
 			&& tabs.first?.id == placeholderID
 			&& tabs.first?.modifiedAt == placeholderModifiedAt
 			&& tabs.first?.currentURL == nil
-		guard placeholderIsUntouched else {
+		let launchCacheIsUntouched = launchCacheSeeded && !launchCacheWasModified
+		guard placeholderIsUntouched || launchCacheIsUntouched else {
 			let selectionBeforeHydration = selectedTabID
+			let cacheSelectionIsUntouched = launchCacheSelectedTabID == selectionBeforeHydration
+				&& selectedTabModifiedAt == .distantPast
 			Self.didApplyStartupBehavior = true
 			let cachedTabs = loaded.tabs
 			let cachedWorkspace = loaded.workspace ?? BrowserWorkspace.migrated(
@@ -855,7 +909,7 @@ final class Browser {
 			)
 			let merged = current.merging(cached)
 			applySyncDocument(merged)
-			if selectionBeforeHydration == placeholderID,
+			if selectionBeforeHydration == placeholderID || cacheSelectionIsUntouched,
 			   let record = loaded.windowRecords.first(where: { $0.windowID == windowID }) ?? restorationRecord,
 			   let selection = record.restoredSelection(availableTabIDs: Set(tabs.map(\.id)))
 			{
@@ -1283,7 +1337,6 @@ final class Browser {
 	func switchCandidates(forward: Bool) -> [UUID] {
 		BrowserWorkspace.tabSwitchCandidates(
 			visibleTabIDs: visibleTabs.map(\.id),
-			recentlyUsedTabIDs: recentlyUsedTabIDs,
 			selectedTabID: selectedTabID,
 			forward: forward
 		)
@@ -2816,6 +2869,9 @@ final class Browser {
 	private func schedulePersistence(fullState: Bool = true, syncExtensions: Bool = true) {
 		BrowserLog.trace(.persistence, "browser.persistence.schedule", metadata: ["window": BrowserLog.id(windowID), "full": String(fullState), "hydrated": String(didFinishHydration)])
 		guard !isPrivate else { return }
+		if launchCacheSeeded, !didFinishHydration {
+			launchCacheWasModified = true
+		}
 		// Selection-only persistence is a hot path and extension activation is
 		// already handled by BrowserWindowRegistry. Rebuilding every extension-tab
 		// snapshot here made each ordinary tab click walk the entire tab set again.
@@ -2916,6 +2972,7 @@ final class Browser {
 	/// ordinary tab selection path. The checkpoint is merged during hydration.
 	private func persistSelectionOnly() {
 		guard !hydrationFailed, didFinishHydration, !isPrivate, let persistence else { return }
+		persistLaunchCache()
 		let update = BrowserSelectionUpdate(
 			windowID: windowID,
 			selectedTabID: selectedTabID,
@@ -2979,6 +3036,7 @@ final class Browser {
 			historyVisits: historyVisits,
 			windowRecords: BrowserWindowRegistry.shared.recordsForPersistence
 		)
+		persistLaunchCache()
 		BrowserLog.duration(.persistence, "state.snapshot-preparation.end",
 		                    since: preparationStart,
 		                    warnAboveMilliseconds: 16,
@@ -3008,5 +3066,48 @@ final class Browser {
 				}
 			}
 		}
+	}
+
+	private func persistLaunchCache() {
+		guard !isPrivate, !isMini else { return }
+		let favicons = session.favicons.favicons
+		var cachedFavicons: [String: Data] = [:]
+		var cachedFaviconBytes = 0
+		let faviconTabOrder = [selectedTab].compactMap(\.self) + tabs.filter { $0.id != selectedTabID }
+		for tab in faviconTabOrder {
+			guard let key = FaviconKey.origin(for: tab.currentURL),
+			      let data = favicons[key],
+			      cachedFavicons[key] == nil,
+			      cachedFavicons.count < BrowserLaunchCache.maximumFavicons,
+			      cachedFaviconBytes + data.count <= BrowserLaunchCache.maximumFaviconBytes
+			else { continue }
+			cachedFavicons[key] = data
+			cachedFaviconBytes += data.count
+		}
+		BrowserLaunchCache.save(BrowserLaunchCache.Snapshot(
+			tabs: tabs.enumerated().map { index, tab in
+				let url = tab.currentURL.map(BrowserAddress.withoutCredentials)
+				return BrowserLaunchCache.Tab(
+					id: tab.id,
+					url: url.flatMap { $0.absoluteString.utf8.count <= 4096 ? $0 : nil },
+					title: String(tab.title.prefix(240)),
+					order: index
+				)
+			},
+			spaces: workspace.spaces.map { space in
+				BrowserLaunchCache.Space(
+					id: space.id,
+					name: String(space.name.prefix(80)),
+					symbol: space.symbol,
+					theme: space.theme,
+					tabIDs: space.tabIDs,
+					selectedTabID: space.selectedTabID
+				)
+			},
+			favouriteTabIDs: workspace.favouriteTabIDs,
+			selectedSpaceID: workspace.selectedSpaceID,
+			selectedTabID: selectedTabID,
+			favicons: cachedFavicons
+		))
 	}
 }

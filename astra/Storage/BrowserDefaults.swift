@@ -17,6 +17,8 @@ enum BrowserStartupBehavior: String, CaseIterable {
 extension BrowserStartupBehavior: Defaults.Serializable {}
 
 extension Defaults.Keys {
+	static let browserLaunchCache = Key<Data>("browserLaunchCache", default: Data())
+
 	static let readerAppearance = Key<BrowserReaderAppearance>("readerAppearance", default: BrowserReaderAppearance())
 	static let newTabStyle = Key<BrowserNewTabStyle>("newTabStyle", default: .page)
 	static let startupBehavior = Key<BrowserStartupBehavior>("startupBehavior", default: .restore)
