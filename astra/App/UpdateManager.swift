@@ -1,10 +1,13 @@
 #if os(macOS)
+	import Darwin
+	import Foundation
 	import Observation
-	import Sparkle
 
+	/// Browser-side observable update state. This module never imports
+	/// Sparkle; only AstraUpdaterRuntime loads it after first-frame readiness.
 	@MainActor
 	@Observable
-	final class UpdateManager: NSObject, SPUUserDriver {
+	final class UpdateManager: NSObject {
 		static let shared = UpdateManager()
 
 		struct UpdateDetails {
@@ -15,211 +18,135 @@
 		}
 
 		enum Status {
-			case checking
-			case available
-			case downloading
-			case preparing
-			case ready
-			case installing
+			case checking, available, downloading, preparing, ready, installing
 			case message(String)
 		}
+
+		enum Choice: String { case skip, dismiss, install }
 
 		var isPresented = false
 		private(set) var status: Status = .checking
 		private(set) var update: UpdateDetails?
+		private(set) var canCheckForUpdates = false
+		private(set) var allowsAutomaticUpdates = false
+		@ObservationIgnored private var applyingRuntimeState = false
 		var automaticChecks = false {
 			didSet {
-				if !automaticChecks {
-					automaticInstalls = false
-				}
-				if updater.automaticallyChecksForUpdates != automaticChecks {
-					updater.automaticallyChecksForUpdates = automaticChecks
+				if !automaticChecks { automaticInstalls = false }
+				if !applyingRuntimeState && automaticChecks != oldValue {
+					post("checks", value: automaticChecks)
 				}
 			}
 		}
-
 		var automaticInstalls = false {
 			didSet {
-				if updater.automaticallyDownloadsUpdates != automaticInstalls {
-					updater.automaticallyDownloadsUpdates = automaticInstalls
+				if !applyingRuntimeState && automaticInstalls != oldValue {
+					post("installs", value: automaticInstalls)
 				}
 			}
 		}
 
-		@ObservationIgnored lazy var updater = SPUUpdater(
-			hostBundle: .main,
-			applicationBundle: .main,
-			userDriver: self,
-			delegate: nil
-		)
-
-		@ObservationIgnored private var choiceReply: ((SPUUserUpdateChoice) -> Void)?
-		@ObservationIgnored private var acknowledgement: (() -> Void)?
-		@ObservationIgnored private var cancellation: (() -> Void)?
+		@ObservationIgnored private var runtimeHandle: UnsafeMutableRawPointer?
+		@ObservationIgnored private var runtimeEntry: (@convention(c) () -> Void)?
 		@ObservationIgnored private var started = false
 
-		func start() {
-			BrowserLog.info(.lifecycle, "updater.start")
-			guard !started else { return }
-			started = true
-
-			do {
-				try updater.start()
-				automaticChecks = updater.automaticallyChecksForUpdates
-				automaticInstalls = updater.automaticallyDownloadsUpdates
-			} catch {
-				status = .message(error.localizedDescription)
-				isPresented = true
-			}
-		}
-
-		func choose(_ choice: SPUUserUpdateChoice) {
-			BrowserLog.info(.lifecycle, "updater.choice", metadata: ["choice": String(describing: choice)])
-			guard let choiceReply else { return }
-			self.choiceReply = nil
-			if choice == .install {
-				if case .ready = status {
-					status = .installing
-				} else {
-					status = .downloading
-				}
-			} else {
-				isPresented = false
-			}
-			choiceReply(choice)
-		}
-
-		func dismiss() {
-			BrowserLog.debug(.lifecycle, "updater.dismiss")
-			if choiceReply != nil {
-				choose(.dismiss)
-			} else {
-				cancellation?()
-				cancellation = nil
-				acknowledgement?()
-				acknowledgement = nil
-				isPresented = false
-			}
-		}
-
-		func show(
-			_: SPUUpdatePermissionRequest,
-			reply: @escaping (SUUpdatePermissionResponse) -> Void
-		) {
-			reply(SUUpdatePermissionResponse(
-				automaticUpdateChecks: automaticChecks,
-				automaticUpdateDownloading: NSNumber(value: automaticInstalls),
-				sendSystemProfile: false
-			))
-		}
-
-		func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {
-			BrowserLog.info(.lifecycle, "updater.check.begin")
-			self.cancellation = cancellation
-			status = .checking
-			isPresented = true
-		}
-
-		func showUpdateFound(
-			with appcastItem: SUAppcastItem,
-			state: SPUUserUpdateState,
-			reply: @escaping (SPUUserUpdateChoice) -> Void
-		) {
-			cancellation = nil
-			update = UpdateDetails(
-				version: appcastItem.displayVersionString,
-				build: appcastItem.versionString,
-				infoURL: appcastItem.infoURL,
-				isInformationOnly: appcastItem.isInformationOnlyUpdate
+		override init() {
+			super.init()
+			NotificationCenter.default.addObserver(
+				self, selector: #selector(receiveState(_:)),
+				name: Notification.Name("com.omeriadon.astra.updater.state"), object: nil
 			)
-			choiceReply = reply
-			status = state.stage == .installing ? .ready : .available
-			isPresented = true
 		}
 
-		func showUpdateReleaseNotes(with _: SPUDownloadData) {}
-
-		func showUpdateReleaseNotesFailedToDownloadWithError(_: any Error) {}
-
-		func showUpdateNotFoundWithError(_ error: any Error, acknowledgement: @escaping () -> Void) {
-			BrowserLog.info(.lifecycle, "updater.not-found", metadata: ["error": BrowserLog.errorDescription(error)])
-			showMessage(error.localizedDescription, acknowledgement: acknowledgement)
+		/// Loads only when the updater is scheduled or explicitly requested.
+		func start() {
+			guard !started else { return }
+			let startedAt = BrowserLog.clock()
+			let filename = "AstraUpdaterRuntime.framework/AstraUpdaterRuntime"
+			guard let base = Bundle.main.privateFrameworksURL else {
+				fail("Astra's updater framework directory is unavailable.")
+				return
+			}
+			guard let handle = dlopen(base.appendingPathComponent(filename).path, RTLD_NOW | RTLD_LOCAL) else {
+				fail("Could not load Astra's updater: " + String(cString: dlerror()))
+				return
+			}
+			guard let symbol = dlsym(handle, "AstraUpdaterRuntimeStart") else {
+				dlclose(handle)
+				fail("Astra's updater framework is incompatible with this version.")
+				return
+			}
+			runtimeHandle = handle
+			runtimeEntry = unsafeBitCast(symbol, to: (@convention(c) () -> Void).self)
+			started = true
+			BrowserLog.duration(.lifecycle, "updater.runtime-load", since: startedAt,
+			                    warnAboveMilliseconds: 200)
+			runtimeEntry?()
 		}
 
-		func showUpdaterError(_ error: any Error, acknowledgement: @escaping () -> Void) {
-			BrowserLog.error(.lifecycle, "updater.error", metadata: ["error": BrowserLog.errorDescription(error)])
-			showMessage(error.localizedDescription, acknowledgement: acknowledgement)
+		func checkForUpdates() {
+			start()
+			guard started else { return }
+			post("check")
 		}
 
-		private func showMessage(_ message: String, acknowledgement: @escaping () -> Void) {
-			cancellation = nil
-			update = nil
+		func choose(_ choice: Choice) {
+			post("choice", choice: choice.rawValue)
+		}
+
+		func dismiss() { post("dismiss") }
+
+		private func post(_ command: String, value: Bool? = nil, choice: String? = nil) {
+			guard started else { return }
+			var payload: [String: Any] = ["command": command]
+			if let value { payload["value"] = value }
+			if let choice { payload["choice"] = choice }
+			NotificationCenter.default.post(
+				name: Notification.Name("com.omeriadon.astra.updater.command"),
+				object: nil, userInfo: payload
+			)
+		}
+
+		private func fail(_ message: String) {
 			status = .message(message)
-			self.acknowledgement = acknowledgement
 			isPresented = true
+			BrowserLog.error(.lifecycle, "updater.lazy-load-failed", metadata: ["error": message])
 		}
 
-		func showDownloadInitiated(cancellation: @escaping () -> Void) {
-			BrowserLog.info(.lifecycle, "updater.download.begin")
-			self.cancellation = cancellation
-			status = .downloading
-		}
-
-		func showDownloadDidReceiveExpectedContentLength(_: UInt64) {}
-
-		func showDownloadDidReceiveData(ofLength _: UInt64) {}
-
-		func showDownloadDidStartExtractingUpdate() {
-			BrowserLog.info(.lifecycle, "updater.extract.begin")
-			cancellation = nil
-			status = .preparing
-		}
-
-		func showExtractionReceivedProgress(_: Double) {}
-
-		func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
-			BrowserLog.notice(.lifecycle, "updater.ready-to-install")
-			choiceReply = reply
-			status = .ready
-			isPresented = true
-		}
-
-		func showInstallingUpdate(
-			withApplicationTerminated _: Bool,
-			retryTerminatingApplication _: @escaping () -> Void
-		) {
-			status = .installing
-		}
-
-		func showUpdateInstalledAndRelaunched(
-			_: Bool,
-			acknowledgement: @escaping () -> Void
-		) {
-			acknowledgement()
-			isPresented = false
-		}
-
-		func dismissUpdateInstallation() {
-			choiceReply = nil
-			cancellation = nil
-			isPresented = false
-		}
-
-		func showUpdateInFocus() {
-			isPresented = true
+		@objc private func receiveState(_ note: Notification) {
+			guard let values = note.userInfo,
+			      let kind = values["status"] as? String else { return }
+			applyingRuntimeState = true
+			defer { applyingRuntimeState = false }
+			automaticChecks = values["automaticChecks"] as? Bool ?? false
+			automaticInstalls = values["automaticInstalls"] as? Bool ?? false
+			allowsAutomaticUpdates = values["allowsAutomaticUpdates"] as? Bool ?? false
+			canCheckForUpdates = values["canCheckForUpdates"] as? Bool ?? false
+			if let version = values["version"] as? String,
+			   let build = values["build"] as? String {
+				update = UpdateDetails(
+					version: version, build: build,
+					infoURL: (values["infoURL"] as? String).flatMap(URL.init(string:)),
+					isInformationOnly: values["informationOnly"] as? Bool ?? false
+				)
+			} else { update = nil }
+			switch kind {
+				case "available": status = .available
+				case "downloading": status = .downloading
+				case "preparing": status = .preparing
+				case "ready": status = .ready
+				case "installing": status = .installing
+				case "message": status = .message(values["message"] as? String ?? "Updater error")
+				default: status = .checking
+			}
+			isPresented = values["presented"] as? Bool ?? false
 		}
 
 		#if DEBUG
 			func showPreview(_ status: Status) {
-				update = UpdateDetails(
-					version: "0.2",
-					build: "2",
-					infoURL: nil,
-					isInformationOnly: false
-				)
+				update = UpdateDetails(version: "0.2", build: "2", infoURL: nil, isInformationOnly: false)
 				self.status = status
 			}
 		#endif
 	}
-
 #endif

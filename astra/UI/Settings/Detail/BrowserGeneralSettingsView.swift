@@ -1,5 +1,4 @@
 import Defaults
-import Sparkle
 import SwiftUI
 
 #if os(macOS)
@@ -286,7 +285,7 @@ struct BrowserGeneralSettingsView: View {
 					.id("Automatically check for updates")
 
 				Toggle("Automatically install updates", isOn: $updates.automaticInstalls)
-					.disabled(!updates.automaticChecks || !updates.updater.allowsAutomaticUpdates)
+					.disabled(!updates.automaticChecks || !updates.allowsAutomaticUpdates)
 					.accessibilityIdentifier("automatically-install-updates")
 					.id("Automatically install updates")
 			}

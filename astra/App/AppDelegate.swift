@@ -10,7 +10,6 @@
 	import AuthenticationServices
 	import Carbon
 	import Defaults
-	import Sparkle
 	import SwiftUI
 	import WebKit
 
@@ -791,7 +790,7 @@
 		}
 
 		@objc private func checkForUpdates(_: Any?) {
-			UpdateManager.shared.updater.checkForUpdates()
+			UpdateManager.shared.checkForUpdates()
 		}
 
 		@objc private func openLocation(_: Any?) {

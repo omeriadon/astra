@@ -50,7 +50,7 @@ struct AboutView: View {
 					}
 
 					#if os(macOS)
-						CheckForUpdatesView(updater: updates.updater)
+						CheckForUpdatesView(updates: updates)
 					#endif
 
 					Spacer()
