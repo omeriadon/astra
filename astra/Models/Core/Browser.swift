@@ -929,6 +929,17 @@ final class Browser {
 		} else {
 			startupBehavior = .restore
 		}
+		// Reopening a session previously constructed a BrowserController for
+		// every non-hibernated saved tab. Its initializer can start WebKit
+		// navigation before the tab is ever selected. Preserve the foreground
+		// tab's eager restoration; leave background tabs dormant until selected.
+		// Their saved URL, history, scroll and encrypted WebKit state remain
+		// available to BrowserTab.wake() without doing any work at launch.
+		let savedWindow = loaded.windowRecords.first { $0.windowID == windowID } ?? restorationRecord
+		let availableSavedIDs = Set(loaded.tabs.map(\.id))
+		let foregroundSavedID = savedWindow?.restoredSelection(availableTabIDs: availableSavedIDs)
+			?? loaded.snapshot?.selectedTabID.flatMap { availableSavedIDs.contains($0) ? $0 : nil }
+			?? loaded.tabs.first?.id
 		let restoredTabs = loaded.tabs.compactMap { saved -> BrowserTab? in
 			let internalPage = saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:))
 			guard saved.internalPage == nil || internalPage != nil else { return nil }
@@ -947,7 +958,7 @@ final class Browser {
 				openPeeks: saved.peeks,
 				pageZoom: saved.pageZoom,
 				scrollPosition: saved.scrollPosition,
-				isHibernated: saved.isHibernated,
+				isHibernated: saved.isHibernated || startupBehavior != .restore || saved.id != foregroundSavedID,
 				modifiedAt: saved.modifiedAt,
 				recordsNavigationHistory: saved.recordsNavigationHistory,
 				restorationState: saved.restorationState,
@@ -964,7 +975,6 @@ final class Browser {
 			newTabs = restoredTabs
 			newTabs.append(BrowserTab(initialURL: homepage, session: session))
 		}
-		let savedWindow = loaded.windowRecords.first { $0.windowID == windowID } ?? restorationRecord
 		let restoredWindowSelection = savedWindow?.restoredSelection(availableTabIDs: Set(newTabs.map(\.id)))
 		let newSelectedTabID = startupBehavior == .restore
 			? (restoredWindowSelection ?? newTabs.first(where: { $0.id == loaded.snapshot?.selectedTabID })?.id ?? newTabs[0].id)
