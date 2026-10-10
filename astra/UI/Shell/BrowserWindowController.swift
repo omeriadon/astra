@@ -103,8 +103,8 @@
 
 		func showWindow() {
 			BrowserWindowRegistry.shared.activate(browser)
-			window.contentView?.layoutSubtreeIfNeeded()
-			window.displayIfNeeded()
+			// AppKit performs layout and display during its normal update pass.
+			// Forcing both synchronously here blocks the startup main thread.
 			window.makeKeyAndOrderFront(nil)
 		}
 
