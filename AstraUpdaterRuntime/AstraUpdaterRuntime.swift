@@ -23,9 +23,18 @@
 			case message(String)
 		}
 
-		var isPresented = false { didSet { publishState() } }
-		private(set) var status: Status = .checking { didSet { publishState() } }
-		private(set) var update: UpdateDetails? { didSet { publishState() } }
+		var isPresented = false {
+			didSet { publishState() }
+		}
+
+		private(set) var status: Status = .checking {
+			didSet { publishState() }
+		}
+
+		private(set) var update: UpdateDetails? {
+			didSet { publishState() }
+		}
+
 		var automaticChecks = false {
 			didSet {
 				if !automaticChecks {
@@ -82,9 +91,13 @@
 						default: choose(.dismiss)
 					}
 				case "checks":
-					if let value = note.userInfo?["value"] as? Bool { automaticChecks = value }
+					if let value = note.userInfo?["value"] as? Bool {
+						automaticChecks = value
+					}
 				case "installs":
-					if let value = note.userInfo?["value"] as? Bool { automaticInstalls = value }
+					if let value = note.userInfo?["value"] as? Bool {
+						automaticInstalls = value
+					}
 				default: break
 			}
 		}
@@ -121,7 +134,6 @@
 		}
 
 		func start() {
-
 			guard !started else { return }
 			started = true
 
@@ -140,7 +152,6 @@
 		}
 
 		func choose(_ choice: SPUUserUpdateChoice) {
-
 			guard let choiceReply else { return }
 			self.choiceReply = nil
 			if choice == .install {
@@ -156,7 +167,6 @@
 		}
 
 		func dismiss() {
-
 			if choiceReply != nil {
 				choose(.dismiss)
 			} else {
@@ -180,7 +190,6 @@
 		}
 
 		func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {
-
 			self.cancellation = cancellation
 			status = .checking
 			isPresented = true
@@ -208,12 +217,10 @@
 		func showUpdateReleaseNotesFailedToDownloadWithError(_: any Error) {}
 
 		func showUpdateNotFoundWithError(_ error: any Error, acknowledgement: @escaping () -> Void) {
-
 			showMessage(error.localizedDescription, acknowledgement: acknowledgement)
 		}
 
 		func showUpdaterError(_ error: any Error, acknowledgement: @escaping () -> Void) {
-
 			showMessage(error.localizedDescription, acknowledgement: acknowledgement)
 		}
 
@@ -226,7 +233,6 @@
 		}
 
 		func showDownloadInitiated(cancellation: @escaping () -> Void) {
-
 			self.cancellation = cancellation
 			status = .downloading
 		}
@@ -236,7 +242,6 @@
 		func showDownloadDidReceiveData(ofLength _: UInt64) {}
 
 		func showDownloadDidStartExtractingUpdate() {
-
 			cancellation = nil
 			status = .preparing
 		}
@@ -244,7 +249,6 @@
 		func showExtractionReceivedProgress(_: Double) {}
 
 		func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
-
 			choiceReply = reply
 			status = .ready
 			isPresented = true

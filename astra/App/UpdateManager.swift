@@ -53,8 +53,10 @@
 		@ObservationIgnored private var applyingRuntimeState = false
 		var automaticChecks = false {
 			didSet {
-				if !automaticChecks { automaticInstalls = false }
-				if !applyingRuntimeState && automaticChecks != oldValue {
+				if !automaticChecks {
+					automaticInstalls = false
+				}
+				if !applyingRuntimeState, automaticChecks != oldValue {
 					if started {
 						post("checks", value: automaticChecks)
 					} else {
@@ -64,9 +66,10 @@
 				}
 			}
 		}
+
 		var automaticInstalls = false {
 			didSet {
-				if !applyingRuntimeState && automaticInstalls != oldValue {
+				if !applyingRuntimeState, automaticInstalls != oldValue {
 					if started {
 						post("installs", value: automaticInstalls)
 					} else {
@@ -109,34 +112,36 @@
 					DeferredUpdaterImage.open(at: path)
 				}.value
 				guard let self else {
-					if let handle = loaded.handle { dlclose(handle) }
+					if let handle = loaded.handle {
+						dlclose(handle)
+					}
 					return
 				}
-				self.libraryLoadTask = nil
+				libraryLoadTask = nil
 				guard let handle = loaded.handle, let entry = loaded.entry else {
-					self.fail("Could not load Astra's updater: " + (loaded.failure ?? "Unknown error"))
+					fail("Could not load Astra's updater: " + (loaded.failure ?? "Unknown error"))
 					return
 				}
-				self.runtimeHandle = handle
-				self.runtimeEntry = unsafeBitCast(entry, to: (@convention(c) () -> Void).self)
-				self.started = true
+				runtimeHandle = handle
+				runtimeEntry = unsafeBitCast(entry, to: (@convention(c) () -> Void).self)
+				started = true
 				BrowserLog.duration(.lifecycle, "updater.runtime-load", since: startedAt, warnAboveMilliseconds: 200)
 				let initializeStartedAt = BrowserLog.clock()
-				self.runtimeEntry?()
+				runtimeEntry?()
 				BrowserLog.duration(.lifecycle, "updater.runtime-start", since: initializeStartedAt, warnAboveMilliseconds: 80)
 				// State snapshots emitted during start may temporarily reset UI
 				// toggles. Replay any user changes made while the dylib was loading.
-				if let requested = self.pendingAutomaticChecks {
-					self.pendingAutomaticChecks = nil
-					self.post("checks", value: requested)
+				if let requested = pendingAutomaticChecks {
+					pendingAutomaticChecks = nil
+					post("checks", value: requested)
 				}
-				if let requested = self.pendingAutomaticInstalls {
-					self.pendingAutomaticInstalls = nil
-					self.post("installs", value: requested)
+				if let requested = pendingAutomaticInstalls {
+					pendingAutomaticInstalls = nil
+					post("installs", value: requested)
 				}
-				if self.queuedManualCheck {
-					self.queuedManualCheck = false
-					self.post("check")
+				if queuedManualCheck {
+					queuedManualCheck = false
+					post("check")
 				}
 			}
 		}
@@ -156,13 +161,19 @@
 			post("choice", choice: choice.rawValue)
 		}
 
-		func dismiss() { post("dismiss") }
+		func dismiss() {
+			post("dismiss")
+		}
 
 		private func post(_ command: String, value: Bool? = nil, choice: String? = nil) {
 			guard started else { return }
 			var payload: [String: Any] = ["command": command]
-			if let value { payload["value"] = value }
-			if let choice { payload["choice"] = choice }
+			if let value {
+				payload["value"] = value
+			}
+			if let choice {
+				payload["choice"] = choice
+			}
 			NotificationCenter.default.post(
 				name: Notification.Name("com.omeriadon.astra.updater.command"),
 				object: nil, userInfo: payload
@@ -185,13 +196,16 @@
 			allowsAutomaticUpdates = values["allowsAutomaticUpdates"] as? Bool ?? false
 			canCheckForUpdates = values["canCheckForUpdates"] as? Bool ?? false
 			if let version = values["version"] as? String,
-			   let build = values["build"] as? String {
+			   let build = values["build"] as? String
+			{
 				update = UpdateDetails(
 					version: version, build: build,
 					infoURL: (values["infoURL"] as? String).flatMap(URL.init(string:)),
 					isInformationOnly: values["informationOnly"] as? Bool ?? false
 				)
-			} else { update = nil }
+			} else {
+				update = nil
+			}
 			switch kind {
 				case "available": status = .available
 				case "downloading": status = .downloading
