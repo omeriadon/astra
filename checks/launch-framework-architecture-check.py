@@ -33,7 +33,6 @@ assert {
     "App/browserApp.swift",
     "UI/Shell/BrowserWindowController.swift",
     "UI/Chrome/BrowserAIChatSidebar.swift",
-    "UI/Tabs/BrowserTabHoverPreviewCoordinator.swift",
     "App/BrowserDataTransfer.swift",
     "App/BrowserDiagnostics.swift",
     "App/BrowserWebsiteAppMenuIntegration.swift",
@@ -69,6 +68,7 @@ assert "struct ShellDownloadsBarView" not in shell
 assert "struct ShellSidebarListView: View" in (root / "astra/UI/Shell/BrowserSidebarControls.swift").read_text()
 assert "struct ShellDownloadsBarView: View" in (root / "astra/UI/Shell/BrowserDownloadsBarView.swift").read_text()
 assert "final class BrowserTabHoverPreviewCoordinator" in (root / "astra/UI/Tabs/BrowserTabHoverPreviewCoordinator.swift").read_text()
+assert "UI/Tabs/BrowserTabHoverPreviewCoordinator.swift" not in runtime_excluded  # BrowserFavouriteTile still uses it
 assert "final class BrowserTabHoverPreviewCoordinator" not in (root / "astra/UI/Tabs/BrowserTabRow.swift").read_text()
 for name in ("UI/Shell/BrowserSpaceScrollState.swift", "Web/Navigation/BrowserDesktopCommands.swift", "Web/Navigation/BrowserDesktopCommands+ExportFormat.swift", "UI/Content/BrowserSourceViewer.swift"):
     assert name not in runtime_excluded, f"Required website-app utility excluded: {name}"
