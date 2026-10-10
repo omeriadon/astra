@@ -26,3 +26,14 @@ for case, expected in (("normal", 4), ("warning", 2), ("critical", 1)):
     ), f"Expected warm-controller limit {expected} for {case} pressure"
 assert policy.index("for id in browser.recentlyUsedTabIDs") < policy.index("for tab in browser.tabs")
 print("Adaptive WebKit tab resource budget and protected media/peek retention checks passed")
+
+# Startup page attachment must not poll expensive WebKit screenshots without
+# an actual handoff curtain. Only reparenting an existing preview needs it.
+webview = Path("astra/Web/Navigation/BrowserWebView.swift").read_text()
+handoff = webview.split("if webView.superview !== self {", 1)[1].split(
+    "// WebKit owns the page frame while its inspector is docked", 1
+)[0]
+assert "curtain.isHidden = !specification.isVisible || curtain.image == nil" in handoff
+assert "if !curtain.isHidden {" in handoff
+assert handoff.index("if !curtain.isHidden {") < handoff.index("handoffTask = Task {")
+print("WebKit first-attach snapshot work is guarded by visible curtain")
