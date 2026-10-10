@@ -27,6 +27,7 @@
 		private var queuedStartupURLs: [URL] = []
 		private var shouldReopenAfterStartup = false
 		private var memoryPressureSource: DispatchSourceMemoryPressure?
+		private var didScheduleDeferredStartupServices = false
 
 		private var pictureInPictureController: BrowserController? {
 			for browser in allBrowsers {
@@ -65,7 +66,7 @@
 				forEventClass: AEEventClass(kInternetEventClass),
 				andEventID: AEEventID(kAEGetURL)
 			)
-			_ = BrowserWebSession.shared
+			// Initialize the full WebKit session only when the first Browser is constructed.
 			BrowserController.addressPromptOwner = { [weak self] controller, webView, documentID in
 				guard let self,
 				      let browser = activeBrowser,
@@ -131,23 +132,11 @@
 			#endif
 			let authentication = ASWebAuthenticationSessionWebBrowserSessionManager.shared
 			authentication.sessionHandler = BrowserAuthenticationSessionHandler.shared
-			// Keep non-critical services off the launch/first-frame critical path.
-			// Stagger them so one slow subsystem cannot serialize all deferred work
-			// or create a single large post-launch CPU spike.
-			Task { @MainActor in
-				try? await Task.sleep(for: .milliseconds(600))
-				await BrowserExtensionManager.shared.prepare()
-			}
-			Task { @MainActor in
-				try? await Task.sleep(for: .milliseconds(1000))
-				UpdateManager.shared.start()
-				BrowserDownloadManager.shared.resumeAvailableDownloads()
-			}
-			Task { @MainActor in
-				try? await Task.sleep(for: .milliseconds(1600))
-				BrowserWebsiteMonitoring.shared.start()
-				// AI model catalogs are fetched and cached when a model menu opens.
-				// Spawning Codex and Claude CLIs at every launch wastes CPU.
+			// Defer noncritical services until the first visible window has updated,
+			// with a bounded fallback for headless Web Push/authentication launches.
+			Task { @MainActor [weak self] in
+				try? await Task.sleep(for: .seconds(2))
+				self?.scheduleDeferredStartupServices(trigger: "fallback")
 			}
 			let source = DispatchSource.makeMemoryPressureSource(eventMask: [.normal, .warning, .critical], queue: .main)
 			source.setEventHandler {
@@ -178,21 +167,37 @@
 					(try? persistence?.loadWindowRecords()) ?? []
 				}.value
 				BrowserWindowRegistry.shared.beginWindowRestoration(records)
-				for record in records where !windows.contains(where: { $0.browser.windowID == record.windowID }) {
+				// Preserve the old foreground window (the last restored record)
+				// while presenting it before constructing secondary NSHostingViews.
+				if let record = records.last,
+				   !windows.contains(where: { $0.browser.windowID == record.windowID })
+				{
 					openBrowserWindow(restorationRecord: record, showImmediately: false)
-				}
-				if windows.isEmpty, !wasLaunchedForWebPush {
+				} else if windows.isEmpty, !wasLaunchedForWebPush {
 					openBrowserWindow(showImmediately: false)
 				}
-
-				// Browser intentionally hydrates from disk asynchronously behind a
-				// lightweight placeholder. Show that first frame immediately instead
-				// of hiding every window until all JSON/restoration work has completed.
-				for controller in windows {
-					controller.showWindow()
-				}
-				if !windows.isEmpty {
+				if let foreground = windows.first {
+					foreground.onFirstVisibleUpdate = { [weak self] in
+						guard let self else { return }
+						BrowserLog.notice(.lifecycle, "startup.first-visible-window-update", metadata: [
+							"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - self.startupStartedAt) * 1000),
+						])
+						self.scheduleDeferredStartupServices(trigger: "first-window-update")
+					}
+					foreground.showWindow()
 					NSApp.activate()
+					BrowserLog.notice(.lifecycle, "startup.first-window-presented", metadata: [
+						"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
+						"records": String(records.count),
+					])
+				}
+				// Yield before restoring secondary windows; don't force their views
+				// to be constructed before the first window can start displaying.
+				await Task.yield()
+				for record in records.dropLast() where !windows.contains(where: { $0.browser.windowID == record.windowID }) {
+					let controller = openBrowserWindow(restorationRecord: record, showImmediately: false)
+					// Keep all restored windows visible without stealing key focus.
+					controller.window.orderBack(nil)
 				}
 				BrowserLog.notice(.lifecycle, "startup.windows-presented", metadata: [
 					"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
@@ -208,6 +213,30 @@
 						try? await Task.sleep(for: .milliseconds(25))
 					}
 				}
+			}
+		}
+
+		/// Schedule optional services after first visible AppKit window update.
+		/// A fallback handles launches that never display a browser window.
+		private func scheduleDeferredStartupServices(trigger: String) {
+			guard !didScheduleDeferredStartupServices else { return }
+			didScheduleDeferredStartupServices = true
+			BrowserLog.notice(.lifecycle, "startup.deferred-services-scheduled", metadata: [
+				"trigger": trigger,
+				"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
+			])
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(350))
+				await BrowserExtensionManager.shared.prepare()
+			}
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(900))
+				UpdateManager.shared.start()
+				BrowserDownloadManager.shared.resumeAvailableDownloads()
+			}
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(1500))
+				BrowserWebsiteMonitoring.shared.start()
 			}
 		}
 
