@@ -47,6 +47,8 @@ jobs:
           python3 scripts/release/validate_artifact.py --self-test
           python3 checks/website-app-bundle-check.py --self-test
           python3 checks/workflow-diagnostics-check.py
+      - name: Verify lazy startup architecture
+        run: python3 checks/launch-framework-architecture-check.py
       - name: Startup and Sparkle audit script syntax
         run: |
           bash -n scripts/benchmark_startup.sh

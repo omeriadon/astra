@@ -43,4 +43,6 @@ if [[ "$MODE" != "--unsigned" ]]; then
   codesign --verify --deep --strict --verbose=2 "$UPDATER"
   codesign --verify --deep --strict --verbose=2 "$SPARKLE"
 fi
+echo "Installed bundle and Mach-O footprint (KiB):"
+du -sk "$APP" "$CODE" "$WEB" "$UPDATER" "$SPARKLE"
 echo "PASS: Browser and website apps do not load Sparkle eagerly; updater owns Sparkle."

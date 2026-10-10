@@ -3,6 +3,27 @@
 	import Foundation
 	import Observation
 
+	/// Transfer the completed dyld image handle to the main actor only after
+	/// dlopen/dlsym have completed on a utility thread. The loader owns the
+	/// handle until the application's process exits (no premature dlclose).
+	private nonisolated struct DeferredUpdaterImage: @unchecked Sendable {
+		let handle: UnsafeMutableRawPointer?
+		let entry: UnsafeMutableRawPointer?
+		let failure: String?
+
+		nonisolated static func open(at path: String) -> Self {
+			guard let handle = dlopen(path, RTLD_NOW | RTLD_LOCAL) else {
+				let message = dlerror().map { String(cString: $0) } ?? "Unknown dynamic-loader error"
+				return Self(handle: nil, entry: nil, failure: message)
+			}
+			guard let entry = dlsym(handle, "AstraUpdaterRuntimeStart") else {
+				dlclose(handle)
+				return Self(handle: nil, entry: nil, failure: "Astra's updater runtime is incompatible.")
+			}
+			return Self(handle: handle, entry: entry, failure: nil)
+		}
+	}
+
 	/// Browser-side observable update state. This module never imports
 	/// Sparkle; only AstraUpdaterRuntime loads it after first-frame readiness.
 	@MainActor
@@ -34,14 +55,24 @@
 			didSet {
 				if !automaticChecks { automaticInstalls = false }
 				if !applyingRuntimeState && automaticChecks != oldValue {
-					post("checks", value: automaticChecks)
+					if started {
+						post("checks", value: automaticChecks)
+					} else {
+						pendingAutomaticChecks = automaticChecks
+						start()
+					}
 				}
 			}
 		}
 		var automaticInstalls = false {
 			didSet {
 				if !applyingRuntimeState && automaticInstalls != oldValue {
-					post("installs", value: automaticInstalls)
+					if started {
+						post("installs", value: automaticInstalls)
+					} else {
+						pendingAutomaticInstalls = automaticInstalls
+						start()
+					}
 				}
 			}
 		}
@@ -49,6 +80,10 @@
 		@ObservationIgnored private var runtimeHandle: UnsafeMutableRawPointer?
 		@ObservationIgnored private var runtimeEntry: (@convention(c) () -> Void)?
 		@ObservationIgnored private var started = false
+		@ObservationIgnored private var libraryLoadTask: Task<Void, Never>?
+		@ObservationIgnored private var queuedManualCheck = false
+		@ObservationIgnored private var pendingAutomaticChecks: Bool?
+		@ObservationIgnored private var pendingAutomaticInstalls: Bool?
 
 		override init() {
 			super.init()
@@ -59,35 +94,62 @@
 		}
 
 		/// Loads only when the updater is scheduled or explicitly requested.
+		/// Loads the two Mach-O images off the UI thread. Their Sparkle
+		/// objects and user driver are initialized on MainActor once mapped.
 		func start() {
-			guard !started else { return }
+			guard !started, libraryLoadTask == nil else { return }
 			let startedAt = BrowserLog.clock()
-			let filename = "AstraUpdaterRuntime.framework/AstraUpdaterRuntime"
 			guard let base = Bundle.main.privateFrameworksURL else {
 				fail("Astra's updater framework directory is unavailable.")
 				return
 			}
-			guard let handle = dlopen(base.appendingPathComponent(filename).path, RTLD_NOW | RTLD_LOCAL) else {
-				fail("Could not load Astra's updater: " + String(cString: dlerror()))
-				return
+			let path = base.appendingPathComponent("AstraUpdaterRuntime.framework/AstraUpdaterRuntime").path
+			libraryLoadTask = Task { @MainActor [weak self] in
+				let loaded = await Task.detached(priority: .utility) {
+					DeferredUpdaterImage.open(at: path)
+				}.value
+				guard let self else {
+					if let handle = loaded.handle { dlclose(handle) }
+					return
+				}
+				self.libraryLoadTask = nil
+				guard let handle = loaded.handle, let entry = loaded.entry else {
+					self.fail("Could not load Astra's updater: " + (loaded.failure ?? "Unknown error"))
+					return
+				}
+				self.runtimeHandle = handle
+				self.runtimeEntry = unsafeBitCast(entry, to: (@convention(c) () -> Void).self)
+				self.started = true
+				BrowserLog.duration(.lifecycle, "updater.runtime-load", since: startedAt, warnAboveMilliseconds: 200)
+				let initializeStartedAt = BrowserLog.clock()
+				self.runtimeEntry?()
+				BrowserLog.duration(.lifecycle, "updater.runtime-start", since: initializeStartedAt, warnAboveMilliseconds: 80)
+				// State snapshots emitted during start may temporarily reset UI
+				// toggles. Replay any user changes made while the dylib was loading.
+				if let requested = self.pendingAutomaticChecks {
+					self.pendingAutomaticChecks = nil
+					self.post("checks", value: requested)
+				}
+				if let requested = self.pendingAutomaticInstalls {
+					self.pendingAutomaticInstalls = nil
+					self.post("installs", value: requested)
+				}
+				if self.queuedManualCheck {
+					self.queuedManualCheck = false
+					self.post("check")
+				}
 			}
-			guard let symbol = dlsym(handle, "AstraUpdaterRuntimeStart") else {
-				dlclose(handle)
-				fail("Astra's updater framework is incompatible with this version.")
-				return
-			}
-			runtimeHandle = handle
-			runtimeEntry = unsafeBitCast(symbol, to: (@convention(c) () -> Void).self)
-			started = true
-			BrowserLog.duration(.lifecycle, "updater.runtime-load", since: startedAt,
-			                    warnAboveMilliseconds: 200)
-			runtimeEntry?()
 		}
 
 		func checkForUpdates() {
+			if started {
+				post("check")
+				return
+			}
+			queuedManualCheck = true
+			status = .checking
+			isPresented = true
 			start()
-			guard started else { return }
-			post("check")
 		}
 
 		func choose(_ choice: Choice) {
