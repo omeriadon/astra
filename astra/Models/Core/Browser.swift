@@ -671,7 +671,7 @@ final class Browser {
 		var persistenceError: String?
 		do {
 			if !isMini, !isPrivate {
-				persistenceStore = try BrowserPersistence()
+				persistenceStore = try BrowserPersistence.makeShared()
 			}
 		} catch {
 			persistenceError = error.localizedDescription
