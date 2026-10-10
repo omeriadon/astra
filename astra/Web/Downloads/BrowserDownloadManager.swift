@@ -116,7 +116,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		#if DEBUG
 			assert(Self.safeStem("../unsafe\\name") == "unsafename")
 		#endif
-		updateDockProgress()
+		// A fresh process has no active Dock progress to clear. The hydrated
+		// downloads state invokes updateDockProgress() when it becomes available.
 	}
 
 	#if os(macOS)
