@@ -37,8 +37,8 @@ def validate(app: Path) -> None:
         for line in result.stdout.splitlines()
         if line and not line.endswith(":")
     }
-    if exported != {"AstraWebsiteAppMain", "AstraBrowserMain"}:
-        raise ValueError(f"Expected two runtime entry points; found {len(exported)} exported symbols")
+    if exported != {"AstraWebsiteAppMain"}:
+        raise ValueError(f"Expected only website app entry: {sorted(exported)}")
     defined = subprocess.run(["nm", "--no-dyldinfo", "-jU", str(binary)], capture_output=True, text=True, check=True)
     symbols = {line.lstrip("_") for line in defined.stdout.splitlines() if line and not line.endswith(":")}
     if symbols != exported:
@@ -47,18 +47,12 @@ def validate(app: Path) -> None:
     main_binary = app / "Contents/MacOS/astra"
     if not main_binary.is_file():
         raise ValueError("Host executable is missing")
-    host_binaries = [main_binary, *main_binary.parent.glob("astra.debug.dylib")]
-    linked_runtime = False
-    for host_binary in host_binaries:
-        # The host only launches the shared implementation; a whole browser copy exceeds this budget.
-        if host_binary.stat().st_size > 1024 * 1024:
-            raise ValueError(f"Host launcher exceeds 1 MiB; browser code may be duplicated: {host_binary.name}")
+    for host_binary in [main_binary, *main_binary.parent.glob("astra.debug.dylib")]:
         dependencies = subprocess.run(
             ["otool", "-L", str(host_binary)], capture_output=True, text=True, check=True
         ).stdout
-        linked_runtime |= "AstraWebsiteAppRuntime.framework" in dependencies
-    if not linked_runtime:
-        raise ValueError("Host launcher does not link AstraWebsiteAppRuntime.framework")
+        if "AstraWebsiteAppRuntime.framework" in dependencies:
+            raise ValueError("Browser must not eagerly link website-app runtime")
 
     runtime_files = files_named(runtime, (*READER_SCRIPTS, READER_LICENSE, *EXTENSION_ARCHIVES))
     if runtime_files:
@@ -134,20 +128,23 @@ enum BrowserWebsiteAppHelperMain {
             "-Xlinker", "-install_name", "-Xlinker",
             "@rpath/AstraWebsiteAppRuntime.framework/Versions/A/AstraWebsiteAppRuntime",
             "-Xlinker", "-exported_symbol", "-Xlinker", "_AstraWebsiteAppMain",
-            "-Xlinker", "-exported_symbol", "-Xlinker", "_AstraBrowserMain",
             "-o", str(binary),
         ], check=True)
         subprocess.run(["strip", "-T", "-x", str(binary)], check=True)
         ctypes.CDLL(str(binary)).AstraWebsiteAppMain()
-        ctypes.CDLL(str(binary)).AstraBrowserMain()
-        launcher_source = Path(__file__).resolve().parents[1] / "AstraAppLauncher/AstraAppLauncher.c"
+        host_main = root / "HostMain.swift"
+        host_main.write_text('''import Foundation
+@main
+struct HostMain {
+    @MainActor
+    static func main() {
+        precondition(BrowserResources.bundle === Bundle.main)
+    }
+}
+''')
         executable = app / "Contents/MacOS/astra"
         executable.parent.mkdir(parents=True)
-        subprocess.run([
-            "xcrun", "clang", str(launcher_source), str(binary),
-            "-Wl,-rpath,@executable_path/../Frameworks",
-            "-o", str(executable),
-        ], check=True)
+        subprocess.run(["xcrun", "swiftc", str(source), str(host_main), "-o", str(executable)], check=True)
         subprocess.run([str(executable)], check=True)
         validate(app)
         nested_runtime = runtime.parent / "Nested/AstraWebsiteAppRuntime.framework"
@@ -162,15 +159,6 @@ enum BrowserWebsiteAppHelperMain {
             "CFBundlePackageType": "APPL",
         }))
         subprocess.run([str(executable)], check=True)
-        duplicate_code = executable.parent / "astra.debug.dylib"
-        duplicate_code.write_bytes(bytes(1024 * 1024 + 1))
-        try:
-            validate(app)
-        except ValueError as error:
-            assert "Host launcher exceeds" in str(error)
-        else:
-            raise AssertionError("Duplicated browser code passed")
-        duplicate_code.unlink()
         package = host / PACKAGE_BUNDLES[0]
         package.rmdir()
         try:

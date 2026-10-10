@@ -35,8 +35,8 @@ printf '%s\n' "$code_load_commands" | awk '/cmd LC_RPATH/ { flag=1; next } flag 
 
 # Use string comparison rather than grep -q in a pipe: pipefail would treat
 # SIGPIPE from an early grep match as a false failure.
-[[ "$code_dependencies" == *"AstraWebsiteAppRuntime.framework"* ]] || {
-  echo "Browser code is not linked against the embedded website-app runtime" >&2
+[[ "$code_dependencies" != *"AstraWebsiteAppRuntime.framework"* ]] || {
+  echo "Browser code eagerly links website-app-only runtime" >&2
   exit 1
 }
 [[ "$runtime_dependencies" == *"Sparkle.framework"* ]] || {
