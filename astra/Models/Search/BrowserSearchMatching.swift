@@ -93,7 +93,12 @@ enum BrowserSearchMatching {
 
 	/// Exact > prefix > words > substring > typo/abbreviation.
 	nonisolated static func score(_ query: String, in text: String) -> Double {
-		let query = normalized(query)
+		score(normalizedQuery: normalized(query), in: text)
+	}
+
+	/// The caller can normalize once for an entire search across hundreds of
+	/// candidate titles and URLs rather than repeating it for every candidate.
+	nonisolated static func score(normalizedQuery query: String, in text: String) -> Double {
 		let text = normalized(text)
 		guard !query.isEmpty, !text.isEmpty else { return 0 }
 		if query == text {
@@ -126,7 +131,7 @@ enum BrowserSearchMatching {
 		}
 		// ponytail: one-edit typos and compact abbreviations; broaden tolerance if real queries require it.
 		if query.count >= 4, abs(query.count - word.count) <= 1,
-		   editDistance(query, word) <= 1
+		   withinOneEdit(query, word)
 		{
 			return 0.62
 		}
@@ -138,29 +143,39 @@ enum BrowserSearchMatching {
 		return remaining.isEmpty ? 0.5 : 0
 	}
 
-	private nonisolated static func editDistance(_ lhs: String, _ rhs: String) -> Int {
-		let lhs = Array(lhs)
-		let rhs = Array(rhs)
-		var previousPrevious: [Int] = []
-		var previous = Array(0 ... rhs.count)
-		for (row, character) in lhs.enumerated() {
-			var current = [row + 1]
-			for (column, other) in rhs.enumerated() {
-				current.append(min(
-					current[column] + 1,
-					previous[column + 1] + 1,
-					previous[column] + (character == other ? 0 : 1)
-				))
-				if row > 0, column > 0,
-				   character == rhs[column - 1], lhs[row - 1] == other
-				{
-					current[column + 1] = min(current[column + 1], previousPrevious[column - 1] + 1)
-				}
+	/// Search typo ranking only needs the <=1 edit-distance predicate. Avoid
+	/// allocating and filling a quadratic Levenshtein matrix per candidate.
+	/// This preserves one insertion, deletion, substitution or adjacent swap.
+	private nonisolated static func withinOneEdit(_ lhs: String, _ rhs: String) -> Bool {
+		let left = Array(lhs)
+		let right = Array(rhs)
+		guard abs(left.count - right.count) <= 1 else { return false }
+		var i = 0
+		var j = 0
+		var edits = 0
+		while i < left.count, j < right.count {
+			if left[i] == right[j] {
+				i += 1
+				j += 1
+				continue
 			}
-			previousPrevious = previous
-			previous = current
+			guard edits == 0 else { return false }
+			edits = 1
+			if left.count == right.count, i + 1 < left.count, j + 1 < right.count,
+			   left[i] == right[j + 1], left[i + 1] == right[j]
+			{
+				i += 2
+				j += 2
+			} else if left.count > right.count {
+				i += 1
+			} else if right.count > left.count {
+				j += 1
+			} else {
+				i += 1
+				j += 1
+			}
 		}
-		return previous[rhs.count]
+		return true
 	}
 }
 

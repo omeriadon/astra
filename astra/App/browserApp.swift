@@ -16,13 +16,17 @@ extension Color {
 }
 
 #if os(macOS)
-	#if !ASTRA_WEBSITE_APP_HELPER
+	#if !ASTRA_WEBSITE_APP_HELPER || ASTRA_WEBSITE_APP_RUNTIME
 		import AppKit
 
-		@main
+		#if !ASTRA_WEBSITE_APP_RUNTIME
+			@main
+		#endif
 		enum browserApp {
 			@MainActor
 			static func main() {
+				BrowserLog.markMainEntry()
+				BrowserLog.bootstrap()
 				let application = NSApplication.shared
 				let delegate = AppDelegate()
 
@@ -40,6 +44,10 @@ extension Color {
 #else
 	@main
 	struct browserApp: App {
+		init() {
+			BrowserLog.bootstrap()
+		}
+
 		var body: some Scene {
 			WindowGroup {
 				ContentView()

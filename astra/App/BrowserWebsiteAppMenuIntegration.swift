@@ -13,8 +13,10 @@
 				forName: NSApplication.didFinishLaunchingNotification,
 				object: NSApp,
 				queue: .main
-			) { [weak self] _ in
-				Task { @MainActor in self?.installMenuItem() }
+			) { _ in
+				Task { @MainActor in
+					BrowserWebsiteAppMenuIntegration.shared.installMenuItem()
+				}
 			}
 		}
 
@@ -60,7 +62,7 @@
 					}
 					do {
 						let registry = BrowserWebsiteAppRegistry.shared
-						let installation = try registry.install(name: field.stringValue, url: candidate.url, icon: candidate.icon)
+						let installation = try await registry.install(name: field.stringValue, url: candidate.url, icon: candidate.icon)
 						try await registry.beginKeepInDockFlow(installation.id)
 						candidate.browser.session.toastManager.show(symbol: "checkmark", message: "Website app added to the Dock.")
 					} catch {

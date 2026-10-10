@@ -29,6 +29,7 @@ final class BrowserWindowRegistry {
 				windowID: browser.windowID,
 				tabIDs: browser.tabs.map(\.id),
 				selectedTabID: browser.selectedTabID,
+				selectionModifiedAt: browser.selectedTabModifiedAt,
 				frame: browser.savedWindowFrame
 			)
 		}
@@ -52,10 +53,16 @@ final class BrowserWindowRegistry {
 	func register(_ browser: Browser) {
 		browsers.removeAll { $0.browser == nil }
 		browsers.append(WeakBrowser(browser))
-		BrowserExtensionManager.shared.sync(browser)
+		// Normal startup windows register with a lightweight placeholder before
+		// disk hydration. Syncing that placeholder into WKWebExtensionController
+		// only to replace it moments later adds launch work and duplicate events.
+		if browser.isHydrationFinished {
+			BrowserExtensionManager.shared.sync(browser)
+		}
 	}
 
 	func unregister(_ browser: Browser) {
+		browser.selectedTab?.markInteraction()
 		if pendingPublishSource === browser {
 			publishTask?.cancel()
 			publishTask = nil
@@ -83,7 +90,10 @@ final class BrowserWindowRegistry {
 		activeBrowserID = browser.windowID
 		claimSelectedTab(in: browser)
 		BrowserExtensionManager.shared.focus(browser)
-		if browser.selectedTab?.isHibernated == true {
+		// Cached startup tabs are deliberately dormant until the first
+		// visible AppKit update. Waking one here would allocate WebKit while
+		// the initial NSHostingView is still being laid out.
+		if browser.isHydrationFinished, browser.selectedTab?.isHibernated == true {
 			browser.selectTab(browser.selectedTabID)
 		}
 		if !browser.isPrivate {
@@ -100,24 +110,90 @@ final class BrowserWindowRegistry {
 
 	func ownsTab(_ id: UUID, in browser: Browser) -> Bool {
 		guard !browser.isPrivate, !browser.isMini else { return true }
-		if let owner = tabOwners[id], openBrowsers.contains(where: { $0.windowID == owner && $0.tab(withID: id) != nil }) {
+		let normalBrowsers = openBrowsers.filter { !$0.isPrivate && !$0.isMini }
+		guard normalBrowsers.count > 1 else { return true }
+
+		if let owner = tabOwners[id],
+		   let ownerBrowser = normalBrowsers.first(where: { $0.windowID == owner }),
+		   ownerBrowser.tab(withID: id) != nil
+		{
 			return owner == browser.windowID
 		}
-		return openBrowsers.first { !$0.isPrivate && !$0.isMini && $0.tab(withID: id) != nil }?.windowID == browser.windowID
-			|| !openBrowsers.contains { !$0.isPrivate && !$0.isMini && $0.tab(withID: id) != nil }
+		return normalBrowsers.first { $0.tab(withID: id) != nil }?.windowID == browser.windowID
+			|| !normalBrowsers.contains { $0.tab(withID: id) != nil }
+	}
+
+	/// Resolve ownership for an entire window in one pass. Hot rendering paths
+	/// must use this instead of calling ownsTab once per tab: the fallback owner
+	/// rule otherwise rescans every window's tab array for every row.
+	func ownedTabIDs(in browser: Browser) -> Set<UUID> {
+		let browserIDs = Set(browser.tabs.map(\.id))
+		guard !browser.isPrivate, !browser.isMini else { return browserIDs }
+
+		let normalBrowsers = openBrowsers.filter { !$0.isPrivate && !$0.isMini }
+		guard normalBrowsers.count > 1 else { return browserIDs }
+
+		var idsByWindow: [UUID: Set<UUID>] = [:]
+		idsByWindow.reserveCapacity(normalBrowsers.count)
+		var firstOwner: [UUID: UUID] = [:]
+		firstOwner.reserveCapacity(normalBrowsers.reduce(0) { $0 + $1.tabs.count })
+
+		for candidate in normalBrowsers {
+			let ids = Set(candidate.tabs.map(\.id))
+			idsByWindow[candidate.windowID] = ids
+			for id in ids where firstOwner[id] == nil {
+				firstOwner[id] = candidate.windowID
+			}
+		}
+
+		var result = Set<UUID>()
+		result.reserveCapacity(browserIDs.count)
+		for id in browserIDs {
+			let explicitOwner = tabOwners[id].flatMap { owner in
+				idsByWindow[owner]?.contains(id) == true ? owner : nil
+			}
+			if (explicitOwner ?? firstOwner[id] ?? browser.windowID) == browser.windowID {
+				result.insert(id)
+			}
+		}
+		return result
 	}
 
 	func claimSelectedTab(in browser: Browser) {
 		guard !browser.isPrivate, !browser.isMini,
 		      activeBrowserID == browser.windowID else { return }
+
+		let selectedID = browser.selectedTabID
+		let normalBrowsers = openBrowsers.filter { !$0.isPrivate && !$0.isMini }
+		let previousOwnerID: UUID? = {
+			if let owner = tabOwners[selectedID],
+			   normalBrowsers.contains(where: {
+			   	$0.windowID == owner && $0.tab(withID: selectedID) != nil
+			   })
+			{
+				return owner
+			}
+			return normalBrowsers.first {
+				$0.tab(withID: selectedID) != nil
+			}?.windowID
+		}()
+
 		browser.prepareSelectedTabDisplayOwner()
-		tabOwners[browser.selectedTabID] = browser.windowID
+		tabOwners[selectedID] = browser.windowID
 		browser.configureSelectedTab()
-		Task { @MainActor [weak self] in
+
+		Task { @MainActor [weak self, weak browser] in
 			await Task.yield()
-			guard let self else { return }
-			for window in openBrowsers {
-				BrowserExtensionManager.shared.sync(window)
+			guard let self, let browser else { return }
+			if let previousOwnerID, previousOwnerID != browser.windowID {
+				// Ownership really moved between windows; rebuild the small extension
+				// model because one window loses the tab and another gains it.
+				for window in openBrowsers {
+					BrowserExtensionManager.shared.sync(window)
+				}
+			} else {
+				// Ordinary tab clicks only change the active extension tab.
+				BrowserExtensionManager.shared.selectionDidChange(browser)
 			}
 		}
 	}
@@ -131,6 +207,25 @@ final class BrowserWindowRegistry {
 		return openBrowsers.contains {
 			$0 !== browser && !$0.isPrivate && !$0.isMini && $0.selectedTabID == id && ownsTab(id, in: $0)
 		}
+	}
+
+	/// Sidebar rows ask this for every visible tab. Resolve the selected tabs
+	/// owned by other normal windows once instead of rescanning all windows and
+	/// their tab arrays from every row body.
+	func tabIDsOpenInAnotherWindow(than browser: Browser) -> Set<UUID> {
+		guard !browser.isPrivate, !browser.isMini else { return [] }
+		let normalBrowsers = openBrowsers.filter { !$0.isPrivate && !$0.isMini }
+		guard normalBrowsers.count > 1 else { return [] }
+
+		var result = Set<UUID>()
+		result.reserveCapacity(normalBrowsers.count - 1)
+		for other in normalBrowsers where other !== browser {
+			let id = other.selectedTabID
+			if ownsTab(id, in: other) {
+				result.insert(id)
+			}
+		}
+		return result
 	}
 
 	func isReferenced(_ tab: BrowserTab) -> Bool {
@@ -160,11 +255,21 @@ final class BrowserWindowRegistry {
 	}
 
 	private func publishNow(from source: Browser) {
+		guard !source.isPrivate else { return }
+		let started = BrowserLog.clock()
 		browsers.removeAll { $0.browser == nil }
-		for entry in browsers {
-			guard !source.isPrivate, let browser = entry.browser, !browser.isPrivate, browser !== source else { continue }
-			browser.receiveSharedState(from: source)
+		let recipients = browsers.compactMap(\.browser).filter { $0 !== source && !$0.isPrivate }
+		defer {
+			BrowserLog.duration(.performance, "workflow.windows.shared-state-fanout",
+			                    since: started, warnAboveMilliseconds: 30,
+			                    metadata: [
+			                    	"recipients": String(recipients.count),
+			                    	"source_tabs": String(source.tabs.count),
+			                    ])
 		}
+		// Construct the full source document only once for the whole fan-out.
+		// Each recipient still performs its own conflict-preserving local merge.
+		source.publishSharedState(to: recipients)
 	}
 }
 

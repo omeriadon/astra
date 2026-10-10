@@ -1,14 +1,16 @@
 import Foundation
 
-enum BrowserDownloadStatus: String, Codable, Sendable {
+nonisolated enum BrowserDownloadStatus: String, Codable, Sendable {
 	case downloading
+	case finalizing
 	case paused
 	case completed
+	case cancelled
 	case failed
 }
 
-struct BrowserDownloadSegment: Codable, Equatable, Sendable {
-	static let minimumSegmentBytes: Int64 = 128 * 1024 * 1024
+nonisolated struct BrowserDownloadSegment: Codable, Equatable, Sendable {
+	static let minimumSegmentBytes: Int64 = 32 * 1024 * 1024
 	static let maximumConnections = 16
 
 	let start: Int64
@@ -34,7 +36,7 @@ struct BrowserDownloadSegment: Codable, Equatable, Sendable {
 	}
 }
 
-struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
+nonisolated struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 	let id: UUID
 	let createdAt: Date
 	let sourceURL: URL?
@@ -86,17 +88,85 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 			formatter.allowedUnits = [.hour, .minute, .second]
 			formatter.unitsStyle = .abbreviated
 			formatter.maximumUnitCount = 2
-			if let remaining = formatter.string(from: estimatedTimeRemaining) {
+			if let remaining = formatter.string(from: Self.displayTimeRemaining(estimatedTimeRemaining)) {
 				details.append("\(remaining) remaining")
 			}
 		}
 		return details.joined(separator: " · ")
 	}
 
+	static func averageThroughput(samples: [(bytes: Int64, at: Date)]) -> Double? {
+		guard let first = samples.first, let last = samples.last else { return nil }
+		let cutoff = last.at.addingTimeInterval(-20)
+		var startBytes = Double(first.bytes)
+		var startTime = first.at
+		if first.at < cutoff, samples.count > 1 {
+			let next = samples[1]
+			let interval = next.at.timeIntervalSince(first.at)
+			guard interval > 0 else { return nil }
+			startBytes += Double(next.bytes - first.bytes) * cutoff.timeIntervalSince(first.at) / interval
+			startTime = cutoff
+		}
+		let elapsed = last.at.timeIntervalSince(startTime)
+		guard elapsed > 0 else { return nil }
+		return max(0, (Double(last.bytes) - startBytes) / elapsed)
+	}
+
+	static func smoothedThroughput(previous: Double?, observed: Double, elapsed: TimeInterval) -> Double {
+		guard observed.isFinite, observed >= 0 else { return previous ?? 0 }
+		guard let previous, previous.isFinite, previous >= 0, elapsed > 0 else { return observed }
+		let alpha = min(max(1 - exp(-elapsed / 4), 0.04), 0.35)
+		return previous + alpha * (observed - previous)
+	}
+
+	static func smoothedTimeRemaining(
+		previous: TimeInterval?,
+		observed: TimeInterval,
+		elapsed: TimeInterval
+	) -> TimeInterval? {
+		guard observed.isFinite, observed > 0 else { return previous }
+		guard let previous, previous.isFinite, previous > 0, elapsed > 0 else {
+			return observed
+		}
+		let predicted = max(0, previous - elapsed)
+		var alpha = min(max(1 - exp(-elapsed / 8), 0.025), 0.20)
+		if observed > max(predicted * 2, predicted + 60)
+			|| observed < min(predicted * 0.5, max(0, predicted - 60))
+		{
+			alpha = max(alpha, 0.08)
+		}
+		return max(0, predicted + alpha * (observed - predicted))
+	}
+
+	static func displayTimeRemaining(_ value: TimeInterval) -> TimeInterval {
+		guard value.isFinite, value > 0 else { return value }
+		let quantum: TimeInterval = if value < 60 {
+			5
+		} else if value < 10 * 60 {
+			10
+		} else if value < 60 * 60 {
+			30
+		} else {
+			60
+		}
+		return max(quantum, (value / quantum).rounded() * quantum)
+	}
+
+	var estimatedFinish: Date? {
+		guard status == .downloading,
+		      let estimatedTimeRemaining,
+		      estimatedTimeRemaining.isFinite,
+		      estimatedTimeRemaining > 0
+		else { return nil }
+		return Date.now.addingTimeInterval(estimatedTimeRemaining)
+	}
+
 	var statusSummary: String {
 		switch status {
 			case .downloading:
 				return progressDetails
+			case .finalizing:
+				return "Finalizing file…"
 			case .paused:
 				return "\(errorMessage ?? "Paused") · \(progressLabel)"
 			case .completed:
@@ -104,6 +174,8 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 					return "Downloaded · renewed access needed · \(progressLabel)"
 				}
 				return "Downloaded · \(progressLabel)"
+			case .cancelled:
+				return "Cancelled · \(progressLabel)"
 			case .failed:
 				let error = errorMessage ?? "Download failed."
 				guard (receivedBytes ?? 0) > 0 else { return error }
@@ -112,7 +184,7 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 	}
 
 	var canRetry: Bool {
-		status == .failed
+		[.failed, .cancelled, .paused].contains(status)
 			&& requestMethod?.uppercased() == "GET"
 			&& requestHasBody == false
 			&& requestHasAuthorization == false
@@ -120,7 +192,7 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 	}
 
 	var canResume: Bool {
-		status == .paused && resumeData != nil
+		status == .paused && (resumeData != nil || segments?.isEmpty == false)
 	}
 
 	mutating func markCancellationPending() {
@@ -153,13 +225,28 @@ struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 		request.httpBody != nil || request.httpBodyStream != nil
 	}
 
-	/// Segmented acceleration and fresh retry can only reproduce a plain GET.
-	/// Treat any explicit header as non-replayable so WebKit keeps ownership of
-	/// requests whose response may depend on Referer, Accept, signatures, or
-	/// other origin-specific request semantics.
+	private static let authorizationRequestHeaders: Set<String> = [
+		"authorization",
+		"proxy-authorization",
+	]
+
+	/// Detached segmented transfers never replay browser cookies. Authorization
+	/// credentials and URL credentials are stronger signals that the resource is
+	/// intentionally authenticated, so those remain WebKit-owned.
+	static func requestHasSensitiveCredentials(_ request: URLRequest) -> Bool {
+		if request.url?.user != nil || request.url?.password != nil {
+			return true
+		}
+		return (request.allHTTPHeaderFields ?? [:]).keys.contains {
+			authorizationRequestHeaders.contains($0.lowercased())
+		}
+	}
+
+	/// Fresh retry does not persist arbitrary request headers, so it remains more
+	/// conservative than segmented transfer and leaves any header-bearing request
+	/// owned by WebKit.
 	static func requestMayCarryCredentials(_ request: URLRequest) -> Bool {
-		request.url?.user != nil
-			|| request.url?.password != nil
+		requestHasSensitiveCredentials(request)
 			|| !(request.allHTTPHeaderFields ?? [:]).isEmpty
 	}
 

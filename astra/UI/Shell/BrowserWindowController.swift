@@ -1,5 +1,6 @@
 #if os(macOS)
 	import AppKit
+	import Defaults
 	import SwiftUI
 
 	@MainActor
@@ -7,6 +8,9 @@
 		let browser: Browser
 		let window: NSWindow
 		var onClose: (() -> Void)?
+		/// Fires after AppKit first updates a visible window, not merely after orderFront.
+		var onFirstVisibleUpdate: (() -> Void)?
+		private var didReportFirstVisibleUpdate = false
 		private var allowsClosing = false
 		private var closeApprovalInFlight = false
 
@@ -60,6 +64,8 @@
 
 			let hostedRoot = MacBrowserHostedRoot(browser: browser)
 			let hostingView = NSHostingView(rootView: hostedRoot)
+			// Pane visibility controls the window minimum; intrinsic hosting constraints must not compete with it.
+			hostingView.sizingOptions = []
 			let contentHost = BrowserContentHostView(hostingView: hostingView)
 
 			super.init()
@@ -69,7 +75,13 @@
 
 			window.delegate = self
 			window.contentView = contentHost
-			window.contentMinSize = NSSize(width: min(640, visibleFrame.width), height: min(480, visibleFrame.height))
+			window.contentMinSize = NSSize(width: BrowserChromeMetrics.minimumContentWidth, height: min(480, visibleFrame.height))
+			window.setBrowserMinimumContentWidth(BrowserChromeMetrics.minimumWindowWidth(
+				sidebarShown: browser.sidebarShown,
+				aiSidebarShown: browser.showsAISidebar && browser.canShowAISidebar
+					&& Defaults[.aiFeaturesEnabled] && Defaults[.aiSidebar],
+				minimumContentWidth: BrowserChromeMetrics.minimumPageWidth(isSettings: browser.selectedTab?.internalPage == .settings)
+			))
 			window.title = browser.isPrivate ? "astra — Private Browsing" : "astra"
 			window.isOpaque = false
 			window.backgroundColor = NSColor.white.withAlphaComponent(0.001)
@@ -94,9 +106,20 @@
 
 		func showWindow() {
 			BrowserWindowRegistry.shared.activate(browser)
-			window.contentView?.layoutSubtreeIfNeeded()
-			window.displayIfNeeded()
+			// AppKit performs layout and display during its normal update pass.
+			// Forcing both synchronously here blocks the startup main thread.
 			window.makeKeyAndOrderFront(nil)
+		}
+
+		func windowDidUpdate(_: Notification) {
+			guard !didReportFirstVisibleUpdate, window.isVisible else { return }
+			didReportFirstVisibleUpdate = true
+			BrowserLog.notice(.lifecycle, "startup.window-first-appkit-update", metadata: [
+				"window": BrowserLog.id(browser.windowID),
+			])
+			let callback = onFirstVisibleUpdate
+			onFirstVisibleUpdate = nil
+			callback?()
 		}
 
 		func windowDidBecomeKey(_: Notification) {
@@ -171,52 +194,6 @@
 			}
 			window.contentView = nil
 			onClose?()
-		}
-	}
-
-	final class BrowserContentHostView: NSView {
-		init(hostingView: NSView) {
-			super.init(frame: .zero)
-
-			hostingView.translatesAutoresizingMaskIntoConstraints = false
-			addSubview(hostingView)
-
-			NSLayoutConstraint.activate([
-				hostingView.leadingAnchor.constraint(equalTo: leadingAnchor),
-				hostingView.trailingAnchor.constraint(equalTo: trailingAnchor),
-				hostingView.topAnchor.constraint(equalTo: topAnchor),
-				hostingView.bottomAnchor.constraint(equalTo: bottomAnchor),
-			])
-
-			#if DEBUG
-				assert(
-					responds(to: NSSelectorFromString("_opaqueRectForWindowMoveWhenInTitlebar")),
-					"AppKit titlebar drag override is not visible to Objective-C"
-				)
-			#endif
-		}
-
-		@available(*, unavailable)
-		required init?(coder _: NSCoder) {
-			fatalError("init(coder:) is unavailable")
-		}
-
-		override var mouseDownCanMoveWindow: Bool {
-			false
-		}
-
-		/// NSWindowStyleMaskFullSizeContentView normally lets AppKit force
-		/// titlebar-overlapping content into the native window-drag region even
-		/// when mouseDownCanMoveWindow is false. Firefox, Chromium, and Zed use
-		/// this private selector to mark app-owned titlebar content as opaque to
-		/// that drag-region calculation.
-		///
-		/// Returning the entire host bounds disables AppKit's implicit titlebar
-		/// dragging across Astra. Explicit WindowDragBackground views still move
-		/// the window with NSWindow.performDrag(with:).
-		@objc(_opaqueRectForWindowMoveWhenInTitlebar)
-		func opaqueRectForWindowMoveWhenInTitlebar() -> NSRect {
-			bounds
 		}
 	}
 

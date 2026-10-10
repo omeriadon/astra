@@ -19,6 +19,27 @@ enum BrowserSettingsSchema {
 		"miniAstraWindowAnimation",
 		"miniAstraShortcutEnabled",
 		"webInspectorEnabled",
+		"developerModeEnabled",
+		"usageLimitsProvider",
+		"automaticHibernationEnabled",
+		"aiFeaturesEnabled",
+		"aiBrowserActionPermissions",
+		"aiBookmarkTitles",
+		"aiWebsiteMonitoring",
+		"deliveredWebsiteMonitors",
+		"aiLinkPreviews",
+		"adBlockingEnabled",
+		"aiLinkPreviewMode",
+		"aiLinkPreviewShiftOverride",
+		"aiTabGroups",
+		"aiFind",
+		"aiFindContextLimit",
+		"aiSidebar",
+		"aiTabTitles",
+		"aiProvider",
+		"aiCodexModel",
+		"aiClaudeModel",
+		"aiFeaturePresets",
 		"downloadsFolderBookmark",
 	]
 
@@ -41,12 +62,29 @@ enum BrowserSettingsSchema {
 		Defaults[.homepageURL] = "https://www.google.com"
 		Defaults[.tryHTTPSFirst] = true
 		Defaults[.globalPrivacyControl] = true
+		Defaults[.adBlockingEnabled] = true
 		Defaults[.historyRetentionDays] = 0
 		Defaults[.searchSuggestionsEnabled] = true
 		Defaults[.browserSearchConfiguration] = BrowserSearchConfiguration.default.encoded
 		Defaults[.startPagePreferences] = BrowserStartPagePreferences.default.encoded
 		Defaults[.browserTheme] = BrowserTheme()
 		Defaults[.renameDownloadsWithAppleIntelligence] = true
+		Defaults[.aiFeaturesEnabled] = true
+		Defaults[.aiBrowserActionPermissions] = "{}"
+		Defaults[.aiBookmarkTitles] = true
+		Defaults[.aiWebsiteMonitoring] = true
+		Defaults[.aiLinkPreviews] = true
+		Defaults[.aiLinkPreviewMode] = "always"
+		Defaults[.aiLinkPreviewShiftOverride] = false
+		Defaults[.aiTabGroups] = true
+		Defaults[.aiFind] = true
+		Defaults[.aiFindContextLimit] = true
+		Defaults[.aiSidebar] = true
+		Defaults[.aiTabTitles] = true
+		Defaults[.aiProvider] = "presets"
+		Defaults[.aiCodexModel] = ""
+		Defaults[.aiClaudeModel] = ""
+		Defaults[.aiFeaturePresets] = "{}"
 		Defaults[.downloadsAskWhereToSave] = false
 		Defaults[.copyMailtoAddresses] = true
 		Defaults[.requireDoublePressToQuit] = true
@@ -61,6 +99,9 @@ enum BrowserSettingsSchema {
 		Defaults[.miniAstraWindowAnimation] = true
 		Defaults[.miniAstraShortcutEnabled] = false
 		Defaults[.webInspectorEnabled] = false
+		Defaults[.developerModeEnabled] = false
+		Defaults[.usageLimitsProvider] = .none
+		Defaults[.automaticHibernationEnabled] = true
 		Defaults[.downloadsFolderBookmark] = ""
 	}
 }

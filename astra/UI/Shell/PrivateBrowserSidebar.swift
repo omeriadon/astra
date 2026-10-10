@@ -5,7 +5,7 @@ struct PrivateBrowserSidebar: View {
 
 	var body: some View {
 		ScrollView {
-			LazyVStack(spacing: 2) {
+			VStack(spacing: 2) {
 				Label("Private Browsing", systemImage: "eye.slash")
 					.font(.headline)
 					.frame(maxWidth: .infinity, alignment: .leading)
@@ -24,6 +24,7 @@ struct PrivateBrowserSidebar: View {
 			.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
 			.padding(.bottom, 48)
 		}
+		.frame(maxWidth: .infinity, maxHeight: .infinity)
 		.accessibilityIdentifier("private-sidebar")
 	}
 }

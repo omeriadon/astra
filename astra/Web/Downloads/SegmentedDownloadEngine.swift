@@ -25,18 +25,33 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 	private nonisolated(unsafe) var lastProgressHop: [String: Date] = [:]
 	private var startTokens: [UUID: UUID] = [:]
 	private var replayHeaders: [UUID: [String: String]] = [:]
+	/// URLSession download completion moves files synchronously before its
+	/// delegate callback returns. Never execute those filesystem operations on
+	/// the UI thread. The delegate methods already explicitly hop to MainActor
+	/// when they publish progress/completion into BrowserDownloadManager.
+	private let delegateQueue: OperationQueue = {
+		let queue = OperationQueue()
+		queue.name = "com.omeriadon.astra.segmented-download-delegate"
+		queue.qualityOfService = .utility
+		queue.maxConcurrentOperationCount = 1
+		return queue
+	}()
+
 	private lazy var session: URLSession = {
 		let identifier = (Bundle.main.bundleIdentifier ?? "browser") + ".segmentedDownloads"
 		let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
 		configuration.isDiscretionary = false
+		configuration.httpCookieStorage = nil
+		configuration.httpShouldSetCookies = false
+		configuration.urlCredentialStorage = nil
 		configuration.httpMaximumConnectionsPerHost = BrowserDownloadSegment.maximumConnections
-		return URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
+		return URLSession(configuration: configuration, delegate: self, delegateQueue: delegateQueue)
 	}()
 
 	func start(_ item: BrowserDownload, originalRequest: URLRequest? = nil) {
+		BrowserLog.info(.downloads, "segmented.start", metadata: ["item": BrowserLog.id(item.id), "request": BrowserLog.request(originalRequest), "url": BrowserLog.url(item.requestURL)])
 		guard let url = item.requestURL,
-		      let segments = item.segments,
-		      let validator = item.rangeValidator
+		      let segments = item.segments
 		else { return }
 		if let originalRequest {
 			replayHeaders[item.id] = Self.safeReplayHeaders(originalRequest)
@@ -48,14 +63,21 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 				guard let self, startTokens[item.id] == token else { return }
 				for (index, segment) in segments.enumerated() where !segment.completed {
 					let description = "\(item.id.uuidString):\(index)"
-					guard !tasks.contains(where: { $0.taskDescription == description }) else { continue }
+					if let task = tasks.first(where: { $0.taskDescription == description && $0.state != .canceling && $0.state != .completed }) {
+						if task.state == .suspended {
+							task.resume()
+						}
+						continue
+					}
 					var request = URLRequest(url: url)
 					for (field, value) in replayHeaders[item.id] ?? [:] {
 						request.setValue(value, forHTTPHeaderField: field)
 					}
 					request.cachePolicy = .reloadIgnoringLocalCacheData
 					request.setValue("bytes=\(segment.start)-\(segment.end)", forHTTPHeaderField: "Range")
-					request.setValue(validator, forHTTPHeaderField: "If-Range")
+					if let validator = item.rangeValidator {
+						request.setValue(validator, forHTTPHeaderField: "If-Range")
+					}
 					request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
 					let task = self.session.downloadTask(with: request)
 					task.taskDescription = description
@@ -66,6 +88,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 	}
 
 	func fallbackRequest(for item: BrowserDownload) -> URLRequest? {
+		BrowserLog.debug(.downloads, "segmented.fallback-request", metadata: ["item": BrowserLog.id(item.id)])
 		guard let url = item.requestURL else { return nil }
 		var request = URLRequest(url: url)
 		for (field, value) in replayHeaders[item.id] ?? [:] {
@@ -74,7 +97,18 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		return request
 	}
 
+	func pause(_ itemID: UUID) async {
+		startTokens[itemID] = UUID()
+		let tasks = await withCheckedContinuation { continuation in
+			session.getAllTasks { continuation.resume(returning: $0) }
+		}
+		for task in tasks where task.taskDescription?.hasPrefix(itemID.uuidString + ":") == true && task.state == .running {
+			task.suspend()
+		}
+	}
+
 	func cancel(_ itemID: UUID) {
+		BrowserLog.notice(.downloads, "segmented.cancel", metadata: ["item": BrowserLog.id(itemID)])
 		startTokens[itemID] = UUID()
 		session.getAllTasks { tasks in
 			for task in tasks where task.taskDescription?.hasPrefix(itemID.uuidString + ":") == true {
@@ -84,6 +118,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 	}
 
 	func cancelAndWait(_ itemIDs: [UUID]) async {
+		BrowserLog.notice(.downloads, "segmented.cancel-and-wait", metadata: ["count": String(itemIDs.count)])
 		for itemID in itemIDs {
 			startTokens[itemID] = UUID()
 		}
@@ -207,16 +242,16 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		return directory.appendingPathComponent("\(itemID.uuidString)-\(index).part")
 	}
 
-	private static func safeReplayHeaders(_ request: URLRequest) -> [String: String] {
-		guard !BrowserDownload.requestMayCarryCredentials(request) else { return [:] }
+	static func safeReplayHeaders(_ request: URLRequest) -> [String: String] {
+		guard !BrowserDownload.requestHasSensitiveCredentials(request) else { return [:] }
 		return (request.allHTTPHeaderFields ?? [:]).filter { field, _ in
 			!blockedReplayHeaders.contains(field.lowercased())
 		}
 	}
 
-	func removeParts(_ itemID: UUID, count: Int) {
-		for index in 0 ..< count {
-			try? FileManager.default.removeItem(at: Self.partURL(itemID, index: index))
-		}
+	func removeParts(_ itemID: UUID, count: Int) async {
+		BrowserLog.debug(.downloads, "segmented.remove-parts", metadata: ["item": BrowserLog.id(itemID), "count": String(count)])
+		let paths = (0 ..< count).map { Self.partURL(itemID, index: $0) }
+		await BrowserDownloadFileWorker.shared.removeFiles(paths)
 	}
 }

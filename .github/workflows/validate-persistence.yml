@@ -1,0 +1,33 @@
+name: Astra - Persistence and Restoration
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Persistence and Restoration
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/window-sync-noop-check.py
+          python3 checks/history-derived-cache-check.py
+          python3 checks/control-tab-observation-check.py
+          python3 checks/checkpoint-privacy-cache-check.py
+          python3 checks/library-observation-check.py
+          python3 checks/window-record-sidecar-check.py
+          python3 checks/scroll-journal-check.py
+          python3 checks/startup-hydration-dependencies-check.py

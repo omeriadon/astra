@@ -1,5 +1,6 @@
 import Defaults
 import Haze
+import Observation
 import SwiftUI
 
 struct BrowserContentView: View, Animatable {
@@ -15,21 +16,22 @@ struct BrowserContentView: View, Animatable {
 	var body: some View {
 		GeometryReader { proxy in
 			let selectedTab = browser.selectedTab
+			let hasActiveDuplicate = BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
 			ZStack {
 				KeepAliveWebStack(browser: browser, insets: insets)
 					.zIndex(0)
-				content
+				content(hasActiveDuplicate: hasActiveDuplicate)
 					.zIndex(1)
 			}
 			.animation(nil, value: browser.selectedTabID)
-			.animation(nil, value: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
+			.animation(nil, value: hasActiveDuplicate)
 			#if os(macOS)
 				.overlay(alignment: .bottomLeading) {
-					if !BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser),
+					if !hasActiveDuplicate,
 					   let controller = browser.selectedTab?.activeController,
 					   let url = controller.hoveredLinkURL
 					{
-						BrowserLinkPreview(url: url)
+						BrowserLinkPreview(url: url, isPrivate: browser.isPrivate)
 							.frame(maxWidth: min(700, proxy.size.width * 0.75), alignment: .leading)
 							.frame(maxWidth: .infinity, alignment: controller.hoveredLinkUsesTrailingCorner ? .trailing : .leading)
 							.padding(8)
@@ -45,10 +47,10 @@ struct BrowserContentView: View, Animatable {
 	}
 
 	@ViewBuilder
-	private var content: some View {
+	private func content(hasActiveDuplicate: Bool) -> some View {
 		#if os(macOS)
 			if let controller = browser.selectedTab?.activeController, controller.url != nil,
-			   BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
+			   hasActiveDuplicate
 			{
 				BrowserTabMirrorView(controller: controller)
 			} else {
@@ -118,7 +120,7 @@ private struct KeepAliveWebStack: View {
 	var body: some View {
 		let selectedTab = browser.selectedTab
 		ZStack {
-			ForEach(keepAliveControllers()) { controller in
+			ForEach(browser.tabResources.controllersForDisplay()) { controller in
 				BrowserWebView(
 					controller: controller,
 					windowID: browser.windowID,
@@ -128,9 +130,9 @@ private struct KeepAliveWebStack: View {
 					maximumViewportInsets: insets.maximum
 				)
 				.id(controller.id)
-				.opacity(controller === selectedTab?.controller && selectedTab?.internalPage == nil && controller.navigationFailure == nil ? 1 : 0)
-				.allowsHitTesting(controller === selectedTab?.controller && selectedTab?.activeController === controller && controller.navigationFailure == nil)
-				.accessibilityHidden(controller !== selectedTab?.controller || selectedTab?.activeController !== controller || controller.navigationFailure != nil)
+				.opacity(controller === selectedTab?.controller && selectedTab?.internalPage == nil && controller.committedURL != nil && controller.navigationFailure == nil ? 1 : 0)
+				.allowsHitTesting(controller === selectedTab?.controller && selectedTab?.activeController === controller && controller.committedURL != nil && controller.navigationFailure == nil)
+				.accessibilityHidden(controller !== selectedTab?.controller || selectedTab?.activeController !== controller || controller.committedURL == nil || controller.navigationFailure != nil)
 			}
 
 			if let failure = selectedTab?.controller?.navigationFailure, selectedTab?.internalPage == nil {
@@ -147,32 +149,69 @@ private struct KeepAliveWebStack: View {
 			}
 		}
 	}
+}
 
-	private func keepAliveControllers() -> [BrowserController] {
+/// Per-browser WebKit attachment policy. The normal warm budget is four
+/// controllers; pressure reduces idle retention without overriding media,
+/// capture, unsaved-form or active lifecycle protection from WebKit.
+@MainActor
+@Observable
+final class BrowserTabResourceManager {
+	@ObservationIgnored private weak var browser: Browser?
+	private(set) var warmControllerLimit = 4
+
+	init(browser: Browser) {
+		self.browser = browser
+	}
+
+	func updateMemoryPressure(_ level: BrowserHibernationManager.PressureLevel) {
+		let limit = switch level {
+			case .normal: 4
+			case .warning: 2
+			case .critical: 1
+		}
+		guard warmControllerLimit != limit else { return }
+		warmControllerLimit = limit
+		BrowserLog.debug(.performance, "webkit.warm-controller-budget", metadata: ["count": String(limit)])
+	}
+
+	func controllersForDisplay() -> [BrowserController] {
+		guard let browser else { return [] }
+		let started = BrowserLog.clock()
 		let selectedTab = browser.selectedTab
+		let ownedTabIDs = BrowserWindowRegistry.shared.ownedTabIDs(in: browser)
+		let tabsByID = browser.tabsByID
 		var result: [BrowserController] = []
 		var seen = Set<UUID>()
 		func append(_ controller: BrowserController?) {
 			guard let controller, controller.url != nil, seen.insert(controller.id).inserted else { return }
 			result.append(controller)
 		}
-		if let selectedTab, BrowserWindowRegistry.shared.ownsTab(selectedTab.id, in: browser) {
+		if let selectedTab, ownedTabIDs.contains(selectedTab.id) {
 			append(selectedTab.controller)
 		}
-		for id in browser.recentlyUsedTabIDs where result.count < 4 {
-			guard let tab = browser.tab(withID: id), tab.internalPage == nil,
-			      BrowserWindowRegistry.shared.ownsTab(tab.id, in: browser) else { continue }
+		// Pressure applies only to idle recency retention. Independently
+		// protected controllers are always included below regardless of budget.
+		for id in browser.recentlyUsedTabIDs where result.count < warmControllerLimit {
+			guard ownedTabIDs.contains(id),
+			      let tab = tabsByID[id], tab.internalPage == nil else { continue }
 			append(tab.controller)
 		}
-		// ponytail: retain all playing or paused media while iframe PiP state is unobservable; narrow this when WebKit exposes a frame-aware callback.
-		for tab in browser.tabs where BrowserWindowRegistry.shared.ownsTab(tab.id, in: browser) {
-			append(tab.controller?.requiresMediaTeardownConfirmation == true ? tab.controller : nil)
+		for tab in browser.tabs where ownedTabIDs.contains(tab.id) {
+			append(tab.controller?.shouldKeepWebViewAttached == true ? tab.controller : nil)
 			for peek in tab.id == selectedTab?.id ? [] : tab.peeks {
-				if peek.controller.requiresMediaTeardownConfirmation {
+				if peek.controller.shouldKeepWebViewAttached {
 					append(peek.controller)
 				}
 			}
 		}
+		BrowserLog.duration(.performance, "workflow.webview-hosts.resolve",
+		                    since: started, warnAboveMilliseconds: 8,
+		                    metadata: [
+		                    	"tab_count": String(browser.tabs.count),
+		                    	"host_count": String(result.count),
+		                    	"warm_budget": String(warmControllerLimit),
+		                    ])
 		return result
 	}
 }

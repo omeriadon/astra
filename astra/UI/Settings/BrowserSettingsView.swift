@@ -9,8 +9,9 @@ struct BrowserSettingsView: View {
 		browser.theme
 	}
 
-	enum Page: CaseIterable {
+	nonisolated enum Page: CaseIterable {
 		case ui
+		case ai
 		case account
 		case importData
 		case privacyAndSecurity
@@ -25,13 +26,13 @@ struct BrowserSettingsView: View {
 			case failedWebsiteStates
 		#endif
 
-		enum Section: String, CaseIterable {
+		nonisolated enum Section: String, CaseIterable {
 			case ui = "UI"
 			case account = "Account"
 			case advanced = "Advanced"
 		}
 
-		struct Definition {
+		nonisolated struct Definition {
 			let title: String
 			let symbol: String
 			let section: Section?
@@ -39,6 +40,7 @@ struct BrowserSettingsView: View {
 			let terms: [String]
 		}
 
+		@MainActor
 		var definition: Definition {
 			switch self {
 				case .ui:
@@ -51,10 +53,18 @@ struct BrowserSettingsView: View {
 							"Default Browser", "Make Default Browser",
 							"New Tab", "Sidebar Tab", "Spotlight Overlay", "Address Bar", "Page Zoom", "Default Page Zoom", "Reset Default Zoom", "Peek", "Levels",
 							"Mini Astra", "links", "cursor", "animation", "shortcut",
-							"Zoom out in Peeks", "Downloads", "Rename downloads with Apple Intelligence",
+							"Zoom out in Peeks", "Downloads",
 							"Ask where to save each download", "Download folder", "Choose Folder",
 							"Updates", "Automatically check for updates", "Automatically install updates",
 						] + AddressDisplayStyle.allCases.map(\.title) + PeekLevel.allCases.map(\.title)
+					)
+				case .ai:
+					Definition(
+						title: "AI",
+						symbol: "sparkles",
+						section: .ui,
+						identifier: "settings-ai",
+						terms: ["All AI Features", "Rename Downloads", "Rename downloads with Apple Intelligence", "Link Previews", "Today Tabs", "Clean Tab Titles", "Ask in Find", "AI Sidebar", "Usage Log", "Show Usage Log", "Codex", "Claude", "Tokens"]
 					)
 				case .account:
 					Definition(
@@ -107,7 +117,7 @@ struct BrowserSettingsView: View {
 						symbol: "chevron.left.forwardslash.chevron.right",
 						section: .advanced,
 						identifier: "settings-developer",
-						terms: ["GitHub", "Repository", "Shorthand", "owner/repository", "Web Inspector", "Safari", "Develop menu"]
+						terms: ["GitHub", "Repository", "Shorthand", "owner/repository", "Web Inspector", "Safari", "Develop menu", "Developer Mode", "Usage Limits", "Codex", "Claude"]
 					)
 				case .advanced:
 					Definition(
@@ -138,6 +148,7 @@ struct BrowserSettingsView: View {
 			}
 		}
 
+		@MainActor
 		func matches(_ query: String) -> Bool {
 			guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
 			let metadata = definition
@@ -152,99 +163,111 @@ struct BrowserSettingsView: View {
 	}
 
 	var body: some View {
-		HStack(spacing: 0) {
-			List {
-				if matchingPages.isEmpty {
-					Text("No settings found")
-						.foregroundStyle(.secondary)
-				}
+		GeometryReader { geometry in
+			ScrollView(.horizontal) {
+				HStack(spacing: 0) {
+					List {
+						if matchingPages.isEmpty {
+							Text("No settings found")
+								.foregroundStyle(.secondary)
+						}
 
-				ForEach(Page.Section.allCases, id: \.self) { section in
-					let pages = matchingPages.filter { $0.definition.section == section }
-					if !pages.isEmpty {
-						Section(section.rawValue) {
-							ForEach(pages, id: \.self) { page in
-								row(for: page)
+						ForEach(Page.Section.allCases, id: \.self) { section in
+							let pages = matchingPages.filter { $0.definition.section == section }
+							if !pages.isEmpty {
+								Section(section.rawValue) {
+									ForEach(pages, id: \.self) { page in
+										row(for: page)
+									}
+								}
 							}
 						}
 					}
-				}
-			}
-			.listStyle(.sidebar)
-			.scrollContentBackground(.hidden)
-			.safeAreaBar(edge: .top) {
-				HStack(spacing: 8) {
-					Image(systemName: "magnifyingglass")
-						.accessibilityHidden(true)
-					TextField("Search Settings", text: $searchText)
-						.textFieldStyle(.plain)
-						.accessibilityIdentifier("settings-search")
-				}
-				.padding(.horizontal, 8)
-				.padding(.vertical, 6)
-				.glassEffect(.regular, in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
-				.padding(.horizontal, 12)
-				.padding(.top, 12)
-				.padding(.bottom, 12)
-			}
-			.safeAreaBar(edge: .bottom) {
-				VStack(spacing: 8) {
-					ForEach(matchingPages.filter { $0.definition.section == nil }, id: \.self) { page in
-						row(for: page)
+					.listStyle(.sidebar)
+					.scrollContentBackground(.hidden)
+					.safeAreaBar(edge: .top) {
+						HStack(spacing: 8) {
+							Image(systemName: "magnifyingglass")
+								.accessibilityHidden(true)
+							TextField("Search Settings", text: $searchText)
+								.textFieldStyle(.plain)
+								.accessibilityIdentifier("settings-search")
+						}
+						.padding(.horizontal, 8)
+						.padding(.vertical, 6)
+						.glassEffect(.regular, in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
+						.padding(.horizontal, 12)
+						.padding(.top, 12)
+						.padding(.bottom, 12)
+					}
+					.safeAreaBar(edge: .bottom) {
+						VStack(spacing: 8) {
+							ForEach(matchingPages.filter { $0.definition.section == nil }, id: \.self) { page in
+								row(for: page)
+							}
+						}
+						.padding(.bottom, 6)
+					}
+					.frame(width: BrowserChromeMetrics.settingsSidebarWidth)
+					.foregroundStyle(theme.foregroundColor)
+
+					Divider()
+
+					ScrollViewReader { proxy in
+						Group {
+							switch selectedPage {
+								case .ai:
+									BrowserAISettingsView()
+								case .ui:
+									BrowserGeneralSettingsView()
+								case .importData:
+									BrowserImportView(browser: browser)
+								case .account:
+									BrowserAccountSettingsView()
+								case .privacyAndSecurity:
+									BrowserPrivacyAndSecuritySettingsView(session: browser.session)
+								case .developer:
+									BrowserDeveloperSettingsView()
+								case .advanced:
+									BrowserAdvancedSettingsView()
+								case .extensions:
+									BrowserExtensionsSettingsView(browser: browser)
+								#if os(macOS)
+									case .websiteApps:
+										BrowserWebsiteAppsSettingsView()
+								#endif
+								case .about:
+									AboutView()
+								#if DEBUG
+									case .failedWebsiteStates:
+										BrowserFailedWebsiteStatesSettingsView(browser: browser)
+								#endif
+							}
+						}
+						.id(selectedPage)
+						.task(id: browser.settingsScrollTarget) {
+							guard let target = browser.settingsScrollTarget else { return }
+							await Task.yield()
+							proxy.scrollTo(target, anchor: .top)
+						}
+					}
+					.padding(.horizontal, selectedPage != .about ? BrowserChromeMetrics.settingsDetailPadding : 0)
+					.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+					.safeAreaBar(edge: .top) {
+						if selectedPage != .about {
+							BrowserSettingsTitleView(page: selectedPage)
+						}
 					}
 				}
-				.padding(.bottom, 6)
+				.monospaced()
+				.frame(
+					width: max(geometry.size.width, BrowserChromeMetrics.minimumPageWidth(isSettings: true) - BrowserChromeMetrics.shellEdgePadding * 2),
+					height: geometry.size.height,
+					alignment: .topLeading
+				)
 			}
-			.frame(width: 230)
-			.foregroundStyle(theme.foregroundColor)
-
-			Divider()
-
-			ScrollViewReader { proxy in
-				Group {
-					switch selectedPage {
-						case .ui:
-							BrowserGeneralSettingsView()
-						case .importData:
-							BrowserImportView(browser: browser)
-						case .account:
-							BrowserAccountSettingsView()
-						case .privacyAndSecurity:
-							BrowserPrivacyAndSecuritySettingsView(session: browser.session)
-						case .developer:
-							BrowserDeveloperSettingsView()
-						case .advanced:
-							BrowserAdvancedSettingsView()
-						case .extensions:
-							BrowserExtensionsSettingsView(browser: browser)
-						#if os(macOS)
-							case .websiteApps:
-								BrowserWebsiteAppsSettingsView()
-						#endif
-						case .about:
-							AboutView()
-						#if DEBUG
-							case .failedWebsiteStates:
-								BrowserFailedWebsiteStatesSettingsView(browser: browser)
-						#endif
-					}
-				}
-				.id(selectedPage)
-				.task(id: browser.settingsScrollTarget) {
-					guard let target = browser.settingsScrollTarget else { return }
-					await Task.yield()
-					proxy.scrollTo(target, anchor: .top)
-				}
-			}
-			.padding(.horizontal, selectedPage != .about ? 16 : 0)
-			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-			.safeAreaBar(edge: .top) {
-				if selectedPage != .about {
-					BrowserSettingsTitleView(page: selectedPage)
-				}
-			}
+			.accessibilityIdentifier("settings-horizontal-overflow")
 		}
-		.monospaced()
 	}
 
 	private func row(for page: Page) -> some View {

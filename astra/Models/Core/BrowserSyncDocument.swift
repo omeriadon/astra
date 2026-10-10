@@ -490,7 +490,7 @@ private nonisolated func spaceKey(_ space: BrowserSpace) -> String {
 		.map { "\($0.key)|\($0.value.timeIntervalSince1970)" }
 	return [space.id.uuidString, space.name, space.symbol, String(space.modifiedAt.timeIntervalSince1970),
 	        space.tabIDs.map(\.uuidString).joined(separator: ","), space.pinnedTabIDs.map(\.uuidString).joined(separator: ","),
-	        space.selectedTabID?.uuidString ?? "", folders.joined(separator: ";"), deleted.joined(separator: ";"),
+	        space.selectedTabID?.uuidString ?? "", space.todayTabGroups.map { "\($0.name):\($0.tabIDs.map(\.uuidString).joined(separator: ","))" }.joined(separator: ";"), folders.joined(separator: ";"), deleted.joined(separator: ";"),
 	        themeKey(space.theme)].joined(separator: "|")
 }
 
@@ -524,6 +524,11 @@ private nonisolated func preferred<Value: Codable & Equatable>(
 ) -> Value {
 	if firstDate != secondDate {
 		return firstDate > secondDate ? first : second
+	}
+	// Most ties are the same entity replicated across browser windows.
+	// Preserve the deterministic byte-level tie breaker for actual conflicts.
+	if first == second {
+		return first
 	}
 	return stableData(first).lexicographicallyPrecedes(stableData(second)) ? second : first
 }

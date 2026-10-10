@@ -5,6 +5,8 @@ extension AddressDisplayStyle: Defaults.Serializable {}
 extension PeekLevel: Defaults.Serializable {}
 extension BrowserNewTabStyle: Defaults.Serializable {}
 extension BrowserTheme: Defaults.Serializable {}
+extension BrowserReaderAppearance: Defaults.Serializable {}
+extension BrowserUsageLimitsProvider: Defaults.Serializable {}
 
 enum BrowserStartupBehavior: String, CaseIterable {
 	case restore
@@ -15,11 +17,15 @@ enum BrowserStartupBehavior: String, CaseIterable {
 extension BrowserStartupBehavior: Defaults.Serializable {}
 
 extension Defaults.Keys {
+	static let browserLaunchCache = Key<Data>("browserLaunchCache", default: Data())
+
+	static let readerAppearance = Key<BrowserReaderAppearance>("readerAppearance", default: BrowserReaderAppearance())
 	static let newTabStyle = Key<BrowserNewTabStyle>("newTabStyle", default: .page)
 	static let startupBehavior = Key<BrowserStartupBehavior>("startupBehavior", default: .restore)
 	static let homepageURL = Key<String>("homepageURL", default: "https://www.google.com")
 	static let tryHTTPSFirst = Key<Bool>("tryHTTPSFirst", default: true)
 	static let globalPrivacyControl = Key<Bool>("globalPrivacyControl", default: true)
+	static let adBlockingEnabled = Key<Bool>("adBlockingEnabled", default: true)
 	static let historyRetentionDays = Key<Int>("historyRetentionDays", default: 0)
 	static let searchSuggestionsEnabled = Key<Bool>("searchSuggestionsEnabled", default: true)
 	static let browserSearchConfiguration = Key<String>("browserSearchConfiguration", default: BrowserSearchConfiguration.default.encoded)
@@ -29,6 +35,9 @@ extension Defaults.Keys {
 	static let miniAstraWindowAnimation = Key<Bool>("miniAstraWindowAnimation", default: true)
 	static let miniAstraShortcutEnabled = Key<Bool>("miniAstraShortcutEnabled", default: false)
 	static let webInspectorEnabled = Key<Bool>("webInspectorEnabled", default: false)
+	static let developerModeEnabled = Key<Bool>("developerModeEnabled", default: false)
+	static let usageLimitsProvider = Key<BrowserUsageLimitsProvider>("usageLimitsProvider", default: .none)
+	static let automaticHibernationEnabled = Key<Bool>("automaticHibernationEnabled", default: true)
 
 	static let sidebarShown = Key<Bool>(
 		"sidebarShown",
@@ -48,6 +57,7 @@ extension Defaults.Keys {
 		"peekLevel",
 		"zoomOutInPeeks",
 		"renameDownloadsWithAppleIntelligence",
+		"bookmarkFolderNames",
 		"copyMailtoAddresses",
 		"requireDoublePressToQuit",
 		"browserTheme",

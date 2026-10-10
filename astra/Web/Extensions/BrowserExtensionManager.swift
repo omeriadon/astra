@@ -7,6 +7,44 @@ import WebKit
 	import UIKit
 #endif
 
+/// Extension archives can be tens of megabytes. Only state transitions and
+/// WebKit APIs belong on the main actor; filesystem operations and CRX parsing
+/// run on utility workers, including error-path cleanup.
+private nonisolated enum BrowserExtensionFileWorker {
+	static func validateArchive(at url: URL) throws {
+		guard url.pathExtension.lowercased() == "zip",
+		      let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+		      size <= 50_000_000
+		else {
+			throw NSError(domain: "astra.extensions", code: 6)
+		}
+	}
+
+	static func copyArchive(from source: URL, to destination: URL) throws {
+		try FileManager.default.createDirectory(
+			at: destination.deletingLastPathComponent(), withIntermediateDirectories: true
+		)
+		do {
+			try FileManager.default.copyItem(at: source, to: destination)
+		} catch {
+			// A cancelled/failed copy must not leave an installable partial ZIP.
+			try? FileManager.default.removeItem(at: destination)
+			throw error
+		}
+	}
+
+	static func unpackChromeArchive(from download: URL, to destination: URL) throws {
+		guard let size = try download.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+		      size <= 50_000_000 else { throw ChromeExtensionPackage.PackageError.invalid }
+		let archive = try ChromeExtensionPackage.archive(from: Data(contentsOf: download))
+		try archive.write(to: destination, options: .atomic)
+	}
+
+	static func remove(_ url: URL) {
+		try? FileManager.default.removeItem(at: url)
+	}
+}
+
 @MainActor
 @Observable
 final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate {
@@ -17,8 +55,33 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 
 	static let shared = BrowserExtensionManager()
 
-	let controller = WKWebExtensionController()
-	private let bundledNames = ["darkreader-chrome-mv3", "ublock-origin-lite-safari"]
+	/// Creating a WKWebExtensionController can initialize WebKit processes and
+	/// extension infrastructure. Window registrations are queued until needed.
+	@ObservationIgnored private var didInitializeController = false
+	@ObservationIgnored lazy var controller: WKWebExtensionController = {
+		let controller = WKWebExtensionController()
+		controller.delegate = self
+		NotificationCenter.default.addObserver(self, selector: #selector(extensionErrorsChanged(_:)), name: WKWebExtensionContext.errorsDidUpdateNotification, object: nil)
+		didInitializeController = true
+		BrowserLog.notice(.extensions, "startup.extension-controller-created")
+		for window in windows.values {
+			controller.didOpenWindow(window)
+		}
+		// Defer replay until the lazy initializer has returned, otherwise
+		// sync() would recursively access the property being initialized.
+		Task { @MainActor [weak self] in
+			guard let self else { return }
+			for browser in BrowserWindowRegistry.shared.openBrowsers where browser.isHydrationFinished && !browser.isPrivate {
+				self.sync(browser)
+			}
+			if let focused = BrowserWindowRegistry.shared.activeBrowser, !focused.isPrivate {
+				focus(focused)
+			}
+		}
+		return controller
+	}()
+
+	private let bundledNames = ["darkreader-chrome-mv3"]
 	private(set) var loadErrors: [String: String] = [:] {
 		didSet {
 			if loadErrors.contains(where: { oldValue[$0.key] != $0.value }) {
@@ -36,6 +99,9 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	private(set) var actionsRevision = 0
 	private(set) var isInstallingFromStore = false
 	private var contexts: [String: WKWebExtensionContext] = [:]
+	@ObservationIgnored private var contextPreparationTasks: [String: Task<WKWebExtensionContext, Error>] = [:]
+	@ObservationIgnored private var enableIntentRevisions: [String: UInt64] = [:]
+	private var cachedDisplayNames: [String: String] = [:]
 	private var windows: [UUID: BrowserExtensionWindow] = [:]
 	private var tabs: [UUID: [UUID: BrowserExtensionTab]] = [:]
 	private var knownTabIDs: [UUID: Set<UUID>] = [:]
@@ -66,18 +132,18 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		safariBundlePaths = UserDefaults.standard.dictionary(forKey: "safariExtensionBundles") as? [String: String] ?? [:]
 		unpinnedNames = Set(UserDefaults.standard.stringArray(forKey: "unpinnedExtensions") ?? [])
 		safariNames = Set(UserDefaults.standard.stringArray(forKey: "safariExtensions") ?? [])
-		enabledNames = Set((["darkreader-chrome-mv3", "ublock-origin-lite-safari"] + savedNames).filter {
+		cachedDisplayNames = UserDefaults.standard.dictionary(forKey: "extensionDisplayNames") as? [String: String] ?? [:]
+		enabledNames = Set((["darkreader-chrome-mv3"] + savedNames).filter {
 			UserDefaults.standard.bool(forKey: "extension.\($0).enabled")
 		})
 		super.init()
 		#if DEBUG
 			ChromeExtensionPackage.checkParsing()
 		#endif
-		controller.delegate = self
-		NotificationCenter.default.addObserver(self, selector: #selector(extensionErrorsChanged(_:)), name: WKWebExtensionContext.errorsDidUpdateNotification, object: nil)
 	}
 
 	@objc private func extensionErrorsChanged(_ notification: Notification) {
+		BrowserLog.debug(.extensions, "extension.errors-updated")
 		guard let context = notification.object as? WKWebExtensionContext,
 		      let name = contexts.first(where: { $0.value === context })?.key else { return }
 		if context.errors.isEmpty {
@@ -93,7 +159,9 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		}
 		let window = BrowserExtensionWindow(browser: browser)
 		windows[browser.windowID] = window
-		controller.didOpenWindow(window)
+		if didInitializeController {
+			controller.didOpenWindow(window)
+		}
 		return window
 	}
 
@@ -109,11 +177,21 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func sync(_ browser: Browser) {
+		BrowserLog.trace(.extensions, "extensions.sync-window", metadata: ["window": BrowserLog.id(browser.windowID), "tabs": String(browser.tabs.count)])
 		guard !browser.isPrivate else { return }
+		// A restored window may complete hydration before first display.
+		// Its extension model is replayed when WebKit actually needs the controller.
+		guard didInitializeController else { return }
 		_ = extensionWindow(for: browser)
-		let ids = Set(browser.tabs.filter {
-			$0.internalPage == nil && BrowserWindowRegistry.shared.ownsTab($0.id, in: browser)
-		}.map(\.id))
+		let ownedIDs = BrowserWindowRegistry.shared.ownedTabIDs(in: browser)
+		let ownedTabs = browser.tabs.filter {
+			$0.internalPage == nil && ownedIDs.contains($0.id)
+		}
+		let ids = Set(ownedTabs.map(\.id))
+		var pinnedIDs = Set(browser.workspace.favouriteTabIDs)
+		for space in browser.workspace.spaces {
+			pinnedIDs.formUnion(space.pinnedTabIDs)
+		}
 		let previous = knownTabIDs[browser.windowID] ?? []
 		for id in ids.subtracting(previous) {
 			if let tab = extensionTab(for: id, in: browser) {
@@ -128,17 +206,16 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			tabSnapshots[browser.windowID]?.removeValue(forKey: id)
 		}
 		knownTabIDs[browser.windowID] = ids
-		for tab in browser.tabs where ids.contains(tab.id) {
+		for tab in ownedTabs {
 			let snapshot = TabSnapshot(
 				url: tab.currentURL,
 				title: tab.title,
 				loading: tab.controller?.isLoading == true,
-				pinned: browser.workspace.favouriteTabIDs.contains(tab.id)
-					|| browser.workspace.spaces.contains { $0.pinnedTabIDs.contains(tab.id) },
+				pinned: pinnedIDs.contains(tab.id),
 				zoom: tab.controller?.pageZoom ?? 1
 			)
 			if let previousSnapshot = tabSnapshots[browser.windowID]?[tab.id],
-			   let bridge = extensionTab(for: tab.id, in: browser)
+			   let bridge = tabs[browser.windowID]?[tab.id]
 			{
 				var changed: WKWebExtension.TabChangedProperties = []
 				if previousSnapshot.title != snapshot.title {
@@ -162,21 +239,95 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			}
 			tabSnapshots[browser.windowID, default: [:]][tab.id] = snapshot
 		}
-		if let selected = browser.selectedTab, ids.contains(selected.id), selectedTabIDs[browser.windowID] != selected.id {
-			let prior = selectedTabIDs[browser.windowID].flatMap { tabs[browser.windowID]?[$0] }
-			if let current = extensionTab(for: selected.id, in: browser) {
-				controller.didActivateTab(current, previousActiveTab: prior)
-				selectedTabIDs[browser.windowID] = selected.id
-			}
+		selectionDidChange(browser, ownedIDs: ids)
+	}
+
+	/// WebKit loading KVO changes a single tab property. Rebuilding every
+	/// extension-tab snapshot on each navigation start/finish made foreground
+	/// and background page loads walk the whole browser tab collection.
+	func loadingDidChange(for id: UUID, in browser: Browser) {
+		tabPropertiesDidChange(for: id, in: browser)
+	}
+
+	/// Normal tab metadata and WebKit loading events affect one WebExtension
+	/// bridge, not every bridge in a window. Structural membership changes
+	/// still use sync(_:) from Browser's explicit tab mutation paths.
+	func tabPropertiesDidChange(for id: UUID, in browser: Browser, forceWebViewRefresh: Bool = false) {
+		guard !browser.isPrivate,
+		      BrowserWindowRegistry.shared.ownsTab(id, in: browser),
+		      let tab = browser.tab(withID: id),
+		      tab.internalPage == nil else { return }
+		guard let previous = tabSnapshots[browser.windowID]?[id],
+		      let bridge = tabs[browser.windowID]?[id]
+		else {
+			sync(browser)
+			return
 		}
+		let next = TabSnapshot(
+			url: tab.currentURL,
+			title: tab.title,
+			loading: tab.controller?.isLoading == true,
+			pinned: previous.pinned,
+			zoom: tab.controller?.pageZoom ?? 1
+		)
+		var changed: WKWebExtension.TabChangedProperties = forceWebViewRefresh ? [.URL, .loading] : []
+		if previous.title != next.title {
+			changed.insert(.title)
+		}
+		if previous.url != next.url {
+			changed.insert(.URL)
+		}
+		if previous.loading != next.loading {
+			changed.insert(.loading)
+		}
+		if previous.zoom != next.zoom {
+			changed.insert(.zoomFactor)
+		}
+		guard !changed.isEmpty else { return }
+		tabSnapshots[browser.windowID, default: [:]][id] = next
+		controller.didChangeTabProperties(changed, for: bridge)
+	}
+
+	/// Selection changes do not require rebuilding every extension-tab snapshot.
+	/// This is the hot path for ordinary tab clicks.
+	func selectionDidChange(_ browser: Browser) {
+		guard !browser.isPrivate, didInitializeController else { return }
+		let ownedIDs = BrowserWindowRegistry.shared.ownedTabIDs(in: browser)
+		selectionDidChange(browser, ownedIDs: ownedIDs)
+	}
+
+	private func selectionDidChange(_ browser: Browser, ownedIDs: Set<UUID>) {
+		guard let selected = browser.selectedTab,
+		      selected.internalPage == nil,
+		      ownedIDs.contains(selected.id),
+		      selectedTabIDs[browser.windowID] != selected.id
+		else { return }
+
+		let prior = selectedTabIDs[browser.windowID].flatMap { tabs[browser.windowID]?[$0] }
+		let current: BrowserExtensionTab
+		if let existing = tabs[browser.windowID]?[selected.id] {
+			current = existing
+		} else {
+			guard let created = extensionTab(for: selected.id, in: browser) else { return }
+			current = created
+			knownTabIDs[browser.windowID, default: []].insert(selected.id)
+			controller.didOpenTab(created)
+		}
+		controller.didActivateTab(current, previousActiveTab: prior)
+		selectedTabIDs[browser.windowID] = selected.id
 	}
 
 	func closeWindow(for browser: Browser) {
+		BrowserLog.debug(.extensions, "extensions.close-window", metadata: ["window": BrowserLog.id(browser.windowID)])
 		guard let window = windows.removeValue(forKey: browser.windowID) else { return }
-		for tab in tabs[browser.windowID]?.values ?? [UUID: BrowserExtensionTab]().values {
-			controller.didCloseTab(tab, windowIsClosing: true)
+		// Closing an unused startup window must not initialize WebKit's
+		// extension controller just to send close notifications.
+		if didInitializeController {
+			for tab in tabs[browser.windowID]?.values ?? [UUID: BrowserExtensionTab]().values {
+				controller.didCloseTab(tab, windowIsClosing: true)
+			}
+			controller.didCloseWindow(window)
 		}
-		controller.didCloseWindow(window)
 		tabs.removeValue(forKey: browser.windowID)
 		knownTabIDs.removeValue(forKey: browser.windowID)
 		selectedTabIDs.removeValue(forKey: browser.windowID)
@@ -185,15 +336,27 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 
 	func focus(_ browser: Browser) {
 		guard !browser.isPrivate else { return }
+		// NSWindow activation occurs before the first frame; it must not
+		// create an otherwise-unused WKWebExtensionController.
+		guard didInitializeController else { return }
 		controller.didFocusWindow(extensionWindow(for: browser))
 	}
 
 	func webViewDidChange(for id: UUID, in browser: Browser) {
 		guard !browser.isPrivate else { return }
-		sync(browser)
-		if let tab = extensionTab(for: id, in: browser) {
-			controller.didChangeTabProperties([.URL, .loading], for: tab)
+		// A WKWebView replacement does not change the identities of every tab.
+		// A registered bridge must refresh URL/loading even when their values
+		// are unchanged, because its backing WebKit view has changed.
+		guard knownTabIDs[browser.windowID]?.contains(id) == true,
+		      tabs[browser.windowID]?[id] != nil,
+		      BrowserWindowRegistry.shared.ownsTab(id, in: browser)
+		else {
+			// Newly created, transferred or closed tabs still need structural
+			// open/close notifications with correct window ownership.
+			sync(browser)
+			return
 		}
+		tabPropertiesDidChange(for: id, in: browser, forceWebViewRefresh: true)
 	}
 
 	func loadedNames() -> [String] {
@@ -294,6 +457,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			let context = WKWebExtensionContext(for: extensionObject)
 			context.uniqueIdentifier = name
 			contexts[name] = context
+			cacheDisplayName(extensionObject.displayName, for: name)
 			installedNames.append(name)
 			safariNames.insert(name)
 			safariBundlePaths[name] = candidate.bundleURL.path
@@ -316,7 +480,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func title(for name: String) -> String {
-		if let title = contexts[name]?.webExtension.displayName {
+		if let title = contexts[name]?.webExtension.displayName ?? cachedDisplayNames[name] {
 			return title
 		}
 		switch name {
@@ -398,44 +562,121 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func prepare() async {
-		guard !didPrepare else { return }
+		guard !didPrepare else {
+			BrowserLog.trace(.extensions, "extensions.prepare.skip", metadata: ["reason": "already-prepared"])
+			return
+		}
+		let logStarted = BrowserLog.clock()
+		BrowserLog.info(.extensions, "extensions.prepare.begin", metadata: ["available": String(availableNames.count), "enabled": String(enabledNames.count)])
 		didPrepare = true
-		for name in availableNames {
+
+		// Only enabled extensions belong on the launch path. Disabled packages are
+		// metadata-only until the user opens extension settings or the staggered
+		// idle preparation below reaches them.
+		for (index, name) in availableNames.filter({ enabledNames.contains($0) }).enumerated() {
+			if index > 0 {
+				await Task.yield()
+			}
+			BrowserLog.debug(.extensions, "extension.prepare-item", metadata: ["name": BrowserLog.value(name), "enabled": "true"])
 			do {
-				let webExtension: WKWebExtension
-				if let path = safariBundlePaths[name], let bundle = Bundle(path: path) {
-					webExtension = try await WKWebExtension(appExtensionBundle: bundle)
-				} else if let url = archiveURL(for: name) {
-					webExtension = try await WKWebExtension(resourceBaseURL: url)
-				} else {
-					loadErrors[name] = "Extension package is missing."
-					continue
-				}
-				let context = WKWebExtensionContext(for: webExtension)
-				context.uniqueIdentifier = name
-				contexts[name] = context
-				if enabledNames.contains(name) {
-					try enable(name)
-				}
+				_ = try await prepareContext(for: name)
+				// The user may have disabled the extension during an await.
+				guard enabledNames.contains(name) else { continue }
+				try enable(name)
+			} catch {
+				loadErrors[name] = error.localizedDescription
+			}
+		}
+
+		BrowserLog.duration(.extensions, "extensions.prepare.end", since: logStarted, warnAboveMilliseconds: 500, metadata: ["contexts": String(contexts.count), "errors": String(loadErrors.count)])
+		// Disabled extensions are prepared only when the user opens extension
+		// settings or enables one. Background preparation here was creating
+		// WKWebExtension contexts and parsing packages shortly after launch.
+	}
+
+	func prepareAllContexts() async {
+		await prepare()
+		await prepareMissingContexts()
+	}
+
+	private func prepareMissingContexts() async {
+		for name in availableNames where contexts[name] == nil {
+			guard !Task.isCancelled else { return }
+			do {
+				_ = try await prepareContext(for: name)
 			} catch {
 				loadErrors[name] = error.localizedDescription
 			}
 		}
 	}
 
+	@discardableResult
+	private func prepareContext(for name: String) async throws -> WKWebExtensionContext {
+		if let existing = contexts[name] {
+			return existing
+		}
+		if let preparing = contextPreparationTasks[name] {
+			return try await preparing.value
+		}
+		// A settings click can overlap the launch-time extension preparation.
+		// Share one in-flight WebKit parse rather than creating duplicate contexts.
+		let preparing = Task { @MainActor in
+			try await createContext(for: name)
+		}
+		contextPreparationTasks[name] = preparing
+		defer { contextPreparationTasks[name] = nil }
+		return try await preparing.value
+	}
+
+	private func createContext(for name: String) async throws -> WKWebExtensionContext {
+		let started = BrowserLog.clock()
+		let webExtension: WKWebExtension
+		if let path = safariBundlePaths[name], let bundle = Bundle(path: path) {
+			webExtension = try await WKWebExtension(appExtensionBundle: bundle)
+		} else if let url = archiveURL(for: name) {
+			webExtension = try await WKWebExtension(resourceBaseURL: url)
+		} else {
+			throw NSError(
+				domain: "astra.extensions",
+				code: 12,
+				userInfo: [NSLocalizedDescriptionKey: "Extension package is missing."]
+			)
+		}
+		try Task.checkCancellation()
+		// It may have been uninstalled while WebKit parsed the archive.
+		guard bundledNames.contains(name) || installedNames.contains(name) || safariBundlePaths[name] != nil
+		else { throw CancellationError() }
+		let context = WKWebExtensionContext(for: webExtension)
+		context.uniqueIdentifier = name
+		contexts[name] = context
+		cacheDisplayName(webExtension.displayName, for: name)
+		BrowserLog.duration(
+			.extensions,
+			"extension.prepare-item.end",
+			since: started,
+			warnAboveMilliseconds: 150,
+			metadata: ["name": BrowserLog.value(name), "enabled": String(enabledNames.contains(name))]
+		)
+		return context
+	}
+
+	private func cacheDisplayName(_ value: String?, for name: String) {
+		guard let value, !value.isEmpty, cachedDisplayNames[name] != value else { return }
+		cachedDisplayNames[name] = value
+		UserDefaults.standard.set(cachedDisplayNames, forKey: "extensionDisplayNames")
+	}
+
 	func installArchive(from archive: URL, source: Source) async throws -> String {
+		BrowserLog.info(.extensions, "extension.install-archive", metadata: ["source": source.rawValue, "archive": BrowserLog.path(archive)])
 		let access = archive.startAccessingSecurityScopedResource()
 		defer {
 			if access {
 				archive.stopAccessingSecurityScopedResource()
 			}
 		}
-		guard archive.pathExtension.lowercased() == "zip",
-		      let size = try archive.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-		      size <= 50_000_000
-		else {
-			throw NSError(domain: "astra.extensions", code: 6)
-		}
+		try await Task.detached(priority: .utility) {
+			try BrowserExtensionFileWorker.validateArchive(at: archive)
+		}.value
 		let checked = try await WKWebExtension(resourceBaseURL: archive)
 		guard checked.manifestVersion == 2 || checked.manifestVersion == 3 else {
 			throw NSError(domain: "astra.extensions", code: 4)
@@ -444,12 +685,15 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		guard let destination = archiveURL(for: name, creatingDirectory: true) else {
 			throw NSError(domain: "astra.extensions", code: 5)
 		}
-		try FileManager.default.copyItem(at: archive, to: destination)
+		try await Task.detached(priority: .utility) {
+			try BrowserExtensionFileWorker.copyArchive(from: archive, to: destination)
+		}.value
 		do {
 			let extensionObject = try await WKWebExtension(resourceBaseURL: destination)
 			let context = WKWebExtensionContext(for: extensionObject)
 			context.uniqueIdentifier = name
 			contexts[name] = context
+			cacheDisplayName(extensionObject.displayName, for: name)
 			installedNames.append(name)
 			UserDefaults.standard.set(installedNames, forKey: "installedExtensions")
 			if source == .safari {
@@ -458,12 +702,15 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			}
 			return name
 		} catch {
-			try? FileManager.default.removeItem(at: destination)
+			await Task.detached(priority: .utility) {
+				BrowserExtensionFileWorker.remove(destination)
+			}.value
 			throw error
 		}
 	}
 
 	func installFromChromeStore(_ listing: URL) async {
+		BrowserLog.info(.extensions, "extension.install-store", metadata: ["listing": BrowserLog.url(listing)])
 		guard !isInstallingFromStore, let id = ChromeExtensionPackage.extensionID(from: listing) else { return }
 		isInstallingFromStore = true
 		defer { isInstallingFromStore = false }
@@ -476,17 +723,21 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 				URLQueryItem(name: "x", value: "id=\(id)&uc"),
 			]
 			let (download, response) = try await URLSession.shared.download(from: components.url!)
-			defer { try? FileManager.default.removeItem(at: download) }
+			defer {
+				Task.detached(priority: .utility) { BrowserExtensionFileWorker.remove(download) }
+			}
 			guard let response = response as? HTTPURLResponse, response.statusCode == 200,
 			      response.url?.scheme == "https", let host = response.url?.host,
 			      host == "google.com" || host.hasSuffix(".google.com")
-			      || host == "googleusercontent.com" || host.hasSuffix(".googleusercontent.com"),
-			      let size = try download.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-			      size <= 50_000_000 else { throw ChromeExtensionPackage.PackageError.invalid }
-			let archive = try ChromeExtensionPackage.archive(from: Data(contentsOf: download))
+			      || host == "googleusercontent.com" || host.hasSuffix(".googleusercontent.com")
+			else { throw ChromeExtensionPackage.PackageError.invalid }
 			let temporaryZIP = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("zip")
-			defer { try? FileManager.default.removeItem(at: temporaryZIP) }
-			try archive.write(to: temporaryZIP, options: .atomic)
+			defer {
+				Task.detached(priority: .utility) { BrowserExtensionFileWorker.remove(temporaryZIP) }
+			}
+			try await Task.detached(priority: .utility) {
+				try BrowserExtensionFileWorker.unpackChromeArchive(from: download, to: temporaryZIP)
+			}.value
 			let name = try await installArchive(from: temporaryZIP, source: .chrome)
 			if let context = contexts[name] {
 				promptForAccess(to: permissionSummary(for: name), from: context) { [weak self] allowed in
@@ -501,11 +752,16 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func removeInstalled(_ name: String) {
+		BrowserLog.info(.extensions, "extension.remove", metadata: ["name": BrowserLog.value(name)])
 		guard installedNames.contains(name) else { return }
 		let url = archiveURL(for: name)
 		setEnabled(false, for: name)
 		guard contexts[name]?.isLoaded != true else { return }
+		contextPreparationTasks[name]?.cancel()
+		contextPreparationTasks[name] = nil
 		contexts.removeValue(forKey: name)
+		cachedDisplayNames.removeValue(forKey: name)
+		UserDefaults.standard.set(cachedDisplayNames, forKey: "extensionDisplayNames")
 		installedNames.removeAll { $0 == name }
 		safariBundlePaths.removeValue(forKey: name)
 		UserDefaults.standard.set(safariBundlePaths, forKey: "safariExtensionBundles")
@@ -514,7 +770,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		UserDefaults.standard.set(Array(safariNames), forKey: "safariExtensions")
 		UserDefaults.standard.removeObject(forKey: "extension.\(name).enabled")
 		if let url {
-			try? FileManager.default.removeItem(at: url)
+			Task.detached(priority: .utility) { BrowserExtensionFileWorker.remove(url) }
 		}
 	}
 
@@ -523,16 +779,14 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			return nil
 		}
 		if bundledNames.contains(name) {
-			return Bundle.main.url(forResource: name, withExtension: "zip")
+			return BrowserResources.bundle.url(forResource: name, withExtension: "zip")
 		}
 		guard UUID(uuidString: name) != nil,
 		      installedNames.contains(name) || creatingDirectory,
 		      let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
 		let directory = support.appendingPathComponent(Bundle.main.bundleIdentifier ?? "astra", isDirectory: true)
 			.appendingPathComponent("Extensions", isDirectory: true)
-		if creatingDirectory {
-			try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-		}
+		// Directory creation happens in the detached archive copy worker.
 		return directory.appendingPathComponent(name).appendingPathExtension("zip")
 	}
 
@@ -549,6 +803,25 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func setEnabled(_ enabled: Bool, for name: String) {
+		BrowserLog.info(.extensions, "extension.set-enabled", metadata: ["name": BrowserLog.value(name), "enabled": String(enabled)])
+		let revision = (enableIntentRevisions[name] ?? 0) &+ 1
+		enableIntentRevisions[name] = revision
+		if enabled, contexts[name] == nil {
+			Task { @MainActor [weak self] in
+				guard let self else { return }
+				do {
+					_ = try await prepareContext(for: name)
+					// Do not re-enable after a later explicit disable or removal.
+					guard enableIntentRevisions[name] == revision,
+					      bundledNames.contains(name) || installedNames.contains(name) else { return }
+					setEnabled(true, for: name)
+				} catch {
+					guard enableIntentRevisions[name] == revision else { return }
+					loadErrors[name] = error.localizedDescription
+				}
+			}
+			return
+		}
 		if enabled, !bundledNames.contains(name),
 		   UserDefaults.standard.string(forKey: "extension.\(name).approvedPermissions") != permissionSummary(for: name),
 		   let context = contexts[name]
@@ -583,6 +856,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	private func enable(_ name: String) throws {
+		BrowserLog.debug(.extensions, "extension.enable", metadata: ["name": BrowserLog.value(name)])
 		guard let context = contexts[name], !context.isLoaded else { return }
 		guard bundledNames.contains(name)
 			|| UserDefaults.standard.string(forKey: "extension.\(name).approvedPermissions") == permissionSummary(for: name)
@@ -646,7 +920,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		for _: WKWebExtensionContext,
 		completionHandler: ((any WKWebExtensionWindow)?, Error?) -> Void
 	) {
-		#if os(macOS)
+		#if os(macOS) && !ASTRA_WEBSITE_APP_RUNTIME
 			guard !configuration.shouldBePrivate,
 			      configuration.tabs.isEmpty,
 			      let app = NSApp.delegate as? AppDelegate

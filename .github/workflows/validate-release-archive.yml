@@ -1,0 +1,73 @@
+name: Astra - Release Archive
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  archive:
+    name: Unsigned Release archive and bundle checks
+    runs-on: xcode-27
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select Xcode 27
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Install Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+      - name: Build archive and verify distribution layout
+        shell: bash
+        env:
+          RELEASE_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          ARCHIVE="$RUNNER_TEMP/astra-validation.xcarchive"
+          BUILD_ARGUMENTS=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO)
+          if [[ "$RELEASE_BRANCH" =~ ^release/([0-9]+\.[0-9]+(\.[0-9]+)?)\+([0-9]+)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            BUILD="${BASH_REMATCH[3]}"
+            BUILD_ARGUMENTS+=("MARKETING_VERSION=$VERSION" "CURRENT_PROJECT_VERSION=$BUILD")
+          fi
+          set -o pipefail
+          xcodebuild archive \
+            -project astra.xcodeproj \
+            -scheme astra \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -archivePath "$ARCHIVE" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
+            "${BUILD_ARGUMENTS[@]}" 2>&1 | tee "$RUNNER_TEMP/astra-archive-build.log"
+          APP="$(find "$ARCHIVE/Products/Applications" -maxdepth 1 -name '*.app' -print -quit)"
+          [[ -n "$APP" && -d "$APP" ]] || { echo "::error::No application in archive"; exit 1; }
+          ACTUAL_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+          ACTUAL_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
+          if [[ -n "${VERSION:-}" && "$ACTUAL_VERSION" != "$VERSION" ]]; then
+            echo "::error::Expected version $VERSION, got $ACTUAL_VERSION"
+            exit 1
+          fi
+          if [[ -n "${BUILD:-}" && "$ACTUAL_BUILD" != "$BUILD" ]]; then
+            echo "::error::Expected build $BUILD, got $ACTUAL_BUILD"
+            exit 1
+          fi
+          python3 checks/website-app-bundle-check.py "$APP"
+          python3 checks/website-app-runtime-size-check.py "$APP"
+          bash scripts/audit_sparkle_bundle.sh "$APP" --unsigned
+          echo "Validated unsigned Astra $ACTUAL_VERSION (build $ACTUAL_BUILD)"
+      - name: Upload archive build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astra-release-archive-${{ github.run_id }}
+          path: ${{ runner.temp }}/astra-archive-build.log
+          if-no-files-found: ignore
+          retention-days: 7

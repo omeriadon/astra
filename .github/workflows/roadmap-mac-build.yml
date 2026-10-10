@@ -1,20 +1,17 @@
-name: Roadmap Mac Build
+name: Astra - macOS Debug Build
 
 on:
+  pull_request:
+    branches: [main]
   push:
-    branches:
-      - astra/roadmap/integration
-    paths:
-      - 'astra/**'
-      - 'astra.xcodeproj/**'
-      - 'Packages/**'
-      - '*.xcconfig'
+    branches: [astra/roadmap/integration]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: roadmap-mac-build-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -24,14 +21,17 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Check out integration branch
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Select Xcode 27.2 beta
+      - name: Validate startup tooling
         shell: bash
         run: |
-          sudo xcode-select -s /Applications/Xcode_27.2_beta.app/Contents/Developer
-          xcodebuild -version
+          bash -n scripts/benchmark_startup.sh
+          bash -n scripts/audit_sparkle_bundle.sh
+
+      - name: Select Xcode 27
+        run: bash scripts/ci/select-xcode-27.sh
 
       - name: Install Metal Toolchain
         shell: bash
@@ -50,6 +50,10 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             2>&1 | tee "$RUNNER_TEMP/astra-mac-build.log"
+
+      - name: Audit Sparkle linking and embedding
+        shell: bash
+        run: bash scripts/audit_sparkle_bundle.sh "$RUNNER_TEMP/AstraDerivedData/Build/Products/Debug/astra.app" --unsigned
 
       - name: Upload build log
         if: always()

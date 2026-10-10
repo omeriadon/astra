@@ -1,0 +1,206 @@
+{
+  "reference-v2-debug": {
+    "process_birth_to_main_log_ms": {
+      "n": 8,
+      "median_ms": 49.25,
+      "p95_ms": 1254.2,
+      "min_ms": 44.5,
+      "max_ms": 1254.2
+    },
+    "process_birth_to_first_window_ms": {
+      "n": 8,
+      "median_ms": 466.05,
+      "p95_ms": 1931.3,
+      "min_ms": 454.0,
+      "max_ms": 1931.3
+    },
+    "process_birth_to_first_visible_update_ms": {
+      "n": 8,
+      "median_ms": 808.6,
+      "p95_ms": 2363.3,
+      "min_ms": 676.8,
+      "max_ms": 2363.3
+    },
+    "process_birth_to_first_usable_window_ms": {
+      "n": 8,
+      "median_ms": 811.3,
+      "p95_ms": 2372.9,
+      "min_ms": 678.0,
+      "max_ms": 2372.9
+    },
+    "process_birth_to_all_windows_ms": {
+      "n": 8,
+      "median_ms": 816.75,
+      "p95_ms": 2375.7,
+      "min_ms": 776.6,
+      "max_ms": 2375.7
+    },
+    "process_birth_to_restoration_complete_ms": {
+      "n": 8,
+      "median_ms": 817.1,
+      "p95_ms": 2376.2,
+      "min_ms": 776.7,
+      "max_ms": 2376.2
+    },
+    "process_birth_to_deferred_services_ms": {
+      "n": 8,
+      "median_ms": 808.6,
+      "p95_ms": 2363.3,
+      "min_ms": 677.0,
+      "max_ms": 2363.3
+    }
+  },
+  "candidate-v2-debug": {
+    "process_birth_to_main_log_ms": {
+      "n": 8,
+      "median_ms": 47.25,
+      "p95_ms": 1147.2,
+      "min_ms": 44.5,
+      "max_ms": 1147.2
+    },
+    "process_birth_to_first_window_ms": {
+      "n": 8,
+      "median_ms": 472.05,
+      "p95_ms": 1611.6,
+      "min_ms": 437.8,
+      "max_ms": 1611.6
+    },
+    "process_birth_to_first_visible_update_ms": {
+      "n": 8,
+      "median_ms": 806.65,
+      "p95_ms": 1943.2,
+      "min_ms": 762.1,
+      "max_ms": 1943.2
+    },
+    "process_birth_to_first_usable_window_ms": {
+      "n": 8,
+      "median_ms": 809.95,
+      "p95_ms": 1949.5,
+      "min_ms": 763.2,
+      "max_ms": 1949.5
+    },
+    "process_birth_to_all_windows_ms": {
+      "n": 8,
+      "median_ms": 815.65,
+      "p95_ms": 1953.0,
+      "min_ms": 774.7,
+      "max_ms": 1953.0
+    },
+    "process_birth_to_restoration_complete_ms": {
+      "n": 8,
+      "median_ms": 817.2,
+      "p95_ms": 1953.2,
+      "min_ms": 777.3,
+      "max_ms": 1953.2
+    },
+    "process_birth_to_deferred_services_ms": {
+      "n": 8,
+      "median_ms": 806.7,
+      "p95_ms": 1943.3,
+      "min_ms": 762.1,
+      "max_ms": 1943.3
+    }
+  },
+  "reference-v2-release": {
+    "process_birth_to_main_log_ms": {
+      "n": 8,
+      "median_ms": 46.45,
+      "p95_ms": 856.4,
+      "min_ms": 42.8,
+      "max_ms": 856.4
+    },
+    "process_birth_to_first_window_ms": {
+      "n": 8,
+      "median_ms": 453.5,
+      "p95_ms": 1284.3,
+      "min_ms": 439.2,
+      "max_ms": 1284.3
+    },
+    "process_birth_to_first_visible_update_ms": {
+      "n": 8,
+      "median_ms": 778.35,
+      "p95_ms": 1625.4,
+      "min_ms": 708.3,
+      "max_ms": 1625.4
+    },
+    "process_birth_to_first_usable_window_ms": {
+      "n": 8,
+      "median_ms": 782.35,
+      "p95_ms": 1626.0,
+      "min_ms": 711.0,
+      "max_ms": 1626.0
+    },
+    "process_birth_to_all_windows_ms": {
+      "n": 8,
+      "median_ms": 784.0,
+      "p95_ms": 1626.8,
+      "min_ms": 711.3,
+      "max_ms": 1626.8
+    },
+    "process_birth_to_restoration_complete_ms": {
+      "n": 8,
+      "median_ms": 784.2,
+      "p95_ms": 1626.9,
+      "min_ms": 711.5,
+      "max_ms": 1626.9
+    },
+    "process_birth_to_deferred_services_ms": {
+      "n": 8,
+      "median_ms": 778.35,
+      "p95_ms": 1625.4,
+      "min_ms": 708.3,
+      "max_ms": 1625.4
+    }
+  },
+  "candidate-v2-release": {
+    "process_birth_to_main_log_ms": {
+      "n": 8,
+      "median_ms": 44.6,
+      "p95_ms": 863.4,
+      "min_ms": 42.4,
+      "max_ms": 863.4
+    },
+    "process_birth_to_first_window_ms": {
+      "n": 8,
+      "median_ms": 464.65,
+      "p95_ms": 1247.0,
+      "min_ms": 436.5,
+      "max_ms": 1247.0
+    },
+    "process_birth_to_first_visible_update_ms": {
+      "n": 8,
+      "median_ms": 793.55,
+      "p95_ms": 1598.0,
+      "min_ms": 760.7,
+      "max_ms": 1598.0
+    },
+    "process_birth_to_first_usable_window_ms": {
+      "n": 8,
+      "median_ms": 795.1,
+      "p95_ms": 1599.3,
+      "min_ms": 761.5,
+      "max_ms": 1599.3
+    },
+    "process_birth_to_all_windows_ms": {
+      "n": 8,
+      "median_ms": 798.55,
+      "p95_ms": 1601.4,
+      "min_ms": 763.8,
+      "max_ms": 1601.4
+    },
+    "process_birth_to_restoration_complete_ms": {
+      "n": 8,
+      "median_ms": 803.5,
+      "p95_ms": 1601.5,
+      "min_ms": 768.7,
+      "max_ms": 1601.5
+    },
+    "process_birth_to_deferred_services_ms": {
+      "n": 8,
+      "median_ms": 793.65,
+      "p95_ms": 1598.0,
+      "min_ms": 760.7,
+      "max_ms": 1598.0
+    }
+  }
+}

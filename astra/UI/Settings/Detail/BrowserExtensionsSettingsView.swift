@@ -56,7 +56,7 @@ struct BrowserExtensionsSettingsView: View {
 			.listStyle(.sidebar)
 		}
 		.task {
-			await extensions.prepare()
+			await extensions.prepareAllContexts()
 			await extensions.refreshSafariExtensions()
 		}
 		.onChange(of: scenePhase) { _, phase in

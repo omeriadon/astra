@@ -1,5 +1,4 @@
 import Defaults
-import Sparkle
 import SwiftUI
 
 #if os(macOS)
@@ -15,11 +14,11 @@ struct BrowserGeneralSettingsView: View {
 	@Default(.defaultPageZoom) private var defaultPageZoom
 	@Default(.peekLevel) private var peekLevel
 	@Default(.zoomOutInPeeks) private var zoomOutInPeeks
-	@Default(.renameDownloadsWithAppleIntelligence) private var renameDownloadsWithAppleIntelligence
 	@Default(.downloadsAskWhereToSave) private var downloadsAskWhereToSave
 	@Default(.startupBehavior) private var startupBehavior
 	@Default(.homepageURL) private var homepageURL
 	@Default(.browserSearchConfiguration) private var browserSearchConfigurationValue
+	@Default(.automaticHibernationEnabled) private var automaticHibernationEnabled
 
 	#if os(macOS)
 		@State private var isDefaultBrowser = false
@@ -194,6 +193,17 @@ struct BrowserGeneralSettingsView: View {
 			}
 			.id("Startup")
 
+			Section("Performance") {
+				Toggle("Automatically hibernate inactive tabs", isOn: $automaticHibernationEnabled)
+					.accessibilityLabel("Automatically hibernate inactive tabs")
+					.accessibilityHint("Releases WebKit resources from inactive tabs after a period of inactivity")
+					.accessibilityIdentifier("automatic-hibernation-enabled")
+				Text("Inactive tabs are released after about 30 minutes. Memory pressure can shorten this period.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
+			}
+			.id("Performance")
+
 			#if os(macOS)
 				Section("Mini Astra") {
 					Toggle("Open links from other apps in Mini Astra", isOn: $miniAstraEnabled)
@@ -265,11 +275,6 @@ struct BrowserGeneralSettingsView: View {
 					}
 				#endif
 
-				Toggle("Rename downloads with Apple Intelligence", isOn: $renameDownloadsWithAppleIntelligence)
-					.accessibilityLabel("Rename downloads with Apple Intelligence")
-					.accessibilityIdentifier("rename-downloads-with-apple-intelligence")
-					.id("Rename downloads with Apple Intelligence")
-
 				ZStack {}
 			}
 			.id("Downloads")
@@ -280,7 +285,7 @@ struct BrowserGeneralSettingsView: View {
 					.id("Automatically check for updates")
 
 				Toggle("Automatically install updates", isOn: $updates.automaticInstalls)
-					.disabled(!updates.automaticChecks || !updates.updater.allowsAutomaticUpdates)
+					.disabled(!updates.automaticChecks || !updates.allowsAutomaticUpdates)
 					.accessibilityIdentifier("automatically-install-updates")
 					.id("Automatically install updates")
 			}

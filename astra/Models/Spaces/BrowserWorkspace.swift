@@ -121,6 +121,13 @@ struct BrowserWorkspace: Codable, Equatable, Sendable {
 				tabIDs.contains($0) && seenPinned.insert($0).inserted
 			}
 
+			let normalIDs = tabIDs.subtracting(spaces[index].pinnedTabIDs)
+			var groupedIDs = Set<UUID>()
+			spaces[index].todayTabGroups = spaces[index].todayTabGroups.compactMap { group in
+				let ids = group.tabIDs.filter { normalIDs.contains($0) && groupedIDs.insert($0).inserted }
+				return ids.isEmpty ? nil : BrowserTabGroupingFeature.Group(name: group.name, tabIDs: ids)
+			}
+
 			let pinnedIDs = Set(spaces[index].pinnedTabIDs)
 			var folderIndexes: [UUID: Int] = [:]
 			var folders: [PinnedTabFolder] = []
@@ -179,13 +186,10 @@ struct BrowserWorkspace: Codable, Equatable, Sendable {
 
 	static func tabSwitchCandidates(
 		visibleTabIDs: [UUID],
-		recentlyUsedTabIDs: [UUID],
 		selectedTabID: UUID,
 		forward: Bool
 	) -> [UUID] {
-		var seen = Set<UUID>()
-		let ids = recentlyUsedTabIDs.filter { visibleTabIDs.contains($0) && seen.insert($0).inserted }
-			+ visibleTabIDs.filter { seen.insert($0).inserted }
+		let ids = visibleTabIDs
 		guard ids.count > 1, let selectedIndex = ids.firstIndex(of: selectedTabID) else { return [] }
 		return (1 ... ids.count).map { offset in
 			let direction = forward ? offset : ids.count - offset

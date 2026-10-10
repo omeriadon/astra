@@ -181,7 +181,7 @@ struct NewTabView: View {
 							Section("Favorites") {
 								LazyVGrid(columns: [GridItem(.adaptive(minimum: 60, maximum: 100))], spacing: 12) {
 									ForEach(browser.favouriteTabs) { tab in
-										BrowserFavouriteTile(tab: tab, browser: browser, navigationNamespace: transitions)
+										BrowserFavouriteTile(tab: tab, browser: browser, isSelected: browser.selectedTabID == tab.id, navigationNamespace: transitions)
 									}
 								}
 								.padding(.vertical, 8)

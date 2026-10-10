@@ -1,0 +1,29 @@
+name: Astra - Downloads
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Downloads
+    runs-on: xcode-27
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/download-index-persistence-check.py
+          python3 checks/download-staging-io-check.py
+          swiftc astra/Models/Library/BrowserDownload.swift astra/Web/Downloads/BrowserDownloadedFile.swift astra/Web/Downloads/BrowserDownloadFileWorker.swift checks/download-file-worker-check.swift -o "$RUNNER_TEMP/astra-download-file-worker-check"
+          "$RUNNER_TEMP/astra-download-file-worker-check"

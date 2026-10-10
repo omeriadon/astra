@@ -1,0 +1,31 @@
+name: Astra - WebKit, Extensions and UI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: WebKit, Extensions and UI
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          node checks/favicon-observer-check.mjs
+          python3 checks/extension-hot-path-check.py
+          python3 checks/webkit-resource-policy-check.py
+          python3 checks/extension-file-worker-check.py
+          python3 scripts/webkit_benchmark.py self-test
+          python3 checks/noise-lifecycle-check.py

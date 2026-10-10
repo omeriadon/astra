@@ -4,6 +4,8 @@
 	import UIKit
 #endif
 import Defaults
+import Foundation
+import Observation
 import SwiftUI
 
 struct BrowserTabRow: View {
@@ -14,16 +16,25 @@ struct BrowserTabRow: View {
 	var tabIndex: Int?
 	var normalCount: Int?
 	var pinned: Bool?
+	var rowSpaceID: UUID?
+	var rowTheme: BrowserTheme?
+	var isOpenElsewhere: Bool?
 	var onSelectTab: ((UUID) -> Void)?
 	var navigationNamespace: Namespace.ID?
 	@Namespace private var rowTransitions
 	private var theme: BrowserTheme {
-		browser.theme
+		rowTheme ?? browser.theme
 	}
 
 	@State private var isRenaming = false
 	@State private var isHovered = false
+	@State private var showsMonitorDetails = false
+	#if os(macOS)
+		@State private var hoverFrame = CGRect.zero
+		@State private var hoverPreviewStarted = false
+	#endif
 	@State private var renameText = ""
+	@Default(.developerModeEnabled) private var developerModeEnabled
 	@FocusState private var isTitleFocused: Bool
 	#if os(macOS)
 		@State private var tabDrag = BrowserTabDragCoordinator.shared
@@ -51,13 +62,34 @@ struct BrowserTabRow: View {
 	}
 
 	var body: some View {
-		HStack(spacing: 6) {
+		let isOpenElsewhere = isOpenElsewhere ?? BrowserWindowRegistry.shared.isOpenInAnotherWindow(tab.id, than: browser)
+		return HStack(spacing: 6) {
 			TabIconView(tab: tab, browser: browser, onSelectTab: onSelectTab)
+			if let match = tab.monitorMatch {
+				Button("Monitored condition met", systemImage: "bell.badge.fill") { browser.selectTab(tab.id) }
+					.labelStyle(.iconOnly)
+					.buttonStyle(.glassProminent)
+					.tint(.yellow)
+					.onHover { showsMonitorDetails = $0 }
+					.accessibilityIdentifier("monitor-match-\(match.id.uuidString)")
+					.popover(isPresented: $showsMonitorDetails) {
+						VStack(alignment: .leading, spacing: 8) {
+							Label("Condition fulfilled", systemImage: "bell.badge.fill").font(.headline)
+							Text(match.criterion).font(.caption).foregroundStyle(.secondary)
+							Text(match.message).textSelection(.enabled)
+						}
+						.padding(16)
+						.frame(width: 300)
+					}
+			}
 
 			TabTitleView(
 				tab: tab,
 				browser: browser,
 				isRenaming: isRenaming,
+				isHovered: isHovered,
+				showsCloseButton: isSelected || onSelectTab != nil || isHovered,
+				closeFadeWidth: onSelectTab != nil ? 64 : (isSelected || isHovered ? 36 : 12),
 				renameText: $renameText,
 				isTitleFocused: $isTitleFocused,
 				onBeginRenaming: beginRenaming,
@@ -65,19 +97,17 @@ struct BrowserTabRow: View {
 				onCancelRenaming: cancelRenaming,
 				onSelectTab: onSelectTab
 			)
-
-			if isSelected || onSelectTab != nil {
-				TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
-					.keyboardShortcut("W", modifiers: .command)
-			} else {
-				TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
-					.opacity(isHovered ? 1 : 0)
-					.allowsHitTesting(isHovered)
-					.accessibilityHidden(!isHovered)
+			.overlay(alignment: .trailing) {
+				if isSelected || onSelectTab != nil {
+					TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
+						.keyboardShortcut("W", modifiers: .command)
+				} else if isHovered {
+					TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
+				}
 			}
 		}
-		.opacity(BrowserWindowRegistry.shared.isOpenInAnotherWindow(tab.id, than: browser) ? 0.35 : 1)
-		.allowsHitTesting(!BrowserWindowRegistry.shared.isOpenInAnotherWindow(tab.id, than: browser))
+		.opacity(isOpenElsewhere ? 0.35 : 1)
+		.allowsHitTesting(!isOpenElsewhere)
 		.padding(.horizontal, 8)
 		.frame(height: onSelectTab == nil ? 28 : 44)
 		.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? rowTransitions)
@@ -97,20 +127,33 @@ struct BrowserTabRow: View {
 					)
 			}
 		}
+		.overlay {
+			if isSelected, tab.internalPage == nil, developerModeEnabled || tab.isDeveloperMode {
+				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+					.strokeBorder(Color(red: 0.55, green: 0.4, blue: 0), lineWidth: 2)
+					.overlay {
+						RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+							.strokeBorder(.yellow, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+					}
+					.allowsHitTesting(false)
+					.accessibilityHidden(true)
+			}
+		}
 		#if os(macOS)
 		.background {
-			BrowserDropZone(
-				browser: browser,
-				area: browser.selectedSpace.pinnedTabIDs.contains(tab.id) ? .pinned : .normal,
-				spaceID: browser.workspace.selectedSpaceID,
-				beforeTabID: tab.id
-			)
+			if tabDrag.activeTabID != nil {
+				BrowserDropZone(
+					browser: browser,
+					area: isPinned ? .pinned : .normal,
+					spaceID: rowSpaceID ?? browser.workspace.selectedSpaceID,
+					beforeTabID: tab.id
+				)
+			}
 		}
 		.highPriorityGesture(
 			DragGesture(minimumDistance: 8)
 				.onChanged { _ in
 					if tabDrag.activeTabID != tab.id {
-						browser.flushPersistence()
 						tabDrag.begin(tab.id, from: browser)
 					}
 					tabDrag.update()
@@ -120,7 +163,79 @@ struct BrowserTabRow: View {
 				}
 		)
 		#endif
-		.onHover { isHovered = $0 }
+		.onHover { hovering in
+			isHovered = hovering
+			#if os(macOS)
+				guard onSelectTab == nil else { return }
+				if hovering {
+					// Frame arrives via the always-on geometry observer below;
+					// if we already have one, begin immediately so short hovers register.
+					if hoverPreviewStarted {
+						BrowserTabHoverPreviewCoordinator.shared.updateFrame(
+							for: tab.id,
+							windowID: browser.windowID,
+							frame: hoverFrame
+						)
+					} else if hoverFrame != .zero {
+						hoverPreviewStarted = true
+						BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
+							tabID: tab.id,
+							windowID: browser.windowID,
+							sourceFrame: hoverFrame
+						)
+					}
+				} else {
+					if hoverPreviewStarted {
+						BrowserTabHoverPreviewCoordinator.shared.hoverEnded(
+							tabID: tab.id,
+							windowID: browser.windowID
+						)
+					}
+					hoverPreviewStarted = false
+				}
+			#endif
+		}
+		#if os(macOS)
+		.onGeometryChange(for: CGRect.self) { proxy in
+			proxy.frame(in: .global)
+		} action: { frame in
+			guard onSelectTab == nil else { return }
+			hoverFrame = frame
+			guard isHovered else { return }
+			if hoverPreviewStarted {
+				BrowserTabHoverPreviewCoordinator.shared.updateFrame(
+					for: tab.id,
+					windowID: browser.windowID,
+					frame: frame
+				)
+			} else {
+				hoverPreviewStarted = true
+				BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
+					tabID: tab.id,
+					windowID: browser.windowID,
+					sourceFrame: frame
+				)
+			}
+		}
+		.onChange(of: tab.id) { oldID, _ in
+			if hoverPreviewStarted {
+				BrowserTabHoverPreviewCoordinator.shared.hoverEnded(
+					tabID: oldID,
+					windowID: browser.windowID
+				)
+			}
+			hoverPreviewStarted = false
+		}
+		.onDisappear {
+			if hoverPreviewStarted {
+				BrowserTabHoverPreviewCoordinator.shared.hoverEnded(
+					tabID: tab.id,
+					windowID: browser.windowID
+				)
+			}
+			hoverPreviewStarted = false
+		}
+		#endif
 		.contextMenu {
 			TabRowContextMenu(
 				tab: tab,
@@ -161,13 +276,7 @@ struct BrowserTabRow: View {
 	}
 
 	private func copyURL() {
-		guard let url = tab.currentURL else { return }
-		#if os(macOS)
-			NSPasteboard.general.clearContents()
-			NSPasteboard.general.setString(BrowserAddress.withoutCredentials(url).absoluteString, forType: .string)
-		#elseif os(iOS)
-			UIPasteboard.general.url = url
-		#endif
+		browser.copyURL(for: tab)
 	}
 }
 
@@ -182,6 +291,9 @@ extension BrowserTabRow: Equatable {
 			&& lhs.tabIndex == rhs.tabIndex
 			&& lhs.normalCount == rhs.normalCount
 			&& lhs.pinned == rhs.pinned
+			&& lhs.rowSpaceID == rhs.rowSpaceID
+			&& lhs.rowTheme == rhs.rowTheme
+			&& lhs.isOpenElsewhere == rhs.isOpenElsewhere
 			&& (lhs.onSelectTab == nil) == (rhs.onSelectTab == nil)
 			&& lhs.navigationNamespace == rhs.navigationNamespace
 	}
@@ -191,6 +303,9 @@ private struct TabIconView: View {
 	let tab: BrowserTab
 	let browser: Browser
 	var onSelectTab: ((UUID) -> Void)?
+	#if os(macOS)
+		@State private var isMouseDown = false
+	#endif
 
 	var body: some View {
 		Button {
@@ -217,25 +332,46 @@ private struct TabIconView: View {
 			.frame(width: onSelectTab == nil ? 16 : 22, height: onSelectTab == nil ? 16 : 22)
 		}
 		.buttonStyle(.plain)
-		.accessibilityIdentifier("select-tab-\(tab.id.uuidString)")
+		#if os(macOS)
+			.simultaneousGesture(
+				DragGesture(minimumDistance: 0)
+					.onChanged { _ in
+						guard onSelectTab == nil, !isMouseDown else { return }
+						isMouseDown = true
+						browser.selectTab(tab.id)
+					}
+					.onEnded { _ in
+						isMouseDown = false
+					}
+			)
+		#endif
+			.accessibilityIdentifier("select-tab-\(tab.id.uuidString)")
 	}
 }
 
 private struct TabTitleView: View {
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	let tab: BrowserTab
 	let browser: Browser
 	let isRenaming: Bool
+	let isHovered: Bool
+	let showsCloseButton: Bool
+	let closeFadeWidth: CGFloat
 	@Binding var renameText: String
 	var isTitleFocused: FocusState<Bool>.Binding
 	let onBeginRenaming: () -> Void
 	let onCommitRenaming: () -> Void
 	let onCancelRenaming: () -> Void
 	var onSelectTab: ((UUID) -> Void)?
+	#if os(macOS)
+		@State private var isMouseDown = false
+	#endif
 
 	var body: some View {
 		if isRenaming {
 			TextField("Tab Name", text: $renameText)
 				.textFieldStyle(.plain)
+				.padding(.trailing, showsCloseButton ? closeFadeWidth : 0)
 				.focused(isTitleFocused)
 				.onSubmit(onCommitRenaming)
 				.onKeyPress(.escape) {
@@ -253,29 +389,62 @@ private struct TabTitleView: View {
 				browser.selectTab(tab.id)
 				onSelectTab?(tab.id)
 			} label: {
-				Label {
+				GeometryReader { proxy in
 					Text(verbatim: tab.title)
+						.contentTransition(.opacity)
+						.animation(reduceMotion ? nil : .smooth(duration: 0.2), value: tab.title)
 						.lineLimit(1)
-				} icon: {
-					Image(systemName: tab.internalPage?.symbol ?? "globe")
+						.fixedSize(horizontal: true, vertical: false)
+						.frame(width: proxy.size.width, alignment: .leading)
+						.mask(titleFadeMask(width: proxy.size.width))
+						.frame(height: proxy.size.height, alignment: .leading)
+						.clipped()
 				}
-				.labelStyle(.titleOnly)
 				.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 				.contentShape(Rectangle())
 			}
 			.buttonStyle(.plain)
-			.simultaneousGesture(
-				TapGesture(count: 2)
-					.onEnded { _ in onBeginRenaming() }
-			)
-			.accessibilityLabel(Text(verbatim: tab.title))
-			.accessibilityActions {
-				if tab.internalPage == nil {
-					Button("Rename", systemImage: "pencil") { onBeginRenaming() }
+			#if os(macOS)
+				.simultaneousGesture(
+					DragGesture(minimumDistance: 0)
+						.onChanged { _ in
+							guard onSelectTab == nil, !isMouseDown else { return }
+							isMouseDown = true
+							browser.selectTab(tab.id)
+						}
+						.onEnded { _ in
+							isMouseDown = false
+						}
+				)
+			#endif
+				.simultaneousGesture(
+					TapGesture(count: 2)
+						.onEnded { _ in onBeginRenaming() }
+				)
+				.accessibilityLabel(Text(verbatim: tab.title))
+				.accessibilityActions {
+					if tab.internalPage == nil {
+						Button("Rename", systemImage: "pencil") { onBeginRenaming() }
+					}
 				}
-			}
-			.accessibilityIdentifier("tab-title-\(tab.id.uuidString)")
+				.accessibilityIdentifier("tab-title-\(tab.id.uuidString)")
 		}
+	}
+
+	private func titleFadeMask(width: CGFloat) -> some View {
+		let fadeWidth = isHovered ? closeFadeWidth + 28 : closeFadeWidth
+		let fadeStart = max(0, 1 - fadeWidth / max(width, 1))
+		let fadeEnd = isHovered ? max(0, 1 - (onSelectTab == nil ? 20 : 44) / max(width, 1)) : 1
+		return LinearGradient(
+			stops: [
+				.init(color: .white, location: 0),
+				.init(color: .white, location: fadeStart),
+				.init(color: .clear, location: fadeEnd),
+				.init(color: .clear, location: 1),
+			],
+			startPoint: .leading,
+			endPoint: .trailing
+		)
 	}
 }
 
@@ -377,7 +546,8 @@ private struct TabRowContextMenu: View {
 			Divider()
 
 			Button("Copy URL", systemImage: "doc.on.doc", action: onCopyURL)
-				.disabled(tab.currentURL == nil)
+				.disabled(tab.copyableURL == nil)
+				.accessibilityIdentifier("copy-tab-url-\(tab.id.uuidString)")
 			Button("Add to Reading List", systemImage: "text.badge.plus") {
 				browser.addToReadingList(tabID: tab.id)
 			}
@@ -414,3 +584,167 @@ private struct TabRowContextMenu: View {
 		}
 	}
 }
+
+#if os(macOS)
+	struct BrowserTabHoverPreviewOverlay: View {
+		let browser: Browser
+		@State private var coordinator = BrowserTabHoverPreviewCoordinator.shared
+
+		private let cardWidth: CGFloat = 320
+		private let cardHeight: CGFloat = 284
+		private let margin: CGFloat = 12
+
+		var body: some View {
+			GeometryReader { geometry in
+				let globalFrame = geometry.frame(in: .global)
+				if coordinator.isVisible,
+				   coordinator.windowID == browser.windowID,
+				   let tabID = coordinator.presentedTabID,
+				   let tab = browser.tabsByID[tabID]
+				{
+					let desiredX = coordinator.sourceFrame.maxX - globalFrame.minX + margin + cardWidth / 2
+					let desiredY = coordinator.sourceFrame.midY - globalFrame.minY
+					let x = min(
+						max(cardWidth / 2 + margin, desiredX),
+						max(cardWidth / 2 + margin, geometry.size.width - cardWidth / 2 - margin)
+					)
+					let y = min(
+						max(cardHeight / 2 + margin, desiredY),
+						max(cardHeight / 2 + margin, geometry.size.height - cardHeight / 2 - margin)
+					)
+
+					BrowserTabHoverPreviewCard(tab: tab, browser: browser)
+						.frame(width: cardWidth, height: cardHeight)
+						.position(x: x, y: y)
+						.id(tab.id)
+						.transaction { transaction in
+							transaction.animation = nil
+						}
+				}
+			}
+			.animation(.linear(duration: 0.1), value: coordinator.isVisible)
+			.allowsHitTesting(false)
+			.accessibilityHidden(true)
+		}
+	}
+
+	private struct BrowserTabHoverPreviewCard: View {
+		let tab: BrowserTab
+		let browser: Browser
+		@State private var memoryBytes: UInt64?
+		@State private var hasSampledMemory = false
+
+		private var host: String {
+			if tab.internalPage != nil {
+				return "Internal Page"
+			}
+			return tab.currentURL?.host ?? "New Tab"
+		}
+
+		private var unavailableMemoryLabel: String {
+			if tab.isHibernated {
+				return "Hibernated"
+			}
+			return hasSampledMemory ? "Unavailable" : "Measuring…"
+		}
+
+		var body: some View {
+			VStack(alignment: .leading, spacing: 10) {
+				HStack(spacing: 9) {
+					if let favicon = tab.session.favicons.image(for: tab.currentURL, in: tab.controller?.webViewIfLoaded) {
+						favicon
+							.resizable()
+							.scaledToFit()
+							.frame(width: 18, height: 18)
+					} else {
+						Image(systemName: tab.internalPage?.symbol ?? "globe")
+							.frame(width: 18, height: 18)
+					}
+
+					VStack(alignment: .leading, spacing: 1) {
+						Text(verbatim: tab.title)
+							.font(.headline)
+							.lineLimit(1)
+						Text(verbatim: host)
+							.font(.caption)
+							.foregroundStyle(.secondary)
+							.lineLimit(1)
+					}
+				}
+
+				Group {
+					if let page = tab.internalPage {
+						Image(systemName: page.symbol)
+							.font(.system(size: 42))
+							.frame(maxWidth: .infinity, maxHeight: .infinity)
+					} else if let controller = tab.controller,
+					          controller.hasCurrentPreviewSnapshot,
+					          let snapshot = controller.previewSnapshot
+					{
+						Image(nsImage: snapshot)
+							.resizable()
+							.aspectRatio(contentMode: .fill)
+					} else {
+						ZStack {
+							ThemeSurface(theme: browser.theme)
+								.background(.quaternary)
+							Image(systemName: tab.isHibernated ? "moon.zzz" : "rectangle.dashed")
+								.font(.system(size: 28))
+								.foregroundStyle(.secondary)
+						}
+					}
+				}
+				.frame(width: 296, height: 166)
+				.clipped()
+				.clipShape(RoundedRectangle(cornerRadius: 10))
+
+				HStack {
+					Text("Tab memory")
+						.font(.subheadline.weight(.semibold))
+					Spacer()
+					Text(memoryBytes.map(Self.formatBytes) ?? unavailableMemoryLabel)
+						.font(.subheadline.monospacedDigit())
+						.foregroundStyle(.secondary)
+				}
+			}
+			.padding(12)
+			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
+			.task(id: tab.id) {
+				memoryBytes = nil
+				hasSampledMemory = false
+				guard let controller = tab.controller else {
+					hasSampledMemory = true
+					return
+				}
+
+				if !controller.hasCurrentPreviewSnapshot {
+					await controller.refreshPreviewSnapshot()
+				}
+				memoryBytes = await sampleTabMemory(for: controller)
+				hasSampledMemory = true
+				while !Task.isCancelled {
+					do {
+						try await Task.sleep(for: .seconds(2))
+					} catch {
+						return
+					}
+					memoryBytes = await sampleTabMemory(for: controller)
+					hasSampledMemory = true
+					if !controller.hasCurrentPreviewSnapshot {
+						await controller.refreshPreviewSnapshot()
+					}
+				}
+			}
+		}
+
+		private func sampleTabMemory(for controller: BrowserController) async -> UInt64? {
+			let snapshots = await BrowserController.tabProcessMemorySnapshots(for: [controller])
+			return snapshots[controller.id]?.knownProcessBytes
+		}
+
+		private nonisolated static func formatBytes(_ bytes: UInt64) -> String {
+			ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
+		}
+	}
+#endif

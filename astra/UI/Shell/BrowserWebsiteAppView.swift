@@ -20,15 +20,12 @@
 						browser: browser,
 						theme: browser.theme,
 						sidebarShown: false,
-						topBarColorScheme: browser.selectedTab?.activeController?.themeColorIsLight.map { $0 ? .light : .dark } ?? colorScheme,
-						transitionFromTheme: nil,
-						transitionToTheme: nil,
-						themeBlend: 0
+						topBarColorScheme: browser.selectedTab?.activeController?.themeColorIsLight.map { $0 ? .light : .dark } ?? colorScheme
 					)
 					.background { WindowDragBackground() }
 					.accessibilityIdentifier("website-app-top-bar")
 				}
-				BrowserContentView(browser: browser)
+				BrowserPageView(browser: browser, cornerRadius: 0)
 			}
 			.background { BrowserThemeBackground(theme: browser.theme) }
 			.ignoresSafeArea()

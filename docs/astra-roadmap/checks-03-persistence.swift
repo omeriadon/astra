@@ -20,6 +20,14 @@ struct BrowserPersistenceCheck {
 			windowRecords: [BrowserWindowRecord(windowID: UUID(), tabIDs: [tab.id], selectedTabID: tab.id)]
 		)
 		try persistence.savePersistedState(state)
+		let windowSidecar = directory.appendingPathComponent("browser-windows.json")
+		precondition(FileManager.default.fileExists(atPath: windowSidecar.path))
+		let indexedRecords = try persistence.loadWindowRecords()
+		precondition(indexedRecords == (state.windowRecords ?? []))
+		// Missing or unreadable sidecars must fall back to the full envelope.
+		try Data("invalid-sidecar".utf8).write(to: windowSidecar)
+		let fallbackRecords = try persistence.loadWindowRecords()
+		precondition(fallbackRecords == (state.windowRecords ?? []))
 		let restored = try persistence.loadPersistedState()
 		assert(restored?.openTabs.map(\.id) == [tab.id])
 		assert(restored?.windowRecords?.first?.tabIDs == [tab.id])
@@ -82,6 +90,129 @@ struct BrowserPersistenceCheck {
 		} catch BrowserPersistenceError.unsupportedVersion {}
 		let preservedFuture = try Data(contentsOf: currentURL)
 		assert(preservedFuture == future)
+
+		// A tab click in window B must survive a subsequent unrelated full
+		// snapshot from window A. Full-session writes consume the checkpoint
+		// under the same lock, not simply delete it.
+		let multiWindowDirectory = directory.appendingPathComponent("multiwindow", isDirectory: true)
+		try FileManager.default.createDirectory(at: multiWindowDirectory, withIntermediateDirectories: true)
+		let multiPersistence = BrowserPersistence(directory: multiWindowDirectory)
+		let secondTab = OpenTab(url: URL(string: "https://second.example")!)
+		let otherSpace = BrowserSpace(
+			id: BrowserSpace.firstID,
+			tabIDs: [tab.id, secondTab.id],
+			selectedTabID: tab.id
+		)
+		let firstWindow = UUID()
+		let secondWindow = UUID()
+		let windowTime = Date.now
+		let multiState = BrowserPersistedState(
+			bookmarks: [],
+			openTabs: [tab, secondTab],
+			closedTabs: [],
+			workspace: BrowserWorkspace(
+				spaces: [otherSpace], favouriteTabIDs: [],
+				selectedSpaceID: otherSpace.id
+			),
+			snapshot: BrowserSnapshot(
+				selectedTabID: tab.id,
+				selectedTabModifiedAt: .distantPast
+			),
+			windowRecords: [
+				BrowserWindowRecord(
+					windowID: firstWindow, tabIDs: [tab.id, secondTab.id],
+					selectedTabID: tab.id, selectionModifiedAt: .distantPast
+				),
+				BrowserWindowRecord(
+					windowID: secondWindow, tabIDs: [tab.id, secondTab.id],
+					selectedTabID: tab.id, selectionModifiedAt: .distantPast
+				),
+			]
+		)
+		try multiPersistence.savePersistedState(multiState)
+		try multiPersistence.saveSelectionUpdate(BrowserSelectionUpdate(
+			windowID: secondWindow, selectedTabID: secondTab.id,
+			selectedTabModifiedAt: windowTime, selectedSpaceID: otherSpace.id
+		))
+		try multiPersistence.savePersistedState(multiState)
+		let merged = try multiPersistence.loadPersistedState()
+		precondition(merged?.windowRecords?.first(where: { $0.windowID == secondWindow })?.selectedTabID == secondTab.id)
+		precondition(merged?.windowRecords?.first(where: { $0.windowID == secondWindow })?.selectionModifiedAt == windowTime)
+		precondition(merged?.snapshot.selectedTabID == secondTab.id)
+		precondition(!FileManager.default.fileExists(
+			atPath: multiWindowDirectory.appendingPathComponent("browser-selection.json").path
+		))
+
+		// Multiple full saves exercise the warm primary/backup cache. Removing
+		// a history visit must invalidate the old backup: corruption recovery
+		// must never resurrect a deleted browsing record.
+		let privacyDirectory = directory.appendingPathComponent("warm-privacy", isDirectory: true)
+		try FileManager.default.createDirectory(at: privacyDirectory, withIntermediateDirectories: true)
+		let privacyPersistence = BrowserPersistence(directory: privacyDirectory)
+		let privateVisit = BrowserVisit(url: URL(string: "https://sensitive.example/session")!, title: "Sensitive")
+		var withPrivateHistory = state
+		withPrivateHistory.historyVisits = [privateVisit]
+		try privacyPersistence.savePersistedState(withPrivateHistory)
+		try privacyPersistence.savePersistedState(withPrivateHistory)
+		var withoutPrivateHistory = withPrivateHistory
+		withoutPrivateHistory.historyVisits = []
+		withoutPrivateHistory.snapshot.deletedVisitsAt[privateVisit.id] = .now
+		try privacyPersistence.savePersistedState(withoutPrivateHistory)
+		let privacyPrimary = privacyDirectory.appendingPathComponent("browser-state.json")
+		try Data("corrupt".utf8).write(to: privacyPrimary)
+		let privacyRecovered = try privacyPersistence.loadPersistedState()
+		precondition(privacyRecovered?.historyVisits?.isEmpty == true)
+		precondition(privacyRecovered?.snapshot.deletedVisitsAt[privateVisit.id] != nil)
+
+		// Atomic replacement of a valid cached checkpoint by a future schema
+		// must be detected, even if its JSON happens to have similar length.
+		let futureVersion = Data(#"{"version":99,"state":{"unknown":true}}"#.utf8)
+		try futureVersion.write(to: privacyPrimary, options: .atomic)
+		do {
+			try privacyPersistence.savePersistedState(withoutPrivateHistory)
+			preconditionFailure("Warm cache allowed newer schema to be overwritten")
+		} catch BrowserPersistenceError.unsupportedVersion {}
+		let preservedFutureVersion = try Data(contentsOf: privacyPrimary)
+		precondition(preservedFutureVersion == futureVersion)
+
+		// Scroll journal durability, stale snapshot merge, and navigation
+		// invalidation without rebuilding the full session for every scroll.
+		let scrollDirectory = directory.appendingPathComponent("scroll-journal", isDirectory: true)
+		try FileManager.default.createDirectory(at: scrollDirectory, withIntermediateDirectories: true)
+		let scrollPersistence = BrowserPersistence(directory: scrollDirectory)
+		try scrollPersistence.savePersistedState(state)
+		let scrollPosition = BrowserScrollPosition(x: 18, y: 450)
+		let update = BrowserScrollUpdate(
+			tabID: tab.id, url: tab.url, historyIndex: tab.historyIndex,
+			position: scrollPosition,
+			modifiedAt: max(.now, tab.modifiedAt.addingTimeInterval(1))
+		)
+		try scrollPersistence.saveScrollUpdates([update])
+		let scrollRestored = try scrollPersistence.loadPersistedState()
+		precondition(scrollRestored?.openTabs[0].scrollPosition == scrollPosition)
+		// Full saves from another window must absorb a newer scroll journal
+		// even when that window captured its full snapshot earlier.
+		try scrollPersistence.savePersistedState(state)
+		let mergedScroll = try scrollPersistence.loadPersistedState()
+		precondition(mergedScroll?.openTabs[0].scrollPosition == scrollPosition)
+		precondition(!FileManager.default.fileExists(
+			atPath: scrollDirectory.appendingPathComponent("browser-scroll.json").path
+		))
+		// URL and back/forward changes cannot replay the old scroll coordinate.
+		var navigated = state
+		navigated.openTabs[0].url = URL(string: "https://navigated.example")!
+		try scrollPersistence.saveScrollUpdates([update])
+		try scrollPersistence.savePersistedState(navigated)
+		let navigatedResult = try scrollPersistence.loadPersistedState()
+		precondition(navigatedResult?.openTabs[0].url == navigated.openTabs[0].url)
+		precondition(navigatedResult?.openTabs[0].scrollPosition == .zero)
+		// Future journal versions are never silently overwritten.
+		let futureScroll = Data(#"{"version":99,"baseSignature":{},"updates":{}}"#.utf8)
+		try futureScroll.write(to: scrollDirectory.appendingPathComponent("browser-scroll.json"), options: .atomic)
+		do {
+			try scrollPersistence.saveScrollUpdates([update])
+			preconditionFailure("Future scroll journal was overwritten")
+		} catch BrowserPersistenceError.unsupportedVersion {}
 
 		try persistence.saveShutdownMetadata(clean: false)
 		let uncleanShutdown = try persistence.loadShutdownMetadata()

@@ -25,6 +25,7 @@ final class BrowserSync {
 	@ObservationIgnored private var settingVersions: [String: Date]
 	@ObservationIgnored private let deviceID: UUID
 	@ObservationIgnored private var settingsObserver: NSObjectProtocol?
+	@ObservationIgnored private var observedSettingsRefreshTask: Task<Void, Never>?
 	@ObservationIgnored private var observedServerAddress: String?
 	@ObservationIgnored private var authGeneration: UInt64 = 0
 
@@ -53,9 +54,9 @@ final class BrowserSync {
 			object: UserDefaults.standard,
 			queue: .main
 		) { [weak self] _ in
-			Task { @MainActor [weak self] in
+			MainActor.assumeIsolated {
 				self?.serverAddressDidChange()
-				self?.settingsDidChange()
+				self?.scheduleObservedSettingsRefresh()
 			}
 		}
 		networkMonitor.pathUpdateHandler = { path in
@@ -87,6 +88,7 @@ final class BrowserSync {
 	}
 
 	func attach(_ browser: Browser) {
+		BrowserLog.info(.sync, "sync.attach", metadata: ["window": BrowserLog.id(browser.windowID), "signed_in": String(isSignedIn)])
 		guard !browser.isPrivate, !browser.isMini else { return }
 		guard self.browser !== browser else { return }
 		let hadBrowser = self.browser != nil
@@ -96,7 +98,20 @@ final class BrowserSync {
 		}
 	}
 
+	private func scheduleObservedSettingsRefresh() {
+		guard observedSettingsRefreshTask == nil else { return }
+		observedSettingsRefreshTask = Task { @MainActor [weak self] in
+			// UserDefaults emits for unrelated keys too; coalesce notifications
+			// rather than encoding the entire synced settings set for each write.
+			try? await Task.sleep(for: .milliseconds(250))
+			guard !Task.isCancelled, let self else { return }
+			observedSettingsRefreshTask = nil
+			settingsDidChange()
+		}
+	}
+
 	func settingsDidChange() {
+		BrowserLog.debug(.sync, "sync.settings-changed")
 		do {
 			let current = try Self.readSettings()
 			for key in Defaults.Keys.syncedSettingNames where current[key] != knownSettings[key] {
@@ -127,7 +142,12 @@ final class BrowserSync {
 	}
 
 	func scheduleSync() {
+		BrowserLog.debug(.sync, "sync.schedule", metadata: ["signed_in": String(isSignedIn), "busy": String(isSyncing)])
 		guard isSignedIn, browser != nil else { return }
+		guard !isSyncing else {
+			syncRequestedWhileBusy = true
+			return
+		}
 		scheduledSync?.cancel()
 		scheduledSync = Task { @MainActor [weak self] in
 			try? await Task.sleep(for: .seconds(2))
@@ -137,6 +157,8 @@ final class BrowserSync {
 	}
 
 	func signIn(result: Result<ASAuthorization, any Error>) async {
+		let logStarted = BrowserLog.clock()
+		BrowserLog.info(.sync, "sync.sign-in.begin", metadata: ["server": BrowserLog.url(currentServerAddress)])
 		authGeneration &+= 1
 		let signInGeneration = authGeneration
 		do {
@@ -167,13 +189,16 @@ final class BrowserSync {
 			UserDefaults.standard.set(tokenEndpoint, forKey: "syncTokenEndpoint")
 			isSignedIn = true
 			errorDescription = nil
+			BrowserLog.duration(.sync, "sync.sign-in.success", since: logStarted, warnAboveMilliseconds: 1000, metadata: ["server": BrowserLog.url(currentServerAddress)])
 			await syncNow()
 		} catch {
+			BrowserLog.error(.sync, "sync.sign-in.failed", metadata: ["error": BrowserLog.errorDescription(error), "server": BrowserLog.url(currentServerAddress)])
 			errorDescription = error.localizedDescription
 		}
 	}
 
 	func signOut() {
+		BrowserLog.notice(.sync, "sync.sign-out")
 		do {
 			try BrowserSessionStore.delete()
 			authGeneration &+= 1
@@ -189,6 +214,8 @@ final class BrowserSync {
 	}
 
 	func syncNow() async {
+		let logStarted = BrowserLog.clock()
+		BrowserLog.info(.sync, "sync.begin", metadata: ["server": BrowserLog.url(currentServerAddress), "signed_in": String(isSignedIn)])
 		guard let browser, browser.isReadyForSync,
 		      let sessionToken,
 		      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
@@ -290,7 +317,13 @@ final class BrowserSync {
 			}
 			lastSync = .now
 			errorDescription = nil
+			BrowserLog.duration(.sync, "sync.success", since: logStarted, warnAboveMilliseconds: 1500, metadata: ["server": BrowserLog.url(currentServerAddress)])
 		} catch {
+			guard !Task.isCancelled, !(error is CancellationError), (error as? URLError)?.code != .cancelled else {
+				BrowserLog.debug(.sync, "sync.cancelled")
+				return
+			}
+			BrowserLog.error(.sync, "sync.failed", metadata: ["error": BrowserLog.errorDescription(error), "server": BrowserLog.url(currentServerAddress)])
 			errorDescription = error.localizedDescription
 		}
 	}
@@ -364,6 +397,30 @@ final class BrowserSync {
 		return authGeneration
 	}
 
+	func websiteMonitors() async throws -> [BrowserWebsiteMonitor] {
+		let generation = try requireAIAuthentication()
+		let result: [BrowserWebsiteMonitor] = try await request(path: "v1/monitors", method: "GET", body: String?.none, bearer: sessionToken)
+		try validateAIAuthentication(generation)
+		return result
+	}
+
+	func createWebsiteMonitor(_ input: BrowserWebsiteMonitorInput) async throws -> BrowserWebsiteMonitor {
+		let generation = try requireAIAuthentication()
+		let result: BrowserWebsiteMonitor = try await request(path: "v1/monitors", method: "POST", body: input, bearer: sessionToken)
+		try validateAIAuthentication(generation)
+		return result
+	}
+
+	func setWebsiteMonitorsEnabled(_ enabled: Bool) async throws {
+		_ = try requireAIAuthentication()
+		let _: BrowserMonitorState = try await request(path: "v1/monitors/enabled", method: "PUT", body: BrowserMonitorState(enabled: enabled), bearer: sessionToken)
+	}
+
+	func deleteWebsiteMonitor(_ id: UUID) async throws {
+		_ = try requireAIAuthentication()
+		let _: BrowserMonitorDeleted = try await request(path: "v1/monitors/\(id.uuidString)", method: "DELETE", body: String?.none, bearer: sessionToken)
+	}
+
 	func validateAIAuthentication(_ generation: UInt64) throws {
 		guard try requireAIAuthentication() == generation else {
 			throw BrowserAIError.signInRequired
@@ -394,6 +451,7 @@ final class BrowserSync {
 		var request = URLRequest(url: baseURL.appending(path: "v1/ai/stream"))
 		request.httpMethod = "POST"
 		request.httpBody = try JSONEncoder().encode(body)
+		guard (request.httpBody?.count ?? 0) <= 20 * 1024 * 1024 else { throw BrowserAIError.server(413, nil) }
 		request.timeoutInterval = 90
 		request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 		request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
@@ -403,43 +461,58 @@ final class BrowserSync {
 		configuration.timeoutIntervalForResource = 90
 		let session = URLSession(configuration: configuration)
 		defer { session.invalidateAndCancel() }
-		let (bytes, response) = try await session.bytes(for: request)
-		try validateAIAuthentication(generation)
-		guard let response = response as? HTTPURLResponse else {
-			throw BrowserAIError.invalidStream
-		}
-		if response.statusCode == 401 {
-			signOut()
-			throw BrowserAIError.signInRequired
-		}
-		guard response.statusCode == 200 else {
-			throw BrowserSyncError.http(response.statusCode)
-		}
-		guard response.value(forHTTPHeaderField: "Content-Type")?.lowercased().hasPrefix("text/event-stream") == true else {
-			throw BrowserAIError.invalidStream
-		}
-		var totalBytes = 0
-		for try await line in bytes.lines {
+		return try await withTaskCancellationHandler {
 			try Task.checkCancellation()
+			let (bytes, response) = try await session.bytes(for: request)
 			try validateAIAuthentication(generation)
-			totalBytes += line.utf8.count
-			guard line.utf8.count <= 524_288, totalBytes <= 32 * 1024 * 1024 else {
+			guard let response = response as? HTTPURLResponse else {
 				throw BrowserAIError.invalidStream
 			}
-			guard line.hasPrefix("data: ") else { continue }
-			let event = try JSONDecoder().decode(BrowserAIStreamEvent.self, from: Data(line.dropFirst(6).utf8))
-			guard event.error == nil, let text = event.text, let isFinal = event.isFinal else {
-				throw BrowserAIError.invalidStream
+			if response.statusCode == 401 {
+				signOut()
+				throw BrowserAIError.signInRequired
 			}
-			onSnapshot(text)
-			if isFinal {
-				guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-					throw BrowserAIError.emptyResponse
+			guard response.statusCode == 200 else {
+				var message = ""
+				for try await line in bytes.lines {
+					message += String(line.prefix(16384 - min(message.utf8.count, 16384)))
+					if message.utf8.count >= 16384 {
+						break
+					}
 				}
-				return text
+				throw BrowserAIError.http(response.statusCode, data: Data(message.utf8))
 			}
+			guard response.value(forHTTPHeaderField: "Content-Type")?.lowercased().hasPrefix("text/event-stream") == true else {
+				throw BrowserAIError.invalidStream
+			}
+			var totalBytes = 0
+			for try await line in bytes.lines {
+				try Task.checkCancellation()
+				try validateAIAuthentication(generation)
+				totalBytes += line.utf8.count
+				guard line.utf8.count <= 524_288, totalBytes <= 32 * 1024 * 1024 else {
+					throw BrowserAIError.invalidStream
+				}
+				guard line.hasPrefix("data: ") else { continue }
+				let event = try JSONDecoder().decode(BrowserAIStreamEvent.self, from: Data(line.dropFirst(6).utf8))
+				if let error = event.error {
+					throw BrowserAIError.server(502, String(error.prefix(300)))
+				}
+				guard let text = event.text, let isFinal = event.isFinal else {
+					throw BrowserAIError.invalidStream
+				}
+				onSnapshot(text)
+				if isFinal {
+					guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+						throw BrowserAIError.emptyResponse
+					}
+					return text
+				}
+			}
+			throw BrowserAIError.invalidStream
+		} onCancel: {
+			session.invalidateAndCancel()
 		}
-		throw BrowserAIError.invalidStream
 	}
 
 	private func request<Response: Decodable>(
@@ -449,6 +522,7 @@ final class BrowserSync {
 		bearer: String?,
 		timeout: TimeInterval = 30
 	) async throws -> Response {
+		BrowserLog.debug(.sync, "sync.http-request", metadata: ["method": method, "path": path, "server": BrowserLog.url(currentServerAddress)])
 		guard let baseURL = SyncServerAddress.normalized(Defaults[.syncServerURL], allowLocalHTTP: Self.allowsLocalHTTP)
 		else {
 			throw BrowserSyncError.invalidServerURL
@@ -478,6 +552,9 @@ final class BrowserSync {
 					signOut()
 				}
 				guard 200 ..< 300 ~= response.statusCode else {
+					if path.hasPrefix("v1/ai/") {
+						throw BrowserAIError.http(response.statusCode, data: data)
+					}
 					throw BrowserSyncError.http(response.statusCode)
 				}
 				return try JSONDecoder().decode(Response.self, from: data)

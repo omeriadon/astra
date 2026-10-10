@@ -1,5 +1,4 @@
 import Defaults
-import Haze
 import SwiftUI
 import WebKit
 #if os(macOS)
@@ -8,6 +7,7 @@ import WebKit
 
 extension Notification.Name {
 	static let showBrowserDownloads = Notification.Name("ShowBrowserDownloads")
+	static let toggleBrowserTopBar = Notification.Name("ToggleBrowserTopBar")
 }
 
 struct DesktopBrowserShell: View {
@@ -18,6 +18,8 @@ struct DesktopBrowserShell: View {
 	}
 
 	@Default(.sidebarShown) private var sidebarShown
+	@Default(.aiFeaturesEnabled) private var allAIFeatures
+	@Default(.aiSidebar) private var aiSidebarEnabled
 	private var downloads: BrowserDownloadManager {
 		browser.session.downloads
 	}
@@ -27,14 +29,14 @@ struct DesktopBrowserShell: View {
 	@State private var flightProgress = 0.0
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var isFullScreen = false
-	@State private var transitionFromTheme: BrowserTheme?
-	@State private var transitionToTheme: BrowserTheme?
-	@State private var themeBlend = 0.0
-	@State private var themeTransitionGeneration = 0
-	@State private var swipeTargetID: UUID?
-	@State private var swipeProgress = 0.0
-	@State private var swipeDirection: CGFloat = 1
+	@State private var spaceScrollState = BrowserSpaceScrollState()
+	@State private var showsTopBar = true
 	@State private var isTopBarRevealed = false
+	@State private var isSidebarRevealed = false
+	@State private var presentedSidebarShown = false
+	@State private var presentedAISidebarShown = false
+	@State private var reservedMinimumWidth: CGFloat = 0
+	@State private var paneTransitionGeneration = 0
 	#if os(macOS)
 		@State private var hostWindow: NSWindow?
 		@State private var windowButtonAnimationGeneration = 0
@@ -45,16 +47,77 @@ struct DesktopBrowserShell: View {
 		return themeColorIsLight ? .light : .dark
 	}
 
+	private var showsAISidebar: Bool {
+		allAIFeatures && browser.showsAISidebar && browser.canShowAISidebar && aiSidebarEnabled
+	}
+
+	private var minimumWindowWidth: CGFloat {
+		BrowserChromeMetrics.minimumWindowWidth(
+			sidebarShown: sidebarShown,
+			aiSidebarShown: showsAISidebar,
+			minimumContentWidth: minimumPageWidth
+		)
+	}
+
+	private var minimumPageWidth: CGFloat {
+		BrowserChromeMetrics.minimumPageWidth(isSettings: browser.selectedTab?.internalPage == .settings)
+	}
+
+	private var isSidebarPinned: Bool {
+		#if os(macOS)
+			presentedSidebarShown
+		#else
+			sidebarShown
+		#endif
+	}
+
+	private var isSidebarVisible: Bool {
+		isSidebarPinned || isSidebarRevealed
+	}
+
+	private var isAISidebarVisible: Bool {
+		#if os(macOS)
+			presentedAISidebarShown
+		#else
+			showsAISidebar
+		#endif
+	}
+
+	private var showsTopBarOnPage: Bool {
+		!browser.isShowingNewTab && browser.selectedTab?.internalPage == nil
+	}
+
+	private var hasVisibleChrome: Bool {
+		isSidebarVisible || isAISidebarVisible || (showsTopBarOnPage && (showsTopBar || isTopBarRevealed))
+	}
+
 	private var contentCornerRadius: CGFloat {
-		sidebarShown
+		hasVisibleChrome
 			? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar
 			: BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar
 	}
 
 	#if os(macOS)
+		private func updateWindowMinimumSize() {
+			guard let window = hostWindow else { return }
+			paneTransitionGeneration += 1
+			let generation = paneTransitionGeneration
+			reservedMinimumWidth = max(reservedMinimumWidth, minimumWindowWidth)
+			window.setBrowserMinimumContentWidth(reservedMinimumWidth)
+			let animation: Animation? = window.isVisible && !reduceMotion ? .smooth(duration: 0.3) : nil
+			withAnimation(animation, completionCriteria: .removed) {
+				presentedSidebarShown = sidebarShown
+				presentedAISidebarShown = showsAISidebar
+			} completion: {
+				guard generation == paneTransitionGeneration else { return }
+				reservedMinimumWidth = minimumWindowWidth
+				window.setBrowserMinimumContentWidth(reservedMinimumWidth)
+			}
+		}
+
 		private func updateWindowButtons(in window: NSWindow?, animated: Bool = true) {
 			guard let window else { return }
-			let hidden = !sidebarShown && !isTopBarRevealed
+			let hidden = !isSidebarVisible && !(showsTopBarOnPage && (showsTopBar || isTopBarRevealed))
 			let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
 				.compactMap { window.standardWindowButton($0) }
 			windowButtonAnimationGeneration += 1
@@ -87,106 +150,99 @@ struct DesktopBrowserShell: View {
 		}
 	#endif
 
-	private func previewSpaceTheme(_ targetID: UUID?, progress: Double) {
-		guard let targetID,
-		      let targetIndex = browser.workspace.spaces.firstIndex(where: { $0.id == targetID }),
-		      let currentIndex = browser.workspace.spaces.firstIndex(where: { $0.id == browser.workspace.selectedSpaceID })
-		else {
-			withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) {
-				swipeTargetID = nil
-				swipeProgress = 0
-				if transitionToTheme != nil, transitionToTheme != theme {
-					themeBlend = 0
-				}
-			}
-			return
-		}
-		let target = browser.workspace.spaces[targetIndex]
-		swipeDirection = targetIndex > currentIndex ? 1 : -1
-		swipeTargetID = targetID
-		swipeProgress = reduceMotion ? 0 : progress
-		if transitionToTheme != target.theme {
-			transitionFromTheme = theme
-			transitionToTheme = target.theme
-			themeBlend = 0
-		}
-		themeBlend = progress
-	}
-
-	private func completeSpaceThemeTransition(from oldID: UUID, to newID: UUID) {
-		if swipeTargetID == newID, swipeProgress >= 0.99 {
-			swipeTargetID = nil
-			swipeProgress = 0
-			transitionFromTheme = nil
-			transitionToTheme = nil
-			themeBlend = 0
-			return
-		}
-		swipeTargetID = nil
-		swipeProgress = 0
-		let oldTheme = browser.workspace.spaces.first(where: { $0.id == oldID })?.theme ?? theme
-		transitionFromTheme = oldTheme
-		transitionToTheme = theme
-		themeBlend = 0
-		themeTransitionGeneration += 1
-		let generation = themeTransitionGeneration
-		withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24), completionCriteria: .logicallyComplete) {
-			themeBlend = 1
-		} completion: {
-			guard generation == themeTransitionGeneration,
-			      browser.workspace.selectedSpaceID == newID else { return }
-			transitionFromTheme = nil
-			transitionToTheme = nil
-			themeBlend = 0
-		}
-	}
-
-	var body: some View {
+	private var windowLayout: some View {
 		GeometryReader { geometry in
-			BrowserSplitView(sidebarShown: $browser.sidebarShown) {
+			let showsAI = isAISidebarVisible
+			BrowserSplitView(
+				sidebarShown: .constant(isSidebarVisible),
+				minimumContentWidth: minimumPageWidth,
+				sidebarOverlaysContent: !isSidebarPinned,
+				followingSidebarWidth: showsAI ? BrowserChromeMetrics.aiSidebarWidthRange.lowerBound : 0
+			) {
 				ShellSidebarColumn(
 					browser: browser,
 					theme: theme,
-					sidebarShown: sidebarShown,
+					sidebarShown: isSidebarVisible,
 					isFullScreen: isFullScreen,
 					colorScheme: colorScheme,
 					topBarColorScheme: topBarColorScheme,
 					showsDownloads: $showsDownloads,
-					swipeTargetID: swipeTargetID,
-					swipeProgress: swipeProgress,
-					swipeDirection: swipeDirection,
 					downloads: downloads,
-					onSwipeProgress: previewSpaceTheme
+					spaceScrollState: spaceScrollState
 				)
 
 			} content: {
-				ShellContentColumn(
-					browser: browser,
-					theme: theme,
-					sidebarShown: sidebarShown,
-					isFullScreen: isFullScreen,
-					colorScheme: colorScheme,
-					topBarColorScheme: topBarColorScheme,
-					transitionFromTheme: transitionFromTheme,
-					transitionToTheme: transitionToTheme,
-					themeBlend: themeBlend,
-					contentCornerRadius: contentCornerRadius,
-					windowWidth: geometry.size.width,
-					isTopBarRevealed: $isTopBarRevealed
-				)
+				BrowserSplitView(
+					sidebarShown: .constant(showsAI),
+					sidebarWidth: min(360, geometry.size.width * 0.45) + BrowserChromeMetrics.shellEdgePadding,
+					sidebarWidthRange: BrowserChromeMetrics.aiSidebarWidthRange,
+					minimumContentWidth: minimumPageWidth,
+					edge: .trailing
+				) {
+					BrowserAIChatSidebar(browser: browser, chat: browser.aiChat, isVisible: showsAI)
+						.padding(.vertical, BrowserChromeMetrics.shellEdgePadding)
+						.padding(.trailing, BrowserChromeMetrics.shellEdgePadding)
+						.allowsHitTesting(showsAI)
+						.accessibilityHidden(!showsAI)
+				} content: {
+					ShellContentColumn(
+						browser: browser,
+						theme: theme,
+						sidebarShown: isSidebarVisible,
+						isFullScreen: isFullScreen,
+						colorScheme: colorScheme,
+						topBarColorScheme: topBarColorScheme,
+						contentCornerRadius: contentCornerRadius,
+						hasVisibleChrome: hasVisibleChrome,
+						showsTopBar: showsTopBar,
+						isTopBarRevealed: $isTopBarRevealed
+					)
+				}
+				.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsAI)
+			}
+			#if !os(macOS)
+			.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: isSidebarVisible)
+			.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsAI)
+			#endif
+			.onContinuousHover { phase in
+				switch phase {
+					case let .active(location):
+						let revealWidth = isSidebarRevealed
+							? BrowserChromeMetrics.sidebarWidth(
+								preferred: BrowserChromeMetrics.expandedSidebarWidth,
+								limits: BrowserChromeMetrics.sidebarWidthRange,
+								availableWidth: geometry.size.width,
+								minimumContentWidth: minimumPageWidth
+									+ (showsAI ? BrowserChromeMetrics.aiSidebarWidthRange.lowerBound : 0)
+							)
+							: 6
+						let shouldReveal = !sidebarShown && location.x < revealWidth
+						guard shouldReveal != isSidebarRevealed else { return }
+						withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+							isSidebarRevealed = shouldReveal
+						}
+					case .ended:
+						guard isSidebarRevealed else { return }
+						withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+							isSidebarRevealed = false
+						}
+				}
 			}
 		}
 		.background {
-			BrowserThemeBackground(
-				theme: transitionToTheme ?? theme,
-				transitionFromTheme: transitionFromTheme,
-				transitionProgress: themeBlend
-			)
+			BrowserThemeBackground(theme: theme, spaces: browser.workspace.spaces, scrollState: spaceScrollState)
 		}
-		.onChange(of: browser.workspace.selectedSpaceID) { oldID, newID in
-			completeSpaceThemeTransition(from: oldID, to: newID)
+		.onChange(of: sidebarShown) { _, _ in
+			isSidebarRevealed = false
 		}
 		#if os(macOS)
+		.onReceive(NotificationCenter.default.publisher(for: .toggleBrowserTopBar)) { notification in
+			guard notification.object as? UUID == browser.windowID,
+			      hostWindow?.isKeyWindow == true else { return }
+			withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+				showsTopBar.toggle()
+			}
+		}
 		.onReceive(NotificationCenter.default.publisher(for: .showBrowserDownloads)) { notification in
 			guard notification.object as? UUID == browser.windowID,
 			      hostWindow?.isKeyWindow == true else { return }
@@ -199,57 +255,93 @@ struct DesktopBrowserShell: View {
 			}
 			.allowsHitTesting(false)
 		}
-		.onChange(of: sidebarShown) { _, _ in
+		.onChange(of: minimumWindowWidth, initial: true) { _, _ in
+			updateWindowMinimumSize()
+		}
+		.onChange(of: hostWindow) { _, _ in
+			isFullScreen = hostWindow?.styleMask.contains(.fullScreen) == true
+			updateWindowMinimumSize()
+		}
+		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeScreenNotification)) { notification in
+			guard notification.object as? NSWindow === hostWindow else { return }
+			updateWindowMinimumSize()
+		}
+		.onChange(of: isSidebarVisible) { _, shown in
+			updateWindowButtons(in: hostWindow)
+			if !shown {
+				BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
+			}
+		}
+		.onChange(of: showsTopBar) { _, _ in
 			updateWindowButtons(in: hostWindow)
 		}
 		.onChange(of: isTopBarRevealed) { _, _ in
 			updateWindowButtons(in: hostWindow)
 		}
-		#endif
-		.overlay {
-			DownloadFlightOverlay(
-				flight: flight,
-				flightProgress: flightProgress,
-				sidebarShown: sidebarShown,
-				theme: theme
-			)
-			.allowsHitTesting(false)
+		.onChange(of: showsTopBarOnPage) { _, _ in
+			isTopBarRevealed = false
+			updateWindowButtons(in: hostWindow)
 		}
-		#if os(macOS)
-		.overlay {
-			TabDragOverlay(browser: browser, hostWindow: hostWindow)
+		#endif
+	}
+
+	var body: some View {
+		windowLayout
+			.overlay {
+				DownloadFlightOverlay(
+					flight: flight,
+					flightProgress: flightProgress,
+					sidebarShown: isSidebarVisible,
+					theme: theme
+				)
 				.allowsHitTesting(false)
-		}
-		#endif
-		.onChange(of: downloads.latestStart?.id) { _, _ in
-			guard let start = downloads.latestStart,
-			      let item = downloads.items.first(where: { $0.id == start.id })
-			else { return }
-			flightProgress = 0
-			flight = DownloadFlight(id: start.id, source: start.source, symbol: item.symbol)
-			withAnimation(reduceMotion ? .none : .smooth(duration: 0.7)) {
-				flightProgress = 1
 			}
-		}
-		.task(id: flight?.id) {
-			guard flight != nil else { return }
-			try? await Task.sleep(for: .milliseconds(750))
-			if !Task.isCancelled {
-				flight = nil
-			}
-		}
 		#if os(macOS)
-		.onAppear {
-			isFullScreen = NSApp.keyWindow?.styleMask.contains(.fullScreen) == true
-		}
-		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
-			isFullScreen = true
-		}
-		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
-			isFullScreen = false
-		}
+			.overlay {
+				TabDragOverlay(browser: browser, hostWindow: hostWindow)
+					.allowsHitTesting(false)
+			}
+			.overlay {
+				BrowserTabHoverPreviewOverlay(browser: browser)
+			}
 		#endif
-		.ignoresSafeArea()
+			.onChange(of: showsDownloads) { _, shown in
+				if shown {
+					BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
+				}
+			}
+			.onChange(of: downloads.latestStart?.id) { _, _ in
+				guard let start = downloads.latestStart,
+				      let item = downloads.items.first(where: { $0.id == start.id })
+				else { return }
+				flightProgress = 0
+				flight = DownloadFlight(id: start.id, source: start.source, symbol: item.symbol)
+				withAnimation(reduceMotion ? .none : .smooth(duration: 0.7)) {
+					flightProgress = 1
+				}
+			}
+			.task(id: flight?.id) {
+				guard flight != nil else { return }
+				try? await Task.sleep(for: .milliseconds(750))
+				if !Task.isCancelled {
+					flight = nil
+				}
+			}
+		#if os(macOS)
+			.onAppear {
+				isFullScreen = hostWindow?.styleMask.contains(.fullScreen) == true
+			}
+			.onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { notification in
+				guard notification.object as? NSWindow === hostWindow else { return }
+				isFullScreen = true
+			}
+			.onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { notification in
+				guard notification.object as? NSWindow === hostWindow else { return }
+				isFullScreen = false
+				updateWindowMinimumSize()
+			}
+		#endif
+			.ignoresSafeArea()
 	}
 }
 
@@ -272,11 +364,8 @@ private struct ShellNavigationBarControls: View {
 			Spacer()
 				.frame(width: isFullScreen ? 0 : 80)
 		}
-		.frame(
-			width: BrowserChromeMetrics.persistentControlsAreaWidth,
-			height: BrowserChromeMetrics.topBarRegionHeight,
-			alignment: .leading
-		)
+		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
+		.frame(maxWidth: BrowserChromeMetrics.persistentControlsAreaWidth, alignment: .leading)
 		.environment(
 			\.colorScheme,
 			sidebarShown ? colorScheme : topBarColorScheme
@@ -292,14 +381,20 @@ private struct ShellSidebarColumn: View {
 	let colorScheme: ColorScheme
 	let topBarColorScheme: ColorScheme
 	@Binding var showsDownloads: Bool
-	let swipeTargetID: UUID?
-	let swipeProgress: Double
-	let swipeDirection: CGFloat
 	let downloads: BrowserDownloadManager
-	let onSwipeProgress: (UUID?, Double) -> Void
+	let spaceScrollState: BrowserSpaceScrollState
+	@State private var sidebarMediaHeight: CGFloat = 0
+
+	private var bottomOpacityHeight: CGFloat {
+		sidebarMediaHeight > 0 ? sidebarMediaHeight + 8 + 33 : 34
+	}
+
+	@State private var keepsDownloadsMounted = false
 
 	var body: some View {
-		VStack(spacing: 0) {
+		ZStack(alignment: .topLeading) {
+			sidebarContent
+
 			ShellNavigationBarControls(
 				browser: browser,
 				theme: theme,
@@ -309,62 +404,112 @@ private struct ShellSidebarColumn: View {
 				topBarColorScheme: topBarColorScheme
 			)
 			.frame(maxWidth: .infinity, alignment: .leading)
-			ZStack(alignment: .top) {
-				Group {
-					if browser.isPrivate {
-						PrivateBrowserSidebar(browser: browser)
-					} else {
-						ShellSidebarListView(browser: browser, space: browser.selectedSpace, theme: theme)
+			.allowsHitTesting(false)
+		}
+	}
+
+	private var sidebarContent: some View {
+		let downloadsVisible = showsDownloads
+		return ZStack(alignment: .top) {
+			Group {
+				if browser.isPrivate {
+					PrivateBrowserSidebar(browser: browser)
+						.sidebarScrollContentMargins()
+				} else {
+					BrowserSpacePager(
+						spaces: browser.workspace.spaces,
+						selectedSpaceID: browser.workspace.selectedSpaceID,
+						favouriteTabIDs: browser.workspace.favouriteTabIDs,
+						scrollState: spaceScrollState,
+						onSelectSpace: { id in
+							guard id != browser.workspace.selectedSpaceID else { return }
+							browser.selectSpace(id)
+						}
+					) { space, isActiveSpace, favouriteTabIDs in
+						ShellSidebarListView(
+							browser: browser,
+							space: space,
+							theme: space.theme,
+							isActiveSpace: isActiveSpace,
+							favouriteTabIDs: favouriteTabIDs
+						)
+						.foregroundStyle(space.theme.foregroundColor)
+						.sidebarScrollContentMargins()
 					}
+					.accessibilityIdentifier("sidebar-space-pages")
 				}
+			}
+			.foregroundStyle(theme.foregroundColor)
+			.visualEffect { content, geometry in
+				content.offset(x: downloadsVisible ? geometry.size.width : 0)
+			}
+
+			Group {
+				if showsDownloads || keepsDownloadsMounted {
+					DownloadsSidebarView(
+						manager: downloads,
+						theme: theme
+					)
+					.sidebarScrollContentMargins()
+				} else {
+					// When tabs are displayed there is no reason to keep
+					// observing every download progress event or lay out a
+					// second offscreen scroll tree.
+					Color.clear
+				}
+			}
+			.foregroundStyle(theme.foregroundColor)
+			.visualEffect { content, geometry in
+				content.offset(x: downloadsVisible ? 0 : -geometry.size.width)
+			}
+		}
+		.frame(maxWidth: .infinity, maxHeight: .infinity)
+		.ignoresSafeArea(.container, edges: .vertical)
+		.sidebarScrollOpacityFade(
+			top: 38,
+			bottom: bottomOpacityHeight + 11,
+			bottomOpacityHeight: bottomOpacityHeight
+		)
+		.task(id: showsDownloads) {
+			if showsDownloads {
+				keepsDownloadsMounted = true
+			} else {
+				guard keepsDownloadsMounted else { return }
+				// Preserve the full slide-out before dismantling the hidden
+				// content. The button animates this transition for 0.32 s.
+				do {
+					try await Task.sleep(for: .milliseconds(380))
+				} catch {
+					return
+				}
+				guard !Task.isCancelled else { return }
+				keepsDownloadsMounted = false
+			}
+		}
+		.overlay(alignment: .bottom) {
+			if sidebarShown {
+				sidebarBottomBar
+					.fixedSize(horizontal: false, vertical: true)
+			}
+		}
+	}
+
+	private var sidebarBottomBar: some View {
+		VStack(spacing: 8) {
+			BrowserMediaActivityView(browser: browser)
+				.padding(.horizontal, 8)
 				.foregroundStyle(theme.foregroundColor)
-				.offset(x: showsDownloads ? BrowserChromeMetrics.expandedSidebarWidth : -swipeDirection * BrowserChromeMetrics.expandedSidebarWidth * swipeProgress)
-
-				if !browser.isPrivate, let swipeTargetID,
-				   let target = browser.workspace.spaces.first(where: { $0.id == swipeTargetID }),
-				   !showsDownloads
-				{
-					ShellSidebarListView(browser: browser, space: target, theme: theme)
-						.foregroundStyle(target.theme.foregroundColor)
-						.allowsHitTesting(false)
-						.offset(x: swipeDirection * BrowserChromeMetrics.expandedSidebarWidth * (1 - swipeProgress))
+				.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+					sidebarMediaHeight = height
 				}
 
-				DownloadsSidebarView(manager: downloads, theme: theme)
-					.foregroundStyle(theme.foregroundColor)
-					.offset(x: showsDownloads ? 0 : -BrowserChromeMetrics.expandedSidebarWidth)
-			}
-			.clipped()
-			.frame(maxWidth: .infinity, maxHeight: .infinity)
-			.safeAreaInset(edge: .bottom, spacing: 0) {
-				BrowserMediaActivityView(browser: browser)
-					.padding(.horizontal, 8)
-					.padding(.bottom, 48)
-			}
-			.overlay(alignment: .bottom) {
-				ZStack(alignment: .bottom) {
-					HazeEffect(
-						maskProvider: LinearGradientMaskProvider(
-							startPoint: .bottom,
-							endPoint: .top,
-							startOpacity: 1,
-							endOpacity: 0,
-							isSmooth: true
-						),
-						maxBlurRadius: 2
-					)
-					.frame(height: 56)
-					.allowsHitTesting(false)
-					ShellDownloadsBarView(
-						browser: browser,
-						theme: theme,
-						downloads: downloads,
-						showsDownloads: $showsDownloads,
-						onSwipeProgress: onSwipeProgress
-					)
-					.foregroundStyle(theme.foregroundColor)
-				}
-			}
+			ShellDownloadsBarView(
+				browser: browser,
+				theme: theme,
+				downloads: downloads,
+				showsDownloads: $showsDownloads
+			)
+			.foregroundStyle(theme.foregroundColor)
 		}
 	}
 }
@@ -376,11 +521,9 @@ private struct ShellContentColumn: View {
 	let isFullScreen: Bool
 	let colorScheme: ColorScheme
 	let topBarColorScheme: ColorScheme
-	let transitionFromTheme: BrowserTheme?
-	let transitionToTheme: BrowserTheme?
-	let themeBlend: Double
 	let contentCornerRadius: CGFloat
-	let windowWidth: CGFloat
+	let hasVisibleChrome: Bool
+	let showsTopBar: Bool
 	@Binding var isTopBarRevealed: Bool
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	#if os(macOS)
@@ -393,15 +536,24 @@ private struct ShellContentColumn: View {
 			theme: theme,
 			sidebarShown: true,
 			topBarColorScheme: topBarColorScheme,
-			transitionFromTheme: transitionFromTheme,
-			transitionToTheme: transitionToTheme,
-			themeBlend: themeBlend
+			reservesWindowControls: !sidebarShown && !isFullScreen
 		)
+		#if os(macOS)
+		.onDrop(of: [UTType.url, UTType.plainText], isTargeted: $isAddressDropTargeted, perform: acceptAddressDrop)
+		.overlay {
+			if isAddressDropTargeted {
+				RoundedRectangle(cornerRadius: 10)
+					.stroke(theme.foregroundColor.opacity(0.7), lineWidth: 2)
+					.padding(.horizontal, 10)
+					.allowsHitTesting(false)
+			}
+		}
+		#endif
 	}
 
 	private var topBarHeight: CGFloat {
 		guard browser.selectedTab?.internalPage == nil, !browser.isShowingNewTab else { return 0 }
-		guard sidebarShown || isTopBarRevealed else { return 0 }
+		guard showsTopBar || isTopBarRevealed else { return 0 }
 		return BrowserChromeMetrics.topBarRegionHeight
 			+ BrowserChromeMetrics.shellEdgePadding
 	}
@@ -409,44 +561,21 @@ private struct ShellContentColumn: View {
 	var body: some View {
 		ZStack(alignment: .top) {
 			topBar
-				.frame(width: max(0, windowWidth - BrowserChromeMetrics.expandedSidebarWidth))
 				.frame(height: BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding, alignment: .top)
-				.transaction { transaction in
-					transaction.animation = nil
-				}
 				.frame(maxWidth: .infinity, alignment: .trailing)
-				.animation(reduceMotion ? nil : .smooth(duration: 0.3)) { content in
-					content
-						.offset(y: topBarHeight > 0 ? 0 : -BrowserChromeMetrics.topBarRegionHeight - BrowserChromeMetrics.shellEdgePadding)
-						.opacity(topBarHeight > 0 ? 1 : 0)
+				.mask(alignment: .top) {
+					Rectangle().frame(height: topBarHeight)
 				}
-				.clipped()
-				.zIndex(1)
 				.allowsHitTesting(topBarHeight > 0)
 				.accessibilityHidden(topBarHeight == 0)
-			#if os(macOS)
-				.onDrop(of: [UTType.url, UTType.plainText], isTargeted: $isAddressDropTargeted, perform: acceptAddressDrop)
-				.overlay {
-					if isAddressDropTargeted {
-						RoundedRectangle(cornerRadius: 10)
-							.stroke(theme.foregroundColor.opacity(0.7), lineWidth: 2)
-							.padding(.horizontal, 10)
-							.allowsHitTesting(false)
-					}
-				}
-			#endif
-
 			VStack(spacing: 0) {
 				Spacer(minLength: 0)
 					.frame(height: topBarHeight)
 				BrowserPageView(browser: browser, cornerRadius: contentCornerRadius)
-					.padding(.top, sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
-					.padding([.bottom, .horizontal], sidebarShown ? BrowserChromeMetrics.shellEdgePadding : 0)
-					.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: sidebarShown)
+					.equatable()
+					.padding(.top, hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
+					.padding([.bottom, .horizontal], hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
-			}
-			.transaction { transaction in
-				transaction.animation = nil
 			}
 		}
 		.animation(nil, value: browser.selectedTabID)
@@ -456,9 +585,18 @@ private struct ShellContentColumn: View {
 					let revealHeight = isTopBarRevealed
 						? BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding
 						: 6
-					isTopBarRevealed = !sidebarShown && location.y < revealHeight
+					let shouldReveal = browser.selectedTab?.internalPage == nil
+						&& !browser.isShowingNewTab
+						&& !showsTopBar && location.y < revealHeight
+					guard shouldReveal != isTopBarRevealed else { return }
+					withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+						isTopBarRevealed = shouldReveal
+					}
 				case .ended:
-					isTopBarRevealed = false
+					guard isTopBarRevealed else { return }
+					withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+						isTopBarRevealed = false
+					}
 			}
 		}
 		.onChange(of: sidebarShown) { _, _ in
@@ -476,20 +614,7 @@ private struct ShellContentColumn: View {
 				? UTType.url.identifier
 				: UTType.plainText.identifier
 			guard provider.hasItemConformingToTypeIdentifier(type) else { return false }
-			provider.loadItem(forTypeIdentifier: type, options: nil) { item, _ in
-				let text: String? = if let url = item as? URL {
-					url.absoluteString
-				} else if let data = item as? Data {
-					String(data: data, encoding: .utf8)
-				} else if let string = item as? String {
-					string
-				} else if let string = item as? NSString {
-					string as String
-				} else if let url = item as? NSURL {
-					url.absoluteString
-				} else {
-					nil
-				}
+			let applyDrop: @Sendable (String?) -> Void = { text in
 				Task { @MainActor in
 					guard browser.selectedTabID == tabID,
 					      browser.selectedTab?.activeController === controller,
@@ -503,6 +628,15 @@ private struct ShellContentColumn: View {
 					      ["http", "https"].contains(destination.scheme?.lowercased() ?? "")
 					else { return }
 					controller.loadFromAddressBar(destination)
+				}
+			}
+			if type == UTType.url.identifier {
+				_ = provider.loadObject(ofClass: URL.self) { object, _ in
+					applyDrop(object?.absoluteString)
+				}
+			} else {
+				_ = provider.loadObject(ofClass: String.self) { object, _ in
+					applyDrop(object)
 				}
 			}
 			return true
@@ -551,7 +685,7 @@ private struct DownloadFlightOverlay: View {
 		var body: some View {
 			GeometryReader { geometry in
 				if let tabID = tabDrag.activeTabID,
-				   let tab = browser.tabs.first(where: { $0.id == tabID }),
+				   let tab = browser.tab(withID: tabID),
 				   let hostWindow
 				{
 					let point = hostWindow.convertPoint(fromScreen: tabDrag.screenPoint)

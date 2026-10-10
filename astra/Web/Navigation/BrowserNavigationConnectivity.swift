@@ -6,7 +6,6 @@ final class BrowserNavigationConnectivity {
 	static let didChangeNotification = Notification.Name("BrowserNavigationConnectivityDidChange")
 
 	private let monitor = NWPathMonitor()
-	private let queue = DispatchQueue(label: "astra.navigation-connectivity")
 
 	private init() {
 		monitor.pathUpdateHandler = { path in
@@ -15,6 +14,6 @@ final class BrowserNavigationConnectivity {
 				object: path.status == .satisfied
 			)
 		}
-		monitor.start(queue: queue)
+		monitor.start(queue: .main)
 	}
 }

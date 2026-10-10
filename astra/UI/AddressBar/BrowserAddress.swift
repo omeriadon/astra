@@ -74,19 +74,24 @@ enum BrowserAddress {
 			return ""
 		}
 		let url = withoutCredentials(originalURL)
-		guard style == .simple, !isEditing else {
-			if style == .dimmed, !isEditing,
-			   let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-			   let query = configuration.query(for: url, isPrivate: isPrivate),
-			   let range = searchQueryValueRange(
-			   	in: url.absoluteString,
-			   	components: components,
-			   	parameterName: configuration.queryParameterName(for: url)
-			   )
-			{
-				return url.absoluteString.replacingCharacters(in: range, with: query)
-			}
+		if isEditing || style == .full {
 			return url.absoluteString
+		}
+		if style == .dimmed,
+		   let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+		   let query = configuration.query(for: url, isPrivate: isPrivate),
+		   let range = searchQueryValueRange(
+		   	in: url.absoluteString,
+		   	components: components,
+		   	parameterName: configuration.queryParameterName(for: url)
+		   )
+		{
+			return displayText(String(url.absoluteString[..<range.lowerBound]))
+				+ query
+				+ displayText(String(url.absoluteString[range.upperBound...]))
+		}
+		if style == .dimmed {
+			return displayText(url.absoluteString)
 		}
 		if let query = configuration.query(for: url, isPrivate: isPrivate) {
 			return query
@@ -94,9 +99,9 @@ enum BrowserAddress {
 		guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
 		      let host = hostWithoutWWW(for: components)
 		else {
-			return url.absoluteString
+			return displayText(url.absoluteString)
 		}
-		return host + components.percentEncodedPath
+		return displayText(host + components.percentEncodedPath)
 	}
 
 	static func primaryTextRanges(
@@ -105,8 +110,11 @@ enum BrowserAddress {
 		configuration: BrowserSearchConfiguration = .default,
 		isPrivate: Bool = false
 	) -> [Range<String.Index>] {
-		guard let url,
-		      let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+		guard let originalURL = url else {
+			return []
+		}
+		let url = withoutCredentials(originalURL)
+		guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
 		      components.string == url.absoluteString,
 		      let hostRange = components.rangeOfHost
 		else {
@@ -127,37 +135,68 @@ enum BrowserAddress {
 			if displayedText == text {
 				return [range]
 			}
-			let decodedDisplay = text.replacingCharacters(in: range, with: query)
+			let decodedDisplay = displayText(String(text[..<range.lowerBound]))
+				+ query
+				+ displayText(String(text[range.upperBound...]))
 			guard displayedText == decodedDisplay else {
 				return []
 			}
-			let startOffset = text[..<range.lowerBound].utf16.count
+			let startOffset = displayText(String(text[..<range.lowerBound])).utf16.count
 			let endOffset = startOffset + query.utf16.count
-			guard endOffset <= displayedText.utf16.count else {
-				return []
-			}
+			guard endOffset <= displayedText.utf16.count else { return [] }
 			let start = String.Index(utf16Offset: startOffset, in: displayedText)
 			let end = String.Index(utf16Offset: endOffset, in: displayedText)
-			guard start <= end else {
-				return []
-			}
 			return [start ..< end]
 		}
-		guard components.string == displayedText else {
+		guard components.string == text,
+		      displayText(text) == displayedText
+		else {
 			return []
 		}
 		let host = text[hostRange]
 		let visibleHostStart = host.lowercased().hasPrefix("www.")
 			? text.index(hostRange.lowerBound, offsetBy: 4)
 			: hostRange.lowerBound
-		var ranges = [visibleHostStart ..< hostRange.upperBound]
+		guard let visibleHostRange = transformedRange(
+			for: visibleHostStart ..< hostRange.upperBound,
+			in: text,
+			as: displayedText
+		) else {
+			return []
+		}
+		var ranges = [visibleHostRange]
 		if let pathRange = components.rangeOfPath, !pathRange.isEmpty {
 			let pathEnd = text[pathRange].last == "/" ? text.index(before: pathRange.upperBound) : pathRange.upperBound
 			if pathRange.lowerBound < pathEnd {
-				ranges.append(pathRange.lowerBound ..< pathEnd)
+				if let displayedPathRange = transformedRange(
+					for: pathRange.lowerBound ..< pathEnd,
+					in: text,
+					as: displayedText
+				) {
+					ranges.append(displayedPathRange)
+				}
 			}
 		}
 		return ranges
+	}
+
+	private static func displayText(_ text: String) -> String {
+		text.replacingOccurrences(of: "%20", with: " ")
+	}
+
+	private static func transformedRange(
+		for range: Range<String.Index>,
+		in original: String,
+		as displayed: String
+	) -> Range<String.Index>? {
+		let startOffset = displayText(String(original[..<range.lowerBound])).utf16.count
+		let endOffset = displayText(String(original[..<range.upperBound])).utf16.count
+		guard endOffset <= displayed.utf16.count else {
+			return nil
+		}
+		let start = String.Index(utf16Offset: startOffset, in: displayed)
+		let end = String.Index(utf16Offset: endOffset, in: displayed)
+		return start <= end ? start ..< end : nil
 	}
 
 	static func isSearchURL(

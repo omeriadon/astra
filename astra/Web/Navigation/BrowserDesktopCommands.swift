@@ -1,5 +1,7 @@
 #if os(macOS)
 	import AppKit
+	import Darwin
+	import Defaults
 	import UniformTypeIdentifiers
 	import WebKit
 
@@ -37,6 +39,63 @@
 			case pdf
 			case webArchive
 			case source
+		}
+
+		static func configureWebInspector(_ webView: WKWebView, enabled: Bool) {
+			webView.isInspectable = enabled
+			let preferences = webView.configuration.preferences
+			if preferences.responds(to: NSSelectorFromString("_setDeveloperExtrasEnabled:")) {
+				preferences.setValue(enabled, forKey: "developerExtrasEnabled")
+			}
+			if !enabled,
+			   webView.responds(to: NSSelectorFromString("_inspector")),
+			   let inspector = webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
+			   inspector.responds(to: NSSelectorFromString("close"))
+			{
+				inspector.perform(NSSelectorFromString("close"))
+			}
+		}
+
+		static func showWebInspector(_ controller: BrowserController, selectingElement: Bool = false) {
+			guard let webView = controller.webViewIfLoaded,
+			      controller.hasCurrentPageDocument else { return }
+			// Persist docking preferences only when opening, outside the defaults observer path.
+			UserDefaults.standard.set(1, forKey: "__WebInspectorPageGroupLevel1__.WebKit2InspectorAttachmentSide")
+			UserDefaults.standard.set(true, forKey: "__WebInspectorPageGroupLevel1__.WebKit2InspectorStartsAttached")
+			Defaults[.webInspectorEnabled] = true
+			configureWebInspector(webView, enabled: true)
+			guard webView.responds(to: NSSelectorFromString("_inspector")),
+			      let inspector = webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
+			      inspector.responds(to: NSSelectorFromString("show")),
+			      inspector.responds(to: NSSelectorFromString("close")),
+			      inspector.responds(to: NSSelectorFromString("attach"))
+			else {
+				controller.session.toastManager.show(
+					symbol: "exclamationmark.triangle",
+					message: "This WebKit version cannot open Astra’s Web Inspector. Inspect this page from Safari’s Develop menu."
+				)
+				return
+			}
+			if selectingElement {
+				guard inspector.responds(to: NSSelectorFromString("toggleElementSelection")) else {
+					controller.session.toastManager.show(symbol: "exclamationmark.triangle", message: "Element selection is unavailable in this WebKit version.")
+					return
+				}
+				if inspector.value(forKey: "isElementSelectionActive") as? Bool != true {
+					// Connect without showing the inspector until an element has been selected.
+					inspector.perform(NSSelectorFromString("toggleElementSelection"))
+				}
+			} else {
+				let isVisible = inspector.value(forKey: "isVisible") as? Bool == true
+				inspector.perform(NSSelectorFromString(isVisible ? "close" : "show"))
+			}
+		}
+
+		static func attachWebInspector(_ inspector: NSObject) {
+			// The C entry point preserves the configured side; Objective-C attach defaults to bottom.
+			guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "WKInspectorAttach") else { return }
+			let attach = unsafeBitCast(symbol, to: (@convention(c) (UnsafeRawPointer) -> Void).self)
+			attach(UnsafeRawPointer(Unmanaged.passUnretained(inspector).toOpaque()))
 		}
 
 		static func openFile(in browser: Browser, window: NSWindow?) {

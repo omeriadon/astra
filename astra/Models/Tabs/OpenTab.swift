@@ -5,6 +5,7 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 	var internalPage: String?
 	var pageTitle: String
 	var customTitle: String?
+	var monitorMatch: BrowserMonitorMatch?
 	var url: URL?
 	var history: [URL]
 	var historyIndex: Int
@@ -31,6 +32,7 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		var updated = self
 		updated.pageTitle = remote.pageTitle
 		updated.customTitle = remote.customTitle
+		updated.monitorMatch = remote.monitorMatch
 		updated.pageZoom = remote.pageZoom
 		updated.modifiedAt = remote.modifiedAt
 		updated.recordsNavigationHistory = remote.recordsNavigationHistory
@@ -48,6 +50,7 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		internalPage: String? = nil,
 		pageTitle: String = "New Tab",
 		customTitle: String? = nil,
+		monitorMatch: BrowserMonitorMatch? = nil,
 		url: URL? = nil,
 		history: [URL] = [],
 		historyIndex: Int = 0,
@@ -66,6 +69,7 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		self.internalPage = internalPage
 		self.pageTitle = pageTitle
 		self.customTitle = customTitle
+		self.monitorMatch = monitorMatch
 		self.url = url
 		self.history = history
 		self.historyIndex = Self.clampedIndex(historyIndex, count: history.count)
@@ -87,6 +91,7 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		case title
 		case pageTitle
 		case customTitle
+		case monitorMatch
 		case url
 		case history
 		case historyIndex
@@ -131,6 +136,7 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		recordsNavigationHistory = try container.decodeIfPresent(Bool.self, forKey: .recordsNavigationHistory) ?? true
 		restorationState = try container.decodeIfPresent(Data.self, forKey: .restorationState)
 		fileAccessBookmark = try container.decodeIfPresent(Data.self, forKey: .fileAccessBookmark)
+		monitorMatch = try container.decodeIfPresent(BrowserMonitorMatch.self, forKey: .monitorMatch)
 	}
 
 	nonisolated func encode(to encoder: Encoder) throws {
@@ -139,6 +145,7 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		try container.encodeIfPresent(internalPage, forKey: .internalPage)
 		try container.encode(pageTitle, forKey: .pageTitle)
 		try container.encodeIfPresent(customTitle, forKey: .customTitle)
+		try container.encodeIfPresent(monitorMatch, forKey: .monitorMatch)
 		try container.encodeIfPresent(url, forKey: .url)
 		try container.encode(history, forKey: .history)
 		try container.encode(historyIndex, forKey: .historyIndex)

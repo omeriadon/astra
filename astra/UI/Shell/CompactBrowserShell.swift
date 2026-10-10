@@ -20,6 +20,7 @@
 								browser: browser,
 								space: browser.selectedSpace,
 								theme: browser.theme,
+								favouriteTabIDs: browser.workspace.favouriteTabIDs,
 								onSelectTab: { id in showPage(from: id.uuidString) },
 								onNewTab: { showPage(from: "sidebar-new-tab") },
 								navigationNamespace: presentations
@@ -53,7 +54,6 @@
 							ToolbarItem(placement: .bottomBar) {
 								BrowserSpacesBar(
 									browser: browser,
-									onSwipeProgress: { _, _ in },
 									onOpenPage: { showPage(from: "sidebar") }
 								)
 							}
@@ -99,6 +99,11 @@
 					.ignoresSafeArea(.container, edges: isWebsite ? .vertical : [])
 				}
 				.toolbar {
+					ToolbarItem(placement: .topBarTrailing) {
+						if let controller = browser.selectedTab?.activeController, browser.selectedTab?.internalPage == nil {
+							BrowserAdBlockingButton(controller: controller)
+						}
+					}
 					ToolbarItem(placement: .bottomBar) {
 						HStack(spacing: 8) {
 							Button("Sidebar", systemImage: "sidebar.leading") {
@@ -114,6 +119,11 @@
 							addressCapsule
 								.frame(maxWidth: .infinity)
 								.glassEffect(.regular, in: Capsule())
+							if let controller = browser.selectedTab?.activeController, browser.selectedTab?.internalPage == nil {
+								BrowserTranslationButton(browser: browser, controller: controller)
+									.frame(width: 44, height: 44)
+									.buttonBorderShape(.circle)
+							}
 
 							newTabButton
 								.labelStyle(.iconOnly)

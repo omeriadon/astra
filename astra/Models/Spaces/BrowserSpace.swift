@@ -47,6 +47,7 @@ struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
 	var theme: BrowserTheme
 	var tabIDs: [UUID]
 	var pinnedTabIDs: [UUID]
+	var todayTabGroups: [BrowserTabGroupingFeature.Group]
 	var pinnedFolders: [PinnedTabFolder]
 	var deletedPinnedFoldersAt: [UUID: Date]
 	var selectedTabID: UUID?
@@ -60,6 +61,7 @@ struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
 		tabIDs: [UUID] = [],
 		pinnedTabIDs: [UUID] = [],
 		pinnedFolders: [PinnedTabFolder] = [],
+		todayTabGroups: [BrowserTabGroupingFeature.Group] = [],
 		deletedPinnedFoldersAt: [UUID: Date] = [:],
 		selectedTabID: UUID? = nil,
 		modifiedAt: Date = .now
@@ -71,13 +73,14 @@ struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
 		self.tabIDs = tabIDs
 		self.pinnedTabIDs = pinnedTabIDs
 		self.pinnedFolders = pinnedFolders
+		self.todayTabGroups = todayTabGroups
 		self.deletedPinnedFoldersAt = deletedPinnedFoldersAt
 		self.selectedTabID = selectedTabID
 		self.modifiedAt = modifiedAt
 	}
 
 	private enum CodingKeys: String, CodingKey {
-		case id, name, symbol, theme, tabIDs, pinnedTabIDs, pinnedFolders, deletedPinnedFoldersAt, selectedTabID, modifiedAt
+		case id, name, symbol, theme, todayTabGroups, tabIDs, pinnedTabIDs, pinnedFolders, deletedPinnedFoldersAt, selectedTabID, modifiedAt
 	}
 
 	nonisolated init(from decoder: Decoder) throws {
@@ -88,6 +91,7 @@ struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
 		theme = try values.decode(BrowserTheme.self, forKey: .theme)
 		tabIDs = try values.decode([UUID].self, forKey: .tabIDs)
 		pinnedTabIDs = try values.decode([UUID].self, forKey: .pinnedTabIDs)
+		todayTabGroups = try values.decodeIfPresent([BrowserTabGroupingFeature.Group].self, forKey: .todayTabGroups) ?? []
 		pinnedFolders = try values.decodeIfPresent([PinnedTabFolder].self, forKey: .pinnedFolders) ?? []
 		deletedPinnedFoldersAt = try values.decodeIfPresent([UUID: Date].self, forKey: .deletedPinnedFoldersAt) ?? [:]
 		selectedTabID = try values.decodeIfPresent(UUID.self, forKey: .selectedTabID)

@@ -1,3 +1,4 @@
+import Defaults
 import Foundation
 
 struct BrowserSearchAction: Identifiable {
@@ -60,6 +61,13 @@ struct BrowserSearchAction: Identifiable {
 				perform: { browser.createSpace() }
 			),
 		]
+		if Defaults[.aiFeaturesEnabled], browser.canShowAISidebar, Defaults[.aiSidebar] {
+			actions.append(Self(
+				id: "toggle-ai-sidebar", title: "AI Sidebar", symbol: "bubble.left.and.text.bubble.right",
+				terms: ["chat", "ask AI", "toggle AI"], detail: "Browser Action",
+				perform: { browser.showsAISidebar.toggle() }
+			))
+		}
 		if browser.isPrivate {
 			actions.removeAll { $0.id == "new-space" || $0.id == "page-themeEditor" }
 		}

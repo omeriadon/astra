@@ -5,6 +5,7 @@
 	@MainActor
 	enum BrowserDataTransfer {
 		static func importData(into browser: Browser, window: NSWindow?) {
+			BrowserLog.info(.persistence, "data-transfer.import.begin", metadata: ["window": BrowserLog.id(browser.windowID)])
 			guard !browser.isPrivate, !browser.isMini, let window else { return }
 			let isCurrent = currentBrowser(browser, in: window)
 			let panel = NSOpenPanel()
@@ -26,10 +27,15 @@
 							)
 						}.value
 						guard isCurrent() else { return }
-						let hasDuplicates = document.bookmarks.contains { bookmark in
-							browser.bookmarks.contains { $0.url == bookmark.url }
-						} || document.readingList.contains { item in
-							browser.readingList.contains { $0.url == item.url }
+						// A large import can contain tens of thousands of items.
+						// Build membership indexes once rather than performing
+						// a nested main-thread scan for every imported record.
+						let existingBookmarkURLs = Set(browser.bookmarks.map(\.url))
+						let existingReadingURLs = Set(browser.readingList.map(\.url))
+						let hasDuplicates = document.bookmarks.contains {
+							existingBookmarkURLs.contains($0.url)
+						} || document.readingList.contains {
+							existingReadingURLs.contains($0.url)
 						}
 						var replacingDuplicates = false
 						if hasDuplicates {
@@ -48,9 +54,11 @@
 						browser.importBookmarks(document.bookmarks, replacingDuplicates: replacingDuplicates)
 						browser.importReadingList(document.readingList, replacingDuplicates: replacingDuplicates)
 						browser.importHistory(document.history)
+						BrowserLog.info(.persistence, "data-transfer.import.success", metadata: ["bookmarks": String(document.bookmarks.count), "reading_list": String(document.readingList.count), "history": String(document.history.count), "source": BrowserLog.path(url)])
 						ToastManager.shared.show(symbol: "checkmark.circle", message: "Browsing data imported")
 					} catch {
 						guard isCurrent() else { return }
+						BrowserLog.error(.persistence, "data-transfer.import.failed", metadata: ["error": BrowserLog.errorDescription(error), "source": BrowserLog.path(url)])
 						ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "Could not import data: \(error.localizedDescription)")
 					}
 				}
@@ -58,6 +66,7 @@
 		}
 
 		static func exportData(from browser: Browser, window: NSWindow?, bookmarksOnly: Bool = false) {
+			BrowserLog.info(.persistence, "data-transfer.export.begin", metadata: ["window": BrowserLog.id(browser.windowID), "bookmarks_only": String(bookmarksOnly), "bookmarks": String(browser.bookmarks.count), "history": String(browser.historyVisits.count)])
 			guard !browser.isPrivate, !browser.isMini, let window else { return }
 			let isCurrent = currentBrowser(browser, in: window)
 			let panel = NSSavePanel()

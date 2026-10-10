@@ -1,7 +1,15 @@
 import Foundation
 
 @MainActor
+private enum BrowserPersistenceDirectoryCache {
+	static var url: URL?
+}
+
+@MainActor
 private func persistenceDirectory() throws -> URL {
+	if let cached = BrowserPersistenceDirectoryCache.url {
+		return cached
+	}
 	let fileManager = FileManager.default
 	let applicationSupport = try fileManager.url(
 		for: .applicationSupportDirectory,
@@ -14,11 +22,12 @@ private func persistenceDirectory() throws -> URL {
 		isDirectory: true
 	)
 	try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+	BrowserPersistenceDirectoryCache.url = directory
 	return directory
 }
 
 /// One value snapshot is committed atomically, including tab organization and selection.
-struct BrowserPersistedState: Codable, @unchecked Sendable {
+nonisolated struct BrowserPersistedState: Codable, @unchecked Sendable {
 	var bookmarks: [Bookmark]
 	var readingList: [ReadingListItem] = []
 	var openTabs: [OpenTab]
@@ -56,19 +65,36 @@ struct BrowserPersistedState: Codable, @unchecked Sendable {
 	}
 }
 
-struct BrowserWindowRecord: Codable, Equatable, Sendable {
+nonisolated struct BrowserWindowRecord: Codable, Equatable, Sendable {
 	var version: Int
 	var windowID: UUID
 	var tabIDs: [UUID]
 	var selectedTabID: UUID
+	var selectionModifiedAt: Date
 	var frame: BrowserWindowFrame?
 
-	init(windowID: UUID, tabIDs: [UUID], selectedTabID: UUID, frame: BrowserWindowFrame? = nil) {
+	init(windowID: UUID, tabIDs: [UUID], selectedTabID: UUID, selectionModifiedAt: Date = .distantPast, frame: BrowserWindowFrame? = nil) {
 		version = 1
 		self.windowID = windowID
 		self.tabIDs = tabIDs
 		self.selectedTabID = selectedTabID
+		self.selectionModifiedAt = selectionModifiedAt
 		self.frame = frame
+	}
+
+	private enum CodingKeys: String, CodingKey {
+		case version, windowID, tabIDs, selectedTabID, selectionModifiedAt, frame
+	}
+
+	/// Older session envelopes have no per-window selection timestamp.
+	nonisolated init(from decoder: Decoder) throws {
+		let container = try decoder.container(keyedBy: CodingKeys.self)
+		version = try container.decode(Int.self, forKey: .version)
+		windowID = try container.decode(UUID.self, forKey: .windowID)
+		tabIDs = try container.decode([UUID].self, forKey: .tabIDs)
+		selectedTabID = try container.decode(UUID.self, forKey: .selectedTabID)
+		selectionModifiedAt = try container.decodeIfPresent(Date.self, forKey: .selectionModifiedAt) ?? .distantPast
+		frame = try container.decodeIfPresent(BrowserWindowFrame.self, forKey: .frame)
 	}
 
 	func restoredSelection(availableTabIDs: Set<UUID>) -> UUID? {
@@ -79,7 +105,7 @@ struct BrowserWindowRecord: Codable, Equatable, Sendable {
 	}
 }
 
-struct BrowserWindowFrame: Codable, Equatable, Sendable {
+nonisolated struct BrowserWindowFrame: Codable, Equatable, Sendable {
 	var x: Double
 	var y: Double
 	var width: Double
@@ -108,7 +134,7 @@ struct BrowserWindowFrame: Codable, Equatable, Sendable {
 	}
 }
 
-struct BrowserShutdownMetadata: Codable, Equatable, Sendable {
+nonisolated struct BrowserShutdownMetadata: Codable, Equatable, Sendable {
 	var version: Int
 	var clean: Bool
 	var updatedAt: Date
@@ -116,6 +142,24 @@ struct BrowserShutdownMetadata: Codable, Equatable, Sendable {
 	static func current(clean: Bool) -> Self {
 		Self(version: 1, clean: clean, updatedAt: .now)
 	}
+}
+
+/// Minimal durable selection update. No URLs, history, or private browsing data are stored here.
+nonisolated struct BrowserSelectionUpdate: Codable, Sendable {
+	let windowID: UUID
+	let selectedTabID: UUID
+	let selectedTabModifiedAt: Date
+	let selectedSpaceID: UUID
+}
+
+/// A bounded, URL-scoped scroll checkpoint. Its parent full checkpoint is
+/// identified separately on disk, so a stale sidecar cannot change a newer tab.
+nonisolated struct BrowserScrollUpdate: Codable, Sendable {
+	let tabID: UUID
+	let url: URL?
+	let historyIndex: Int
+	let position: BrowserScrollPosition
+	let modifiedAt: Date
 }
 
 nonisolated enum BrowserHomepage {
@@ -135,7 +179,7 @@ nonisolated enum BrowserHomepage {
 	}
 }
 
-enum BrowserPersistenceError: LocalizedError, Equatable {
+nonisolated enum BrowserPersistenceError: LocalizedError, Equatable {
 	case unsupportedVersion
 	case invalidSnapshot
 
@@ -149,7 +193,7 @@ enum BrowserPersistenceError: LocalizedError, Equatable {
 	}
 }
 
-final class BrowserPersistence: @unchecked Sendable {
+final nonisolated class BrowserPersistence: @unchecked Sendable {
 	private let directory: URL
 	private var readingArchiveDirectory: URL {
 		directory.appendingPathComponent("reading-list", isDirectory: true)
@@ -161,10 +205,166 @@ final class BrowserPersistence: @unchecked Sendable {
 	private static let maxReadingArchiveTotalBytes = 256 * 1024 * 1024
 	// ponytail: one process-wide lock keeps the archive caps exact across windows; per-directory locks only if contention matters.
 	private nonisolated static let readingArchiveLock = NSLock()
+	/// Serializes full-state commits and selection checkpoints across all windows.
+	private nonisolated static let selectionJournalLock = NSLock()
+
+	/// A volatile, memory-bounded process cache of the last committed primary
+	/// checkpoint. The inode/size/mtime tuple is checked before every reuse:
+	/// restores, external edits and atomic replacements cannot reuse stale data.
+	/// The global selectionJournalLock serializes its callers.
+	private nonisolated(unsafe) static let checkpointCache: NSCache<NSString, CachedCheckpoint> = {
+		let cache = NSCache<NSString, CachedCheckpoint>()
+		cache.countLimit = 2
+		cache.totalCostLimit = 24 * 1024 * 1024
+		return cache
+	}()
+
+	private nonisolated struct CheckpointSignature: Equatable, Codable {
+		let fileNumber: UInt64
+		let byteCount: UInt64
+		let modifiedAt: Date
+
+		init?(at url: URL) {
+			guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+			      let fileNumber = attributes[.systemFileNumber] as? NSNumber,
+			      let byteCount = attributes[.size] as? NSNumber,
+			      let modifiedAt = attributes[.modificationDate] as? Date
+			else { return nil }
+			self.fileNumber = fileNumber.uint64Value
+			self.byteCount = byteCount.uint64Value
+			self.modifiedAt = modifiedAt
+		}
+	}
+
+	private nonisolated struct OldTabPrivacy {
+		let history: Set<URL>
+		let recordsNavigationHistory: Bool
+	}
+
+	/// Only the fields needed to decide whether the backup would resurrect
+	/// removed private data. Retaining the entire old 50k-visit model would
+	/// double session memory between successive checkpoints.
+	private nonisolated struct PrivacyDeletionIndex {
+		let historyURLs: [UUID: URL]
+		let bookmarkURLs: [UUID: URL]
+		let readingURLs: [UUID: URL]
+		let closedTabIDs: Set<UUID>
+		let openTabPrivacy: [UUID: OldTabPrivacy]
+		let deletedVisitsAt: [UUID: Date]
+		let historyClearedAt: Date
+		let containedCredentialURLs: Bool
+
+		init(_ state: BrowserPersistedState) {
+			historyURLs = Dictionary((state.historyVisits ?? []).map { ($0.id, $0.url) }, uniquingKeysWith: { old, _ in old })
+			bookmarkURLs = Dictionary(state.bookmarks.map { ($0.id, $0.url) }, uniquingKeysWith: { old, _ in old })
+			readingURLs = Dictionary(state.readingList.map { ($0.id, $0.url) }, uniquingKeysWith: { old, _ in old })
+			closedTabIDs = Set(state.closedTabs.map(\.id))
+			openTabPrivacy = Dictionary(
+				state.openTabs.map { ($0.id, OldTabPrivacy(history: Set($0.history), recordsNavigationHistory: $0.recordsNavigationHistory)) },
+				uniquingKeysWith: { old, _ in old }
+			)
+			deletedVisitsAt = state.snapshot.deletedVisitsAt
+			historyClearedAt = state.snapshot.historyClearedAt
+			containedCredentialURLs = state.openTabs.contains { tab in
+				(tab.history + [tab.url].compactMap(\.self)).contains { $0.user != nil || $0.password != nil }
+			} || state.bookmarks.contains { $0.url.user != nil || $0.url.password != nil }
+				|| (state.historyVisits ?? []).contains { $0.url.user != nil || $0.url.password != nil }
+		}
+
+		func hasPrivacyRemoval(comparedTo state: BrowserPersistedState) -> Bool {
+			let newHistory = Dictionary((state.historyVisits ?? []).map { ($0.id, $0.url) }, uniquingKeysWith: { old, _ in old })
+			let newBookmarks = Dictionary(state.bookmarks.map { ($0.id, $0.url) }, uniquingKeysWith: { old, _ in old })
+			let newReading = Dictionary(state.readingList.map { ($0.id, $0.url) }, uniquingKeysWith: { old, _ in old })
+			let currentClosed = Set(state.closedTabs.map(\.id))
+			let currentOpen = Dictionary(state.openTabs.map { ($0.id, $0) }, uniquingKeysWith: { old, _ in old })
+			if historyURLs.contains(where: { newHistory[$0.key] != $0.value }) {
+				return true
+			}
+			if bookmarkURLs.contains(where: { newBookmarks[$0.key] != $0.value }) {
+				return true
+			}
+			if readingURLs.contains(where: { newReading[$0.key] != $0.value }) {
+				return true
+			}
+			if historyClearedAt < state.snapshot.historyClearedAt {
+				return true
+			}
+			if !closedTabIDs.isSubset(of: currentClosed) {
+				return true
+			}
+			for (id, previous) in openTabPrivacy {
+				guard let updated = currentOpen[id] else { continue }
+				if !previous.history.isSubset(of: Set(updated.history)) {
+					return true
+				}
+				if previous.recordsNavigationHistory, !updated.recordsNavigationHistory {
+					return true
+				}
+			}
+			if deletedVisitsAt.contains(where: { id, date in
+				state.snapshot.deletedVisitsAt[id].map { $0 > date } ?? false
+			}) {
+				return true
+			}
+			return containedCredentialURLs
+		}
+	}
+
+	private final nonisolated class CachedCheckpoint {
+		let signature: CheckpointSignature
+		let backupSignature: CheckpointSignature?
+		let originalData: Data?
+		let privacy: PrivacyDeletionIndex
+
+		init(signature: CheckpointSignature, backupSignature: CheckpointSignature?,
+		     data: Data, privacy: PrivacyDeletionIndex)
+		{
+			self.signature = signature
+			self.backupSignature = backupSignature
+			// The backup bytes are convenient below 8 MiB. Keep no extra copy
+			// of a large JSON payload; the privacy index still avoids decoding it.
+			originalData = data.count <= 8 * 1024 * 1024 ? data : nil
+			self.privacy = privacy
+		}
+	}
+
+	private nonisolated struct SelectionJournal: Codable {
+		let version: Int
+		var updates: [String: BrowserSelectionUpdate]
+		let writtenAt: Date
+	}
+
+	/// Tiny, atomic overlay for scroll-only mutations. Full saves absorb these
+	/// updates under the same lock before committing the primary checkpoint.
+	private nonisolated struct ScrollJournal: Codable {
+		let version: Int
+		let baseSignature: CheckpointSignature
+		var updates: [String: BrowserScrollUpdate]
+	}
 
 	private nonisolated struct Envelope: Codable {
 		let version: Int
 		let state: BrowserPersistedState
+	}
+
+	/// Minimal launch-time projection. AppDelegate only needs window identities,
+	/// selections, and frames to construct windows; decoding tabs/history/bookmarks
+	/// here duplicated the Browser hydration decode and inflated cold-start work.
+	private nonisolated struct WindowRecordsEnvelope: Decodable {
+		let version: Int
+		let state: WindowRecordsState
+	}
+
+	private nonisolated struct WindowRecordsState: Decodable {
+		let windowRecords: [BrowserWindowRecord]?
+	}
+
+	/// Compact startup index, explicitly tied to the *primary* atomic
+	/// checkpoint. A mismatched sidecar must never override backup recovery.
+	private nonisolated struct WindowRecordsSidecar: Codable {
+		let version: Int
+		let signature: CheckpointSignature
+		let records: [BrowserWindowRecord]
 	}
 
 	private nonisolated struct ReadingArchiveEnvelope: Codable {
@@ -181,6 +381,7 @@ final class BrowserPersistence: @unchecked Sendable {
 	}
 
 	nonisolated func saveReadingArchive(_ data: Data, id: UUID, url: URL) throws -> UUID {
+		BrowserLog.debug(.persistence, "reading-archive.save", metadata: ["id": BrowserLog.id(id), "url": BrowserLog.url(url), "bytes": String(data.count)])
 		guard !data.isEmpty, data.count <= Self.maxReadingArchiveBytes else { throw BrowserUserData.ImportError.tooLarge }
 		guard BrowserHomepage.validURL(url.absoluteString) != nil else { throw BrowserPersistenceError.invalidSnapshot }
 		guard url.absoluteString.utf8.count <= 16384 else { throw BrowserUserData.ImportError.tooLarge }
@@ -216,6 +417,7 @@ final class BrowserPersistence: @unchecked Sendable {
 	}
 
 	nonisolated func loadReadingArchive(id: UUID, url expectedURL: URL) throws -> Data? {
+		BrowserLog.debug(.persistence, "reading-archive.load", metadata: ["id": BrowserLog.id(id), "url": BrowserLog.url(expectedURL)])
 		Self.readingArchiveLock.lock()
 		defer { Self.readingArchiveLock.unlock() }
 		let folder = readingArchiveDirectory
@@ -232,6 +434,7 @@ final class BrowserPersistence: @unchecked Sendable {
 	}
 
 	nonisolated func removeReadingArchive(id: UUID, ifGeneration generation: UUID? = nil) throws {
+		BrowserLog.debug(.persistence, "reading-archive.remove", metadata: ["id": BrowserLog.id(id), "generation": BrowserLog.id(generation)])
 		Self.readingArchiveLock.lock()
 		defer { Self.readingArchiveLock.unlock() }
 		let folder = readingArchiveDirectory
@@ -252,19 +455,32 @@ final class BrowserPersistence: @unchecked Sendable {
 		self.directory = directory
 	}
 
+	/// The session, favicon cache, and window restorer share immutable
+	/// directory state instead of independently resolving Application Support.
+	@MainActor private static var sessionStore: BrowserPersistence?
+
 	@MainActor
 	static func makeShared() throws -> BrowserPersistence {
-		try BrowserPersistence()
+		if let sessionStore {
+			return sessionStore
+		}
+		let store = try BrowserPersistence()
+		sessionStore = store
+		return store
 	}
 
 	nonisolated func loadPersistedState() throws -> BrowserPersistedState? {
+		let logStarted = BrowserLog.clock()
+		BrowserLog.debug(.persistence, "state.load.begin", metadata: ["directory": BrowserLog.path(directory)])
 		var hasSnapshot = false
 		for name in ["browser-state.json", "browser-state.backup.json"] {
 			let url = directory.appendingPathComponent(name)
 			guard FileManager.default.fileExists(atPath: url.path) else { continue }
 			hasSnapshot = true
 			do {
-				return try decodeSnapshot(Data(contentsOf: url))
+				let state = try applyingScrollUpdates(to: applyingSelectionUpdates(to: decodeSnapshot(Data(contentsOf: url)), loadedFrom: url), loadedFrom: url)
+				BrowserLog.duration(.persistence, "state.load.end", since: logStarted, warnAboveMilliseconds: 250, metadata: ["source": name, "tabs": String(state.openTabs.count), "bookmarks": String(state.bookmarks.count)])
+				return state
 			} catch BrowserPersistenceError.unsupportedVersion {
 				throw BrowserPersistenceError.unsupportedVersion
 			} catch {
@@ -275,6 +491,78 @@ final class BrowserPersistence: @unchecked Sendable {
 			throw BrowserPersistenceError.invalidSnapshot
 		}
 		return nil
+	}
+
+	nonisolated func loadWindowRecords() throws -> [BrowserWindowRecord] {
+		let logStarted = BrowserLog.clock()
+		let primaryURL = directory.appendingPathComponent("browser-state.json")
+		if let signature = CheckpointSignature(at: primaryURL) {
+			let sidecarURL = directory.appendingPathComponent("browser-windows.json")
+			if let byteCount = try? sidecarURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+			   byteCount <= 256 * 1024,
+			   let bytes = try? Data(contentsOf: sidecarURL), bytes.count <= 256 * 1024,
+			   let sidecar = try? JSONDecoder().decode(WindowRecordsSidecar.self, from: bytes),
+			   sidecar.version == 1, sidecar.signature == signature,
+			   (try? validateWindowRecords(sidecar.records)) != nil
+			{
+				let records = applyingWindowSelectionUpdates(sidecar.records, loadedFrom: primaryURL)
+				BrowserLog.duration(.persistence, "window-records.load.end",
+				                    since: logStarted, warnAboveMilliseconds: 100,
+				                    metadata: ["source": "sidecar", "windows": String(records.count)])
+				return records
+			}
+		}
+		var hasSnapshot = false
+		for name in ["browser-state.json", "browser-state.backup.json"] {
+			let url = directory.appendingPathComponent(name)
+			guard FileManager.default.fileExists(atPath: url.path) else { continue }
+			hasSnapshot = true
+			do {
+				let data = try Data(contentsOf: url)
+				guard data.count <= 64 * 1024 * 1024 else {
+					throw BrowserPersistenceError.invalidSnapshot
+				}
+				let envelope = try JSONDecoder().decode(WindowRecordsEnvelope.self, from: data)
+				guard (1 ... Self.currentVersion).contains(envelope.version) else {
+					throw BrowserPersistenceError.unsupportedVersion
+				}
+				let recorded = envelope.state.windowRecords ?? []
+				try validateWindowRecords(recorded)
+				let records = applyingWindowSelectionUpdates(recorded, loadedFrom: url)
+				BrowserLog.duration(
+					.persistence,
+					"window-records.load.end",
+					since: logStarted,
+					warnAboveMilliseconds: 100,
+					metadata: ["source": name, "windows": String(records.count)]
+				)
+				return records
+			} catch BrowserPersistenceError.unsupportedVersion {
+				throw BrowserPersistenceError.unsupportedVersion
+			} catch {
+				continue
+			}
+		}
+		if hasSnapshot {
+			throw BrowserPersistenceError.invalidSnapshot
+		}
+		return []
+	}
+
+	private nonisolated func applyingWindowSelectionUpdates(
+		_ original: [BrowserWindowRecord], loadedFrom url: URL
+	) -> [BrowserWindowRecord] {
+		var records = original
+		if let journal = try? selectionUpdates(newerThan: url) {
+			for index in records.indices {
+				guard let update = journal.updates[records[index].windowID.uuidString],
+				      update.selectedTabModifiedAt > records[index].selectionModifiedAt,
+				      records[index].tabIDs.contains(update.selectedTabID) else { continue }
+				records[index].selectedTabID = update.selectedTabID
+				records[index].selectionModifiedAt = update.selectedTabModifiedAt
+			}
+		}
+		return records
 	}
 
 	nonisolated func loadBookmarks() throws -> [Bookmark] {
@@ -322,65 +610,351 @@ final class BrowserPersistence: @unchecked Sendable {
 		return try read(BrowserSnapshot.self, named: "browser-snapshot.json")
 	}
 
+	/// Writes a tiny, versioned selection checkpoint without reading or serializing
+	/// tabs, history, bookmarks, favicons, or webview state.
+	nonisolated func saveSelectionUpdate(_ update: BrowserSelectionUpdate) throws {
+		let started = BrowserLog.clock()
+		Self.selectionJournalLock.lock()
+		defer { Self.selectionJournalLock.unlock() }
+		var updates = try readSelectionJournal()?.updates ?? [:]
+		let key = update.windowID.uuidString
+		if let previous = updates[key], previous.selectedTabModifiedAt >= update.selectedTabModifiedAt {
+			return
+		}
+		updates[key] = update
+		guard updates.count <= 256 else { throw BrowserPersistenceError.invalidSnapshot }
+		let journal = SelectionJournal(version: 1, updates: updates, writtenAt: .now)
+		let data = try JSONEncoder().encode(journal)
+		guard data.count <= 512 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
+		try data.write(to: directory.appendingPathComponent("browser-selection.json"), options: .atomic)
+		BrowserLog.duration(.persistence, "selection.save.end", since: started, warnAboveMilliseconds: 40, metadata: ["bytes": String(data.count)])
+	}
+
+	private nonisolated func readSelectionJournal() throws -> SelectionJournal? {
+		let url = directory.appendingPathComponent("browser-selection.json")
+		guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+		let data = try Data(contentsOf: url)
+		guard data.count <= 512 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
+		// Inspect the schema version before decoding the shape: a future
+		// version may intentionally have incompatible fields.
+		guard let header = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+		      let version = header["version"] as? Int
+		else {
+			throw BrowserPersistenceError.invalidSnapshot
+		}
+		guard version == 1 else { throw BrowserPersistenceError.unsupportedVersion }
+		return try JSONDecoder().decode(SelectionJournal.self, from: data)
+	}
+
+	/// A scroll writes a small atomic JSON overlay rather than serializing
+	/// bookmarks, every tab, history, and all window records on the main actor.
+	/// Updates share the full-checkpoint lock, so a structural save can safely
+	/// absorb them without losing scrolls from a different window.
+	nonisolated func saveScrollUpdates(_ changes: [BrowserScrollUpdate]) throws {
+		guard !changes.isEmpty else { return }
+		let started = BrowserLog.clock()
+		Self.selectionJournalLock.lock()
+		defer { Self.selectionJournalLock.unlock() }
+		let primary = directory.appendingPathComponent("browser-state.json")
+		guard let signature = CheckpointSignature(at: primary) else {
+			throw BrowserPersistenceError.invalidSnapshot
+		}
+		let existing = try readScrollJournal()
+		var updates = existing?.baseSignature == signature ? (existing?.updates ?? [:]) : [:]
+		for change in changes {
+			guard change.position.x.isFinite, change.position.y.isFinite,
+			      abs(change.position.x) <= 1_000_000_000,
+			      abs(change.position.y) <= 1_000_000_000 else { continue }
+			let key = change.tabID.uuidString
+			if let old = updates[key], old.modifiedAt > change.modifiedAt {
+				continue
+			}
+			updates[key] = change
+		}
+		guard updates.count <= 4096 else { throw BrowserPersistenceError.invalidSnapshot }
+		let encoded = try JSONEncoder().encode(ScrollJournal(
+			version: 1, baseSignature: signature, updates: updates
+		))
+		guard encoded.count <= 512 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
+		try encoded.write(to: directory.appendingPathComponent("browser-scroll.json"), options: .atomic)
+		BrowserLog.duration(.persistence, "scroll.save.end", since: started,
+		                    warnAboveMilliseconds: 40,
+		                    metadata: ["bytes": String(encoded.count), "tabs": String(changes.count)])
+	}
+
+	private nonisolated func readScrollJournal() throws -> ScrollJournal? {
+		let url = directory.appendingPathComponent("browser-scroll.json")
+		guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+		let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+		guard size <= 512 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
+		let data = try Data(contentsOf: url)
+		guard data.count <= 512 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
+		let header = try JSONDecoder().decode(EnvelopeVersionOnly.self, from: data)
+		guard header.version == 1 else { throw BrowserPersistenceError.unsupportedVersion }
+		let journal = try JSONDecoder().decode(ScrollJournal.self, from: data)
+		guard journal.updates.count <= 4096 else { throw BrowserPersistenceError.invalidSnapshot }
+		return journal
+	}
+
+	private nonisolated func applyingScrollUpdates(
+		to original: BrowserPersistedState, loadedFrom snapshotURL: URL
+	) throws -> BrowserPersistedState {
+		Self.selectionJournalLock.lock()
+		defer { Self.selectionJournalLock.unlock() }
+		guard let signature = CheckpointSignature(at: snapshotURL),
+		      let journal = try? readScrollJournal(),
+		      journal.baseSignature == signature else { return original }
+		var state = original
+		mergeScrollUpdates(journal, into: &state)
+		return state
+	}
+
+	private nonisolated func mergeScrollUpdates(
+		_ journal: ScrollJournal, into state: inout BrowserPersistedState
+	) {
+		for index in state.openTabs.indices {
+			let tab = state.openTabs[index]
+			guard let update = journal.updates[tab.id.uuidString],
+			      tab.url == update.url, tab.historyIndex == update.historyIndex,
+			      update.modifiedAt >= tab.modifiedAt,
+			      update.position.x.isFinite, update.position.y.isFinite,
+			      abs(update.position.x) <= 1_000_000_000,
+			      abs(update.position.y) <= 1_000_000_000 else { continue }
+			state.openTabs[index].scrollPosition = update.position
+			state.openTabs[index].modifiedAt = update.modifiedAt
+		}
+	}
+
+	private nonisolated func selectionUpdates(newerThan snapshotURL: URL) throws -> SelectionJournal? {
+		Self.selectionJournalLock.lock()
+		defer { Self.selectionJournalLock.unlock() }
+		guard let journal = try readSelectionJournal() else { return nil }
+		let snapshotTime = (try? snapshotURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+		return journal.writtenAt > snapshotTime ? journal : nil
+	}
+
+	private nonisolated func applyingSelectionUpdates(
+		to original: BrowserPersistedState,
+		loadedFrom snapshotURL: URL
+	) throws -> BrowserPersistedState {
+		guard let journal = try? selectionUpdates(newerThan: snapshotURL) else { return original }
+		var state = original
+		mergeSelectionUpdates(journal, into: &state)
+		return state
+	}
+
+	/// Called both when loading a pending checkpoint and before committing a
+	/// full snapshot. A full save in window A must not erase window B's more
+	/// recent selection just because it persisted another structural mutation.
+	private nonisolated func mergeSelectionUpdates(
+		_ journal: SelectionJournal,
+		into state: inout BrowserPersistedState
+	) {
+		let available = Set(state.openTabs.map(\.id))
+		for index in (state.windowRecords ?? []).indices {
+			guard let update = journal.updates[state.windowRecords![index].windowID.uuidString],
+			      update.selectedTabModifiedAt > state.windowRecords![index].selectionModifiedAt,
+			      available.contains(update.selectedTabID),
+			      state.windowRecords![index].tabIDs.contains(update.selectedTabID) else { continue }
+			state.windowRecords![index].selectedTabID = update.selectedTabID
+			state.windowRecords![index].selectionModifiedAt = update.selectedTabModifiedAt
+		}
+		let newerUpdates = journal.updates.values
+			.filter { $0.selectedTabModifiedAt > state.snapshot.selectedTabModifiedAt }
+			.sorted(by: { $0.selectedTabModifiedAt > $1.selectedTabModifiedAt })
+		guard let update = newerUpdates.first(where: { update in
+			guard available.contains(update.selectedTabID),
+			      let spaceIndex = state.workspace.spaces.firstIndex(where: { $0.id == update.selectedSpaceID })
+			else { return false }
+			return state.workspace.favouriteTabIDs.contains(update.selectedTabID)
+				|| state.workspace.spaces[spaceIndex].tabIDs.contains(update.selectedTabID)
+		}), let spaceIndex = state.workspace.spaces.firstIndex(where: { $0.id == update.selectedSpaceID })
+		else { return }
+		state.snapshot.selectedTabID = update.selectedTabID
+		state.snapshot.selectedTabModifiedAt = update.selectedTabModifiedAt
+		state.workspace.selectedSpaceID = update.selectedSpaceID
+		state.workspace.selectionModifiedAt = update.selectedTabModifiedAt
+		state.workspace.modifiedAt = max(state.workspace.modifiedAt, update.selectedTabModifiedAt)
+		state.workspace.spaces[spaceIndex].selectedTabID = update.selectedTabID
+		state.workspace.spaces[spaceIndex].modifiedAt = max(
+			state.workspace.spaces[spaceIndex].modifiedAt, update.selectedTabModifiedAt
+		)
+	}
+
 	nonisolated func savePersistedState(_ state: BrowserPersistedState) throws {
+		Self.selectionJournalLock.lock()
+		defer { Self.selectionJournalLock.unlock() }
+		// Never silently overwrite a checkpoint written by a newer release.
+		// A corrupt checkpoint can be ignored: the full snapshot is authoritative.
+		let selectionJournal: SelectionJournal?
+		do {
+			selectionJournal = try readSelectionJournal()
+		} catch BrowserPersistenceError.unsupportedVersion {
+			throw BrowserPersistenceError.unsupportedVersion
+		} catch {
+			selectionJournal = nil
+		}
+		let scrollJournal: ScrollJournal?
+		do {
+			scrollJournal = try readScrollJournal()
+		} catch BrowserPersistenceError.unsupportedVersion {
+			throw BrowserPersistenceError.unsupportedVersion
+		} catch {
+			scrollJournal = nil
+		}
+		let logStarted = BrowserLog.clock()
+		BrowserLog.debug(.persistence, "state.save.begin", metadata: ["tabs": String(state.openTabs.count), "bookmarks": String(state.bookmarks.count), "reading_list": String(state.readingList.count), "history": String(state.historyVisits?.count ?? 0)])
 		try validateWindowRecords(state.windowRecords ?? [])
-		for name in ["browser-state.json", "browser-state.backup.json"] {
-			let url = directory.appendingPathComponent(name)
-			guard let currentData = try? Data(contentsOf: url) else { continue }
+		let currentURL = directory.appendingPathComponent("browser-state.json")
+		let backupURL = directory.appendingPathComponent("browser-state.backup.json")
+		let previousReadStarted = BrowserLog.clock()
+		// A full-state save needs the old state to detect privacy deletions.
+		// Decode it once; do not reread and decode the same 50,000-visit JSON
+		// document during schema checking and again for backup comparison.
+		let cacheKey = currentURL.standardizedFileURL.path as NSString
+		let currentSignature = CheckpointSignature(at: currentURL)
+		let cached = currentSignature.flatMap { signature -> CachedCheckpoint? in
+			guard let candidate = Self.checkpointCache.object(forKey: cacheKey),
+			      candidate.signature == signature else { return nil }
+			return candidate
+		}
+		// A cold start or an externally replaced checkpoint still receives the
+		// original full schema/privacy validation. Normal consecutive saves
+		// reuse only the confirmed prior checkpoint's compact privacy index.
+		let previousData = cached?.originalData ?? (try? Data(contentsOf: currentURL))
+		let previousIndex: PrivacyDeletionIndex?
+		if let cached {
+			previousIndex = cached.privacy
+			BrowserLog.trace(.persistence, "state.previous-cache.hit")
+		} else if let previousData {
 			do {
-				_ = try decodeSnapshot(currentData)
+				previousIndex = try PrivacyDeletionIndex(decodeSnapshot(previousData))
 			} catch BrowserPersistenceError.unsupportedVersion {
 				throw BrowserPersistenceError.unsupportedVersion
 			} catch {
-				continue
+				previousIndex = nil
+			}
+		} else {
+			previousIndex = nil
+		}
+		// A backup already validated by the most recent successful commit
+		// needs only an inode/size/mtime check. Unknown or externally replaced
+		// backups are read and schema-checked before any files are overwritten.
+		let backupSignature = CheckpointSignature(at: backupURL)
+		let knownBackupUnchanged = cached != nil && cached?.backupSignature == backupSignature
+		let backupData = knownBackupUnchanged ? nil : (try? Data(contentsOf: backupURL))
+		if let backupData {
+			try rejectUnsupportedEnvelopeVersion(backupData)
+		}
+		let backupPrevious: PrivacyDeletionIndex? = if previousIndex == nil, let backupData {
+			(try? decodeSnapshot(backupData)).map(PrivacyDeletionIndex.init)
+		} else {
+			nil
+		}
+		BrowserLog.duration(.persistence, "state.previous-decode.end",
+		                    since: previousReadStarted,
+		                    warnAboveMilliseconds: 125,
+		                    metadata: ["recovery_baseline": String(backupPrevious != nil)])
+		let encodeStarted = BrowserLog.clock()
+		var state = state
+		if let selectionJournal {
+			mergeSelectionUpdates(selectionJournal, into: &state)
+		}
+		if let scrollJournal, scrollJournal.baseSignature == currentSignature {
+			mergeScrollUpdates(scrollJournal, into: &state)
+		}
+		state.windowRecords = (state.windowRecords ?? []).sorted { $0.windowID.uuidString < $1.windowID.uuidString }
+		try validatePersistedState(state)
+		let data = try JSONEncoder().encode(Envelope(version: Self.currentVersion, state: state))
+		guard data.count <= 64 * 1024 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
+		BrowserLog.duration(.persistence, "state.encode.end",
+		                    since: encodeStarted,
+		                    warnAboveMilliseconds: 125,
+		                    metadata: ["bytes": String(data.count)])
+		let previousPrimaryWasUnavailable = previousIndex == nil
+		var privateDataWasRemoved = false
+		if let previous = previousIndex ?? backupPrevious {
+			privateDataWasRemoved = previous.hasPrivacyRemoval(comparedTo: state)
+			if privateDataWasRemoved {
+				// If we restored from the backup because the primary was
+				// damaged, repair the primary first: never remove the last
+				// recoverable copy until another valid one is committed.
+				if previousPrimaryWasUnavailable, backupPrevious != nil,
+				   let backupData
+				{
+					try backupData.write(to: currentURL, options: .atomic)
+				}
+				// Keep a valid current snapshot while removing any stale backup.
+				// Once deletion is committed, restoration can never fall back
+				// to a backup that resurrects the removed private information.
+				if FileManager.default.fileExists(atPath: backupURL.path) {
+					try FileManager.default.removeItem(at: backupURL)
+				}
+			} else if let previousData, previousPrimaryWasUnavailable == false {
+				try previousData.write(to: backupURL, options: .atomic)
 			}
 		}
-		var state = state
-		state.windowRecords = (state.windowRecords ?? []).sorted { $0.windowID.uuidString < $1.windowID.uuidString }
-		let data = try JSONEncoder().encode(Envelope(version: Self.currentVersion, state: state))
-		_ = try decodeSnapshot(data)
-		let currentURL = directory.appendingPathComponent("browser-state.json")
-		var privateDataWasRemoved = false
-		if FileManager.default.fileExists(atPath: currentURL.path),
-		   let previousData = try? Data(contentsOf: currentURL),
-		   (try? decodeSnapshot(previousData)) != nil
-		{
-			let previous = try decodeSnapshot(previousData)
-			let incomingIDs = Set((state.historyVisits ?? []).map(\.id))
-			privateDataWasRemoved = (previous.historyVisits ?? []).contains { !incomingIDs.contains($0.id) }
-				|| previous.readingList.contains { old in !state.readingList.contains(where: { $0.id == old.id }) }
-				|| previous.snapshot.historyClearedAt < state.snapshot.historyClearedAt
-				|| previous.closedTabs.contains { old in
-					!state.closedTabs.contains(where: { $0.id == old.id })
-				}
-				|| previous.openTabs.contains { old in
-					guard let updated = state.openTabs.first(where: { $0.id == old.id }) else { return false }
-					return old.history.contains { !updated.history.contains($0) }
-				}
-				|| previous.snapshot.deletedVisitsAt.contains { id, date in
-					state.snapshot.deletedVisitsAt[id].map { $0 > date } ?? false
-				}
-				|| previous.openTabs.contains { old in
-					old.recordsNavigationHistory && state.openTabs.first(where: { $0.id == old.id })?.recordsNavigationHistory == false
-				}
-				|| previous.openTabs.contains { tab in
-					(tab.history + [tab.url].compactMap(\.self)).contains { $0.user != nil || $0.password != nil }
-				}
-				|| previous.bookmarks.contains { $0.url.user != nil || $0.url.password != nil }
-				|| (previous.historyVisits ?? []).contains { $0.url.user != nil || $0.url.password != nil }
-			try previousData.write(
-				to: directory.appendingPathComponent("browser-state.backup.json"),
-				options: .atomic
-			)
-		}
+		let commitStarted = BrowserLog.clock()
 		try data.write(to: currentURL, options: .atomic)
+		// The full snapshot includes all window selections captured at commit time.
+		// A crash before this cleanup is safe: loader ignores older journals.
+		try? FileManager.default.removeItem(at: directory.appendingPathComponent("browser-selection.json"))
+		// The primary now contains every valid pending scroll change. A crash
+		// before removal is harmless because the sidecar signature is stale.
+		try? FileManager.default.removeItem(at: directory.appendingPathComponent("browser-scroll.json"))
 		if privateDataWasRemoved {
-			try data.write(to: directory.appendingPathComponent("browser-state.backup.json"), options: .atomic)
+			try data.write(to: backupURL, options: .atomic)
 		}
+		// Write the small projection only after the primary checkpoint has
+		// committed. Failure here cannot invalidate a successful full save;
+		// the startup loader falls back to the original state envelope.
+		if let signature = CheckpointSignature(at: currentURL) {
+			let sidecar = WindowRecordsSidecar(
+				version: 1, signature: signature, records: state.windowRecords ?? []
+			)
+			if let sidecarBytes = try? JSONEncoder().encode(sidecar),
+			   sidecarBytes.count <= 256 * 1024
+			{
+				do {
+					try sidecarBytes.write(
+						to: directory.appendingPathComponent("browser-windows.json"),
+						options: .atomic
+					)
+				} catch {
+					BrowserLog.warning(.persistence, "window-records.sidecar-write-failed",
+					                   metadata: ["error": BrowserLog.errorDescription(error)])
+				}
+			}
+		}
+		BrowserLog.duration(.persistence, "state.commit.end",
+		                    since: commitStarted,
+		                    warnAboveMilliseconds: 125,
+		                    metadata: ["bytes": String(data.count), "private_data_removed": String(privateDataWasRemoved)])
+		BrowserLog.duration(.persistence, "state.save.end", since: logStarted, warnAboveMilliseconds: 250, metadata: ["bytes": String(data.count), "private_data_removed": String(privateDataWasRemoved)])
 		for name in ["bookmarks.json", "favourites.json", "open-tabs.json", "closed-tabs.json", "workspace.json", "browser-snapshot.json"] {
 			let legacyURL = directory.appendingPathComponent(name)
 			if FileManager.default.fileExists(atPath: legacyURL.path) {
 				try FileManager.default.removeItem(at: legacyURL)
+			}
+		}
+		if let signature = CheckpointSignature(at: currentURL) {
+			let cacheCost = min(
+				Int.max / 2,
+				data.count + (state.historyVisits?.count ?? 0) * 144
+					+ state.openTabs.count * 512 + state.bookmarks.count * 128
+					+ state.readingList.count * 128
+			)
+			if cacheCost <= 24 * 1024 * 1024 {
+				Self.checkpointCache.setObject(
+					CachedCheckpoint(
+						signature: signature, backupSignature: CheckpointSignature(at: backupURL),
+						data: data, privacy: PrivacyDeletionIndex(state)
+					),
+					forKey: cacheKey,
+					cost: cacheCost
+				)
+			} else {
+				Self.checkpointCache.removeObject(forKey: cacheKey)
 			}
 		}
 	}
@@ -393,18 +967,23 @@ final class BrowserPersistence: @unchecked Sendable {
 		try read(BrowserShutdownMetadata.self, named: "browser-shutdown.json")
 	}
 
-	private nonisolated func decodeSnapshot(_ data: Data) throws -> BrowserPersistedState {
-		guard data.count <= 64 * 1024 * 1024 else {
-			throw BrowserPersistenceError.invalidSnapshot
-		}
-		guard let header = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-		      let version = header["version"] as? Int
-		else { throw BrowserPersistenceError.invalidSnapshot }
-		guard (1 ... Self.currentVersion).contains(version) else {
+	private nonisolated struct EnvelopeVersionOnly: Decodable {
+		let version: Int
+	}
+
+	private nonisolated func rejectUnsupportedEnvelopeVersion(_ data: Data) throws {
+		guard data.count <= 64 * 1024 * 1024,
+		      let header = try? JSONDecoder().decode(EnvelopeVersionOnly.self, from: data)
+		else { return }
+		guard (1 ... Self.currentVersion).contains(header.version) else {
 			throw BrowserPersistenceError.unsupportedVersion
 		}
-		let envelope = try JSONDecoder().decode(Envelope.self, from: data)
-		let state = envelope.state
+	}
+
+	/// Validate the decoded document or the in-memory snapshot before encoding.
+	/// Avoid immediately decoding our own JSON output just to repeat these
+	/// semantic checks a second time.
+	private nonisolated func validatePersistedState(_ state: BrowserPersistedState) throws {
 		try validateWindowRecords(state.windowRecords ?? [])
 		guard Set(state.openTabs.map(\.id)).count == state.openTabs.count,
 		      state.bookmarks.count <= 100_000,
@@ -429,6 +1008,21 @@ final class BrowserPersistence: @unchecked Sendable {
 		else {
 			throw BrowserPersistenceError.invalidSnapshot
 		}
+	}
+
+	private nonisolated func decodeSnapshot(_ data: Data) throws -> BrowserPersistedState {
+		guard data.count <= 64 * 1024 * 1024 else {
+			throw BrowserPersistenceError.invalidSnapshot
+		}
+		guard let header = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+		      let version = header["version"] as? Int
+		else { throw BrowserPersistenceError.invalidSnapshot }
+		guard (1 ... Self.currentVersion).contains(version) else {
+			throw BrowserPersistenceError.unsupportedVersion
+		}
+		let envelope = try JSONDecoder().decode(Envelope.self, from: data)
+		let state = envelope.state
+		try validatePersistedState(state)
 		return state
 	}
 
@@ -450,12 +1044,14 @@ final class BrowserPersistence: @unchecked Sendable {
 	}
 
 	private nonisolated func read<Value: Decodable>(_ type: Value.Type, named fileName: String) throws -> Value? {
+		BrowserLog.trace(.persistence, "json.read", metadata: ["file": fileName])
 		let url = directory.appendingPathComponent(fileName)
 		guard FileManager.default.fileExists(atPath: url.path) else { return nil }
 		return try JSONDecoder().decode(type, from: Data(contentsOf: url))
 	}
 
 	private nonisolated func write(_ value: some Encodable, named fileName: String) throws {
+		BrowserLog.trace(.persistence, "json.write", metadata: ["file": fileName])
 		let data = try JSONEncoder().encode(value)
 		try data.write(to: directory.appendingPathComponent(fileName), options: .atomic)
 	}

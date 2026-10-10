@@ -8,8 +8,8 @@
 	final class ControlTabSwitcher {
 		private(set) var candidateIDs: [UUID] = []
 		private(set) var highlightedTabID: UUID?
-		private(set) var candidateWindowAnchorID: UUID?
 		private(set) var isPreviewVisible = false
+		private var visibleCandidateCount = 1
 
 		@ObservationIgnored
 		private let browser: Browser
@@ -39,7 +39,6 @@
 				let isEscape = event.keyCode == 53
 				let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 				let isControlPressed = modifiers.contains(.control)
-				let isShiftPressed = modifiers.contains(.shift)
 				let hasDisallowedModifiers = modifiers.contains(.command) || modifiers.contains(.option)
 				let isHandled = MainActor.assumeIsolated {
 					guard let self else { return false }
@@ -57,9 +56,9 @@
 					)
 					return self.handle(
 						isKeyDown: isKeyDown,
+						keyCode: event.keyCode,
 						isEscape: isEscape,
 						isControlPressed: isControlPressed,
-						isShiftPressed: isShiftPressed,
 						hasDisallowedModifiers: hasDisallowedModifiers,
 						hasMarkedText: hasMarkedText,
 						ownsTabSwitch: ownsTabSwitch
@@ -81,6 +80,9 @@
 		}
 
 		func tabsDidChange() {
+			// No active switch session: avoid rebuilding tab membership for
+			// every background mutation in every open window.
+			guard !candidateIDs.isEmpty else { return }
 			let validTabIDs = Set(browser.visibleTabs.map(\.id))
 			candidateIDs.removeAll { !validTabIDs.contains($0) }
 			guard !candidateIDs.isEmpty else {
@@ -89,9 +91,6 @@
 			}
 			if let highlightedTabID, !validTabIDs.contains(highlightedTabID) {
 				self.highlightedTabID = candidateIDs[0]
-			}
-			if let candidateWindowAnchorID, !validTabIDs.contains(candidateWindowAnchorID) {
-				self.candidateWindowAnchorID = highlightedTabID ?? candidateIDs[0]
 			}
 		}
 
@@ -107,11 +106,15 @@
 			highlightedTabID = tabID
 		}
 
+		func setVisibleCandidateCount(_ count: Int) {
+			visibleCandidateCount = max(1, count)
+		}
+
 		private func handle(
 			isKeyDown: Bool,
+			keyCode: UInt16,
 			isEscape: Bool,
 			isControlPressed: Bool,
-			isShiftPressed: Bool,
 			hasDisallowedModifiers: Bool,
 			hasMarkedText: Bool,
 			ownsTabSwitch: Bool
@@ -151,23 +154,23 @@
 				}
 				guard ownsTabSwitch else { return false }
 				if candidateIDs.isEmpty {
-					sessionForward = !isShiftPressed
+					sessionForward = keyCode == 48
 					let order = browser.switchCandidates(forward: sessionForward)
 					guard !order.isEmpty else { return true }
 					candidateIDs = order
 					highlightedTabID = order[0]
-					candidateWindowAnchorID = order[0]
 					previewTask = Task { @MainActor [weak self] in
 						try? await Task.sleep(for: .milliseconds(200))
 						guard !Task.isCancelled, let self, !candidateIDs.isEmpty else { return }
 						isPreviewVisible = true
 					}
 				} else {
-					let currentIndex = candidateIDs.firstIndex(of: highlightedTabID ?? candidateIDs[0]) ?? 0
-					let isForward = !isShiftPressed
+					let cycleCount = min(candidateIDs.count, visibleCandidateCount)
+					let visibleIDs = candidateIDs.prefix(cycleCount)
+					let currentIndex = visibleIDs.firstIndex(of: highlightedTabID ?? candidateIDs[0]) ?? 0
+					let isForward = keyCode == 48
 					let step = isForward == sessionForward ? 1 : -1
-					highlightedTabID = candidateIDs[(currentIndex + step + candidateIDs.count) % candidateIDs.count]
-					candidateWindowAnchorID = highlightedTabID
+					highlightedTabID = candidateIDs[(currentIndex + step + cycleCount) % cycleCount]
 				}
 				return true
 			}
@@ -179,7 +182,6 @@
 			previewTask = nil
 			candidateIDs = []
 			highlightedTabID = nil
-			candidateWindowAnchorID = nil
 			isPreviewVisible = false
 		}
 	}

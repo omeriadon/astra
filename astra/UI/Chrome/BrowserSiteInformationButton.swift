@@ -173,14 +173,6 @@ private struct BrowserSitePreferenceControls: View {
 		}
 	}
 
-	private var nativeContentBlockingException: Binding<Bool> {
-		Binding {
-			preferences.disablesNativeContentBlocking(for: origin)
-		} set: { disabled in
-			preferences.setNativeContentBlockingDisabled(disabled, for: origin)
-		}
-	}
-
 	var body: some View {
 		Section("Site Preferences") {
 			Text("Zoom is saved and synced for this origin. Desktop/mobile mode and custom user agent stay on this device and apply at the next navigation.")
@@ -188,14 +180,6 @@ private struct BrowserSitePreferenceControls: View {
 				.foregroundStyle(.secondary)
 			if preferences.isZoomDataReadOnly || preferences.isLocalDataReadOnly {
 				Text("Astra preserved saved preferences it cannot read and disabled changes to those preference types.")
-					.font(.caption)
-					.foregroundStyle(.secondary)
-			}
-			if controller.session.contentBlocking.source != nil {
-				Toggle("Pause Native Rules for This Site", isOn: nativeContentBlockingException)
-					.disabled(preferences.isLocalDataReadOnly)
-					.accessibilityIdentifier("site-native-content-blocking-exception-\(origin)")
-				Text("This exception affects Astra’s imported native rule list for tabs showing this site. uBlock Origin Lite may still block the same content.")
 					.font(.caption)
 					.foregroundStyle(.secondary)
 			}

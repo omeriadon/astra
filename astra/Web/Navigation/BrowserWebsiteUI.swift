@@ -151,7 +151,9 @@ import WebKit
 			completionHandler: @escaping () -> Void
 		) {
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				let alert = BrowserWebsiteUI.alert(
 					title: frame.securityOrigin.host,
 					message: message,
@@ -172,7 +174,9 @@ import WebKit
 			completionHandler: @escaping (Bool) -> Void
 		) {
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				let alert = BrowserWebsiteUI.alert(title: frame.securityOrigin.host, message: message, confirm: "OK")
 				let response = await BrowserWebsiteUI.present(alert, in: webView.window) { [self] in
 					ownsPrompt(in: webView, documentID: documentID)
@@ -189,7 +193,9 @@ import WebKit
 			completionHandler: @escaping (String?) -> Void
 		) {
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				let alert = BrowserWebsiteUI.alert(title: frame.securityOrigin.host, message: prompt, confirm: "OK")
 				let field = NSTextField(string: defaultText ?? "")
 				field.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
@@ -210,7 +216,9 @@ import WebKit
 			completionHandler: @escaping (Bool) -> Void
 		) {
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				let alert = BrowserWebsiteUI.alert(
 					title: "Leave \(frame.securityOrigin.host)?",
 					message: "Changes you made may not be saved.",
@@ -237,6 +245,7 @@ import WebKit
 				return
 			}
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			let panel = NSOpenPanel()
 			panel.message = "Choose files for \(frame.securityOrigin.host)"
 			panel.allowsMultipleSelection = parameters.allowsMultipleSelection
@@ -247,6 +256,7 @@ import WebKit
 			let finish: ([URL]?) -> Void = { urls in
 				guard !completed else { return }
 				completed = true
+				self.endLifecycleOperation()
 				completionHandler(urls)
 			}
 			monitor = Task { @MainActor [weak self, weak window] in
@@ -295,6 +305,7 @@ import WebKit
 					do {
 						try await Task.sleep(for: .milliseconds(100))
 					} catch {
+						finish(nil)
 						return
 					}
 				}
@@ -345,7 +356,9 @@ import WebKit
 			completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
 		) {
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				let response = await BrowserWebsiteUI.authenticate(challenge, in: webView.window) { [self] in
 					ownsPrompt(in: webView, documentID: documentID)
 				}
@@ -567,7 +580,9 @@ import WebKit
 			completionHandler: @escaping () -> Void
 		) {
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				_ = await BrowserWebsiteUI.javascriptDialog(
 					title: frame.securityOrigin.host,
 					message: message,
@@ -587,7 +602,9 @@ import WebKit
 			completionHandler: @escaping (Bool) -> Void
 		) {
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				let result = await BrowserWebsiteUI.javascriptDialog(
 					title: frame.securityOrigin.host,
 					message: message,
@@ -608,7 +625,9 @@ import WebKit
 			completionHandler: @escaping (String?) -> Void
 		) {
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				let result = await BrowserWebsiteUI.javascriptDialog(
 					title: frame.securityOrigin.host,
 					message: prompt,
@@ -629,7 +648,9 @@ import WebKit
 			completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
 		) {
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				let response = await BrowserWebsiteUI.authenticate(challenge, in: webView) { [weak self, weak webView] in
 					guard let self, let webView else { return false }
 					return ownsPrompt(in: webView, documentID: documentID)
@@ -732,6 +753,8 @@ extension BrowserController {
 		topOrigin: String,
 		in webView: WKWebView
 	) async -> WKPermissionDecision {
+		beginLifecycleOperation()
+		defer { endLifecycleOperation() }
 		let documentID = navigationIdentifier
 		guard ownsPrompt(in: webView, documentID: documentID) else { return .deny }
 		let permissions = session.permissions

@@ -32,8 +32,19 @@ extension Browser {
 		if query.isEmpty {
 			guard includeActions else { return [] }
 			let shortcuts = ["page-history", "page-bookmarks", "page-settings", "page-themeEditor", "reopen-tab", "new-space"]
-			let results = shortcuts.compactMap { id in
+			var results = shortcuts.compactMap { id in
 				actions.first(where: { $0.id == id }).map { actionResult($0, score: 0) }
+			}
+			if let clipboardURL = newTabClipboardURL {
+				results.insert(
+					BrowserSearchResult(
+						id: "clipboard-url", kind: .typed, title: clipboardURL.absoluteString,
+						detail: "Open Clipboard URL", symbol: "link", score: 2,
+						destination: clipboardURL.absoluteString,
+						perform: { self.openSearchDestination(clipboardURL) }
+					),
+					at: 0
+				)
 			}
 			return results.map { result in
 				BrowserSearchResult(
@@ -52,6 +63,7 @@ extension Browser {
 			}
 		}
 
+		let normalizedQuery = BrowserSearchMatching.normalized(query)
 		var results: [BrowserSearchResult] = []
 		if let destination = BrowserAddress.destination(
 			for: query,
@@ -90,19 +102,19 @@ extension Browser {
 		if includeActions {
 			for action in actions {
 				let score = ([action.title] + action.terms).map {
-					BrowserSearchMatching.score(query, in: $0)
+					BrowserSearchMatching.score(normalizedQuery: normalizedQuery, in: $0)
 				}.max() ?? 0
 				if score > 0 {
 					results.append(actionResult(action, score: score + 0.02))
 				}
 			}
 		}
-		results += historySearchResults(for: query)
-		results += bookmarkSearchResults(for: query)
-		results += openTabSearchResults(for: query)
+		results += historySearchResults(normalizedQuery: normalizedQuery)
+		results += bookmarkSearchResults(normalizedQuery: normalizedQuery)
+		results += openTabSearchResults(normalizedQuery: normalizedQuery)
 		let suggestions = remoteSuggestions ?? (includeActions ? newTabGoogleSuggestions : [])
 		for (index, suggestion) in suggestions.enumerated()
-			where BrowserSearchMatching.normalized(suggestion) != BrowserSearchMatching.normalized(query)
+			where BrowserSearchMatching.normalized(suggestion) != normalizedQuery
 		{
 			guard let url = configuration.searchURL(for: suggestion, isPrivate: isPrivate) else { continue }
 			results.append(BrowserSearchResult(
@@ -114,7 +126,21 @@ extension Browser {
 			))
 		}
 		let ranked = BrowserSearchResult.ranked(results)
-		return ranked.map { result in
+		let ordered: [BrowserSearchResult]
+		if includeActions, let searchURL = configuration.searchURL(for: query, isPrivate: isPrivate) {
+			let exactSearch = BrowserSearchResult(
+				id: "exact-search", kind: .typed, title: query,
+				detail: "Search \(configuration.engine(isPrivate: isPrivate).title)", symbol: "magnifyingglass",
+				score: 0, destination: searchURL.absoluteString,
+				perform: { self.openSearchDestination(searchURL) }
+			)
+			ordered = BrowserSearchResult.enforceExactSearchSecond(
+				ranked, candidate: exactSearch, destination: searchURL.absoluteString
+			)
+		} else {
+			ordered = ranked
+		}
+		return ordered.map { result in
 			BrowserSearchResult(
 				id: result.id, kind: result.kind, title: result.title,
 				detail: result.detail, symbol: result.symbol,
@@ -241,24 +267,45 @@ extension Browser {
 		)
 	}
 
-	private func historySearchResults(for query: String) -> [BrowserSearchResult] {
-		let newestVisit = historyVisits.map(\.visitedAt).max() ?? .distantPast
-		let summaries = Dictionary(grouping: historyVisits, by: \.url).compactMap { url, visits -> (URL, BrowserVisit, Int)? in
-			guard let latest = visits.max(by: {
-				$0.visitedAt == $1.visitedAt
-					? $0.id.uuidString > $1.id.uuidString
-					: $0.visitedAt < $1.visitedAt
-			}) else { return nil }
-			return (url, latest, visits.count)
+	private func historySearchResults(normalizedQuery: String) -> [BrowserSearchResult] {
+		// Retain the SwiftUI observation dependency even when using the ignored cache.
+		_ = historyVisits.count
+		if historySearchIndex == nil {
+			// Build once per history mutation, not for every keystroke.
+			var newestVisit = Date.distantPast
+			var summaries: [URL: (visit: BrowserVisit, count: Int)] = [:]
+			for visit in historyVisits {
+				if visit.visitedAt > newestVisit {
+					newestVisit = visit.visitedAt
+				}
+				if var existing = summaries[visit.url] {
+					existing.count += 1
+					if visit.visitedAt > existing.visit.visitedAt ||
+						(visit.visitedAt == existing.visit.visitedAt &&
+							visit.id.uuidString < existing.visit.id.uuidString)
+					{
+						existing.visit = visit
+					}
+					summaries[visit.url] = existing
+				} else {
+					summaries[visit.url] = (visit, 1)
+				}
+			}
+			let entries = summaries.map { (url: $0.key, visit: $0.value.visit, count: $0.value.count) }
+			historySearchIndex = (newestVisit: newestVisit, entries: entries)
 		}
-		return summaries.compactMap { url, visit, count in
+		guard let index = historySearchIndex else { return [] }
+		return index.entries.compactMap { entry in
+			let url = entry.url
+			let visit = entry.visit
+			let count = entry.count
 			let match = max(
-				BrowserSearchMatching.score(query, in: visit.title),
-				BrowserSearchMatching.score(query, in: url.host ?? ""),
-				BrowserSearchMatching.score(query, in: url.absoluteString)
+				BrowserSearchMatching.score(normalizedQuery: normalizedQuery, in: visit.title),
+				BrowserSearchMatching.score(normalizedQuery: normalizedQuery, in: url.host ?? ""),
+				BrowserSearchMatching.score(normalizedQuery: normalizedQuery, in: url.absoluteString)
 			)
 			guard match > 0 else { return nil }
-			let age = max(0, newestVisit.timeIntervalSince(visit.visitedAt) / 86400)
+			let age = max(0, index.newestVisit.timeIntervalSince(visit.visitedAt) / 86400)
 			let recency = 1 / (1 + age / 365)
 			return BrowserSearchResult(
 				id: "history-\(visit.id)", kind: .history, title: visit.title,
@@ -270,11 +317,11 @@ extension Browser {
 		}
 	}
 
-	private func bookmarkSearchResults(for query: String) -> [BrowserSearchResult] {
+	private func bookmarkSearchResults(normalizedQuery: String) -> [BrowserSearchResult] {
 		bookmarks.compactMap { bookmark in
 			let match = max(
-				BrowserSearchMatching.score(query, in: bookmark.name),
-				BrowserSearchMatching.score(query, in: bookmark.url.absoluteString)
+				BrowserSearchMatching.score(normalizedQuery: normalizedQuery, in: bookmark.name),
+				BrowserSearchMatching.score(normalizedQuery: normalizedQuery, in: bookmark.url.absoluteString)
 			)
 			guard match > 0 else { return nil }
 			return BrowserSearchResult(
@@ -287,13 +334,13 @@ extension Browser {
 		}
 	}
 
-	private func openTabSearchResults(for query: String) -> [BrowserSearchResult] {
+	private func openTabSearchResults(normalizedQuery: String) -> [BrowserSearchResult] {
 		tabs.compactMap { tab in
 			guard let url = tab.activeController?.url ?? tab.currentURL else { return nil }
 			let title = tab.title.isEmpty ? url.host ?? url.absoluteString : tab.title
 			let match = max(
-				BrowserSearchMatching.score(query, in: title),
-				BrowserSearchMatching.score(query, in: url.absoluteString)
+				BrowserSearchMatching.score(normalizedQuery: normalizedQuery, in: title),
+				BrowserSearchMatching.score(normalizedQuery: normalizedQuery, in: url.absoluteString)
 			)
 			guard match > 0 else { return nil }
 			return BrowserSearchResult(

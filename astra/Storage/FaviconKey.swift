@@ -1,7 +1,7 @@
 import Foundation
 
 enum FaviconKey {
-	static func origin(for url: URL?) -> String? {
+	nonisolated static func origin(for url: URL?) -> String? {
 		guard let url,
 		      let scheme = url.scheme?.lowercased(),
 		      scheme == "http" || scheme == "https",

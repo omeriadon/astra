@@ -125,6 +125,13 @@ final class BrowserTab: Identifiable {
 	}
 
 	private(set) var controller: BrowserController?
+	private(set) var monitorMatch: BrowserMonitorMatch?
+
+	func setMonitorMatch(_ match: BrowserMonitorMatch?) {
+		monitorMatch = match
+		markModified()
+	}
+
 	private(set) var pictureInPictureReturnControllerID: UUID?
 	var activeController: BrowserController? {
 		if let pictureInPictureReturnControllerID {
@@ -138,12 +145,34 @@ final class BrowserTab: Identifiable {
 		return peeks.last?.controller ?? controller
 	}
 
+	var isDeveloperMode: Bool {
+		guard internalPage == nil else { return false }
+		if Defaults[.developerModeEnabled] {
+			return true
+		}
+		guard let host = (activeController?.url ?? currentURL)?.host else { return false }
+		return host == "localhost"
+			|| host.hasSuffix(".localhost")
+			|| host == "127.0.0.1"
+			|| host == "::1"
+	}
+
 	var isHibernated: Bool {
 		internalPage == nil && controller == nil
 	}
 
 	var currentURL: URL? {
 		controller?.url ?? storedURL
+	}
+
+	/// Scroll journaling needs the saved navigation index without allocating
+	/// an OpenTab (and potentially encrypting WKWebView restoration state).
+	var scrollHistoryIndex: Int {
+		recordsNavigationHistory ? (controller?.historyIndex ?? storedHistoryIndex) : 0
+	}
+
+	var copyableURL: URL? {
+		internalPage == nil ? activeController?.url ?? currentURL : nil
 	}
 
 	private(set) var peeks: [BrowserPeek]
@@ -160,7 +189,11 @@ final class BrowserTab: Identifiable {
 	private var storedScrollPosition: BrowserScrollPosition
 	private var storedPeeks: [OpenPeek]
 	private(set) var modifiedAt: Date
+	/// Transient activity used by automatic hibernation; restored tabs get a fresh window.
+	private(set) var lastInteractionAt: Date
+	@ObservationIgnored
 	private var restorationBaseline: OpenTab?
+	@ObservationIgnored
 	private var isApplyingSynchronizedMetadata = false
 
 	@ObservationIgnored
@@ -172,7 +205,7 @@ final class BrowserTab: Identifiable {
 
 	/// Scroll-only updates (persisted on a slow debounce, no cross-window fan-out).
 	@ObservationIgnored
-	var didScrollChange: (@MainActor () -> Void)?
+	var didScrollChange: (@MainActor (_ isPeek: Bool) -> Void)?
 
 	@ObservationIgnored
 	private var openTabCache: OpenTab?
@@ -186,6 +219,7 @@ final class BrowserTab: Identifiable {
 			internalPage: internalPage?.persistenceID,
 			pageTitle: pageTitle,
 			customTitle: customTitle,
+			monitorMatch: monitorMatch,
 			url: (controller?.url ?? storedURL).map(BrowserAddress.withoutCredentials),
 			history: recordsNavigationHistory ? (controller?.history ?? storedHistory).map(BrowserAddress.withoutCredentials) : currentURL.map { [BrowserAddress.withoutCredentials($0)] } ?? [],
 			historyIndex: recordsNavigationHistory ? (controller?.historyIndex ?? storedHistoryIndex) : 0,
@@ -207,6 +241,7 @@ final class BrowserTab: Identifiable {
 		internalPage: BrowserInternalPage? = nil,
 		pageTitle: String = "New Tab",
 		customTitle: String? = nil,
+		monitorMatch: BrowserMonitorMatch? = nil,
 		initialURL: URL? = nil,
 		history: [URL] = [],
 		historyIndex: Int = 0,
@@ -220,7 +255,8 @@ final class BrowserTab: Identifiable {
 		recordsNavigationHistory: Bool = true,
 		restorationState: Data? = nil,
 		fileAccessBookmark: Data? = nil,
-		suppressInitialHistoryVisit: Bool = false
+		suppressInitialHistoryVisit: Bool = false,
+		initialRestorationBaseline: OpenTab? = nil
 	) {
 		let session = existingController?.session ?? session ?? .shared
 		self.id = id
@@ -228,6 +264,7 @@ final class BrowserTab: Identifiable {
 		self.session = existingController?.session ?? session
 		self.pageTitle = pageTitle
 		self.customTitle = customTitle
+		self.monitorMatch = monitorMatch
 		storedURL = initialURL
 		storedRestorationState = restorationState
 		storedFileAccessBookmark = fileAccessBookmark
@@ -239,6 +276,7 @@ final class BrowserTab: Identifiable {
 		storedScrollPosition = scrollPosition
 		storedPeeks = openPeeks
 		self.modifiedAt = modifiedAt
+		lastInteractionAt = .now
 		peeks = isHibernated ? [] : openPeeks.map { BrowserPeek(openPeek: $0, session: session) }
 		controller = if isHibernated || internalPage != nil {
 			nil
@@ -261,7 +299,9 @@ final class BrowserTab: Identifiable {
 		for peek in peeks {
 			observe(peek)
 		}
-		restorationBaseline = openTab
+		// Restored tabs already have a fully decoded OpenTab. Reusing it avoids
+		// serializing WebKit interaction state again for every startup tab.
+		restorationBaseline = initialRestorationBaseline ?? openTab
 	}
 
 	convenience init(openTab saved: OpenTab) {
@@ -281,7 +321,8 @@ final class BrowserTab: Identifiable {
 			recordsNavigationHistory: saved.recordsNavigationHistory,
 			restorationState: saved.restorationState,
 			fileAccessBookmark: saved.fileAccessBookmark,
-			suppressInitialHistoryVisit: true
+			suppressInitialHistoryVisit: true,
+			initialRestorationBaseline: saved
 		)
 	}
 
@@ -289,11 +330,16 @@ final class BrowserTab: Identifiable {
 		controller?.canHibernate != false && peeks.allSatisfy(\.controller.canHibernate)
 	}
 
-	func hibernate() {
+	func markInteraction() {
+		lastInteractionAt = .now
+	}
+
+	func hibernate(interactionState: Any? = nil) {
 		guard internalPage == nil else { return }
 		guard let controller, canHibernate else { return }
-		storedInteractionState = controller.webViewIfLoaded?.interactionState
-		storedRestorationState = controller.encryptedInteractionState
+		let interactionState = interactionState ?? controller.webViewIfLoaded?.interactionState
+		storedRestorationState = controller.encryptedInteractionState(from: interactionState)
+		storedInteractionState = storedRestorationState == nil ? interactionState : nil
 		storedFileAccessBookmark = controller.fileAccessBookmark
 		storedHistoryPrefix = controller.liveHistoryPrefix
 		storedURL = controller.url
@@ -439,6 +485,7 @@ final class BrowserTab: Identifiable {
 		isApplyingSynchronizedMetadata = true
 		pageTitle = updated.pageTitle
 		customTitle = updated.customTitle
+		monitorMatch = updated.monitorMatch
 		recordsNavigationHistory = updated.recordsNavigationHistory
 		storedPageZoom = updated.pageZoom
 		if !updated.recordsNavigationHistory {
@@ -505,7 +552,7 @@ final class BrowserTab: Identifiable {
 			markNavigationModified()
 		}
 		peek.controller.scrollPositionDidChange = { [weak self] in
-			self?.markModifiedForScroll()
+			self?.markModifiedForScroll(isPeek: true)
 		}
 	}
 
@@ -540,23 +587,41 @@ final class BrowserTab: Identifiable {
 		didChange?()
 	}
 
+	private func hasSameNavigationState(as baseline: OpenTab) -> Bool {
+		// openTab also captures/encrypts WebKit interactionState. The change
+		// detector only compares URL/history/zoom/scroll, so constructing a full
+		// OpenTab here did expensive restoration-state work for no reason.
+		let url = (controller?.url ?? storedURL).map(BrowserAddress.withoutCredentials)
+		let history = recordsNavigationHistory
+			? (controller?.history ?? storedHistory).map(BrowserAddress.withoutCredentials)
+			: url.map { [$0] } ?? []
+		let historyIndex = recordsNavigationHistory
+			? (controller?.historyIndex ?? storedHistoryIndex)
+			: 0
+		return url == baseline.url
+			&& history == baseline.history
+			&& historyIndex == baseline.historyIndex
+			&& (controller?.pageZoom ?? storedPageZoom) == baseline.pageZoom
+			&& (controller?.scrollPosition ?? storedScrollPosition) == baseline.scrollPosition
+	}
+
 	private func markNavigationModified() {
 		openTabCache = nil
-		if let restorationBaseline, openTab.hasSameNavigationState(as: restorationBaseline) {
+		if let restorationBaseline, hasSameNavigationState(as: restorationBaseline) {
 			return
 		}
 		restorationBaseline = nil
 		markModified()
 	}
 
-	private func markModifiedForScroll() {
+	private func markModifiedForScroll(isPeek: Bool = false) {
 		openTabCache = nil
-		if let restorationBaseline, openTab.hasSameNavigationState(as: restorationBaseline) {
+		if let restorationBaseline, hasSameNavigationState(as: restorationBaseline) {
 			return
 		}
 		restorationBaseline = nil
 		modifiedAt = .now
 		openTabCache = nil
-		didScrollChange?()
+		didScrollChange?(isPeek)
 	}
 }

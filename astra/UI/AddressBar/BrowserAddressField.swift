@@ -108,18 +108,6 @@ struct BrowserAddressField: View {
 					}
 				}
 			)
-			PasteButton(payloadType: String.self) { values in
-				guard let value = values.first,
-				      let destination = BrowserSearchMatching.pastedHTTPURL(value)
-				else {
-					return
-				}
-				addressText = destination.absoluteString
-				isFocused = true
-			}
-			.labelStyle(.iconOnly)
-			.accessibilityLabel("Paste address")
-			.accessibilityIdentifier("paste-address")
 			if let template = availableSearchEngineTemplate {
 				Button {
 					browser.discoverSearchEngineFromAddressBar(template: template)
@@ -287,7 +275,7 @@ struct BrowserAddressField: View {
 
 	private var dimmedAddressText: AttributedString {
 		var text = AttributedString(addressText)
-		text.foregroundColor = Color.primary.opacity(0.2)
+		text.foregroundColor = Color.primary.opacity(0.65)
 		guard let url = browser.selectedTab?.activeController?.url else {
 			text.foregroundColor = .primary
 			return text
