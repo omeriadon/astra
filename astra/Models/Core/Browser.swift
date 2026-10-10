@@ -831,7 +831,11 @@ final class Browser {
 				for tab in tabs {
 					tab.invalidateStoredSnapshot()
 				}
-				applyHydratedState(loaded, placeholderID: placeholderID, placeholderModifiedAt: placeholderModifiedAt)
+				// Replace disposable cached UI state with authoritative disk state
+				// without animating every sidebar row on first restoration.
+				withTransaction(Transaction(animation: nil)) {
+					applyHydratedState(loaded, placeholderID: placeholderID, placeholderModifiedAt: placeholderModifiedAt)
+				}
 			} catch {
 				guard let self else { return }
 				hydrationFailed = true
