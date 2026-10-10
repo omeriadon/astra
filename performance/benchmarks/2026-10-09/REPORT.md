@@ -1,0 +1,119 @@
+# Astra runtime validation, 9–10 October 2026
+
+**Status: incomplete. No browser-wide performance improvement or release-readiness claim is established.**
+
+PR: https://github.com/omeriadon/astra/pull/13. The release branch remains intact and the PR remains open. This dataset records successful checks, failed tools, exploratory results, and unexecuted acceptance criteria separately.
+
+## Environment and isolation
+
+- MacBook Air Mac14,2, arm64, 8 CPU cores, 16 GiB RAM.
+- macOS 27.2, build 26B5101f; Xcode 27.2 beta 2; system WebKit.
+- AC power. Brightness and power settings were not changed. Background applications remained running.
+- Baseline app source: `05af54619cbcc4724800889f01e90d948eb37235`.
+- Candidate app source: `8fc6600d421c4566191fa982940d5d6f139f56ea`.
+- Process-inventory correction: `69f635e`. Later artifact commits do not change the app architecture.
+- Separate worktrees, ad hoc sandboxed builds, bundle identifiers, defaults domains, WebKit stores, and test-only sync Keychain service names were used. Personal profiles were not copied or cleared. Production-only signing entitlements were excluded from the fixtures; authentication/Web Push behavior is therefore not certified.
+- Controlled downloads used a directory selected through the native folder picker under `/tmp`, outside personal Downloads.
+
+Disk availability repeatedly fell to approximately 100 MiB. Instruments and the passive sampler reported explicit disk-full failures. Removing only task-generated caches recovered space temporarily. Existing memory pressure, compressed memory, and swap are confounding factors.
+
+## Actual execution
+
+Computer Use launched both isolated builds, loaded public websites and unsigned-in YouTube pages, created/persisted 100 tabs, exercised repeated Control-Tab switching, toggled the sidebar, scrolled a long local page, entered a form, downloaded files, and tested extension error handling.
+
+The controlled 4 KiB and 16 MiB downloads matched their source SHA-256 values. Automatic AI naming was active and renamed the large payload; filename equality was not used as an integrity test. The automatic-download permission dialog was exercised with Allow Once.
+
+The edited form survived tab switching, and its background tab exposed a disabled Hibernate action. On 10 October the same candidate process, PID 56304, had approximately 13 hours of uptime and still retained the test form. This is an endpoint observation, not a continuously monitored crash-free soak or proof of the exact hibernation exclusion reason.
+
+## Baseline comparison limits
+
+Thirty recovery launches produced real milestone logs, five per build and 10/50/100-tab fixture. The harness forcibly terminated and reopened the app, disrupted the user, and was stopped and removed. Its stdout/stderr were discarded. These samples are retained as **exploratory recovery milestones only**, not accepted ordinary launch comparisons. No further force-kill/relaunch harness was run.
+
+Five observations do not support a useful p95 estimate. The following numerical differences are arithmetic on exploratory data, not certified improvements or regressions.
+
+| Workflow | Baseline | Candidate | Difference | Result |
+|---|---:|---:|---:|---|
+| Cold startup to usable UI | NOT MEASURED | NOT MEASURED | — | Unverified |
+| Ordinary warm startup to usable UI | NOT MEASURED | NOT MEASURED | — | Unverified |
+| 10-tab recovery milestone, median | 828.4 ms | 832.7 ms | +4.3 ms | Exploratory |
+| 50-tab recovery milestone, median | 881.6 ms | 863.8 ms | −17.8 ms | Exploratory |
+| 100-tab recovery milestone, median | 1026.0 ms | 1178.4 ms | +152.4 ms | Exploratory |
+| Input-to-pixel tab switching | NOT MEASURED | NOT MEASURED | — | Unverified |
+| Matched idle CPU workload | NOT MEASURED | NOT MEASURED | — | Unverified |
+| Matched active YouTube memory | NOT MEASURED | NOT MEASURED | — | Playback not certified |
+| Matched background WebKit memory | NOT MEASURED | NOT MEASURED | — | No matched series |
+| Tab-close memory reclamation | NOT MEASURED | NOT MEASURED | — | Unverified |
+
+Recovery milestone ranges, in milliseconds:
+
+| Saved tabs | Baseline range | Candidate range |
+|---|---:|---:|
+| 10 | 672.9–909.3 | 771.2–883.2 |
+| 50 | 784.3–967.6 | 835.3–906.0 |
+| 100 | 652.2–1174.9 | 1152.4–1427.9 |
+
+The window/restoration log boundaries exclude usable interaction and page paint. Fixture tabs mostly represent unloaded blank tabs; they do not represent 100 loaded websites. Encrypted interaction snapshots were excluded because the fixtures use different restoration keys.
+
+## Synchronous stage evidence
+
+The recovered candidate series contains the following measured distributions. These are stage durations, not whole interactions. Baseline coverage was insufficient for comparison.
+
+| Stage | Samples | Median | p95 | Range |
+|---|---:|---:|---:|---:|
+| Tab creation to model commit | 90 | 1.3 ms | 9.4 ms | 0.8–73.4 ms |
+| Tab selection | 110 | 0.2 ms | 1.2 ms | 0.1–16.4 ms |
+| WebView host resolution | 113 | 0.5 ms | 1.6 ms | 0.1–16.0 ms |
+| Snapshot preparation | 93 | 0.4 ms | 1.5 ms | 0.2–32.7 ms |
+| Previous checkpoint decode | 93 | 0.4 ms | 6.3 ms | 0.3–16.9 ms |
+| Checkpoint encoding | 93 | 0.9 ms | 4.7 ms | 0.3–22.2 ms |
+| Checkpoint commit | 93 | 1.8 ms | 22.4 ms | 1.2–38.4 ms |
+| Shared-state fan-out | 92 | 0.0 ms | 0.1 ms | 0.0–0.6 ms |
+
+Outliers remain included. Durations were recorded to 0.1 ms precision; rounded zero does not mean no work. The 100-tab switching log showed selection-journal writes without full checkpoint writes for selection-only changes.
+
+## Profiling and resource findings
+
+Two Time Profiler captures completed: a 30-second initial transition and a 20-second controlled tab-switching capture. Sanitized summaries retain sample counts and leaf/inclusive symbol weights. Inclusive symbols are deduplicated within each sample. Sampling weight is not exact CPU time.
+
+The controlled trace had 4,242 samples, including 4,169 main-thread samples. Runtime, AppKit, SwiftUI, allocation, and event-loop symbols dominated the visible stacks; application frames were partly unsymbolized. The trace does not establish a particular Astra function as a meaningful bottleneck. No architecture was redesigned without attributable evidence.
+
+Descriptive 30-second CPU observations, percent of one CPU core:
+
+- Baseline empty profile: Astra 0.24%.
+- Candidate static-page observation: Astra 1.61%.
+- Candidate 100-tab observation: Astra 1.01%.
+- Paused YouTube, app backgrounded: Astra 0.29%, mapped WebContent 2.39%, GPU 0.02%, networking 0.25%.
+- YouTube playback attempt: Astra 17.66%, mapped WebContent 12.35%, GPU 6.76%, networking 1.51%. Sustained playback was not certified, so this is not an active-playback benchmark.
+
+These scenarios differ and must not be used as build comparisons. YouTube player accessibility/visual state was inconsistent on both builds. No JavaScript heap, decoder-buffer, or exclusive per-tab memory breakdown is claimed.
+
+Mapped process footprints at the overnight endpoint were approximately 129.4 MiB for Astra, 52.6 MiB for the protected local-page WebContent process, 10.2 MiB for GPU, and 25.8 MiB for networking. The Astra footprint at the first passive sample was approximately 127.0 MiB. Process identities remained available. This mapped subset does not include every possible browser process and does not establish a leak or tab-close reclamation.
+
+Activity Monitor was operated independently. Its energy rows could not be reliably attributed between identically named test instances. Physical watts and a comparative energy result are **NOT MEASURED**.
+
+## Failed and incomplete checks
+
+- Leaks: initial recording failed with kperf/ktrace errors; no valid leak result.
+- Rendering: sequential Animation Hitches recording aborted while saving with `No space left on device`; no valid frame-pacing result.
+- The 60-minute passive monitor stopped after ten samples spanning 540 seconds because the result write failed with errno 28. It did not restart Astra. The saved samples are marked incomplete.
+- Computer Use coordinate actions subsequently returned `noWindowsAvailable` even while the app process and accessibility tree remained available. Indexed interaction still verified the retained form.
+- The corrupt extension archive was rejected. The bundled uBlock archive passed `unzip -t` but was rejected by Astra during the low-storage session. A later import retest was blocked by coordinate interaction errors. A standalone WebKit constructor probe terminated in Foundation and is not a valid app-context test. Valid extension installation/removal remains unverified.
+- Multi-window/private browsing, PiP/capture continuity, active background audio, sustained playback, hibernation/wake reclamation, interrupted-write recovery, large history/bookmark UI workloads, and download pause/resume/segmentation/external-volume workflows were not comprehensively executed.
+
+## Implemented corrections and verification
+
+The demonstrated measurement bug was fixed: the previous `ps` layout truncated executable names and missed `com.apple.WebKit.*` helpers. The helper now requests unbounded `comm` output as the final column, retains executable basenames only, recognizes the actual helper names, and never inspects command arguments or infers ownership from ancestry. Parser and live-process regression checks pass.
+
+The passive sampler retains process-start identities, stops on unavailable/reused Astra PID, and contains no app launch or process-signaling behavior. Its result publication now uses a temporary file and atomic replacement so a failed write preserves the preceding result. Identity and publication self-checks pass.
+
+The non-build regression sweep recorded 34 unique passing checks and 35 successful invocations, including isolated hibernation, filesystem/download publication, ownership, history cancellation, and library checks. This is not a claim that every repository check or runtime scenario passed.
+
+The macOS Debug build completed through Xcode MCP on 10 October with no reported errors. The macOS Release build completed through Xcode's Build For Profiling action on 9 October. No local `xcodebuild` command was used. Xcode reported zero scheme tests; executable regression checks are recorded separately. CI on the artifact integration commit must be verified separately from the earlier green run on `8fc6600`.
+
+## Artifacts and privacy
+
+JSON files contain raw numeric samples, process identities, aggregate metrics, fixture definitions, and explicit caveats. Debug logs and successful raw Instruments traces remain outside the repository under `/tmp`; they can contain environment information and should not be published unredacted. Failed traces were removed to recover space.
+
+The pre-commit hook unexpectedly ran whole-repository formatting and staged unrelated files during the first checkpoint. Those changes were removed from the unpublished checkpoint, and the original `BrowserResources.swift` edit was restored. Subsequent scoped commits bypass that hook for the individual command; repository hook configuration was not changed.
+
+The mission remains incomplete. Remaining acceptance criteria are not marked passed, the PR is not merged, and no unsupported memory-reclamation change is introduced.

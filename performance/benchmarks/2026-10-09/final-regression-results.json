@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "date": "2026-10-09",
+  "workflow": ".github/workflows/validate-release.yml",
+  "executed": {
+    "check_count": 34,
+    "passed_count": 34,
+    "failed_count": 0,
+    "successful_invocations": 35,
+    "webkit_process_inventory": "passed",
+    "json_validation": "passed",
+    "post_release_swift_checks": {
+      "bookmark_projection": "passed",
+      "library_scaling_benchmark": "passed",
+      "window_ownership": "passed",
+      "history_cancellation": "passed",
+      "download_file_worker": "passed",
+      "automatic_hibernation": "passed"
+    }
+  },
+  "excluded": [
+    "no additional Swift checks beyond the listed post-release checks",
+    "Check Debug build: xcodebuild excluded",
+    "Check unsigned release archive: xcodebuild excluded",
+    "recovery restoration runtime matrix: excluded after the requested stop; runner not recreated or rerun",
+    "UI automation and app launches: excluded"
+  ],
+  "privacy": {
+    "personal_profile_accessed": false,
+    "network_checks": false,
+    "source_changes": false
+  }
+}

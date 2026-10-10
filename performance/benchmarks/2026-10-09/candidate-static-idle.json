@@ -1,0 +1,154 @@
+{
+  "after": {
+    "captured_at": 1791554428.8614058,
+    "host": {
+      "machine": "arm64",
+      "os": "macOS-27.2-arm64-arm-64bit-Mach-O",
+      "processor_count": 8,
+      "python": "3.14.8"
+    },
+    "measurement": {
+      "cpu_source": "libproc CPU Mach ticks converted with mach_timebase_info; ps cumulative time fallback; interval deltas",
+      "footprint_source": "public proc_pid_rusage RUSAGE_INFO_V4 when available; otherwise unavailable",
+      "ownership": "only explicitly mapped PIDs are attributed; XPC WebKit helpers remain unattributed",
+      "rss_source": "libproc resident size when available; otherwise ps rss; process-level estimates",
+      "shared_processes": "deduplicated by pid and process start identity",
+      "tab_attribution": "unavailable from public WebKit APIs"
+    },
+    "monotonic": 232645.993756166,
+    "processes": [
+      {
+        "cpu_seconds": 6.22,
+        "executable": "omeriadon",
+        "footprint_bytes": 102630696,
+        "identity": "38940@mach:5579198512269",
+        "pid": 38940,
+        "ppid": 1,
+        "role": "astra",
+        "rss_bytes": 115081216,
+        "rusage_cpu_nanoseconds": 6216018208,
+        "rusage_start_abstime": 5579198512269,
+        "started": "Fri Oct 9 21:57:29 2026"
+      }
+    ],
+    "schema": 1,
+    "totals": {
+      "astra": {
+        "footprint_bytes": 102630696,
+        "footprint_processes": 1,
+        "processes": 1,
+        "rss_bytes": 115081216
+      },
+      "gpu": {
+        "footprint_bytes": null,
+        "footprint_processes": 0,
+        "processes": 0,
+        "rss_bytes": 0
+      },
+      "network": {
+        "footprint_bytes": null,
+        "footprint_processes": 0,
+        "processes": 0,
+        "rss_bytes": 0
+      },
+      "other": {
+        "footprint_bytes": null,
+        "footprint_processes": 0,
+        "processes": 0,
+        "rss_bytes": 0
+      },
+      "webcontent": {
+        "footprint_bytes": null,
+        "footprint_processes": 0,
+        "processes": 0,
+        "rss_bytes": 0
+      }
+    },
+    "unattributed_webkit_processes": [],
+    "unavailable_selected_pids": []
+  },
+  "before": {
+    "captured_at": 1791554398.780799,
+    "host": {
+      "machine": "arm64",
+      "os": "macOS-27.2-arm64-arm-64bit-Mach-O",
+      "processor_count": 8,
+      "python": "3.14.8"
+    },
+    "measurement": {
+      "cpu_source": "libproc CPU Mach ticks converted with mach_timebase_info; ps cumulative time fallback; interval deltas",
+      "footprint_source": "public proc_pid_rusage RUSAGE_INFO_V4 when available; otherwise unavailable",
+      "ownership": "only explicitly mapped PIDs are attributed; XPC WebKit helpers remain unattributed",
+      "rss_source": "libproc resident size when available; otherwise ps rss; process-level estimates",
+      "shared_processes": "deduplicated by pid and process start identity",
+      "tab_attribution": "unavailable from public WebKit APIs"
+    },
+    "monotonic": 232615.913162625,
+    "processes": [
+      {
+        "cpu_seconds": 5.73,
+        "executable": "omeriadon",
+        "footprint_bytes": 96699688,
+        "identity": "38940@mach:5579198512269",
+        "pid": 38940,
+        "ppid": 1,
+        "role": "astra",
+        "rss_bytes": 45088768,
+        "rusage_cpu_nanoseconds": 5731015541,
+        "rusage_start_abstime": 5579198512269,
+        "started": "Fri Oct 9 21:57:29 2026"
+      }
+    ],
+    "schema": 1,
+    "totals": {
+      "astra": {
+        "footprint_bytes": 96699688,
+        "footprint_processes": 1,
+        "processes": 1,
+        "rss_bytes": 45088768
+      },
+      "gpu": {
+        "footprint_bytes": null,
+        "footprint_processes": 0,
+        "processes": 0,
+        "rss_bytes": 0
+      },
+      "network": {
+        "footprint_bytes": null,
+        "footprint_processes": 0,
+        "processes": 0,
+        "rss_bytes": 0
+      },
+      "other": {
+        "footprint_bytes": null,
+        "footprint_processes": 0,
+        "processes": 0,
+        "rss_bytes": 0
+      },
+      "webcontent": {
+        "footprint_bytes": null,
+        "footprint_processes": 0,
+        "processes": 0,
+        "rss_bytes": 0
+      }
+    },
+    "unattributed_webkit_processes": [],
+    "unavailable_selected_pids": []
+  },
+  "cpu_percent_of_one_core": {
+    "astra": 1.6134467874597873,
+    "gpu": 0.0,
+    "network": 0.0,
+    "other": 0.0,
+    "webcontent": 0.0
+  },
+  "cpu_seconds": {
+    "astra": 0.485002667,
+    "gpu": 0.0,
+    "network": 0.0,
+    "other": 0.0,
+    "webcontent": 0.0
+  },
+  "elapsed_seconds": 30.060034875001293,
+  "schema": 1
+}

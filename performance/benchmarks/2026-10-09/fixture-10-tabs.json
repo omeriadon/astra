@@ -1,0 +1,289 @@
+{
+  "state": {
+    "windowRecords": [],
+    "bookmarks": [],
+    "readingList": [],
+    "closedTabs": [],
+    "workspace": {
+      "spaces": [
+        {
+          "pinnedFolders": [],
+          "id": "00000000-0000-0000-0000-000000000003",
+          "todayTabGroups": [],
+          "selectedTabID": "F3421A5C-23FD-4084-A2F8-50A8264CFA91",
+          "tabIDs": [
+            "7A473C26-E00B-4306-8321-D4E2580FB46D",
+            "19790801-FF9C-4550-A2CE-5436CC3E3E33",
+            "9E24B6A9-9174-4A8C-98F6-42FE36B3667E",
+            "591CB6C3-84A8-487C-B058-474F8E0C81CC",
+            "58A7243A-9EB4-46E5-9BDE-DF7DB0758230",
+            "AD53267A-CE09-4320-A924-393B7AAF2283",
+            "C76DB866-F3A4-40C8-BA1E-D3710C10EDB4",
+            "AA7D5262-FCE4-4C08-A642-5B58066528C1",
+            "45F6910C-B755-4ECE-8930-139CD373FB1B",
+            "F3421A5C-23FD-4084-A2F8-50A8264CFA91"
+          ],
+          "theme": {
+            "firstColor": {
+              "blue": 0.34,
+              "red": 0.25,
+              "green": 0.29
+            },
+            "shaderNoiseAmount": 0.25,
+            "shaderNoiseMonochrome": true,
+            "meshColorPoints": [
+              {
+                "color": {
+                  "green": 0.29,
+                  "red": 0.25,
+                  "blue": 0.34
+                },
+                "id": "00000000-0000-0000-0000-000000000001",
+                "y": 0.5,
+                "x": 0.5
+              }
+            ],
+            "meshOpacity": 1,
+            "appearanceMode": "auto",
+            "gradientDirection": "topLeading",
+            "usesGradient": false,
+            "shaderNoiseEnabled": false,
+            "secondColor": {
+              "blue": 0.34,
+              "red": 0.25,
+              "green": 0.29
+            }
+          },
+          "pinnedTabIDs": [],
+          "deletedPinnedFoldersAt": [],
+          "name": "Space",
+          "modifiedAt": 813248169.110405,
+          "symbol": "circle.grid.2x2.fill"
+        }
+      ],
+      "favouriteTabIDs": [],
+      "favouritesModifiedAt": -63114076800,
+      "selectedSpaceID": "00000000-0000-0000-0000-000000000003",
+      "selectionModifiedAt": 813248169.110405,
+      "deletedSpacesAt": [],
+      "modifiedAt": 813248169.110405,
+      "deletedSpaceIDs": []
+    },
+    "openTabs": [
+      {
+        "id": "7A473C26-E00B-4306-8321-D4E2580FB46D",
+        "pageTitle": "Example Domain",
+        "recordsNavigationHistory": true,
+        "history": [
+          "https://example.com/"
+        ],
+        "scrollPosition": {
+          "y": 0,
+          "x": 0
+        },
+        "isHibernated": false,
+        "url": "https://example.com/",
+        "pageZoom": 1,
+        "peeks": [],
+        "modifiedAt": 813247097.378924,
+        "historyIndex": 0
+      },
+      {
+        "id": "19790801-FF9C-4550-A2CE-5436CC3E3E33",
+        "pageTitle": "New Tab",
+        "recordsNavigationHistory": true,
+        "history": [
+          "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+          "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
+        ],
+        "scrollPosition": {
+          "y": 0,
+          "x": 0
+        },
+        "isHibernated": false,
+        "url": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+        "pageZoom": 1,
+        "peeks": [],
+        "modifiedAt": 813247838.41106,
+        "historyIndex": 1
+      },
+      {
+        "id": "9E24B6A9-9174-4A8C-98F6-42FE36B3667E",
+        "pageTitle": "New Tab",
+        "recordsNavigationHistory": true,
+        "history": [],
+        "scrollPosition": {
+          "x": 0,
+          "y": 0
+        },
+        "isHibernated": true,
+        "pageZoom": 1,
+        "peeks": [],
+        "modifiedAt": 813248186.990292,
+        "historyIndex": 0
+      },
+      {
+        "id": "591CB6C3-84A8-487C-B058-474F8E0C81CC",
+        "pageTitle": "New Tab",
+        "recordsNavigationHistory": true,
+        "history": [],
+        "scrollPosition": {
+          "x": 0,
+          "y": 0
+        },
+        "isHibernated": false,
+        "pageZoom": 1,
+        "peeks": [],
+        "modifiedAt": 813247886.721522,
+        "historyIndex": 0
+      },
+      {
+        "id": "58A7243A-9EB4-46E5-9BDE-DF7DB0758230",
+        "pageTitle": "New Tab",
+        "recordsNavigationHistory": true,
+        "history": [],
+        "scrollPosition": {
+          "x": 0,
+          "y": 0
+        },
+        "isHibernated": false,
+        "pageZoom": 1,
+        "peeks": [],
+        "modifiedAt": 813247887.513772,
+        "historyIndex": 0
+      },
+      {
+        "id": "AD53267A-CE09-4320-A924-393B7AAF2283",
+        "pageTitle": "New Tab",
+        "recordsNavigationHistory": true,
+        "history": [],
+        "scrollPosition": {
+          "x": 0,
+          "y": 0
+        },
+        "isHibernated": false,
+        "pageZoom": 1,
+        "peeks": [],
+        "modifiedAt": 813247888.277628,
+        "historyIndex": 0
+      },
+      {
+        "id": "C76DB866-F3A4-40C8-BA1E-D3710C10EDB4",
+        "pageTitle": "New Tab",
+        "recordsNavigationHistory": true,
+        "history": [],
+        "scrollPosition": {
+          "x": 0,
+          "y": 0
+        },
+        "isHibernated": false,
+        "pageZoom": 1,
+        "peeks": [],
+        "modifiedAt": 813247889.037811,
+        "historyIndex": 0
+      },
+      {
+        "id": "AA7D5262-FCE4-4C08-A642-5B58066528C1",
+        "pageTitle": "New Tab",
+        "recordsNavigationHistory": true,
+        "history": [],
+        "scrollPosition": {
+          "x": 0,
+          "y": 0
+        },
+        "isHibernated": false,
+        "pageZoom": 1,
+        "peeks": [],
+        "modifiedAt": 813247889.781609,
+        "historyIndex": 0
+      },
+      {
+        "id": "45F6910C-B755-4ECE-8930-139CD373FB1B",
+        "pageTitle": "New Tab",
+        "recordsNavigationHistory": true,
+        "history": [],
+        "scrollPosition": {
+          "x": 0,
+          "y": 0
+        },
+        "isHibernated": false,
+        "pageZoom": 1,
+        "peeks": [],
+        "modifiedAt": 813247890.538155,
+        "historyIndex": 0
+      },
+      {
+        "id": "F3421A5C-23FD-4084-A2F8-50A8264CFA91",
+        "pageTitle": "New Tab",
+        "recordsNavigationHistory": true,
+        "history": [],
+        "scrollPosition": {
+          "x": 0,
+          "y": 0
+        },
+        "isHibernated": false,
+        "pageZoom": 1,
+        "peeks": [],
+        "modifiedAt": 813247891.306929,
+        "historyIndex": 0
+      }
+    ],
+    "snapshot": {
+      "deletedBookmarkIDs": [],
+      "deletedReadingListAt": [],
+      "deletedBookmarksAt": [],
+      "deletedVisitsAt": [],
+      "historyClearedAt": -63114076800,
+      "selectedTabID": "F3421A5C-23FD-4084-A2F8-50A8264CFA91",
+      "closedTabsAt": [],
+      "closedTabIDs": [],
+      "selectedTabModifiedAt": 813248169.110405,
+      "deletedSpacesAt": []
+    },
+    "historyVisits": [
+      {
+        "modifiedAt": 813247517.549632,
+        "visitedAt": 813247515.9903,
+        "url": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+        "id": "6DB6FD2B-6C09-4EC9-9FC6-C68C850A3AFE",
+        "title": "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film - YouTube"
+      },
+      {
+        "modifiedAt": 813247267.715355,
+        "visitedAt": 813247266.247393,
+        "url": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+        "id": "6B7DFB87-82F9-4757-ABB0-4AF96480C14A",
+        "title": "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film - YouTube"
+      },
+      {
+        "modifiedAt": 813247252.487678,
+        "visitedAt": 813247252.223398,
+        "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+        "id": "C8A702E9-72AF-490F-9BB4-92FA600A49DC",
+        "title": "Me at the zoo - YouTube"
+      },
+      {
+        "modifiedAt": 813247251.169105,
+        "visitedAt": 813247250.777424,
+        "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw&themeRefresh=1",
+        "id": "CFE85E1B-1F8B-4B90-A3A3-5D583D34687F",
+        "title": "Me at the zoo - YouTube"
+      },
+      {
+        "modifiedAt": 813247248.906765,
+        "visitedAt": 813247248.179935,
+        "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+        "id": "1F3A09AA-7BF6-4E0A-A3A2-86CBE560CE59",
+        "title": "Me at the zoo - YouTube"
+      },
+      {
+        "modifiedAt": 813247097.389648,
+        "visitedAt": 813247096.864479,
+        "url": "https://example.com/",
+        "id": "306D87B7-8B0E-4A85-9680-9064F60AAA7C",
+        "title": "Example Domain"
+      }
+    ]
+  },
+  "version": 3
+}

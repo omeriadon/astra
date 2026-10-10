@@ -1,0 +1,1401 @@
+{
+  "after": {
+    "captured_at": 1791555343.82482,
+    "host": {
+      "machine": "arm64",
+      "os": "macOS-27.2-arm64-arm-64bit-Mach-O",
+      "processor_count": 8,
+      "python": "3.14.8"
+    },
+    "measurement": {
+      "cpu_source": "libproc CPU Mach ticks converted with mach_timebase_info; ps cumulative time fallback; interval deltas",
+      "footprint_source": "public proc_pid_rusage RUSAGE_INFO_V4 when available; otherwise unavailable",
+      "ownership": "only explicitly mapped PIDs are attributed; XPC WebKit helpers remain unattributed",
+      "rss_source": "libproc resident size when available; otherwise ps rss; process-level estimates",
+      "shared_processes": "deduplicated by pid and process start identity",
+      "tab_attribution": "unavailable from public WebKit APIs"
+    },
+    "monotonic": 233560.954122666,
+    "processes": [
+      {
+        "cpu_seconds": 51.14,
+        "executable": "astra",
+        "footprint_bytes": 436372944,
+        "identity": "46064@mach:5598096882451",
+        "pid": 46064,
+        "ppid": 1,
+        "role": "astra",
+        "rss_bytes": 105693184,
+        "rusage_cpu_nanoseconds": 51141321833,
+        "rusage_start_abstime": 5598096882451,
+        "started": "Fri Oct 9 22:10:36 2026"
+      }
+    ],
+    "schema": 1,
+    "totals": {
+      "astra": {
+        "footprint_bytes": 436372944,
+        "footprint_processes": 1,
+        "processes": 1,
+        "rss_bytes": 105693184
+      },
+      "gpu": {
+        "footprint_bytes": null,
+        "footprint_processes": 0,
+        "processes": 0,
+        "rss_bytes": 0
+      },
+      "network": {
+        "footprint_bytes": null,
+        "footprint_processes": 0,
+        "processes": 0,
+        "rss_bytes": 0
+      },
+      "other": {
+        "footprint_bytes": null,
+        "footprint_processes": 0,
+        "processes": 0,
+        "rss_bytes": 0
+      },
+      "webcontent": {
+        "footprint_bytes": null,
+        "footprint_processes": 0,
+        "processes": 0,
+        "rss_bytes": 0
+      }
+    },
+    "unattributed_webkit_processes": [
+      {
+        "executable": "com.apple.WebKit.GPU",
+        "identity": "10188@Thu Oct 8 15:40:00 2026",
+        "pid": 10188
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "10191@Thu Oct 8 15:40:01 2026",
+        "pid": 10191
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "10201@Thu Oct 8 15:40:01 2026",
+        "pid": 10201
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "14014@Fri Oct 9 17:16:24 2026",
+        "pid": 14014
+      },
+      {
+        "executable": "com.apple.WebKit.GPU",
+        "identity": "14015@Fri Oct 9 17:16:24 2026",
+        "pid": 14015
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "14017@Fri Oct 9 17:16:25 2026",
+        "pid": 14017
+      },
+      {
+        "executable": "com.apple.WebKit.GPU",
+        "identity": "17054@Fri Oct 9 21:47:17 2026",
+        "pid": 17054
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "17055@Fri Oct 9 21:47:17 2026",
+        "pid": 17055
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "17056@Fri Oct 9 21:47:17 2026",
+        "pid": 17056
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "25218@Thu Oct 8 17:45:31 2026",
+        "pid": 25218
+      },
+      {
+        "executable": "com.apple.WebKit.GPU",
+        "identity": "27642@Thu Oct 8 15:47:54 2026",
+        "pid": 27642
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "27643@Thu Oct 8 15:47:54 2026",
+        "pid": 27643
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "27645@Thu Oct 8 15:47:55 2026",
+        "pid": 27645
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "27647@Thu Oct 8 15:47:55 2026",
+        "pid": 27647
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "27664@Thu Oct 8 15:47:57 2026",
+        "pid": 27664
+      },
+      {
+        "executable": "com.apple.WebKit.GPU",
+        "identity": "29762@Wed Oct 7 20:13:03 2026",
+        "pid": 29762
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "29764@Wed Oct 7 20:13:03 2026",
+        "pid": 29764
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "29766@Wed Oct 7 20:13:03 2026",
+        "pid": 29766
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "41300@Thu Oct 8 15:55:13 2026",
+        "pid": 41300
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "44503@Fri Oct 9 22:05:45 2026",
+        "pid": 44503
+      },
+      {
+        "executable": "com.apple.WebKit.GPU",
+        "identity": "44504@Fri Oct 9 22:05:45 2026",
+        "pid": 44504
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "44897@Fri Oct 9 22:06:52 2026",
+        "pid": 44897
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "46071@Fri Oct 9 22:10:37 2026",
+        "pid": 46071
+      },
+      {
+        "executable": "com.apple.WebKit.GPU",
+        "identity": "46072@Fri Oct 9 22:10:37 2026",
+        "pid": 46072
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46075@Fri Oct 9 22:10:38 2026",
+        "pid": 46075
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46253@Fri Oct 9 22:11:11 2026",
+        "pid": 46253
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46335@Fri Oct 9 22:11:26 2026",
+        "pid": 46335
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46348@Fri Oct 9 22:11:27 2026",
+        "pid": 46348
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46351@Fri Oct 9 22:11:28 2026",
+        "pid": 46351
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46353@Fri Oct 9 22:11:29 2026",
+        "pid": 46353
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46356@Fri Oct 9 22:11:29 2026",
+        "pid": 46356
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46366@Fri Oct 9 22:11:30 2026",
+        "pid": 46366
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46367@Fri Oct 9 22:11:31 2026",
+        "pid": 46367
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46564@Fri Oct 9 22:12:18 2026",
+        "pid": 46564
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46566@Fri Oct 9 22:12:18 2026",
+        "pid": 46566
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46575@Fri Oct 9 22:12:19 2026",
+        "pid": 46575
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46576@Fri Oct 9 22:12:20 2026",
+        "pid": 46576
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46577@Fri Oct 9 22:12:21 2026",
+        "pid": 46577
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46586@Fri Oct 9 22:12:21 2026",
+        "pid": 46586
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46590@Fri Oct 9 22:12:22 2026",
+        "pid": 46590
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46591@Fri Oct 9 22:12:23 2026",
+        "pid": 46591
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46592@Fri Oct 9 22:12:24 2026",
+        "pid": 46592
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46600@Fri Oct 9 22:12:25 2026",
+        "pid": 46600
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46616@Fri Oct 9 22:12:26 2026",
+        "pid": 46616
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46622@Fri Oct 9 22:12:27 2026",
+        "pid": 46622
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46653@Fri Oct 9 22:12:29 2026",
+        "pid": 46653
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46656@Fri Oct 9 22:12:30 2026",
+        "pid": 46656
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46664@Fri Oct 9 22:12:31 2026",
+        "pid": 46664
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46668@Fri Oct 9 22:12:32 2026",
+        "pid": 46668
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46671@Fri Oct 9 22:12:33 2026",
+        "pid": 46671
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46680@Fri Oct 9 22:12:35 2026",
+        "pid": 46680
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46682@Fri Oct 9 22:12:36 2026",
+        "pid": 46682
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46695@Fri Oct 9 22:12:38 2026",
+        "pid": 46695
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46743@Fri Oct 9 22:12:50 2026",
+        "pid": 46743
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46746@Fri Oct 9 22:12:51 2026",
+        "pid": 46746
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46757@Fri Oct 9 22:12:53 2026",
+        "pid": 46757
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46761@Fri Oct 9 22:12:54 2026",
+        "pid": 46761
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46774@Fri Oct 9 22:12:57 2026",
+        "pid": 46774
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46790@Fri Oct 9 22:12:59 2026",
+        "pid": 46790
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46793@Fri Oct 9 22:13:00 2026",
+        "pid": 46793
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46805@Fri Oct 9 22:13:02 2026",
+        "pid": 46805
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46814@Fri Oct 9 22:13:04 2026",
+        "pid": 46814
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46815@Fri Oct 9 22:13:06 2026",
+        "pid": 46815
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46828@Fri Oct 9 22:13:07 2026",
+        "pid": 46828
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46829@Fri Oct 9 22:13:09 2026",
+        "pid": 46829
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46839@Fri Oct 9 22:13:10 2026",
+        "pid": 46839
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46844@Fri Oct 9 22:13:12 2026",
+        "pid": 46844
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46853@Fri Oct 9 22:13:14 2026",
+        "pid": 46853
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46867@Fri Oct 9 22:13:17 2026",
+        "pid": 46867
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46872@Fri Oct 9 22:13:19 2026",
+        "pid": 46872
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46880@Fri Oct 9 22:13:20 2026",
+        "pid": 46880
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46892@Fri Oct 9 22:13:22 2026",
+        "pid": 46892
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46975@Fri Oct 9 22:13:37 2026",
+        "pid": 46975
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47025@Fri Oct 9 22:13:47 2026",
+        "pid": 47025
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47026@Fri Oct 9 22:13:48 2026",
+        "pid": 47026
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47027@Fri Oct 9 22:13:49 2026",
+        "pid": 47027
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47030@Fri Oct 9 22:13:49 2026",
+        "pid": 47030
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47038@Fri Oct 9 22:13:50 2026",
+        "pid": 47038
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47039@Fri Oct 9 22:13:50 2026",
+        "pid": 47039
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47041@Fri Oct 9 22:13:51 2026",
+        "pid": 47041
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47045@Fri Oct 9 22:13:52 2026",
+        "pid": 47045
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47054@Fri Oct 9 22:13:53 2026",
+        "pid": 47054
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47055@Fri Oct 9 22:13:55 2026",
+        "pid": 47055
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47057@Fri Oct 9 22:13:55 2026",
+        "pid": 47057
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47065@Fri Oct 9 22:13:56 2026",
+        "pid": 47065
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47070@Fri Oct 9 22:13:57 2026",
+        "pid": 47070
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47071@Fri Oct 9 22:13:57 2026",
+        "pid": 47071
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47072@Fri Oct 9 22:13:58 2026",
+        "pid": 47072
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47081@Fri Oct 9 22:13:59 2026",
+        "pid": 47081
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47084@Fri Oct 9 22:13:59 2026",
+        "pid": 47084
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47085@Fri Oct 9 22:14:00 2026",
+        "pid": 47085
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47086@Fri Oct 9 22:14:01 2026",
+        "pid": 47086
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47088@Fri Oct 9 22:14:01 2026",
+        "pid": 47088
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47099@Fri Oct 9 22:14:02 2026",
+        "pid": 47099
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47101@Fri Oct 9 22:14:02 2026",
+        "pid": 47101
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47102@Fri Oct 9 22:14:03 2026",
+        "pid": 47102
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47105@Fri Oct 9 22:14:05 2026",
+        "pid": 47105
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47112@Fri Oct 9 22:14:05 2026",
+        "pid": 47112
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47181@Fri Oct 9 22:14:20 2026",
+        "pid": 47181
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47183@Fri Oct 9 22:14:21 2026",
+        "pid": 47183
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47187@Fri Oct 9 22:14:22 2026",
+        "pid": 47187
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47188@Fri Oct 9 22:14:23 2026",
+        "pid": 47188
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47196@Fri Oct 9 22:14:23 2026",
+        "pid": 47196
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47197@Fri Oct 9 22:14:24 2026",
+        "pid": 47197
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47199@Fri Oct 9 22:14:24 2026",
+        "pid": 47199
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47200@Fri Oct 9 22:14:25 2026",
+        "pid": 47200
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47203@Fri Oct 9 22:14:26 2026",
+        "pid": 47203
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47210@Fri Oct 9 22:14:26 2026",
+        "pid": 47210
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47214@Fri Oct 9 22:14:27 2026",
+        "pid": 47214
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47216@Fri Oct 9 22:14:28 2026",
+        "pid": 47216
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47217@Fri Oct 9 22:14:28 2026",
+        "pid": 47217
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47226@Fri Oct 9 22:14:29 2026",
+        "pid": 47226
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47229@Fri Oct 9 22:14:30 2026",
+        "pid": 47229
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47231@Fri Oct 9 22:14:30 2026",
+        "pid": 47231
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47233@Fri Oct 9 22:14:31 2026",
+        "pid": 47233
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47244@Fri Oct 9 22:14:32 2026",
+        "pid": 47244
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47245@Fri Oct 9 22:14:33 2026",
+        "pid": 47245
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47247@Fri Oct 9 22:14:33 2026",
+        "pid": 47247
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47248@Fri Oct 9 22:14:34 2026",
+        "pid": 47248
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47249@Fri Oct 9 22:14:35 2026",
+        "pid": 47249
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47257@Fri Oct 9 22:14:35 2026",
+        "pid": 47257
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47258@Fri Oct 9 22:14:36 2026",
+        "pid": 47258
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47264@Fri Oct 9 22:14:37 2026",
+        "pid": 47264
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "68352@Thu Oct 8 15:19:29 2026",
+        "pid": 68352
+      }
+    ],
+    "unavailable_selected_pids": []
+  },
+  "before": {
+    "captured_at": 1791555313.729795,
+    "host": {
+      "machine": "arm64",
+      "os": "macOS-27.2-arm64-arm-64bit-Mach-O",
+      "processor_count": 8,
+      "python": "3.14.8"
+    },
+    "measurement": {
+      "cpu_source": "libproc CPU Mach ticks converted with mach_timebase_info; ps cumulative time fallback; interval deltas",
+      "footprint_source": "public proc_pid_rusage RUSAGE_INFO_V4 when available; otherwise unavailable",
+      "ownership": "only explicitly mapped PIDs are attributed; XPC WebKit helpers remain unattributed",
+      "rss_source": "libproc resident size when available; otherwise ps rss; process-level estimates",
+      "shared_processes": "deduplicated by pid and process start identity",
+      "tab_attribution": "unavailable from public WebKit APIs"
+    },
+    "monotonic": 233530.858813375,
+    "processes": [
+      {
+        "cpu_seconds": 50.84,
+        "executable": "astra",
+        "footprint_bytes": 436405712,
+        "identity": "46064@mach:5598096882451",
+        "pid": 46064,
+        "ppid": 1,
+        "role": "astra",
+        "rss_bytes": 107085824,
+        "rusage_cpu_nanoseconds": 50838717166,
+        "rusage_start_abstime": 5598096882451,
+        "started": "Fri Oct 9 22:10:36 2026"
+      }
+    ],
+    "schema": 1,
+    "totals": {
+      "astra": {
+        "footprint_bytes": 436405712,
+        "footprint_processes": 1,
+        "processes": 1,
+        "rss_bytes": 107085824
+      },
+      "gpu": {
+        "footprint_bytes": null,
+        "footprint_processes": 0,
+        "processes": 0,
+        "rss_bytes": 0
+      },
+      "network": {
+        "footprint_bytes": null,
+        "footprint_processes": 0,
+        "processes": 0,
+        "rss_bytes": 0
+      },
+      "other": {
+        "footprint_bytes": null,
+        "footprint_processes": 0,
+        "processes": 0,
+        "rss_bytes": 0
+      },
+      "webcontent": {
+        "footprint_bytes": null,
+        "footprint_processes": 0,
+        "processes": 0,
+        "rss_bytes": 0
+      }
+    },
+    "unattributed_webkit_processes": [
+      {
+        "executable": "com.apple.WebKit.GPU",
+        "identity": "10188@Thu Oct 8 15:40:00 2026",
+        "pid": 10188
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "10191@Thu Oct 8 15:40:01 2026",
+        "pid": 10191
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "10201@Thu Oct 8 15:40:01 2026",
+        "pid": 10201
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "14014@Fri Oct 9 17:16:24 2026",
+        "pid": 14014
+      },
+      {
+        "executable": "com.apple.WebKit.GPU",
+        "identity": "14015@Fri Oct 9 17:16:24 2026",
+        "pid": 14015
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "14017@Fri Oct 9 17:16:25 2026",
+        "pid": 14017
+      },
+      {
+        "executable": "com.apple.WebKit.GPU",
+        "identity": "17054@Fri Oct 9 21:47:17 2026",
+        "pid": 17054
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "17055@Fri Oct 9 21:47:17 2026",
+        "pid": 17055
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "17056@Fri Oct 9 21:47:17 2026",
+        "pid": 17056
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "25218@Thu Oct 8 17:45:31 2026",
+        "pid": 25218
+      },
+      {
+        "executable": "com.apple.WebKit.GPU",
+        "identity": "27642@Thu Oct 8 15:47:54 2026",
+        "pid": 27642
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "27643@Thu Oct 8 15:47:54 2026",
+        "pid": 27643
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "27645@Thu Oct 8 15:47:55 2026",
+        "pid": 27645
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "27647@Thu Oct 8 15:47:55 2026",
+        "pid": 27647
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "27664@Thu Oct 8 15:47:57 2026",
+        "pid": 27664
+      },
+      {
+        "executable": "com.apple.WebKit.GPU",
+        "identity": "29762@Wed Oct 7 20:13:03 2026",
+        "pid": 29762
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "29764@Wed Oct 7 20:13:03 2026",
+        "pid": 29764
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "29766@Wed Oct 7 20:13:03 2026",
+        "pid": 29766
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "41300@Thu Oct 8 15:55:13 2026",
+        "pid": 41300
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "44503@Fri Oct 9 22:05:45 2026",
+        "pid": 44503
+      },
+      {
+        "executable": "com.apple.WebKit.GPU",
+        "identity": "44504@Fri Oct 9 22:05:45 2026",
+        "pid": 44504
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "44897@Fri Oct 9 22:06:52 2026",
+        "pid": 44897
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "46071@Fri Oct 9 22:10:37 2026",
+        "pid": 46071
+      },
+      {
+        "executable": "com.apple.WebKit.GPU",
+        "identity": "46072@Fri Oct 9 22:10:37 2026",
+        "pid": 46072
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46075@Fri Oct 9 22:10:38 2026",
+        "pid": 46075
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46253@Fri Oct 9 22:11:11 2026",
+        "pid": 46253
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46335@Fri Oct 9 22:11:26 2026",
+        "pid": 46335
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46348@Fri Oct 9 22:11:27 2026",
+        "pid": 46348
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46351@Fri Oct 9 22:11:28 2026",
+        "pid": 46351
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46353@Fri Oct 9 22:11:29 2026",
+        "pid": 46353
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46356@Fri Oct 9 22:11:29 2026",
+        "pid": 46356
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46366@Fri Oct 9 22:11:30 2026",
+        "pid": 46366
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46367@Fri Oct 9 22:11:31 2026",
+        "pid": 46367
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46564@Fri Oct 9 22:12:18 2026",
+        "pid": 46564
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46566@Fri Oct 9 22:12:18 2026",
+        "pid": 46566
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46575@Fri Oct 9 22:12:19 2026",
+        "pid": 46575
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46576@Fri Oct 9 22:12:20 2026",
+        "pid": 46576
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46577@Fri Oct 9 22:12:21 2026",
+        "pid": 46577
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46586@Fri Oct 9 22:12:21 2026",
+        "pid": 46586
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46590@Fri Oct 9 22:12:22 2026",
+        "pid": 46590
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46591@Fri Oct 9 22:12:23 2026",
+        "pid": 46591
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46592@Fri Oct 9 22:12:24 2026",
+        "pid": 46592
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46600@Fri Oct 9 22:12:25 2026",
+        "pid": 46600
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46616@Fri Oct 9 22:12:26 2026",
+        "pid": 46616
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46622@Fri Oct 9 22:12:27 2026",
+        "pid": 46622
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46653@Fri Oct 9 22:12:29 2026",
+        "pid": 46653
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46656@Fri Oct 9 22:12:30 2026",
+        "pid": 46656
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46664@Fri Oct 9 22:12:31 2026",
+        "pid": 46664
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46668@Fri Oct 9 22:12:32 2026",
+        "pid": 46668
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46671@Fri Oct 9 22:12:33 2026",
+        "pid": 46671
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46680@Fri Oct 9 22:12:35 2026",
+        "pid": 46680
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46682@Fri Oct 9 22:12:36 2026",
+        "pid": 46682
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46695@Fri Oct 9 22:12:38 2026",
+        "pid": 46695
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46743@Fri Oct 9 22:12:50 2026",
+        "pid": 46743
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46746@Fri Oct 9 22:12:51 2026",
+        "pid": 46746
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46757@Fri Oct 9 22:12:53 2026",
+        "pid": 46757
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46761@Fri Oct 9 22:12:54 2026",
+        "pid": 46761
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46774@Fri Oct 9 22:12:57 2026",
+        "pid": 46774
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46790@Fri Oct 9 22:12:59 2026",
+        "pid": 46790
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46793@Fri Oct 9 22:13:00 2026",
+        "pid": 46793
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46805@Fri Oct 9 22:13:02 2026",
+        "pid": 46805
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46814@Fri Oct 9 22:13:04 2026",
+        "pid": 46814
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46815@Fri Oct 9 22:13:06 2026",
+        "pid": 46815
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46828@Fri Oct 9 22:13:07 2026",
+        "pid": 46828
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46829@Fri Oct 9 22:13:09 2026",
+        "pid": 46829
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46839@Fri Oct 9 22:13:10 2026",
+        "pid": 46839
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46844@Fri Oct 9 22:13:12 2026",
+        "pid": 46844
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46853@Fri Oct 9 22:13:14 2026",
+        "pid": 46853
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46867@Fri Oct 9 22:13:17 2026",
+        "pid": 46867
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46872@Fri Oct 9 22:13:19 2026",
+        "pid": 46872
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46880@Fri Oct 9 22:13:20 2026",
+        "pid": 46880
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46892@Fri Oct 9 22:13:22 2026",
+        "pid": 46892
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "46975@Fri Oct 9 22:13:37 2026",
+        "pid": 46975
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47025@Fri Oct 9 22:13:47 2026",
+        "pid": 47025
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47026@Fri Oct 9 22:13:48 2026",
+        "pid": 47026
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47027@Fri Oct 9 22:13:49 2026",
+        "pid": 47027
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47030@Fri Oct 9 22:13:49 2026",
+        "pid": 47030
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47038@Fri Oct 9 22:13:50 2026",
+        "pid": 47038
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47039@Fri Oct 9 22:13:50 2026",
+        "pid": 47039
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47041@Fri Oct 9 22:13:51 2026",
+        "pid": 47041
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47045@Fri Oct 9 22:13:52 2026",
+        "pid": 47045
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47054@Fri Oct 9 22:13:53 2026",
+        "pid": 47054
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47055@Fri Oct 9 22:13:55 2026",
+        "pid": 47055
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47057@Fri Oct 9 22:13:55 2026",
+        "pid": 47057
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47065@Fri Oct 9 22:13:56 2026",
+        "pid": 47065
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47070@Fri Oct 9 22:13:57 2026",
+        "pid": 47070
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47071@Fri Oct 9 22:13:57 2026",
+        "pid": 47071
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47072@Fri Oct 9 22:13:58 2026",
+        "pid": 47072
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47081@Fri Oct 9 22:13:59 2026",
+        "pid": 47081
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47084@Fri Oct 9 22:13:59 2026",
+        "pid": 47084
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47085@Fri Oct 9 22:14:00 2026",
+        "pid": 47085
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47086@Fri Oct 9 22:14:01 2026",
+        "pid": 47086
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47088@Fri Oct 9 22:14:01 2026",
+        "pid": 47088
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47099@Fri Oct 9 22:14:02 2026",
+        "pid": 47099
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47101@Fri Oct 9 22:14:02 2026",
+        "pid": 47101
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47102@Fri Oct 9 22:14:03 2026",
+        "pid": 47102
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47105@Fri Oct 9 22:14:05 2026",
+        "pid": 47105
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47112@Fri Oct 9 22:14:05 2026",
+        "pid": 47112
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47181@Fri Oct 9 22:14:20 2026",
+        "pid": 47181
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47183@Fri Oct 9 22:14:21 2026",
+        "pid": 47183
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47187@Fri Oct 9 22:14:22 2026",
+        "pid": 47187
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47188@Fri Oct 9 22:14:23 2026",
+        "pid": 47188
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47196@Fri Oct 9 22:14:23 2026",
+        "pid": 47196
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47197@Fri Oct 9 22:14:24 2026",
+        "pid": 47197
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47199@Fri Oct 9 22:14:24 2026",
+        "pid": 47199
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47200@Fri Oct 9 22:14:25 2026",
+        "pid": 47200
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47203@Fri Oct 9 22:14:26 2026",
+        "pid": 47203
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47210@Fri Oct 9 22:14:26 2026",
+        "pid": 47210
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47214@Fri Oct 9 22:14:27 2026",
+        "pid": 47214
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47216@Fri Oct 9 22:14:28 2026",
+        "pid": 47216
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47217@Fri Oct 9 22:14:28 2026",
+        "pid": 47217
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47226@Fri Oct 9 22:14:29 2026",
+        "pid": 47226
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47229@Fri Oct 9 22:14:30 2026",
+        "pid": 47229
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47231@Fri Oct 9 22:14:30 2026",
+        "pid": 47231
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47233@Fri Oct 9 22:14:31 2026",
+        "pid": 47233
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47244@Fri Oct 9 22:14:32 2026",
+        "pid": 47244
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47245@Fri Oct 9 22:14:33 2026",
+        "pid": 47245
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47247@Fri Oct 9 22:14:33 2026",
+        "pid": 47247
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47248@Fri Oct 9 22:14:34 2026",
+        "pid": 47248
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47249@Fri Oct 9 22:14:35 2026",
+        "pid": 47249
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47257@Fri Oct 9 22:14:35 2026",
+        "pid": 47257
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47258@Fri Oct 9 22:14:36 2026",
+        "pid": 47258
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47264@Fri Oct 9 22:14:37 2026",
+        "pid": 47264
+      },
+      {
+        "executable": "com.apple.WebKit.WebContent",
+        "identity": "47325@Fri Oct 9 22:14:52 2026",
+        "pid": 47325
+      },
+      {
+        "executable": "com.apple.WebKit.Networking",
+        "identity": "68352@Thu Oct 8 15:19:29 2026",
+        "pid": 68352
+      }
+    ],
+    "unavailable_selected_pids": []
+  },
+  "cpu_percent_of_one_core": {
+    "astra": 1.0063240427175684,
+    "gpu": 0.0,
+    "network": 0.0,
+    "other": 0.0,
+    "webcontent": 0.0
+  },
+  "cpu_seconds": {
+    "astra": 0.302604667,
+    "gpu": 0.0,
+    "network": 0.0,
+    "other": 0.0,
+    "webcontent": 0.0
+  },
+  "elapsed_seconds": 30.070300833001966,
+  "schema": 1
+}

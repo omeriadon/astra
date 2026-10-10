@@ -1,0 +1,17 @@
+{
+  "hardware": "Mac14,2 MacBook Air, arm64, 8 CPU cores, 16 GiB RAM",
+  "os": "macOS 27.2 (26B5101f)",
+  "xcode": "Xcode 27.2 beta 2",
+  "power": "AC power; brightness/power mode not changed",
+  "baseline_commit": "05af54619cbcc4724800889f01e90d948eb37235",
+  "candidate_app_source_commit": "8fc6600d421c4566191fa982940d5d6f139f56ea",
+  "measurement_fix_commit": "69f635e",
+  "profile_isolation": "Distinct sandbox bundle identifiers and test-only sync Keychain service strings; no personal profile copied",
+  "fixture_signing": "Ad hoc sandboxed builds; Sign in with Apple and production-only entitlements excluded",
+  "known_confounds": [
+    "Existing background applications left running",
+    "Substantial compressed memory and swap",
+    "Repeated disk exhaustion during trace saving; available storage fluctuated",
+    "Computer Use coordinate actions returned noWindowsAvailable while same Astra process remained running"
+  ]
+}

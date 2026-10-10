@@ -1,0 +1,16 @@
+{
+  "destination": "disposable temporary directory selected through native folder picker",
+  "automatic_ai_naming": "active; large test payload renamed to image_01.bin",
+  "samples": [
+    {
+      "filename": "image_01.bin",
+      "bytes": 16777216,
+      "sha256_matches_source": true
+    },
+    {
+      "filename": "small.bin.bin",
+      "bytes": 4096,
+      "sha256_matches_source": true
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+Validate Release non-app regression checks
+Date: 2026-10-09
+Workflow: .github/workflows/validate-release.yml
+
+Result: 32 checks passed; 0 failed.
+
+Passed groups:
+- Distribution metadata and website-app validation
+- Library projections, scaling, and observer lifecycle
+- WebKit process inventory and exact helper attribution
+- Window, history, WebKit, extension, diagnostics, and hibernation checks
+- Download index persistence and asynchronous file publication
+
+Library projection benchmark samples:
+- 1,000 bookmarks / 100 reading: median 4.215666 ms; p95 4.377125 ms
+- 10,000 bookmarks / 1,000 reading: median 45.273875 ms; p95 46.340125 ms
+- 50,000 bookmarks / 5,000 reading: median 219.461750 ms; p95 230.487250 ms
+
+WebKit process inventory:
+- Before fix: the default `comm=` column truncated helper paths to `/System/Library/`, so no WebKit helper basenames were attributed.
+- After fix: 26 live helpers were detected using exact names `com.apple.WebKit.GPU`, `com.apple.WebKit.Networking`, and `com.apple.WebKit.WebContent`.
+- The final `comm=` column was used; command arguments were never inspected.
+
+Unrun by instruction:
+- Check Debug build
+- Check unsigned release archive
+- xcodebuild was not invoked.

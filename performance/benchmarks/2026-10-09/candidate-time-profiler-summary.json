@@ -1,0 +1,228 @@
+{
+  "sample_count": 3828,
+  "main_thread_sample_count": 1391,
+  "time_span_ms": 30934.876875,
+  "total_sample_weight_ms": 3828.0,
+  "main_thread_sample_weight_ms": 1391.0,
+  "thread_states": {
+    "Running": 3828
+  },
+  "top_15_leaf_symbols": [
+    {
+      "symbol": "WebCore::ContentExtensions::DFAMinimizer::minimize(WebCore::ContentExtensions::DFA&)",
+      "sample_count": 151,
+      "weight_ms": 151.0,
+      "main_thread_sample_count": 0,
+      "main_thread_weight_ms": 0.0
+    },
+    {
+      "symbol": "<deduplicated_symbol>",
+      "sample_count": 84,
+      "weight_ms": 84.0,
+      "main_thread_sample_count": 55,
+      "main_thread_weight_ms": 55.0
+    },
+    {
+      "symbol": "WebCore::ContentExtensions::NFAToDFA::convert(WebCore::ContentExtensions::NFA&&)",
+      "sample_count": 76,
+      "weight_ms": 76.0,
+      "main_thread_sample_count": 0,
+      "main_thread_weight_ms": 0.0
+    },
+    {
+      "symbol": "objc_msgSend",
+      "sample_count": 69,
+      "weight_ms": 69.0,
+      "main_thread_sample_count": 68,
+      "main_thread_weight_ms": 68.0
+    },
+    {
+      "symbol": "WebCore::ContentExtensions::DFABytecodeCompiler::transitions(WebCore::ContentExtensions::DFANode const&)",
+      "sample_count": 69,
+      "weight_ms": 69.0,
+      "main_thread_sample_count": 0,
+      "main_thread_weight_ms": 0.0
+    },
+    {
+      "symbol": "WebCore::ContentExtensions::(anonymous namespace)::FullGraphPartition::refinePartitions()",
+      "sample_count": 52,
+      "weight_ms": 52.0,
+      "main_thread_sample_count": 0,
+      "main_thread_weight_ms": 0.0
+    },
+    {
+      "symbol": "WTF::HashTableAddResult<WTF::HashTableIterator<WTF::HashTable<WebCore::ContentExtensions::UniqueNodeIdSet, WebCore::ContentExtensions::UniqueNodeIdSet, WTF::IdentityExtractor, WebCore::ContentExtensions::UniqueNodeIdSetHash, WebCore::ContentExtensions::UniqueNodeIdSetHashHashTraits, WebCore::ContentExtensions::UniqueNodeIdSetHashHashTraits, WTF::FastMalloc>, WebCore::ContentExtensions::UniqueNodeIdSet, WebCore::ContentExtensions::UniqueNodeIdSet, WTF::IdentityExtractor, WebCore::ContentExtensions::UniqueNodeIdSetHash, WebCore::ContentExtensions::UniqueNodeIdSetHashHashTraits, WebCore::ContentExtensions::UniqueNodeIdSetHashHashTraits>> WTF::HashTable<WebCore::ContentExtensions::UniqueNodeIdSet, WebCore::ContentExtensions::UniqueNodeIdSet, WTF::IdentityExtractor, WebCore::ContentExtensions::UniqueNodeIdSetHash, WebCore::ContentExtensions::UniqueNodeIdSetHashHashTraits, WebCore::ContentExtensions::UniqueNodeIdSetHashHashTraits, WTF::FastMalloc>::addPassingHashCode<WTF::HashSetTranslatorAdapter<WebCore::ContentExtensions::NodeIdSetToUniqueNodeIdSetTranslator>, (WTF::ShouldValidateKey)1, WebCore::ContentExtensions::NodeIdSetToUniqueNodeIdSetSource const&, WTF::HashTableAddResult<WTF::HashTableIterator<WTF::HashTable<WebCore::ContentExtensions::UniqueNodeIdSet, WebCore::ContentExtensions::UniqueNodeIdSet, WTF::IdentityExtractor, WebCore::ContentExtensions::UniqueNodeIdSetHash, WebCore::ContentExtensions::UniqueNodeIdSetHashHashTraits, WebCore::ContentExtensions::UniqueNodeIdSetHashHashTraits, WTF::FastMalloc>, WebCore::ContentExtensions::UniqueNodeIdSet, WebCore::ContentExtensions::UniqueNodeIdSet, WTF::IdentityExtractor, WebCore::ContentExtensions::UniqueNodeIdSetHash, WebCore::ContentExtensions::UniqueNodeIdSetHashHashTraits, WebCore::ContentExtensions::UniqueNodeIdSetHashHashTraits>> WTF::HashSet<std::__1::unique_ptr<WebCore::ContentExtensions::UniqueNodeIdSet, std::__1::default_delete<WebCore::ContentExtensions::UniqueNodeIdSet>>, WebCore::ContentExtensions::UniqueNodeIdSetHash, WebCore::ContentExtensions::UniqueNodeIdSetHashHashTraits, WTF::HashTableTraits, (WTF::ShouldValidateKey)1>::add<WebCore::ContentExtensions::NodeIdSetToUniqueNodeIdSetTranslator, WebCore::ContentExtensions::NodeIdSetToUniqueNodeIdSetSource>(WebCore::ContentExtensions::NodeIdSetToUniqueNodeIdSetSource const&)::'lambda'()>(WebCore::ContentExtensions::NodeIdSetToUniqueNodeIdSetSource const&, WTF::HashTableAddResult<WTF::HashTableIterator<WTF::HashTable<WebCore::ContentExtensions::UniqueNodeIdSet, WebCore::ContentExtensions::UniqueNodeIdSet, WTF::IdentityExtractor, WebCore::ContentExtensions::UniqueNodeIdSetHash, WebCore::ContentExtensions::UniqueNodeIdSetHashHashTraits, WebCore::ContentExtensions::UniqueNodeIdSetHashHashTraits, WTF::FastMalloc>, WebCore::ContentExtensions::UniqueNodeIdSet, WebCore::ContentExtensions::UniqueNodeIdSet, WTF::IdentityExtractor, WebCore::ContentExtensions::UniqueNodeIdSetHash, WebCore::ContentExtensions::UniqueNodeIdSetHashHashTraits, WebCore::ContentExtensions::UniqueNodeIdSetHashHashTraits>> WTF::HashSet<std::__1::unique_ptr<WebCore::ContentExtensions::UniqueNodeIdSet, std::__1::default_delete<WebCore::ContentExtensions::UniqueNodeIdSet>>, WebCore::ContentExtensions::UniqueNodeIdSetHash, WebCore::ContentExtensions::UniqueNodeIdSetHashHashTraits, WTF::HashTableTraits, (WTF::ShouldValidateKey)1>::add<WebCore::ContentExtensions::NodeIdSetToUniqueNodeIdSetTranslator, WebCore::ContentExtensions::NodeIdSetToUniqueNodeIdSetSource>(WebCore::ContentExtensions::NodeIdSetToUniqueNodeIdSetSource const&)::'lambda'() const&)",
+      "sample_count": 34,
+      "weight_ms": 34.0,
+      "main_thread_sample_count": 0,
+      "main_thread_weight_ms": 0.0
+    },
+    {
+      "symbol": "WTF::fastMalloc(unsigned long)",
+      "sample_count": 30,
+      "weight_ms": 30.0,
+      "main_thread_sample_count": 1,
+      "main_thread_weight_ms": 1.0
+    },
+    {
+      "symbol": "pas_thread_local_cache_flush_deallocation_log",
+      "sample_count": 28,
+      "weight_ms": 28.0,
+      "main_thread_sample_count": 0,
+      "main_thread_weight_ms": 0.0
+    },
+    {
+      "symbol": "AG::Subgraph::update(unsigned int)",
+      "sample_count": 24,
+      "weight_ms": 24.0,
+      "main_thread_sample_count": 24,
+      "main_thread_weight_ms": 24.0
+    },
+    {
+      "symbol": "_xzm_xzone_malloc_tiny",
+      "sample_count": 23,
+      "weight_ms": 23.0,
+      "main_thread_sample_count": 20,
+      "main_thread_weight_ms": 20.0
+    },
+    {
+      "symbol": "_platform_memmove",
+      "sample_count": 23,
+      "weight_ms": 23.0,
+      "main_thread_sample_count": 13,
+      "main_thread_weight_ms": 13.0
+    },
+    {
+      "symbol": "WTF::HashTable<unsigned int, unsigned int, WTF::IdentityExtractor, WTF::DefaultHash<unsigned int>, WTF::UnsignedWithZeroKeyHashTraits<unsigned int>, WTF::UnsignedWithZeroKeyHashTraits<unsigned int>, WTF::FastMalloc>::HashTable(WTF::HashTable<unsigned int, unsigned int, WTF::IdentityExtractor, WTF::DefaultHash<unsigned int>, WTF::UnsignedWithZeroKeyHashTraits<unsigned int>, WTF::UnsignedWithZeroKeyHashTraits<unsigned int>, WTF::FastMalloc> const&)",
+      "sample_count": 22,
+      "weight_ms": 22.0,
+      "main_thread_sample_count": 0,
+      "main_thread_weight_ms": 0.0
+    },
+    {
+      "symbol": "mach_msg2_trap",
+      "sample_count": 21,
+      "weight_ms": 21.0,
+      "main_thread_sample_count": 17,
+      "main_thread_weight_ms": 17.0
+    },
+    {
+      "symbol": "swift_retain",
+      "sample_count": 20,
+      "weight_ms": 20.0,
+      "main_thread_sample_count": 19,
+      "main_thread_weight_ms": 19.0
+    }
+  ],
+  "top_15_inclusive_symbols": [
+    {
+      "symbol": "0x103dd3c30",
+      "sample_count": 1302,
+      "weight_ms": 1302.0,
+      "main_thread_sample_count": 1302,
+      "main_thread_weight_ms": 1302.0
+    },
+    {
+      "symbol": "-[NSApplication run]",
+      "sample_count": 1302,
+      "weight_ms": 1302.0,
+      "main_thread_sample_count": 1302,
+      "main_thread_weight_ms": 1302.0
+    },
+    {
+      "symbol": "__debug_main_executable_dylib_entry_point",
+      "sample_count": 1301,
+      "weight_ms": 1301.0,
+      "main_thread_sample_count": 1301,
+      "main_thread_weight_ms": 1301.0
+    },
+    {
+      "symbol": "0x1045bcad8",
+      "sample_count": 1301,
+      "weight_ms": 1301.0,
+      "main_thread_sample_count": 1301,
+      "main_thread_weight_ms": 1301.0
+    },
+    {
+      "symbol": "start",
+      "sample_count": 1301,
+      "weight_ms": 1301.0,
+      "main_thread_sample_count": 1301,
+      "main_thread_weight_ms": 1301.0
+    },
+    {
+      "symbol": "AstraBrowserMain",
+      "sample_count": 1301,
+      "weight_ms": 1301.0,
+      "main_thread_sample_count": 1301,
+      "main_thread_weight_ms": 1301.0
+    },
+    {
+      "symbol": "-[NSApplication(NSEventRouting) _nextEventMatchingEventMask:untilDate:inMode:dequeue:]",
+      "sample_count": 1213,
+      "weight_ms": 1213.0,
+      "main_thread_sample_count": 1213,
+      "main_thread_weight_ms": 1213.0
+    },
+    {
+      "symbol": "-[NSApplication(NSEventRouting) nextEventMatchingMask:untilDate:inMode:dequeue:]",
+      "sample_count": 1213,
+      "weight_ms": 1213.0,
+      "main_thread_sample_count": 1213,
+      "main_thread_weight_ms": 1213.0
+    },
+    {
+      "symbol": "RunCurrentEventLoopInMode",
+      "sample_count": 1211,
+      "weight_ms": 1211.0,
+      "main_thread_sample_count": 1211,
+      "main_thread_weight_ms": 1211.0
+    },
+    {
+      "symbol": "ReceiveNextEventCommon",
+      "sample_count": 1211,
+      "weight_ms": 1211.0,
+      "main_thread_sample_count": 1211,
+      "main_thread_weight_ms": 1211.0
+    },
+    {
+      "symbol": "_BlockUntilNextEventMatchingListInMode",
+      "sample_count": 1211,
+      "weight_ms": 1211.0,
+      "main_thread_sample_count": 1211,
+      "main_thread_weight_ms": 1211.0
+    },
+    {
+      "symbol": "_DPSBlockUntilNextEventMatchingListInMode",
+      "sample_count": 1211,
+      "weight_ms": 1211.0,
+      "main_thread_sample_count": 1211,
+      "main_thread_weight_ms": 1211.0
+    },
+    {
+      "symbol": "_DPSNextEvent",
+      "sample_count": 1211,
+      "weight_ms": 1211.0,
+      "main_thread_sample_count": 1211,
+      "main_thread_weight_ms": 1211.0
+    },
+    {
+      "symbol": "_CFRunLoopRunSpecificWithOptions",
+      "sample_count": 1211,
+      "weight_ms": 1211.0,
+      "main_thread_sample_count": 1211,
+      "main_thread_weight_ms": 1211.0
+    },
+    {
+      "symbol": "_dispatch_client_callout",
+      "sample_count": 1030,
+      "weight_ms": 1030.0,
+      "main_thread_sample_count": 91,
+      "main_thread_weight_ms": 91.0
+    }
+  ],
+  "main_thread_hanging_causes_supported": false,
+  "backtrace_sample_count": 2343,
+  "backtrace_sample_weight_ms": 2343.0,
+  "main_thread_backtrace_sample_weight_ms": 1352.0
+}

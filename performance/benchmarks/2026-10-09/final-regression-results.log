@@ -1,0 +1,32 @@
+Final non UI regression validation
+Date: 2026-10-09
+Workflow: .github/workflows/validate-release.yml
+
+Result: 34 unique checks passed; 0 failed (35 successful invocations including one automatic-hibernation rerun).
+
+Executed:
+- Distribution metadata self test
+- Website app bundle and runtime self tests
+- Website app preparation validation
+- Extension, window, history, control tab, checkpoint, library, WebKit policy, sidecar, scroll, diagnostics, download staging, noise lifecycle, startup hydration, hibernation, and download index checks
+- Favicon observer Node check
+- WebKit benchmark self test
+- WebKit benchmark regression check
+- `swiftc -swift-version 6 astra/Models/Library/Bookmark.swift checks/bookmark-projection-check.swift` and temporary executable: passed
+- `swiftc -O -swift-version 6 astra/Models/Library/Bookmark.swift checks/library-scaling-benchmark.swift` and temporary executable: passed
+- `swiftc -swift-version 6 astra/Models/Core/BrowserWindowRegistry.swift checks/window-ownership-check.swift` and temporary executable: passed
+- `swiftc -swift-version 6 astra/Models/Tabs/BrowserVisit.swift checks/history-search-cancellation-check.swift` and temporary executable: passed
+- `swiftc astra/Models/Library/BrowserDownload.swift astra/Web/Downloads/BrowserDownloadedFile.swift astra/Web/Downloads/BrowserDownloadFileWorker.swift checks/download-file-worker-check.swift` and temporary executable: passed
+- `python3 checks/automatic-hibernation-runtime-check.py`: passed (rerun)
+
+Excluded:
+- Debug build and unsigned archive, because xcodebuild was prohibited
+- Recovery restoration runtime matrix, after the requested stop; its runner was not recreated or rerun
+- UI automation and app launches
+
+Swift benchmark samples:
+- 1,000 bookmarks / 100 reading: median 5.035375 ms; p95 6.152083 ms
+- 10,000 bookmarks / 1,000 reading: median 43.152084 ms; p95 44.815000 ms
+- 50,000 bookmarks / 5,000 reading: median 210.438167 ms; p95 223.346209 ms
+
+No personal profile, network test, source change, commit, or push was performed.

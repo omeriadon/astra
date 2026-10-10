@@ -1,0 +1,7 @@
+{
+  "corrupt_archive_ui": "Rejected: Invalid or corrupt extension archive",
+  "bundled_archive_integrity": "unzip -t passed, 1004 files, 44968673 expanded bytes",
+  "bundled_archive_ui": "Rejected during low-storage session; later retest blocked by Computer Use noWindowsAvailable",
+  "standalone_boundary_probe": "Compiled; Foundation termination code 1, EXC_BREAKPOINT/SIGKILL in WebExtension constructor; invalid standalone test context, not an Astra crash",
+  "installation_and_removal": "NOT VALIDATED"
+}

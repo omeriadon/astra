@@ -1,0 +1,236 @@
+{
+  "sample_count": 4242,
+  "main_thread_sample_count": 4169,
+  "time_span_ms": 20217.996542,
+  "total_sample_weight_ms": 4242.0,
+  "main_thread_sample_weight_ms": 4169.0,
+  "thread_states": {
+    "Running": 4242
+  },
+  "top_15_leaf_symbols": [
+    {
+      "symbol": "objc_msgSend",
+      "sample_count": 319,
+      "weight_ms": 319.0,
+      "main_thread_sample_count": 318,
+      "main_thread_weight_ms": 318.0
+    },
+    {
+      "symbol": "<deduplicated_symbol>",
+      "sample_count": 101,
+      "weight_ms": 101.0,
+      "main_thread_sample_count": 100,
+      "main_thread_weight_ms": 100.0
+    },
+    {
+      "symbol": "__CF_IS_OBJC",
+      "sample_count": 58,
+      "weight_ms": 58.0,
+      "main_thread_sample_count": 58,
+      "main_thread_weight_ms": 58.0
+    },
+    {
+      "symbol": "___chkstk_darwin",
+      "sample_count": 56,
+      "weight_ms": 56.0,
+      "main_thread_sample_count": 56,
+      "main_thread_weight_ms": 56.0
+    },
+    {
+      "symbol": "objc_release",
+      "sample_count": 49,
+      "weight_ms": 49.0,
+      "main_thread_sample_count": 49,
+      "main_thread_weight_ms": 49.0
+    },
+    {
+      "symbol": "_xzm_malloc_tc",
+      "sample_count": 48,
+      "weight_ms": 48.0,
+      "main_thread_sample_count": 48,
+      "main_thread_weight_ms": 48.0
+    },
+    {
+      "symbol": "swift_retain",
+      "sample_count": 42,
+      "weight_ms": 42.0,
+      "main_thread_sample_count": 42,
+      "main_thread_weight_ms": 42.0
+    },
+    {
+      "symbol": "_xzm_xzone_malloc_tiny",
+      "sample_count": 41,
+      "weight_ms": 41.0,
+      "main_thread_sample_count": 41,
+      "main_thread_weight_ms": 41.0
+    },
+    {
+      "symbol": "swift_release",
+      "sample_count": 36,
+      "weight_ms": 36.0,
+      "main_thread_sample_count": 36,
+      "main_thread_weight_ms": 36.0
+    },
+    {
+      "symbol": "_xzm_free_tc",
+      "sample_count": 34,
+      "weight_ms": 34.0,
+      "main_thread_sample_count": 34,
+      "main_thread_weight_ms": 34.0
+    },
+    {
+      "symbol": "static String._unconditionallyBridgeFromObjectiveC(_:)",
+      "sample_count": 32,
+      "weight_ms": 32.0,
+      "main_thread_sample_count": 32,
+      "main_thread_weight_ms": 32.0
+    },
+    {
+      "symbol": "__CFStringHash",
+      "sample_count": 31,
+      "weight_ms": 31.0,
+      "main_thread_sample_count": 31,
+      "main_thread_weight_ms": 31.0
+    },
+    {
+      "symbol": "_platform_memmove",
+      "sample_count": 31,
+      "weight_ms": 31.0,
+      "main_thread_sample_count": 31,
+      "main_thread_weight_ms": 31.0
+    },
+    {
+      "symbol": "__CFStringEqual",
+      "sample_count": 28,
+      "weight_ms": 28.0,
+      "main_thread_sample_count": 28,
+      "main_thread_weight_ms": 28.0
+    },
+    {
+      "symbol": "objc_retain",
+      "sample_count": 25,
+      "weight_ms": 25.0,
+      "main_thread_sample_count": 25,
+      "main_thread_weight_ms": 25.0
+    }
+  ],
+  "top_15_inclusive_symbols": [
+    {
+      "symbol": "0x101ce0ad8",
+      "sample_count": 3914,
+      "weight_ms": 3914.0,
+      "main_thread_sample_count": 3914,
+      "main_thread_weight_ms": 3914.0
+    },
+    {
+      "symbol": "-[NSApplication run]",
+      "sample_count": 3914,
+      "weight_ms": 3914.0,
+      "main_thread_sample_count": 3914,
+      "main_thread_weight_ms": 3914.0
+    },
+    {
+      "symbol": "0x1014f7c30",
+      "sample_count": 3914,
+      "weight_ms": 3914.0,
+      "main_thread_sample_count": 3914,
+      "main_thread_weight_ms": 3914.0
+    },
+    {
+      "symbol": "__debug_main_executable_dylib_entry_point",
+      "sample_count": 3914,
+      "weight_ms": 3914.0,
+      "main_thread_sample_count": 3914,
+      "main_thread_weight_ms": 3914.0
+    },
+    {
+      "symbol": "AstraBrowserMain",
+      "sample_count": 3914,
+      "weight_ms": 3914.0,
+      "main_thread_sample_count": 3914,
+      "main_thread_weight_ms": 3914.0
+    },
+    {
+      "symbol": "start",
+      "sample_count": 3914,
+      "weight_ms": 3914.0,
+      "main_thread_sample_count": 3914,
+      "main_thread_weight_ms": 3914.0
+    },
+    {
+      "symbol": "-[NSApplication(NSEventRouting) _nextEventMatchingEventMask:untilDate:inMode:dequeue:]",
+      "sample_count": 3905,
+      "weight_ms": 3905.0,
+      "main_thread_sample_count": 3905,
+      "main_thread_weight_ms": 3905.0
+    },
+    {
+      "symbol": "-[NSApplication(NSEventRouting) nextEventMatchingMask:untilDate:inMode:dequeue:]",
+      "sample_count": 3905,
+      "weight_ms": 3905.0,
+      "main_thread_sample_count": 3905,
+      "main_thread_weight_ms": 3905.0
+    },
+    {
+      "symbol": "ReceiveNextEventCommon",
+      "sample_count": 3904,
+      "weight_ms": 3904.0,
+      "main_thread_sample_count": 3904,
+      "main_thread_weight_ms": 3904.0
+    },
+    {
+      "symbol": "_BlockUntilNextEventMatchingListInMode",
+      "sample_count": 3903,
+      "weight_ms": 3903.0,
+      "main_thread_sample_count": 3903,
+      "main_thread_weight_ms": 3903.0
+    },
+    {
+      "symbol": "_DPSBlockUntilNextEventMatchingListInMode",
+      "sample_count": 3902,
+      "weight_ms": 3902.0,
+      "main_thread_sample_count": 3902,
+      "main_thread_weight_ms": 3902.0
+    },
+    {
+      "symbol": "_DPSNextEvent",
+      "sample_count": 3902,
+      "weight_ms": 3902.0,
+      "main_thread_sample_count": 3902,
+      "main_thread_weight_ms": 3902.0
+    },
+    {
+      "symbol": "RunCurrentEventLoopInMode",
+      "sample_count": 3900,
+      "weight_ms": 3900.0,
+      "main_thread_sample_count": 3900,
+      "main_thread_weight_ms": 3900.0
+    },
+    {
+      "symbol": "_CFRunLoopRunSpecificWithOptions",
+      "sample_count": 3900,
+      "weight_ms": 3900.0,
+      "main_thread_sample_count": 3893,
+      "main_thread_weight_ms": 3893.0
+    },
+    {
+      "symbol": "__CFRunLoopRun",
+      "sample_count": 3238,
+      "weight_ms": 3238.0,
+      "main_thread_sample_count": 3231,
+      "main_thread_weight_ms": 3231.0
+    }
+  ],
+  "log_numeric_context": {
+    "tab_select_end_events": 14,
+    "webview_host_resolve_events": 19,
+    "main_thread_stall_events": 1,
+    "warm_budget_4_events": 17,
+    "warm_budget_2_events": 2
+  },
+  "log_sample_time_correlation_supported": false,
+  "bottleneck_justified_by_trace": false,
+  "backtrace_sample_count": 4044,
+  "backtrace_sample_weight_ms": 4044.0,
+  "main_thread_backtrace_sample_weight_ms": 3989.0
+}

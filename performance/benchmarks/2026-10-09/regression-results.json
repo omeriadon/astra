@@ -1,0 +1,44 @@
+{
+  "workflow": ".github/workflows/validate-release.yml",
+  "date": "2026-10-09",
+  "environment": {
+    "host": "macOS",
+    "build_checks": "skipped by instruction",
+    "xcodebuild": "not invoked"
+  },
+  "checks": {
+    "distribution_validation": "passed",
+    "library_projection_and_lifecycle": "passed",
+    "webkit_process_inventory": "passed",
+    "download_index_persistence": "passed",
+    "download_file_publication": "passed"
+  },
+  "check_count": 32,
+  "passed_count": 32,
+  "failed_count": 0,
+  "unrun": [
+    "Check Debug build",
+    "Check unsigned release archive"
+  ],
+  "performance_samples": {
+    "library_scaling_projection_median_ms": {
+      "1000_bookmarks_100_reading": 4.215666,
+      "10000_bookmarks_1000_reading": 45.273875,
+      "50000_bookmarks_5000_reading": 219.46175
+    },
+    "library_scaling_projection_p95_ms": {
+      "1000_bookmarks_100_reading": 4.377125,
+      "10000_bookmarks_1000_reading": 46.340125,
+      "50000_bookmarks_5000_reading": 230.48725
+    }
+  },
+  "webkit_process_inventory": {
+    "live_unattributed_helper_count": 26,
+    "helper_names": [
+      "com.apple.WebKit.GPU",
+      "com.apple.WebKit.Networking",
+      "com.apple.WebKit.WebContent"
+    ],
+    "process_arguments_inspected": false
+  }
+}
