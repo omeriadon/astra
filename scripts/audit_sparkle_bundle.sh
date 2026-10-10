@@ -13,25 +13,38 @@ SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
 [[ -f "$RUNTIME" ]] || { echo "Missing website app runtime: $RUNTIME" >&2; exit 1; }
 [[ -d "$SPARKLE" ]] || { echo "Sparkle not embedded: $SPARKLE" >&2; exit 1; }
 
-echo "Main executable dependencies:"
-otool -L "$EXE"
-echo "Website-app runtime dependencies:"
-otool -L "$RUNTIME"
-echo "Runtime search paths:"
-otool -l "$EXE" | awk '/cmd LC_RPATH/ { flag=1; next } flag && /path / { print; flag=0 }'
+# In Debug, Xcode's ENABLE_DEBUG_DYLIB moves the Swift-side framework
+# dependencies from the C launcher into astra.debug.dylib. Release typically
+# links them directly into astra. Inspect whichever actually contains the code.
+CODE_BINARY="$EXE"
+if [[ -f "$APP/Contents/MacOS/astra.debug.dylib" ]]; then
+  CODE_BINARY="$APP/Contents/MacOS/astra.debug.dylib"
+fi
 
-# AstraAppLauncher is a small C binary. Its browser entry point lives inside
-# the website-app runtime; Sparkle itself is linked by that runtime.
-otool -L "$EXE" | grep -q 'AstraWebsiteAppRuntime.framework' || {
-  echo "Astra's browser entry point is not linked from the embedded runtime" >&2
+echo "Launcher dependencies:"
+otool -L "$EXE"
+echo "Browser code dependencies ($CODE_BINARY):"
+code_dependencies="$(otool -L "$CODE_BINARY")"
+printf '%s\n' "$code_dependencies"
+echo "Website-app runtime dependencies:"
+runtime_dependencies="$(otool -L "$RUNTIME")"
+printf '%s\n' "$runtime_dependencies"
+echo "Browser code runtime search paths:"
+code_load_commands="$(otool -l "$CODE_BINARY")"
+printf '%s\n' "$code_load_commands" | awk '/cmd LC_RPATH/ { flag=1; next } flag && /path / { print; flag=0 }'
+
+# Use string comparison rather than grep -q in a pipe: pipefail would treat
+# SIGPIPE from an early grep match as a false failure.
+[[ "$code_dependencies" == *"AstraWebsiteAppRuntime.framework"* ]] || {
+  echo "Browser code is not linked against the embedded website-app runtime" >&2
   exit 1
 }
-otool -L "$RUNTIME" | grep -q 'Sparkle.framework' || {
+[[ "$runtime_dependencies" == *"Sparkle.framework"* ]] || {
   echo "Website-app runtime is missing its Sparkle dependency" >&2
   exit 1
 }
-otool -l "$EXE" | grep -q '@executable_path/../Frameworks' || {
-  echo "Astra's executable is missing its embedded-framework runpath" >&2
+[[ "$code_load_commands" == *"@executable_path/../Frameworks"* ]] || {
+  echo "Browser code is missing the embedded-framework search path" >&2
   exit 1
 }
 
