@@ -90,13 +90,15 @@ import WebKit
 								.help("Copy website link")
 								.accessibilityIdentifier("ai-preview-copy-link")
 							}
-							if browser.showsAISidebar, let page {
-								Button("Add to Chat", systemImage: "bubble.left.and.text.bubble.right") { browser.aiChat.addPage(page) }
-									.labelStyle(.iconOnly)
-									.help("Add full page to chat context")
-									.disabled(browser.aiChat.isResponding)
-									.accessibilityIdentifier("ai-preview-add-context")
-							}
+							#if !ASTRA_WEBSITE_APP_RUNTIME
+								if browser.showsAISidebar, let page {
+									Button("Add to Chat", systemImage: "bubble.left.and.text.bubble.right") { browser.aiChat.addPage(page) }
+										.labelStyle(.iconOnly)
+										.help("Add full page to chat context")
+										.disabled(browser.aiChat.isResponding)
+										.accessibilityIdentifier("ai-preview-add-context")
+								}
+							#endif
 							Spacer(minLength: 0)
 						}
 						.buttonStyle(.glass)

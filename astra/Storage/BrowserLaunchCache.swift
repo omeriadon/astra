@@ -4,11 +4,11 @@ import Foundation
 /// Disposable metadata used to paint the browser shell while the authoritative session loads.
 enum BrowserLaunchCache {
 	// shortcut: 256 tabs, 32 spaces, 64 favicons, and 2 MB total bound startup decoding; increase if normal sessions exceed these limits.
-	static let maximumTabs = 256
-	static let maximumSpaces = 32
-	static let maximumFavicons = 64
-	static let maximumFaviconBytes = 512 * 1024
-	static let maximumEncodedBytes = 2 * 1024 * 1024
+	nonisolated static let maximumTabs = 256
+	nonisolated static let maximumSpaces = 32
+	nonisolated static let maximumFavicons = 64
+	nonisolated static let maximumFaviconBytes = 512 * 1024
+	nonisolated static let maximumEncodedBytes = 2 * 1024 * 1024
 
 	struct Snapshot: Codable, Equatable, Sendable {
 		var tabs: [Tab]
@@ -18,7 +18,7 @@ enum BrowserLaunchCache {
 		var selectedTabID: UUID?
 		var favicons: [String: Data]
 
-		init(
+		nonisolated init(
 			tabs: [Tab] = [],
 			spaces: [Space] = [],
 			favouriteTabIDs: [UUID] = [],
@@ -195,7 +195,7 @@ enum BrowserLaunchCache {
 		return try? PropertyListDecoder().decode(Snapshot.self, from: data)
 	}
 
-	private static func boundedFavicons(_ favicons: [String: Data]) -> [String: Data] {
+	private nonisolated static func boundedFavicons(_ favicons: [String: Data]) -> [String: Data] {
 		var result: [String: Data] = [:]
 		var bytes = 0
 		for key in favicons.keys.sorted() {

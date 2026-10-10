@@ -103,7 +103,9 @@ final class Browser {
 	}
 
 	var showsAISidebar = false
-	let aiChat = BrowserAIChat()
+	#if !ASTRA_WEBSITE_APP_RUNTIME
+		let aiChat = BrowserAIChat()
+	#endif
 	var isAboutToQuit: Bool = false
 	var addressFocusRequest = 0
 	var settingsPage: BrowserSettingsView.Page = .ui
@@ -944,7 +946,6 @@ final class Browser {
 		let foregroundSavedID = savedWindow?.restoredSelection(availableTabIDs: availableSavedIDs)
 			?? loaded.snapshot.flatMap { availableSavedIDs.contains($0.selectedTabID) ? $0.selectedTabID : nil }
 			?? loaded.tabs.first?.id
-		let restoredDefaultPageZoom = Defaults[.defaultPageZoom]
 		let restoredTabs = loaded.tabs.compactMap { saved -> BrowserTab? in
 			let internalPage = saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:))
 			guard saved.internalPage == nil || internalPage != nil else { return nil }
@@ -1383,7 +1384,11 @@ final class Browser {
 	}
 
 	var canShowAISidebar: Bool {
-		!isPrivate && !isShowingNewTab && selectedTab?.internalPage == nil && selectedTab?.currentURL != nil
+		#if ASTRA_WEBSITE_APP_RUNTIME
+			false
+		#else
+			!isPrivate && !isShowingNewTab && selectedTab?.internalPage == nil && selectedTab?.currentURL != nil
+		#endif
 	}
 
 	func createBookmarkFolder(_ name: String) {

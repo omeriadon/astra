@@ -33,6 +33,12 @@ assert {
     "App/browserApp.swift",
     "UI/Shell/BrowserWindowController.swift",
     "UI/Chrome/BrowserAIChatSidebar.swift",
+    "AI/BrowserAIChat.swift",
+    "AI/BrowserAIChatHistory.swift",
+    "UI/Chrome/BrowserAITabDivider.swift",
+    "UI/Chrome/BrowserMediaActivityView.swift",
+    "UI/Chrome/BrowserSpacesBar.swift",
+    "UI/Chrome/DownloadsSidebarView.swift",
     "App/BrowserDataTransfer.swift",
     "App/BrowserDiagnostics.swift",
     "App/BrowserWebsiteAppMenuIntegration.swift",
@@ -46,9 +52,11 @@ assert {
     "UI/Shell/MiniAstraWindowController.swift",
     "UI/Shell/MiniAstraView.swift",
     "UI/Shell/MiniAstraOpeningAnimation.swift",
+    "UI/Shell/topVariableBlur.swift",
     "UI/Tabs/ControlTabSwitcher.swift",
     "UI/Tabs/ControlTabSwitcherPreview.swift",
     "UI/Tabs/ControlTabSwitcherCandidateView.swift",
+    "UI/Windowing/WindowFocusReader.swift",
 }.issubset(runtime_excluded)
 assert not (runtime_excluded & {
     "UI/Shell/BrowserWebsiteAppView.swift",
@@ -61,6 +69,11 @@ assert not (runtime_excluded & {
 }), "Website-app rendering or navigation sources accidentally excluded"
 extensions = (root / "astra/Web/Extensions/BrowserExtensionManager.swift").read_text()
 assert "#if os(macOS) && !ASTRA_WEBSITE_APP_RUNTIME" in extensions
+browser_source = (root / "astra/Models/Core/Browser.swift").read_text()
+assert "#if !ASTRA_WEBSITE_APP_RUNTIME\n\t\tlet aiChat = BrowserAIChat()" in browser_source
+assert "#if ASTRA_WEBSITE_APP_RUNTIME\n\t\t\tfalse" in browser_source
+hover_preview = (root / "astra/UI/Chrome/BrowserAIHoverPreview.swift").read_text()
+assert "#if !ASTRA_WEBSITE_APP_RUNTIME" in hover_preview
 shell = (root / "astra/UI/Shell/BrowserShellControls.swift").read_text()
 assert "struct ShellTopBarView: View" in shell
 assert "struct ShellSidebarListView" not in shell
@@ -75,6 +88,9 @@ for name in ("UI/Shell/BrowserSpaceScrollState.swift", "Web/Navigation/BrowserDe
 for name in ("UI/Shell/BrowserSidebarControls.swift", "UI/Shell/BrowserDownloadsBarView.swift", "UI/Tabs/BrowserTabRow.swift"):
     assert name in runtime_excluded, f"Sidebar UI leaked into website runtime: {name}"
 
+assert not any(x.get("product-name") == "MarkdownView" for x in website["package-product-members"])
+assert any(x.get("product-name") == "MarkdownView" for x in host["package-product-members"])
+assert "AI/BrowserAITools.swift" not in runtime_excluded
 assert not any(x.get("product-name") == "Sparkle" for x in website["package-product-members"])
 assert any(x.get("product-name") == "Sparkle" for x in updater["package-product-members"])
 browser = (root / "astra/App/browserApp.swift").read_text()

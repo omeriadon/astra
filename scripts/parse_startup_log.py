@@ -64,19 +64,20 @@ def parse(path: Path, birth: float, pid: Optional[str] = None) -> dict[str, str]
     for record in records(path):
         if pid is not None and str(record.get("processID")) != pid:
             continue
-        event_message = message(record)
-        if "[startup.first-window-readiness]" in event_message and not values[READINESS_FIELDS[0]]:
-            for key, field in zip(("visible", "key", "hydrated", "first_responder"), READINESS_FIELDS):
-                values[field] = str(f"{key}=true" in event_message).lower()
-        event = next((name for name in EVENTS if f"[{name}]" in event_message), None)
-        field = EVENTS.get(event) if event else None
-        if field is None or values[field] or not record.get("timestamp"):
-            continue
         try:
             elapsed = (timestamp(str(record["timestamp"])) - birth) * 1000
-        except (TypeError, ValueError):
+        except (KeyError, TypeError, ValueError):
             continue
-        if elapsed >= 0:
+        if elapsed < 0:
+            continue
+        event_message = message(record)
+        if "[startup.first-window-readiness]" in event_message and not values[READINESS_FIELDS[0]]:
+            metadata = set(event_message.split())
+            for key, field in zip(("visible", "key", "hydrated", "first_responder"), READINESS_FIELDS):
+                values[field] = str(f"{key}=true" in metadata).lower()
+        event = next((name for name in EVENTS if f"[{name}]" in event_message), None)
+        field = EVENTS.get(event) if event else None
+        if field is not None and not values[field]:
             values[field] = f"{elapsed:.1f}"
     return values
 
@@ -108,7 +109,20 @@ def self_test() -> None:
             "processID": 7,
             "eventMessage": "[startup.first-window-readiness] first_responder=false hydrated=true key=true visible=true",
         }]), encoding="utf-8")
+        content = json.loads(path.read_text())
+        content.insert(0, {
+            "timestamp": "2026-10-09T23:59:59Z",
+            "processID": 7,
+            "eventMessage": "[startup.first-window-readiness] first_responder=true hydrated=true key=true visible=true",
+        })
+        content.insert(1, {
+            "timestamp": "2026-10-10T00:00:00.100Z",
+            "processID": 8,
+            "eventMessage": "[startup.main-entered]",
+        })
+        path.write_text(json.dumps(content), encoding="utf-8")
         missing = parse(path, timestamp("2026-10-10T00:00:00Z"), "7")
+        assert missing["process_birth_to_main_log_ms"] == ""
         assert missing["first_window_first_responder"] == "false"
         assert missing["process_birth_to_first_usable_window_ms"] == ""
     print("Startup log parser self-test passed")
