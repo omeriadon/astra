@@ -55,7 +55,19 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 
 	static let shared = BrowserExtensionManager()
 
-	let controller = WKWebExtensionController()
+	/// Creating a WKWebExtensionController can initialize WebKit processes and
+	/// extension infrastructure. Window registrations are queued until needed.
+	@ObservationIgnored private var didInitializeController = false
+	@ObservationIgnored lazy var controller: WKWebExtensionController = {
+		let controller = WKWebExtensionController()
+		controller.delegate = self
+		NotificationCenter.default.addObserver(self, selector: #selector(extensionErrorsChanged(_:)), name: WKWebExtensionContext.errorsDidUpdateNotification, object: nil)
+		didInitializeController = true
+		for window in windows.values {
+			controller.didOpenWindow(window)
+		}
+		return controller
+	}()
 	private let bundledNames = ["darkreader-chrome-mv3"]
 	private(set) var loadErrors: [String: String] = [:] {
 		didSet {
@@ -115,8 +127,6 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		#if DEBUG
 			ChromeExtensionPackage.checkParsing()
 		#endif
-		controller.delegate = self
-		NotificationCenter.default.addObserver(self, selector: #selector(extensionErrorsChanged(_:)), name: WKWebExtensionContext.errorsDidUpdateNotification, object: nil)
 	}
 
 	@objc private func extensionErrorsChanged(_ notification: Notification) {
@@ -136,7 +146,9 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		}
 		let window = BrowserExtensionWindow(browser: browser)
 		windows[browser.windowID] = window
-		controller.didOpenWindow(window)
+		if didInitializeController {
+			controller.didOpenWindow(window)
+		}
 		return window
 	}
 
@@ -292,10 +304,14 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	func closeWindow(for browser: Browser) {
 		BrowserLog.debug(.extensions, "extensions.close-window", metadata: ["window": BrowserLog.id(browser.windowID)])
 		guard let window = windows.removeValue(forKey: browser.windowID) else { return }
-		for tab in tabs[browser.windowID]?.values ?? [UUID: BrowserExtensionTab]().values {
-			controller.didCloseTab(tab, windowIsClosing: true)
+		// Closing an unused startup window must not initialize WebKit's
+		// extension controller just to send close notifications.
+		if didInitializeController {
+			for tab in tabs[browser.windowID]?.values ?? [UUID: BrowserExtensionTab]().values {
+				controller.didCloseTab(tab, windowIsClosing: true)
+			}
+			controller.didCloseWindow(window)
 		}
-		controller.didCloseWindow(window)
 		tabs.removeValue(forKey: browser.windowID)
 		knownTabIDs.removeValue(forKey: browser.windowID)
 		selectedTabIDs.removeValue(forKey: browser.windowID)
