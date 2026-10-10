@@ -28,6 +28,9 @@ import WebKit
 @Observable
 final class BrowserController: NSObject, Identifiable {
 	#if os(macOS)
+		var hasDockedWebInspector = false
+	#endif
+	#if os(macOS)
 		static func logReclamation(for before: BrowserTabProcessMemorySnapshot) async -> BrowserMemoryReclamationSnapshot {
 			try? await Task.sleep(for: .seconds(2))
 			let sampled = await BrowserTabProcessMemorySnapshot.resample(before.processes)

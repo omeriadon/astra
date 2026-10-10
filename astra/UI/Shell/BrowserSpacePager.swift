@@ -9,8 +9,8 @@ struct BrowserSpacePager<Content: View>: View {
 	let content: (BrowserSpace, Bool, [UUID]) -> Content
 
 	@State private var scrollPosition = ScrollPosition(idType: UUID.self)
-	@State private var scrollPhase = ScrollPhase.idle
 	@State private var userScrollPending = false
+	@State private var userSelectedSpaceID: UUID?
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	init(
@@ -57,18 +57,19 @@ struct BrowserSpacePager<Content: View>: View {
 			withTransaction(transaction) {
 				scrollState.position = min(max(position, 0), Double(max(spaces.count - 1, 0)))
 			}
-			selectSettledSpace(at: position)
 		}
 		.onScrollPhaseChange { _, phase, context in
-			scrollPhase = phase
 			if phase == .interacting {
 				userScrollPending = true
-			} else if phase == .animating {
-				userScrollPending = false
+			} else if userScrollPending {
+				selectSpace(at: Self.pagePosition(in: context.geometry))
 			}
-			selectSettledSpace(at: Self.pagePosition(in: context.geometry))
 		}
 		.onChange(of: selectedSpaceID, initial: true) { oldID, id in
+			if userSelectedSpaceID == id {
+				userSelectedSpaceID = nil
+				return
+			}
 			if oldID != id, let index = spaces.firstIndex(where: { $0.id == id }),
 			   let position = scrollState.position, abs(position - Double(index)) < 0.001
 			{
@@ -88,14 +89,16 @@ struct BrowserSpacePager<Content: View>: View {
 		}
 	}
 
-	private func selectSettledSpace(at position: Double) {
-		guard userScrollPending, scrollPhase == .idle, !spaces.isEmpty,
-		      abs(position - position.rounded()) < 0.001 else { return }
+	private func selectSpace(at position: Double) {
+		guard userScrollPending, !spaces.isEmpty else { return }
 		userScrollPending = false
 		let index = min(max(Int(position.rounded()), 0), spaces.count - 1)
 		let id = spaces[index].id
 		guard id != selectedSpaceID else { return }
-		onSelectSpace(id)
+		userSelectedSpaceID = id
+		withTransaction(Transaction(animation: nil)) {
+			onSelectSpace(id)
+		}
 	}
 
 	private static func pagePosition(in geometry: ScrollGeometry) -> Double {

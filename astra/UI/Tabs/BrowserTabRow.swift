@@ -797,7 +797,7 @@ private struct TabRowContextMenu: View {
 				.clipShape(RoundedRectangle(cornerRadius: 10))
 
 				HStack {
-					Text("Memory")
+					Text("Tab memory")
 						.font(.subheadline.weight(.semibold))
 					Spacer()
 					Text(memoryBytes.map(Self.formatBytes) ?? unavailableMemoryLabel)
@@ -816,13 +816,10 @@ private struct TabRowContextMenu: View {
 					return
 				}
 
-				// The switcher and navigation lifecycle already retain a page
-				// snapshot. Showing the hover card must not force a new WebKit
-				// capture every time the pointer crosses a tab row.
 				if !controller.hasCurrentPreviewSnapshot {
 					await controller.refreshPreviewSnapshot()
 				}
-				memoryBytes = await sampleWebContentMemory(for: controller)
+				memoryBytes = await sampleTabMemory(for: controller)
 				hasSampledMemory = true
 				while !Task.isCancelled {
 					do {
@@ -830,7 +827,7 @@ private struct TabRowContextMenu: View {
 					} catch {
 						return
 					}
-					memoryBytes = await sampleWebContentMemory(for: controller)
+					memoryBytes = await sampleTabMemory(for: controller)
 					hasSampledMemory = true
 					if !controller.hasCurrentPreviewSnapshot {
 						await controller.refreshPreviewSnapshot()
@@ -839,9 +836,9 @@ private struct TabRowContextMenu: View {
 			}
 		}
 
-		private func sampleWebContentMemory(for controller: BrowserController) async -> UInt64? {
+		private func sampleTabMemory(for controller: BrowserController) async -> UInt64? {
 			let snapshots = await BrowserController.tabProcessMemorySnapshots(for: [controller])
-			return snapshots[controller.id]?.webContentBytes
+			return snapshots[controller.id]?.knownProcessBytes
 		}
 
 		private nonisolated static func formatBytes(_ bytes: UInt64) -> String {

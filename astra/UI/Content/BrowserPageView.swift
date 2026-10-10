@@ -9,6 +9,13 @@ struct BrowserPageView: View {
 	}
 
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	private var hasDockedWebInspector: Bool {
+		#if os(macOS)
+			browser.selectedTab?.activeController?.hasDockedWebInspector == true
+		#else
+			false
+		#endif
+	}
 
 	var body: some View {
 		let hasActiveDuplicate = BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
@@ -72,7 +79,17 @@ struct BrowserPageView: View {
 			}
 			.animation(.easeOut(duration: 0.1), value: toastManager.toast != nil)
 			.allowsHitTesting(!hasActiveDuplicate)
-			.clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+			.animation(nil, value: hasDockedWebInspector)
+			.clipShape(
+				UnevenRoundedRectangle(
+					cornerRadii: RectangleCornerRadii(
+						topLeading: cornerRadius,
+						bottomLeading: cornerRadius,
+						bottomTrailing: cornerRadius,
+						topTrailing: hasDockedWebInspector ? 7 : cornerRadius
+					)
+				)
+			)
 	}
 }
 
@@ -84,6 +101,7 @@ extension BrowserPageView: Equatable {
 	static func == (lhs: Self, rhs: Self) -> Bool {
 		lhs.browser === rhs.browser
 			&& lhs.cornerRadius == rhs.cornerRadius
+			&& lhs.hasDockedWebInspector == rhs.hasDockedWebInspector
 			&& sameEdges(lhs.insets.obscured, rhs.insets.obscured)
 			&& sameEdges(lhs.insets.minimum, rhs.insets.minimum)
 			&& sameEdges(lhs.insets.maximum, rhs.insets.maximum)

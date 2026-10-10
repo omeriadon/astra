@@ -269,6 +269,23 @@ struct BrowserWebView {
 			mountIfReady()
 		}
 
+		override func didAddSubview(_ subview: NSView) {
+			super.didAddSubview(subview)
+			updateDockedInspectorVisibility()
+		}
+
+		override func willRemoveSubview(_ subview: NSView) {
+			updateDockedInspectorVisibility(removing: subview)
+			super.willRemoveSubview(subview)
+		}
+
+		private func updateDockedInspectorVisibility(removing removedSubview: NSView? = nil) {
+			let webView = specification.controller.webViewIfLoaded
+			specification.controller.hasDockedWebInspector = subviews.contains {
+				$0 !== removedSubview && $0 is WKWebView && $0 !== webView
+			}
+		}
+
 		override func viewDidMoveToWindow() {
 			super.viewDidMoveToWindow()
 			if window == nil {
@@ -382,6 +399,7 @@ struct BrowserWebView {
 			}
 			// WebKit owns the page frame while its inspector is docked in this host.
 			let hasDockedInspector = subviews.contains { $0 is WKWebView && $0 !== webView }
+			specification.controller.hasDockedWebInspector = hasDockedInspector
 			if !hasDockedInspector {
 				let targetFrame = bounds.offsetBy(dx: 0, dy: isFlipped ? refreshPullOffset : -refreshPullOffset)
 				if webView.frame != targetFrame {
@@ -412,6 +430,7 @@ struct BrowserWebView {
 			handoffTask?.cancel()
 			handoffTask = nil
 			pageGestures.detach()
+			specification.controller.hasDockedWebInspector = false
 			guard let webView = specification.controller.webViewIfLoaded,
 			      webView.superview === self else { return }
 			webView.removeFromSuperview()
