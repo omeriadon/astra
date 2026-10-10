@@ -52,8 +52,6 @@ def process_sample(
     for pid, role in pids.items():
         reading = readings[pid]
         start = reading.get("rusage_start_abstime")
-        if original_starts[pid] is None and start is not None:
-            original_starts[pid] = start
         if start is None or original_starts[pid] != start:
             unavailable.append(pid)
             if role == "astra":
@@ -89,21 +87,24 @@ def write_result(path: Path, result: dict[str, Any]) -> None:
 
 
 def _self_test() -> None:
-    pids = {42: "astra", 43: "helper"}
-    starts = {42: None, 43: None}
+    pids = {42: "astra", 43: "helper", 44: "missing_helper"}
+    starts = {42: 100, 43: 200, 44: None}
     previous: dict[int, dict[str, int]] = {}
     values = {
         42: {"rusage_start_abstime": 100, "rss_bytes": 10, "rusage_cpu_nanoseconds": 20},
         43: {"rusage_start_abstime": 200, "footprint_bytes": 30, "rusage_cpu_nanoseconds": 40},
+        44: {},
     }
     original = globals()["read_rusage"]
     try:
         globals()["read_rusage"] = lambda _: values
         first, previous, stopped = process_sample(pids, starts, previous)
-        assert not stopped and first["unavailable_pids"] == []
+        assert not stopped and first["unavailable_pids"] == [44]
+        values[44] = {"rusage_start_abstime": 300, "footprint_bytes": 50}
         values[42] = {"rusage_start_abstime": 101, "rss_bytes": 11, "rusage_cpu_nanoseconds": 30}
         second, _, stopped = process_sample(pids, starts, previous)
         assert stopped and second["processes"][0]["available"] is False
+        assert second["processes"][2]["available"] is False
         values[42] = {}
         third, _, stopped = process_sample(pids, starts, previous)
         assert stopped and third["processes"][0]["available"] is False
@@ -153,7 +154,7 @@ def main() -> int:
         "samples": [],
         "stopped_reason": None,
     }
-    starts = {pid: None for pid in pids}
+    starts = {pid: value.get("rusage_start_abstime") for pid, value in read_rusage(pids).items()}
     previous: dict[int, dict[str, int]] = {}
     started = time.monotonic()
     while True:
