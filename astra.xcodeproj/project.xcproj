@@ -102,7 +102,6 @@
           "type": "wrapper.framework",
           "index": false,
           "target-membership": [
-            { "build-phase": "astra/frameworks", "platforms": [ "macos" ] },
             { "build-phase": "astra/copy/Embed Frameworks", "code-sign-on-copy": true, "header-preservation": "remove-on-copy" },
           ],
         },
