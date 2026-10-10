@@ -29,6 +29,12 @@ jobs:
       - name: Check out integration branch
         uses: actions/checkout@v4
 
+      - name: Validate startup tooling
+        shell: bash
+        run: |
+          bash -n scripts/benchmark_startup.sh
+          bash -n scripts/audit_sparkle_bundle.sh
+
       - name: Select Xcode 27
         shell: bash
         run: |
@@ -80,6 +86,10 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             2>&1 | tee "$RUNNER_TEMP/astra-mac-build.log"
+
+      - name: Audit Sparkle linking and embedding
+        shell: bash
+        run: bash scripts/audit_sparkle_bundle.sh "$RUNNER_TEMP/AstraDerivedData/Build/Products/Debug/astra.app" --unsigned
 
       - name: Upload build log
         if: always()
