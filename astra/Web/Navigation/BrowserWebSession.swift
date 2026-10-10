@@ -12,12 +12,17 @@ final class BrowserWebSession {
 	let isPrivate: Bool
 	let dataStore: WKWebsiteDataStore
 	let toastManager: ToastManager
-	let downloads: BrowserDownloadManager
-	let favicons: FaviconStore
+	// Downloads are not required to construct the browser shell.
+	lazy var downloads: BrowserDownloadManager = isPrivate
+		? BrowserDownloadManager(privateDataStore: dataStore, toastManager: toastManager)
+		: .shared
+	// The launch cache can render tab metadata before the full favicon store loads.
+	lazy var favicons: FaviconStore = isPrivate ? FaviconStore(isPrivate: true) : .shared
 	let permissions: BrowserSitePermissions
 	let sitePreferences: BrowserSitePreferences
 	let contentBlocking: BrowserContentBlocking
-	let usageLimits: BrowserUsageLimitsStore
+	// Only initialize usage limits when navigation actually needs them.
+	lazy var usageLimits: BrowserUsageLimitsStore = BrowserUsageLimitsStore(dataStore: dataStore)
 	var persistenceWriteTask: Task<Void, Never>?
 	private var cleanupTask: Task<Void, Never>?
 	private var contentBlockingUpdatesTask: Task<Void, Never>?
@@ -32,14 +37,9 @@ final class BrowserWebSession {
 		#else
 			dataStore = isPrivate ? .nonPersistent() : .default()
 		#endif
-		downloads = isPrivate
-			? BrowserDownloadManager(privateDataStore: dataStore, toastManager: toastManager)
-			: .shared
-		favicons = isPrivate ? FaviconStore(isPrivate: true) : .shared
 		permissions = BrowserSitePermissions(isPrivate: isPrivate)
 		sitePreferences = isPrivate ? BrowserSitePreferences(isPrivate: true) : .shared
 		contentBlocking = isPrivate ? BrowserContentBlocking(isPrivate: true) : .shared
-		usageLimits = BrowserUsageLimitsStore(dataStore: dataStore)
 		sitePreferences.didUpdateContentBlockingException = { [weak self] origin in
 			self?.refreshContentBlocking(for: origin)
 		}
