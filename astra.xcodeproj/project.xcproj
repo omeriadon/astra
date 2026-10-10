@@ -2,55 +2,61 @@
   "default-configuration": "Release",
   "configurations": [
     "Debug",
-    "Release",
+    "Release"
   ],
   "localizations": {
     "development": "en",
     "supported": [
-      "Base",
-    ],
+      "Base"
+    ]
   },
   "packages": [
     {
       "kind": "remote",
       "repository": "https://github.com/Lakr233/MarkdownView",
       "version": {
-        "up-to-next-major-version": "4.1.7",
-      },
-    }, {
+        "up-to-next-major-version": "4.1.7"
+      }
+    },
+    {
       "kind": "remote",
       "repository": "https://github.com/sindresorhus/Defaults",
       "version": {
-        "up-to-next-major-version": "9.0.9",
-      },
-    }, {
+        "up-to-next-major-version": "9.0.9"
+      }
+    },
+    {
       "kind": "remote",
       "repository": "https://github.com/sindresorhus/DockProgress",
       "version": {
-        "up-to-next-major-version": "5.1.0",
-      },
-    }, {
+        "up-to-next-major-version": "5.1.0"
+      }
+    },
+    {
       "kind": "remote",
       "repository": "https://github.com/heestand-xyz/Noise",
       "version": {
-        "up-to-next-major-version": "2.0.5",
-      },
-    }, {
+        "up-to-next-major-version": "2.0.5"
+      }
+    },
+    {
       "kind": "remote",
       "repository": "https://github.com/OskarGroth/MaterialView.git",
       "version": {
-        "up-to-next-major-version": "1.0.0",
-      },
-    }, {
+        "up-to-next-major-version": "1.0.0"
+      }
+    },
+    {
       "kind": "remote",
       "repository": "https://github.com/sparkle-project/Sparkle",
       "version": {
-        "up-to-next-major-version": "2.10.0",
-      },
-    }, {
-      "kind": "local",
-      "path": "Packages/Haze",
+        "up-to-next-major-version": "2.10.0"
+      }
     },
+    {
+      "kind": "local",
+      "path": "Packages/Haze"
+    }
   ],
   "files": [
     {
@@ -58,15 +64,16 @@
       "path": "astra",
       "target-membership": [
         "AstraWebsiteAppRuntime",
-        "astra",
+        "astra"
       ],
       "membership-exceptions": [
         {
           "target": "astra",
           "exclusions": [
-            "Special/Info.plist",
-          ],
-        }, {
+            "Special/Info.plist"
+          ]
+        },
+        {
           "target": "AstraWebsiteAppRuntime",
           "exclusions": [
             "Extensions/DarkReader-LICENSE.txt",
@@ -80,32 +87,101 @@
             "Web/Reader/Readability-LICENSE.txt",
             "Web/Reader/Readability-readerable.js",
             "Web/Reader/Readability.js",
-            "Web/Reader/Reader.js",
-          ],
-        },
-      ],
+            "Web/Reader/Reader.js"
+          ]
+        }
+      ]
     },
-    { "kind": "folder", "path": "AstraWebsiteAppInstaller", "target-membership": [ "AstraWebsiteAppInstaller" ] },
-    { "kind": "folder", "path": "AstraWebsiteAppLoader", "target-membership": [ "AstraWebsiteAppTemplate" ] },
-    { "kind": "folder", "path": "AstraWebsiteAppRuntime", "target-membership": [ "AstraWebsiteAppRuntime" ] },
+    {
+      "kind": "folder",
+      "path": "AstraWebsiteAppInstaller",
+      "target-membership": [
+        "AstraWebsiteAppInstaller"
+      ]
+    },
+    {
+      "kind": "folder",
+      "path": "AstraWebsiteAppLoader",
+      "target-membership": [
+        "AstraWebsiteAppTemplate"
+      ]
+    },
+    {
+      "kind": "folder",
+      "path": "AstraWebsiteAppRuntime",
+      "target-membership": [
+        "AstraWebsiteAppRuntime"
+      ]
+    },
     {
       "kind": "group",
       "name": "Products",
       "children": [
-        { "path": "<PRODUCTS>/astra.app", "id": "2A3CB8C8305FC07600584097", "type": "wrapper.application", "index": false },
-        { "path": "<PRODUCTS>/AstraWebsiteAppTemplate.app", "id": "2A7B340630728629002961D5", "type": "wrapper.application", "index": false, "target-membership": [ { "build-phase": "astra/copy/Embed Website App Template", "code-sign-on-copy": true } ] },
-        { "path": "<PRODUCTS>/AstraWebsiteAppInstaller.app", "id": "2A7B3EBC3073C646002961D5", "type": "wrapper.application", "index": false, "target-membership": [ { "build-phase": "astra/copy/Embed Website App Template", "code-sign-on-copy": true } ] },
+        {
+          "path": "<PRODUCTS>/astra.app",
+          "id": "2A3CB8C8305FC07600584097",
+          "type": "wrapper.application",
+          "index": false
+        },
+        {
+          "path": "<PRODUCTS>/AstraWebsiteAppTemplate.app",
+          "id": "2A7B340630728629002961D5",
+          "type": "wrapper.application",
+          "index": false,
+          "target-membership": [
+            {
+              "build-phase": "astra/copy/Embed Website App Template",
+              "code-sign-on-copy": true
+            }
+          ]
+        },
+        {
+          "path": "<PRODUCTS>/AstraWebsiteAppInstaller.app",
+          "id": "2A7B3EBC3073C646002961D5",
+          "type": "wrapper.application",
+          "index": false,
+          "target-membership": [
+            {
+              "build-phase": "astra/copy/Embed Website App Template",
+              "code-sign-on-copy": true
+            }
+          ]
+        },
         {
           "path": "<PRODUCTS>/AstraWebsiteAppRuntime.framework",
           "id": "2A7B40EA3073C807002961D5",
           "type": "wrapper.framework",
           "index": false,
           "target-membership": [
-            { "build-phase": "astra/copy/Embed Frameworks", "code-sign-on-copy": true, "header-preservation": "remove-on-copy" },
-          ],
+            {
+              "build-phase": "astra/copy/Embed Frameworks",
+              "code-sign-on-copy": true,
+              "header-preservation": "remove-on-copy"
+            }
+          ]
         },
-      ],
+        {
+          "path": "<PRODUCTS>/AstraUpdaterRuntime.framework",
+          "id": "A23F7815B0C140009C14B002",
+          "type": "wrapper.framework",
+          "index": false,
+          "target-membership": [
+            {
+              "build-phase": "astra/copy/Embed Frameworks",
+              "code-sign-on-copy": true,
+              "header-preservation": "remove-on-copy"
+            }
+          ]
+        }
+      ]
     },
+    {
+      "kind": "folder",
+      "path": "AstraUpdaterRuntime",
+      "target-membership": [
+        "AstraUpdaterRuntime"
+      ]
+    }
   ],
   "targets": [
     {
@@ -117,6 +193,7 @@
         "AstraWebsiteAppTemplate",
         "AstraWebsiteAppInstaller",
         "AstraWebsiteAppRuntime",
+        "AstraUpdaterRuntime"
       ],
       "build-phases": [
         "compile-sources",
@@ -125,65 +202,131 @@
         {
           "kind": "copy",
           "name": "Embed Website App Template",
-          "bundle-base-path": "resources-directory",
-        }, {
+          "bundle-base-path": "resources-directory"
+        },
+        {
           "kind": "copy",
           "name": "Embed Frameworks",
-          "bundle-base-path": "frameworks-directory",
-        },
+          "bundle-base-path": "frameworks-directory"
+        }
       ],
       "package-product-members": [
         {
           "product-name": "Haze",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "ios" ] },
-        }, {
+          "build-phase": {
+            "build-phase": "frameworks",
+            "platforms": [
+              "ios"
+            ]
+          }
+        },
+        {
           "product-name": "Haze",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "ios" ] },
-        }, {
+          "build-phase": {
+            "build-phase": "frameworks",
+            "platforms": [
+              "ios"
+            ]
+          }
+        },
+        {
           "package": "Defaults",
           "product-name": "Defaults",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "ios" ] },
-        }, {
+          "build-phase": {
+            "build-phase": "frameworks",
+            "platforms": [
+              "ios"
+            ]
+          }
+        },
+        {
           "package": "MarkdownView",
           "product-name": "MarkdownView",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "ios" ] },
-        }, {
+          "build-phase": {
+            "build-phase": "frameworks",
+            "platforms": [
+              "ios"
+            ]
+          }
+        },
+        {
           "package": "Noise",
           "product-name": "Noise",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "ios" ] },
-        }, {
+          "build-phase": {
+            "build-phase": "frameworks",
+            "platforms": [
+              "ios"
+            ]
+          }
+        },
+        {
           "package": "Sparkle",
           "product-name": "Sparkle",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
+          "build-phase": {
+            "build-phase": "frameworks",
+            "platforms": [
+              "macos"
+            ]
+          }
         },
         {
           "product-name": "Haze",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
+          "build-phase": {
+            "build-phase": "frameworks",
+            "platforms": [
+              "macos"
+            ]
+          }
         },
         {
           "package": "Defaults",
           "product-name": "Defaults",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
+          "build-phase": {
+            "build-phase": "frameworks",
+            "platforms": [
+              "macos"
+            ]
+          }
         },
         {
           "package": "DockProgress",
           "product-name": "DockProgress",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
+          "build-phase": {
+            "build-phase": "frameworks",
+            "platforms": [
+              "macos"
+            ]
+          }
         },
         {
           "package": "MarkdownView",
           "product-name": "MarkdownView",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
+          "build-phase": {
+            "build-phase": "frameworks",
+            "platforms": [
+              "macos"
+            ]
+          }
         },
         {
           "product-name": "MaterialView",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
+          "build-phase": {
+            "build-phase": "frameworks",
+            "platforms": [
+              "macos"
+            ]
+          }
         },
         {
           "package": "Noise",
           "product-name": "Noise",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
-        },
+          "build-phase": {
+            "build-phase": "frameworks",
+            "platforms": [
+              "macos"
+            ]
+          }
+        }
       ],
       "build-settings": {
         "ASSETCATALOG_COMPILER_APPICON_NAME": "astra",
@@ -247,8 +390,13 @@
         "SWIFT_VERSION": "5.0",
         "TARGETED_DEVICE_FAMILY": "1,2",
         "XROS_DEPLOYMENT_TARGET": "27.2",
-      },
-    }, {
+        "OTHER_LDFLAGS[sdk=macosx*]": [
+          "$(inherited)",
+          "-Wl,-dead_strip_dylibs"
+        ]
+      }
+    },
+    {
       "name": "AstraWebsiteAppTemplate",
       "id": "2A7B340530728629002961D5",
       "product": "Products/AstraWebsiteAppTemplate.app",
@@ -256,7 +404,7 @@
       "build-phases": [
         "compile-sources",
         "frameworks",
-        "resources",
+        "resources"
       ],
       "build-settings": {
         "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
@@ -309,9 +457,10 @@
         "SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY": "YES",
         "SWIFT_VERSION": "5.0",
         "TARGETED_DEVICE_FAMILY": "1,2,7",
-        "XROS_DEPLOYMENT_TARGET": "27.2",
-      },
-    }, {
+        "XROS_DEPLOYMENT_TARGET": "27.2"
+      }
+    },
+    {
       "name": "AstraWebsiteAppInstaller",
       "id": "2A7B3EBB3073C646002961D5",
       "product": "Products/AstraWebsiteAppInstaller.app",
@@ -319,7 +468,7 @@
       "build-phases": [
         "compile-sources",
         "frameworks",
-        "resources",
+        "resources"
       ],
       "build-settings": {
         "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
@@ -360,9 +509,10 @@
         "SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY": "YES",
         "SWIFT_VERSION": "5.0",
         "TARGETED_DEVICE_FAMILY": "1,2,7",
-        "XROS_DEPLOYMENT_TARGET": "27.2",
-      },
-    }, {
+        "XROS_DEPLOYMENT_TARGET": "27.2"
+      }
+    },
+    {
       "name": "AstraWebsiteAppRuntime",
       "id": "2A7B40E93073C807002961D5",
       "product": "Products/AstraWebsiteAppRuntime.framework",
@@ -371,40 +521,62 @@
         "headers",
         "compile-sources",
         "frameworks",
-        "resources",
+        "resources"
       ],
       "package-product-members": [
         {
           "product-name": "Haze",
-          "build-phase": { "build-phase": "frameworks" },
-        }, {
+          "build-phase": {
+            "build-phase": "frameworks"
+          }
+        },
+        {
           "product-name": "Haze",
-          "build-phase": { "build-phase": "frameworks" },
-        }, {
+          "build-phase": {
+            "build-phase": "frameworks"
+          }
+        },
+        {
           "package": "Defaults",
           "product-name": "Defaults",
-          "build-phase": { "build-phase": "frameworks" },
-        }, {
+          "build-phase": {
+            "build-phase": "frameworks"
+          }
+        },
+        {
           "package": "DockProgress",
           "product-name": "DockProgress",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
-        }, {
+          "build-phase": {
+            "build-phase": "frameworks",
+            "platforms": [
+              "macos"
+            ]
+          }
+        },
+        {
           "package": "MarkdownView",
           "product-name": "MarkdownView",
-          "build-phase": { "build-phase": "frameworks" },
-        }, {
+          "build-phase": {
+            "build-phase": "frameworks"
+          }
+        },
+        {
           "package": "MaterialView",
           "product-name": "MaterialView",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
-        }, {
+          "build-phase": {
+            "build-phase": "frameworks",
+            "platforms": [
+              "macos"
+            ]
+          }
+        },
+        {
           "package": "Noise",
           "product-name": "Noise",
-          "build-phase": { "build-phase": "frameworks" },
-        }, {
-          "package": "Sparkle",
-          "product-name": "Sparkle",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
-        },
+          "build-phase": {
+            "build-phase": "frameworks"
+          }
+        }
       ],
       "build-settings": {
         "ALLOW_TARGET_PLATFORM_SPECIALIZATION": "YES",
@@ -427,11 +599,11 @@
         "IPHONEOS_DEPLOYMENT_TARGET": "27.2",
         "LD_RUNPATH_SEARCH_PATHS": [
           "$(inherited)",
-          "@loader_path/../../..",
+          "@loader_path/../../.."
         ],
         "LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]": [
           "@executable_path/../Frameworks",
-          "@loader_path/Frameworks",
+          "@loader_path/Frameworks"
         ],
         "MACOSX_DEPLOYMENT_TARGET": "27.0",
         "MARKETING_VERSION": "1.0",
@@ -440,7 +612,7 @@
         "OTHER_LDFLAGS": [
           "$(inherited)",
           "-Wl,-rpath,@loader_path/../../..",
-          "-Wl,-exported_symbol,_AstraWebsiteAppMain",
+          "-Wl,-exported_symbol,_AstraWebsiteAppMain"
         ],
         "PRODUCT_BUNDLE_IDENTIFIER": "com.omeriadon.astra.AstraWebsiteAppRuntime",
         "PRODUCT_NAME": "$(TARGET_NAME:c99extidentifier)",
@@ -462,9 +634,90 @@
         "TARGETED_DEVICE_FAMILY": "1,2,7",
         "VERSIONING_SYSTEM": "apple-generic",
         "VERSION_INFO_PREFIX": "",
-        "XROS_DEPLOYMENT_TARGET": "27.2",
-      },
+        "XROS_DEPLOYMENT_TARGET": "27.2"
+      }
     },
+    {
+      "name": "AstraUpdaterRuntime",
+      "id": "A23F7815B0C140009C14B001",
+      "product": "Products/AstraUpdaterRuntime.framework",
+      "product-type": "framework",
+      "build-phases": [
+        "headers",
+        "compile-sources",
+        "frameworks",
+        "resources"
+      ],
+      "package-product-members": [
+        {
+          "package": "Sparkle",
+          "product-name": "Sparkle",
+          "build-phase": {
+            "build-phase": "frameworks",
+            "platforms": [
+              "macos"
+            ]
+          }
+        }
+      ],
+      "build-settings": {
+        "ALLOW_TARGET_PLATFORM_SPECIALIZATION": "YES",
+        "BUILD_LIBRARY_FOR_DISTRIBUTION": "NO",
+        "CODE_SIGN_IDENTITY": "$(CODE_SIGN_IDENTITY_$(_DEVELOPMENT_TEAM_IS_EMPTY))",
+        "CODE_SIGN_STYLE": "Automatic",
+        "CURRENT_PROJECT_VERSION": "1",
+        "DEBUG_INFORMATION_FORMAT[config=Debug]": "dwarf-with-dsym",
+        "DEPLOYMENT_POSTPROCESSING": "YES",
+        "DEVELOPMENT_TEAM": "P6PV2R9443",
+        "DYLIB_COMPATIBILITY_VERSION": "1",
+        "DYLIB_CURRENT_VERSION": "1",
+        "DYLIB_INSTALL_NAME_BASE": "@rpath",
+        "ENABLE_HARDENED_RUNTIME": "YES",
+        "ENABLE_MODULE_VERIFIER": "YES",
+        "ENABLE_TESTABILITY": "NO",
+        "GENERATE_INFOPLIST_FILE": "YES",
+        "INFOPLIST_KEY_NSHumanReadableCopyright": "",
+        "INSTALL_PATH": "$(LOCAL_LIBRARY_DIR)/Frameworks",
+        "IPHONEOS_DEPLOYMENT_TARGET": "27.2",
+        "LD_RUNPATH_SEARCH_PATHS": [
+          "$(inherited)",
+          "@loader_path/../../.."
+        ],
+        "LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]": [
+          "@executable_path/../Frameworks",
+          "@loader_path/Frameworks"
+        ],
+        "MACOSX_DEPLOYMENT_TARGET": "27.0",
+        "MARKETING_VERSION": "1.0",
+        "MODULE_VERIFIER_SUPPORTED_LANGUAGES": "objective-c objective-c++",
+        "MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS": "gnu17 gnu++20",
+        "OTHER_LDFLAGS": [
+          "$(inherited)",
+          "-Wl,-rpath,@loader_path/../../..",
+          "-Wl,-exported_symbol,_AstraUpdaterRuntimeStart"
+        ],
+        "PRODUCT_BUNDLE_IDENTIFIER": "com.omeriadon.astra.AstraUpdaterRuntime",
+        "PRODUCT_NAME": "$(TARGET_NAME:c99extidentifier)",
+        "SDKROOT": "macosx",
+        "SKIP_INSTALL": "YES",
+        "STRING_CATALOG_GENERATE_SYMBOLS": "YES",
+        "STRIP_INSTALLED_PRODUCT": "YES",
+        "STRIP_STYLE": "non-global",
+        "SUPPORTED_PLATFORMS": "macosx",
+        "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "$(inherited)",
+        "SWIFT_APPROACHABLE_CONCURRENCY": "YES",
+        "SWIFT_DEFAULT_ACTOR_ISOLATION": "MainActor",
+        "SWIFT_EMIT_LOC_STRINGS": "YES",
+        "SWIFT_INSTALL_MODULE": "NO",
+        "SWIFT_INSTALL_OBJC_HEADER": "NO",
+        "SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY": "YES",
+        "SWIFT_VERSION": "5.0",
+        "TARGETED_DEVICE_FAMILY": "1,2,7",
+        "VERSIONING_SYSTEM": "apple-generic",
+        "VERSION_INFO_PREFIX": "",
+        "XROS_DEPLOYMENT_TARGET": "27.2"
+      }
+    }
   ],
   "build-settings": {
     "ALWAYS_SEARCH_USER_PATHS": "NO",
@@ -512,7 +765,7 @@
     "GCC_OPTIMIZATION_LEVEL[config=Debug]": "0",
     "GCC_PREPROCESSOR_DEFINITIONS[config=Debug]": [
       "DEBUG=1",
-      "$(inherited)",
+      "$(inherited)"
     ],
     "GCC_WARN_64_TO_32_BIT_CONVERSION": "YES",
     "GCC_WARN_ABOUT_RETURN_TYPE": "YES_ERROR",
@@ -528,8 +781,8 @@
     "STRING_CATALOG_GENERATE_SYMBOLS": "YES",
     "SWIFT_ACTIVE_COMPILATION_CONDITIONS[config=Debug]": "DEBUG $(inherited)",
     "SWIFT_COMPILATION_MODE[config=Release]": "wholemodule",
-    "SWIFT_OPTIMIZATION_LEVEL[config=Debug]": "-Onone",
+    "SWIFT_OPTIMIZATION_LEVEL[config=Debug]": "-Onone"
   },
   "last-upgrade": "27.2",
-  "last-swift-update": "27.2",
+  "last-swift-update": "27.2"
 }
