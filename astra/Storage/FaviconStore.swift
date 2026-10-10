@@ -145,7 +145,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		BrowserLog.debug(.favicons, "favicon-store.init", metadata: ["private": String(isPrivate)])
 		let persistence: BrowserPersistence?
 		do {
-			persistence = isPrivate ? nil : try BrowserPersistence()
+			persistence = isPrivate ? nil : try BrowserPersistence.makeShared()
 		} catch {
 			persistence = nil
 		}
