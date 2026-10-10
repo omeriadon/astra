@@ -243,7 +243,8 @@ actor BrowserDownloadFileWorker {
 		   saved.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL,
 		   BrowserDownload.safeFilename(saved.lastPathComponent) == saved.lastPathComponent,
 		   !FileManager.default.fileExists(atPath: saved.path),
-		   !reserved.contains(saved.standardizedFileURL) {
+		   !reserved.contains(saved.standardizedFileURL)
+		{
 			return saved
 		}
 		return BrowserDownload.collisionFreeURL(fileName: fileName, in: folder, reserved: reserved)
@@ -253,7 +254,8 @@ actor BrowserDownloadFileWorker {
 		try Task.checkCancellation()
 		let root = ownedStagingDirectory.standardizedFileURL.resolvingSymlinksInPath().path + "/"
 		guard file.standardizedFileURL.deletingLastPathComponent().resolvingSymlinksInPath().path + "/" == root,
-		      file.pathExtension == "astradownload" else {
+		      file.pathExtension == "astradownload"
+		else {
 			throw FinalizationError.destinationUnavailable
 		}
 		let manager = FileManager.default

@@ -396,7 +396,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				      	$0.id == itemID && $0.status == .downloading
 				      }),
 				      downloads[downloadID] != nil,
-				      items[currentIndex].fileURL == previousURL else {
+				      items[currentIndex].fileURL == previousURL
+				else {
 					completionHandler(nil)
 					return
 				}
@@ -1665,7 +1666,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				guard !isClosing, downloads[downloadID] != nil,
 				      let index = items.firstIndex(where: {
 				      	$0.id == itemID && $0.status == .downloading
-				      }) else {
+				      })
+				else {
 					url.stopAccessingSecurityScopedResource()
 					return nil
 				}

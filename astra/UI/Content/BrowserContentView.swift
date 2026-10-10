@@ -206,12 +206,12 @@ final class BrowserTabResourceManager {
 			}
 		}
 		BrowserLog.duration(.performance, "workflow.webview-hosts.resolve",
-			since: started, warnAboveMilliseconds: 8,
-			metadata: [
-				"tab_count": String(browser.tabs.count),
-				"host_count": String(result.count),
-				"warm_budget": String(warmControllerLimit),
-			])
+		                    since: started, warnAboveMilliseconds: 8,
+		                    metadata: [
+		                    	"tab_count": String(browser.tabs.count),
+		                    	"host_count": String(result.count),
+		                    	"warm_budget": String(warmControllerLimit),
+		                    ])
 		return result
 	}
 }

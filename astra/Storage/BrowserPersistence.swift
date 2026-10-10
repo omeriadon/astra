@@ -657,18 +657,20 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 			      abs(change.position.x) <= 1_000_000_000,
 			      abs(change.position.y) <= 1_000_000_000 else { continue }
 			let key = change.tabID.uuidString
-			if let old = updates[key], old.modifiedAt > change.modifiedAt { continue }
+			if let old = updates[key], old.modifiedAt > change.modifiedAt {
+				continue
+			}
 			updates[key] = change
 		}
-		guard updates.count <= 4_096 else { throw BrowserPersistenceError.invalidSnapshot }
+		guard updates.count <= 4096 else { throw BrowserPersistenceError.invalidSnapshot }
 		let encoded = try JSONEncoder().encode(ScrollJournal(
 			version: 1, baseSignature: signature, updates: updates
 		))
 		guard encoded.count <= 512 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
 		try encoded.write(to: directory.appendingPathComponent("browser-scroll.json"), options: .atomic)
 		BrowserLog.duration(.persistence, "scroll.save.end", since: started,
-			warnAboveMilliseconds: 40,
-			metadata: ["bytes": String(encoded.count), "tabs": String(changes.count)])
+		                    warnAboveMilliseconds: 40,
+		                    metadata: ["bytes": String(encoded.count), "tabs": String(changes.count)])
 	}
 
 	private nonisolated func readScrollJournal() throws -> ScrollJournal? {
@@ -681,7 +683,7 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		let header = try JSONDecoder().decode(EnvelopeVersionOnly.self, from: data)
 		guard header.version == 1 else { throw BrowserPersistenceError.unsupportedVersion }
 		let journal = try JSONDecoder().decode(ScrollJournal.self, from: data)
-		guard journal.updates.count <= 4_096 else { throw BrowserPersistenceError.invalidSnapshot }
+		guard journal.updates.count <= 4096 else { throw BrowserPersistenceError.invalidSnapshot }
 		return journal
 	}
 
@@ -705,10 +707,10 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 			let tab = state.openTabs[index]
 			guard let update = journal.updates[tab.id.uuidString],
 			      tab.url == update.url, tab.historyIndex == update.historyIndex,
-		      update.modifiedAt >= tab.modifiedAt,
-		      update.position.x.isFinite, update.position.y.isFinite,
-		      abs(update.position.x) <= 1_000_000_000,
-		      abs(update.position.y) <= 1_000_000_000 else { continue }
+			      update.modifiedAt >= tab.modifiedAt,
+			      update.position.x.isFinite, update.position.y.isFinite,
+			      abs(update.position.x) <= 1_000_000_000,
+			      abs(update.position.y) <= 1_000_000_000 else { continue }
 			state.openTabs[index].scrollPosition = update.position
 			state.openTabs[index].modifiedAt = update.modifiedAt
 		}

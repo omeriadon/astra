@@ -14,7 +14,8 @@ private nonisolated enum BrowserExtensionFileWorker {
 	static func validateArchive(at url: URL) throws {
 		guard url.pathExtension.lowercased() == "zip",
 		      let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-		      size <= 50_000_000 else {
+		      size <= 50_000_000
+		else {
 			throw NSError(domain: "astra.extensions", code: 6)
 		}
 	}

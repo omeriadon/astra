@@ -1029,12 +1029,12 @@ final class Browser {
 		let countBefore = tabs.count
 		defer {
 			BrowserLog.duration(.performance, "workflow.tab.create-to-model-commit",
-				since: workflowStart, warnAboveMilliseconds: 16,
-				metadata: [
-					"background": String(inBackground),
-					"tabs_before": String(countBefore),
-					"tabs_after": String(tabs.count),
-				])
+			                    since: workflowStart, warnAboveMilliseconds: 16,
+			                    metadata: [
+			                    	"background": String(inBackground),
+			                    	"tabs_before": String(countBefore),
+			                    	"tabs_after": String(tabs.count),
+			                    ])
 		}
 		BrowserLog.info(.tabs, "tab.create", metadata: ["window": BrowserLog.id(windowID), "background": String(inBackground), "count_before": String(tabs.count)])
 		let tab = BrowserTab(session: session)
@@ -2361,12 +2361,12 @@ final class Browser {
 		let workflowStart = BrowserLog.clock()
 		defer {
 			BrowserLog.duration(.performance, "workflow.tabs.close-to-model-commit",
-				since: workflowStart, warnAboveMilliseconds: 24,
-				metadata: [
-					"requested": String(ids.count),
-					"confirmed": String(confirmed),
-					"tabs_remaining": String(tabs.count),
-				])
+			                    since: workflowStart, warnAboveMilliseconds: 24,
+			                    metadata: [
+			                    	"requested": String(ids.count),
+			                    	"confirmed": String(confirmed),
+			                    	"tabs_remaining": String(tabs.count),
+			                    ])
 		}
 		let protectedIDs = Set(workspace.favouriteTabIDs + workspace.spaces.flatMap(\.pinnedTabIDs))
 		let ids = ids.subtracting(protectedIDs)
@@ -2900,7 +2900,7 @@ final class Browser {
 			} catch {
 				let reason = error.localizedDescription
 				BrowserLog.warning(.persistence, "scroll.save.failed",
-					metadata: ["error": BrowserLog.errorDescription(error)])
+				                   metadata: ["error": BrowserLog.errorDescription(error)])
 				await MainActor.run { [weak self] in
 					guard let self else { return }
 					persistenceErrorDescription = reason
