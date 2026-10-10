@@ -1,46 +1,42 @@
 #!/usr/bin/env bash
 # Usage: bash scripts/audit_sparkle_bundle.sh /path/to/astra.app [--unsigned]
-# --unsigned is for GitHub Actions' CODE_SIGNING_ALLOWED=NO Debug builds only.
+# Unsigned mode is only for CI builds with signing disabled.
 set -euo pipefail
 
 APP="${1:?Usage: $0 /path/to/astra.app [--unsigned]}"
 SIGNATURE_MODE="${2:-signed}"
 EXE="$APP/Contents/MacOS/astra"
+RUNTIME="$APP/Contents/Frameworks/AstraWebsiteAppRuntime.framework/Versions/A/AstraWebsiteAppRuntime"
 SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
 
-[[ -f "$EXE" ]] || { echo "Missing Astra executable: $EXE" >&2; exit 1; }
-[[ -d "$SPARKLE" ]] || { echo "Sparkle not embedded at $SPARKLE" >&2; exit 1; }
+[[ -f "$EXE" ]] || { echo "Missing executable: $EXE" >&2; exit 1; }
+[[ -f "$RUNTIME" ]] || { echo "Missing website app runtime: $RUNTIME" >&2; exit 1; }
+[[ -d "$SPARKLE" ]] || { echo "Sparkle not embedded: $SPARKLE" >&2; exit 1; }
 
-echo "Direct executable dynamic-library dependencies:"
+echo "Main executable dependencies:"
 otool -L "$EXE"
+echo "Website-app runtime dependencies:"
+otool -L "$RUNTIME"
+echo "Runtime search paths:"
+otool -l "$EXE" | awk '/cmd LC_RPATH/ { flag=1; next } flag && /path / { print; flag=0 }'
 
-echo
-echo "Executable runpaths:"
-otool -l "$EXE" | awk '
-  /cmd LC_RPATH/ { rpath=1; next }
-  rpath && /path / { print; rpath=0 }
-'
-
-if ! otool -L "$EXE" | grep -q 'Sparkle.framework'; then
-  echo "Expected Sparkle dynamic dependency missing from main executable" >&2
+# AstraAppLauncher is a small C binary. Its browser entry point lives inside
+# the website-app runtime; Sparkle itself is linked by that runtime.
+otool -L "$EXE" | grep -q 'AstraWebsiteAppRuntime.framework' || {
+  echo "Astra's browser entry point is not linked from the embedded runtime" >&2
   exit 1
-fi
-
-if ! otool -l "$EXE" | grep -q '@executable_path/../Frameworks'; then
-  echo "Missing @executable_path/../Frameworks runtime search path" >&2
+}
+otool -L "$RUNTIME" | grep -q 'Sparkle.framework' || {
+  echo "Website-app runtime is missing its Sparkle dependency" >&2
   exit 1
-fi
-
-echo
-echo "Embedded Sparkle framework:"
-ls -ld "$SPARKLE" "$SPARKLE/Versions/Current" || true
+}
+otool -l "$EXE" | grep -q '@executable_path/../Frameworks' || {
+  echo "Astra's executable is missing its embedded-framework runpath" >&2
+  exit 1
+}
 
 if [[ "$SIGNATURE_MODE" != "--unsigned" ]]; then
-  echo
-  echo "Verifying release bundle and nested framework signatures:"
   codesign --verify --deep --strict --verbose=2 "$APP"
   codesign --verify --deep --strict --verbose=2 "$SPARKLE"
-  codesign -dv --verbose=2 "$APP" 2>&1 | grep -E 'Identifier=|Authority=|TeamIdentifier=' || true
 fi
-
-echo "PASS: Sparkle is embedded and accessible through the executable runpath."
+echo "PASS: Astra launcher, website-app runtime and Sparkle dependencies are consistent."

@@ -1,0 +1,38 @@
+name: Astra - Swift Model Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Swift Model Tests
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          P="$RUNNER_TEMP"
+          swiftc -swift-version 6 astra/Models/Library/Bookmark.swift checks/bookmark-projection-check.swift -o "$P/astra-bookmark-check"
+          "$P/astra-bookmark-check"
+          swiftc -O -swift-version 6 astra/Models/Library/Bookmark.swift checks/library-scaling-benchmark.swift -o "$P/astra-library-scaling"
+          "$P/astra-library-scaling"
+          swiftc -swift-version 6 astra/Models/Core/BrowserWindowRegistry.swift checks/window-ownership-check.swift -o "$P/astra-window-ownership"
+          "$P/astra-window-ownership"
+          swiftc -swift-version 6 astra/Models/Tabs/BrowserVisit.swift checks/history-search-cancellation-check.swift -o "$P/astra-history-search"
+          "$P/astra-history-search"
+          python3 checks/automatic-hibernation-runtime-check.py

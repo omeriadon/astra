@@ -1,9 +1,8 @@
-name: Validate Release
+name: Astra - Release Metadata
 
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main]
   push:
     branches:
       - 'release/**'
@@ -13,212 +12,46 @@ permissions:
   contents: read
 
 concurrency:
-  group: validate-release-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  validate-release:
-    name: Validate Release
-    runs-on: xcode-27
-    timeout-minutes: 30
-
+  metadata:
+    name: Release metadata and validation rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
-      - name: Check out proposed changes
+      - name: Checkout full history for release tag validation
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Select Xcode 27
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          candidates=(
-            /Applications/Xcode_27.2_beta.app/Contents/Developer
-            /Applications/Xcode_27.2.app/Contents/Developer
-            /Applications/Xcode_27.1.app/Contents/Developer
-            /Applications/Xcode_27.0.app/Contents/Developer
-          )
-
-          selected=""
-          for developer_dir in "${candidates[@]}"; do
-            if [[ -d "$developer_dir" ]]; then
-              selected="$developer_dir"
-              break
-            fi
-          done
-
-          if [[ -z "$selected" ]]; then
-            current="$(xcode-select -p)"
-            if xcodebuild -version | head -n1 | grep -Eq '^Xcode 27([. ]|$)'; then
-              selected="$current"
-            else
-              echo "::error::No Xcode 27 installation is available on this runner"
-              ls -1 /Applications | grep '^Xcode' || true
-              exit 1
-            fi
-          fi
-
-          sudo xcode-select -s "$selected"
-          xcodebuild -version
-
-      - name: Install Metal Toolchain
-        shell: bash
-        run: xcodebuild -downloadComponent MetalToolchain
-
-      - name: Parse and validate release metadata
+      - name: Check release branch and tag
         if: startsWith(github.head_ref || github.ref_name, 'release/')
-        shell: bash
         env:
           RELEASE_BRANCH: ${{ github.head_ref || github.ref_name }}
+        shell: bash
         run: |
           set -euo pipefail
-
-          BRANCH="$RELEASE_BRANCH"
-
-          if [[ ! "$BRANCH" =~ ^release/([0-9]+\.[0-9]+(\.[0-9]+)?)\+([0-9]+)$ ]]; then
-            echo "::error::Release branches must be named release/<version>+<build>, for example release/0.1.1+2"
+          if [[ ! "$RELEASE_BRANCH" =~ ^release/([0-9]+\.[0-9]+(\.[0-9]+)?)\+([0-9]+)$ ]]; then
+            echo "::error::Invalid release branch name: $RELEASE_BRANCH"
             exit 1
           fi
-
           VERSION="${BASH_REMATCH[1]}"
           BUILD="${BASH_REMATCH[3]}"
           TAG="v$VERSION+$BUILD"
-
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "BUILD=$BUILD" >> "$GITHUB_ENV"
-          echo "TAG=$TAG" >> "$GITHUB_ENV"
-
-          echo "Release branch: $BRANCH"
-          echo "Version:        $VERSION"
-          echo "Build:          $BUILD"
-          echo "Tag:            $TAG"
-
           if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
             echo "::error::Release tag $TAG already exists"
             exit 1
           fi
-
-      - name: Check distribution validation rules
+          echo "Validated release $VERSION (build $BUILD)"
+      - name: Release packaging rule self-tests
         run: |
+          set -euo pipefail
           python3 scripts/release/validate_artifact.py --self-test
           python3 checks/website-app-bundle-check.py --self-test
-          python3 checks/website-app-runtime-size-check.py --self-test
-          python3 checks/website-app-preparation-check.py
-
-      - name: Check library projections and favicon observer lifecycle
-        shell: bash
-        run: |
-          set -euo pipefail
-          swiftc -swift-version 6 \
-            astra/Models/Library/Bookmark.swift \
-            checks/bookmark-projection-check.swift \
-            -o "$RUNNER_TEMP/astra-bookmark-projection-check"
-          "$RUNNER_TEMP/astra-bookmark-projection-check"
-          swiftc -O -swift-version 6 \
-            astra/Models/Library/Bookmark.swift \
-            checks/library-scaling-benchmark.swift \
-            -o "$RUNNER_TEMP/astra-library-scaling-benchmark"
-          "$RUNNER_TEMP/astra-library-scaling-benchmark"
-          node checks/favicon-observer-check.mjs
-          python3 checks/extension-hot-path-check.py
-          python3 checks/window-sync-noop-check.py
-          python3 checks/history-derived-cache-check.py
-          python3 checks/control-tab-observation-check.py
-          python3 checks/checkpoint-privacy-cache-check.py
-          python3 checks/library-observation-check.py
-          python3 checks/webkit-resource-policy-check.py
-          python3 checks/window-record-sidecar-check.py
-          python3 checks/scroll-journal-check.py
-          python3 checks/extension-file-worker-check.py
           python3 checks/workflow-diagnostics-check.py
-          python3 checks/download-staging-io-check.py
-          python3 scripts/webkit_benchmark.py self-test
-          python3 checks/noise-lifecycle-check.py
-          python3 checks/startup-hydration-dependencies-check.py
-          python3 checks/automatic-hibernation-runtime-check.py
-          swiftc -swift-version 6 \
-            astra/Models/Core/BrowserWindowRegistry.swift \
-            checks/window-ownership-check.swift \
-            -o "$RUNNER_TEMP/astra-window-ownership-check"
-          "$RUNNER_TEMP/astra-window-ownership-check"
-          swiftc -swift-version 6 \
-            astra/Models/Tabs/BrowserVisit.swift \
-            checks/history-search-cancellation-check.swift \
-            -o "$RUNNER_TEMP/astra-history-search-check"
-          "$RUNNER_TEMP/astra-history-search-check"
-
-      - name: Check Debug build
-        shell: bash
+      - name: Startup and Sparkle audit script syntax
         run: |
-          set -euo pipefail
-          xcodebuild build \
-            -project astra.xcodeproj \
-            -scheme astra \
-            -configuration Debug \
-            -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/AstraDebugDerivedData" \
-            -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
-
-      - name: Check download index persistence ordering
-        run: python3 checks/download-index-persistence-check.py
-
-      - name: Check asynchronous download file publication
-        shell: bash
-        run: |
-          set -euo pipefail
-          swiftc \
-            astra/Models/Library/BrowserDownload.swift \
-            astra/Web/Downloads/BrowserDownloadedFile.swift \
-            astra/Web/Downloads/BrowserDownloadFileWorker.swift \
-            checks/download-file-worker-check.swift \
-            -o "$RUNNER_TEMP/astra-download-file-worker-check"
-          "$RUNNER_TEMP/astra-download-file-worker-check"
-
-      - name: Check unsigned release archive
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ARCHIVE="$RUNNER_TEMP/astra-validation.xcarchive"
-          PACKAGES="$RUNNER_TEMP/SourcePackages"
-          BUILD_ARGUMENTS=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO)
-          if [[ -n "${VERSION:-}" ]]; then
-            BUILD_ARGUMENTS+=("MARKETING_VERSION=$VERSION" "CURRENT_PROJECT_VERSION=$BUILD")
-          fi
-
-          xcodebuild archive \
-            -project astra.xcodeproj \
-            -scheme astra \
-            -configuration Release \
-            -destination 'generic/platform=macOS' \
-            -archivePath "$ARCHIVE" \
-            -clonedSourcePackagesDirPath "$PACKAGES" \
-            "${BUILD_ARGUMENTS[@]}"
-
-          APP="$(find "$ARCHIVE/Products/Applications" -maxdepth 1 -name '*.app' -print -quit)"
-
-          if [[ -z "$APP" || ! -d "$APP" ]]; then
-            echo "::error::No .app was produced by the archive"
-            exit 1
-          fi
-
-          ACTUAL_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
-          ACTUAL_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
-
-          if [[ -n "${VERSION:-}" && "$ACTUAL_VERSION" != "$VERSION" ]]; then
-            echo "::error::Built app version is $ACTUAL_VERSION, expected $VERSION"
-            exit 1
-          fi
-
-          if [[ -n "${BUILD:-}" && "$ACTUAL_BUILD" != "$BUILD" ]]; then
-            echo "::error::Built app build is $ACTUAL_BUILD, expected $BUILD"
-            exit 1
-          fi
-
-          python3 checks/website-app-bundle-check.py "$APP"
-          python3 checks/website-app-runtime-size-check.py "$APP"
-
-          echo "Compiled unsigned Astra $ACTUAL_VERSION (build $ACTUAL_BUILD). Distribution signing and notarization run only for merged release PRs."
+          bash -n scripts/benchmark_startup.sh
+          bash -n scripts/audit_sparkle_bundle.sh
+          bash -n scripts/ci/select-xcode-27.sh

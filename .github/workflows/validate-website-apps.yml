@@ -1,0 +1,30 @@
+name: Astra - Website Apps
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Website Apps
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/website-app-runtime-size-check.py --self-test
+          python3 checks/website-app-preparation-check.py
