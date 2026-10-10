@@ -35,9 +35,6 @@ assert {
     "App/BrowserDataTransfer.swift",
     "App/BrowserDiagnostics.swift",
     "App/BrowserWebsiteAppMenuIntegration.swift",
-    "Web/Navigation/BrowserDesktopCommands.swift",
-    "Web/Navigation/BrowserDesktopCommands+ExportFormat.swift",
-    "UI/Content/BrowserSourceViewer.swift",
     "UI/Content/ContentView.swift",
     "UI/Content/BrowserRootView.swift",
     "UI/Shell/DesktopBrowserShell.swift",
@@ -45,7 +42,6 @@ assert {
     "UI/Shell/BrowserSplitView.swift",
     "UI/Shell/PrivateBrowserSidebar.swift",
     "UI/Shell/BrowserSpacePager.swift",
-    "UI/Shell/BrowserSpaceScrollState.swift",
     "UI/Shell/MiniAstraWindowController.swift",
     "UI/Shell/MiniAstraView.swift",
     "UI/Shell/MiniAstraOpeningAnimation.swift",
@@ -70,6 +66,10 @@ assert "struct ShellSidebarListView" not in shell
 assert "struct ShellDownloadsBarView" not in shell
 assert "struct ShellSidebarListView: View" in (root / "astra/UI/Shell/BrowserSidebarControls.swift").read_text()
 assert "struct ShellDownloadsBarView: View" in (root / "astra/UI/Shell/BrowserDownloadsBarView.swift").read_text()
+assert "final class BrowserTabHoverPreviewCoordinator" in (root / "astra/UI/Tabs/BrowserTabHoverPreviewCoordinator.swift").read_text()
+assert "final class BrowserTabHoverPreviewCoordinator" not in (root / "astra/UI/Tabs/BrowserTabRow.swift").read_text()
+for name in ("UI/Shell/BrowserSpaceScrollState.swift", "Web/Navigation/BrowserDesktopCommands.swift", "Web/Navigation/BrowserDesktopCommands+ExportFormat.swift", "UI/Content/BrowserSourceViewer.swift"):
+    assert name not in runtime_excluded, f"Required website-app utility excluded: {name}"
 for name in ("UI/Shell/BrowserSidebarControls.swift", "UI/Shell/BrowserDownloadsBarView.swift", "UI/Tabs/BrowserTabRow.swift"):
     assert name in runtime_excluded, f"Sidebar UI leaked into website runtime: {name}"
 
