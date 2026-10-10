@@ -12,6 +12,15 @@ import OSLog
 /// AI API keys, or other credentials in metadata. request(_:) logs header names
 /// and body sizes, not values.
 enum BrowserLog {
+	/// Start of application code, after dyld but before NSApplication setup.
+	/// This does not include pre-main executable mapping.
+	@MainActor private(set) static var mainEntryUptime: TimeInterval?
+	@MainActor static func markMainEntry() {
+		guard mainEntryUptime == nil else { return }
+		mainEntryUptime = clock()
+		notice(.lifecycle, "startup.main-entered")
+	}
+
 	enum Category: String, CaseIterable, Sendable {
 		case lifecycle
 		case browser
