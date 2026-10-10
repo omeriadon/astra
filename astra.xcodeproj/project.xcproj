@@ -69,6 +69,10 @@
         }, {
           "target": "AstraWebsiteAppRuntime",
           "exclusions": [
+            "App/AppDelegate.swift",
+            "App/BrowserAuthenticationSessionHandler.swift",
+            "App/browserApp.swift",
+            "UI/Shell/BrowserWindowController.swift",
             "Extensions/DarkReader-LICENSE.txt",
             "Extensions/SOURCES.txt",
             "Extensions/darkreader-chrome-mv3.zip",

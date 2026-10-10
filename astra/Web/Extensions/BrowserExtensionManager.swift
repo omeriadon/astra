@@ -920,7 +920,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		for _: WKWebExtensionContext,
 		completionHandler: ((any WKWebExtensionWindow)?, Error?) -> Void
 	) {
-		#if os(macOS)
+		#if os(macOS) && !ASTRA_WEBSITE_APP_RUNTIME
 			guard !configuration.shouldBePrivate,
 			      configuration.tabs.isEmpty,
 			      let app = NSApp.delegate as? AppDelegate
