@@ -179,12 +179,19 @@
 					openBrowserWindow(showImmediately: false)
 				}
 				if let foreground = windows.first {
-					foreground.onFirstVisibleUpdate = { [weak self] in
-						guard let self else { return }
-						BrowserLog.notice(.lifecycle, "startup.first-visible-window-update", metadata: [
-							"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - self.startupStartedAt) * 1000),
-						])
-						self.scheduleDeferredStartupServices(trigger: "first-window-update")
+					// Unlike Task.yield(), this suspends secondary-window creation
+					// until AppKit has actually updated the foreground window. A
+					// bounded fallback avoids getting stuck if the callback is absent.
+					let firstWindowUpdates = AsyncStream<Void> { continuation in
+						foreground.onFirstVisibleUpdate = { [weak self] in
+							continuation.yield(())
+							continuation.finish()
+							guard let self else { return }
+							BrowserLog.notice(.lifecycle, "startup.first-visible-window-update", metadata: [
+								"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - self.startupStartedAt) * 1000),
+							])
+							self.scheduleDeferredStartupServices(trigger: "first-window-update")
+						}
 					}
 					foreground.showWindow()
 					NSApp.activate()
@@ -192,10 +199,24 @@
 						"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
 						"records": String(records.count),
 					])
+					let didUpdate = await withTaskGroup(of: Bool.self) { group in
+						group.addTask {
+							for await _ in firstWindowUpdates { return true }
+							return false
+						}
+						group.addTask {
+							try? await Task.sleep(for: .milliseconds(400))
+							return false
+						}
+						let updated = await group.next() ?? false
+						group.cancelAll()
+						return updated
+					}
+					BrowserLog.notice(.lifecycle, "startup.first-window-frame-gate", metadata: [
+						"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
+						"observed_update": String(didUpdate),
+					])
 				}
-				// Yield before restoring secondary windows; don't force their views
-				// to be constructed before the first window can start displaying.
-				await Task.yield()
 				for record in records.dropLast() where !windows.contains(where: { $0.browser.windowID == record.windowID }) {
 					let controller = openBrowserWindow(restorationRecord: record, showImmediately: false)
 					// Keep all restored windows visible without stealing key focus.
