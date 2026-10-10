@@ -12,6 +12,7 @@ import math
 from pathlib import Path
 import time
 import tempfile
+from unittest.mock import patch
 from typing import Any
 
 
@@ -112,13 +113,19 @@ def _self_test() -> None:
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "samples.json"
         write_result(path, {"samples": [1]})
-        try:
-            write_result(path, {"samples": [object()]})
-        except TypeError:
-            pass
-        else:
-            raise AssertionError("invalid samples must not replace the saved result")
+        def interrupted_write(destination: Path, *args: Any, **kwargs: Any) -> int:
+            destination.write_bytes(b"partial")
+            raise OSError(28, "No space left on device")
+
+        with patch.object(Path, "write_text", interrupted_write):
+            try:
+                write_result(path, {"samples": [2]})
+            except OSError as error:
+                assert error.errno == 28
+            else:
+                raise AssertionError("disk-full failure must propagate")
         assert json.loads(path.read_text()) == {"samples": [1]}
+        assert not path.with_name(path.name + ".tmp").exists()
 
 
 def main() -> int:
@@ -161,7 +168,8 @@ def main() -> int:
             result["stopped_reason"] = "duration_elapsed"
             write_result(arguments.output, result)
             break
-        time.sleep(min(arguments.interval, 60.0))
+        remaining = max(0, arguments.seconds - (time.monotonic() - started))
+        time.sleep(min(arguments.interval, remaining))
     return 0
 
 
