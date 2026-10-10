@@ -341,36 +341,3 @@ private struct ShellTopBarLoadingBar: View {
 		.id(tabID)
 	}
 }
-
-private struct ShellNewTabButton: View {
-	let browser: Browser
-	let theme: BrowserTheme
-	var onNewTab: (() -> Void)?
-	@State private var newTabHovered = false
-
-	var body: some View {
-		Button {
-			browser.requestNewTab()
-			onNewTab?()
-		} label: {
-			Label("New Tab", systemImage: "plus")
-				.frame(maxWidth: .infinity, alignment: .leading)
-				.contentShape(Rectangle())
-		}
-		.keyboardShortcut("t", modifiers: .command)
-		.buttonStyle(.plain)
-		.padding(.horizontal, 8)
-		.foregroundStyle(theme.foregroundColor.opacity(0.65))
-		.onHover { newTabHovered = $0 }
-		.frame(height: onNewTab == nil ? 28 : 44)
-		.background {
-			if newTabHovered {
-				Color.clear.glassEffect(
-					.regular,
-					in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
-				)
-			}
-		}
-		.accessibilityIdentifier("new-tab")
-	}
-}
