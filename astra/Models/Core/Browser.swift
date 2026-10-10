@@ -942,7 +942,7 @@ final class Browser {
 		let savedWindow = loaded.windowRecords.first { $0.windowID == windowID } ?? restorationRecord
 		let availableSavedIDs = Set(loaded.tabs.map(\.id))
 		let foregroundSavedID = savedWindow?.restoredSelection(availableTabIDs: availableSavedIDs)
-			?? loaded.snapshot?.selectedTabID.flatMap { availableSavedIDs.contains($0) ? $0 : nil }
+			?? loaded.snapshot.flatMap { availableSavedIDs.contains($0.selectedTabID) ? $0.selectedTabID : nil }
 			?? loaded.tabs.first?.id
 		let restoredDefaultPageZoom = Defaults[.defaultPageZoom]
 		let restoredTabs = loaded.tabs.compactMap { saved -> BrowserTab? in
