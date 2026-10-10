@@ -197,7 +197,6 @@
 		}
 	}
 
-
 	private struct MacBrowserHostedRoot: View {
 		let browser: Browser
 		@State private var updates = UpdateManager.shared

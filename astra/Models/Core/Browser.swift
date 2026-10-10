@@ -838,7 +838,7 @@ final class Browser {
 				// Replace disposable cached UI state with authoritative disk state
 				// without animating every sidebar row on first restoration.
 				withTransaction(Transaction(animation: nil)) {
-					applyHydratedState(loaded, placeholderID: placeholderID, placeholderModifiedAt: placeholderModifiedAt)
+					self.applyHydratedState(loaded, placeholderID: placeholderID, placeholderModifiedAt: placeholderModifiedAt)
 				}
 			} catch {
 				guard let self else { return }
@@ -961,7 +961,7 @@ final class Browser {
 				history: saved.history,
 				historyIndex: saved.historyIndex,
 				openPeeks: saved.peeks,
-				pageZoom: saved.pageZoom ?? restoredDefaultPageZoom,
+				pageZoom: saved.pageZoom,
 				scrollPosition: saved.scrollPosition,
 				isHibernated: saved.isHibernated || startupBehavior != .restore || saved.id != foregroundSavedID,
 				modifiedAt: saved.modifiedAt,

@@ -390,7 +390,6 @@ private struct PinnedFolderRow: View {
 	}
 }
 
-
 private struct ShellNewTabButton: View {
 	let browser: Browser
 	let theme: BrowserTheme
