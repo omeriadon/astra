@@ -4,9 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches:
-      - astra/roadmap/integration
-      - 'release/**'
+    branches: [astra/roadmap/integration]
   workflow_dispatch:
 
 permissions:
