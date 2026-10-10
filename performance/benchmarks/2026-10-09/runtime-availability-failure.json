@@ -9,5 +9,39 @@
   ],
   "user_report": "App is not alive",
   "app_inventory": "Only isolated candidate listed; normal Astra not listed",
-  "conclusion": "Process existence is not UI availability. No sampled CPU-bound main-thread hang established. Runtime availability unverified; no automatic relaunch."
+  "conclusion": "Process existence is not UI availability. No sampled CPU-bound main-thread hang established. Runtime availability unverified; no automatic relaunch.",
+  "follow_up": {
+    "inspection_time_local": "2026-10-10 12:58\u201312:59 +0800",
+    "execution_budget_minutes": 30,
+    "pid": 42628,
+    "process_start_local": "2026-10-10 12:07:43 +0800",
+    "bundle_identifier_verified": "com.omeriadon.astra.performance.candidate",
+    "normal_astra_in_inventory": false,
+    "window_state": "NOT MEASURED: Computer Use could not bind to the running candidate",
+    "computer_use_attempts": 1,
+    "computer_use_error": "NSCocoaErrorDomain 256; NSOSStatusErrorDomain -1712 errAETimeout; LSOpenCore.mm",
+    "open_event_side_effect": "getApp issued an open event despite verified process existence; user subsequently supplied a macOS application-not-responding dialog",
+    "user_dialog": "You can\u2019t open the application \u201castra.app\u201d because it is not responding.",
+    "sample_time_local": "2026-10-10 12:59:01 +0800",
+    "sample_duration_seconds": 3,
+    "sample_interval_milliseconds": 10,
+    "main_thread_sample_count": 272,
+    "main_thread_observed": "All 272 samples in AppKit event-loop wait ending in mach_msg2_trap",
+    "other_sample_observation": "A liboainject _OAAttachAndInitialize thread was waiting in JavaScriptCore allocation enumeration; no causal attribution established",
+    "raw_sample_path": "/tmp/astra-runtime-handoff-sample.txt",
+    "disk_available_gib_rounded": 8.8,
+    "smoke_test": {
+      "navigation": "NOT MEASURED",
+      "tab_switching": "NOT MEASURED",
+      "retained_form_state": "NOT MEASURED"
+    },
+    "checks": {
+      "webkit_benchmark_self_test": "PASS",
+      "sample_session_identity_and_atomic_publication_self_test": "PASS"
+    },
+    "process_signals_sent": 0,
+    "explicit_launch_or_relaunch_commands": 0,
+    "production_code_changed": false,
+    "conclusion": "Runtime availability remains unresolved. The OS reported nonresponse to an open event. No crash, deadlock, healthy idle state, or attributable app defect established. No further UI requests or recovery loop performed."
+  }
 }

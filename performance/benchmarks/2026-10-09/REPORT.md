@@ -120,4 +120,29 @@ The pre-commit hook unexpectedly ran whole-repository formatting and staged unre
 
 After the later profiling run, Computer Use returned timeouts and an AppleEvent error (-1712). The user reported that the app was not alive. Inventory listed only the isolated candidate; normal Astra was absent. A five-second sample of candidate PID 42628 placed all 4,227 main-thread samples in the AppKit event-loop wait. This does not establish usable UI or a crash-free stability interval. See `runtime-availability-failure.json`. No automatic relaunch was performed.
 
+## Bounded follow-up and handoff, 10 October
+
+The follow-up started at approximately 12:58 local time with a 30-minute execution budget and stopped early when safe UI access remained blocked. Scope was runtime identification, one conditional navigation/tab-switching/form-state smoke test, and this handoff. Personal profiles, credentials, sessions, unrelated apps, and the existing `BrowserResources.swift` edit were protected. No production code, architecture, or benchmark infrastructure was changed.
+
+Read-only process inspection confirmed candidate PID 42628 still had its original 12:07:43 start time. The app bundle identified itself as `com.omeriadon.astra.performance.candidate`. Computer Use inventory listed that isolated candidate and no normal Astra. This distinguishes the remaining test process from a usable normal Astra session; it does not establish which windows exist.
+
+One attempt to bind Computer Use to the verified running candidate failed with `NSCocoaErrorDomain 256` and AppleEvent `-1712` in `LSOpenCore.mm`. Despite process existence, `getApp` issued an open event. The user then supplied a macOS dialog stating: “You can’t open the application ‘astra.app’ because it is not responding.” This establishes the OS-reported failure of the open request, not its root cause. No additional UI attempts, explicit launches/relaunches, process termination, or recovery loop followed. Future inventory-only checks must not assume `getApp` is free of open-event side effects.
+
+A three-second `/usr/bin/sample` capture at 12:59:01, using a 10 ms interval, placed all 272 main-thread samples in AppKit's event-loop wait ending in `mach_msg2_trap`. A profiler-injected `liboainject` initialization thread was also waiting in JavaScriptCore allocation enumeration. Neither observation establishes a crash, deadlock, healthy idle state, or attributable application defect. Raw stacks remain at `/tmp/astra-runtime-handoff-sample.txt` and are not published. Disk availability was approximately 8.8 GiB; no new Instruments capture was attempted.
+
+| Follow-up check | Result |
+|---|---|
+| Candidate PID/start time and bundle identification | Verified |
+| Normal Astra in app inventory | Absent |
+| Existing candidate window state | NOT MEASURED: UI binding failed |
+| Navigation smoke test | NOT MEASURED |
+| Tab-switching smoke test | NOT MEASURED |
+| Retained unsaved form state in this follow-up | NOT MEASURED |
+| `python3 scripts/webkit_benchmark.py self-test` | PASS |
+| `sample-session.py --self-test` identity/publication assertions | PASS |
+
+The two checks validate the measurement helpers only. Previous successful form checks remain historical observations. Runtime availability is unresolved, and the full performance mission has not passed. No code fix was made because no attributable defect was established. No build was needed for these report-only changes.
+
+GitHub status was rechecked through `gh`: PR #13 is OPEN on `release/0.1+3`, with remote HEAD `32459315a7d5ce03c4bdcfb2c0bd51cf001e4d33`. Both [run 38022007785](https://github.com/omeriadon/astra/actions/runs/38022007785) and [run 38022010302](https://github.com/omeriadon/astra/actions/runs/38022010302) remain completed/success on that exact remote HEAD. Local report changes have no new CI result. No push or merge was performed.
+
 The mission remains incomplete. Remaining acceptance criteria are not marked passed, the PR is not merged, and no unsupported memory-reclamation change is introduced.
