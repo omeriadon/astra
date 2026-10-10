@@ -28,6 +28,9 @@
 		private var shouldReopenAfterStartup = false
 		private var memoryPressureSource: DispatchSourceMemoryPressure?
 		private var didScheduleDeferredStartupServices = false
+		#if DEBUG
+			private var didInstallDebugPagesMenu = false
+		#endif
 
 		private var pictureInPictureController: BrowserController? {
 			for browser in allBrowsers {
@@ -688,6 +691,22 @@
 		#endif
 
 		func menuWillOpen(_ menu: NSMenu) {
+			#if DEBUG
+				if menu.title == "astra", !didInstallDebugPagesMenu {
+					didInstallDebugPagesMenu = true
+					menu.insertItem(.separator(), at: 1)
+					let heading = NSMenuItem(title: "Internal Pages", action: nil, keyEquivalent: "")
+					heading.isEnabled = false
+					menu.insertItem(heading, at: 2)
+					for (index, page) in BrowserInternalPage.allCases.enumerated() {
+						let menuItem = item(page.title, action: #selector(openDebugPage(_:)))
+						menuItem.representedObject = page.persistenceID
+						menuItem.image = NSImage(systemSymbolName: page.symbol, accessibilityDescription: page.title)
+						menu.insertItem(menuItem, at: 3 + index)
+					}
+					menu.insertItem(.separator(), at: 3 + BrowserInternalPage.allCases.count)
+				}
+			#endif
 			if menu.title == "Bookmarks" {
 				for item in menu.items where item.tag == 17018 {
 					menu.removeItem(item)
@@ -1042,21 +1061,13 @@
 		private func installMainMenu() {
 			let mainMenu = NSMenu()
 
-			let appMenu = NSMenu()
+			let appMenu = NSMenu(title: "astra")
 			mainMenu.addItem(menuRoot("astra", submenu: appMenu))
 			appMenu.addItem(item("About astra", action: #selector(showAbout(_:))))
 			#if DEBUG
-				appMenu.addItem(.separator())
-				let heading = NSMenuItem(title: "Internal Pages", action: nil, keyEquivalent: "")
-				heading.isEnabled = false
-				appMenu.addItem(heading)
-				for page in BrowserInternalPage.allCases {
-					let menuItem = item(page.title, action: #selector(openDebugPage(_:)))
-					menuItem.representedObject = page.persistenceID
-					menuItem.image = NSImage(systemSymbolName: page.symbol, accessibilityDescription: page.title)
-					appMenu.addItem(menuItem)
-				}
-				appMenu.addItem(.separator())
+				// SF Symbol decoding for debug-only internal pages need not run
+				// before the first window is visible.
+				appMenu.delegate = self
 			#endif
 			appMenu.addItem(item("Check for Updates…", action: #selector(checkForUpdates(_:))))
 			appMenu.addItem(.separator())
