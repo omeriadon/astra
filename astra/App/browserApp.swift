@@ -25,6 +25,7 @@ extension Color {
 		enum browserApp {
 			@MainActor
 			static func main() {
+				BrowserLog.markMainEntry()
 				BrowserLog.bootstrap()
 				let application = NSApplication.shared
 				let delegate = AppDelegate()
