@@ -105,6 +105,7 @@
             "UI/Chrome/BrowserAIChatSidebar.swift",
             "AI/BrowserAIChat.swift",
             "AI/BrowserAIChatHistory.swift",
+            "AI/Features/BrowserChatTitleFeature.swift",
             "UI/Chrome/BrowserAITabDivider.swift",
             "UI/Chrome/BrowserMediaActivityView.swift",
             "UI/Chrome/BrowserSpacesBar.swift",

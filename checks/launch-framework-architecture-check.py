@@ -35,6 +35,7 @@ assert {
     "UI/Chrome/BrowserAIChatSidebar.swift",
     "AI/BrowserAIChat.swift",
     "AI/BrowserAIChatHistory.swift",
+    "AI/Features/BrowserChatTitleFeature.swift",
     "UI/Chrome/BrowserAITabDivider.swift",
     "UI/Chrome/BrowserMediaActivityView.swift",
     "UI/Chrome/BrowserSpacesBar.swift",
@@ -91,6 +92,11 @@ for name in ("UI/Shell/BrowserSidebarControls.swift", "UI/Shell/BrowserDownloads
 assert not any(x.get("product-name") == "MarkdownView" for x in website["package-product-members"])
 assert any(x.get("product-name") == "MarkdownView" for x in host["package-product-members"])
 assert "AI/BrowserAITools.swift" not in runtime_excluded
+tools_source = (root / "astra/AI/BrowserAITools.swift").read_text()
+assert "#if !ASTRA_WEBSITE_APP_RUNTIME\n@MainActor\nstruct BrowserAIChatTurnFeature" in tools_source
+assert "#endif\n\n@MainActor\nstruct BrowserAIWebSearchFeature" in tools_source
+assert "struct BrowserAIWebSearchFeature" in tools_source
+assert "enum BrowserAITools" in tools_source
 assert not any(x.get("product-name") == "Sparkle" for x in website["package-product-members"])
 assert any(x.get("product-name") == "Sparkle" for x in updater["package-product-members"])
 browser = (root / "astra/App/browserApp.swift").read_text()

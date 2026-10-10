@@ -70,6 +70,7 @@ nonisolated struct BrowserAIToolCall: Codable, Sendable {
 	let arguments: [String: String]
 }
 
+#if !ASTRA_WEBSITE_APP_RUNTIME
 @MainActor
 struct BrowserAIChatTurnFeature: BrowserAIFeature {
 	struct Input {
@@ -131,6 +132,7 @@ struct BrowserAIChatTurnFeature: BrowserAIFeature {
 		return Turn(response: text, actions: [])
 	}
 }
+#endif
 
 @MainActor
 struct BrowserAIWebSearchFeature: BrowserAIFeature {
