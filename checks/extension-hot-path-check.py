@@ -28,3 +28,16 @@ enabling = between("func setEnabled(_ enabled: Bool, for name: String)", "privat
 assert "enableIntentRevisions[name] == revision" in enabling
 assert "setEnabled(true, for: name)" in enabling
 print("WebExtension hot-path and preparation lifecycle checks passed")
+
+# No extension controller is required simply to activate a cached startup window.
+controller = between("lazy var controller: WKWebExtensionController", "private let bundledNames")
+assert "for window in windows.values" in controller
+assert "for browser in BrowserWindowRegistry.shared.openBrowsers" in controller
+assert "self.sync(browser)" in controller
+focus = between("func focus(_ browser: Browser)", "func webViewDidChange(")
+assert "guard didInitializeController else { return }" in focus
+sync = between("func sync(_ browser: Browser)", "func loadingDidChange(")
+assert "guard didInitializeController else { return }" in sync
+selection = between("func selectionDidChange(_ browser: Browser)", "private func selectionDidChange(")
+assert "didInitializeController" in selection
+print("WebExtension startup lazy-controller checks passed")
