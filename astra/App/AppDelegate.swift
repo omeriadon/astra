@@ -162,7 +162,7 @@
 				guard let self else { return }
 				defer { finishStartupWindowRestoration() }
 				guard !authentication.wasLaunchedByAuthenticationServices else { return }
-				let persistence = try? BrowserPersistence()
+				let persistence = try? BrowserPersistence.makeShared()
 				let records = await Task.detached(priority: .utility) {
 					(try? persistence?.loadWindowRecords()) ?? []
 				}.value
