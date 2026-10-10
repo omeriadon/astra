@@ -64,6 +64,15 @@ assert not (runtime_excluded & {
 }), "Website-app rendering or navigation sources accidentally excluded"
 extensions = (root / "astra/Web/Extensions/BrowserExtensionManager.swift").read_text()
 assert "#if os(macOS) && !ASTRA_WEBSITE_APP_RUNTIME" in extensions
+shell = (root / "astra/UI/Shell/BrowserShellControls.swift").read_text()
+assert "struct ShellTopBarView: View" in shell
+assert "struct ShellSidebarListView" not in shell
+assert "struct ShellDownloadsBarView" not in shell
+assert "struct ShellSidebarListView: View" in (root / "astra/UI/Shell/BrowserSidebarControls.swift").read_text()
+assert "struct ShellDownloadsBarView: View" in (root / "astra/UI/Shell/BrowserDownloadsBarView.swift").read_text()
+for name in ("UI/Shell/BrowserSidebarControls.swift", "UI/Shell/BrowserDownloadsBarView.swift", "UI/Tabs/BrowserTabRow.swift"):
+    assert name in runtime_excluded, f"Sidebar UI leaked into website runtime: {name}"
+
 assert not any(x.get("product-name") == "Sparkle" for x in website["package-product-members"])
 assert any(x.get("product-name") == "Sparkle" for x in updater["package-product-members"])
 browser = (root / "astra/App/browserApp.swift").read_text()
