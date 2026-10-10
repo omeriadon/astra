@@ -181,11 +181,8 @@
 					openBrowserWindow(showImmediately: false)
 				}
 				if let foreground = windows.first {
-					// Unlike Task.yield(), this suspends secondary-window creation
-					// until AppKit has actually updated the foreground window. A
-					// bounded fallback avoids getting stuck if the callback is absent.
 					let firstWindowUpdates = AsyncStream<Void> { continuation in
-						foreground.onFirstVisibleUpdate = { [weak self] in
+						foreground.onFirstVisibleUpdate = { [weak self, weak foreground] in
 							continuation.yield(())
 							continuation.finish()
 							guard let self else { return }
@@ -193,6 +190,36 @@
 								"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
 							])
 							scheduleDeferredStartupServices(trigger: "first-window-update")
+							Task { @MainActor in
+								guard let foreground else { return }
+								let deadline = BrowserLog.clock() + 10
+								while !Task.isCancelled,
+								      BrowserLog.clock() < deadline,
+								      !(foreground.window.isVisible
+										&& foreground.window.isKeyWindow
+										&& foreground.browser.isHydrationFinished
+										&& foreground.window.firstResponder != nil)
+								{
+									try? await Task.sleep(for: .milliseconds(25))
+								}
+								guard !Task.isCancelled else { return }
+								let readiness: [String: String] = [
+									"visible": String(foreground.window.isVisible),
+									"key": String(foreground.window.isKeyWindow),
+									"hydrated": String(foreground.browser.isHydrationFinished),
+									"first_responder": String(foreground.window.firstResponder != nil),
+									"observed_update": "true",
+									"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - self.startupStartedAt) * 1000),
+								]
+								BrowserLog.notice(.lifecycle, "startup.first-window-readiness", metadata: readiness)
+								if foreground.window.isVisible,
+								   foreground.window.isKeyWindow,
+								   foreground.browser.isHydrationFinished,
+								   foreground.window.firstResponder != nil
+								{
+									BrowserLog.notice(.lifecycle, "startup.first-usable-window", metadata: readiness)
+								}
+							}
 						}
 					}
 					foreground.showWindow()

@@ -25,3 +25,5 @@ jobs:
           set -euo pipefail
           python3 checks/website-app-runtime-size-check.py --self-test
           python3 checks/website-app-preparation-check.py
+          clang -Wall -Wextra -Werror scripts/process_birth.c -o "$RUNNER_TEMP/astra-process-birth"
+          "$RUNNER_TEMP/astra-process-birth"

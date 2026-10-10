@@ -52,5 +52,6 @@ jobs:
       - name: Startup and Sparkle audit script syntax
         run: |
           bash -n scripts/benchmark_startup.sh
+          python3 scripts/parse_startup_log.py --self-test
           bash -n scripts/audit_sparkle_bundle.sh
           bash -n scripts/ci/select-xcode-27.sh
