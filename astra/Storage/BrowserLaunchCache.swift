@@ -131,13 +131,28 @@ enum BrowserLaunchCache {
 		}
 	}
 
+	// A single process startup can request this snapshot for each window and
+	// again for the favicon store. Decode once until the underlying Defaults
+	// data changes; retain equality checks so external settings edits are seen.
+	@MainActor private static var lastDecodedData: Data?
+	@MainActor private static var lastDecodedSnapshot: Snapshot?
+
 	static func load() -> Snapshot? {
-		decoded(Defaults[.browserLaunchCache])
+		let data = Defaults[.browserLaunchCache]
+		if let lastDecodedData, lastDecodedData == data {
+			return lastDecodedSnapshot
+		}
+		let snapshot = decoded(data)
+		lastDecodedData = data
+		lastDecodedSnapshot = snapshot
+		return snapshot
 	}
 
 	static func save(_ snapshot: Snapshot) {
 		guard let data = encoded(snapshot) else { return }
 		Defaults[.browserLaunchCache] = data
+		lastDecodedData = data
+		lastDecodedSnapshot = snapshot
 	}
 
 	static func updateFavicons(_ favicons: [String: Data]) {
