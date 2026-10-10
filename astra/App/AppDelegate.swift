@@ -216,6 +216,12 @@
 						"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
 						"observed_update": String(didUpdate),
 					])
+					// Restore the selected cached website after the shell's first
+					// update, not in NSWindow activation. If disk hydration has
+					// already restored its controller, no extra work is needed.
+					if foreground.browser.selectedTab?.isHibernated == true {
+						foreground.browser.selectTab(foreground.browser.selectedTabID)
+					}
 				}
 				for record in records.dropLast() where !windows.contains(where: { $0.browser.windowID == record.windowID }) {
 					let controller = openBrowserWindow(restorationRecord: record, showImmediately: false)
