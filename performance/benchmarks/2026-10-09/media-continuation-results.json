@@ -1,0 +1,51 @@
+{
+  "fixture": {
+    "duration_seconds": 180,
+    "video_codec": "H.264",
+    "width": 320,
+    "height": 180,
+    "frames_per_second": 15,
+    "audio_tracks": 0,
+    "sha256": "e9f62fa28d37b1bde3584dda254c51cad63da2c3ac48be15368f8de29ce8422e",
+    "path": "/tmp/astra-controlled-web-fixtures/silent-video-180.mp4",
+    "state_method": "Fixture button reads HTMLVideoElement currentTime, paused, ended"
+  },
+  "candidate": {
+    "initial_observation_utc": "2026-10-10T06:28:54.120Z",
+    "initial_time_seconds": 0.3,
+    "initial_paused": false,
+    "initial_ended": false,
+    "final_observation_utc": "2026-10-10T06:34:04.430Z",
+    "final_time_seconds": 180.0,
+    "final_paused": true,
+    "final_ended": true,
+    "seconds_between_observations": 310.31,
+    "clip_completion_observed": true
+  },
+  "baseline": {
+    "initial_observation_utc": "2026-10-10T06:29:35.406Z",
+    "initial_time_seconds": 0.8,
+    "initial_paused": false,
+    "initial_ended": false,
+    "completion": "NOT MEASURED: no final element-state read before requested stop"
+  },
+  "idle_media_state_mismatch": {
+    "observed": true,
+    "fixture_state": "time=0.0 seconds; paused=true; ended=false",
+    "candidate_toolbar": "Pause action present on fresh UI read",
+    "source_observation": "refreshActivity combines DOM playing with WKMediaPlaybackState.playing",
+    "upstream_semantics": "WebPage returns playing when a media session exists and is not paused/suspended; an idle-session false positive is plausible",
+    "exact_deployed_native_state": "NOT MEASURED",
+    "source_urls": [
+      "https://developer.apple.com/documentation/webkit/wkmediaplaybackstate",
+      "https://github.com/WebKit/WebKit/blob/main/Source/WebKit/WebProcess/WebPage/WebPage.cpp",
+      "https://github.com/WebKit/WebKit/blob/main/Source/WebCore/platform/audio/MediaSessionManagerInterface.cpp"
+    ],
+    "fix": "No fallback removed; cross-frame/Web Audio safety must remain protected"
+  },
+  "picture_in_picture": "NOT MEASURED: entry not performed before user requested immediate finish",
+  "background_tab_playback": "NOT MEASURED",
+  "frame_pacing_and_stalls": "NOT MEASURED: endpoint observations do not certify uninterrupted playback",
+  "youtube_sustained_playback": "NOT MEASURED",
+  "production_code_changed": false
+}

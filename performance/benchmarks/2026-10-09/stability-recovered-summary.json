@@ -1,0 +1,24 @@
+{
+  "samples": 46,
+  "elapsed_seconds": 2700.374025041,
+  "requested_seconds": 3600,
+  "runtime_status": "INCOMPLETE: user requested immediate finish; monitor already absent at cleanup, raw completion reason is null",
+  "raw_stopped_reason": null,
+  "workload": "Mixed two-build idle measurements, hibernation/wake, media navigation and silent playback; no Instruments capture",
+  "astra_pid": 10665,
+  "all_samples_process_available": true,
+  "astra_footprint_bytes": {
+    "first": 120522024,
+    "last": 145409464,
+    "min": 120522024,
+    "max": 148178360,
+    "median": 133072240.0
+  },
+  "astra_cpu_percent_one_core_over_interval": 13.552181971771246,
+  "caveats": [
+    "Not a completed 60-minute stability session",
+    "Periodic UI checks only; no continuous UI responsiveness or crash-free certification",
+    "Mixed workload, not idle CPU or leak evidence"
+  ],
+  "cleanup": "No sampler or fixture server remained; Astra app processes were not terminated during final cleanup"
+}

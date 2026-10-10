@@ -1,6 +1,6 @@
 # Astra runtime validation, 9–10 October 2026
 
-**Status: incomplete. Isolated runtime availability recovered and a short smoke check passed; no browser-wide performance improvement or release-readiness claim is established.**
+**Status: stopped at user request. Runtime recovery, matched app-only idle samples, and hibernation/wake checks completed. Full performance acceptance remains incomplete.**
 
 PR: https://github.com/omeriadon/astra/pull/13. The release branch remains intact and the PR remains open. This dataset records successful checks, failed tools, exploratory results, and unexecuted acceptance criteria separately.
 
@@ -39,7 +39,7 @@ Five observations do not support a useful p95 estimate. The following numerical 
 | 50-tab recovery milestone, median | 881.6 ms | 863.8 ms | −17.8 ms | Exploratory |
 | 100-tab recovery milestone, median | 1026.0 ms | 1178.4 ms | +152.4 ms | Exploratory |
 | Input-to-pixel tab switching | NOT MEASURED | NOT MEASURED | — | Unverified |
-| Matched idle CPU workload | NOT MEASURED | NOT MEASURED | — | Unverified |
+| Background idle, app CPU only (two local pages) | 0.078% median | 0.070% median | −0.0075 percentage points | Five matched intervals; cache/profile histories differ |
 | Matched active YouTube memory | NOT MEASURED | NOT MEASURED | — | Playback not certified |
 | Matched background WebKit memory | NOT MEASURED | NOT MEASURED | — | No matched series |
 | Tab-close memory reclamation | NOT MEASURED | Mapped footprint −573.4 MiB | — | One candidate closure observed |
@@ -168,5 +168,42 @@ The fresh candidate returned its accessibility tree and an existing test form co
 | New stability interval or matched performance comparison | NOT MEASURED |
 
 Current isolated runtime availability is restored. The prior nonresponse remains unexplained. Its occurrence after profiling and the absence of injection in the recovered process are an association, not proof of an Instruments or Astra root cause. No production-code fix or architecture change was made. The original 33-minute stability interval remains incomplete, and the missing performance comparisons retain their NOT MEASURED status. No additional build was needed; the two existing measurement self-checks, benchmark JSON validation, and scoped diff validation passed. Raw diagnostic samples remain under `/tmp` and were not committed.
+
+## Final continuation results and requested stop
+
+After the user requested continued validation, the existing isolated baseline build was verified as signature-valid and launched normally. Baseline remained at source `05af546`; candidate remained at `8fc6600`. No production app code was changed, no additional build was run, and no further Astra process termination occurred. Only disposable test tabs were reduced to prepare matching workloads; personal profiles and the existing `BrowserResources.swift` edit were preserved.
+
+### Matched background idle
+
+Both Debug builds had one window, two loaded loopback pages, zero hibernated tabs, the same edited form marker, 100% zoom, and the second page selected. Both were verified as backgrounded at each interval boundary. After a 30-second settling period, five simultaneous 30-second intervals measured the explicit Astra app PIDs. AC power and unchanged power settings were verified; system WebKit version was `22625.2.7.1`. Instruments was not attached.
+
+| App-only metric | Baseline | Candidate |
+|---|---:|---:|
+| CPU median, percent of one core | 0.078% | 0.070% |
+| CPU range | 0.072–0.095% | 0.065–0.077% |
+| Physical footprint median | 138.4 MiB | 120.5 MiB |
+| Physical footprint range | 138.3–144.5 MiB | 120.5–122.8 MiB |
+
+Raw intervals are in `matched-background-idle.json`. These are matched current workloads with different prior cache/profile histories, concurrent isolated builds, existing compression/swap, and unrelated applications still running. They establish observed app-only values, not a causal browser-wide improvement. WebContent/GPU/network totals were excluded from this comparison.
+
+### Hibernation and wake
+
+One clean long-page sequence was executed in each build while a separate edited form remained protected. Explicit process attribution used Activity Monitor's local fixture association and exact isolated WebKit sandbox open-file associations; no ancestry inference was used. Hibernation terminated WebContent PID 29467 in candidate and PID 32890 in baseline. The candidate replacement was explicitly mapped as PID 31696. Mapped WebContent footprint fell 29.6 MiB in candidate and 54.6 MiB in baseline. These are one-trial subset deltas; changes in other mapped processes and differing allocation histories prevent a comparative reclamation claim.
+
+Both builds restored 120% zoom and normalized scroll position 0.1243318 from 0.1244387, with forward and back navigation working. The protected form marker remained intact during the other tab's hibernation. The candidate's inactive edited-form Hibernate action was disabled while the clean inactive page's action was enabled. See `hibernation-runtime-results.json` and the four before/after snapshots. The automatic timeout/pressure matrix remains **NOT MEASURED**.
+
+### Media and remaining measurements
+
+The candidate's deterministic silent H.264 fixture advanced from 0.3 seconds (`paused=false`, `ended=false`) to its 180-second endpoint (`paused=true`, `ended=true`). This establishes clip completion. The observations were 310.31 seconds apart and do not establish continuous frame pacing or absence of stalls. Baseline playback started, but its final element state was not read before the requested stop. The fixture's source hash and numeric observations are in `media-continuation-results.json`; generated media remains outside the repository.
+
+Before playback, the candidate exposed a Pause toolbar action while the fixture reported time 0 and `paused=true`. A fresh UI read reproduced this disagreement. `refreshActivity` combines its DOM flag with WebKit's aggregate playback result. [Upstream WebKit](https://github.com/WebKit/WebKit/blob/main/Source/WebKit/WebProcess/WebPage/WebPage.cpp) returns playing when a media session exists and is neither paused nor suspended, while its [session-state check](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/platform/audio/MediaSessionManagerInterface.cpp) tests the session's Paused state. This suggests an idle-session fallback false positive; the exact deployed native return was not directly measured. No fallback was removed because iframe/Web Audio lifecycle protection must remain intact. Toolbar state alone was not used to certify playback.
+
+PiP entry, background-tab playback continuity, sustained YouTube playback, input-to-pixel latency, comparative energy, new scrolling/hitch measurements, and the other unexecuted acceptance cases remain **NOT MEASURED**. No new profiling capture was attempted.
+
+### Passive interval and cleanup
+
+The recovered passive monitor left 46 samples spanning 2,700.37 seconds (45 minutes), not the requested 60 minutes. All recorded candidate process samples remained available. Mixed-workload app footprint ranged 114.9–141.3 MiB, ending at 138.7 MiB; average app CPU was 13.55% of one core. This includes UI interactions and media work and is not idle CPU or leak evidence. The raw completion reason was null, and the sampler was already absent when explicit cleanup was attempted. It is **INCOMPLETE**, with no continuous-UI or crash-free certification. Raw data and caveats are in `stability-recovered-session.json` and `stability-recovered-summary.json`.
+
+The user then requested immediate finish. No fixture server or sampler remained running at cleanup; both isolated Astra processes were left running. No further experiment, app restart, build, push, or merge was performed. PR #13 was rechecked as OPEN on remote HEAD `32459315a7d5ce03c4bdcfb2c0bd51cf001e4d33`; both previously linked CI runs remain completed/success on that head. Local result artifacts have no new CI run. Benchmark JSON, measurement consistency assertions, and scoped diff checks passed.
 
 The mission remains incomplete. Remaining acceptance criteria are not marked passed, the PR is not merged, and no unsupported memory-reclamation change is introduced.

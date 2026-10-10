@@ -1,0 +1,44 @@
+{
+  "scenario": "One clean long-page hibernation/wake in each isolated build, alongside a protected edited form",
+  "source_commits": {
+    "baseline": "05af54619cbcc4724800889f01e90d948eb37235",
+    "candidate": "8fc6600d421c4566191fa982940d5d6f139f56ea"
+  },
+  "build_configuration": "Debug",
+  "results": {
+    "candidate": {
+      "exited_webcontent_pid": 29467,
+      "verified_replacement_webcontent_pid": 31696,
+      "mapped_webcontent_footprint_delta_bytes": -31015824,
+      "astra_footprint_delta_bytes": -2064408,
+      "exited_process_before_identity": "29467@mach:6268641967986",
+      "zoom_percent_before": 120,
+      "zoom_percent_after_wake": 120,
+      "normalized_scroll_before": 0.1244387,
+      "normalized_scroll_after_wake": 0.1243318,
+      "forward_and_back_navigation_after_wake": "PASS",
+      "protected_form_marker_retained_during_other_tab_hibernation": "PASS",
+      "hibernation_mapping_source": "Activity Monitor local fixture association plus exact isolated WebKit sandbox open-file association"
+    },
+    "baseline": {
+      "exited_webcontent_pid": 32890,
+      "verified_replacement_webcontent_pid": null,
+      "mapped_webcontent_footprint_delta_bytes": -57279400,
+      "astra_footprint_delta_bytes": -13467672,
+      "exited_process_before_identity": "32890@mach:6280747157564",
+      "zoom_percent_before": 120,
+      "zoom_percent_after_wake": 120,
+      "normalized_scroll_before": 0.1244387,
+      "normalized_scroll_after_wake": 0.1243318,
+      "forward_and_back_navigation_after_wake": "PASS",
+      "protected_form_marker_retained_during_other_tab_hibernation": "PASS",
+      "hibernation_mapping_source": "Activity Monitor local fixture association plus exact isolated WebKit sandbox open-file association"
+    }
+  },
+  "caveats": [
+    "One trial per build; not a comparative reclamation improvement claim",
+    "Snapshot totals include explicitly mapped processes only; shared GPU excluded",
+    "Other mapped processes and app allocations may change between snapshots",
+    "Automatic pressure/timeout matrix remains NOT MEASURED"
+  ]
+}

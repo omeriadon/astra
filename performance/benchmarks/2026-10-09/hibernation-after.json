@@ -1,0 +1,207 @@
+{
+  "captured_at": 1791612437.3217878,
+  "host": {
+    "machine": "arm64",
+    "os": "macOS-27.2-arm64-arm-64bit",
+    "processor_count": 8,
+    "python": "3.9.6"
+  },
+  "measurement": {
+    "cpu_source": "libproc CPU Mach ticks converted with mach_timebase_info; ps cumulative time fallback; interval deltas",
+    "footprint_source": "public proc_pid_rusage RUSAGE_INFO_V4 when available; otherwise unavailable",
+    "ownership": "only explicitly mapped PIDs are attributed; XPC WebKit helpers remain unattributed",
+    "rss_source": "libproc resident size when available; otherwise ps rss; process-level estimates",
+    "shared_processes": "deduplicated by pid and process start identity",
+    "tab_attribution": "unavailable from public WebKit APIs"
+  },
+  "monotonic": 0.087986041,
+  "processes": [
+    {
+      "cpu_seconds": 29.52,
+      "executable": "astra",
+      "footprint_bytes": 128566592,
+      "identity": "10665@mach:6192318168949",
+      "pid": 10665,
+      "ppid": 1,
+      "role": "astra",
+      "rss_bytes": 109772800,
+      "rusage_cpu_nanoseconds": 29521669958,
+      "rusage_start_abstime": 6192318168949,
+      "started": "Sat Oct 10 13:08:35 2026"
+    },
+    {
+      "cpu_seconds": 2.48,
+      "executable": "com.apple.WebKit.WebContent",
+      "footprint_bytes": 75547536,
+      "identity": "10676@mach:6192346642709",
+      "pid": 10676,
+      "ppid": 1,
+      "role": "webcontent",
+      "rss_bytes": 17973248,
+      "rusage_cpu_nanoseconds": 2477446333,
+      "rusage_start_abstime": 6192346642709,
+      "started": "Sat Oct 10 13:08:36 2026"
+    },
+    {
+      "cpu_seconds": 0.62,
+      "executable": "com.apple.WebKit.WebContent",
+      "footprint_bytes": 28902288,
+      "identity": "26765@mach:6256012720559",
+      "pid": 26765,
+      "ppid": 1,
+      "role": "webcontent",
+      "rss_bytes": 12468224,
+      "rusage_cpu_nanoseconds": 620726375,
+      "rusage_start_abstime": 6256012720559,
+      "started": "Sat Oct 10 13:52:49 2026"
+    }
+  ],
+  "schema": 1,
+  "totals": {
+    "astra": {
+      "footprint_bytes": 128566592,
+      "footprint_processes": 1,
+      "processes": 1,
+      "rss_bytes": 109772800
+    },
+    "gpu": {
+      "footprint_bytes": null,
+      "footprint_processes": 0,
+      "processes": 0,
+      "rss_bytes": 0
+    },
+    "network": {
+      "footprint_bytes": null,
+      "footprint_processes": 0,
+      "processes": 0,
+      "rss_bytes": 0
+    },
+    "other": {
+      "footprint_bytes": null,
+      "footprint_processes": 0,
+      "processes": 0,
+      "rss_bytes": 0
+    },
+    "webcontent": {
+      "footprint_bytes": 104449824,
+      "footprint_processes": 2,
+      "processes": 2,
+      "rss_bytes": 30441472
+    }
+  },
+  "unattributed_webkit_processes": [
+    {
+      "executable": "com.apple.WebKit.GPU",
+      "identity": "10188@Thu Oct 8 15:40:00 2026",
+      "pid": 10188
+    },
+    {
+      "executable": "com.apple.WebKit.Networking",
+      "identity": "10191@Thu Oct 8 15:40:01 2026",
+      "pid": 10191
+    },
+    {
+      "executable": "com.apple.WebKit.WebContent",
+      "identity": "10201@Thu Oct 8 15:40:01 2026",
+      "pid": 10201
+    },
+    {
+      "executable": "com.apple.WebKit.Networking",
+      "identity": "10671@Sat Oct 10 13:08:36 2026",
+      "pid": 10671
+    },
+    {
+      "executable": "com.apple.WebKit.GPU",
+      "identity": "10672@Sat Oct 10 13:08:36 2026",
+      "pid": 10672
+    },
+    {
+      "executable": "com.apple.WebKit.GPU",
+      "identity": "17054@Fri Oct 9 21:47:17 2026",
+      "pid": 17054
+    },
+    {
+      "executable": "com.apple.WebKit.WebContent",
+      "identity": "17055@Fri Oct 9 21:47:17 2026",
+      "pid": 17055
+    },
+    {
+      "executable": "com.apple.WebKit.Networking",
+      "identity": "17056@Fri Oct 9 21:47:17 2026",
+      "pid": 17056
+    },
+    {
+      "executable": "com.apple.WebKit.Networking",
+      "identity": "26153@Sat Oct 10 13:50:56 2026",
+      "pid": 26153
+    },
+    {
+      "executable": "com.apple.WebKit.GPU",
+      "identity": "26154@Sat Oct 10 13:50:56 2026",
+      "pid": 26154
+    },
+    {
+      "executable": "com.apple.WebKit.WebContent",
+      "identity": "26159@Sat Oct 10 13:50:57 2026",
+      "pid": 26159
+    },
+    {
+      "executable": "com.apple.WebKit.WebContent",
+      "identity": "26684@Sat Oct 10 13:52:31 2026",
+      "pid": 26684
+    },
+    {
+      "executable": "com.apple.WebKit.GPU",
+      "identity": "27642@Thu Oct 8 15:47:54 2026",
+      "pid": 27642
+    },
+    {
+      "executable": "com.apple.WebKit.WebContent",
+      "identity": "27643@Thu Oct 8 15:47:54 2026",
+      "pid": 27643
+    },
+    {
+      "executable": "com.apple.WebKit.WebContent",
+      "identity": "27645@Thu Oct 8 15:47:55 2026",
+      "pid": 27645
+    },
+    {
+      "executable": "com.apple.WebKit.Networking",
+      "identity": "27647@Thu Oct 8 15:47:55 2026",
+      "pid": 27647
+    },
+    {
+      "executable": "com.apple.WebKit.WebContent",
+      "identity": "27664@Thu Oct 8 15:47:57 2026",
+      "pid": 27664
+    },
+    {
+      "executable": "com.apple.WebKit.Networking",
+      "identity": "31537@Sat Oct 10 14:07:10 2026",
+      "pid": 31537
+    },
+    {
+      "executable": "com.apple.WebKit.Networking",
+      "identity": "41300@Thu Oct 8 15:55:13 2026",
+      "pid": 41300
+    },
+    {
+      "executable": "com.apple.WebKit.Networking",
+      "identity": "68352@Thu Oct 8 15:19:29 2026",
+      "pid": 68352
+    },
+    {
+      "executable": "com.apple.WebKit.Networking",
+      "identity": "72814@Fri Oct 9 23:13:37 2026",
+      "pid": 72814
+    },
+    {
+      "executable": "com.apple.WebKit.WebContent",
+      "identity": "88173@Sat Oct 10 12:49:44 2026",
+      "pid": 88173
+    }
+  ],
+  "unavailable_selected_pids": [
+    29467
+  ]
+}
