@@ -40,7 +40,7 @@ fi
 birth_helper="$(mktemp -d)/process_birth"
 trap 'rm -rf "${birth_helper%/*}"' EXIT
 clang -O2 "$SCRIPT_DIR/process_birth.c" -o "$birth_helper"
-echo 'run,pid,process_birth_to_main_log_ms,process_birth_to_first_window_ms,process_birth_to_first_visible_update_ms,process_birth_to_first_usable_window_ms,process_birth_to_all_windows_ms,process_birth_to_restoration_complete_ms,process_birth_to_deferred_services_ms,first_window_visible,first_window_key,first_window_hydrated,first_window_first_responder' > "$OUTPUT"
+echo 'run,pid,process_birth_to_main_log_ms,process_birth_to_first_window_ms,process_birth_to_first_visible_update_ms,process_birth_to_first_usable_window_ms,process_birth_to_all_windows_ms,process_birth_to_restoration_complete_ms,process_birth_to_deferred_services_ms,first_window_visible,first_window_key,first_window_can_become_key,first_window_hydrated,first_window_first_responder' > "$OUTPUT"
 echo "Output: $OUTPUT"
 
 for ((run = 1; run <= RUNS; run++)); do

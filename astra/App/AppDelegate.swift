@@ -196,7 +196,7 @@
 								while !Task.isCancelled,
 								      BrowserLog.clock() < deadline,
 								      !(foreground.window.isVisible
-										&& foreground.window.isKeyWindow
+										&& foreground.window.canBecomeKey
 										&& foreground.browser.isHydrationFinished
 										&& foreground.window.firstResponder != nil)
 								{
@@ -206,6 +206,7 @@
 								let readiness: [String: String] = [
 									"visible": String(foreground.window.isVisible),
 									"key": String(foreground.window.isKeyWindow),
+									"can_become_key": String(foreground.window.canBecomeKey),
 									"hydrated": String(foreground.browser.isHydrationFinished),
 									"first_responder": String(foreground.window.firstResponder != nil),
 									"observed_update": "true",
@@ -213,7 +214,7 @@
 								]
 								BrowserLog.notice(.lifecycle, "startup.first-window-readiness", metadata: readiness)
 								if foreground.window.isVisible,
-								   foreground.window.isKeyWindow,
+								   foreground.window.canBecomeKey,
 								   foreground.browser.isHydrationFinished,
 								   foreground.window.firstResponder != nil
 								{
