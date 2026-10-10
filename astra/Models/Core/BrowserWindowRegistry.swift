@@ -90,7 +90,10 @@ final class BrowserWindowRegistry {
 		activeBrowserID = browser.windowID
 		claimSelectedTab(in: browser)
 		BrowserExtensionManager.shared.focus(browser)
-		if browser.selectedTab?.isHibernated == true {
+		// Cached startup tabs are deliberately dormant until the first
+		// visible AppKit update. Waking one here would allocate WebKit while
+		// the initial NSHostingView is still being laid out.
+		if browser.isHydrationFinished, browser.selectedTab?.isHibernated == true {
 			browser.selectTab(browser.selectedTabID)
 		}
 		if !browser.isPrivate {
