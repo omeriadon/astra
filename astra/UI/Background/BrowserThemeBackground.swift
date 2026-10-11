@@ -75,24 +75,13 @@ private struct SpaceThemeSurface: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	var body: some View {
-		#if os(macOS)
-			// Presentation updates go straight to AppKit layers, without
-			// invalidating SwiftUI or re-evaluating the mesh every frame.
-			NativeSpaceThemeSurface(
-				theme: theme,
-				themes: themes,
-				palettes: palettes,
-				scrollState: scrollState
-			)
-		#else
-			let appearance = blendedAppearance
-			ThemeSurface(
-				theme: appearance.theme,
-				colors: appearance.colors,
-				noiseColorAmount: appearance.noiseColorAmount
-			)
-			.animation(scrollState == nil && !reduceMotion ? .smooth(duration: 0.3) : nil, value: theme)
-		#endif
+		let appearance = blendedAppearance
+		ThemeSurface(
+			theme: appearance.theme,
+			colors: appearance.colors,
+			noiseColorAmount: appearance.noiseColorAmount
+		)
+		.animation(scrollState == nil && !reduceMotion ? .smooth(duration: 0.3) : nil, value: theme)
 	}
 
 	private var blendedAppearance: (theme: BrowserTheme, colors: [Color]?, noiseColorAmount: Double?) {

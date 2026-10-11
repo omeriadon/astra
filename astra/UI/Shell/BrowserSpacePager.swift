@@ -488,8 +488,11 @@ struct BrowserSpacePager<Content: View>: View {
 			// A display-link callback can occur 60-120 times per second.
 			// Avoid touching the hosting hierarchy until the visible page
 			// window or its dimensions actually change.
-			if !refreshContent, mountedPageWindow == indices,
-			   mountedPageSize == bounds.size
+			// A selection change needs to update hit-testing and accessibility
+			// even when the same pages remain mounted. Otherwise the newly
+			// active page can remain non-interactive, breaking vertical scroll.
+			if !refreshContent, changedPageIDs.isEmpty,
+			   mountedPageWindow == indices, mountedPageSize == bounds.size
 			{
 				return
 			}
@@ -549,10 +552,12 @@ struct BrowserSpacePager<Content: View>: View {
 			}
 			guard pageWidth > 0, let scrollState else { return }
 			let position = min(max(offset / pageWidth, 0), Double(max(pageIDs.count - 1, 0)))
-			// This runs for every gesture/display-link frame. Keep progress
-			// outside SwiftUI Observation and update the native theme layers
-			// directly so the sidebar's view graph stays stable.
-			scrollState.publishPresentationPosition(position)
+			guard scrollState.position != position else { return }
+			var transaction = Transaction(animation: nil)
+			transaction.disablesAnimations = true
+			withTransaction(transaction) {
+				scrollState.position = position
+			}
 		}
 
 		private func startSettling(to target: Double, velocity: Double, response: Double) {
