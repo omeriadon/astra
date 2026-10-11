@@ -9,6 +9,7 @@ struct BrowserSpacesBar: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var spaceToDelete: BrowserSpace?
 	@State private var showsDeleteAlert = false
+	@Namespace private var selectionAnimation
 
 	var body: some View {
 		ScrollViewReader { reader in
@@ -21,10 +22,14 @@ struct BrowserSpacesBar: View {
 							isSelected: browser.workspace.selectedSpaceID == space.id,
 							spaceToDelete: $spaceToDelete,
 							showsDeleteAlert: $showsDeleteAlert,
+							selectionNamespace: selectionAnimation,
 							onOpenPage: onOpenPage
 						)
 					}
 				}
+				#if os(macOS)
+				.animation(reduceMotion ? nil : .smooth(duration: 0.25), value: browser.workspace.selectedSpaceID)
+				#endif
 			}
 			.scrollIndicators(.hidden)
 			#if os(iOS)
@@ -73,6 +78,7 @@ struct BrowserSpacesBar: View {
 		let isSelected: Bool
 		@Binding var spaceToDelete: BrowserSpace?
 		@Binding var showsDeleteAlert: Bool
+		let selectionNamespace: Namespace.ID
 		var onOpenPage: (() -> Void)?
 
 		var body: some View {
@@ -91,6 +97,9 @@ struct BrowserSpacesBar: View {
 							RoundedRectangle(cornerRadius: 8)
 								.fill(Color.primary.gradient)
 								.opacity(0.4)
+							#if os(macOS)
+								.matchedGeometryEffect(id: "selected-space-highlight", in: selectionNamespace)
+							#endif
 						}
 					}
 			}
