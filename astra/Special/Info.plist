@@ -2,6 +2,41 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>ASWebAuthenticationSessionWebBrowserSupportCapabilities</key>
+	<dict>
+		<key>AdditionalHeaderFieldsAreSupported</key>
+		<true/>
+		<key>CallbackURLMatchingIsSupported</key>
+		<true/>
+		<key>EphemeralBrowserSessionIsSupported</key>
+		<true/>
+		<key>IsSupported</key>
+		<true/>
+	</dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>Web URLs</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>http</string>
+				<string>https</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>Web Push Wake</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>x-webkit-app-launch</string>
+			</array>
+		</dict>
+	</array>
 	<key>LSFileQuarantineEnabled</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
