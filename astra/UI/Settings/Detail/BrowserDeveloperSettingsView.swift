@@ -75,19 +75,20 @@ struct BrowserDeveloperSettingsView: View {
 					Toggle("Enable Browser Use", isOn: browserUseEnabled)
 						.accessibilityLabel("Enable Browser Use")
 						.accessibilityIdentifier("browser-use-enabled")
+					LabeledContent("Status", value: browserAgentServer.status)
+						.accessibilityIdentifier("browser-use-status")
 					if browserAgentServer.isEnabled {
 						LabeledContent("Endpoint", value: browserAgentServer.endpoint)
 							.accessibilityIdentifier("browser-use-endpoint")
-						LabeledContent("Status", value: browserAgentServer.status)
-							.accessibilityIdentifier("browser-use-status")
 						Button("Copy Codex Configuration", systemImage: "doc.on.doc") {
 							NSPasteboard.general.clearContents()
 							NSPasteboard.general.setString(browserAgentServer.codexConfiguration, forType: .string)
 						}
 						.accessibilityLabel("Copy Codex Configuration")
 						.accessibilityIdentifier("copy-codex-configuration")
+						.disabled(browserAgentServer.codexConfiguration.isEmpty)
 					}
-					Text("Browser Use can access local pages you explicitly share and tabs created by an agent. Private tabs are never shared.")
+					Text("Runs locally and accesses only pages you share or tabs created by an agent. Private tabs are never shared. Access and the connection credential reset when Browser Use is disabled or Astra quits.")
 						.font(.caption)
 						.foregroundStyle(.secondary)
 				}

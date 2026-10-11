@@ -1,7 +1,8 @@
 # Agent browser integration feasibility
 
-Checked 2026-10-11. Status: the proposed direct Playwright attachment to Astra's
-macOS WKWebViews is blocked. No browser integration was implemented.
+Checked 2026-10-11. Direct Playwright attachment to Astra's macOS WKWebViews remains
+blocked. Astra's separate native MCP integration is documented in
+[Browser Use](browser-use.md); it does not depend on a Playwright inspector transport.
 
 ## Intended integration
 

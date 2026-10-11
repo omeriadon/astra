@@ -23,9 +23,10 @@ struct BrowserAgentControls: View {
 	#if os(macOS)
 		private func canShare(_ tab: BrowserTab) -> Bool {
 			!browser.isPrivate
+				&& !browser.isMini
 				&& !browser.isShowingNewTab
 				&& tab.internalPage == nil
-				&& tab.currentURL != nil
+				&& ["http", "https"].contains(tab.currentURL?.scheme?.lowercased() ?? "")
 		}
 
 		private func shareButton(tab: BrowserTab) -> some View {
@@ -40,13 +41,25 @@ struct BrowserAgentControls: View {
 		}
 
 		private func controlledControls(tabID: UUID) -> some View {
+			BrowserAgentControlledStatus {
+				server.revoke(tabID)
+			}
+		}
+	#endif
+}
+
+#if os(macOS)
+	private struct BrowserAgentControlledStatus: View {
+		let revoke: () -> Void
+
+		var body: some View {
 			HStack(spacing: 6) {
 				Label("Controlled by Browser Use", systemImage: "person.crop.circle.badge.checkmark")
 					.font(.caption)
 					.lineLimit(1)
 					.accessibilityIdentifier("browser-use-controlled-label")
 				Button("Revoke Browser Access", systemImage: "person.crop.circle.badge.xmark") {
-					server.revoke(tabID)
+					revoke()
 				}
 				.labelStyle(.iconOnly)
 				.buttonStyle(.bordered)
@@ -56,10 +69,8 @@ struct BrowserAgentControls: View {
 				.accessibilityIdentifier("revoke-browser-access")
 			}
 		}
-	#endif
-}
+	}
 
-#if os(macOS)
 	struct BrowserAgentControlledPageBorder: View {
 		let cornerRadius: CGFloat
 
@@ -74,5 +85,20 @@ struct BrowserAgentControls: View {
 			.allowsHitTesting(false)
 			.accessibilityHidden(true)
 		}
+	}
+#endif
+
+#if os(macOS)
+	#Preview("Browser Use controls") {
+		VStack(alignment: .leading, spacing: 12) {
+			BrowserAgentControlledStatus {}
+			RoundedRectangle(cornerRadius: 12)
+				.fill(.background)
+				.overlay {
+					BrowserAgentControlledPageBorder(cornerRadius: 12)
+				}
+				.frame(width: 480, height: 200)
+		}
+		.padding(16)
 	}
 #endif
