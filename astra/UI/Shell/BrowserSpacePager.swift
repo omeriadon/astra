@@ -172,6 +172,17 @@ struct BrowserSpacePager<Content: View>: View {
 			return max(0, Int(floor(clamped)) - 1) ... min(count - 1, Int(ceil(clamped)) + 1)
 		}
 
+		/// Prevent turnarounds at the destination: critical damping alone
+		/// does not prevent overshoot with a large initial velocity.
+		static func monotonicVelocity(from start: Double, to target: Double, velocity: Double, response: Double) -> Double {
+			let distance = target - start
+			guard distance.isFinite, velocity.isFinite, response > 0,
+			      abs(distance) > 0.1, distance * velocity > 0
+			else { return 0 }
+			let maximum = (2 * Double.pi / response) * abs(distance)
+			return (distance > 0 ? 1 : -1) * min(abs(velocity), maximum)
+		}
+
 		static func velocity(
 			samples: [(time: TimeInterval, offset: Double)],
 			at timestamp: TimeInterval
@@ -203,6 +214,9 @@ struct BrowserSpacePager<Content: View>: View {
 				selectedSpaceID: selectedSpaceID,
 				scrollState: scrollState,
 				reduceMotion: reduceMotion,
+				favouriteTabIDs: favouriteTabIDs,
+				colorScheme: context.environment.colorScheme,
+				dynamicTypeSize: context.environment.dynamicTypeSize,
 				onSelectSpace: onSelectSpace
 			) { space, isActive in
 				AnyView(
@@ -271,6 +285,9 @@ struct BrowserSpacePager<Content: View>: View {
 		private var pageHosts: [UUID: BrowserSpacePageHost] = [:]
 		private var attachedPageIDs: Set<UUID> = []
 		private var spaceSnapshots: [UUID: BrowserSpace] = [:]
+		private var favouriteTabIDs: [UUID] = []
+		private var pageColorScheme: ColorScheme?
+		private var pageDynamicTypeSize: DynamicTypeSize?
 		private var pageFactory: ((BrowserSpace, Bool) -> AnyView)?
 		private var pageIDs: [UUID] = []
 		private var selectedSpaceID: UUID?
@@ -291,7 +308,6 @@ struct BrowserSpacePager<Content: View>: View {
 		private var positionPublicationPending = false
 		private var mountedPageWindow: ClosedRange<Int>?
 		private var mountedPageSize = CGSize.zero
-		private var lastBackgroundPublication: CFTimeInterval = -.infinity
 
 		override var isFlipped: Bool {
 			true
@@ -320,6 +336,9 @@ struct BrowserSpacePager<Content: View>: View {
 			selectedSpaceID: UUID,
 			scrollState: BrowserSpaceScrollState,
 			reduceMotion: Bool,
+			favouriteTabIDs: [UUID],
+			colorScheme: ColorScheme,
+			dynamicTypeSize: DynamicTypeSize,
 			onSelectSpace: @escaping (UUID) -> Void,
 			content: @escaping (BrowserSpace, Bool) -> AnyView
 		) {
@@ -327,6 +346,15 @@ struct BrowserSpacePager<Content: View>: View {
 			let membershipChanged = pageIDs != newIDs
 			let selectionChanged = self.selectedSpaceID != selectedSpaceID
 			let selectionAcknowledged = pendingSelectionID == selectedSpaceID
+			let newSnapshots = Dictionary(uniqueKeysWithValues: spaces.map { ($0.id, $0) })
+			let refreshContent = membershipChanged || selectionChanged
+				|| spaceSnapshots != newSnapshots
+				|| self.favouriteTabIDs != favouriteTabIDs
+				|| pageColorScheme != colorScheme
+				|| pageDynamicTypeSize != dynamicTypeSize
+			self.favouriteTabIDs = favouriteTabIDs
+			pageColorScheme = colorScheme
+			pageDynamicTypeSize = dynamicTypeSize
 			self.scrollState = scrollState
 			self.onSelectSpace = onSelectSpace
 			self.reduceMotion = reduceMotion
@@ -335,7 +363,7 @@ struct BrowserSpacePager<Content: View>: View {
 				pendingSelectionID = nil
 			}
 			pageIDs = newIDs
-			spaceSnapshots = Dictionary(uniqueKeysWithValues: spaces.map { ($0.id, $0) })
+			spaceSnapshots = newSnapshots
 			pageFactory = content
 
 			// Page ownership is keyed to stable UUIDs. Only *attached* pages
@@ -362,8 +390,10 @@ struct BrowserSpacePager<Content: View>: View {
 				stopSettling()
 				render(target, deferred: true)
 			}
-			updateMountedPages(refreshContent: true)
-			needsLayout = true
+			// Theme progress can invalidate the parent every frame, but unchanged
+			// tabs must not rebuild NSHostingView roots or request AppKit layout.
+			updateMountedPages(refreshContent: refreshContent)
+			if membershipChanged { needsLayout = true }
 			publishPosition(deferred: true)
 		}
 
@@ -501,14 +531,6 @@ struct BrowserSpacePager<Content: View>: View {
 				return
 			}
 			guard pageWidth > 0, let scrollState else { return }
-			// The sidebar moves at display refresh rate, but continuously
-			// rebuilding the window-wide mesh gradient at 120 Hz is expensive.
-			// Limit *background* publication only; paging geometry retains
-			// native frame-rate input and spring animation.
-			let now = CACurrentMediaTime()
-			let interacting = gesture == .horizontal || settling != nil
-			if interacting, now - lastBackgroundPublication < 1.0 / 30.0 { return }
-			lastBackgroundPublication = now
 			let position = min(max(offset / pageWidth, 0), Double(max(pageIDs.count - 1, 0)))
 			guard scrollState.position != position else { return }
 			var transaction = Transaction(animation: nil)
@@ -531,7 +553,9 @@ struct BrowserSpacePager<Content: View>: View {
 			settling = Settling(
 				start: offset,
 				target: target,
-				velocity: velocity,
+				velocity: BrowserSpacePagingPhysics.monotonicVelocity(
+					from: offset, to: target, velocity: velocity, response: response
+				),
 				time: CACurrentMediaTime(),
 				spring: Spring(response: response, dampingRatio: 1)
 			)
@@ -542,7 +566,9 @@ struct BrowserSpacePager<Content: View>: View {
 
 		@objc private func step(_ link: CADisplayLink) {
 			guard let settling else { return }
-			let elapsed = max(0, link.timestamp - settling.time)
+			// The display link's timestamp belongs to the previous refresh.
+			// Compute the pose for the upcoming display refresh.
+			let elapsed = max(0, link.targetTimestamp - settling.time)
 			let value: Double = settling.spring.value(
 				fromValue: settling.start,
 				toValue: settling.target,
