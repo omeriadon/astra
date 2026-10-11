@@ -125,7 +125,7 @@ private struct SpaceThemeSurface: View {
 					// swipe. Only opacity is updated per presentation frame.
 					ZStack {
 						CachedSpaceThemeSurface(theme: themes[firstIndex], colors: palettes[firstIndex])
-						.equatable()
+							.equatable()
 							.opacity(1 - progress)
 						CachedSpaceThemeSurface(theme: themes[secondIndex], colors: palettes[secondIndex])
 							.equatable()
