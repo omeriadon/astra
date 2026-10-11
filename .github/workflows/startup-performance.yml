@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: performance-startup-${{ github.event.pull_request.number || github.ref }
+  group: performance-startup-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -55,7 +55,7 @@ jobs:
         if: always()
         shell: bash
         env:
-          MEASURE_OUTCOME: ${{ steps.measure.outcome }
+          MEASURE_OUTCOME: ${{ steps.measure.outcome }}
         run: |
           python3 - <<'PY'
           import csv
@@ -99,9 +99,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: astra-startup-performance-${{ github.run_id }
+          name: astra-startup-performance-${{ github.run_id }}
           path: |
             results/
-            ${{ runner.temp }/astra-startup-release-build.log
+            ${{ runner.temp }}/astra-startup-release-build.log
           if-no-files-found: warn
           retention-days: 30

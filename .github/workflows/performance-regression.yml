@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: performance-library-${{ github.event.pull_request.number || github.ref }
+  group: performance-library-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -22,12 +22,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: candidate
-          ref: ${{ github.event.pull_request.head.sha || github.sha }
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Checkout baseline
         uses: actions/checkout@v4
         with:
           path: baseline
-          ref: ${{ github.event.pull_request.base.sha || 'main' }
+          ref: ${{ github.event.pull_request.base.sha || 'main' }}
       - name: Validate benchmark parser
         run: python3 candidate/scripts/ci/library_benchmark_report.py --self-test
       - name: Run same-runner baseline and candidate benchmarks
@@ -55,7 +55,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: astra-library-performance-${{ github.run_id }
+          name: astra-library-performance-${{ github.run_id }}
           path: results/
           if-no-files-found: warn
           retention-days: 30
