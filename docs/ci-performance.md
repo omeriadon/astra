@@ -5,8 +5,8 @@ build, Release archive and test validations remain blocking.
 
 ## Astra - Performance Regression
 
-Runs on pull requests into main or via workflow_dispatch. Checks out the PR
-base and candidate in separate directories on one macOS runner and executes the
+Runs on pull requests into main or via workflow_dispatch. Checks out the previous compatible
+Build 3 commit and candidate in separate directories on one macOS runner and executes the
 existing optimised Swift library-scaling benchmark at 1k, 10k and 50k bookmarks.
 Reports raw text, JSON and Markdown with medians, p95 and percentage change.
 
@@ -49,10 +49,10 @@ power mode, page fixture, build configuration and cache state.
 
 Reliable blocking performance thresholds, end-to-end frame latency and
 WebKit tab-specific memory measurements require a controlled dedicated Mac
-runner and actual UI-driving instrumentation. The existing
-astra_workflow_report.py checks timing events from recorded logs; its parser
-is already self-tested by Release Metadata. No arbitrary CI log should be
-mistaken for a complete tab-switch or input-to-first-frame trace.
+runner and actual UI-driving instrumentation. The existing astra_workflow_report.py parses any available filtered CI unified-log
+performance events into a separate JSON artifact. The parser is self-tested by
+Release Metadata. Missing events are reported; collected internal durations do
+not prove end-to-end input-to-first-frame latency.
 
 For a controlled local run:
 

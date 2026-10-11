@@ -48,6 +48,18 @@ jobs:
           python3 scripts/ci/webkit_ci_scenario.py \
             "$RUNNER_TEMP/AstraWebKitDerivedData/Build/Products/Release/astra.app" \
             --output-dir results 2>&1 | tee results/webkit-output.log
+      - name: Collect internal workflow-duration diagnostics
+        if: steps.measure.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          log show --last 10m --style compact --info --debug \
+            --predicate 'subsystem == "com.omeriadon.astra"' \
+            > "$RUNNER_TEMP/astra-timing-events.txt"
+          python3 scripts/astra_workflow_report.py \
+            "$RUNNER_TEMP/astra-timing-events.txt" --json \
+            > results/workflow-timings.json
       - name: Summarise process measurements
         if: always()
         shell: bash
@@ -68,6 +80,17 @@ jobs:
                   "No runtime measurements were recorded. The hosted macOS runner "
                   "might not provide a usable GUI session or the app failed to start.\n"
               )
+          timing_file = output / "workflow-timings.json"
+          if timing_file.exists():
+              import json
+              timings = json.loads(timing_file.read_text())
+              report += (
+                  "\nInstrumented internal workflow durations: "
+                  + str(timings.get("measurements", 0))
+                  + " samples (see workflow-timings.json).\n"
+              )
+          else:
+              report += "\nInternal duration logs were unavailable.\n"
           if os.environ["MEASURE_OUTCOME"] != "success":
               report += "\n**Measurement unavailable or incomplete.** Inspect webkit-output.log.\n"
           print(report)
