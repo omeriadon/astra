@@ -252,6 +252,7 @@ struct BrowserSpacePager<Content: View>: View {
 
 		private let documentView = BrowserSpacePagerDocumentView()
 		private var pageHosts: [UUID: BrowserSpacePageHost] = [:]
+		private var attachedPageIDs: Set<UUID> = []
 		private var spaceSnapshots: [UUID: BrowserSpace] = [:]
 		private var pageFactory: ((BrowserSpace, Bool) -> AnyView)?
 		private var pageIDs: [UUID] = []
@@ -320,6 +321,7 @@ struct BrowserSpacePager<Content: View>: View {
 			// its vertical ScrollView and local SwiftUI state until it is revisited.
 			for id in pageHosts.keys.filter({ !newIDs.contains($0) }) {
 				pageHosts.removeValue(forKey: id)?.removeFromSuperview()
+				attachedPageIDs.remove(id)
 			}
 
 			if membershipChanged {
@@ -407,9 +409,10 @@ struct BrowserSpacePager<Content: View>: View {
 			) else { return }
 			let mountedIDs = Set(indices.map { pageIDs[$0] })
 
-			for (id, host) in pageHosts where !mountedIDs.contains(id) && host.superview != nil {
-				host.removeFromSuperview()
+			for id in attachedPageIDs.subtracting(mountedIDs) {
+				pageHosts[id]?.removeFromSuperview()
 			}
+			attachedPageIDs = mountedIDs
 			for index in indices {
 				let id = pageIDs[index]
 				guard let space = spaceSnapshots[id] else { continue }
@@ -425,14 +428,19 @@ struct BrowserSpacePager<Content: View>: View {
 					host.sizingOptions = []
 					pageHosts[id] = host
 				}
-				host.hitTestingEnabled = active
-				host.setAccessibilityHidden(!active)
-				host.frame = NSRect(
+				if host.hitTestingEnabled != active {
+					host.hitTestingEnabled = active
+					host.setAccessibilityHidden(!active)
+				}
+				let frame = NSRect(
 					x: CGFloat(index) * bounds.width,
 					y: 0,
 					width: bounds.width,
 					height: bounds.height
 				)
+				if host.frame != frame {
+					host.frame = frame
+				}
 				if host.superview !== documentView {
 					documentView.addSubview(host)
 				}
