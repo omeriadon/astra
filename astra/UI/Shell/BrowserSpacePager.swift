@@ -244,6 +244,8 @@ struct BrowserSpacePager<Content: View>: View {
 		private static var clipMoves = 0
 		private static var updates = 0
 		private static var publications = 0
+		private static var rootReplacements = 0
+		private static var cachedReattachments = 0
 		private static var lastReport = BrowserLog.clock()
 
 		static func hostLayout() {
@@ -262,6 +264,14 @@ struct BrowserSpacePager<Content: View>: View {
 			if enabled { publications += 1 }
 		}
 
+		static func rootReplaced() {
+			if enabled { rootReplacements += 1 }
+		}
+
+		static func cachedPageReattached() {
+			if enabled { cachedReattachments += 1 }
+		}
+
 		static func reportIfNeeded() {
 			guard enabled else { return }
 			let now = BrowserLog.clock()
@@ -273,12 +283,16 @@ struct BrowserSpacePager<Content: View>: View {
 				"clip_moves": String(clipMoves),
 				"page_window_updates": String(updates),
 				"theme_position_publications": String(publications),
+				"page_root_replacements": String(rootReplacements),
+				"cached_page_reattachments": String(cachedReattachments),
 				"theme_frozen": String(freezeThemeProgress),
 			])
 			layouts = 0
 			clipMoves = 0
 			updates = 0
 			publications = 0
+			rootReplacements = 0
+			cachedReattachments = 0
 			lastReport = now
 		}
 	}
@@ -337,6 +351,9 @@ struct BrowserSpacePager<Content: View>: View {
 		private let documentView = BrowserSpacePagerDocumentView()
 		private let clipView = BrowserSpacePagerClipView()
 		private var pageHosts: [UUID: BrowserSpacePageHost] = [:]
+		// Detached hosts retain their last SwiftUI root. Only refresh a root
+		// on return if its data, active state or environment became stale.
+		private var stalePageIDs: Set<UUID> = []
 		private var attachedPageIDs: Set<UUID> = []
 		private var spaceSnapshots: [UUID: BrowserSpace] = [:]
 		private var favouriteTabIDs: [UUID] = []
@@ -415,6 +432,13 @@ struct BrowserSpacePager<Content: View>: View {
 				}
 				changedPageIDs.insert(selectedSpaceID)
 			}
+			// Mark detached hosts as needing an update, rather than rebuilding
+			// them simply because they crossed the viewport boundary.
+			if refreshAllPages {
+				stalePageIDs.formUnion(pageHosts.keys)
+			}
+			stalePageIDs.formUnion(changedPageIDs)
+			stalePageIDs.formIntersection(newIDs)
 			self.favouriteTabIDs = favouriteTabIDs
 			pageColorScheme = colorScheme
 			pageDynamicTypeSize = dynamicTypeSize
@@ -568,14 +592,17 @@ struct BrowserSpacePager<Content: View>: View {
 				let host: BrowserSpacePageHost
 				if let retained = pageHosts[id] {
 					host = retained
-					if refreshContent || changedPageIDs.contains(id) || retained.superview == nil {
+					if refreshContent || stalePageIDs.contains(id) {
+						BrowserSpacePagingMetrics.rootReplaced()
 						retained.rootView = pageFactory(space, active)
+						stalePageIDs.remove(id)
 					}
 				} else {
 					host = BrowserSpacePageHost(rootView: pageFactory(space, active))
 					host.sizingOptions = []
 					host.setAccessibilityHidden(!active)
 					pageHosts[id] = host
+					stalePageIDs.remove(id)
 				}
 				if host.hitTestingEnabled != active {
 					host.hitTestingEnabled = active
@@ -591,6 +618,9 @@ struct BrowserSpacePager<Content: View>: View {
 					host.frame = frame
 				}
 				if host.superview !== documentView {
+					if pageHosts[id] === host, host.superview == nil {
+						BrowserSpacePagingMetrics.cachedPageReattached()
+					}
 					documentView.addSubview(host)
 				}
 			}
