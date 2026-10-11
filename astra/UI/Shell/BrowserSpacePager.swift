@@ -246,22 +246,68 @@ struct BrowserSpacePager<Content: View>: View {
 	private enum BrowserSpacePagingMetrics {
 		static let enabled = ProcessInfo.processInfo.environment["ASTRA_PAGING_METRICS"] == "1"
 		static let freezeThemeProgress = ProcessInfo.processInfo.environment["ASTRA_PAGING_PROFILE_FREEZE_THEME"] == "1"
+		// Diagnostic only: swipe gestures still run but the viewport stays still.
+		// This isolates native clip movement from SwiftUI/theme invalidation.
+		static let freezeViewport = ProcessInfo.processInfo.environment["ASTRA_PAGING_PROFILE_FREEZE_VIEWPORT"] == "1"
 		private static var layouts = 0
+		private static var activeLayouts = 0
+		private static var layoutNearClipMove = 0
+		private static var layoutTotalMilliseconds = 0.0
+		private static var layoutMaximumMilliseconds = 0.0
+		private static var lastClipMove = -Double.infinity
+		private static var rootReplacements = 0
+		private static var hostCreations = 0
+		private static var updateCalls = 0
+		private static var updateSelectionChanges = 0
+		private static var updateFullRefreshes = 0
 		private static var clipMoves = 0
 		private static var updates = 0
 		private static var publications = 0
 		private static var lastReport = BrowserLog.clock()
 
-		static func hostLayout() {
+		static func hostLayout(active: Bool, durationSeconds: Double) {
+			guard enabled else { return }
+			layouts += 1
+			if active {
+				activeLayouts += 1
+			}
+			let elapsedMilliseconds = max(0, durationSeconds * 1000)
+			layoutTotalMilliseconds += elapsedMilliseconds
+			layoutMaximumMilliseconds = max(layoutMaximumMilliseconds, elapsedMilliseconds)
+			// Correlation only: a layout within one nominal frame of a clip move
+			// may still be driven by unrelated window or SwiftUI invalidation.
+			if CACurrentMediaTime() - lastClipMove <= 0.025 {
+				layoutNearClipMove += 1
+			}
+		}
+
+		static func hostCreated() {
 			if enabled {
-				layouts += 1
+				hostCreations += 1
+			}
+		}
+
+		static func rootReplaced() {
+			if enabled {
+				rootReplacements += 1
+			}
+		}
+
+		static func nativeUpdate(selectionChanged: Bool, fullRefresh: Bool) {
+			guard enabled else { return }
+			updateCalls += 1
+			if selectionChanged {
+				updateSelectionChanges += 1
+			}
+			if fullRefresh {
+				updateFullRefreshes += 1
 			}
 		}
 
 		static func clipMove() {
-			if enabled {
-				clipMoves += 1
-			}
+			guard enabled else { return }
+			clipMoves += 1
+			lastClipMove = CACurrentMediaTime()
 		}
 
 		static func pageUpdate() {
@@ -284,12 +330,31 @@ struct BrowserSpacePager<Content: View>: View {
 			BrowserLog.notice(.performance, "paging.layout-sample", metadata: [
 				"seconds": String(format: "%.2f", duration),
 				"page_host_layouts": String(layouts),
+				"active_page_layouts": String(activeLayouts),
+				"layout_near_clip_move": String(layoutNearClipMove),
+				"host_layout_total_ms": String(format: "%.1f", layoutTotalMilliseconds),
+				"host_layout_max_ms": String(format: "%.2f", layoutMaximumMilliseconds),
+				"page_root_replacements": String(rootReplacements),
+				"page_host_creations": String(hostCreations),
+				"native_update_calls": String(updateCalls),
+				"native_selection_changes": String(updateSelectionChanges),
+				"native_full_refreshes": String(updateFullRefreshes),
+				"viewport_frozen": String(freezeViewport),
 				"clip_moves": String(clipMoves),
 				"page_window_updates": String(updates),
 				"theme_position_publications": String(publications),
 				"theme_frozen": String(freezeThemeProgress),
 			])
 			layouts = 0
+			activeLayouts = 0
+			layoutNearClipMove = 0
+			layoutTotalMilliseconds = 0
+			layoutMaximumMilliseconds = 0
+			rootReplacements = 0
+			hostCreations = 0
+			updateCalls = 0
+			updateSelectionChanges = 0
+			updateFullRefreshes = 0
 			clipMoves = 0
 			updates = 0
 			publications = 0
@@ -301,8 +366,16 @@ struct BrowserSpacePager<Content: View>: View {
 		var hitTestingEnabled = false
 
 		override func layout() {
+			guard BrowserSpacePagingMetrics.enabled else {
+				super.layout()
+				return
+			}
+			let started = CACurrentMediaTime()
 			super.layout()
-			BrowserSpacePagingMetrics.hostLayout()
+			BrowserSpacePagingMetrics.hostLayout(
+				active: hitTestingEnabled,
+				durationSeconds: CACurrentMediaTime() - started
+			)
 		}
 
 		override func hitTest(_ point: NSPoint) -> NSView? {
@@ -425,6 +498,7 @@ struct BrowserSpacePager<Content: View>: View {
 				|| pageColorScheme != colorScheme
 				|| pageDynamicTypeSize != dynamicTypeSize
 				|| pageContentTopMargin != contentTopMargin
+			BrowserSpacePagingMetrics.nativeUpdate(selectionChanged: selectionChanged, fullRefresh: refreshAllPages)
 			var changedPageIDs = Set(newIDs.filter { spaceSnapshots[$0] != newSnapshots[$0] })
 			if selectionChanged {
 				if let previousSelection = self.selectedSpaceID {
@@ -528,7 +602,7 @@ struct BrowserSpacePager<Content: View>: View {
 			if documentView.frame != documentFrame {
 				documentView.frame = documentFrame
 			}
-			if clipView.bounds.origin.x != offset {
+			if !BrowserSpacePagingMetrics.freezeViewport, clipView.bounds.origin.x != offset {
 				BrowserSpacePagingMetrics.clipMove()
 				clipView.scroll(to: NSPoint(x: offset, y: 0))
 			}
@@ -538,7 +612,7 @@ struct BrowserSpacePager<Content: View>: View {
 
 		private func render(_ position: Double, deferred: Bool = false) {
 			offset = position
-			if clipView.bounds.origin.x != position {
+			if !BrowserSpacePagingMetrics.freezeViewport, clipView.bounds.origin.x != position {
 				BrowserSpacePagingMetrics.clipMove()
 				clipView.scroll(to: NSPoint(x: position, y: 0))
 			}
@@ -587,9 +661,11 @@ struct BrowserSpacePager<Content: View>: View {
 				if let retained = pageHosts[id] {
 					host = retained
 					if refreshContent || changedPageIDs.contains(id) || retained.superview == nil {
+						BrowserSpacePagingMetrics.rootReplaced()
 						retained.rootView = pageFactory(space, active)
 					}
 				} else {
+					BrowserSpacePagingMetrics.hostCreated()
 					host = BrowserSpacePageHost(rootView: pageFactory(space, active))
 					host.sizingOptions = []
 					host.setAccessibilityHidden(!active)

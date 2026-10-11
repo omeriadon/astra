@@ -74,6 +74,7 @@ private struct SpaceThemeSurface: View {
 	let scrollState: BrowserSpaceScrollState?
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+<<<<<<< HEAD
 	#if os(macOS)
 		/// Profile both paths without recompiling. The original interpolated
 		/// mesh remains available as a safe fallback.
@@ -81,62 +82,17 @@ private struct SpaceThemeSurface: View {
 			ProcessInfo.processInfo.environment["ASTRA_PAGING_LEGACY_THEME_BLEND"] == "1"
 	#endif
 
+=======
+>>>>>>> refs/remotes/origin/release/0.1+3
 	var body: some View {
-		#if os(macOS)
-			if Self.legacyBlend {
-				legacyAppearance
-			} else {
-				opacityCrossfade
-			}
-		#else
-			legacyAppearance
-		#endif
-	}
-
-	private var legacyAppearance: some View {
 		let appearance = blendedAppearance
-		return ThemeSurface(
+		ThemeSurface(
 			theme: appearance.theme,
 			colors: appearance.colors,
 			noiseColorAmount: appearance.noiseColorAmount
 		)
 		.animation(scrollState == nil && !reduceMotion ? .smooth(duration: 0.3) : nil, value: theme)
 	}
-
-	#if os(macOS)
-		@ViewBuilder
-		private var opacityCrossfade: some View {
-			if let rawPosition = scrollState?.position,
-			   rawPosition.isFinite,
-			   !themes.isEmpty,
-			   palettes.count == themes.count
-			{
-				let position = min(max(rawPosition, 0), Double(themes.count - 1))
-				let firstIndex = Int(position)
-				let secondIndex = min(firstIndex + 1, themes.count - 1)
-				let progress = position - Double(firstIndex)
-
-				if firstIndex == secondIndex {
-					CachedSpaceThemeSurface(theme: themes[firstIndex], colors: palettes[firstIndex])
-						.equatable()
-				} else {
-					// The expensive mesh/noise content is unchanged during a
-					// swipe. Only opacity is updated per presentation frame.
-					ZStack {
-						CachedSpaceThemeSurface(theme: themes[firstIndex], colors: palettes[firstIndex])
-							.equatable()
-							.opacity(1 - progress)
-						CachedSpaceThemeSurface(theme: themes[secondIndex], colors: palettes[secondIndex])
-							.equatable()
-							.opacity(progress)
-					}
-				}
-			} else {
-				ThemeSurface(theme: theme)
-					.animation(scrollState == nil && !reduceMotion ? .smooth(duration: 0.3) : nil, value: theme)
-			}
-		}
-	#endif
 
 	private var blendedAppearance: (theme: BrowserTheme, colors: [Color]?, noiseColorAmount: Double?) {
 		guard let rawPosition = scrollState?.position, !themes.isEmpty, palettes.count == themes.count else {
@@ -163,16 +119,3 @@ private struct SpaceThemeSurface: View {
 		return (blended, colors, noiseColorAmount)
 	}
 }
-
-#if os(macOS)
-	/// Explicit equality keeps the 100-point MeshGradient and optional noise
-	/// subtree stable while only the surrounding opacity changes.
-	private struct CachedSpaceThemeSurface: View, Equatable {
-		let theme: BrowserTheme
-		let colors: [Color]
-
-		var body: some View {
-			ThemeSurface(theme: theme, colors: colors)
-		}
-	}
-#endif
