@@ -436,6 +436,9 @@ private struct ShellSidebarColumn: View {
 						.foregroundStyle(space.theme.foregroundColor)
 						.sidebarScrollContentMargins()
 					}
+					#if os(macOS)
+						.frame(maxWidth: .infinity, maxHeight: .infinity)
+					#endif
 					.accessibilityIdentifier("sidebar-space-pages")
 				}
 			}
