@@ -549,12 +549,10 @@ struct BrowserSpacePager<Content: View>: View {
 			}
 			guard pageWidth > 0, let scrollState else { return }
 			let position = min(max(offset / pageWidth, 0), Double(max(pageIDs.count - 1, 0)))
-			guard scrollState.position != position else { return }
-			var transaction = Transaction(animation: nil)
-			transaction.disablesAnimations = true
-			withTransaction(transaction) {
-				scrollState.position = position
-			}
+			// This runs for every gesture/display-link frame. Keep progress
+			// outside SwiftUI Observation and update the native theme layers
+			// directly so the sidebar's view graph stays stable.
+			scrollState.publishPresentationPosition(position)
 		}
 
 		private func startSettling(to target: Double, velocity: Double, response: Double) {
