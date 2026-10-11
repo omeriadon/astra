@@ -43,6 +43,27 @@ for time in [0.0, 0.016, 0.1, 0.25, 0.4] {
 	precondition(abs(actual - expected) < 0.000001)
 }
 
+// A high-speed release near the target must not cross the target and then
+// visibly reverse direction. Critical damping on its own does not ensure that.
+for (start, target, velocity) in [(290.0, 300.0, 10_000.0), (310.0, 300.0, -10_000.0)] {
+	let limited = BrowserSpacePagingPhysics.monotonicVelocity(
+		from: start, to: target, velocity: velocity, response: 0.25
+	)
+	precondition(limited.sign == (target - start).sign)
+	precondition(abs(limited) <= (2 * Double.pi / 0.25) * abs(target - start) + 0.000001)
+	var previous = start
+	for step in 0 ... 120 {
+		let time = Double(step) / 120.0
+		let value: Double = spring.value(fromValue: start, toValue: target, initialVelocity: limited, time: time)
+		precondition((target - start) * (value - previous) >= -0.000001, "Spring reversed direction")
+		precondition((target - start) * (value - target) <= 0.000001, "Spring overshot destination")
+		previous = value
+	}
+}
+precondition(BrowserSpacePagingPhysics.monotonicVelocity(from: 300, to: 300, velocity: 1000, response: 0.25) == 0)
+precondition(BrowserSpacePagingPhysics.monotonicVelocity(from: 290, to: 300, velocity: -1000, response: 0.25) == 0)
+precondition(BrowserSpacePagingPhysics.monotonicVelocity(from: 290, to: 300, velocity: .infinity, response: 0.25) == 0)
+
 let settled: Double = spring.value(fromValue: 390.0, toValue: 600.0, initialVelocity: 400.0, time: spring.settlingDuration)
 precondition(abs(settled - 600) < 1)
 
@@ -65,4 +86,4 @@ for (position, count, expected) in mountedWindows {
 
 precondition(BrowserSpacePagingPhysics.mountedPageIndices(position: .nan, count: 8) == nil)
 
-print("Paging calculations passed: resistance/adoption, release direction, multi-page travel, interruption, edge bounds, stale velocity and spring convergence.")
+print("Paging calculations passed: resistance/adoption, release direction, multi-page travel, interruption, edge bounds, stale velocity, monotone handoff and spring convergence.")
