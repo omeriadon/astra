@@ -164,6 +164,14 @@ struct BrowserSpacePager<Content: View>: View {
 			return min(max(index, 0), count - 1)
 		}
 
+		/// At most four pages are needed when a gesture straddles two spaces:
+		/// both visible pages plus one page of lookahead on either side.
+		static func mountedPageIndices(position: Double, count: Int) -> ClosedRange<Int>? {
+			guard count > 0, position.isFinite else { return nil }
+			let clamped = min(max(position, 0), Double(count - 1))
+			return max(0, Int(floor(clamped)) - 1) ... min(count - 1, Int(ceil(clamped)) + 1)
+		}
+
 		static func velocity(
 			samples: [(time: TimeInterval, offset: Double)],
 			at timestamp: TimeInterval
@@ -244,6 +252,9 @@ struct BrowserSpacePager<Content: View>: View {
 
 		private let documentView = BrowserSpacePagerDocumentView()
 		private var pageHosts: [UUID: BrowserSpacePageHost] = [:]
+		private var attachedPageIDs: Set<UUID> = []
+		private var spaceSnapshots: [UUID: BrowserSpace] = [:]
+		private var pageFactory: ((BrowserSpace, Bool) -> AnyView)?
 		private var pageIDs: [UUID] = []
 		private var selectedSpaceID: UUID?
 		private var pendingSelectionID: UUID?
@@ -302,25 +313,15 @@ struct BrowserSpacePager<Content: View>: View {
 				pendingSelectionID = nil
 			}
 			pageIDs = newIDs
+			spaceSnapshots = Dictionary(uniqueKeysWithValues: spaces.map { ($0.id, $0) })
+			pageFactory = content
 
+			// Page ownership is keyed to stable UUIDs. Only *attached* pages
+			// participate in SwiftUI layout/observation; a detached host retains
+			// its vertical ScrollView and local SwiftUI state until it is revisited.
 			for id in pageHosts.keys.filter({ !newIDs.contains($0) }) {
 				pageHosts.removeValue(forKey: id)?.removeFromSuperview()
-			}
-			for space in spaces {
-				let active = space.id == selectedSpaceID
-				let root = content(space, active)
-				let host: BrowserSpacePageHost
-				if let existing = pageHosts[space.id] {
-					host = existing
-					host.rootView = root
-				} else {
-					host = BrowserSpacePageHost(rootView: root)
-					host.sizingOptions = []
-					pageHosts[space.id] = host
-					documentView.addSubview(host)
-				}
-				host.hitTestingEnabled = active
-				host.setAccessibilityHidden(!active)
+				attachedPageIDs.remove(id)
 			}
 
 			if membershipChanged {
@@ -338,6 +339,7 @@ struct BrowserSpacePager<Content: View>: View {
 				stopSettling()
 				render(target, deferred: true)
 			}
+			updateMountedPages(refreshContent: true)
 			needsLayout = true
 			publishPosition(deferred: true)
 		}
@@ -384,21 +386,66 @@ struct BrowserSpacePager<Content: View>: View {
 				width: bounds.width * CGFloat(pageIDs.count),
 				height: bounds.height
 			)
-			for (index, id) in pageIDs.enumerated() {
-				pageHosts[id]?.frame = NSRect(
-					x: CGFloat(index) * bounds.width,
-					y: 0,
-					width: bounds.width,
-					height: bounds.height
-				)
-			}
+			updateMountedPages()
 			publishPosition(deferred: true)
 		}
 
 		private func render(_ position: Double, deferred: Bool = false) {
 			offset = position
 			documentView.setFrameOrigin(NSPoint(x: -position, y: 0))
+			updateMountedPages()
 			publishPosition(deferred: deferred)
+		}
+
+		/// Keep only the current and adjacent pages in AppKit's visible tree.
+		/// The one-page lookahead supports slow swipes, interruption and the
+		/// custom spring without eagerly constructing unrelated SwiftUI lists.
+		private func updateMountedPages(refreshContent: Bool = false) {
+			guard let pageFactory, !pageIDs.isEmpty, bounds.width > 0 else { return }
+			let reference = pageWidth > 0 ? offset / pageWidth :
+				Double(pageIDs.firstIndex(where: { $0 == selectedSpaceID }) ?? 0)
+			guard let indices = BrowserSpacePagingPhysics.mountedPageIndices(
+				position: reference, count: pageIDs.count
+			) else { return }
+			let mountedIDs = Set(indices.map { pageIDs[$0] })
+
+			for id in attachedPageIDs.subtracting(mountedIDs) {
+				pageHosts[id]?.removeFromSuperview()
+			}
+			attachedPageIDs = mountedIDs
+			for index in indices {
+				let id = pageIDs[index]
+				guard let space = spaceSnapshots[id] else { continue }
+				let active = id == selectedSpaceID
+				let host: BrowserSpacePageHost
+				if let retained = pageHosts[id] {
+					host = retained
+					if refreshContent || retained.superview == nil {
+						retained.rootView = pageFactory(space, active)
+					}
+				} else {
+					host = BrowserSpacePageHost(rootView: pageFactory(space, active))
+					host.sizingOptions = []
+					host.setAccessibilityHidden(!active)
+					pageHosts[id] = host
+				}
+				if host.hitTestingEnabled != active {
+					host.hitTestingEnabled = active
+					host.setAccessibilityHidden(!active)
+				}
+				let frame = NSRect(
+					x: CGFloat(index) * bounds.width,
+					y: 0,
+					width: bounds.width,
+					height: bounds.height
+				)
+				if host.frame != frame {
+					host.frame = frame
+				}
+				if host.superview !== documentView {
+					documentView.addSubview(host)
+				}
+			}
 		}
 
 		private func publishPosition(deferred: Bool) {

@@ -45,4 +45,23 @@ for time in [0.0, 0.016, 0.1, 0.25, 0.4] {
 
 let settled: Double = spring.value(fromValue: 390.0, toValue: 600.0, initialVelocity: 400.0, time: spring.settlingDuration)
 precondition(abs(settled - 600) < 1)
+
+let mountedWindows: [(Double, Int, ClosedRange<Int>?)] = [
+	(0, 0, nil),
+	(0, 1, 0 ... 0),
+	(0, 8, 0 ... 1),
+	(0.4, 8, 0 ... 2),
+	(3, 8, 2 ... 4),
+	(3.25, 8, 2 ... 5),
+	(7, 8, 6 ... 7),
+	(100, 8, 6 ... 7),
+	(-100, 8, 0 ... 1),
+]
+for (position, count, expected) in mountedWindows {
+	let actual = BrowserSpacePagingPhysics.mountedPageIndices(position: position, count: count)
+	precondition(actual == expected, "Wrong mount window for \(position)/\(count)")
+	precondition(actual == nil || actual!.count <= 4, "More than four attached space pages")
+}
+precondition(BrowserSpacePagingPhysics.mountedPageIndices(position: .nan, count: 8) == nil)
+
 print("Paging calculations passed: resistance/adoption, release direction, multi-page travel, interruption, edge bounds, stale velocity and spring convergence.")
