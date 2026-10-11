@@ -74,16 +74,6 @@ private struct SpaceThemeSurface: View {
 	let scrollState: BrowserSpaceScrollState?
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-<<<<<<< HEAD
-	#if os(macOS)
-		/// Profile both paths without recompiling. The original interpolated
-		/// mesh remains available as a safe fallback.
-		private static let legacyBlend =
-			ProcessInfo.processInfo.environment["ASTRA_PAGING_LEGACY_THEME_BLEND"] == "1"
-	#endif
-
-=======
->>>>>>> refs/remotes/origin/release/0.1+3
 	var body: some View {
 		let appearance = blendedAppearance
 		ThemeSurface(
