@@ -93,7 +93,10 @@ assert not any(x.get("product-name") == "MarkdownView" for x in website["package
 assert any(x.get("product-name") == "MarkdownView" for x in host["package-product-members"])
 assert "AI/BrowserAITools.swift" not in runtime_excluded
 tools_source = (root / "astra/AI/BrowserAITools.swift").read_text()
-assert re.search(\n    r"(?m)^#if !ASTRA_WEBSITE_APP_RUNTIME\\n[ \\t]*@MainActor\\n[ \\t]*struct BrowserAIChatTurnFeature\\b",\n    tools_source,\n), "Chat tooling must remain isolated from the website-app runtime"
+assert re.search(
+    r"(?m)^#if !ASTRA_WEBSITE_APP_RUNTIME\n[ \t]*@MainActor\n[ \t]*struct BrowserAIChatTurnFeature\b",
+    tools_source,
+), "Chat tooling must remain isolated from the website-app runtime"
 assert "#endif\n\n@MainActor\nstruct BrowserAIWebSearchFeature" in tools_source
 assert "struct BrowserAIWebSearchFeature" in tools_source
 assert "enum BrowserAITools" in tools_source
