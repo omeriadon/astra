@@ -133,9 +133,9 @@
 						case let .request(request):
 							self.requests[id] = Task { [weak self] in
 								guard let self else { return }
-								let response = await handler(request)
+								let response = await self.handler(request)
 								guard !Task.isCancelled else { return }
-								write(response, id: id)
+								self.write(response, id: id)
 							}
 					}
 				}
