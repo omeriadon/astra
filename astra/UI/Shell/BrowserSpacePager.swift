@@ -1,6 +1,7 @@
 import SwiftUI
 #if os(macOS)
 import AppKit
+import QuartzCore
 
 /// AppKit owns horizontal paging; each page remains the existing SwiftUI
 /// vertical-scrolling sidebar. This isolates horizontal gesture handling from
@@ -65,6 +66,8 @@ final class AppKitSpacePagerView<Content: View>: NSView {
 	private var pageWidth: CGFloat = 0
 	private var pageHeight: CGFloat = 0
 	private var applyingGeometry = false
+	private var isConfiguring = false
+	private var deferredPositionPublish = false
 
 	override init(frame: NSRect) {
 		super.init(frame: frame)
@@ -122,6 +125,8 @@ final class AppKitSpacePagerView<Content: View>: NSView {
 	}
 
 	func configure(_ configuration: BrowserSpacePager<Content>) {
+		isConfiguring = true
+		defer { isConfiguring = false }
 		let oldSpaces = Dictionary(uniqueKeysWithValues: spaces.map { ($0.id, $0) })
 		let oldIDs = spaces.map(\.id)
 		let previousSelected = selectedID
@@ -177,7 +182,7 @@ final class AppKitSpacePagerView<Content: View>: NSView {
 	private func routeWheel(_ event: NSEvent) {
 		guard let window, event.window === window, !spaces.isEmpty, pageWidth > 0 else { return }
 		let point = convert(event.locationInWindow, from: nil)
-		guard bounds.contains(point), abs(event.scrollingDeltaX) > 0.01 else { return }
+		guard bounds.contains(point), abs(event.scrollingDeltaX) >= 0.5 else { return }
 		snapTask?.cancel()
 		snapTask = nil
 		// NSScrollView applies the system's scrolling direction, natural
@@ -239,7 +244,19 @@ final class AppKitSpacePagerView<Content: View>: NSView {
 		guard !applyingGeometry, pageWidth > 0 else { return }
 		let value = Double(scroller.contentView.bounds.origin.x / pageWidth)
 		let bounded = min(max(value, 0), Double(max(spaces.count - 1, 0)))
-		if scrollState?.position != bounded {
+		if isConfiguring {
+			// Publishing Observation during updateNSView can cause SwiftUI
+			// state-mutation warnings and re-entrant representable updates.
+			if !deferredPositionPublish {
+				deferredPositionPublish = true
+				Task { @MainActor [weak self] in
+					await Task.yield()
+					guard let self else { return }
+					self.deferredPositionPublish = false
+					self.didScroll()
+				}
+			}
+		} else if scrollState?.position != bounded {
 			scrollState?.position = bounded
 		}
 		updateMountedPages()
@@ -289,9 +306,6 @@ final class AppKitSpacePagerView<Content: View>: NSView {
 		}
 	}
 
-	deinit {
-		// The representable's dismantleNSView performs main-actor cleanup.
-	}
 }
 #else
 
