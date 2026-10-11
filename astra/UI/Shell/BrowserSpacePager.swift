@@ -234,8 +234,62 @@ struct BrowserSpacePager<Content: View>: View {
 		}
 	}
 
+	/// Opt-in counters for attributing page-host layout and Observation costs.
+	/// Enabled only for diagnostics; normal paging has no extra log traffic.
+	@MainActor
+	private enum BrowserSpacePagingMetrics {
+		static let enabled = ProcessInfo.processInfo.environment["ASTRA_PAGING_METRICS"] == "1"
+		static let freezeThemeProgress = ProcessInfo.processInfo.environment["ASTRA_PAGING_PROFILE_FREEZE_THEME"] == "1"
+		private static var layouts = 0
+		private static var clipMoves = 0
+		private static var updates = 0
+		private static var publications = 0
+		private static var lastReport = BrowserLog.clock()
+
+		static func hostLayout() {
+			if enabled { layouts += 1 }
+		}
+
+		static func clipMove() {
+			if enabled { clipMoves += 1 }
+		}
+
+		static func pageUpdate() {
+			if enabled { updates += 1 }
+		}
+
+		static func published() {
+			if enabled { publications += 1 }
+		}
+
+		static func reportIfNeeded() {
+			guard enabled else { return }
+			let now = BrowserLog.clock()
+			let duration = now - lastReport
+			guard duration >= 2 else { return }
+			BrowserLog.notice(.performance, "paging.layout-sample", metadata: [
+				"seconds": String(format: "%.2f", duration),
+				"page_host_layouts": String(layouts),
+				"clip_moves": String(clipMoves),
+				"page_window_updates": String(updates),
+				"theme_position_publications": String(publications),
+				"theme_frozen": String(freezeThemeProgress),
+			])
+			layouts = 0
+			clipMoves = 0
+			updates = 0
+			publications = 0
+			lastReport = now
+		}
+	}
+
 	private final class BrowserSpacePageHost: NSHostingView<AnyView> {
 		var hitTestingEnabled = false
+
+		override func layout() {
+			super.layout()
+			BrowserSpacePagingMetrics.hostLayout()
+		}
 
 		override func hitTest(_ point: NSPoint) -> NSView? {
 			hitTestingEnabled ? super.hitTest(point) : nil
@@ -457,6 +511,7 @@ struct BrowserSpacePager<Content: View>: View {
 				documentView.frame = documentFrame
 			}
 			if clipView.bounds.origin.x != offset {
+				BrowserSpacePagingMetrics.clipMove()
 				clipView.scroll(to: NSPoint(x: offset, y: 0))
 			}
 			updateMountedPages()
@@ -466,6 +521,7 @@ struct BrowserSpacePager<Content: View>: View {
 		private func render(_ position: Double, deferred: Bool = false) {
 			offset = position
 			if clipView.bounds.origin.x != position {
+				BrowserSpacePagingMetrics.clipMove()
 				clipView.scroll(to: NSPoint(x: position, y: 0))
 			}
 			updateMountedPages()
@@ -496,6 +552,7 @@ struct BrowserSpacePager<Content: View>: View {
 			{
 				return
 			}
+			BrowserSpacePagingMetrics.pageUpdate()
 			mountedPageWindow = indices
 			mountedPageSize = bounds.size
 			let mountedIDs = Set(indices.map { pageIDs[$0] })
@@ -550,9 +607,16 @@ struct BrowserSpacePager<Content: View>: View {
 				}
 				return
 			}
+			BrowserSpacePagingMetrics.reportIfNeeded()
 			guard pageWidth > 0, let scrollState else { return }
-			let position = min(max(offset / pageWidth, 0), Double(max(pageIDs.count - 1, 0)))
+			// Controlled experiment: suppress only high-frequency theme updates.
+			// The pager and its page hit-testing remain fully functional.
+			let rawPosition = BrowserSpacePagingMetrics.freezeThemeProgress
+				? Double(pageIDs.firstIndex(of: selectedSpaceID ?? UUID()) ?? 0)
+				: offset / pageWidth
+			let position = min(max(rawPosition, 0), Double(max(pageIDs.count - 1, 0)))
 			guard scrollState.position != position else { return }
+			BrowserSpacePagingMetrics.published()
 			var transaction = Transaction(animation: nil)
 			transaction.disablesAnimations = true
 			withTransaction(transaction) {
