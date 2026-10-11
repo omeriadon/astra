@@ -272,6 +272,9 @@ struct BrowserSpacePager<Content: View>: View {
 		private var pageWidth = 0.0
 		private var settling: Settling?
 		private var positionPublicationPending = false
+		private var mountedPageWindow: ClosedRange<Int>?
+		private var mountedPageSize = CGSize.zero
+		private var lastBackgroundPublication: CFTimeInterval = -.infinity
 
 		override var isFlipped: Bool {
 			true
@@ -407,6 +410,13 @@ struct BrowserSpacePager<Content: View>: View {
 			guard let indices = BrowserSpacePagingPhysics.mountedPageIndices(
 				position: reference, count: pageIDs.count
 			) else { return }
+			// A display-link callback can occur 60-120 times per second.
+			// Avoid touching the hosting hierarchy until the visible page
+			// window or its dimensions actually change.
+			if !refreshContent, mountedPageWindow == indices,
+			   mountedPageSize == bounds.size { return }
+			mountedPageWindow = indices
+			mountedPageSize = bounds.size
 			let mountedIDs = Set(indices.map { pageIDs[$0] })
 
 			for id in attachedPageIDs.subtracting(mountedIDs) {
@@ -460,6 +470,14 @@ struct BrowserSpacePager<Content: View>: View {
 				return
 			}
 			guard pageWidth > 0, let scrollState else { return }
+			// The sidebar moves at display refresh rate, but continuously
+			// rebuilding the window-wide mesh gradient at 120 Hz is expensive.
+			// Limit *background* publication only; paging geometry retains
+			// native frame-rate input and spring animation.
+			let now = CACurrentMediaTime()
+			let interacting = gesture == .horizontal || settling != nil
+			if interacting, now - lastBackgroundPublication < 1.0 / 30.0 { return }
+			lastBackgroundPublication = now
 			let position = min(max(offset / pageWidth, 0), Double(max(pageIDs.count - 1, 0)))
 			guard scrollState.position != position else { return }
 			var transaction = Transaction(animation: nil)
@@ -510,6 +528,7 @@ struct BrowserSpacePager<Content: View>: View {
 			if abs(value - settling.target) < 0.1, abs(velocity) < 1 {
 				render(settling.target)
 				stopSettling()
+				publishPosition(deferred: true)
 			}
 		}
 
