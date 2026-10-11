@@ -56,17 +56,19 @@ final class NativeSpaceThemeSurfaceView: NSView {
         state: BrowserSpaceScrollState?,
         environment: EnvironmentValues
     ) {
+        // Selecting a new space must NOT recreate all hosted gradients
+        // at gesture release; its theme is already cached by space index.
         let contentChanged =
-            currentTheme != theme ||
             currentThemes != themes ||
             currentPalettes != palettes ||
+            (themes.isEmpty && currentTheme != theme) ||
             currentColorScheme != environment.colorScheme ||
             currentDynamicTypeSize != environment.dynamicTypeSize ||
             currentReduceMotion != environment.accessibilityReduceMotion
 
         self.environment = environment
+        currentTheme = theme
         if contentChanged {
-            currentTheme = theme
             currentThemes = themes
             currentPalettes = palettes
             currentColorScheme = environment.colorScheme
