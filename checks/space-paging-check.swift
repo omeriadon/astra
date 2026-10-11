@@ -45,7 +45,7 @@ for time in [0.0, 0.016, 0.1, 0.25, 0.4] {
 
 // A high-speed release near the target must not cross the target and then
 // visibly reverse direction. Critical damping on its own does not ensure that.
-for (start, target, velocity) in [(290.0, 300.0, 10_000.0), (310.0, 300.0, -10_000.0)] {
+for (start, target, velocity) in [(290.0, 300.0, 10000.0), (310.0, 300.0, -10000.0)] {
 	let limited = BrowserSpacePagingPhysics.monotonicVelocity(
 		from: start, to: target, velocity: velocity, response: 0.25
 	)
@@ -60,6 +60,7 @@ for (start, target, velocity) in [(290.0, 300.0, 10_000.0), (310.0, 300.0, -10_0
 		previous = value
 	}
 }
+
 precondition(BrowserSpacePagingPhysics.monotonicVelocity(from: 300, to: 300, velocity: 1000, response: 0.25) == 0)
 precondition(BrowserSpacePagingPhysics.monotonicVelocity(from: 290, to: 300, velocity: -1000, response: 0.25) == 0)
 precondition(BrowserSpacePagingPhysics.monotonicVelocity(from: 290, to: 300, velocity: .infinity, response: 0.25) == 0)

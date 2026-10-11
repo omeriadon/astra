@@ -2762,10 +2762,10 @@ extension BrowserController: WKNavigationDelegate {
 				) { [weak self, weak webView] result in
 					Task { @MainActor in
 						guard case .success = result,
-							  let self,
-							  let webView,
-							  self.navigationGeneration == generation,
-							  self.owns(webView)
+						      let self,
+						      let webView,
+						      self.navigationGeneration == generation,
+						      self.owns(webView)
 						else { return }
 						BrowserPerformanceBenchmark.recordTwoRAF(controllerID: self.id)
 					}

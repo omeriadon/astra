@@ -402,7 +402,9 @@ struct BrowserSpacePager<Content: View>: View {
 			// Theme progress can invalidate the parent every frame, but only
 			// actually changed pages should rebuild their SwiftUI hosting roots.
 			updateMountedPages(refreshContent: refreshAllPages, changedPageIDs: changedPageIDs)
-			if membershipChanged { needsLayout = true }
+			if membershipChanged {
+				needsLayout = true
+			}
 			publishPosition(deferred: true)
 		}
 
@@ -487,7 +489,10 @@ struct BrowserSpacePager<Content: View>: View {
 			// Avoid touching the hosting hierarchy until the visible page
 			// window or its dimensions actually change.
 			if !refreshContent, mountedPageWindow == indices,
-			   mountedPageSize == bounds.size { return }
+			   mountedPageSize == bounds.size
+			{
+				return
+			}
 			mountedPageWindow = indices
 			mountedPageSize = bounds.size
 			let mountedIDs = Set(indices.map { pageIDs[$0] })
