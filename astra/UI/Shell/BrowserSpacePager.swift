@@ -234,6 +234,22 @@ struct BrowserSpacePager<Content: View>: View {
 		}
 	}
 
+	/// Clip-based paging moves only the viewport's bounds. The previous
+	/// implementation moved the document's NSView frame on every swipe tick,
+	/// invalidating NSHostingView layout and triggering SwiftUI graph work.
+	/// Keep the unclamped origin so the existing custom edge resistance works.
+	private final class BrowserSpacePagerClipView: NSClipView {
+		override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+			proposedBounds
+		}
+
+		override func scrollWheel(with _: NSEvent) {
+			// The pager's local wheel monitor owns horizontal gesture physics.
+			// Nested SwiftUI vertical scroll views continue handling their own
+			// vertical events; never apply a second native horizontal offset.
+		}
+	}
+
 	private final class BrowserNativeSpacePagerView: NSView {
 		private enum Gesture {
 			case none
@@ -251,6 +267,7 @@ struct BrowserSpacePager<Content: View>: View {
 		}
 
 		private let documentView = BrowserSpacePagerDocumentView()
+		private let clipView = BrowserSpacePagerClipView()
 		private var pageHosts: [UUID: BrowserSpacePageHost] = [:]
 		private var attachedPageIDs: Set<UUID> = []
 		private var spaceSnapshots: [UUID: BrowserSpace] = [:]
@@ -293,7 +310,9 @@ struct BrowserSpacePager<Content: View>: View {
 			super.init(frame: .zero)
 			wantsLayer = true
 			layer?.masksToBounds = true
-			addSubview(documentView)
+			clipView.drawsBackground = false
+			clipView.documentView = documentView
+			addSubview(clipView)
 		}
 
 		func update(
@@ -328,6 +347,7 @@ struct BrowserSpacePager<Content: View>: View {
 			}
 
 			if membershipChanged {
+				mountedPageWindow = nil
 				resetGesture()
 				stopSettling()
 				pendingSelectionID = nil
@@ -383,19 +403,30 @@ struct BrowserSpacePager<Content: View>: View {
 					rawOffset = offset
 				}
 			}
-			documentView.frame = NSRect(
-				x: -offset,
+			if clipView.frame != bounds {
+				clipView.frame = bounds
+			}
+			let documentFrame = NSRect(
+				x: 0,
 				y: 0,
 				width: bounds.width * CGFloat(pageIDs.count),
 				height: bounds.height
 			)
+			if documentView.frame != documentFrame {
+				documentView.frame = documentFrame
+			}
+			if clipView.bounds.origin.x != offset {
+				clipView.scroll(to: NSPoint(x: offset, y: 0))
+			}
 			updateMountedPages()
 			publishPosition(deferred: true)
 		}
 
 		private func render(_ position: Double, deferred: Bool = false) {
 			offset = position
-			documentView.setFrameOrigin(NSPoint(x: -position, y: 0))
+			if clipView.bounds.origin.x != position {
+				clipView.scroll(to: NSPoint(x: position, y: 0))
+			}
 			updateMountedPages()
 			publishPosition(deferred: deferred)
 		}
