@@ -347,11 +347,20 @@ struct BrowserSpacePager<Content: View>: View {
 			let selectionChanged = self.selectedSpaceID != selectedSpaceID
 			let selectionAcknowledged = pendingSelectionID == selectedSpaceID
 			let newSnapshots = Dictionary(uniqueKeysWithValues: spaces.map { ($0.id, $0) })
-			let refreshContent = membershipChanged || selectionChanged
-				|| spaceSnapshots != newSnapshots
+			// A space selection should only invalidate the old and new pages.
+			// Replacing every mounted NSHostingView root at gesture release
+			// induces a visible layout hitch precisely as the spring begins.
+			let refreshAllPages = membershipChanged
 				|| self.favouriteTabIDs != favouriteTabIDs
 				|| pageColorScheme != colorScheme
 				|| pageDynamicTypeSize != dynamicTypeSize
+			var changedPageIDs = Set(newIDs.filter { spaceSnapshots[$0] != newSnapshots[$0] })
+			if selectionChanged {
+				if let previousSelection = self.selectedSpaceID {
+					changedPageIDs.insert(previousSelection)
+				}
+				changedPageIDs.insert(selectedSpaceID)
+			}
 			self.favouriteTabIDs = favouriteTabIDs
 			pageColorScheme = colorScheme
 			pageDynamicTypeSize = dynamicTypeSize
@@ -390,9 +399,9 @@ struct BrowserSpacePager<Content: View>: View {
 				stopSettling()
 				render(target, deferred: true)
 			}
-			// Theme progress can invalidate the parent every frame, but unchanged
-			// tabs must not rebuild NSHostingView roots or request AppKit layout.
-			updateMountedPages(refreshContent: refreshContent)
+			// Theme progress can invalidate the parent every frame, but only
+			// actually changed pages should rebuild their SwiftUI hosting roots.
+			updateMountedPages(refreshContent: refreshAllPages, changedPageIDs: changedPageIDs)
 			if membershipChanged { needsLayout = true }
 			publishPosition(deferred: true)
 		}
@@ -464,7 +473,10 @@ struct BrowserSpacePager<Content: View>: View {
 		/// Keep only the current and adjacent pages in AppKit's visible tree.
 		/// The one-page lookahead supports slow swipes, interruption and the
 		/// custom spring without eagerly constructing unrelated SwiftUI lists.
-		private func updateMountedPages(refreshContent: Bool = false) {
+		private func updateMountedPages(
+			refreshContent: Bool = false,
+			changedPageIDs: Set<UUID> = []
+		) {
 			guard let pageFactory, !pageIDs.isEmpty, bounds.width > 0 else { return }
 			let reference = pageWidth > 0 ? offset / pageWidth :
 				Double(pageIDs.firstIndex(where: { $0 == selectedSpaceID }) ?? 0)
@@ -491,7 +503,7 @@ struct BrowserSpacePager<Content: View>: View {
 				let host: BrowserSpacePageHost
 				if let retained = pageHosts[id] {
 					host = retained
-					if refreshContent || retained.superview == nil {
+					if refreshContent || changedPageIDs.contains(id) || retained.superview == nil {
 						retained.rootView = pageFactory(space, active)
 					}
 				} else {
