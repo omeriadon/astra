@@ -9,6 +9,9 @@ struct BrowserPageView: View {
 	}
 
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	#if os(macOS)
+		@State private var browserAgentServer = BrowserAgentServer.shared
+	#endif
 	private var hasDockedWebInspector: Bool {
 		#if os(macOS)
 			browser.selectedTab?.activeController?.hasDockedWebInspector == true
@@ -81,15 +84,18 @@ struct BrowserPageView: View {
 			.allowsHitTesting(!hasActiveDuplicate)
 			.animation(nil, value: hasDockedWebInspector)
 			.clipShape(
-				UnevenRoundedRectangle(
-					cornerRadii: RectangleCornerRadii(
-						topLeading: cornerRadius,
-						bottomLeading: cornerRadius,
-						bottomTrailing: cornerRadius,
-						topTrailing: hasDockedWebInspector ? 7 : cornerRadius
-					)
-				)
+				RoundedRectangle(cornerRadius: cornerRadius)
 			)
+		#if os(macOS)
+			.overlay {
+				if let tab = selectedTab,
+				   !hasActiveDuplicate,
+				   browserAgentServer.isControlled(tab.id)
+				{
+					BrowserAgentControlledPageBorder(cornerRadius: cornerRadius)
+				}
+			}
+		#endif
 	}
 }
 

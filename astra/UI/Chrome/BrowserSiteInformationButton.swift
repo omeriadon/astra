@@ -1,3 +1,4 @@
+import Defaults
 import SwiftUI
 import WebKit
 
@@ -21,6 +22,7 @@ struct BrowserSiteInformationButton: View {
 
 private struct BrowserSiteInformationView: View {
 	let controller: BrowserController
+	@Default(.developerModeEnabled) private var developerModeEnabled
 
 	var body: some View {
 		List {
@@ -84,6 +86,20 @@ private struct BrowserSiteInformationView: View {
 			   let origin = BrowserSitePermissions.origin(for: url)
 			{
 				BrowserSitePreferenceControls(controller: controller, origin: origin)
+			}
+			Section("Developer Mode") {
+				Button(
+					developerModeEnabled ? "Disable Developer Mode" : "Enable Developer Mode",
+					systemImage: developerModeEnabled ? "hammer.fill" : "hammer"
+				) {
+					developerModeEnabled.toggle()
+				}
+				.accessibilityLabel(developerModeEnabled ? "Disable Developer Mode" : "Enable Developer Mode")
+				.accessibilityValue(developerModeEnabled ? "On" : "Off")
+				.accessibilityIdentifier("website-developer-mode-toggle")
+				Text("Applies to all websites. Localhost enters developer mode automatically.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
 			}
 			Section("Active Access for Committed Page") {
 				LabeledContent(

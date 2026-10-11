@@ -166,6 +166,7 @@ struct DesktopBrowserShell: View {
 					isFullScreen: isFullScreen,
 					colorScheme: colorScheme,
 					topBarColorScheme: topBarColorScheme,
+					showsTopBar: showsTopBar,
 					showsDownloads: $showsDownloads,
 					downloads: downloads,
 					spaceScrollState: spaceScrollState
@@ -362,7 +363,7 @@ private struct ShellNavigationBarControls: View {
 	var body: some View {
 		HStack(spacing: 5) {
 			Spacer()
-				.frame(width: isFullScreen ? 0 : 80)
+				.frame(width: isFullScreen ? 0 : BrowserChromeMetrics.windowControlsAreaWidth)
 		}
 		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 		.frame(maxWidth: BrowserChromeMetrics.persistentControlsAreaWidth, alignment: .leading)
@@ -380,13 +381,24 @@ private struct ShellSidebarColumn: View {
 	let isFullScreen: Bool
 	let colorScheme: ColorScheme
 	let topBarColorScheme: ColorScheme
+	let showsTopBar: Bool
 	@Binding var showsDownloads: Bool
 	let downloads: BrowserDownloadManager
 	let spaceScrollState: BrowserSpaceScrollState
 	@State private var sidebarMediaHeight: CGFloat = 0
+	@State private var sidebarHeaderHeight: CGFloat = 0
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	private var bottomOpacityHeight: CGFloat {
 		sidebarMediaHeight > 0 ? sidebarMediaHeight + 8 + 33 : 34
+	}
+
+	private var sidebarFadeTop: CGFloat {
+		showsSidebarHeader ? sidebarHeaderHeight + 11 : 38
+	}
+
+	private var showsSidebarHeader: Bool {
+		!showsTopBar && sidebarShown
 	}
 
 	@State private var keepsDownloadsMounted = false
@@ -394,6 +406,21 @@ private struct ShellSidebarColumn: View {
 	var body: some View {
 		ZStack(alignment: .topLeading) {
 			sidebarContent
+				.overlay(alignment: .top) {
+					if showsSidebarHeader {
+						BrowserSidebarHeader(
+							browser: browser,
+							theme: theme,
+							isFullScreen: isFullScreen
+						)
+						.fixedSize(horizontal: false, vertical: true)
+						.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+							withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+								sidebarHeaderHeight = height
+							}
+						}
+					}
+				}
 
 			ShellNavigationBarControls(
 				browser: browser,
@@ -414,13 +441,14 @@ private struct ShellSidebarColumn: View {
 			Group {
 				if browser.isPrivate {
 					PrivateBrowserSidebar(browser: browser)
-						.sidebarScrollContentMargins()
+						.sidebarScrollContentMargins(top: showsSidebarHeader ? sidebarHeaderHeight + 4 : 33)
 				} else {
 					BrowserSpacePager(
 						spaces: browser.workspace.spaces,
 						selectedSpaceID: browser.workspace.selectedSpaceID,
 						favouriteTabIDs: browser.workspace.favouriteTabIDs,
 						scrollState: spaceScrollState,
+						contentTopMargin: showsSidebarHeader ? sidebarHeaderHeight + 4 : 33,
 						onSelectSpace: { id in
 							guard id != browser.workspace.selectedSpaceID else { return }
 							browser.selectSpace(id)
@@ -434,7 +462,7 @@ private struct ShellSidebarColumn: View {
 							favouriteTabIDs: favouriteTabIDs
 						)
 						.foregroundStyle(space.theme.foregroundColor)
-						.sidebarScrollContentMargins()
+						.sidebarScrollContentMargins(top: showsSidebarHeader ? sidebarHeaderHeight + 4 : 33)
 					}
 					.accessibilityIdentifier("sidebar-space-pages")
 				}
@@ -450,7 +478,7 @@ private struct ShellSidebarColumn: View {
 						manager: downloads,
 						theme: theme
 					)
-					.sidebarScrollContentMargins()
+					.sidebarScrollContentMargins(top: showsSidebarHeader ? sidebarHeaderHeight + 4 : 33)
 				} else {
 					// When tabs are displayed there is no reason to keep
 					// observing every download progress event or lay out a
@@ -466,7 +494,8 @@ private struct ShellSidebarColumn: View {
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
 		.ignoresSafeArea(.container, edges: .vertical)
 		.sidebarScrollOpacityFade(
-			top: 38,
+			top: sidebarFadeTop,
+			topOpacityHeight: showsSidebarHeader ? sidebarHeaderHeight : nil,
 			bottom: bottomOpacityHeight + 11,
 			bottomOpacityHeight: bottomOpacityHeight
 		)
@@ -553,6 +582,7 @@ private struct ShellContentColumn: View {
 
 	private var topBarHeight: CGFloat {
 		guard browser.selectedTab?.internalPage == nil, !browser.isShowingNewTab else { return 0 }
+		guard !(sidebarShown && !showsTopBar) else { return 0 }
 		guard showsTopBar || isTopBarRevealed else { return 0 }
 		return BrowserChromeMetrics.topBarRegionHeight
 			+ BrowserChromeMetrics.shellEdgePadding
@@ -560,14 +590,16 @@ private struct ShellContentColumn: View {
 
 	var body: some View {
 		ZStack(alignment: .top) {
-			topBar
-				.frame(height: BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding, alignment: .top)
-				.frame(maxWidth: .infinity, alignment: .trailing)
-				.mask(alignment: .top) {
-					Rectangle().frame(height: topBarHeight)
-				}
-				.allowsHitTesting(topBarHeight > 0)
-				.accessibilityHidden(topBarHeight == 0)
+			if !sidebarShown || showsTopBar {
+				topBar
+					.frame(height: BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding, alignment: .top)
+					.frame(maxWidth: .infinity, alignment: .trailing)
+					.mask(alignment: .top) {
+						Rectangle().frame(height: topBarHeight)
+					}
+					.allowsHitTesting(topBarHeight > 0)
+					.accessibilityHidden(topBarHeight == 0)
+			}
 			VStack(spacing: 0) {
 				Spacer(minLength: 0)
 					.frame(height: topBarHeight)
@@ -585,7 +617,8 @@ private struct ShellContentColumn: View {
 					let revealHeight = isTopBarRevealed
 						? BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding
 						: 6
-					let shouldReveal = browser.selectedTab?.internalPage == nil
+					let shouldReveal = !sidebarShown
+						&& browser.selectedTab?.internalPage == nil
 						&& !browser.isShowingNewTab
 						&& !showsTopBar && location.y < revealHeight
 					guard shouldReveal != isTopBarRevealed else { return }

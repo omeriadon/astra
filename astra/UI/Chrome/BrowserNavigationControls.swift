@@ -12,9 +12,7 @@ struct BrowserNavigationControls: View {
 			#if os(macOS)
 				BrowserSiteInformationButton(controller: controller)
 			#endif
-			NavigationBackButton(controller: controller, browser: browser)
-			NavigationForwardButton(controller: controller, browser: browser)
-			NavigationReloadButton(controller: controller)
+			BrowserHistoryNavigationControls(controller: controller, browser: browser)
 			BrowserAdBlockingButton(controller: controller)
 			BrowserZoomControls(controller: controller)
 			if controller.isReaderAvailable || controller.readerHTML != nil {
@@ -37,6 +35,31 @@ struct BrowserNavigationControls: View {
 			.accessibilityLabel(controller.isZapping ? "Cancel Zap" : "Zap Element")
 			.accessibilityIdentifier("browser-zap-element")
 		}
+		.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
+		.id(controller.history)
+		.id(controller.historyIndex)
+	}
+}
+
+struct BrowserHistoryNavigationControls: View {
+	let controller: BrowserController
+	let browser: Browser
+	var separatesReload = false
+
+	var body: some View {
+		HStack(spacing: 6) {
+			NavigationBackButton(controller: controller, browser: browser)
+			NavigationForwardButton(controller: controller, browser: browser)
+			if separatesReload {
+				Spacer(minLength: 8)
+			}
+			NavigationReloadButton(controller: controller)
+		}
+		.controlSize(.regular)
+		.labelStyle(.iconOnly)
+		.buttonSizing(.fitted)
+		.buttonStyle(.bordered)
+		.foregroundStyle(.primary)
 		.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
 		.id(controller.history)
 		.id(controller.historyIndex)

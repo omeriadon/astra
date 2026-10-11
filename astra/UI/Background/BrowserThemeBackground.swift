@@ -75,13 +75,12 @@ private struct SpaceThemeSurface: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	#if os(macOS)
-		// Profile both paths without recompiling. The original interpolated
-		// mesh remains available as a safe fallback.
+		/// Profile both paths without recompiling. The original interpolated
+		/// mesh remains available as a safe fallback.
 		private static let legacyBlend =
 			ProcessInfo.processInfo.environment["ASTRA_PAGING_LEGACY_THEME_BLEND"] == "1"
 	#endif
 
-	@ViewBuilder
 	var body: some View {
 		#if os(macOS)
 			if Self.legacyBlend {

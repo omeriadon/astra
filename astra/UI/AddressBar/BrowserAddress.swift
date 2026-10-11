@@ -104,6 +104,24 @@ enum BrowserAddress {
 		return displayText(host + components.percentEncodedPath)
 	}
 
+	static func domainDisplayString(
+		for url: URL?,
+		configuration: BrowserSearchConfiguration = .default,
+		isPrivate: Bool = false
+	) -> String {
+		guard let originalURL = url else { return "" }
+		let url = withoutCredentials(originalURL)
+		if let query = configuration.query(for: url, isPrivate: isPrivate) {
+			return query
+		}
+		guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+		      let host = hostWithoutWWW(for: components)
+		else {
+			return ""
+		}
+		return host
+	}
+
 	static func primaryTextRanges(
 		for url: URL?,
 		displayedText: String,

@@ -46,6 +46,7 @@ enum BrowserChromeMetrics {
 	// macos 27 window radius is 20
 
 	// Includes the space reserved for macOS window controls.
+	static let windowControlsAreaWidth: CGFloat = 80
 	static let persistentControlsAreaWidth: CGFloat = 160
 	static let shellEdgePadding: CGFloat = 4
 	static let tabWindowCornerRadiusWithSidebar: CGFloat = 12.5

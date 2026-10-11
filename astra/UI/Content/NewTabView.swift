@@ -51,54 +51,15 @@ struct NewTabView: View {
 						}
 					}
 				}
-				Section(browser.newTabSearchText.isEmpty ? "Browser Actions" : "Suggestions") {
-					ForEach(browser.newTabSearchResults) { result in
-						let query = browser.newTabSearchText
-						let generation = browser.newTabSearchGeneration
-						Button {
-							browser.performNewTabSearchResult(result)
-						} label: {
-							Label {
-								VStack(alignment: .leading, spacing: 2) {
-									Text(verbatim: result.title)
-										.lineLimit(1)
-									Text(verbatim: result.detail)
-										.font(.caption)
-										.foregroundStyle(.secondary)
-										.lineLimit(1)
-								}
-								.frame(maxWidth: .infinity, alignment: .leading)
-							} icon: {
-								BrowserSearchResultIcon(result: result)
-									.frame(width: 20, height: 20)
-							}
-							.contentShape(Rectangle())
-						}
-						.buttonStyle(.plain)
-						.listRowBackground(Color.primary.opacity(selectedResultID == result.id ? 0.12 : 0))
-						.accessibilityLabel("\(result.title), \(result.detail)")
-						.accessibilityAddTraits(selectedResultID == result.id ? [.isSelected] : [])
-						.accessibilityIdentifier("new-tab-result-\(result.id)")
-						.id(result.id)
-						.contextMenu {
-							if result.kind == .history,
-							   let value = result.destination,
-							   let url = URL(string: value)
-							{
-								Button("Remove from History", systemImage: "trash", role: .destructive) {
-									browser.removeHistorySuggestion(
-										id: result.id,
-										url: url,
-										query: query,
-										generation: generation,
-										fromNewTab: true
-									)
-								}
-								.accessibilityIdentifier("remove-history-\(result.id)")
-							}
-						}
-					}
-				}
+				BrowserSearchSuggestionsSection(
+					browser: browser,
+					results: browser.newTabSearchResults,
+					query: browser.newTabSearchText,
+					generation: browser.newTabSearchGeneration,
+					selectedResultID: selectedResultID,
+					fromNewTab: true,
+					onSelect: browser.performNewTabSearchResult
+				)
 			}
 			.listStyle(.sidebar)
 			.scrollContentBackground(.hidden)

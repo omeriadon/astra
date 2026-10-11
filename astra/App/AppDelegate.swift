@@ -889,6 +889,10 @@
 			BrowserDesktopCommands.showWebInspector(controller)
 		}
 
+		@objc private func toggleDeveloperMode(_: Any?) {
+			Defaults[.developerModeEnabled].toggle()
+		}
+
 		private func exportPage(_ format: BrowserDesktopCommands.ExportFormat) {
 			guard let browser = activeBrowser,
 			      let controller = browser.selectedTab?.activeController
@@ -977,6 +981,10 @@
 		}
 
 		func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+			if menuItem.action == #selector(toggleDeveloperMode(_:)) {
+				menuItem.state = Defaults[.developerModeEnabled] ? .on : .off
+				return true
+			}
 			let pageActions: Set<Selector> = [
 				#selector(printPage(_:)), #selector(sharePage(_:)), #selector(savePDF(_:)), #selector(saveWebArchive(_:)),
 				#selector(saveSource(_:)), #selector(findInPage(_:)), #selector(findNext(_:)),
@@ -1199,6 +1207,12 @@
 				key: "i",
 				modifiers: [.command, .option]
 			))
+			let developerModeItem = item(
+				"Developer Mode",
+				action: #selector(toggleDeveloperMode(_:))
+			)
+			developerModeItem.identifier = NSUserInterfaceItemIdentifier("developer-mode-toggle")
+			viewMenu.addItem(developerModeItem)
 			viewMenu.addItem(.separator())
 			viewMenu.addItem(item(
 				"Enter Full Screen",

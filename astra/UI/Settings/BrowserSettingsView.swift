@@ -117,7 +117,7 @@ struct BrowserSettingsView: View {
 						symbol: "chevron.left.forwardslash.chevron.right",
 						section: .advanced,
 						identifier: "settings-developer",
-						terms: ["GitHub", "Repository", "Shorthand", "owner/repository", "Web Inspector", "Safari", "Develop menu", "Developer Mode", "Usage Limits", "Codex", "Claude"]
+						terms: ["GitHub", "Repository", "Shorthand", "owner/repository", "Web Inspector", "Safari", "Develop menu", "Developer Mode", "Usage Limits", "Codex", "Claude", "Browser Use", "MCP", "localhost", "Endpoint", "Status", "Copy Codex Configuration"]
 					)
 				case .advanced:
 					Definition(

@@ -1,12 +1,17 @@
 import Defaults
 import SwiftUI
 
+#if os(macOS)
+	import AppKit
+#endif
+
 struct BrowserDeveloperSettingsView: View {
 	@Default(.browserSearchConfiguration) private var searchConfigurationValue
 	@Default(.developerModeEnabled) private var developerModeEnabled
 	@Default(.usageLimitsProvider) private var usageLimitsProvider
 	#if os(macOS)
 		@Default(.webInspectorEnabled) private var webInspectorEnabled
+		@State private var browserAgentServer = BrowserAgentServer.shared
 	#endif
 
 	private var githubShorthandEnabled: Binding<Bool> {
@@ -18,6 +23,16 @@ struct BrowserDeveloperSettingsView: View {
 			searchConfigurationValue = configuration.encoded
 		}
 	}
+
+	#if os(macOS)
+		private var browserUseEnabled: Binding<Bool> {
+			Binding {
+				browserAgentServer.isEnabled
+			} set: { enabled in
+				browserAgentServer.setEnabled(enabled)
+			}
+		}
+	#endif
 
 	var body: some View {
 		List {
@@ -55,6 +70,28 @@ struct BrowserDeveloperSettingsView: View {
 					.font(.caption)
 					.foregroundStyle(.secondary)
 			}
+			#if os(macOS)
+				Section("Browser Use") {
+					Toggle("Enable Browser Use", isOn: browserUseEnabled)
+						.accessibilityLabel("Enable Browser Use")
+						.accessibilityIdentifier("browser-use-enabled")
+					if browserAgentServer.isEnabled {
+						LabeledContent("Endpoint", value: browserAgentServer.endpoint)
+							.accessibilityIdentifier("browser-use-endpoint")
+						LabeledContent("Status", value: browserAgentServer.status)
+							.accessibilityIdentifier("browser-use-status")
+						Button("Copy Codex Configuration", systemImage: "doc.on.doc") {
+							NSPasteboard.general.clearContents()
+							NSPasteboard.general.setString(browserAgentServer.codexConfiguration, forType: .string)
+						}
+						.accessibilityLabel("Copy Codex Configuration")
+						.accessibilityIdentifier("copy-codex-configuration")
+					}
+					Text("Browser Use can access local pages you explicitly share and tabs created by an agent. Private tabs are never shared.")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+				}
+			#endif
 		}
 		.listStyle(.sidebar)
 		.scrollContentBackground(.hidden)

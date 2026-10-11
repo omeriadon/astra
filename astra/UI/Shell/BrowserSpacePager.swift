@@ -9,6 +9,7 @@ struct BrowserSpacePager<Content: View>: View {
 	let selectedSpaceID: UUID
 	let favouriteTabIDs: [UUID]
 	let scrollState: BrowserSpaceScrollState
+	let contentTopMargin: CGFloat
 	let onSelectSpace: (UUID) -> Void
 	let content: (BrowserSpace, Bool, [UUID]) -> Content
 
@@ -22,6 +23,7 @@ struct BrowserSpacePager<Content: View>: View {
 		selectedSpaceID: UUID,
 		favouriteTabIDs: [UUID],
 		scrollState: BrowserSpaceScrollState,
+		contentTopMargin: CGFloat = 33,
 		onSelectSpace: @escaping (UUID) -> Void,
 		@ViewBuilder content: @escaping (BrowserSpace, Bool, [UUID]) -> Content
 	) {
@@ -29,6 +31,7 @@ struct BrowserSpacePager<Content: View>: View {
 		self.selectedSpaceID = selectedSpaceID
 		self.favouriteTabIDs = favouriteTabIDs
 		self.scrollState = scrollState
+		self.contentTopMargin = contentTopMargin
 		self.onSelectSpace = onSelectSpace
 		self.content = content
 		_scrollPosition = State(initialValue: ScrollPosition(id: selectedSpaceID, anchor: .center))
@@ -41,6 +44,7 @@ struct BrowserSpacePager<Content: View>: View {
 				selectedSpaceID: selectedSpaceID,
 				favouriteTabIDs: favouriteTabIDs,
 				scrollState: scrollState,
+				contentTopMargin: contentTopMargin,
 				reduceMotion: reduceMotion,
 				onSelectSpace: onSelectSpace,
 				content: content
@@ -200,6 +204,7 @@ struct BrowserSpacePager<Content: View>: View {
 		let selectedSpaceID: UUID
 		let favouriteTabIDs: [UUID]
 		let scrollState: BrowserSpaceScrollState
+		let contentTopMargin: CGFloat
 		let reduceMotion: Bool
 		let onSelectSpace: (UUID) -> Void
 		let content: (BrowserSpace, Bool, [UUID]) -> Content
@@ -217,6 +222,7 @@ struct BrowserSpacePager<Content: View>: View {
 				favouriteTabIDs: favouriteTabIDs,
 				colorScheme: context.environment.colorScheme,
 				dynamicTypeSize: context.environment.dynamicTypeSize,
+				contentTopMargin: contentTopMargin,
 				onSelectSpace: onSelectSpace
 			) { space, isActive in
 				AnyView(
@@ -247,19 +253,27 @@ struct BrowserSpacePager<Content: View>: View {
 		private static var lastReport = BrowserLog.clock()
 
 		static func hostLayout() {
-			if enabled { layouts += 1 }
+			if enabled {
+				layouts += 1
+			}
 		}
 
 		static func clipMove() {
-			if enabled { clipMoves += 1 }
+			if enabled {
+				clipMoves += 1
+			}
 		}
 
 		static func pageUpdate() {
-			if enabled { updates += 1 }
+			if enabled {
+				updates += 1
+			}
 		}
 
 		static func published() {
-			if enabled { publications += 1 }
+			if enabled {
+				publications += 1
+			}
 		}
 
 		static func reportIfNeeded() {
@@ -342,6 +356,7 @@ struct BrowserSpacePager<Content: View>: View {
 		private var favouriteTabIDs: [UUID] = []
 		private var pageColorScheme: ColorScheme?
 		private var pageDynamicTypeSize: DynamicTypeSize?
+		private var pageContentTopMargin: CGFloat = 33
 		private var pageFactory: ((BrowserSpace, Bool) -> AnyView)?
 		private var pageIDs: [UUID] = []
 		private var selectedSpaceID: UUID?
@@ -393,6 +408,7 @@ struct BrowserSpacePager<Content: View>: View {
 			favouriteTabIDs: [UUID],
 			colorScheme: ColorScheme,
 			dynamicTypeSize: DynamicTypeSize,
+			contentTopMargin: CGFloat,
 			onSelectSpace: @escaping (UUID) -> Void,
 			content: @escaping (BrowserSpace, Bool) -> AnyView
 		) {
@@ -408,6 +424,7 @@ struct BrowserSpacePager<Content: View>: View {
 				|| self.favouriteTabIDs != favouriteTabIDs
 				|| pageColorScheme != colorScheme
 				|| pageDynamicTypeSize != dynamicTypeSize
+				|| pageContentTopMargin != contentTopMargin
 			var changedPageIDs = Set(newIDs.filter { spaceSnapshots[$0] != newSnapshots[$0] })
 			if selectionChanged {
 				if let previousSelection = self.selectedSpaceID {
@@ -418,6 +435,7 @@ struct BrowserSpacePager<Content: View>: View {
 			self.favouriteTabIDs = favouriteTabIDs
 			pageColorScheme = colorScheme
 			pageDynamicTypeSize = dynamicTypeSize
+			pageContentTopMargin = contentTopMargin
 			self.scrollState = scrollState
 			self.onSelectSpace = onSelectSpace
 			self.reduceMotion = reduceMotion

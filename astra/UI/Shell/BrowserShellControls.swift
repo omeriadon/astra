@@ -77,7 +77,7 @@ struct ShellTopBarView: View {
 		}
 		.padding(
 			.leading,
-			reservesWindowControls ? 80 : (sidebarShown ? 10 : BrowserChromeMetrics.persistentControlsAreaWidth)
+			reservesWindowControls ? BrowserChromeMetrics.windowControlsAreaWidth : (sidebarShown ? 10 : BrowserChromeMetrics.persistentControlsAreaWidth)
 		)
 		.frame(height: isCompact ? BrowserChromeMetrics.topBarRegionHeight * 2 : BrowserChromeMetrics.topBarRegionHeight)
 		.frame(maxWidth: .infinity, alignment: .leading)
@@ -126,6 +126,7 @@ private struct ShellWebsiteNavigationControls: View {
 				.buttonStyle(.bordered)
 				.foregroundStyle(.primary)
 				.id(ObjectIdentifier(controller))
+			BrowserAgentControls(browser: browser)
 			#if os(macOS)
 				if developerModeEnabled || browser.selectedTab?.isDeveloperMode == true {
 					Button("Inspect Element", systemImage: "cursorarrow.rays") {

@@ -13,6 +13,7 @@ import SwiftUI
 private extension View {
 	func sidebarScrollAlphaMask(
 		top: CGFloat,
+		topOpacityHeight: CGFloat?,
 		bottom: CGFloat,
 		bottomOpacityHeight: CGFloat = 34
 	) -> some View {
@@ -21,7 +22,7 @@ private extension View {
 				let height = max(geometry.size.height, 1)
 				let topEnd = min(max(top / height, 0), 1)
 				let bottomStart = max(topEnd, 1 - min(max(bottom / height, 0), 1))
-				let topOpacityPoint = min(20 / height, topEnd)
+				let topOpacityPoint = min(max((topOpacityHeight ?? 20) / height, 0), topEnd)
 				let bottomOpacityPoint = max(
 					bottomStart,
 					1 - min(max(bottomOpacityHeight / height, 0), 1)
@@ -29,7 +30,7 @@ private extension View {
 
 				LinearGradient(
 					stops: [
-						.init(color: .clear, location: 0),
+						.init(color: topOpacityHeight == nil ? .clear : .white.opacity(0.3), location: 0),
 						.init(color: .white.opacity(0.3), location: topOpacityPoint),
 						.init(color: .white, location: topEnd),
 						.init(color: .white, location: bottomStart),
@@ -47,11 +48,13 @@ private extension View {
 
 private struct SidebarScrollContentMarginsModifier: ViewModifier {
 	let top: CGFloat
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	func body(content: Content) -> some View {
 		content
 			.ignoresSafeArea(.container, edges: .vertical)
 			.contentMargins(.top, top, for: .scrollContent)
+			.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: top)
 	}
 }
 
@@ -64,11 +67,17 @@ extension View {
 
 	func sidebarScrollOpacityFade(
 		top: CGFloat = 38,
+		topOpacityHeight: CGFloat? = nil,
 		bottom: CGFloat = 45,
 		bottomOpacityHeight: CGFloat = 34
 	) -> some View {
 		scrollEdgeEffectHidden(true, for: .vertical)
-			.sidebarScrollAlphaMask(top: top, bottom: bottom, bottomOpacityHeight: bottomOpacityHeight)
+			.sidebarScrollAlphaMask(
+				top: top,
+				topOpacityHeight: topOpacityHeight,
+				bottom: bottom,
+				bottomOpacityHeight: bottomOpacityHeight
+			)
 			.overlay(alignment: .bottom) {
 				#if os(macOS)
 					GeometryReader { geometry in
