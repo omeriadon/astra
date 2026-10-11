@@ -249,6 +249,8 @@ struct BrowserSpacePager<Content: View>: View {
 		// Diagnostic only: swipe gestures still run but the viewport stays still.
 		// This isolates native clip movement from SwiftUI/theme invalidation.
 		static let freezeViewport = ProcessInfo.processInfo.environment["ASTRA_PAGING_PROFILE_FREEZE_VIEWPORT"] == "1"
+		// Opt-in A/B test. Default scroll(to:) remains production behavior.
+		static let useDirectBounds = ProcessInfo.processInfo.environment["ASTRA_PAGING_EXPERIMENT_DIRECT_BOUNDS"] == "1"
 		private static var layouts = 0
 		private static var activeLayouts = 0
 		private static var layoutNearClipMove = 0
@@ -340,6 +342,7 @@ struct BrowserSpacePager<Content: View>: View {
 				"native_selection_changes": String(updateSelectionChanges),
 				"native_full_refreshes": String(updateFullRefreshes),
 				"viewport_frozen": String(freezeViewport),
+				"viewport_method": useDirectBounds ? "setBoundsOrigin" : "scrollTo",
 				"clip_moves": String(clipMoves),
 				"page_window_updates": String(updates),
 				"theme_position_publications": String(publications),
@@ -602,20 +605,29 @@ struct BrowserSpacePager<Content: View>: View {
 			if documentView.frame != documentFrame {
 				documentView.frame = documentFrame
 			}
-			if !BrowserSpacePagingMetrics.freezeViewport, clipView.bounds.origin.x != offset {
-				BrowserSpacePagingMetrics.clipMove()
-				clipView.scroll(to: NSPoint(x: offset, y: 0))
-			}
+			moveViewport(to: offset)
 			updateMountedPages()
 			publishPosition(deferred: true)
 		}
 
-		private func render(_ position: Double, deferred: Bool = false) {
-			offset = position
-			if !BrowserSpacePagingMetrics.freezeViewport, clipView.bounds.origin.x != position {
-				BrowserSpacePagingMetrics.clipMove()
+		// Keep the view hierarchy, page frames, coordinate system and gesture
+		// handling identical. Compare only the native scrolling primitive.
+		// The alternative is disabled by default until measured and interactively
+		// checked for vertical scrolling, hover, hit-testing and overscroll.
+		private func moveViewport(to position: Double) {
+			guard !BrowserSpacePagingMetrics.freezeViewport,
+			      clipView.bounds.origin.x != position else { return }
+			BrowserSpacePagingMetrics.clipMove()
+			if BrowserSpacePagingMetrics.useDirectBounds {
+				clipView.setBoundsOrigin(NSPoint(x: position, y: 0))
+			} else {
 				clipView.scroll(to: NSPoint(x: position, y: 0))
 			}
+		}
+
+		private func render(_ position: Double, deferred: Bool = false) {
+			offset = position
+			moveViewport(to: position)
 			updateMountedPages()
 			publishPosition(deferred: deferred)
 		}
