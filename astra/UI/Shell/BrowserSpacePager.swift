@@ -246,8 +246,8 @@ struct BrowserSpacePager<Content: View>: View {
 	private enum BrowserSpacePagingMetrics {
 		static let enabled = ProcessInfo.processInfo.environment["ASTRA_PAGING_METRICS"] == "1"
 		static let freezeThemeProgress = ProcessInfo.processInfo.environment["ASTRA_PAGING_PROFILE_FREEZE_THEME"] == "1"
-		// Diagnostic only: swipe gestures still run but the viewport stays still.
-		// This isolates native clip movement from SwiftUI/theme invalidation.
+		/// Diagnostic only: swipe gestures still run but the viewport stays still.
+		/// This isolates native clip movement from SwiftUI/theme invalidation.
 		static let freezeViewport = ProcessInfo.processInfo.environment["ASTRA_PAGING_PROFILE_FREEZE_VIEWPORT"] == "1"
 		// Opt-in A/B test. Default scroll(to:) remains production behavior.
 		static let useDirectBounds = ProcessInfo.processInfo.environment["ASTRA_PAGING_EXPERIMENT_DIRECT_BOUNDS"] == "1"
@@ -610,10 +610,10 @@ struct BrowserSpacePager<Content: View>: View {
 			publishPosition(deferred: true)
 		}
 
-		// Keep the view hierarchy, page frames, coordinate system and gesture
-		// handling identical. Compare only the native scrolling primitive.
-		// The alternative is disabled by default until measured and interactively
-		// checked for vertical scrolling, hover, hit-testing and overscroll.
+		/// Keep the view hierarchy, page frames, coordinate system and gesture
+		/// handling identical. Compare only the native scrolling primitive.
+		/// The alternative is disabled by default until measured and interactively
+		/// checked for vertical scrolling, hover, hit-testing and overscroll.
 		private func moveViewport(to position: Double) {
 			guard !BrowserSpacePagingMetrics.freezeViewport,
 			      clipView.bounds.origin.x != position else { return }
