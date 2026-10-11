@@ -164,6 +164,14 @@ struct BrowserSpacePager<Content: View>: View {
 			return min(max(index, 0), count - 1)
 		}
 
+		/// At most four pages are needed when a gesture straddles two spaces:
+		/// both visible pages plus one page of lookahead on either side.
+		static func mountedPageIndices(position: Double, count: Int) -> ClosedRange<Int>? {
+			guard count > 0, position.isFinite else { return nil }
+			let clamped = min(max(position, 0), Double(count - 1))
+			return max(0, Int(floor(clamped)) - 1) ... min(count - 1, Int(ceil(clamped)) + 1)
+		}
+
 		static func velocity(
 			samples: [(time: TimeInterval, offset: Double)],
 			at timestamp: TimeInterval
@@ -394,15 +402,15 @@ struct BrowserSpacePager<Content: View>: View {
 			guard let pageFactory, !pageIDs.isEmpty, bounds.width > 0 else { return }
 			let reference = pageWidth > 0 ? offset / pageWidth :
 				Double(pageIDs.firstIndex(where: { $0 == selectedSpaceID }) ?? 0)
-			let lower = max(0, Int(floor(reference)) - 1)
-			let upper = min(pageIDs.count - 1, Int(ceil(reference)) + 1)
-			guard lower <= upper else { return }
-			let mountedIDs = Set((lower ... upper).map { pageIDs[$0] })
+			guard let indices = BrowserSpacePagingPhysics.mountedPageIndices(
+				position: reference, count: pageIDs.count
+			) else { return }
+			let mountedIDs = Set(indices.map { pageIDs[$0] })
 
 			for (id, host) in pageHosts where !mountedIDs.contains(id) && host.superview != nil {
 				host.removeFromSuperview()
 			}
-			for index in lower ... upper {
+			for index in indices {
 				let id = pageIDs[index]
 				guard let space = spaceSnapshots[id] else { continue }
 				let active = id == selectedSpaceID
