@@ -69,6 +69,7 @@ final class AppKitSpacePagerView<Content: View>: NSView {
 	private var isConfiguring = false
 	private var deferredPositionPublish = false
 	private var pageOrderNeedsLayout = false
+	private var horizontalGestureActive = false
 
 	override init(frame: NSRect) {
 		super.init(frame: frame)
@@ -188,18 +189,24 @@ final class AppKitSpacePagerView<Content: View>: NSView {
 	private func routeWheel(_ event: NSEvent) {
 		guard let window, event.window === window, !spaces.isEmpty, pageWidth > 0 else { return }
 		let point = convert(event.locationInWindow, from: nil)
-		guard bounds.contains(point), abs(event.scrollingDeltaX) >= 0.5 else { return }
-		snapTask?.cancel()
-		snapTask = nil
-		// NSScrollView applies the system's scrolling direction, natural
-		// scrolling, and momentum. The event also reaches the child vertical
-		// SwiftUI scroll view via the regular responder path.
-		scroller.scrollWheel(with: event)
-		if event.momentumPhase == .ended {
+		let inside = bounds.contains(point)
+		guard inside || horizontalGestureActive else { return }
+		let hasHorizontalMovement = abs(event.scrollingDeltaX) >= 0.5
+		if hasHorizontalMovement {
+			horizontalGestureActive = true
+			snapTask?.cancel()
+			snapTask = nil
+			// NSScrollView applies the system's scrolling direction, natural
+			// scrolling, and momentum. The unmodified event reaches the child
+			// vertical SwiftUI scroll view via the normal responder path.
+			scroller.scrollWheel(with: event)
+		}
+		guard horizontalGestureActive else { return }
+		if event.momentumPhase == .ended || event.phase == .cancelled {
 			scheduleSnap(delay: .milliseconds(0))
-		} else if event.phase == .ended || (event.phase.isEmpty && event.momentumPhase.isEmpty) {
-			// Defer slightly: a trackpad momentum sequence can start after
-			// the final direct-touch event.
+		} else if event.phase == .ended || (event.phase.isEmpty && event.momentumPhase.isEmpty && hasHorizontalMovement) {
+			// Terminal wheel events can have zero horizontal delta. Defer to
+			// allow a momentum sequence to begin before choosing a target.
 			scheduleSnap(delay: .milliseconds(130))
 		}
 	}
@@ -209,6 +216,7 @@ final class AppKitSpacePagerView<Content: View>: NSView {
 		snapTask = Task { @MainActor [weak self] in
 			try? await Task.sleep(for: delay)
 			guard !Task.isCancelled else { return }
+			self?.horizontalGestureActive = false
 			self?.finishGesture()
 		}
 	}
@@ -305,6 +313,7 @@ final class AppKitSpacePagerView<Content: View>: NSView {
 	func stopObserving() {
 		snapTask?.cancel()
 		snapTask = nil
+		horizontalGestureActive = false
 		removeWheelMonitor()
 		if let boundsObserver {
 			NotificationCenter.default.removeObserver(boundsObserver)
