@@ -249,14 +249,19 @@ struct BrowserSpacePager<Content: View>: View {
 		/// Diagnostic only: swipe gestures still run but the viewport stays still.
 		/// This isolates native clip movement from SwiftUI/theme invalidation.
 		static let freezeViewport = ProcessInfo.processInfo.environment["ASTRA_PAGING_PROFILE_FREEZE_VIEWPORT"] == "1"
-		// Opt-in A/B test. Default scroll(to:) remains production behavior.
-		static let useDirectBounds = ProcessInfo.processInfo.environment["ASTRA_PAGING_EXPERIMENT_DIRECT_BOUNDS"] == "1"
 		private static var layouts = 0
 		private static var activeLayouts = 0
 		private static var layoutNearClipMove = 0
 		private static var layoutTotalMilliseconds = 0.0
 		private static var layoutMaximumMilliseconds = 0.0
 		private static var lastClipMove = -Double.infinity
+		private static var springTicks = 0
+		private static var springLateTicks = 0
+		private static var springMaximumGapMs = 0.0
+		private static var pagerRenders = 0
+		private static var pagerRenderTotalMs = 0.0
+		private static var pagerRenderMaximumMs = 0.0
+		private static var pagerRendersOver8ms = 0
 		private static var rootReplacements = 0
 		private static var hostCreations = 0
 		private static var updateCalls = 0
@@ -312,6 +317,25 @@ struct BrowserSpacePager<Content: View>: View {
 			lastClipMove = CACurrentMediaTime()
 		}
 
+		static func springGap(seconds: Double, expectedSeconds: Double) {
+			guard enabled else { return }
+			springTicks += 1
+			let milliseconds = max(0, seconds * 1000)
+			springMaximumGapMs = max(springMaximumGapMs, milliseconds)
+			if expectedSeconds > 0, seconds > expectedSeconds * 1.5 {
+				springLateTicks += 1
+			}
+		}
+
+		static func renderDuration(_ seconds: Double) {
+			guard enabled else { return }
+			pagerRenders += 1
+			let milliseconds = max(0, seconds * 1000)
+			pagerRenderTotalMs += milliseconds
+			pagerRenderMaximumMs = max(pagerRenderMaximumMs, milliseconds)
+			if milliseconds > 8 { pagerRendersOver8ms += 1 }
+		}
+
 		static func pageUpdate() {
 			if enabled {
 				updates += 1
@@ -342,12 +366,26 @@ struct BrowserSpacePager<Content: View>: View {
 				"native_selection_changes": String(updateSelectionChanges),
 				"native_full_refreshes": String(updateFullRefreshes),
 				"viewport_frozen": String(freezeViewport),
-				"viewport_method": useDirectBounds ? "setBoundsOrigin" : "scrollTo",
+				"viewport_method": "scrollTo",
+				"spring_gap_samples": String(springTicks),
+				"spring_late_gaps": String(springLateTicks),
+				"spring_max_gap_ms": String(format: "%.2f", springMaximumGapMs),
+				"pager_render_calls": String(pagerRenders),
+				"pager_render_total_ms": String(format: "%.1f", pagerRenderTotalMs),
+				"pager_render_max_ms": String(format: "%.2f", pagerRenderMaximumMs),
+				"pager_renders_over_8ms": String(pagerRendersOver8ms),
 				"clip_moves": String(clipMoves),
 				"page_window_updates": String(updates),
 				"theme_position_publications": String(publications),
 				"theme_frozen": String(freezeThemeProgress),
 			])
+			springTicks = 0
+			springLateTicks = 0
+			springMaximumGapMs = 0
+			pagerRenders = 0
+			pagerRenderTotalMs = 0
+			pagerRenderMaximumMs = 0
+			pagerRendersOver8ms = 0
 			layouts = 0
 			activeLayouts = 0
 			layoutNearClipMove = 0
@@ -442,6 +480,7 @@ struct BrowserSpacePager<Content: View>: View {
 		private var reduceMotion = false
 		private var monitor: Any?
 		private var frameLink: CADisplayLink?
+		private var lastSpringCallbackTime: CFTimeInterval?
 		private var gesture = Gesture.none
 		private var physicalGestureEnded = false
 		private var interruptedSettling = false
@@ -610,26 +649,24 @@ struct BrowserSpacePager<Content: View>: View {
 			publishPosition(deferred: true)
 		}
 
-		/// Keep the view hierarchy, page frames, coordinate system and gesture
-		/// handling identical. Compare only the native scrolling primitive.
-		/// The alternative is disabled by default until measured and interactively
-		/// checked for vertical scrolling, hover, hit-testing and overscroll.
+		/// Translate the clip as before. Changing this API alone did not
+		/// improve paging in the measured setBoundsOrigin A/B experiment.
 		private func moveViewport(to position: Double) {
 			guard !BrowserSpacePagingMetrics.freezeViewport,
 			      clipView.bounds.origin.x != position else { return }
 			BrowserSpacePagingMetrics.clipMove()
-			if BrowserSpacePagingMetrics.useDirectBounds {
-				clipView.setBoundsOrigin(NSPoint(x: position, y: 0))
-			} else {
-				clipView.scroll(to: NSPoint(x: position, y: 0))
-			}
+			clipView.scroll(to: NSPoint(x: position, y: 0))
 		}
 
 		private func render(_ position: Double, deferred: Bool = false) {
+			let started = BrowserSpacePagingMetrics.enabled ? CACurrentMediaTime() : 0
 			offset = position
 			moveViewport(to: position)
 			updateMountedPages()
 			publishPosition(deferred: deferred)
+			if BrowserSpacePagingMetrics.enabled {
+				BrowserSpacePagingMetrics.renderDuration(CACurrentMediaTime() - started)
+			}
 		}
 
 		/// Keep only the current and adjacent pages in AppKit's visible tree.
@@ -756,6 +793,16 @@ struct BrowserSpacePager<Content: View>: View {
 
 		@objc private func step(_ link: CADisplayLink) {
 			guard let settling else { return }
+			if BrowserSpacePagingMetrics.enabled {
+				let current = CACurrentMediaTime()
+				if let previous = lastSpringCallbackTime {
+					BrowserSpacePagingMetrics.springGap(
+						seconds: current - previous,
+						expectedSeconds: link.targetTimestamp - link.timestamp
+					)
+				}
+				lastSpringCallbackTime = current
+			}
 			// The display link's timestamp belongs to the previous refresh.
 			// Compute the pose for the upcoming display refresh.
 			let elapsed = max(0, link.targetTimestamp - settling.time)
@@ -780,6 +827,7 @@ struct BrowserSpacePager<Content: View>: View {
 		}
 
 		private func stopSettling() {
+			lastSpringCallbackTime = nil
 			settling = nil
 			frameLink?.invalidate()
 			frameLink = nil
