@@ -2,7 +2,6 @@
 
 	import AppKit
 	import Foundation
-	import MCP
 	import Network
 	import Observation
 	import Security

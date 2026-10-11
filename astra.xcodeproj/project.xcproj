@@ -48,12 +48,6 @@
         "up-to-next-major-version": "2.10.0",
       },
     }, {
-      "kind": "remote",
-      "repository": "https://github.com/modelcontextprotocol/swift-sdk",
-      "version": {
-        "up-to-next-major-version": "0.11.0",
-      },
-    }, {
       "kind": "local",
       "path": "Packages/Haze",
     },
@@ -505,10 +499,6 @@
         {
           "package": "Sparkle",
           "product-name": "Sparkle",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
-        }, {
-          "package": "mcp-swift-sdk",
-          "product-name": "MCP",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
         },
       ],
