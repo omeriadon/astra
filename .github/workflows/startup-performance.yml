@@ -1,0 +1,107 @@
+name: Astra - Startup Performance
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-startup-${{ github.event.pull_request.number || github.ref }
+  cancel-in-progress: true
+
+jobs:
+  startup:
+    name: Real startup timings (informational)
+    runs-on: xcode-27
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate existing startup benchmark tooling
+        shell: bash
+        run: |
+          bash -n scripts/benchmark_startup.sh
+          ASTRA_BENCH_SELF_TEST=1 bash scripts/benchmark_startup.sh
+      - name: Select Xcode 27
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Install Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+      - name: Build unsigned Release app
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project astra.xcodeproj -scheme astra -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/AstraPerfDerivedData" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            2>&1 | tee "$RUNNER_TEMP/astra-startup-release-build.log"
+      - name: Measure five launches (informational)
+        id: measure
+        continue-on-error: true
+        shell: bash
+        env:
+          ASTRA_BENCH_WAIT_SECONDS: "7"
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          export ASTRA_BENCH_OUTPUT="$PWD/results/startup.csv"
+          bash scripts/benchmark_startup.sh \
+            "$RUNNER_TEMP/AstraPerfDerivedData/Build/Products/Release/astra.app" 5 \
+            2>&1 | tee results/startup-output.log
+      - name: Summarise startup observations
+        if: always()
+        shell: bash
+        env:
+          MEASURE_OUTCOME: ${{ steps.measure.outcome }
+        run: |
+          python3 - <<'PY'
+          import csv
+          import os
+          import statistics
+          from pathlib import Path
+          output = Path("results")
+          output.mkdir(exist_ok=True)
+          csv_path = output / "startup.csv"
+          lines = ["## Astra startup benchmark — informational", ""]
+          if csv_path.exists():
+              with csv_path.open(newline="") as source:
+                  data = list(csv.DictReader(source))
+              key = "process_birth_to_first_usable_window_ms"
+              samples = [float(row[key]) for row in data if row.get(key)]
+              if samples:
+                  lines.extend((
+                      f"Successful measurements: **{len(samples)} / 5**.",
+                      f"Median first usable window: **{statistics.median(samples):.1f} ms**.",
+                      f"Range: {min(samples):.1f}–{max(samples):.1f} ms."
+                  ))
+              else:
+                  lines.append("No valid first-usable-window timing was collected.")
+          else:
+              lines.append("No CSV produced. The hosted runner may lack a usable GUI session.")
+          if os.environ["MEASURE_OUTCOME"] != "success":
+              lines.extend(("", "**Measurement unavailable or incomplete.** Inspect the artifact log."))
+          lines.extend((
+              "",
+              "No hard performance gate: runner hardware, OS, WebKit cache and "
+              "LaunchServices can vary. This is a disposable CI profile, not a "
+              "restoration benchmark with your personal browsing data."
+          ))
+          report = "\n".join(lines) + "\n"
+          (output / "startup-summary.md").write_text(report)
+          print(report)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fp:
+              fp.write(report)
+          PY
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astra-startup-performance-${{ github.run_id }
+          path: |
+            results/
+            ${{ runner.temp }/astra-startup-release-build.log
+          if-no-files-found: warn
+          retention-days: 30

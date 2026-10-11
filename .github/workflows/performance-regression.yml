@@ -1,0 +1,61 @@
+name: Astra - Performance Regression
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-library-${{ github.event.pull_request.number || github.ref }
+  cancel-in-progress: true
+
+jobs:
+  library:
+    name: Library benchmark comparison (informational)
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          path: candidate
+          ref: ${{ github.event.pull_request.head.sha || github.sha }
+      - name: Checkout baseline
+        uses: actions/checkout@v4
+        with:
+          path: baseline
+          ref: ${{ github.event.pull_request.base.sha || 'main' }
+      - name: Validate benchmark parser
+        run: python3 candidate/scripts/ci/library_benchmark_report.py --self-test
+      - name: Run same-runner baseline and candidate benchmarks
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          (
+            cd baseline
+            swiftc -O -swift-version 6 astra/Models/Library/Bookmark.swift \
+              checks/library-scaling-benchmark.swift -o "$RUNNER_TEMP/astra-library-base"
+          )
+          (
+            cd candidate
+            swiftc -O -swift-version 6 astra/Models/Library/Bookmark.swift \
+              checks/library-scaling-benchmark.swift -o "$RUNNER_TEMP/astra-library-candidate"
+          )
+          "$RUNNER_TEMP/astra-library-base" | tee results/baseline.txt
+          "$RUNNER_TEMP/astra-library-candidate" | tee results/candidate.txt
+          python3 candidate/scripts/ci/library_benchmark_report.py \
+            --baseline results/baseline.txt --candidate results/candidate.txt \
+            --output-dir results
+          cat results/library-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload benchmark observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astra-library-performance-${{ github.run_id }
+          path: results/
+          if-no-files-found: warn
+          retention-days: 30
