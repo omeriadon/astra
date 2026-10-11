@@ -114,6 +114,7 @@
 		func windowDidUpdate(_: Notification) {
 			guard !didReportFirstVisibleUpdate, window.isVisible else { return }
 			didReportFirstVisibleUpdate = true
+			BrowserPerformanceBenchmark.recordWindowUpdate(window)
 			BrowserLog.notice(.lifecycle, "startup.window-first-appkit-update", metadata: [
 				"window": BrowserLog.id(browser.windowID),
 			])
@@ -123,7 +124,12 @@
 		}
 
 		func windowDidBecomeKey(_: Notification) {
+			BrowserPerformanceBenchmark.recordKeyChange(window)
 			BrowserWindowRegistry.shared.activate(browser)
+		}
+
+		func windowDidChangeOcclusionState(_: Notification) {
+			BrowserPerformanceBenchmark.recordOcclusionChange(window)
 		}
 
 		func windowDidMove(_: Notification) {

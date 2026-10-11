@@ -54,6 +54,7 @@
 		}
 
 		func applicationWillFinishLaunching(_: Notification) {
+			BrowserPerformanceBenchmark.install()
 			startupStartedAt = BrowserLog.mainEntryUptime ?? BrowserLog.clock()
 			BrowserLog.info(.lifecycle, "app.will-finish-launching", metadata: [
 				"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
@@ -213,6 +214,7 @@
 									"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - self.startupStartedAt) * 1000),
 								]
 								BrowserLog.notice(.lifecycle, "startup.first-window-readiness", metadata: readiness)
+								BrowserPerformanceBenchmark.recordForegroundReadiness(window: foreground.window, browser: foreground.browser)
 								if foreground.window.isVisible,
 								   foreground.window.canBecomeKey,
 								   foreground.browser.isHydrationFinished,
@@ -273,6 +275,9 @@
 					while !controller.browser.isHydrationFinished {
 						try? await Task.sleep(for: .milliseconds(25))
 					}
+				}
+				if let foreground = windows.first {
+					await BrowserPerformanceBenchmark.seedTabsIfRequested(in: foreground.browser)
 				}
 			}
 		}
