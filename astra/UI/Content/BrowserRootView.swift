@@ -118,6 +118,9 @@ struct BrowserRootView: View {
 
 		func body(content: Content) -> some View {
 			content
+				// The shell already draws beneath the titlebar, but this outer blur layer
+				// must also cover the titlebar safe area to avoid a visible horizontal seam.
+				.ignoresSafeArea(.container, edges: .top)
 				.blur(radius: browser.isAboutToQuit ? 5 : 0)
 				.overlay(alignment: .center) {
 					if Date.now < quitExpiry {
