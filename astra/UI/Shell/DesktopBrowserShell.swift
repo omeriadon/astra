@@ -434,6 +434,11 @@ private struct ShellSidebarColumn: View {
 							favouriteTabIDs: favouriteTabIDs
 						)
 						.foregroundStyle(space.theme.foregroundColor)
+						#if os(macOS)
+							// A manually created NSHostingView is a new environment root.
+							// Preserve the outer shell's explicit appearance.
+							.environment(\.colorScheme, colorScheme)
+						#endif
 						.sidebarScrollContentMargins()
 					}
 					#if os(macOS)
