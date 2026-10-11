@@ -29,7 +29,6 @@ struct DesktopBrowserShell: View {
 	@State private var flightProgress = 0.0
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var isFullScreen = false
-	@State private var spaceScrollState = BrowserSpaceScrollState()
 	@State private var showsTopBar = true
 	@State private var isTopBarRevealed = false
 	@State private var isSidebarRevealed = false
@@ -168,8 +167,7 @@ struct DesktopBrowserShell: View {
 					topBarColorScheme: topBarColorScheme,
 					showsTopBar: showsTopBar,
 					showsDownloads: $showsDownloads,
-					downloads: downloads,
-					spaceScrollState: spaceScrollState
+					downloads: downloads
 				)
 
 			} content: {
@@ -231,7 +229,7 @@ struct DesktopBrowserShell: View {
 			}
 		}
 		.background {
-			BrowserThemeBackground(theme: theme, spaces: browser.workspace.spaces, scrollState: spaceScrollState)
+			BrowserThemeBackground(theme: theme)
 		}
 		.onChange(of: sidebarShown) { _, _ in
 			isSidebarRevealed = false
@@ -384,7 +382,6 @@ private struct ShellSidebarColumn: View {
 	let showsTopBar: Bool
 	@Binding var showsDownloads: Bool
 	let downloads: BrowserDownloadManager
-	let spaceScrollState: BrowserSpaceScrollState
 	@State private var sidebarMediaHeight: CGFloat = 0
 	@State private var sidebarHeaderHeight: CGFloat = 0
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -402,6 +399,7 @@ private struct ShellSidebarColumn: View {
 	}
 
 	@State private var keepsDownloadsMounted = false
+	@State private var showsSpacePicker = false
 
 	var body: some View {
 		ZStack(alignment: .topLeading) {
@@ -443,27 +441,15 @@ private struct ShellSidebarColumn: View {
 					PrivateBrowserSidebar(browser: browser)
 						.sidebarScrollContentMargins(top: showsSidebarHeader ? sidebarHeaderHeight + 4 : 33)
 				} else {
-					BrowserSpacePager(
-						spaces: browser.workspace.spaces,
-						selectedSpaceID: browser.workspace.selectedSpaceID,
-						favouriteTabIDs: browser.workspace.favouriteTabIDs,
-						scrollState: spaceScrollState,
-						contentTopMargin: showsSidebarHeader ? sidebarHeaderHeight + 4 : 33,
-						onSelectSpace: { id in
-							guard id != browser.workspace.selectedSpaceID else { return }
-							browser.selectSpace(id)
-						}
-					) { space, isActiveSpace, favouriteTabIDs in
-						ShellSidebarListView(
-							browser: browser,
-							space: space,
-							theme: space.theme,
-							isActiveSpace: isActiveSpace,
-							favouriteTabIDs: favouriteTabIDs
-						)
-						.foregroundStyle(space.theme.foregroundColor)
-						.sidebarScrollContentMargins(top: showsSidebarHeader ? sidebarHeaderHeight + 4 : 33)
-					}
+					ShellSidebarListView(
+						browser: browser,
+						space: browser.selectedSpace,
+						theme: browser.selectedSpace.theme,
+						favouriteTabIDs: browser.workspace.favouriteTabIDs
+					)
+					.id(browser.selectedSpace.id)
+					.foregroundStyle(browser.selectedSpace.theme.foregroundColor)
+					.sidebarScrollContentMargins(top: showsSidebarHeader ? sidebarHeaderHeight + 4 : 33)
 					.accessibilityIdentifier("sidebar-space-pages")
 				}
 			}
@@ -517,29 +503,64 @@ private struct ShellSidebarColumn: View {
 		}
 		.overlay(alignment: .bottom) {
 			if sidebarShown {
-				sidebarBottomBar
-					.fixedSize(horizontal: false, vertical: true)
+				GeometryReader { geometry in
+					sidebarBottomBar(maximumPanelHeight: max(0, geometry.size.height - sidebarMediaHeight - 70))
+						.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+				}
 			}
 		}
 	}
 
-	private var sidebarBottomBar: some View {
-		VStack(spacing: 8) {
-			BrowserMediaActivityView(browser: browser)
-				.padding(.horizontal, 8)
-				.foregroundStyle(theme.foregroundColor)
-				.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-					sidebarMediaHeight = height
+	private func sidebarBottomBar(maximumPanelHeight: CGFloat) -> some View {
+		ZStack(alignment: .bottom) {
+			#if os(macOS)
+				if showsSpacePicker {
+					Button {
+						showsSpacePicker = false
+					} label: {
+						Label("Close Spaces", systemImage: "xmark")
+							.hidden()
+							.frame(maxWidth: .infinity, maxHeight: .infinity)
+							.contentShape(Rectangle())
+					}
+					.buttonStyle(.plain)
+					.keyboardShortcut(.cancelAction)
+					.accessibilityLabel("Close Spaces")
+					.accessibilityIdentifier("space-picker-dismiss")
 				}
+			#endif
+			VStack(spacing: 8) {
+				#if os(macOS)
+					if showsSpacePicker, !browser.isPrivate {
+						BrowserSpacePickerPanel(browser: browser, maximumHeight: maximumPanelHeight) {
+							showsSpacePicker = false
+						}
+						.padding(.horizontal, 8)
+						.foregroundStyle(theme.foregroundColor)
+						.transition(.opacity)
+					}
+				#endif
+				BrowserMediaActivityView(browser: browser)
+					.padding(.horizontal, 8)
+					.foregroundStyle(theme.foregroundColor)
+					.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+						sidebarMediaHeight = height
+					}
 
-			ShellDownloadsBarView(
-				browser: browser,
-				theme: theme,
-				downloads: downloads,
-				showsDownloads: $showsDownloads
-			)
-			.foregroundStyle(theme.foregroundColor)
+				ShellDownloadsBarView(
+					browser: browser,
+					theme: theme,
+					downloads: downloads,
+					showsDownloads: $showsDownloads,
+					onToggleSpacePicker: {
+						showsSpacePicker.toggle()
+					}
+				)
+				.foregroundStyle(theme.foregroundColor)
+			}
+			.fixedSize(horizontal: false, vertical: true)
 		}
+		.animation(reduceMotion ? nil : .smooth(duration: 0.2), value: showsSpacePicker)
 	}
 }
 

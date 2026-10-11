@@ -95,7 +95,6 @@
             "UI/Content/ContentView.swift",
             "UI/Shell/BrowserDownloadsBarView.swift",
             "UI/Shell/BrowserSidebarControls.swift",
-            "UI/Shell/BrowserSpacePager.swift",
             "UI/Shell/BrowserSplitView.swift",
             "UI/Shell/BrowserWindowController.swift",
             "UI/Shell/CompactBrowserShell.swift",

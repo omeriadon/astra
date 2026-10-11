@@ -8,6 +8,7 @@ struct ShellDownloadsBarView: View {
 	@Default(.aiFeaturesEnabled) private var allAIFeatures
 	let downloads: BrowserDownloadManager
 	@Binding var showsDownloads: Bool
+	var onToggleSpacePicker: (() -> Void)?
 	@State private var downloadsHover = false
 	@State private var addSpaceHover = false
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -61,8 +62,11 @@ struct ShellDownloadsBarView: View {
 					.font(.caption)
 					.frame(maxWidth: .infinity)
 			} else {
-				BrowserSpacesBar(browser: browser)
-					.frame(maxWidth: .infinity)
+				BrowserSpacesBar(
+					browser: browser,
+					onToggleSpacePicker: onToggleSpacePicker
+				)
+				.frame(maxWidth: .infinity)
 			}
 
 			if allAIFeatures, browser.canShowAISidebar, Defaults[.aiSidebar] {
@@ -74,26 +78,28 @@ struct ShellDownloadsBarView: View {
 				.accessibilityIdentifier("sidebar-ai-toggle")
 			}
 
-			if !browser.isPrivate {
-				Button {
-					browser.createSpace()
-				} label: {
-					Image(systemName: "plus")
-						.frame(width: 25, height: 25)
-						.background {
-							if addSpaceHover {
-								RoundedRectangle(cornerRadius: 8)
-									.fill(Color.primary.gradient)
-									.opacity(0.3)
+			#if os(iOS)
+				if !browser.isPrivate {
+					Button {
+						browser.createSpace()
+					} label: {
+						Image(systemName: "plus")
+							.frame(width: 25, height: 25)
+							.background {
+								if addSpaceHover {
+									RoundedRectangle(cornerRadius: 8)
+										.fill(Color.primary.gradient)
+										.opacity(0.3)
+								}
 							}
-						}
-						.contentShape(Rectangle())
+							.contentShape(Rectangle())
+					}
+					.buttonStyle(.plain)
+					.accessibilityLabel("Add Space")
+					.accessibilityIdentifier("add-space")
+					.onHover { addSpaceHover = $0 }
 				}
-				.buttonStyle(.plain)
-				.accessibilityLabel("Add Space")
-				.accessibilityIdentifier("add-space")
-				.onHover { addSpaceHover = $0 }
-			}
+			#endif
 		}
 		.padding([.horizontal, .bottom], 8)
 	}

@@ -49,7 +49,6 @@ assert {
     "UI/Shell/CompactBrowserShell.swift",
     "UI/Shell/BrowserSplitView.swift",
     "UI/Shell/PrivateBrowserSidebar.swift",
-    "UI/Shell/BrowserSpacePager.swift",
     "UI/Shell/MiniAstraWindowController.swift",
     "UI/Shell/MiniAstraView.swift",
     "UI/Shell/MiniAstraOpeningAnimation.swift",
@@ -84,7 +83,7 @@ assert "struct ShellDownloadsBarView: View" in (root / "astra/UI/Shell/BrowserDo
 assert "final class BrowserTabHoverPreviewCoordinator" in (root / "astra/UI/Tabs/BrowserTabHoverPreviewCoordinator.swift").read_text()
 assert "UI/Tabs/BrowserTabHoverPreviewCoordinator.swift" not in runtime_excluded  # BrowserFavouriteTile still uses it
 assert "final class BrowserTabHoverPreviewCoordinator" not in (root / "astra/UI/Tabs/BrowserTabRow.swift").read_text()
-for name in ("UI/Shell/BrowserSpaceScrollState.swift", "Web/Navigation/BrowserDesktopCommands.swift", "Web/Navigation/BrowserDesktopCommands+ExportFormat.swift", "UI/Content/BrowserSourceViewer.swift"):
+for name in ("Web/Navigation/BrowserDesktopCommands.swift", "Web/Navigation/BrowserDesktopCommands+ExportFormat.swift", "UI/Content/BrowserSourceViewer.swift"):
     assert name not in runtime_excluded, f"Required website-app utility excluded: {name}"
 for name in ("UI/Shell/BrowserSidebarControls.swift", "UI/Shell/BrowserDownloadsBarView.swift", "UI/Tabs/BrowserTabRow.swift"):
     assert name in runtime_excluded, f"Sidebar UI leaked into website runtime: {name}"

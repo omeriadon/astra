@@ -7,7 +7,7 @@ switcher = Path("astra/UI/Tabs/ControlTabSwitcher.swift").read_text()
 assert "private(set) var visibleTabMembershipRevision = 0" in browser
 tabs = browser.split("private(set) var tabs: [BrowserTab]", 1)[1].split("@ObservationIgnored", 1)[0]
 assert "visibleTabMembershipRevision &+= 1" in tabs
-workspace = browser.split("private(set) var workspace: BrowserWorkspace", 1)[1].split("private(set) var spaceSwitchDirection", 1)[0]
+workspace = browser.split("private(set) var workspace: BrowserWorkspace", 1)[1].split("private(set) var recentlyUsedTabIDs", 1)[0]
 assert "didSet { visibleTabMembershipRevision &+= 1 }" in workspace
 assert ".onChange(of: browser.visibleTabMembershipRevision)" in root
 assert ".onChange(of: browser.visibleTabs.map(\\.id))" not in root

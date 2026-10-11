@@ -36,9 +36,6 @@ struct ShellSidebarListView: View {
 	}
 
 	var body: some View {
-		// Page-local values are supplied by BrowserSpacePager. Do not read
-		// Browser.workspace here: it is a single observed value, so any selection
-		// timestamp mutation would otherwise invalidate every prepared space page.
 		let tabsByID = browser.tabsByID
 		let openElsewhereIDs = BrowserWindowRegistry.shared.tabIDsOpenInAnotherWindow(than: browser)
 		let favouriteTabs = browser.isPrivate ? [] : favouriteTabIDs.compactMap { tabsByID[$0] }

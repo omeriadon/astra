@@ -38,7 +38,6 @@ final class Browser {
 		didSet { visibleTabMembershipRevision &+= 1 }
 	}
 
-	private(set) var spaceSwitchDirection = 1
 	private(set) var recentlyUsedTabIDs: [UUID]
 	/// A scalar Observation token for library projections. Comparing complete
 	/// bookmark and reading-list arrays at every SwiftUI invalidation is O(N).
@@ -286,12 +285,37 @@ final class Browser {
 		guard !isPrivate else { return }
 		let space = BrowserSpace()
 		let mutationDate = nextWorkspaceMutationDate()
-		spaceSwitchDirection = 1
 		workspace.spaces.append(space)
 		workspace.selectedSpaceID = space.id
 		workspace.modifiedAt = mutationDate
 		workspace.selectionModifiedAt = mutationDate
 		openInternalPage(.themeEditor)
+		schedulePersistence()
+	}
+
+	func reorderSpaces(_ ids: [UUID], before destinationID: UUID?) {
+		guard !isPrivate,
+		      !ids.isEmpty,
+		      Set(ids).count == ids.count,
+		      Set(ids).isSubset(of: workspace.spaces.map(\.id))
+		else { return }
+		if let destinationID {
+			guard workspace.spaces.contains(where: { $0.id == destinationID }),
+			      !ids.contains(destinationID) else { return }
+		}
+
+		let movingIDs = Set(ids)
+		let moving = workspace.spaces.filter { movingIDs.contains($0.id) }
+		let remaining = workspace.spaces.filter { !movingIDs.contains($0.id) }
+		let insertionIndex = destinationID.flatMap { destination in
+			remaining.firstIndex { $0.id == destination }
+		} ?? remaining.endIndex
+		var reordered = remaining
+		reordered.insert(contentsOf: moving, at: insertionIndex)
+		guard reordered.map(\.id) != workspace.spaces.map(\.id) else { return }
+
+		workspace.spaces = reordered
+		workspace.modifiedAt = nextWorkspaceMutationDate()
 		schedulePersistence()
 	}
 
@@ -334,9 +358,6 @@ final class Browser {
 		BrowserLog.debug(.spaces, "space.select", metadata: ["window": BrowserLog.id(windowID), "from": BrowserLog.id(workspace.selectedSpaceID), "to": BrowserLog.id(id)])
 		guard id != workspace.selectedSpaceID,
 		      let nextIndex = workspace.spaces.firstIndex(where: { $0.id == id }) else { return }
-		if let currentIndex = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
-			spaceSwitchDirection = nextIndex >= currentIndex ? 1 : -1
-		}
 		let space = workspace.spaces[nextIndex]
 		let targetID: UUID? = {
 			if let preferred = space.selectedTabID,
@@ -1305,9 +1326,6 @@ final class Browser {
 		} else if !nextWorkspace.favouriteTabIDs.contains(id),
 		          let ownerIndex = nextWorkspace.spaces.firstIndex(where: { $0.tabIDs.contains(id) })
 		{
-			if let currentIndex = nextWorkspace.spaces.firstIndex(where: { $0.id == nextWorkspace.selectedSpaceID }) {
-				spaceSwitchDirection = ownerIndex >= currentIndex ? 1 : -1
-			}
 			nextWorkspace.selectedSpaceID = nextWorkspace.spaces[ownerIndex].id
 		}
 
