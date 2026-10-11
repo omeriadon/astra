@@ -426,6 +426,7 @@ struct BrowserSpacePager<Content: View>: View {
 				} else {
 					host = BrowserSpacePageHost(rootView: pageFactory(space, active))
 					host.sizingOptions = []
+					host.setAccessibilityHidden(!active)
 					pageHosts[id] = host
 				}
 				if host.hitTestingEnabled != active {
