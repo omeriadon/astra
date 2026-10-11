@@ -68,6 +68,7 @@ final class AppKitSpacePagerView<Content: View>: NSView {
 	private var applyingGeometry = false
 	private var isConfiguring = false
 	private var deferredPositionPublish = false
+	private var pageOrderNeedsLayout = false
 
 	override init(frame: NSRect) {
 		super.init(frame: frame)
@@ -104,13 +105,17 @@ final class AppKitSpacePagerView<Content: View>: NSView {
 		scroller.frame = bounds
 		let width = max(scroller.contentSize.width, 1)
 		let height = max(scroller.contentSize.height, 1)
-		guard width != pageWidth || height != pageHeight else { return }
-		let currentPosition = pageWidth > 0
-			? scroller.contentView.bounds.origin.x / pageWidth
-			: CGFloat(spaces.firstIndex(where: { $0.id == selectedID }) ?? 0)
+		let contentWidth = width * CGFloat(max(1, spaces.count))
+		guard width != pageWidth || height != pageHeight
+			|| document.frame.width != contentWidth || pageOrderNeedsLayout else { return }
+		let selectedIndex = CGFloat(spaces.firstIndex(where: { $0.id == selectedID }) ?? 0)
+		let currentPosition = pageOrderNeedsLayout || pageWidth == 0
+			? selectedIndex
+			: scroller.contentView.bounds.origin.x / pageWidth
+		pageOrderNeedsLayout = false
 		pageWidth = width
 		pageHeight = height
-		document.frame = NSRect(x: 0, y: 0, width: width * CGFloat(max(1, spaces.count)), height: height)
+		document.frame = NSRect(x: 0, y: 0, width: contentWidth, height: height)
 		for (id, host) in cachedPages {
 			guard let index = spaces.firstIndex(where: { $0.id == id }) else { continue }
 			host.frame = NSRect(x: CGFloat(index) * width, y: 0, width: width, height: height)
@@ -150,6 +155,7 @@ final class AppKitSpacePagerView<Content: View>: NSView {
 			}
 		}
 		if oldIDs != spaces.map(\.id) {
+			pageOrderNeedsLayout = true
 			needsLayout = true
 			layoutSubtreeIfNeeded()
 		}
