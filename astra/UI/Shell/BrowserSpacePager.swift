@@ -590,6 +590,7 @@ struct BrowserSpacePager<Content: View>: View {
 				guard let space = spaceSnapshots[id] else { continue }
 				let active = id == selectedSpaceID
 				let host: BrowserSpacePageHost
+				let wasCached = pageHosts[id] != nil
 				if let retained = pageHosts[id] {
 					host = retained
 					if refreshContent || stalePageIDs.contains(id) {
@@ -618,7 +619,7 @@ struct BrowserSpacePager<Content: View>: View {
 					host.frame = frame
 				}
 				if host.superview !== documentView {
-					if pageHosts[id] === host, host.superview == nil {
+					if wasCached, host.superview == nil {
 						BrowserSpacePagingMetrics.cachedPageReattached()
 					}
 					documentView.addSubview(host)
