@@ -451,6 +451,11 @@ private struct AddressTextField: View {
 			.focused(isFocused)
 			.submitLabel(.go)
 			.onSubmit(onSubmitAddress)
+			.onChange(of: addressText) { _, _ in
+				#if os(macOS)
+					BrowserPerformanceBenchmark.recordAddressTextChange()
+				#endif
+			}
 			.onKeyPress(.tab) {
 				onCompleteAddress() ? .handled : .ignored
 			}

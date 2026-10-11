@@ -2742,6 +2742,36 @@ extension BrowserController: WKNavigationDelegate {
 			BrowserLog.info(.navigation, "navigation.did-finish", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(webView.url)])
 		}
 		guard owns(webView), navigation === currentNavigation else { return }
+		#if os(macOS)
+			if BrowserPerformanceBenchmark.enabled,
+			   BrowserPerformanceBenchmark.shouldMeasureNavigation(webView)
+			{
+				BrowserPerformanceBenchmark.recordNavigationFinished(
+					controllerID: id,
+					webView: webView,
+					webContentPID: Self.privateProcessIdentifier("_webProcessIdentifier", on: webView),
+					graphicsPID: Self.privateProcessIdentifier("_gpuProcessIdentifier", on: webView),
+					networkPID: Self.privateProcessIdentifier("_networkProcessIdentifier", on: webView.configuration.websiteDataStore)
+				)
+				let generation = navigationGeneration
+				webView.callAsyncJavaScript(
+					"await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(document.readyState))))",
+					arguments: [:],
+					in: nil,
+					in: .page
+				) { [weak self, weak webView] result in
+					Task { @MainActor in
+						guard case .success = result,
+							  let self,
+							  let webView,
+							  self.navigationGeneration == generation,
+							  self.owns(webView)
+						else { return }
+						BrowserPerformanceBenchmark.recordTwoRAF(controllerID: self.id)
+					}
+				}
+			}
+		#endif
 		refreshContentBlocking(for: webView.url)
 		webView.evaluateJavaScript("globalThis.astraProbeReader?.(true)", in: nil, in: .defaultClient, completionHandler: nil)
 		updateHistory()
