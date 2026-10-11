@@ -119,13 +119,16 @@ private struct SpaceThemeSurface: View {
 
 				if firstIndex == secondIndex {
 					CachedSpaceThemeSurface(theme: themes[firstIndex], colors: palettes[firstIndex])
+						.equatable()
 				} else {
 					// The expensive mesh/noise content is unchanged during a
 					// swipe. Only opacity is updated per presentation frame.
 					ZStack {
 						CachedSpaceThemeSurface(theme: themes[firstIndex], colors: palettes[firstIndex])
+						.equatable()
 							.opacity(1 - progress)
 						CachedSpaceThemeSurface(theme: themes[secondIndex], colors: palettes[secondIndex])
+							.equatable()
 							.opacity(progress)
 					}
 				}
