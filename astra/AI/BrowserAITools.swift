@@ -71,67 +71,67 @@ nonisolated struct BrowserAIToolCall: Codable, Sendable {
 }
 
 #if !ASTRA_WEBSITE_APP_RUNTIME
-@MainActor
-struct BrowserAIChatTurnFeature: BrowserAIFeature {
-	struct Input {
-		let context: String
-		let question: String
-		let catalog: String
-		let images: [BrowserAIImage]
-		let reasoning: String
-		var files: [BrowserAIFile] = []
-	}
-
-	nonisolated struct Turn: Decodable, Sendable {
-		let response: String
-		let actions: [BrowserAIToolCall]
-	}
-
-	var model: BrowserAIModel {
-		BrowserAIFeatureID.chat.model
-	}
-
-	var logName: String {
-		"AI Sidebar"
-	}
-
-	func request(for input: Input) -> BrowserAIRequest {
-		.init(instructions: BrowserAIPrompts.chatTools + "\nEnabled tools and arguments (all argument values are strings):\n" + input.catalog,
-		      prompt: "<context>\n\(input.context)\n</context>\nUser request: \(input.question)", maximumResponseTokens: 2048,
-		      images: input.images.isEmpty ? nil : input.images, reasoningEffort: input.reasoning, files: input.files.isEmpty ? nil : input.files)
-	}
-
-	func output(from text: String) throws -> Turn {
-		let data = BrowserAIOutput.jsonData(text)
-		if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-			guard let response = object["response"] as? String else { throw BrowserAIError.invalidResponse("The AI returned an action response without readable response text.") }
-			let rawActions = object["actions"] ?? []
-			guard let actions = rawActions as? [[String: Any]], actions.count <= 5 else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
-			let calls = try actions.map { item -> BrowserAIToolCall in
-				guard let name = item["name"] as? String, BrowserAIAction(rawValue: name) != nil,
-				      let values = item["arguments"] as? [String: Any], values.count <= 8 else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
-				var arguments: [String: String] = [:]
-				for (key, value) in values {
-					let string: String
-					if let value = value as? String {
-						string = value
-					} else if let value = value as? NSNumber {
-						string = CFGetTypeID(value) == CFBooleanGetTypeID() ? (value.boolValue ? "true" : "false") : value.stringValue
-					} else {
-						throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.")
-					}
-					guard string.utf8.count <= 8192 else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
-					arguments[key] = string
-				}
-				return BrowserAIToolCall(name: name, arguments: arguments)
-			}
-			return Turn(response: response, actions: calls)
+	@MainActor
+	struct BrowserAIChatTurnFeature: BrowserAIFeature {
+		struct Input {
+			let context: String
+			let question: String
+			let catalog: String
+			let images: [BrowserAIImage]
+			let reasoning: String
+			var files: [BrowserAIFile] = []
 		}
-		guard !String(decoding: data, as: UTF8.self).hasPrefix("{") else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
-		guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
-		return Turn(response: text, actions: [])
+
+		nonisolated struct Turn: Decodable, Sendable {
+			let response: String
+			let actions: [BrowserAIToolCall]
+		}
+
+		var model: BrowserAIModel {
+			BrowserAIFeatureID.chat.model
+		}
+
+		var logName: String {
+			"AI Sidebar"
+		}
+
+		func request(for input: Input) -> BrowserAIRequest {
+			.init(instructions: BrowserAIPrompts.chatTools + "\nEnabled tools and arguments (all argument values are strings):\n" + input.catalog,
+			      prompt: "<context>\n\(input.context)\n</context>\nUser request: \(input.question)", maximumResponseTokens: 2048,
+			      images: input.images.isEmpty ? nil : input.images, reasoningEffort: input.reasoning, files: input.files.isEmpty ? nil : input.files)
+		}
+
+		func output(from text: String) throws -> Turn {
+			let data = BrowserAIOutput.jsonData(text)
+			if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+				guard let response = object["response"] as? String else { throw BrowserAIError.invalidResponse("The AI returned an action response without readable response text.") }
+				let rawActions = object["actions"] ?? []
+				guard let actions = rawActions as? [[String: Any]], actions.count <= 5 else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
+				let calls = try actions.map { item -> BrowserAIToolCall in
+					guard let name = item["name"] as? String, BrowserAIAction(rawValue: name) != nil,
+					      let values = item["arguments"] as? [String: Any], values.count <= 8 else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
+					var arguments: [String: String] = [:]
+					for (key, value) in values {
+						let string: String
+						if let value = value as? String {
+							string = value
+						} else if let value = value as? NSNumber {
+							string = CFGetTypeID(value) == CFBooleanGetTypeID() ? (value.boolValue ? "true" : "false") : value.stringValue
+						} else {
+							throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.")
+						}
+						guard string.utf8.count <= 8192 else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
+						arguments[key] = string
+					}
+					return BrowserAIToolCall(name: name, arguments: arguments)
+				}
+				return Turn(response: response, actions: calls)
+			}
+			guard !String(decoding: data, as: UTF8.self).hasPrefix("{") else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
+			guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
+			return Turn(response: text, actions: [])
+		}
 	}
-}
 #endif
 
 @MainActor

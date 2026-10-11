@@ -196,9 +196,9 @@
 								while !Task.isCancelled,
 								      BrowserLog.clock() < deadline,
 								      !(foreground.window.isVisible
-										&& foreground.window.canBecomeKey
-										&& foreground.browser.isHydrationFinished
-										&& foreground.window.firstResponder != nil)
+								      	&& foreground.window.canBecomeKey
+								      	&& foreground.browser.isHydrationFinished
+								      	&& foreground.window.firstResponder != nil)
 								{
 									try? await Task.sleep(for: .milliseconds(25))
 								}
