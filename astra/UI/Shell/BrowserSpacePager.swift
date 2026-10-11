@@ -488,8 +488,11 @@ struct BrowserSpacePager<Content: View>: View {
 			// A display-link callback can occur 60-120 times per second.
 			// Avoid touching the hosting hierarchy until the visible page
 			// window or its dimensions actually change.
-			if !refreshContent, mountedPageWindow == indices,
-			   mountedPageSize == bounds.size
+			// A selection change needs to update hit-testing and accessibility
+			// even when the same pages remain mounted. Otherwise the newly
+			// active page can remain non-interactive, breaking vertical scroll.
+			if !refreshContent, changedPageIDs.isEmpty,
+			   mountedPageWindow == indices, mountedPageSize == bounds.size
 			{
 				return
 			}
