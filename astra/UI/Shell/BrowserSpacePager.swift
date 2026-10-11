@@ -299,7 +299,7 @@ struct BrowserSpacePager<Content: View>: View {
 			scrollState: BrowserSpaceScrollState,
 			reduceMotion: Bool,
 			onSelectSpace: @escaping (UUID) -> Void,
-			content: (BrowserSpace, Bool) -> AnyView
+			content: @escaping (BrowserSpace, Bool) -> AnyView
 		) {
 			let newIDs = spaces.map(\.id)
 			let membershipChanged = pageIDs != newIDs

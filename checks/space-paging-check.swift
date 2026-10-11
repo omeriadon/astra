@@ -62,6 +62,7 @@ for (position, count, expected) in mountedWindows {
 	precondition(actual == expected, "Wrong mount window for \(position)/\(count)")
 	precondition(actual == nil || actual!.count <= 4, "More than four attached space pages")
 }
+
 precondition(BrowserSpacePagingPhysics.mountedPageIndices(position: .nan, count: 8) == nil)
 
 print("Paging calculations passed: resistance/adoption, release direction, multi-page travel, interruption, edge bounds, stale velocity and spring convergence.")
