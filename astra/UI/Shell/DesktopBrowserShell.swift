@@ -399,7 +399,6 @@ private struct ShellSidebarColumn: View {
 	}
 
 	@State private var keepsDownloadsMounted = false
-	@State private var showsSpacePicker = false
 
 	var body: some View {
 		ZStack(alignment: .topLeading) {
@@ -503,65 +502,31 @@ private struct ShellSidebarColumn: View {
 		}
 		.overlay(alignment: .bottom) {
 			if sidebarShown {
-				GeometryReader { geometry in
-					sidebarBottomBar(maximumPanelHeight: max(0, geometry.size.height - sidebarMediaHeight - 70))
-						.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-				}
+				sidebarBottomBar
 			}
 		}
 	}
 
-	private func sidebarBottomBar(maximumPanelHeight: CGFloat) -> some View {
-		ZStack(alignment: .bottom) {
-			#if os(macOS)
-				if showsSpacePicker {
-					Button {
-						showsSpacePicker = false
-					} label: {
-						Label("Close Spaces", systemImage: "xmark")
-							.hidden()
-							.frame(maxWidth: .infinity, maxHeight: .infinity)
-							.contentShape(Rectangle())
-					}
-					.buttonStyle(.plain)
-					.keyboardShortcut(.cancelAction)
-					.accessibilityLabel("Close Spaces")
-					.accessibilityIdentifier("space-picker-dismiss")
-				}
-			#endif
-			VStack(spacing: 8) {
-				#if os(macOS)
-					if showsSpacePicker, !browser.isPrivate {
-						BrowserSpacePickerPanel(browser: browser, maximumHeight: maximumPanelHeight) {
-							showsSpacePicker = false
-						}
-						.padding(.horizontal, 8)
-						.foregroundStyle(theme.foregroundColor)
-						.transition(.opacity)
-					}
-				#endif
-				BrowserMediaActivityView(browser: browser)
-					.padding(.horizontal, 8)
-					.foregroundStyle(theme.foregroundColor)
-					.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-						sidebarMediaHeight = height
-					}
-
-				ShellDownloadsBarView(
-					browser: browser,
-					theme: theme,
-					downloads: downloads,
-					showsDownloads: $showsDownloads,
-					onToggleSpacePicker: {
-						showsSpacePicker.toggle()
-					}
-				)
+	private var sidebarBottomBar: some View {
+		VStack(spacing: 8) {
+			BrowserMediaActivityView(browser: browser)
+				.padding(.horizontal, 8)
 				.foregroundStyle(theme.foregroundColor)
-			}
-			.fixedSize(horizontal: false, vertical: true)
+				.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+					sidebarMediaHeight = height
+				}
+
+			ShellDownloadsBarView(
+				browser: browser,
+				theme: theme,
+				downloads: downloads,
+				showsDownloads: $showsDownloads
+			)
+			.foregroundStyle(theme.foregroundColor)
 		}
-		.animation(reduceMotion ? nil : .smooth(duration: 0.2), value: showsSpacePicker)
+		.fixedSize(horizontal: false, vertical: true)
 	}
+
 }
 
 private struct ShellContentColumn: View {
