@@ -80,7 +80,7 @@
 				Task { @MainActor in state(value) }
 			}
 			listener.newConnectionHandler = { [weak self] connection in
-				Task { @MainActor in self?.accept(connection) }
+				Task { @MainActor [weak self] in self?.accept(connection) }
 			}
 		}
 
@@ -101,7 +101,7 @@
 			connections[id] = connection
 			connection.stateUpdateHandler = { [weak self] state in
 				if case .failed = state {
-					Task { @MainActor in self?.finish(id) }
+					Task { @MainActor [weak self] in self?.finish(id) }
 				}
 			}
 			deadlines[id] = Task { [weak self] in
@@ -115,7 +115,7 @@
 		private func receive(_ id: UUID, buffer: Data) {
 			guard let connection = connections[id] else { return }
 			connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, complete, error in
-				Task { @MainActor in
+				Task { @MainActor [weak self] in
 					guard let self, self.connections[id] != nil else { return }
 					var accumulated = buffer
 					if let data {
@@ -149,7 +149,7 @@
 			headers["Connection"] = "close"
 			let head = "HTTP/1.1 \(response.status) Response\r\n" + headers.map { "\($0.key): \($0.value)\r\n" }.joined() + "\r\n"
 			connection.send(content: Data(head.utf8) + response.body, completion: .contentProcessed { [weak self] _ in
-				Task { @MainActor in self?.finish(id) }
+				Task { @MainActor [weak self] in self?.finish(id) }
 			})
 		}
 
