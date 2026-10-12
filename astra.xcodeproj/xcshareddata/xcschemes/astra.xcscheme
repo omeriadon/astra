@@ -66,11 +66,6 @@
             value = "1"
             isEnabled = "NO">
          </EnvironmentVariable>
-         <EnvironmentVariable
-            key = "ASTRA_PAGING_EXPERIMENT_DIRECT_BOUNDS"
-            value = "1"
-            isEnabled = "YES">
-         </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction

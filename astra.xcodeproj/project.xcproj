@@ -167,16 +167,16 @@
       ],
       "package-product-members": [
         {
-          "product-name": "MCP",
+          "product-name": "Haze",
+          "build-phase": { "build-phase": "frameworks", "platforms": [ "ios" ] },
+        }, {
+          "product-name": "Haze",
+          "build-phase": { "build-phase": "frameworks", "platforms": [ "ios" ] },
+        }, {
+          "product-name": "Haze",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
         }, {
-          "product-name": "Haze",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "ios" ] },
-        }, {
-          "product-name": "Haze",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "ios" ] },
-        }, {
-          "product-name": "Haze",
+          "product-name": "MCP",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
         }, {
           "product-name": "MaterialView",

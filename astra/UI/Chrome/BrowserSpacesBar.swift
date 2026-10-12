@@ -161,7 +161,7 @@ struct BrowserSpacesBar: View {
 				.accessibilityIdentifier("space-picker-add")
 			}
 			.padding(6)
-			.background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+			.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
 			.accessibilityIdentifier("space-picker-panel")
 			.onExitCommand(perform: onDismiss)
 			.alert("Delete Space?", isPresented: $showsDeleteAlert, presenting: spaceToDelete) { space in
