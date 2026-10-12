@@ -72,7 +72,7 @@ struct ShellSidebarListView: View {
 								}
 							}
 							.padding(.bottom, 12)
-
+						}
 						if favouriteTabs.isEmpty {
 							ForEach([BrowserTab]()) { _ in EmptyView() }
 								.reorderable(collectionID: SidebarTabCollection.favourite)
