@@ -16,9 +16,7 @@ struct ShellSidebarListView: View {
 	@State private var cleanupError: String?
 	@State private var todayGroupsUndo: [BrowserTabGroupingFeature.Group]?
 	@Namespace private var sidebarTransitions
-	#if os(macOS)
-		@State private var tabDrag = BrowserTabDragCoordinator.shared
-	#endif
+	@State private var sidebarSelection = BrowserSidebarTabSelection()
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	@ViewBuilder
@@ -47,7 +45,9 @@ struct ShellSidebarListView: View {
 		let normalIDSet = Set(normalTabs.map(\.id))
 		let normalIndexes = Dictionary(uniqueKeysWithValues: normalTabs.enumerated().map { ($0.element.id, $0.offset) })
 		let groupedIDs = Set(space.todayTabGroups.flatMap(\.tabIDs))
-		let ungroupedNormalTabs = normalTabs.enumerated().filter { !groupedIDs.contains($0.element.id) }
+		let ungroupedNormalTabs = normalTabs.filter { !groupedIDs.contains($0.id) }
+		let pinnedSelectionOrder = space.pinnedFolders.flatMap(\.tabIDs).filter { tabsByID[$0] != nil }
+			+ ungroupedPinnedTabs.map(\.id)
 		let selectedID = space.selectedTabID
 		return GeometryReader { geometry in
 			ScrollViewReader { reader in
@@ -61,6 +61,7 @@ struct ShellSidebarListView: View {
 											favouriteTile(tab, selectedID: selectedID)
 												.frame(maxWidth: .infinity)
 										}
+										.reorderable(collectionID: SidebarTabCollection.favourite)
 										ForEach(0 ..< max(0, start + 4 - favouriteTabs.count), id: \.self) { _ in
 											Color.clear
 												.frame(maxWidth: .infinity)
@@ -71,67 +72,42 @@ struct ShellSidebarListView: View {
 								}
 							}
 							.padding(.bottom, 12)
-							#if os(macOS)
-								.background {
-									BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
-								}
-							#endif
-						}
-						#if os(macOS)
-							if favouriteTabs.isEmpty, tabDrag.activeTabID != nil {
-								Color.clear
-									.frame(height: 34)
-									.background {
-										BrowserDropZone(browser: browser, area: .favourite, spaceID: nil, beforeTabID: nil)
-									}
-							}
-						#endif
 
-						if !pinnedTabs.isEmpty || !space.pinnedFolders.isEmpty {
-							VStack(spacing: 2) {
-								HStack {
-									Text("Pinned Tabs")
-										.font(.caption)
-									Spacer()
-									Button("New Folder", systemImage: "folder.badge.plus") {
-										browser.createPinnedFolder()
-									}
-									.labelStyle(.iconOnly)
-									.accessibilityIdentifier("new-pinned-folder")
-								}
-								ForEach(space.pinnedFolders) { folder in
-									PinnedFolderRow(folder: folder, browser: browser, tabsByID: tabsByID, selectedID: selectedID, isActiveSpace: isActiveSpace, normalCount: normalTabs.count, spaceID: space.id, theme: theme, openElsewhereIDs: openElsewhereIDs, onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
-								}
-								ForEach(ungroupedPinnedTabs) { tab in
-									BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalTabs.count, pinned: true, rowSpaceID: space.id, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
-										.equatable()
-										.id(tab.id)
-								}
-							}
-							#if os(macOS)
-							.background {
-								if tabDrag.activeTabID != nil {
-									BrowserDropZone(browser: browser, area: .pinned, spaceID: space.id, beforeTabID: nil)
-								}
-							}
-							#endif
+						if favouriteTabs.isEmpty {
+							ForEach([BrowserTab]()) { _ in EmptyView() }
+								.reorderable(collectionID: SidebarTabCollection.favourite)
+							Color.clear.frame(height: 14)
 						}
-						if pinnedTabs.isEmpty, space.pinnedFolders.isEmpty {
-							Button("New Pinned Folder", systemImage: "folder.badge.plus") {
-								browser.createPinnedFolder()
+
+
+						VStack(spacing: 2) {
+							HStack {
+								Text("Pinned Tabs").font(.caption)
+								Spacer()
 							}
-							.buttonStyle(.plain)
-							.accessibilityIdentifier("new-pinned-folder")
+							ForEach(space.pinnedFolders) { folder in
+								PinnedFolderRow(folder: folder, browser: browser, tabsByID: tabsByID,
+									selectedID: selectedID, isActiveSpace: isActiveSpace, normalCount: normalTabs.count,
+									spaceID: space.id, theme: theme, openElsewhereIDs: openElsewhereIDs,
+									onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions,
+									sidebarSelection: sidebarSelection, selectionOrder: pinnedSelectionOrder)
+							}
+							ForEach(ungroupedPinnedTabs) { tab in
+								BrowserTabRow(tab: tab, browser: browser,
+									isSelected: isActiveSpace && selectedID == tab.id,
+									tabIndex: nil, normalCount: normalTabs.count, pinned: true,
+									rowSpaceID: space.id, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id),
+									onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions,
+									sidebarSelection: sidebarSelection, selectionOrder: pinnedSelectionOrder)
+								.equatable()
+								.id(tab.id)
+							}
+							.reorderable(collectionID: SidebarTabCollection.pinned)
+							if pinnedTabs.isEmpty {
+								ForEach([BrowserTab]()) { _ in EmptyView() }
+									.reorderable(collectionID: SidebarTabCollection.pinned)
+							}
 						}
-						#if os(macOS)
-							if space.pinnedTabIDs.isEmpty, tabDrag.activeTabID != nil {
-								Color.clear
-									.frame(height: 28)
-									.background {
-										BrowserDropZone(browser: browser, area: .pinned, spaceID: space.id, beforeTabID: nil)
-									}
-							}
-						#endif
 						BrowserAITabDivider(browser: browser, tabs: normalTabs, action: $cleanupAction, error: $cleanupError, canUndoGrouping: todayGroupsUndo != nil)
 						VStack(spacing: 2) {
 							ForEach(space.todayTabGroups) { group in
