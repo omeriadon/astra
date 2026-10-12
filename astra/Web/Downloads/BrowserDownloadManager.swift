@@ -30,7 +30,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	private var accelerationAbandoned: Set<UUID> = []
 	private(set) var accelerationPending: Set<UUID> = []
 	private var resumeWebView: WKWebView?
-	@ObservationIgnored private lazy var segmented = SegmentedDownloadEngine()
+	@ObservationIgnored private lazy var segmented = SegmentedDownloadEngine(manager: self)
 	private var isClosing = false
 	private var deletingItems: Set<UUID> = []
 	private var downloadCacheReadCompleted = false
@@ -616,6 +616,28 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				persist()
 				showToast(symbol: "exclamationmark.triangle", message: "Download finalization failed: \(error.localizedDescription)")
 			}
+		}
+	}
+
+
+	/// Called only by the segmented transport on MainActor. Do not resurrect
+	/// paused, deleted, private-session-ended or finalizing transfers.
+	func activeSegmentedDownload(_ itemID: UUID) -> BrowserDownload? {
+		guard !isClosing, !deletingItems.contains(itemID) else { return nil }
+		return items.first {
+			$0.id == itemID && $0.status == .downloading && $0.segments?.isEmpty == false
+		}
+	}
+
+	func setSegmentConnectionMessage(_ itemID: UUID, message: String?) {
+		guard let index = items.firstIndex(where: {
+			$0.id == itemID && $0.status == .downloading && $0.segments != nil
+		}), items[index].errorMessage != message else { return }
+		items[index].errorMessage = message
+		if message != nil {
+			items[index].throughput = nil
+			items[index].estimatedTimeRemaining = nil
+			rateSamples[itemID] = nil
 		}
 	}
 
@@ -1431,7 +1453,14 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		}
 	}
 
-	func completeSegment(_ itemID: UUID, index: Int, partURL: URL, response: HTTPURLResponse?) {
+
+	func completeSegment(_ itemID: UUID, index: Int, taskID: Int, partURL: URL, response: HTTPURLResponse?) {
+		// A cancelled or replaced attempt may finish after its successor starts.
+		// Never merge that stale result into the destination staging file.
+		guard segmented.acceptsCompletion(itemID, index: index, taskID: taskID) else {
+			Task { await BrowserDownloadFileWorker.shared.removeFiles([partURL]) }
+			return
+		}
 		guard !isClosing,
 		      let itemIndex = items.firstIndex(where: { $0.id == itemID }),
 		      items[itemIndex].status == .downloading,
@@ -1513,11 +1542,15 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		      items[itemIndex].segments?.indices.contains(index) == true,
 		      items[itemIndex].totalBytes != nil
 		else { return }
+
+		segmented.segmentCommitted(itemID, index: index)
 		items[itemIndex].segments?[index].completed = true
 		items[itemIndex].segments?[index].received = partSize
 		updateSegmentProgress(itemID, index: index, received: partSize)
 		persist()
+
 		guard items[itemIndex].segments?.allSatisfy(\.completed) == true else { return }
+		segmented.stopMonitoring(itemID)
 		beginFinalization(itemID, temporaryURL: fileURL)
 	}
 
@@ -1529,6 +1562,9 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		      fileURL == nil || items[index].fileURL == fileURL,
 		      let segments = items[index].segments
 		else { return }
+
+		// Resolve original safe headers before cancellation clears transport state.
+		let fallbackRequest = segmented.fallbackRequest(for: items[index])
 		segmented.cancel(itemID)
 		accelerationAbandoned.insert(itemID)
 		let failedFileURL = items[index].fileURL
@@ -1551,14 +1587,16 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			persist()
 			return
 		}
-		let fallbackRequest = segmented.fallbackRequest(for: items[index]) ?? URLRequest(url: url)
+
+		let request = fallbackRequest ?? URLRequest(url: url)
 		persist()
 		if resumeWebView == nil {
 			let configuration = WKWebViewConfiguration()
 			configuration.websiteDataStore = privateDataStore ?? .default()
 			resumeWebView = WKWebView(frame: .zero, configuration: configuration)
 		}
-		resumeWebView?.startDownload(using: fallbackRequest) { [weak self] download in
+
+		resumeWebView?.startDownload(using: request) { [weak self] download in
 			self?.attach(download, to: itemID)
 		}
 	}
