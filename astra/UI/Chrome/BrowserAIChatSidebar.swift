@@ -71,7 +71,8 @@ struct BrowserAIChatSidebar: View {
 							hoveredURL: $hoveredURL,
 							hoveredLinkSize: $hoveredLinkSize,
 							hoveredLinkShiftPressed: $hoveredLinkShiftPressed,
-							onPreviewChange: { reader.scrollTo("chat-bottom", anchor: .bottom) }
+							onPreviewChange: { reader.scrollTo("chat-bottom", anchor: .bottom) },
+							onRetry: { send() }
 						)
 						Color.clear.frame(height: 1).id("chat-bottom")
 					}
@@ -378,6 +379,7 @@ private struct BrowserAIChatStreamingResponse: View {
 	@Binding var hoveredLinkSize: CGSize
 	@Binding var hoveredLinkShiftPressed: Bool
 	let onPreviewChange: () -> Void
+	let onRetry: () -> Void
 	@State private var presentedPreview = ""
 
 	var body: some View {
@@ -411,9 +413,17 @@ private struct BrowserAIChatStreamingResponse: View {
 				}
 			}
 			if let error = chat.error {
-				Text(error)
-					.foregroundStyle(.secondary)
-					.accessibilityIdentifier("ai-chat-error")
+				VStack(alignment: .leading, spacing: 8) {
+					Text(error)
+						.foregroundStyle(.secondary)
+						.accessibilityIdentifier("ai-chat-error")
+					if chat.canRetry {
+						Button("Retry Message", systemImage: "arrow.clockwise", action: onRetry)
+							.buttonStyle(.glass)
+							.disabled(chat.isResponding)
+							.accessibilityIdentifier("ai-chat-retry")
+					}
+				}
 			}
 		}
 		// MarkdownContent reparses the entire accumulated response on each

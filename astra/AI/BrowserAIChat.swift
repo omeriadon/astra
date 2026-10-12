@@ -26,6 +26,7 @@ final class BrowserAIChat {
 	private(set) var messages: [Message] = []
 	private(set) var preview = ""
 	private(set) var error: String?
+	private(set) var canRetry = false
 	private(set) var isResponding = false
 	@ObservationIgnored private var pages: [UUID: BrowserAIPageText] = [:]
 
@@ -120,6 +121,7 @@ final class BrowserAIChat {
 		linkedTabIDs = []
 		preview = ""
 		error = nil
+		canRetry = false
 	}
 
 	func send(in browser: Browser) async {
@@ -131,12 +133,26 @@ final class BrowserAIChat {
 		let conversationID = id
 		let spaceID = browser.selectedSpace.id
 		let model = effectiveModel
+		let sendID = UUID()
+		let started = BrowserLog.clock()
+		var answerCommitted = false
 		isResponding = true
 		error = nil
+		canRetry = false
 		preview = ""
+		BrowserLog.info(.ai, "ai.chat.send", metadata: [
+			"id": BrowserLog.id(sendID), "conversation": BrowserLog.id(conversationID),
+			"provider": BrowserLog.value(model.identifier),
+			"history_messages": String(messages.count),
+			"question_bytes": String(question.utf8.count),
+			"attachments": String(newAttachments.count),
+			"linked_tabs": String(linkedTabIDs.count),
+			"pending_pages": String(pendingPages.count)
+		])
 		defer { isResponding = false }
 		do {
 			try await BrowserAI.shared.checkAccess(for: model, feature: "AI Sidebar")
+			BrowserLog.debug(.ai, "ai.chat.preflight-passed", metadata: ["id": BrowserLog.id(sendID)])
 			let tabs = availableTabs(in: browser)
 			var ids = linkedTabIDs
 			for tab in tabs.sorted(by: { $0.title.count > $1.title.count }) {
@@ -151,12 +167,18 @@ final class BrowserAIChat {
 			}
 			for id in ids {
 				guard let tab = tabs.first(where: { $0.id == id }), let url = tab.currentURL else { throw BrowserAIError.pageUnavailable }
+				let pageStarted = BrowserLog.clock()
 				let page: BrowserAIPageText = if let controller = tab.activeController, controller.webViewIfLoaded != nil {
 					try await BrowserAIPageText.extract(from: controller)
 				} else {
 					try await BrowserAIPageLoader().page(at: url)
 				}
 				contextPages[id] = page
+				BrowserLog.debug(.ai, "ai.chat.page-extracted", metadata: [
+					"id": BrowserLog.id(sendID), "tab": BrowserLog.id(id),
+					"url": BrowserLog.url(url), "context_bytes": String(page.prompt.utf8.count),
+					"elapsed_ms": String(Int((BrowserLog.clock() - pageStarted) * 1000))
+				])
 			}
 			try Task.checkCancellation()
 			let files = messages.flatMap(\.attachments) + newAttachments
@@ -167,9 +189,27 @@ final class BrowserAIChat {
 			let fileContext = files.map(\.prompt).joined(separator: "\n\n")
 			var toolResults = ""
 			var answer = ""
-			for _ in 0 ..< 5 {
+			BrowserLog.debug(.ai, "ai.chat.context-ready", metadata: [
+				"id": BrowserLog.id(sendID), "pages": String(contextPages.count),
+				"page_bytes": String(context.utf8.count),
+				"file_bytes": String(fileContext.utf8.count),
+				"conversation_bytes": String(conversation.utf8.count),
+				"image_count": String(images.count)
+			])
+			for round in 0 ..< 5 {
 				try Task.checkCancellation()
+				BrowserLog.debug(.ai, "ai.chat.turn-start", metadata: [
+					"id": BrowserLog.id(sendID), "round": String(round + 1),
+					"tool_results_bytes": String(toolResults.utf8.count)
+				])
 				let (turn, results) = try await streamTurn(input: .init(context: context + "\n" + fileContext + "\n<conversation>\n" + conversation + "\n</conversation>\n" + BrowserAITools.inventory(browser) + "\n<tool-results>\n" + toolResults + "\n</tool-results>", question: question, catalog: BrowserAITools.catalog(), images: images, reasoning: selectedReasoning.isEmpty ? "provider-default" : selectedReasoning, files: files.compactMap(\.file)), model: model, browser: browser, spaceID: spaceID)
+				BrowserLog.debug(.ai, "ai.chat.turn-complete", metadata: [
+					"id": BrowserLog.id(sendID), "round": String(round + 1),
+					"action_count": String(turn.actions.count),
+					"action_names": turn.actions.map(\.name).joined(separator: ","),
+					"response_bytes": String(turn.response.utf8.count),
+					"tool_results_bytes": String(results.utf8.count)
+				])
 				toolResults += results
 				if turn.actions.isEmpty {
 					answer = turn.response
@@ -183,6 +223,7 @@ final class BrowserAIChat {
 			pages = contextPages
 			messages.append(Message(isUser: true, text: question, attachments: newAttachments))
 			messages.append(Message(isUser: false, text: answer))
+			answerCommitted = true
 			if messages.count == 2 {
 				title = String(question.prefix(70))
 			}
@@ -192,19 +233,42 @@ final class BrowserAIChat {
 			pendingPages = []
 			preview = ""
 			try await save()
+			BrowserLog.info(.ai, "ai.chat.saved", metadata: [
+				"id": BrowserLog.id(sendID), "conversation": BrowserLog.id(conversationID),
+				"answer_bytes": String(answer.utf8.count),
+				"elapsed_ms": String(Int((BrowserLog.clock() - started) * 1000))
+			])
+			// Title generation is supplementary: do not block the composer or
+			// turn a successful, saved response into an apparent chat failure.
 			if !titleIsGenerated {
-				let generated = try? await BrowserAI.shared.perform(BrowserChatTitleFeature(), input: .init(question: question, answer: answer), model: model)
-				try Task.checkCancellation()
-				if let generated {
-					title = generated
-					titleIsGenerated = true
-					try await save()
+				Task { @MainActor [weak self] in
+					guard let self else { return }
+					let generated = try? await BrowserAI.shared.perform(BrowserChatTitleFeature(), input: .init(question: question, answer: answer), model: model)
+					guard self.id == conversationID, !self.titleIsGenerated, let generated else { return }
+					self.title = generated
+					self.titleIsGenerated = true
+					do {
+						try await self.save()
+					} catch {
+						BrowserLog.warning(.ai, "ai.chat.title-save-failed", metadata: [
+							"id": BrowserLog.id(sendID), "error": BrowserLog.errorDescription(error)
+						])
+					}
 				}
 			}
 		} catch {
 			preview = ""
 			if !Task.isCancelled {
 				self.error = error.localizedDescription
+				canRetry = !answerCommitted
+				BrowserLog.error(.ai, "ai.chat.failed", metadata: [
+					"id": BrowserLog.id(sendID), "conversation": BrowserLog.id(conversationID),
+					"stage": answerCommitted ? "save" : "generation",
+					"error": BrowserLog.errorDescription(error),
+					"elapsed_ms": String(Int((BrowserLog.clock() - started) * 1000))
+				])
+			} else {
+				BrowserLog.debug(.ai, "ai.chat.cancelled", metadata: ["id": BrowserLog.id(sendID)])
 			}
 		}
 	}
@@ -217,11 +281,22 @@ final class BrowserAIChat {
 		let (pendingCalls, continuation) = AsyncStream.makeStream(of: BrowserAIToolCall.self)
 		var seen = Set<Data>()
 		var results = ""
+		let turnID = UUID()
+		BrowserLog.debug(.ai, "ai.chat.stream-turn-start", metadata: [
+			"id": BrowserLog.id(turnID),
+			"context_bytes": String(input.context.utf8.count),
+			"question_bytes": String(input.question.utf8.count),
+			"images": String(input.images.count),
+			"model": BrowserLog.value(model.identifier)
+		])
 		let generation = Task { @MainActor in
 			defer { continuation.finish() }
 			var lastPreviewPublishedAt: ContinuousClock.Instant?
 			var latestPreview = ""
 			let turn = try await BrowserAI.shared.performStreaming(feature, input: input, model: model) { snapshot in
+				BrowserLog.trace(.ai, "ai.chat.stream-progress", metadata: [
+					"id": BrowserLog.id(turnID), "bytes": String(snapshot.utf8.count)
+				])
 				latestPreview = BrowserAIOutput.streamedString("response", in: snapshot) ?? (snapshot.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") ? "" : snapshot)
 				// The Markdown view and scroll reader are relatively expensive.
 				// Publish at most ~12 updates per second while retaining the
@@ -246,24 +321,48 @@ final class BrowserAIChat {
 					let encoder = JSONEncoder()
 					encoder.outputFormatting = .sortedKeys
 					guard let identifier = try? encoder.encode(call), seen.insert(identifier).inserted else { continue }
+					BrowserLog.debug(.ai, "ai.chat.tool-decoded", metadata: [
+						"id": BrowserLog.id(turnID), "tool": call.name,
+						"arguments_bytes": String(identifier.count)
+					])
 					continuation.yield(call)
 				}
 			}
 			if preview != latestPreview {
 				preview = latestPreview
 			}
+			BrowserLog.debug(.ai, "ai.chat.stream-turn-finished", metadata: [
+				"id": BrowserLog.id(turnID), "actions": String(turn.actions.count),
+				"response_bytes": String(turn.response.utf8.count),
+				"response": BrowserLog.value(String(turn.response.prefix(8192)))
+			])
 			return turn
 		}
 		defer { generation.cancel(); continuation.finish() }
 		return try await withTaskCancellationHandler {
 			for await call in pendingCalls {
 				try Task.checkCancellation()
+				let toolStarted = BrowserLog.clock()
+				BrowserLog.debug(.ai, "ai.chat.tool-start", metadata: [
+					"id": BrowserLog.id(turnID), "tool": call.name
+				])
 				do {
 					let result = try await BrowserAITools.execute(call, browser: browser, spaceID: spaceID, model: model)
+					BrowserLog.debug(.ai, "ai.chat.tool-success", metadata: [
+						"id": BrowserLog.id(turnID), "tool": call.name,
+						"elapsed_ms": String(Int((BrowserLog.clock() - toolStarted) * 1000)),
+						"result_bytes": String(result.utf8.count),
+						"result": BrowserLog.value(String(result.prefix(4096)))
+					])
 					results += "\n\(call.name): \(result)\n"
 					await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "success", details: "phase=tool")
 				} catch {
 					try Task.checkCancellation()
+					BrowserLog.error(.ai, "ai.chat.tool-failure", metadata: [
+						"id": BrowserLog.id(turnID), "tool": call.name,
+						"elapsed_ms": String(Int((BrowserLog.clock() - toolStarted) * 1000)),
+						"error": BrowserLog.errorDescription(error)
+					])
 					results += "\n\(call.name): Failed. \(error.localizedDescription)\n"
 					await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "failed", details: "phase=tool")
 				}
@@ -292,6 +391,7 @@ final class BrowserAIChat {
 		linkedTabIDs = []
 		preview = ""
 		error = nil
+		canRetry = false
 	}
 }
 
