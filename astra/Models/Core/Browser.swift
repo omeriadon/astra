@@ -283,7 +283,7 @@ final class Browser {
 	func createSpace() {
 		BrowserLog.info(.spaces, "space.create", metadata: ["window": BrowserLog.id(windowID), "existing": String(workspace.spaces.count)])
 		guard !isPrivate else { return }
-		let space = BrowserSpace()
+		let space = makeRandomSpace()
 		let mutationDate = nextWorkspaceMutationDate()
 		workspace.spaces.append(space)
 		workspace.selectedSpaceID = space.id
@@ -291,6 +291,80 @@ final class Browser {
 		workspace.selectionModifiedAt = mutationDate
 		openInternalPage(.themeEditor)
 		schedulePersistence()
+	}
+
+
+	// New spaces receive their own editable appearance rather than inheriting the
+	// default blue/grey theme. Existing spaces are never re-randomised.
+	private func makeRandomSpace() -> BrowserSpace {
+		let palettes: [(primary: BrowserColor, accent: BrowserColor)] = [
+			(.init(red: 0.98, green: 0.68, blue: 0.66), .init(red: 0.91, green: 0.28, blue: 0.47)),
+			(.init(red: 0.78, green: 0.27, blue: 0.20), .init(red: 1.00, green: 0.62, blue: 0.33)),
+			(.init(red: 1.00, green: 0.58, blue: 0.25), .init(red: 0.94, green: 0.83, blue: 0.48)),
+			(.init(red: 0.96, green: 0.83, blue: 0.44), .init(red: 0.87, green: 0.54, blue: 0.29)),
+			(.init(red: 0.75, green: 0.89, blue: 0.44), .init(red: 0.35, green: 0.64, blue: 0.32)),
+			(.init(red: 0.18, green: 0.49, blue: 0.39), .init(red: 0.54, green: 0.80, blue: 0.61)),
+			(.init(red: 0.54, green: 0.88, blue: 0.76), .init(red: 0.17, green: 0.62, blue: 0.67)),
+			(.init(red: 0.18, green: 0.61, blue: 0.66), .init(red: 0.14, green: 0.35, blue: 0.57)),
+			(.init(red: 0.38, green: 0.55, blue: 0.88), .init(red: 0.65, green: 0.78, blue: 0.97)),
+			(.init(red: 0.66, green: 0.63, blue: 0.97), .init(red: 0.39, green: 0.34, blue: 0.76)),
+			(.init(red: 0.53, green: 0.28, blue: 0.73), .init(red: 0.83, green: 0.57, blue: 0.91)),
+			(.init(red: 0.88, green: 0.46, blue: 0.78), .init(red: 0.60, green: 0.29, blue: 0.64)),
+			(.init(red: 0.83, green: 0.24, blue: 0.45), .init(red: 1.00, green: 0.64, blue: 0.65)),
+			(.init(red: 0.31, green: 0.43, blue: 0.57), .init(red: 0.66, green: 0.73, blue: 0.81)),
+			(.init(red: 0.22, green: 0.33, blue: 0.69), .init(red: 0.41, green: 0.69, blue: 0.92)),
+			(.init(red: 0.43, green: 0.30, blue: 0.30), .init(red: 0.84, green: 0.63, blue: 0.48)),
+		]
+		// Prefer a visibly different palette from every existing space.
+		let distinctPalettes = palettes.filter { palette in
+			!workspace.spaces.contains { existing in
+				let color = existing.theme.meshColorPoints.first?.color ?? existing.theme.firstColor
+				let red = palette.primary.red - color.red
+				let green = palette.primary.green - color.green
+				let blue = palette.primary.blue - color.blue
+				return red * red + green * green + blue * blue < 0.09
+			}
+		}
+		let palette = (distinctPalettes.isEmpty ? palettes : distinctPalettes).randomElement() ?? palettes[0]
+		let unusedSymbols = BrowserSpace.symbols.filter { symbol in
+			!workspace.spaces.contains { $0.symbol == symbol }
+		}
+		let symbol = (unusedSymbols.isEmpty ? BrowserSpace.symbols : unusedSymbols).randomElement()
+			?? "circle.grid.2x2.fill"
+
+		var theme = BrowserTheme()
+		let isGradient = Int.random(in: 0 ... 3) != 0
+		theme.usesGradient = isGradient
+		theme.firstColor = palette.primary
+		theme.secondColor = palette.accent
+		theme.gradientDirection = ThemeGradientDirection.allCases.randomElement() ?? .topLeading
+		theme.meshOpacity = Double.random(in: 0.58 ... 0.92)
+		theme.appearanceMode = Bool.random()
+			? .auto
+			: (palette.primary.luminance > 0.55 ? .light : .dark)
+		theme.meshColorPoints = [
+			ThemeColorPoint(
+				color: palette.primary,
+				x: isGradient ? 0.25 : 0.5,
+				y: isGradient ? 0.3 : 0.5
+			),
+		]
+		if isGradient {
+			theme.meshColorPoints.append(
+				ThemeColorPoint(color: palette.accent, x: 0.75, y: 0.7)
+			)
+			if Bool.random() {
+				let highlight = BrowserColor(
+					red: min(1, (palette.primary.red + palette.accent.red) / 2 + 0.1),
+					green: min(1, (palette.primary.green + palette.accent.green) / 2 + 0.1),
+					blue: min(1, (palette.primary.blue + palette.accent.blue) / 2 + 0.1)
+				)
+				theme.meshColorPoints.append(
+					ThemeColorPoint(color: highlight, x: 0.25, y: 0.8)
+				)
+			}
+		}
+		return BrowserSpace(symbol: symbol, theme: theme)
 	}
 
 	func reorderSpaces(_ ids: [UUID], before destinationID: UUID?) {
