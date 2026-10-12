@@ -1,7 +1,7 @@
 import Foundation
 
 enum BrowserChromeMetrics {
-	static let topBarRegionHeight: CGFloat = 28
+	static let topBarRegionHeight: CGFloat = 23
 	static let expandedSidebarWidth: CGFloat = 224
 	static let sidebarWidthRange: ClosedRange<CGFloat> = 130 ... 330
 	static let aiSidebarWidthRange: ClosedRange<CGFloat> = 300 ... 600

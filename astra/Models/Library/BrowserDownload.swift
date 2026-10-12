@@ -92,7 +92,7 @@ nonisolated struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 				details.append("\(remaining) remaining")
 			}
 		}
-		return details.joined(separator: " · ")
+		return details.joined(separator: "\n")
 	}
 
 	static func averageThroughput(samples: [(bytes: Int64, at: Date)]) -> Double? {
@@ -165,24 +165,24 @@ nonisolated struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 		switch status {
 			case .downloading:
 				if let errorMessage, segments != nil {
-					return "\(errorMessage) · \(progressLabel)"
+					return "\(errorMessage)\n\(progressLabel)"
 				}
 				return progressDetails
 			case .finalizing:
 				return "Finalizing file…"
 			case .paused:
-				return "\(errorMessage ?? "Paused") · \(progressLabel)"
+				return "\(errorMessage ?? "Paused")\n\(progressLabel)"
 			case .completed:
 				if destinationIsFileScoped == true, fileAccessBookmark == nil {
-					return "Downloaded · renewed access needed · \(progressLabel)"
+					return "Downloaded\nrenewed access needed\n\(progressLabel)"
 				}
-				return "Downloaded · \(progressLabel)"
+				return "Downloaded\n\(progressLabel)"
 			case .cancelled:
-				return "Cancelled · \(progressLabel)"
+				return "Cancelled\n\(progressLabel)"
 			case .failed:
 				let error = errorMessage ?? "Download failed."
 				guard (receivedBytes ?? 0) > 0 else { return error }
-				return "\(error) · \(progressLabel)"
+				return "\(error)\n\(progressLabel)"
 		}
 	}
 

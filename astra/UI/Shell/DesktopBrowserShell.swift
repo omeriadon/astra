@@ -167,7 +167,6 @@ struct DesktopBrowserShell: View {
 			BrowserSplitView(
 				sidebarShown: .constant(isSidebarVisible),
 				minimumContentWidth: minimumPageWidth,
-				sidebarOverlaysContent: !isSidebarPinned,
 				followingSidebarWidth: showsAI ? BrowserChromeMetrics.aiSidebarWidthRange.lowerBound : 0
 			) {
 				ShellSidebarColumn(
