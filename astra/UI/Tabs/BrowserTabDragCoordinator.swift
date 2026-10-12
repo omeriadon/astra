@@ -193,3 +193,99 @@
 		}
 	}
 #endif
+
+
+#if os(macOS)
+/// Distinct destinations allow macOS 27 SwiftUI reordering to move items both
+/// within and across the sidebar's three top-level areas and pinned folders.
+enum SidebarTabCollection: Hashable, Sendable {
+	case favourite
+	case pinned
+	case normal
+	case folder(UUID)
+	case todayGroup(String)
+}
+
+@MainActor
+@Observable
+final class BrowserSidebarTabSelection {
+	private(set) var tabIDs: Set<UUID> = []
+	private(set) var area: Browser.TabArea?
+	private(set) var spaceID: UUID?
+	private var anchorID: UUID?
+
+	func contains(_ id: UUID, area: Browser.TabArea, spaceID: UUID) -> Bool {
+		self.area == area && self.spaceID == spaceID && tabIDs.contains(id)
+	}
+
+	func orderedIDs(in ids: [UUID], area: Browser.TabArea, spaceID: UUID) -> [UUID] {
+		guard self.area == area, self.spaceID == spaceID else { return [] }
+		return ids.filter { tabIDs.contains($0) }
+	}
+
+	/// Returns true when the click should also activate the tab.
+	@discardableResult
+	func click(_ id: UUID, area: Browser.TabArea, spaceID: UUID, orderedIDs: [UUID], currentID: UUID?, modifiers: NSEvent.ModifierFlags) -> Bool {
+		let command = modifiers.contains(.command)
+		let shift = modifiers.contains(.shift)
+		guard command || shift else {
+			clear()
+			anchorID = id
+			return true
+		}
+		guard orderedIDs.contains(id) else { return false }
+		if self.area != area || self.spaceID != spaceID {
+			clear()
+			self.area = area
+			self.spaceID = spaceID
+		}
+		if shift {
+			let anchor = anchorID.flatMap { orderedIDs.firstIndex(of: $0) }
+				?? currentID.flatMap { orderedIDs.firstIndex(of: $0) }
+				?? orderedIDs.firstIndex(of: id)!
+			let clicked = orderedIDs.firstIndex(of: id)!
+			let range = Set(orderedIDs[min(anchor, clicked) ... max(anchor, clicked)])
+			if command {
+				tabIDs.formUnion(range)
+			} else {
+				tabIDs = range
+			}
+			anchorID = orderedIDs[anchor]
+		} else {
+			if !tabIDs.insert(id).inserted { tabIDs.remove(id) }
+			anchorID = id
+		}
+		return false
+	}
+
+	func clear() {
+		tabIDs = []
+		area = nil
+		spaceID = nil
+		anchorID = nil
+	}
+}
+#endif
+
+#if os(iOS)
+import Foundation
+import Observation
+
+enum SidebarTabCollection: Hashable, Sendable {
+	case favourite
+	case pinned
+	case normal
+	case folder(UUID)
+	case todayGroup(String)
+}
+
+/// The macOS sidebar supplies real multi-selection; iOS rows do not.
+@MainActor
+@Observable
+final class BrowserSidebarTabSelection {
+	var tabIDs: Set<UUID> = []
+	func contains(_ id: UUID, area: Browser.TabArea, spaceID: UUID) -> Bool { false }
+	func orderedIDs(in ids: [UUID], area: Browser.TabArea, spaceID: UUID) -> [UUID] { [] }
+	func clear() {}
+}
+#endif
