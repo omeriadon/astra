@@ -4,6 +4,25 @@ struct BrowserPageView: View {
 	let browser: Browser
 	let cornerRadius: CGFloat
 	var insets = BrowserViewportInsets()
+	@State private var presentedSpaceID: UUID
+	@State private var presentedTabID: UUID
+	@State private var contentOpacity = 1.0
+	@State private var transitionGeneration = 0
+
+	init(browser: Browser, cornerRadius: CGFloat, insets: BrowserViewportInsets = BrowserViewportInsets()) {
+		self.browser = browser
+		self.cornerRadius = cornerRadius
+		self.insets = insets
+		_presentedSpaceID = State(initialValue: browser.selectedSpace.id)
+		_presentedTabID = State(initialValue: browser.selectedTabID)
+	}
+
+	private var displayedTab: BrowserTab? {
+		if presentedSpaceID != browser.selectedSpace.id {
+			return browser.tab(withID: presentedTabID) ?? browser.selectedTab
+		}
+		return browser.selectedTab
+	}
 	private var toastManager: ToastManager {
 		browser.session.toastManager
 	}
@@ -22,9 +41,9 @@ struct BrowserPageView: View {
 
 	var body: some View {
 		let hasActiveDuplicate = BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
-		let selectedTab = browser.selectedTab
+		let selectedTab = displayedTab
 		return ZStack(alignment: .top) {
-			BrowserContentView(browser: browser, insets: insets)
+			BrowserContentView(browser: browser, insets: insets, displayedTabID: selectedTab?.id)
 			#if os(macOS)
 				.blur(radius: hasActiveDuplicate ? 10 : 0)
 				.allowsHitTesting(!hasActiveDuplicate)
@@ -56,7 +75,7 @@ struct BrowserPageView: View {
 		.allowsHitTesting(!hasActiveDuplicate)
 		#if os(macOS)
 			.overlay {
-				if let controller = browser.selectedTab?.activeController,
+				if let controller = selectedTab?.activeController,
 				   controller.readerHTML == nil,
 				   !hasActiveDuplicate
 				{
@@ -67,7 +86,7 @@ struct BrowserPageView: View {
 		#endif
 
 			.overlay(alignment: .topTrailing) {
-				if let controller = browser.selectedTab?.activeController, controller.showsFind {
+				if let controller = selectedTab?.activeController, controller.showsFind {
 					BrowserFindBar(controller: controller)
 						.id(controller.id)
 				}
@@ -96,6 +115,39 @@ struct BrowserPageView: View {
 				}
 			}
 		#endif
+		// Keep outgoing page content stable until the fade-out completes.
+		.opacity(contentOpacity)
+		.allowsHitTesting(presentedSpaceID == browser.selectedSpace.id)
+		.onChange(of: browser.selectedTabID) { _, id in
+			if presentedSpaceID == browser.selectedSpace.id {
+				presentedTabID = id
+			}
+		}
+		.onChange(of: browser.selectedSpace.id) { _, newID in
+			transitionGeneration += 1
+			let generation = transitionGeneration
+			guard !reduceMotion, presentedSpaceID != newID,
+			      browser.tab(withID: presentedTabID) != nil
+			else {
+				presentedSpaceID = newID
+				presentedTabID = browser.selectedTabID
+				contentOpacity = 1
+				return
+			}
+
+			withAnimation(.easeInOut(duration: 0.1)) {
+				contentOpacity = 0
+			}
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(105))
+				guard generation == transitionGeneration else { return }
+				presentedSpaceID = browser.selectedSpace.id
+				presentedTabID = browser.selectedTabID
+				withAnimation(.easeInOut(duration: 0.1)) {
+					contentOpacity = 1
+				}
+			}
+		}
 	}
 }
 
