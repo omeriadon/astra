@@ -597,7 +597,7 @@
 		}
 
 		@objc private func newWindow(_: Any?) {
-			openBrowserWindow(isPrivate: activeAuthenticationBrowser == nil && activeBrowser?.isPrivate == true)
+			openBrowserWindow()
 		}
 
 		@objc private func newTab(_: Any?) {
