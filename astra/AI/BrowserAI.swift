@@ -62,8 +62,8 @@ final class BrowserAI {
 	) async throws -> Feature.Output {
 		let request = try feature.request(for: input)
 		let selected = model ?? BrowserAISettings.effectiveModel(feature.model)
-		return try await logged(request, model: selected, feature: feature.logName, mode: "single") {
-			let text = try await generateResponse(request, model: selected)
+		return try await logged(request, model: selected, feature: feature.logName, mode: "single") { id in
+			let text = try await generateResponse(request, model: selected, requestID: id)
 			return try (feature.output(from: text), text.utf8.count)
 		}
 	}
@@ -71,13 +71,13 @@ final class BrowserAI {
 	/// Each call has its own session. There is no shared transcript or automatic cloud fallback.
 	func generate(_ request: BrowserAIRequest, model: BrowserAIModel = .appleIntelligence) async throws -> String {
 		let selected = BrowserAISettings.effectiveModel(model)
-		return try await logged(request, model: selected, feature: "AI Request", mode: "single") {
-			let text = try await generateResponse(request, model: selected)
+		return try await logged(request, model: selected, feature: "AI Request", mode: "single") { id in
+			let text = try await generateResponse(request, model: selected, requestID: id)
 			return (text, text.utf8.count)
 		}
 	}
 
-	private func generateResponse(_ request: BrowserAIRequest, model: BrowserAIModel) async throws -> String {
+	private func generateResponse(_ request: BrowserAIRequest, model: BrowserAIModel, requestID: UUID) async throws -> String {
 		try Task.checkCancellation()
 		try requireEnabled()
 		let generation = try authentication(for: model)
@@ -108,7 +108,7 @@ final class BrowserAI {
 			case .codex, .claude:
 				text = try await BrowserAICLI.generate(request, model: model)
 			case let .openRouter(modelID):
-				let response = try await BrowserSync.shared.generateAI(cloudRequest(request, modelID: modelID))
+				let response = try await BrowserSync.shared.generateAI(cloudRequest(request, modelID: modelID), requestID: requestID)
 				text = response.text
 		}
 		try Task.checkCancellation()
@@ -129,8 +129,8 @@ final class BrowserAI {
 	) async throws -> Feature.Output {
 		let request = try feature.request(for: input)
 		let selected = model ?? BrowserAISettings.effectiveModel(feature.model)
-		return try await logged(request, model: selected, feature: feature.logName, mode: "stream") {
-			let text = try await streamResponse(request, model: selected, onSnapshot: onSnapshot)
+		return try await logged(request, model: selected, feature: feature.logName, mode: "stream") { id in
+			let text = try await streamResponse(request, model: selected, requestID: id, onSnapshot: onSnapshot)
 			return try (feature.output(from: text), text.utf8.count)
 		}
 	}
@@ -141,8 +141,8 @@ final class BrowserAI {
 		onSnapshot: @MainActor (String) -> Void
 	) async throws -> String {
 		let selected = BrowserAISettings.effectiveModel(model)
-		return try await logged(request, model: selected, feature: "AI Request", mode: "stream") {
-			let text = try await streamResponse(request, model: selected, onSnapshot: onSnapshot)
+		return try await logged(request, model: selected, feature: "AI Request", mode: "stream") { id in
+			let text = try await streamResponse(request, model: selected, requestID: id, onSnapshot: onSnapshot)
 			return (text, text.utf8.count)
 		}
 	}
@@ -150,6 +150,7 @@ final class BrowserAI {
 	private func streamResponse(
 		_ request: BrowserAIRequest,
 		model: BrowserAIModel,
+		requestID: UUID,
 		onSnapshot: @MainActor (String) -> Void
 	) async throws -> String {
 		try Task.checkCancellation()
@@ -208,6 +209,7 @@ final class BrowserAI {
 			case let .openRouter(modelID):
 				text = try await BrowserSync.shared.streamAI(
 					cloudRequest(request, modelID: modelID),
+					requestID: requestID,
 					onSnapshot: { snapshot in
 						if Defaults[.aiFeaturesEnabled] {
 							onSnapshot(snapshot)
@@ -245,19 +247,30 @@ final class BrowserAI {
 		model: BrowserAIModel,
 		feature: String,
 		mode: String,
-		operation: @MainActor () async throws -> (Output, Int)
+		operation: @MainActor (UUID) async throws -> (Output, Int)
 	) async throws -> Output {
 		let id = UUID()
 		let started = ContinuousClock.now
 		let provider = logProvider(model)
 		BrowserLog.info(.ai, "ai.request", metadata: ["id": BrowserLog.id(id), "feature": BrowserLog.value(feature), "provider": provider, "mode": mode, "input_bytes": String(request.instructions.utf8.count + request.prompt.utf8.count), "images": String(request.images?.count ?? 0)])
 		#if DEBUG
+			BrowserLog.debug(.ai, "ai.request.details", metadata: [
+				"id": BrowserLog.id(id), "model_id": model.identifier,
+				"instructions_bytes": String(request.instructions.utf8.count),
+				"prompt_bytes": String(request.prompt.utf8.count),
+				"maximum_tokens": String(request.maximumResponseTokens ?? 0),
+				"reasoning": request.reasoningEffort ?? "default",
+				"web_search": String(request.webSearch ?? false),
+				"image_count": String(request.images?.count ?? 0),
+				"image_bytes": String(request.images?.reduce(0, { $0 + $1.data.count }) ?? 0),
+				"file_count": String(request.files?.count ?? 0)
+			])
 			BrowserLog.debug(.ai, "ai.prompt.debug", metadata: ["id": BrowserLog.id(id), "instructions": BrowserLog.value(request.instructions), "prompt": BrowserLog.value(request.prompt)])
 		#endif
 		await BrowserAIUsageLog.shared.record(id: id, feature: feature, provider: provider, event: "request", details: "mode=\(mode) input_utf8_bytes=\(request.instructions.utf8.count + request.prompt.utf8.count) images=\(request.images?.count ?? 0)")
 		do {
 			try requireEnabled()
-			let (output, bytes) = try await operation()
+			let (output, bytes) = try await operation(id)
 			BrowserLog.info(.ai, "ai.success", metadata: ["id": BrowserLog.id(id), "feature": BrowserLog.value(feature), "provider": provider, "output_bytes": String(bytes), "elapsed_ms": String(elapsedMilliseconds(since: started))])
 			await BrowserAIUsageLog.shared.record(id: id, feature: feature, provider: provider, event: "success", details: "output_utf8_bytes=\(bytes) elapsed_ms=\(elapsedMilliseconds(since: started))")
 			return output
@@ -369,7 +382,13 @@ nonisolated enum BrowserAIError: LocalizedError {
 
 	static func http(_ status: Int, data: Data) -> Self {
 		let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-		let reason = (object?["reason"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+		let error = object?["error"]
+		let reason = ((object?["reason"] as? String)
+			?? (error as? String)
+			?? ((error as? [String: Any])?["message"] as? String)
+			?? (object?["message"] as? String)
+			?? (object?["detail"] as? String))?
+			.trimmingCharacters(in: .whitespacesAndNewlines)
 		return .server(status, reason.flatMap { $0.isEmpty ? nil : String($0.prefix(300)) })
 	}
 
