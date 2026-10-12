@@ -8,6 +8,7 @@ struct ShellDownloadsBarView: View {
 	@Default(.aiFeaturesEnabled) private var allAIFeatures
 	let downloads: BrowserDownloadManager
 	@Binding var showsDownloads: Bool
+	let onRequestDeleteSpace: (BrowserSpace) -> Void
 	@State private var downloadsHover = false
 	@State private var addSpaceHover = false
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -62,7 +63,8 @@ struct ShellDownloadsBarView: View {
 					.frame(maxWidth: .infinity)
 			} else {
 				BrowserSpacesBar(
-					browser: browser
+					browser: browser,
+					onRequestDeleteSpace: onRequestDeleteSpace
 				)
 				.frame(maxWidth: .infinity)
 			}

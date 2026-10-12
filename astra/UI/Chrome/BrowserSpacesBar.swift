@@ -3,6 +3,7 @@ import SwiftUI
 struct BrowserSpacesBar: View {
 	let browser: Browser
 	var onOpenPage: (() -> Void)?
+	var onRequestDeleteSpace: ((BrowserSpace) -> Void)?
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var spaceToDelete: BrowserSpace?
 	@State private var showsDeleteAlert = false
@@ -25,9 +26,13 @@ struct BrowserSpacesBar: View {
 			.accessibilityValue(browser.selectedSpace.name)
 			.accessibilityIdentifier("space-picker-button")
 			.popover(isPresented: $showsSpacePicker, arrowEdge: .bottom) {
-				BrowserSpacePickerPopover(browser: browser) {
-					showsSpacePicker = false
-				}
+				BrowserSpacePickerPopover(
+					browser: browser,
+					onDismiss: { showsSpacePicker = false },
+					onRequestDeleteSpace: { space in
+						onRequestDeleteSpace?(space)
+					}
+				)
 			}
 		#else
 			ScrollViewReader { reader in
@@ -146,8 +151,7 @@ struct BrowserSpacesBar: View {
 	struct BrowserSpacePickerPopover: View {
 		let browser: Browser
 		let onDismiss: () -> Void
-		@State private var spaceToDelete: BrowserSpace?
-		@State private var showsDeleteAlert = false
+		let onRequestDeleteSpace: (BrowserSpace) -> Void
 
 		var body: some View {
 			VStack(alignment: .trailing, spacing: 8) {
@@ -171,16 +175,6 @@ struct BrowserSpacesBar: View {
 			.fixedSize(horizontal: false, vertical: true)
 			.accessibilityIdentifier("space-picker-panel")
 			.onExitCommand(perform: onDismiss)
-			.alert("Delete Space?", isPresented: $showsDeleteAlert, presenting: spaceToDelete) { space in
-				Button(role: .destructive) {
-					browser.deleteSpace(space.id)
-				} label: {
-					Label("Delete Space", systemImage: "trash")
-				}
-				Button(role: .cancel) {}
-			} message: { space in
-				Text("Tabs in \(space.name) will move to another Space.")
-			}
 		}
 
 		@ViewBuilder
@@ -246,8 +240,12 @@ struct BrowserSpacesBar: View {
 
 		private func requestSpaceDeletion(_ space: BrowserSpace) {
 			guard browser.workspace.spaces.count > 1 else { return }
-			spaceToDelete = space
-			showsDeleteAlert = true
+			onDismiss()
+			// Let the popover close before the shell presents its own alert.
+			Task { @MainActor in
+				await Task.yield()
+				onRequestDeleteSpace(space)
+			}
 		}
 
 		private func spaceRow(_ space: BrowserSpace) -> some View {
