@@ -46,6 +46,8 @@ struct ShellSidebarListView: View {
 		let normalIndexes = Dictionary(uniqueKeysWithValues: normalTabs.enumerated().map { ($0.element.id, $0.offset) })
 		let groupedIDs = Set(space.todayTabGroups.flatMap(\.tabIDs))
 		let ungroupedNormalTabs = normalTabs.filter { !groupedIDs.contains($0.id) }
+		let normalSelectionOrder = space.todayTabGroups.flatMap(\.tabIDs).filter { normalIDSet.contains($0) }
+			+ ungroupedNormalTabs.map(\.id)
 		let pinnedSelectionOrder = space.pinnedFolders.flatMap(\.tabIDs).filter { tabsByID[$0] != nil }
 			+ ungroupedPinnedTabs.map(\.id)
 		let selectedID = space.selectedTabID
@@ -132,7 +134,7 @@ struct ShellSidebarListView: View {
 									.accessibilityIdentifier("today-tab-group-\(group.id)")
 									.transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
 									ForEach(groupTabs) { tab in
-										BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions, sidebarSelection: sidebarSelection, selectionOrder: normalTabs.map(\.id))
+										BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions, sidebarSelection: sidebarSelection, selectionOrder: normalSelectionOrder)
 											.equatable()
 											.matchedGeometryEffect(id: tab.id, in: sidebarTransitions, properties: .position)
 											.transition(.identity)
@@ -142,7 +144,7 @@ struct ShellSidebarListView: View {
 								}
 							}
 							ForEach(ungroupedNormalTabs) { tab in
-								BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions, sidebarSelection: sidebarSelection, selectionOrder: normalTabs.map(\.id))
+								BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions, sidebarSelection: sidebarSelection, selectionOrder: normalSelectionOrder)
 									.equatable()
 									.matchedGeometryEffect(id: tab.id, in: sidebarTransitions, properties: .position)
 									.transition(.identity)
@@ -190,6 +192,18 @@ struct ShellSidebarListView: View {
 	}
 
 	private func applyReorder(_ difference: ReorderDifference<UUID, SidebarTabCollection>) {
+		let sourceIDs: [UUID]
+		if difference.sources.contains(where: { sidebarSelection.tabIDs.contains($0) }),
+			sidebarSelection.tabIDs.count > 1
+		{
+			let sourceArea = sidebarSelection.area == .pinned
+				? space.pinnedFolders.flatMap(\.tabIDs) + space.pinnedTabIDs
+				: space.tabIDs
+			var seen = Set<UUID>()
+			sourceIDs = sourceArea.filter { sidebarSelection.tabIDs.contains($0) && seen.insert($0).inserted }
+		} else {
+			sourceIDs = difference.sources
+		}
 		let beforeID: UUID?
 		switch difference.destination.position {
 			case .before(let id): beforeID = id
@@ -197,15 +211,15 @@ struct ShellSidebarListView: View {
 		}
 		switch difference.destination.collectionID {
 			case .favourite:
-				browser.moveTabs(difference.sources, to: .favourite, before: beforeID)
+				browser.moveTabs(sourceIDs, to: .favourite, before: beforeID)
 			case .pinned:
-				browser.moveTabs(difference.sources, to: .pinned, in: space.id, before: beforeID)
+				browser.moveTabs(sourceIDs, to: .pinned, in: space.id, before: beforeID)
 			case .normal:
-				browser.moveTabs(difference.sources, to: .normal, in: space.id, before: beforeID)
+				browser.moveTabs(sourceIDs, to: .normal, in: space.id, before: beforeID)
 			case .todayGroup(let groupID):
-				browser.moveTabs(difference.sources, to: .normal, in: space.id, before: beforeID, todayGroupID: groupID)
+				browser.moveTabs(sourceIDs, to: .normal, in: space.id, before: beforeID, todayGroupID: groupID)
 			case .folder(let id):
-				browser.moveTabs(difference.sources, to: .pinned, in: space.id, before: beforeID, folderID: id)
+				browser.moveTabs(sourceIDs, to: .pinned, in: space.id, before: beforeID, folderID: id)
 		}
 		sidebarSelection.clear()
 	}
