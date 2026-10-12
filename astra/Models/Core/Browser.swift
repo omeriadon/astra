@@ -572,7 +572,8 @@ final class Browser {
 		guard !isPrivate else { return }
 		let destinationID = spaceID ?? workspace.selectedSpaceID
 		guard workspace.spaces.contains(where: { $0.id == destinationID }) else { return }
-		let validIDs = Array(NSOrderedSet(array: tabIDs)) .compactMap { $0 as? UUID }.filter { tab(withID: $0) != nil }
+		var folderSeen = Set<UUID>()
+		let validIDs = tabIDs.filter { folderSeen.insert($0).inserted && tab(withID: $0) != nil }
 		if !validIDs.isEmpty {
 			moveTabs(validIDs, to: .pinned, in: destinationID)
 		}
@@ -642,7 +643,7 @@ final class Browser {
 
 	/// Apply a native SwiftUI reorder difference atomically across favourite, pinned,
 	/// normal, and pinned-folder collections. The input order is the visual drag order.
-	func moveTabs(_ ids: [UUID], to area: TabArea, in spaceID: UUID? = nil, before targetID: UUID? = nil, folderID: UUID? = nil) {
+	func moveTabs(_ ids: [UUID], to area: TabArea, in spaceID: UUID? = nil, before targetID: UUID? = nil, folderID: UUID? = nil, todayGroupID: String? = nil) {
 		guard !isPrivate else { return }
 		let existing = Set(tabs.map(\.id))
 		var seen = Set<UUID>()
@@ -654,6 +655,9 @@ final class Browser {
 		guard area == .favourite || workspace.spaces.contains(where: { $0.id == destinationID }) else { return }
 		if let folderID {
 			guard area == .pinned, workspace.spaces.contains(where: { $0.id == destinationID && $0.pinnedFolders.contains(where: { $0.id == folderID }) }) else { return }
+		}
+		if let todayGroupID {
+			guard area == .normal, workspace.spaces.contains(where: { $0.id == destinationID && $0.todayTabGroups.contains(where: { $0.id == todayGroupID }) }) else { return }
 		}
 		var next = workspace
 		let timestamp = nextWorkspaceMutationDate()
@@ -676,6 +680,10 @@ final class Browser {
 					next.spaces[index].pinnedFolders[folderIndex].modifiedAt = timestamp
 				}
 			}
+			next.spaces[index].todayTabGroups = next.spaces[index].todayTabGroups.compactMap { group in
+				let ids = group.tabIDs.filter { !movingSet.contains($0) }
+				return ids.isEmpty && group.id != todayGroupID ? nil : BrowserTabGroupingFeature.Group(name: group.name, tabIDs: ids)
+			}
 		}
 		if area == .favourite {
 			let insertAt = targetID.flatMap { next.favouriteTabIDs.firstIndex(of: $0) } ?? next.favouriteTabIDs.endIndex
@@ -694,23 +702,18 @@ final class Browser {
 				}
 			}
 			next.spaces[index].modifiedAt = destinationDate
-			// Keep manually ordered Today groups consistent with the sidebar's order.
-			// Dropping into a grouped tab adds the moved tabs to that group; dropping
-			// outside a group leaves them in the ungrouped daily section.
-			if area == .normal, let targetID,
-				let groupIndex = next.spaces[index].todayTabGroups.firstIndex(where: { $0.tabIDs.contains(targetID) })
+			if area == .normal, let todayGroupID,
+				let groupIndex = next.spaces[index].todayTabGroups.firstIndex(where: { $0.id == todayGroupID })
 			{
 				var group = next.spaces[index].todayTabGroups[groupIndex]
-				let groupInsert = group.tabIDs.firstIndex(of: targetID) ?? group.tabIDs.endIndex
+				let groupInsert = targetID.flatMap { group.tabIDs.firstIndex(of: $0) } ?? group.tabIDs.endIndex
 				group.tabIDs.insert(contentsOf: moving, at: groupInsert)
 				next.spaces[index].todayTabGroups[groupIndex] = group
 			}
 		}
 		for index in next.spaces.indices {
 			let normalIDs = next.spaces[index].tabIDs.filter { !next.spaces[index].pinnedTabIDs.contains($0) }
-			next.spaces[index].todayTabGroups = Self.filteredTodayTabGroups(next.spaces[index].todayTabGroups.map { group in
-				BrowserTabGroupingFeature.Group(name: group.name, tabIDs: group.tabIDs.filter { !movingSet.contains($0) || index == next.spaces.firstIndex(where: { $0.id == destinationID }) && area == .normal })
-			}, normalIDs: normalIDs)
+			next.spaces[index].todayTabGroups = Self.filteredTodayTabGroups(next.spaces[index].todayTabGroups, normalIDs: normalIDs)
 		}
 		next.modifiedAt = destinationDate
 		guard next != workspace else { return }
