@@ -56,11 +56,7 @@ struct ShellDownloadsBarView: View {
 				}
 			}
 
-			if browser.isPrivate {
-				Label("Private", systemImage: "eye.slash")
-					.font(.caption)
-					.frame(maxWidth: .infinity)
-			} else {
+			if !browser.isPrivate {
 				BrowserSpacesBar(
 					browser: browser
 				)

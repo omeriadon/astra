@@ -233,7 +233,8 @@ struct NewTabView: View {
 		VStack(alignment: .leading, spacing: 14) {
 			if !isQuickSearch {
 				HStack {
-					Text(browser.isPrivate ? "Private Browsing" : "astra")
+					Text(browser.isPrivate ? "astra private browsing" : "astra")
+						.monospaced()
 						.font(.largeTitle.bold())
 					Spacer()
 					Button {
@@ -246,8 +247,10 @@ struct NewTabView: View {
 					.accessibilityIdentifier("start-page-preferences")
 					.matchedTransitionSource(id: "start-page-preferences", in: transitions)
 				}
-				Text(browser.isPrivate ? "Tabs and website data are discarded when this window closes. Downloaded files are kept." : "Search the web, history, or browser actions")
-					.foregroundStyle(.secondary)
+				if browser.isPrivate {
+					Text("Tabs and website data are discarded when this window closes. Downloaded files are kept.")
+						.foregroundStyle(.secondary)
+				}
 			}
 			HStack(spacing: 10) {
 				Image(systemName: "magnifyingglass")
