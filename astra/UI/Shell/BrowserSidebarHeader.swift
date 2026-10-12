@@ -4,6 +4,7 @@ struct BrowserSidebarHeader: View {
 	let browser: Browser
 	let theme: BrowserTheme
 	let isFullScreen: Bool
+	let acceptsFocusRequests: Bool
 
 	private var controller: BrowserController? {
 		browser.selectedTab?.activeController
@@ -15,7 +16,11 @@ struct BrowserSidebarHeader: View {
 				regularHeader
 				compactHeader
 			}
-			BrowserAddressField(browser: browser, usesGlassBackground: true)
+			BrowserAddressField(
+				browser: browser,
+				usesGlassBackground: true,
+				acceptsFocusRequests: acceptsFocusRequests
+			)
 		}
 		.padding(.horizontal, 5)
 		.padding(.top, 0)

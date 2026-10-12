@@ -4,6 +4,7 @@ import SwiftUI
 struct BrowserAddressField: View {
 	let browser: Browser
 	var usesGlassBackground = false
+	var acceptsFocusRequests = true
 
 	init(browser: Browser) {
 		self.browser = browser
@@ -12,6 +13,12 @@ struct BrowserAddressField: View {
 	init(browser: Browser, usesGlassBackground: Bool) {
 		self.browser = browser
 		self.usesGlassBackground = usesGlassBackground
+	}
+
+	init(browser: Browser, usesGlassBackground: Bool = false, acceptsFocusRequests: Bool) {
+		self.browser = browser
+		self.usesGlassBackground = usesGlassBackground
+		self.acceptsFocusRequests = acceptsFocusRequests
 	}
 
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
@@ -229,7 +236,11 @@ struct BrowserAddressField: View {
 			}
 		}
 		.onChange(of: browser.addressFocusRequest) { _, _ in
-			isFocused = true
+			if acceptsFocusRequests {
+				isFocused = true
+			} else {
+				isFocused = false
+			}
 		}
 		.onChange(of: browser.selectedTab?.peeks.last?.id) { _, _ in
 			isFocused = false

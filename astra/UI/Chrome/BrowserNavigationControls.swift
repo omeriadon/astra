@@ -86,10 +86,12 @@ struct BrowserHistoryNavigationControls: View {
 			NavigationForwardButton(controller: controller, browser: browser)
 			Color.clear.frame(width: BrowserChromeMetrics.historyGroupSpacerWidth, height: 1)
 			if separatesReload {
-				Spacer(minLength: 8)
+				Spacer(minLength: 0)
 			}
 			NavigationReloadButton(controller: controller)
-			Color.clear.frame(width: BrowserChromeMetrics.historyGroupSpacerWidth, height: 1)
+			if !separatesReload {
+				Color.clear.frame(width: BrowserChromeMetrics.historyGroupSpacerWidth, height: 1)
+			}
 		}
 		.controlSize(.regular)
 		.labelStyle(.iconOnly)
@@ -160,6 +162,7 @@ private struct NavigationIconLabel: View {
 private struct NavigationBackButton: View {
 	let controller: BrowserController
 	let browser: Browser
+	@State private var showsHistory = false
 
 	private var historyEntries: some View {
 		ForEach((0 ..< controller.historyIndex).reversed(), id: \.self) { index in
@@ -182,25 +185,48 @@ private struct NavigationBackButton: View {
 	}
 
 	var body: some View {
-		// A Menu with a primary action navigates on click and opens history on
-		// press-and-hold. Keep contextMenu so right-click continues to work.
-		Menu {
-			historyEntries
+		Button {
+			navigate()
 		} label: {
 			NavigationIconLabel(title: "Back", systemImage: "chevron.backward")
-		} primaryAction: {
-			navigate()
 		}
-		.menuIndicator(.hidden)
+		.astraTopBarButton()
+		.overlay {
+			// Native bordered buttons consume mouse tracking before SwiftUI hold gestures.
+			Color.clear
+				.contentShape(Rectangle())
+				.gesture(
+					LongPressGesture(minimumDuration: 0.45)
+						.exclusively(before: TapGesture())
+						.onEnded { gesture in
+							switch gesture {
+								case .first:
+									showsHistory = true
+								case .second:
+									navigate()
+							}
+						}
+				)
+				.allowsHitTesting(controller.canGoBack)
+				.accessibilityHidden(true)
+		}
 		.contextMenu { historyEntries }
+		.popover(isPresented: $showsHistory, arrowEdge: .top) {
+			VStack(alignment: .leading, spacing: 6) {
+				historyEntries
+			}
+			.padding(8)
+		}
 		.disabled(!controller.canGoBack)
 		.accessibilityIdentifier("browser-back")
+		.accessibilityLabel("Back")
 	}
 }
 
 private struct NavigationForwardButton: View {
 	let controller: BrowserController
 	let browser: Browser
+	@State private var showsHistory = false
 
 	private var historyEntries: some View {
 		ForEach(min(controller.historyIndex + 1, controller.history.count) ..< controller.history.count, id: \.self) { index in
@@ -223,17 +249,41 @@ private struct NavigationForwardButton: View {
 	}
 
 	var body: some View {
-		Menu {
-			historyEntries
+		Button {
+			navigate()
 		} label: {
 			NavigationIconLabel(title: "Forward", systemImage: "chevron.forward")
-		} primaryAction: {
-			navigate()
 		}
-		.menuIndicator(.hidden)
+		.astraTopBarButton()
+		.overlay {
+			// Native bordered buttons consume mouse tracking before SwiftUI hold gestures.
+			Color.clear
+				.contentShape(Rectangle())
+				.gesture(
+					LongPressGesture(minimumDuration: 0.45)
+						.exclusively(before: TapGesture())
+						.onEnded { gesture in
+							switch gesture {
+								case .first:
+									showsHistory = true
+								case .second:
+									navigate()
+							}
+						}
+				)
+				.allowsHitTesting(controller.canGoForward)
+				.accessibilityHidden(true)
+		}
 		.contextMenu { historyEntries }
+		.popover(isPresented: $showsHistory, arrowEdge: .top) {
+			VStack(alignment: .leading, spacing: 6) {
+				historyEntries
+			}
+			.padding(8)
+		}
 		.disabled(!controller.canGoForward)
 		.accessibilityIdentifier("browser-forward")
+		.accessibilityLabel("Forward")
 	}
 }
 

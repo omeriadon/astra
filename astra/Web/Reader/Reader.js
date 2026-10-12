@@ -41,25 +41,41 @@
         }
         for (const child of node.childNodes) clean(child, output, depth + 1);
     };
-    globalThis.astraExtractReader = () => {
-        if (!document.body || document.getElementsByTagName('*').length > maximumElements) return null;
+    let cachedArticle;
+    let cachedURL;
+    const extractReader = () => {
+        if (!['http:', 'https:'].includes(location.protocol)
+            || !document.body
+            || document.getElementsByTagName('*').length > maximumElements) return null;
         const article = new Readability(document.cloneNode(true), {
             maxElemsToParse: maximumElements,
             serializer: element => element
         }).parse();
-        if (!article || article.length < 500 || article.length > 2000000) return null;
+        if (!article || article.length < 500 || article.length > 2000000) {
+            return null;
+        }
         const body = document.createElement('article');
         clean(article.content, body);
-        if (body.innerHTML.length > 5000000) return null;
+        const content = body.innerHTML;
+        if (!content.trim() || content.length > 5000000) return null;
         return { title: article.title || document.title, byline: article.byline || '',
-            content: body.innerHTML, dir: article.dir === 'rtl' ? 'rtl' : 'ltr' };
+            content, dir: article.dir === 'rtl' ? 'rtl' : 'ltr' };
     };
+    globalThis.astraExtractReader = () => cachedURL === location.href ? cachedArticle || null : null;
     let timer;
     let previous;
     globalThis.astraProbeReader = (force = false) => {
-        const available = ['http:', 'https:'].includes(location.protocol)
-            && document.body !== null && document.getElementsByTagName('*').length <= maximumElements
-            && isProbablyReaderable(document);
+        const pageURL = location.href;
+        let article;
+        try {
+            article = extractReader();
+        } catch {
+            article = null;
+        }
+        if (pageURL !== location.href) return;
+        cachedURL = pageURL;
+        cachedArticle = article;
+        const available = !!article;
         const key = location.href + ':' + available;
         if (force || key !== previous) {
             previous = key;
@@ -70,7 +86,7 @@
         clearTimeout(timer);
         timer = setTimeout(globalThis.astraProbeReader, 500);
     };
-    new MutationObserver(schedule).observe(document, { childList: true, subtree: true });
+    new MutationObserver(schedule).observe(document, { childList: true, subtree: true, characterData: true });
     addEventListener('DOMContentLoaded', schedule);
     addEventListener('popstate', schedule);
     schedule();

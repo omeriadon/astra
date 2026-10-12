@@ -48,13 +48,11 @@ private extension View {
 
 private struct SidebarScrollContentMarginsModifier: ViewModifier {
 	let top: CGFloat
-	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	func body(content: Content) -> some View {
 		content
 			.ignoresSafeArea(.container, edges: .vertical)
 			.contentMargins(.top, top, for: .scrollContent)
-			.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: top)
 	}
 }
 

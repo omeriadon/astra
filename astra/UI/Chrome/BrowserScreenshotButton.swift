@@ -16,7 +16,7 @@
 				AstraTopBarIcon(title: "Screenshot Page", systemImage: "camera")
 			}
 			.astraTopBarButton()
-			.disabled(isCapturing || !controller.hasCurrentPageDocument || controller.navigationFailure != nil)
+			.disabled(isCapturing || !controller.hasRenderedWebView)
 			.help("Capture the visible page")
 			.accessibilityLabel("Screenshot Page")
 			.accessibilityIdentifier("browser-screenshot-page")

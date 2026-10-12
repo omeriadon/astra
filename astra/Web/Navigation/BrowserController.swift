@@ -696,6 +696,10 @@ final class BrowserController: NSObject, Identifiable {
 		!isInvalidated && !awaitsNavigationCommit && committedURL != nil
 	}
 
+	var hasRenderedWebView: Bool {
+		!isInvalidated && createdWebView != nil
+	}
+
 	var canApplySitePreferencesToCurrentPage: Bool {
 		hasCurrentPageDocument && navigationFailure == nil
 	}
@@ -1407,7 +1411,6 @@ final class BrowserController: NSObject, Identifiable {
 			      content.utf8.count <= 5 * 1024 * 1024
 			else {
 				isReaderAvailable = false
-				session.toastManager.show(symbol: "doc.text", message: "Reader mode could not extract an article from this page.")
 				return
 			}
 			showsFind = false
@@ -2294,7 +2297,7 @@ final class BrowserController: NSObject, Identifiable {
 
 		func captureScreenshot() async throws -> BrowserScreenshot {
 			let view = readerHTML == nil ? createdWebView : screenshotReaderWebView
-			guard hasCurrentPageDocument, let view, !view.bounds.isEmpty else {
+			guard let view, !view.bounds.isEmpty else {
 				throw CocoaError(.coderInvalidValue)
 			}
 			let documentID = navigationIdentifier
@@ -2303,7 +2306,7 @@ final class BrowserController: NSObject, Identifiable {
 			configuration.rect = view.bounds
 			let scale = view.window?.backingScaleFactor ?? 2
 			let image = try await view.takeSnapshot(configuration: configuration)
-			guard hasCurrentPageDocument, navigationIdentifier == documentID,
+			guard !isInvalidated, navigationIdentifier == documentID,
 			      wasReader == (readerHTML != nil)
 			else {
 				throw CocoaError(.userCancelled)

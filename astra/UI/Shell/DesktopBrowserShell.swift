@@ -428,15 +428,15 @@ private struct ShellSidebarColumn: View {
 	let downloads: BrowserDownloadManager
 	let onRequestDeleteSpace: (BrowserSpace) -> Void
 	@State private var sidebarMediaHeight: CGFloat = 0
-	@State private var sidebarHeaderHeight: CGFloat = 0
+	@State private var sidebarHeaderHeight: CGFloat = BrowserChromeMetrics.topBarRegionHeight * 2 + 8
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	private var bottomOpacityHeight: CGFloat {
 		sidebarMediaHeight > 0 ? sidebarMediaHeight + 8 + 33 : 34
 	}
 
-	private var sidebarFadeTop: CGFloat {
-		showsSidebarHeader ? sidebarHeaderHeight + 11 : 38
+	private var sidebarHeaderReservation: CGFloat {
+		sidebarHeaderHeight + 11
 	}
 
 	private var showsSidebarHeader: Bool {
@@ -449,16 +449,18 @@ private struct ShellSidebarColumn: View {
 		ZStack(alignment: .topLeading) {
 			sidebarContent
 				.overlay(alignment: .top) {
-					if showsSidebarHeader {
-						BrowserSidebarHeader(
-							browser: browser,
-							theme: theme,
-							isFullScreen: isFullScreen
-						)
-						.fixedSize(horizontal: false, vertical: true)
-						.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-							sidebarHeaderHeight = height
-						}
+					BrowserSidebarHeader(
+						browser: browser,
+						theme: theme,
+						isFullScreen: isFullScreen,
+						acceptsFocusRequests: showsSidebarHeader
+					)
+					.fixedSize(horizontal: false, vertical: true)
+					.opacity(showsSidebarHeader ? 1 : 0)
+					.allowsHitTesting(showsSidebarHeader)
+					.accessibilityHidden(!showsSidebarHeader)
+					.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+						sidebarHeaderHeight = height
 					}
 				}
 
@@ -481,11 +483,11 @@ private struct ShellSidebarColumn: View {
 			Group {
 				if browser.isPrivate {
 					PrivateBrowserSidebar(browser: browser)
-						.sidebarScrollContentMargins(top: BrowserChromeMetrics.topBarRegionHeight + 5)
+						.sidebarScrollContentMargins(top: sidebarHeaderReservation)
 				} else {
 					ShellSpaceTabList(
 						browser: browser,
-						topMargin: BrowserChromeMetrics.topBarRegionHeight + 5
+						topMargin: sidebarHeaderReservation
 					)
 				}
 			}
@@ -500,7 +502,7 @@ private struct ShellSidebarColumn: View {
 						manager: downloads,
 						theme: theme
 					)
-					.sidebarScrollContentMargins(top: BrowserChromeMetrics.topBarRegionHeight + 5)
+					.sidebarScrollContentMargins(top: sidebarHeaderReservation)
 				} else {
 					// When tabs are displayed there is no reason to keep
 					// observing every download progress event or lay out a
@@ -516,8 +518,8 @@ private struct ShellSidebarColumn: View {
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
 		.ignoresSafeArea(.container, edges: .vertical)
 		.sidebarScrollOpacityFade(
-			top: sidebarFadeTop,
-			topOpacityHeight: showsSidebarHeader ? sidebarHeaderHeight : nil,
+			top: sidebarHeaderReservation,
+			topOpacityHeight: sidebarHeaderHeight,
 			bottom: bottomOpacityHeight + 11,
 			bottomOpacityHeight: bottomOpacityHeight
 		)
@@ -654,7 +656,8 @@ private struct ShellContentColumn: View {
 			theme: theme,
 			sidebarShown: true,
 			topBarColorScheme: topBarColorScheme,
-			reservesWindowControls: !sidebarShown && !isFullScreen
+			reservesWindowControls: !sidebarShown && !isFullScreen,
+			acceptsFocusRequests: topBarHeight > 0
 		)
 		#if os(macOS)
 		.onDrop(of: [UTType.url, UTType.plainText], isTargeted: $isAddressDropTargeted, perform: acceptAddressDrop)
@@ -684,10 +687,7 @@ private struct ShellContentColumn: View {
 			topBar
 				.frame(height: BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding, alignment: .top)
 				.frame(maxWidth: .infinity, alignment: .trailing)
-				.mask(alignment: .top) {
-					Rectangle().frame(height: topBarHeight)
-				}
-				.opacity((showsTopBar || isTopBarRevealed ? 1.0 : 0.0) * topBarOpacity)
+				.opacity(topBarOpacity)
 				.allowsHitTesting(topBarHeight > 0 && topBarOpacity > 0)
 				.accessibilityHidden(topBarHeight == 0)
 				.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsTopBar)

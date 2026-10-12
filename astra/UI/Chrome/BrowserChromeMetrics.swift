@@ -43,8 +43,9 @@ enum BrowserChromeMetrics {
 
 	static let topBarContentHeight: CGFloat = 20
 	static let topBarButtonWidth: CGFloat = 22
-	static let historyGroupSpacerWidth: CGFloat = topBarButtonWidth * 0.6
-	static let topBarEdgeInset: CGFloat = 5
+	static let historyGroupSpacerWidth: CGFloat = topBarButtonWidth * 0.6 - 12
+	static let topBarLeadingInset: CGFloat = 5
+	static let topBarTrailingInset: CGFloat = 6
 
 	// macos 27 window radius is 20
 
