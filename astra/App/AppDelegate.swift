@@ -944,6 +944,10 @@
 			activeBrowser?.selectedTab?.activeController?.toggleReader()
 		}
 
+		@objc private func toggleZapElement(_: Any?) {
+			activeBrowser?.selectedTab?.activeController?.toggleZap()
+		}
+
 		@objc private func translatePage(_: Any?) {
 			guard let browser = activeBrowser else { return }
 			NotificationCenter.default.post(name: .astraTranslatePage, object: browser)
@@ -1111,6 +1115,13 @@
 			if menuItem.action == #selector(copyURL(_:)) {
 				return BrowserKeyboardMenuPolicy.canCopyURL(activeBrowser?.selectedTab?.copyableURL)
 			}
+			if menuItem.action == #selector(toggleZapElement(_:)) {
+				guard activeAuthenticationBrowser == nil,
+				      activeBrowser?.selectedTab?.internalPage == nil,
+				      let controller = activeBrowser?.selectedTab?.activeController else { return false }
+				menuItem.title = controller.isZapping ? "Cancel Zap Element" : "Zap Element"
+				return controller.hasCurrentPageDocument && controller.navigationFailure == nil
+			}
 			if menuItem.action == #selector(toggleReader(_:)) {
 				let controller = activeBrowser?.selectedTab?.activeController
 				menuItem.title = controller?.readerHTML == nil ? "Show Reader" : "Hide Reader"
@@ -1233,6 +1244,7 @@
 			let viewMenu = NSMenu(title: "View")
 			mainMenu.addItem(menuRoot("View", submenu: viewMenu))
 			viewMenu.addItem(item("Show Reader", action: #selector(toggleReader(_:)), key: "r", modifiers: [.command, .option]))
+			viewMenu.addItem(item("Zap Element", action: #selector(toggleZapElement(_:))))
 			viewMenu.addItem(item("Toggle Sidebar", action: #selector(toggleSidebar(_:)), key: "s"))
 			viewMenu.addItem(item("Toggle Top Bar", action: #selector(toggleTopBar(_:)), key: "d"))
 			viewMenu.addItem(item("Toggle AI Sidebar", action: #selector(toggleAISidebar(_:)), key: "l", modifiers: [.command, .option]))

@@ -43,9 +43,6 @@ struct BrowserNavigationControls: View {
 
 	var body: some View {
 		HStack(spacing: 6) {
-			#if os(macOS)
-				BrowserSiteInformationButton(controller: controller)
-			#endif
 			BrowserHistoryNavigationControls(controller: controller, browser: browser)
 			BrowserZoomControls(controller: controller)
 			if controller.isReaderAvailable || controller.readerHTML != nil {
@@ -60,15 +57,17 @@ struct BrowserNavigationControls: View {
 				.accessibilityValue(controller.readerHTML == nil ? "Off" : "On")
 				.accessibilityIdentifier("browser-reader-toggle")
 			}
-			Button {
-				controller.toggleZap()
-			} label: {
-				AstraTopBarIcon(title: "Zap Element", systemImage: "bolt.slash")
-			}
-			.astraTopBarButton()
-			.tint(controller.isZapping ? .red : nil)
-			.accessibilityLabel(controller.isZapping ? "Cancel Zap" : "Zap Element")
-			.accessibilityIdentifier("browser-zap-element")
+			#if os(iOS)
+				Button {
+					controller.toggleZap()
+				} label: {
+					AstraTopBarIcon(title: "Zap Element", systemImage: "bolt.slash")
+				}
+				.astraTopBarButton()
+				.tint(controller.isZapping ? .red : nil)
+				.accessibilityLabel(controller.isZapping ? "Cancel Zap" : "Zap Element")
+				.accessibilityIdentifier("browser-zap-element")
+			#endif
 		}
 		.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
 		.id(controller.history)
@@ -85,10 +84,12 @@ struct BrowserHistoryNavigationControls: View {
 		HStack(spacing: 6) {
 			NavigationBackButton(controller: controller, browser: browser)
 			NavigationForwardButton(controller: controller, browser: browser)
+			Color.clear.frame(width: BrowserChromeMetrics.historyGroupSpacerWidth, height: 1)
 			if separatesReload {
 				Spacer(minLength: 8)
 			}
 			NavigationReloadButton(controller: controller)
+			Color.clear.frame(width: BrowserChromeMetrics.historyGroupSpacerWidth, height: 1)
 		}
 		.controlSize(.regular)
 		.labelStyle(.iconOnly)
@@ -160,33 +161,39 @@ private struct NavigationBackButton: View {
 	let controller: BrowserController
 	let browser: Browser
 
-	var body: some View {
-		Button {
-			#if os(macOS)
-				if NSApp.currentEvent?.modifierFlags.contains(.command) == true {
-					browser.openHistoryEntry(from: controller, offset: -1)
-				} else {
-					controller.goBack()
-				}
-			#else
-				controller.goBack()
-			#endif
-		} label: {
-			NavigationIconLabel(
-				title: "Back",
-				systemImage: "chevron.backward"
-			)
-		}
-		.contextMenu {
-			ForEach((0 ..< controller.historyIndex).reversed(), id: \.self) { index in
-				Button(
-					controller.history[index].absoluteString,
-					systemImage: "clock.arrow.circlepath"
-				) {
-					controller.go(toHistoryIndex: index)
-				}
+	@ViewBuilder
+	private var historyEntries: some View {
+		ForEach((0 ..< controller.historyIndex).reversed(), id: \.self) { index in
+			Button(controller.history[index].absoluteString, systemImage: "clock.arrow.circlepath") {
+				controller.go(toHistoryIndex: index)
 			}
 		}
+	}
+
+	private func navigate() {
+		#if os(macOS)
+			if NSApp.currentEvent?.modifierFlags.contains(.command) == true {
+				browser.openHistoryEntry(from: controller, offset: -1)
+			} else {
+				controller.goBack()
+			}
+		#else
+			controller.goBack()
+		#endif
+	}
+
+	var body: some View {
+		// A Menu with a primary action navigates on click and opens history on
+		// press-and-hold. Keep contextMenu so right-click continues to work.
+		Menu {
+			historyEntries
+		} label: {
+			NavigationIconLabel(title: "Back", systemImage: "chevron.backward")
+		} primaryAction: {
+			navigate()
+		}
+		.menuIndicator(.hidden)
+		.contextMenu { historyEntries }
 		.disabled(!controller.canGoBack)
 		.accessibilityIdentifier("browser-back")
 	}
@@ -196,33 +203,37 @@ private struct NavigationForwardButton: View {
 	let controller: BrowserController
 	let browser: Browser
 
-	var body: some View {
-		Button {
-			#if os(macOS)
-				if NSApp.currentEvent?.modifierFlags.contains(.command) == true {
-					browser.openHistoryEntry(from: controller, offset: 1)
-				} else {
-					controller.goForward()
-				}
-			#else
-				controller.goForward()
-			#endif
-		} label: {
-			NavigationIconLabel(
-				title: "Forward",
-				systemImage: "chevron.forward"
-			)
-		}
-		.contextMenu {
-			ForEach(min(controller.historyIndex + 1, controller.history.count) ..< controller.history.count, id: \.self) { index in
-				Button(
-					controller.history[index].absoluteString,
-					systemImage: "clock.arrow.circlepath"
-				) {
-					controller.go(toHistoryIndex: index)
-				}
+	@ViewBuilder
+	private var historyEntries: some View {
+		ForEach(min(controller.historyIndex + 1, controller.history.count) ..< controller.history.count, id: \.self) { index in
+			Button(controller.history[index].absoluteString, systemImage: "clock.arrow.circlepath") {
+				controller.go(toHistoryIndex: index)
 			}
 		}
+	}
+
+	private func navigate() {
+		#if os(macOS)
+			if NSApp.currentEvent?.modifierFlags.contains(.command) == true {
+				browser.openHistoryEntry(from: controller, offset: 1)
+			} else {
+				controller.goForward()
+			}
+		#else
+			controller.goForward()
+		#endif
+	}
+
+	var body: some View {
+		Menu {
+			historyEntries
+		} label: {
+			NavigationIconLabel(title: "Forward", systemImage: "chevron.forward")
+		} primaryAction: {
+			navigate()
+		}
+		.menuIndicator(.hidden)
+		.contextMenu { historyEntries }
 		.disabled(!controller.canGoForward)
 		.accessibilityIdentifier("browser-forward")
 	}
