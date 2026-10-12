@@ -944,6 +944,21 @@
 			activeBrowser?.selectedTab?.activeController?.toggleReader()
 		}
 
+		@objc private func translatePage(_: Any?) {
+			guard let browser = activeBrowser else { return }
+			NotificationCenter.default.post(name: .astraTranslatePage, object: browser)
+		}
+
+		@objc private func monitorWebsite(_: Any?) {
+			guard let browser = activeBrowser else { return }
+			NotificationCenter.default.post(name: .astraMonitorWebsite, object: browser)
+		}
+
+		@objc private func editSiteUserAgent(_: Any?) {
+			guard let browser = activeBrowser else { return }
+			NotificationCenter.default.post(name: .astraEditSiteUserAgent, object: browser)
+		}
+
 		@objc private func enterPictureInPicture(_: Any?) {
 			activeBrowser?.selectedTab?.activeController?.enterPictureInPicture()
 		}
@@ -981,6 +996,28 @@
 		}
 
 		func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+			if menuItem.action == #selector(translatePage(_:)) {
+				guard activeAuthenticationBrowser == nil,
+				      let browser = activeBrowser,
+				      let controller = browser.selectedTab?.activeController,
+				      controller.hasCurrentPageDocument, !controller.isLoading,
+				      controller.navigationFailure == nil,
+				      let url = controller.committedURL else { return false }
+				return BrowserTranslationPolicy.translationURL(for: url, language: "en", isPrivate: browser.isPrivate) != nil
+			}
+			if menuItem.action == #selector(monitorWebsite(_:)) {
+				return activeAuthenticationBrowser == nil
+					&& activeBrowser?.canShowAISidebar == true
+					&& activeBrowser?.selectedTab?.activeController?.hasCurrentPageDocument == true
+					&& Defaults[.aiFeaturesEnabled] && Defaults[.aiWebsiteMonitoring]
+			}
+			if menuItem.action == #selector(editSiteUserAgent(_:)) {
+				guard activeAuthenticationBrowser == nil,
+				      let controller = activeBrowser?.selectedTab?.activeController,
+				      let url = controller.committedURL else { return false }
+				return BrowserSitePermissions.origin(for: url) != nil
+					&& !controller.session.sitePreferences.isLocalDataReadOnly
+			}
 			if menuItem.action == #selector(toggleDeveloperMode(_:)) {
 				menuItem.state = Defaults[.developerModeEnabled] ? .on : .off
 				return true
@@ -1200,6 +1237,10 @@
 			viewMenu.addItem(item("Toggle Top Bar", action: #selector(toggleTopBar(_:)), key: "d"))
 			viewMenu.addItem(item("Toggle AI Sidebar", action: #selector(toggleAISidebar(_:)), key: "l", modifiers: [.command, .option]))
 			viewMenu.addItem(item("Edit Space", action: #selector(editSpace(_:))))
+			viewMenu.addItem(.separator())
+			viewMenu.addItem(item("Translate Page…", action: #selector(translatePage(_:))))
+			viewMenu.addItem(item("Monitor Website…", action: #selector(monitorWebsite(_:))))
+			viewMenu.addItem(item("Custom User Agent…", action: #selector(editSiteUserAgent(_:))))
 			viewMenu.addItem(.separator())
 			viewMenu.addItem(item(
 				"Web Inspector",

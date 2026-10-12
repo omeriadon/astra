@@ -30,11 +30,12 @@ struct BrowserAgentControls: View {
 		}
 
 		private func shareButton(tab: BrowserTab) -> some View {
-			Button("Share with Browser Use", systemImage: "rectangle.portrait.and.arrow.forward") {
+			Button {
 				server.share(tab: tab, in: browser)
+			} label: {
+				AstraTopBarIcon(title: "Share with Browser Use", systemImage: "rectangle.portrait.and.arrow.forward")
 			}
-			.labelStyle(.iconOnly)
-			.buttonStyle(.bordered)
+			.astraTopBarButton()
 			.help("Share this page with Browser Use")
 			.accessibilityLabel("Share with Browser Use")
 			.accessibilityIdentifier("share-with-browser-use")
@@ -61,8 +62,7 @@ struct BrowserAgentControls: View {
 				Button("Revoke Browser Access", systemImage: "person.crop.circle.badge.xmark") {
 					revoke()
 				}
-				.labelStyle(.iconOnly)
-				.buttonStyle(.bordered)
+				.astraTopBarButton()
 				.help("Revoke Browser Use access to this page")
 				.accessibilityLabel("Revoke Browser Access")
 				.accessibilityHint("Stops Browser Use from accessing this page")

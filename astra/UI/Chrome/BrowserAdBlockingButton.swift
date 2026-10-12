@@ -29,9 +29,8 @@ struct BrowserAdBlockingButton: View {
 			controller.session.sitePreferences.setNativeContentBlockingDisabled(isBlocked, for: origin)
 			controller.reload()
 		}
-		.labelStyle(.iconOnly)
-		.buttonStyle(.glass)
-		.tint(isBlocked ? nil : .orange)
+		.labelStyle(.titleAndIcon)
+		.buttonStyle(.borderless)
 		.disabled(
 			origin == nil
 				|| !adBlockingEnabled

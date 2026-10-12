@@ -10,11 +10,12 @@
 		@State private var showsEditor = false
 
 		var body: some View {
-			Button("Screenshot Page", systemImage: "camera") {
+			Button {
 				Task { await capture(framed: true) }
+			} label: {
+				AstraTopBarIcon(title: "Screenshot Page", systemImage: "camera")
 			}
-			.labelStyle(.iconOnly)
-			.buttonStyle(.glass)
+			.astraTopBarButton()
 			.disabled(isCapturing || !controller.hasCurrentPageDocument || controller.navigationFailure != nil)
 			.help("Capture the visible page")
 			.accessibilityLabel("Screenshot Page")
