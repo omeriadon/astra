@@ -203,6 +203,7 @@ enum SidebarTabCollection: Hashable, Sendable {
 	case pinned
 	case normal
 	case folder(UUID)
+	case todayGroup(String)
 }
 
 @MainActor
@@ -269,6 +270,14 @@ final class BrowserSidebarTabSelection {
 #if os(iOS)
 import Foundation
 import Observation
+
+enum SidebarTabCollection: Hashable, Sendable {
+	case favourite
+	case pinned
+	case normal
+	case folder(UUID)
+	case todayGroup(String)
+}
 
 /// The macOS sidebar supplies real multi-selection; iOS rows do not.
 @MainActor
