@@ -55,24 +55,14 @@ struct ShellTopBarView: View {
 				VStack(spacing: 0) {
 					BrowserAddressField(browser: browser)
 						.frame(height: BrowserChromeMetrics.topBarRegionHeight)
-					ScrollView(.horizontal) {
-						HStack(spacing: 10) {
-							ShellWebsiteNavigationControls(browser: browser, theme: theme)
-							ShellExtensionControls(browser: browser, theme: theme)
-						}
-						.frame(height: BrowserChromeMetrics.topBarRegionHeight)
+					HStack(spacing: 10) {
+						ShellWebsiteNavigationControls(browser: browser, theme: theme)
+						ShellExtensionControls(browser: browser, theme: theme)
 					}
-					.scrollIndicators(.hidden)
+					.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 				}
 			} else {
-				ViewThatFits(in: .horizontal) {
-					desktopWebsiteControls
-					ScrollView(.horizontal) {
-						desktopWebsiteControls
-							.fixedSize(horizontal: true, vertical: false)
-					}
-					.accessibilityIdentifier("website-toolbar-overflow")
-				}
+				desktopWebsiteControls
 			}
 		}
 		.padding(
@@ -102,10 +92,13 @@ struct ShellTopBarView: View {
 	private var desktopWebsiteControls: some View {
 		HStack(spacing: 10) {
 			ShellWebsiteNavigationControls(browser: browser, theme: theme)
+				.fixedSize(horizontal: true, vertical: false)
 			BrowserAddressField(browser: browser)
-				.frame(minWidth: BrowserChromeMetrics.minimumContentWidth)
-			Spacer(minLength: 0)
+				// Use only the width remaining after navigation and extensions.
+				.frame(minWidth: 72, maxWidth: .infinity)
+				.layoutPriority(-1)
 			ShellExtensionControls(browser: browser, theme: theme)
+				.fixedSize(horizontal: true, vertical: false)
 		}
 	}
 }

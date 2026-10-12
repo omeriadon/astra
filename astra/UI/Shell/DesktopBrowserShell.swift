@@ -631,6 +631,8 @@ private struct ShellContentColumn: View {
 	let showsTopBar: Bool
 	@Binding var isTopBarRevealed: Bool
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	@State private var topBarOpacity = 1.0
+	@State private var topBarTransitionGeneration = 0
 	#if os(macOS)
 		@State private var isAddressDropTargeted = false
 	#endif
@@ -673,7 +675,8 @@ private struct ShellContentColumn: View {
 					.mask(alignment: .top) {
 						Rectangle().frame(height: topBarHeight)
 					}
-					.allowsHitTesting(topBarHeight > 0)
+					.opacity(topBarOpacity)
+					.allowsHitTesting(topBarHeight > 0 && topBarOpacity > 0)
 					.accessibilityHidden(topBarHeight == 0)
 			}
 			VStack(spacing: 0) {
@@ -687,6 +690,25 @@ private struct ShellContentColumn: View {
 			}
 		}
 		.animation(nil, value: browser.selectedTabID)
+		.onChange(of: browser.selectedSpace.id) { _, _ in
+			topBarTransitionGeneration += 1
+			let generation = topBarTransitionGeneration
+			guard !reduceMotion else {
+				topBarOpacity = 1
+				return
+			}
+			// Match the sidebar and tab-content 0.1 s out / 0.1 s in fade.
+			withAnimation(.easeInOut(duration: 0.1)) {
+				topBarOpacity = 0
+			}
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(105))
+				guard generation == topBarTransitionGeneration else { return }
+				withAnimation(.easeInOut(duration: 0.1)) {
+					topBarOpacity = 1
+				}
+			}
+		}
 		.onContinuousHover { phase in
 			switch phase {
 				case let .active(location):
