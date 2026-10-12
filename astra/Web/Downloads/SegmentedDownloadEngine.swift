@@ -46,10 +46,11 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 	private func beginMonitoring() {
 		if pathMonitor == nil {
 			let monitor = NWPathMonitor()
+
 			monitor.pathUpdateHandler = { [weak self] path in
+				let available = path.status == .satisfied
 				Task { @MainActor [weak self] in
 					guard let self else { return }
-					let available = path.status == .satisfied
 					let recovered = !pathAvailable && available
 					pathAvailable = available
 					for itemID in monitoredItems {
@@ -82,7 +83,6 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		retryJobs.removeValue(forKey: itemID)?.cancel()
 		retryAttempts[itemID] = nil
 		startTokens[itemID] = UUID()
-		replayHeaders[itemID] = nil
 		let prefix = itemID.uuidString + ":"
 		for key in activeTaskIDs.keys.filter({ $0.hasPrefix(prefix) }) {
 			activeTaskIDs[key] = nil
@@ -96,6 +96,12 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 			pathMonitor = nil
 			pathAvailable = true
 		}
+	}
+
+
+	func forget(_ itemID: UUID) {
+		stopMonitoring(itemID)
+		replayHeaders[itemID] = nil
 	}
 
 	private func recordActivity(_ itemID: UUID, index: Int, taskID: Int) {
@@ -137,6 +143,8 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 			manager?.setSegmentConnectionMessage(itemID, message: "Waiting for network…")
 			return
 		}
+
+		if immediately { retryJobs.removeValue(forKey: itemID)?.cancel() }
 		guard retryJobs[itemID] == nil else { return }
 		let attempt = retryAttempts[itemID, default: 0]
 		retryAttempts[itemID] = min(attempt + 1, 6)
@@ -241,9 +249,8 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 
 	func start(_ item: BrowserDownload, originalRequest: URLRequest? = nil) {
 		BrowserLog.info(.downloads, "segmented.start", metadata: ["item": BrowserLog.id(item.id), "request": BrowserLog.request(originalRequest), "url": BrowserLog.url(item.requestURL)])
-		guard let url = item.requestURL,
-		      let segments = item.segments
-		else { return }
+
+		guard let url = item.requestURL, item.segments != nil else { return }
 		if let originalRequest {
 			replayHeaders[item.id] = Self.safeReplayHeaders(originalRequest)
 		}
@@ -254,7 +261,6 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		startTokens[item.id] = token
 		session.getAllTasks { [weak self] tasks in
 			Task { @MainActor [weak self] in
-
 				guard let self, startTokens[item.id] == token,
 				      pathAvailable,
 				      let current = manager?.activeSegmentedDownload(item.id),
@@ -312,9 +318,10 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 	}
 
 
+
 	func cancel(_ itemID: UUID) {
 		BrowserLog.notice(.downloads, "segmented.cancel", metadata: ["item": BrowserLog.id(itemID)])
-		stopMonitoring(itemID)
+		forget(itemID)
 		session.getAllTasks { tasks in
 			for task in tasks where task.taskDescription?.hasPrefix(itemID.uuidString + ":") == true {
 				task.cancel()
@@ -324,7 +331,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 
 	func cancelAndWait(_ itemIDs: [UUID]) async {
 		BrowserLog.notice(.downloads, "segmented.cancel-and-wait", metadata: ["count": String(itemIDs.count)])
-		for itemID in itemIDs { stopMonitoring(itemID) }
+		for itemID in itemIDs { forget(itemID) }
 		let tasks = await withCheckedContinuation { continuation in
 			session.getAllTasks { continuation.resume(returning: $0) }
 		}
@@ -342,7 +349,8 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		newRequest: URLRequest,
 		completionHandler: @escaping (URLRequest?) -> Void
 	) {
-		guard let (itemID, _) = Self.identify(task),
+
+		guard let (itemID, index) = Self.identify(task),
 		      let sourceURL = response.url,
 		      let destinationURL = newRequest.url,
 		      sourceURL != destinationURL
@@ -351,8 +359,11 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 			return
 		}
 		completionHandler(nil)
+
+		let taskID = task.taskIdentifier
 		Task { @MainActor [weak self] in
-			self?.manager?.segmentFailed(itemID)
+			guard let self, acceptsCompletion(itemID, index: index, taskID: taskID) else { return }
+			manager?.segmentFailed(itemID)
 		}
 	}
 
