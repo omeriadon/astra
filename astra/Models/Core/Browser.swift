@@ -640,7 +640,6 @@ final class Browser {
 		schedulePersistence()
 	}
 
-
 	/// Apply a native SwiftUI reorder difference atomically across favourite, pinned,
 	/// normal, and pinned-folder collections. The input order is the visual drag order.
 	func moveTabs(_ ids: [UUID], to area: TabArea, in spaceID: UUID? = nil, before targetID: UUID? = nil, folderID: UUID? = nil, todayGroupID: String? = nil) {
@@ -703,12 +702,16 @@ final class Browser {
 			}
 			next.spaces[index].modifiedAt = destinationDate
 			if area == .normal, let todayGroupID,
-				let groupIndex = next.spaces[index].todayTabGroups.firstIndex(where: { $0.id == todayGroupID })
+			   let groupIndex = next.spaces[index].todayTabGroups.firstIndex(where: { $0.id == todayGroupID })
 			{
-				var group = next.spaces[index].todayTabGroups[groupIndex]
+				let group = next.spaces[index].todayTabGroups[groupIndex]
 				let groupInsert = targetID.flatMap { group.tabIDs.firstIndex(of: $0) } ?? group.tabIDs.endIndex
-				group.tabIDs.insert(contentsOf: moving, at: groupInsert)
-				next.spaces[index].todayTabGroups[groupIndex] = group
+				var tabIDs = group.tabIDs
+				tabIDs.insert(contentsOf: moving, at: groupInsert)
+				next.spaces[index].todayTabGroups[groupIndex] = BrowserTabGroupingFeature.Group(
+					name: group.name,
+					tabIDs: tabIDs
+				)
 			}
 		}
 		for index in next.spaces.indices {
@@ -1598,15 +1601,17 @@ final class Browser {
 		var didAdd = false
 		for id in ids {
 			guard let tab = tab(withID: id), tab.internalPage == nil,
-				let url = (tab.activeController?.committedURL ?? tab.currentURL).map(BrowserAddress.withoutCredentials),
-				url.absoluteString.utf8.count <= 16384, known.insert(url).inserted
+			      let url = (tab.activeController?.committedURL ?? tab.currentURL).map(BrowserAddress.withoutCredentials),
+			      url.absoluteString.utf8.count <= 16384, known.insert(url).inserted
 			else { continue }
 			let title = tab.activeController?.webViewIfLoaded?.title ?? tab.title
 			guard title.utf8.count <= 16384 else { continue }
 			bookmarks.append(Bookmark(name: title, url: url))
 			didAdd = true
 		}
-		if didAdd { scheduleUserDataPersistence() }
+		if didAdd {
+			scheduleUserDataPersistence()
+		}
 	}
 
 	func bookmarkSelectedPage() {
@@ -2640,7 +2645,9 @@ final class Browser {
 
 	private func openNewTab(_ request: URLRequest, inBackground: Bool, after sourceID: UUID? = nil) {
 		let tab = addTab(inBackground: inBackground)
-		if let sourceID { placeOpenedTab(tab.id, after: sourceID) }
+		if let sourceID {
+			placeOpenedTab(tab.id, after: sourceID)
+		}
 		#if os(macOS)
 			tab.controller?.previewSnapshotRefreshSuspended = inBackground
 		#endif
@@ -2654,7 +2661,7 @@ final class Browser {
 		guard newID != sourceID else { return }
 		if isPrivate {
 			guard let source = tabs.firstIndex(where: { $0.id == sourceID }),
-				let new = tabs.firstIndex(where: { $0.id == newID }) else { return }
+			      let new = tabs.firstIndex(where: { $0.id == newID }) else { return }
 			let tab = tabs.remove(at: new)
 			tabs.insert(tab, at: min(source + 1, tabs.count))
 			return
@@ -2666,13 +2673,17 @@ final class Browser {
 			: space.tabIDs.first(where: { !space.pinnedTabIDs.contains($0) && $0 != newID })
 		moveTab(newID, to: .normal, in: space.id, before: nextID)
 		if isNormalSource,
-			let index = workspace.spaces.firstIndex(where: { $0.id == space.id }),
-			let groupIndex = workspace.spaces[index].todayTabGroups.firstIndex(where: { $0.tabIDs.contains(sourceID) }),
-			let sourcePosition = workspace.spaces[index].todayTabGroups[groupIndex].tabIDs.firstIndex(of: sourceID)
+		   let index = workspace.spaces.firstIndex(where: { $0.id == space.id }),
+		   let groupIndex = workspace.spaces[index].todayTabGroups.firstIndex(where: { $0.tabIDs.contains(sourceID) }),
+		   let sourcePosition = workspace.spaces[index].todayTabGroups[groupIndex].tabIDs.firstIndex(of: sourceID)
 		{
-			var group = workspace.spaces[index].todayTabGroups[groupIndex]
-			group.tabIDs.insert(newID, at: sourcePosition + 1)
-			workspace.spaces[index].todayTabGroups[groupIndex] = group
+			let group = workspace.spaces[index].todayTabGroups[groupIndex]
+			var tabIDs = group.tabIDs
+			tabIDs.insert(newID, at: sourcePosition + 1)
+			workspace.spaces[index].todayTabGroups[groupIndex] = BrowserTabGroupingFeature.Group(
+				name: group.name,
+				tabIDs: tabIDs
+			)
 			markWorkspaceStructureChanged()
 			schedulePersistence()
 		}

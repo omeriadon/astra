@@ -72,7 +72,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 				while !Task.isCancelled {
 					try? await Task.sleep(for: .seconds(15))
 					guard !Task.isCancelled, let self else { return }
-					await self.checkForStalls(threshold: 90)
+					await checkForStalls(threshold: 90)
 				}
 			}
 		}
@@ -97,7 +97,6 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 			pathAvailable = true
 		}
 	}
-
 
 	func forget(_ itemID: UUID) {
 		stopMonitoring(itemID)
@@ -144,7 +143,9 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 			return
 		}
 
-		if immediately { retryJobs.removeValue(forKey: itemID)?.cancel() }
+		if immediately {
+			retryJobs.removeValue(forKey: itemID)?.cancel()
+		}
 		guard retryJobs[itemID] == nil else { return }
 		let attempt = retryAttempts[itemID, default: 0]
 		retryAttempts[itemID] = min(attempt + 1, 6)
@@ -170,7 +171,8 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		let now = Date.now
 		for itemID in Array(monitoredItems) {
 			guard let item = manager?.activeSegmentedDownload(itemID),
-			      let segments = item.segments else {
+			      let segments = item.segments
+			else {
 				stopMonitoring(itemID)
 				continue
 			}
@@ -197,7 +199,9 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 					restartNeeded = true
 				}
 			}
-			if restartNeeded { scheduleRetry(itemID, immediately: threshold == 0) }
+			if restartNeeded {
+				scheduleRetry(itemID, immediately: threshold == 0)
+			}
 		}
 	}
 
@@ -209,7 +213,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		finishingSegments.remove(key)
 		guard manager?.activeSegmentedDownload(itemID) != nil else { return }
 		let failure = error as NSError
-		if failure.domain == NSURLErrorDomain && [
+		if failure.domain == NSURLErrorDomain, [
 			NSURLErrorTimedOut, NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost,
 			NSURLErrorNetworkConnectionLost, NSURLErrorDNSLookupFailed,
 			NSURLErrorNotConnectedToInternet, NSURLErrorInternationalRoamingOff,
@@ -271,8 +275,12 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 					guard !finishingSegments.contains(description) else { continue }
 					if let task = tasks.first(where: { $0.taskDescription == description && $0.state != .canceling && $0.state != .completed }) {
 						activeTaskIDs[description] = task.taskIdentifier
-						if lastActivity[description] == nil { lastActivity[description] = .now }
-						if task.state == .suspended { task.resume() }
+						if lastActivity[description] == nil {
+							lastActivity[description] = .now
+						}
+						if task.state == .suspended {
+							task.resume()
+						}
 						continue
 					}
 					var request = URLRequest(url: url)
@@ -306,7 +314,6 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		return request
 	}
 
-
 	func pause(_ itemID: UUID) async {
 		stopMonitoring(itemID)
 		let tasks = await withCheckedContinuation { continuation in
@@ -316,8 +323,6 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 			task.suspend()
 		}
 	}
-
-
 
 	func cancel(_ itemID: UUID) {
 		BrowserLog.notice(.downloads, "segmented.cancel", metadata: ["item": BrowserLog.id(itemID)])
@@ -331,7 +336,9 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 
 	func cancelAndWait(_ itemIDs: [UUID]) async {
 		BrowserLog.notice(.downloads, "segmented.cancel-and-wait", metadata: ["count": String(itemIDs.count)])
-		for itemID in itemIDs { forget(itemID) }
+		for itemID in itemIDs {
+			forget(itemID)
+		}
 		let tasks = await withCheckedContinuation { continuation in
 			session.getAllTasks { continuation.resume(returning: $0) }
 		}
@@ -349,7 +356,6 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		newRequest: URLRequest,
 		completionHandler: @escaping (URLRequest?) -> Void
 	) {
-
 		guard let (itemID, index) = Self.identify(task),
 		      let sourceURL = response.url,
 		      let destinationURL = newRequest.url,
@@ -426,7 +432,6 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 				self?.manager?.completeSegment(itemID, index: index, taskID: taskID, partURL: partURL, response: response)
 			}
 		} catch {
-
 			Task { @MainActor [weak self] in
 				guard let self else { return }
 				if acceptsCompletion(itemID, index: index, taskID: taskID) {
@@ -441,7 +446,6 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		task: URLSessionTask,
 		didCompleteWithError error: (any Error)?
 	) {
-
 		guard let error,
 		      let (itemID, index) = Self.identify(task)
 		else { return }
@@ -466,7 +470,6 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		else { return nil }
 		return (id, index)
 	}
-
 
 	private nonisolated static func partURL(_ itemID: UUID, index: Int, taskID: Int) -> URL {
 		let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

@@ -163,7 +163,6 @@ nonisolated struct BrowserDownload: Codable, Equatable, Identifiable, Sendable {
 
 	var statusSummary: String {
 		switch status {
-
 			case .downloading:
 				if let errorMessage, segments != nil {
 					return "\(errorMessage) · \(progressLabel)"

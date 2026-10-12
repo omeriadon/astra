@@ -619,7 +619,6 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		}
 	}
 
-
 	/// Called only by the segmented transport on MainActor. Do not resurrect
 	/// paused, deleted, private-session-ended or finalizing transfers.
 	func activeSegmentedDownload(_ itemID: UUID) -> BrowserDownload? {
@@ -1454,7 +1453,6 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			persist()
 		}
 	}
-
 
 	func completeSegment(_ itemID: UUID, index: Int, taskID: Int, partURL: URL, response: HTTPURLResponse?) {
 		// A cancelled or replaced attempt may finish after its successor starts.

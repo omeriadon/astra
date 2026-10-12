@@ -41,13 +41,14 @@ struct BrowserTabRow: View {
 	private var isMultiSelected: Bool {
 		sidebarSelection?.contains(tab.id, area: isPinned ? .pinned : .normal, spaceID: rowSpaceID ?? browser.workspace.selectedSpaceID) == true
 	}
+
 	private func activateTab() {
 		#if os(macOS)
 			if let sidebarSelection, onSelectTab == nil {
 				let activate = sidebarSelection.click(tab.id, area: isPinned ? .pinned : .normal,
-					spaceID: rowSpaceID ?? browser.workspace.selectedSpaceID,
-					orderedIDs: selectionOrder, currentID: browser.selectedTabID,
-					modifiers: NSEvent.modifierFlags)
+				                                      spaceID: rowSpaceID ?? browser.workspace.selectedSpaceID,
+				                                      orderedIDs: selectionOrder, currentID: browser.selectedTabID,
+				                                      modifiers: NSEvent.modifierFlags)
 				guard activate else { return }
 			}
 		#endif
@@ -241,23 +242,23 @@ struct BrowserTabRow: View {
 				SidebarSelectedTabsContextMenu(
 					browser: browser, selection: sidebarSelection,
 					ids: sidebarSelection.orderedIDs(in: selectionOrder, area: isPinned ? .pinned : .normal,
-						spaceID: rowSpaceID ?? browser.workspace.selectedSpaceID),
+					                                 spaceID: rowSpaceID ?? browser.workspace.selectedSpaceID),
 					spaceID: rowSpaceID ?? browser.workspace.selectedSpaceID,
 					isPinned: isPinned
 				)
 			} else {
-			TabRowContextMenu(
-				tab: tab,
-				browser: browser,
-				isPinned: isPinned,
-				canCloseAbove: canCloseAbove,
-				canCloseBelow: canCloseBelow,
-				normalCount: resolvedNormalCount,
-				spaceID: rowSpaceID,
-				onCopyURL: copyURL,
-				onBeginRenaming: beginRenaming,
-				onSelectTab: onSelectTab
-			)
+				TabRowContextMenu(
+					tab: tab,
+					browser: browser,
+					isPinned: isPinned,
+					canCloseAbove: canCloseAbove,
+					canCloseBelow: canCloseBelow,
+					normalCount: resolvedNormalCount,
+					spaceID: rowSpaceID,
+					onCopyURL: copyURL,
+					onBeginRenaming: beginRenaming,
+					onSelectTab: onSelectTab
+				)
 			}
 		}
 		.onChange(of: isSelected) { _, selected in
@@ -323,7 +324,9 @@ private struct TabIconView: View {
 
 	var body: some View {
 		Button {
-			if let onActivate { onActivate() } else {
+			if let onActivate {
+				onActivate()
+			} else {
 				browser.selectTab(tab.id)
 				onSelectTab?(tab.id)
 			}
@@ -353,7 +356,7 @@ private struct TabIconView: View {
 				DragGesture(minimumDistance: 0)
 					.onChanged { _ in
 						guard onSelectTab == nil, !isMouseDown,
-							NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
+						      NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
 						isMouseDown = true
 						browser.selectTab(tab.id)
 					}
@@ -404,7 +407,9 @@ private struct TabTitleView: View {
 				.accessibilityIdentifier("tab-name-\(tab.id.uuidString)")
 		} else {
 			Button {
-				if let onActivate { onActivate() } else {
+				if let onActivate {
+					onActivate()
+				} else {
 					browser.selectTab(tab.id)
 					onSelectTab?(tab.id)
 				}
@@ -429,7 +434,7 @@ private struct TabTitleView: View {
 					DragGesture(minimumDistance: 0)
 						.onChanged { _ in
 							guard onSelectTab == nil, !isMouseDown,
-								NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
+							      NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
 							isMouseDown = true
 							browser.selectTab(tab.id)
 						}
@@ -639,12 +644,16 @@ private struct SidebarSelectedTabsContextMenu: View {
 			selection.clear()
 		}
 		Button("Add to Reading List", systemImage: "text.badge.plus") {
-			for id in ids { browser.addToReadingList(tabID: id) }
+			for id in ids {
+				browser.addToReadingList(tabID: id)
+			}
 			selection.clear()
 		}
 		Divider()
 		Button(isPinned ? "Hibernate Selected Tabs" : "Close Selected Tabs", systemImage: isPinned ? "moon.zzz" : "xmark", role: .destructive) {
-			for id in ids { browser.closeTab(id) }
+			for id in ids {
+				browser.closeTab(id)
+			}
 			selection.clear()
 		}
 	}

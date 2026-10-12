@@ -61,39 +61,39 @@ struct BrowserFavouriteTile: View {
 			}
 		#if os(macOS)
 			.modifier(
-			FavouriteHoverPreviewModifier(
-				tabID: tab.id,
-				windowID: browser.windowID,
-				previewEnabled: onSelectTab == nil,
-				isHovered: $isHovered,
-				hoverFrame: $hoverFrame,
-				hoverPreviewStarted: $hoverPreviewStarted
+				FavouriteHoverPreviewModifier(
+					tabID: tab.id,
+					windowID: browser.windowID,
+					previewEnabled: onSelectTab == nil,
+					isHovered: $isHovered,
+					hoverFrame: $hoverFrame,
+					hoverPreviewStarted: $hoverPreviewStarted
+				)
 			)
-		)
 		#endif
-		.accessibilityLabel(tab.title)
-		.accessibilityAddTraits(isSelected ? .isSelected : [])
-		.accessibilityIdentifier("favourite-tab-\(tab.id.uuidString)")
-		.contextMenu {
-			Button("Move to Pinned Tabs", systemImage: "pin") {
-				browser.moveTab(tab.id, to: .pinned)
-			}
-			Button("Move to Normal Tabs", systemImage: "rectangle") {
-				browser.moveTab(tab.id, to: .normal)
-			}
-			if tab.internalPage == nil {
-				Button("Add to Reading List", systemImage: "text.badge.plus") {
-					browser.addToReadingList(tabID: tab.id)
+			.accessibilityLabel(tab.title)
+			.accessibilityAddTraits(isSelected ? .isSelected : [])
+			.accessibilityIdentifier("favourite-tab-\(tab.id.uuidString)")
+			.contextMenu {
+				Button("Move to Pinned Tabs", systemImage: "pin") {
+					browser.moveTab(tab.id, to: .pinned)
 				}
-				.disabled(!browser.canAddToReadingList(tabID: tab.id))
-				.accessibilityIdentifier("favourite-add-reading-list-\(tab.id.uuidString)")
-				Button("Save Page Offline", systemImage: "arrow.down.circle") {
-					browser.saveReadingListSnapshot(tabID: tab.id)
+				Button("Move to Normal Tabs", systemImage: "rectangle") {
+					browser.moveTab(tab.id, to: .normal)
 				}
-				.disabled(!browser.canSaveReadingListSnapshot(tabID: tab.id))
-				.accessibilityIdentifier("favourite-save-offline-\(tab.id.uuidString)")
+				if tab.internalPage == nil {
+					Button("Add to Reading List", systemImage: "text.badge.plus") {
+						browser.addToReadingList(tabID: tab.id)
+					}
+					.disabled(!browser.canAddToReadingList(tabID: tab.id))
+					.accessibilityIdentifier("favourite-add-reading-list-\(tab.id.uuidString)")
+					Button("Save Page Offline", systemImage: "arrow.down.circle") {
+						browser.saveReadingListSnapshot(tabID: tab.id)
+					}
+					.disabled(!browser.canSaveReadingListSnapshot(tabID: tab.id))
+					.accessibilityIdentifier("favourite-save-offline-\(tab.id.uuidString)")
+				}
 			}
-		}
 	}
 }
 

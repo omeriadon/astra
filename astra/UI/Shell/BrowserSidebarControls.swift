@@ -81,7 +81,6 @@ struct ShellSidebarListView: View {
 							Color.clear.frame(height: 14)
 						}
 
-
 						VStack(spacing: 2) {
 							HStack {
 								Text("Pinned Tabs").font(.caption)
@@ -89,20 +88,20 @@ struct ShellSidebarListView: View {
 							}
 							ForEach(space.pinnedFolders) { folder in
 								PinnedFolderRow(folder: folder, browser: browser, tabsByID: tabsByID,
-									selectedID: selectedID, isActiveSpace: isActiveSpace, normalCount: normalTabs.count,
-									spaceID: space.id, theme: theme, openElsewhereIDs: openElsewhereIDs,
-									onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions,
-									sidebarSelection: sidebarSelection, selectionOrder: pinnedSelectionOrder)
+								                selectedID: selectedID, isActiveSpace: isActiveSpace, normalCount: normalTabs.count,
+								                spaceID: space.id, theme: theme, openElsewhereIDs: openElsewhereIDs,
+								                onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions,
+								                sidebarSelection: sidebarSelection, selectionOrder: pinnedSelectionOrder)
 							}
 							ForEach(ungroupedPinnedTabs) { tab in
 								BrowserTabRow(tab: tab, browser: browser,
-									isSelected: isActiveSpace && selectedID == tab.id,
-									tabIndex: nil, normalCount: normalTabs.count, pinned: true,
-									rowSpaceID: space.id, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id),
-									onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions,
-									sidebarSelection: sidebarSelection, selectionOrder: pinnedSelectionOrder)
-								.equatable()
-								.id(tab.id)
+								              isSelected: isActiveSpace && selectedID == tab.id,
+								              tabIndex: nil, normalCount: normalTabs.count, pinned: true,
+								              rowSpaceID: space.id, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id),
+								              onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions,
+								              sidebarSelection: sidebarSelection, selectionOrder: pinnedSelectionOrder)
+									.equatable()
+									.id(tab.id)
 							}
 							.reorderable(collectionID: SidebarTabCollection.pinned)
 							if pinnedTabs.isEmpty {
@@ -155,7 +154,6 @@ struct ShellSidebarListView: View {
 								.matchedTransitionSource(id: "sidebar-new-tab", in: navigationNamespace ?? sidebarTransitions)
 						}
 						.animation(reduceMotion ? nil : .smooth(duration: 0.35), value: space.todayTabGroups)
-
 					}
 					.reorderContainer(for: BrowserTab.self, in: SidebarTabCollection.self, isEnabled: !browser.isPrivate && onSelectTab == nil) { difference in
 						applyReorder(difference)
@@ -194,7 +192,7 @@ struct ShellSidebarListView: View {
 	private func applyReorder(_ difference: ReorderDifference<UUID, SidebarTabCollection>) {
 		let sourceIDs: [UUID]
 		if difference.sources.contains(where: { sidebarSelection.tabIDs.contains($0) }),
-			sidebarSelection.tabIDs.count > 1
+		   sidebarSelection.tabIDs.count > 1
 		{
 			let sourceArea = sidebarSelection.area == .pinned
 				? space.pinnedFolders.flatMap(\.tabIDs) + space.pinnedTabIDs
@@ -204,10 +202,9 @@ struct ShellSidebarListView: View {
 		} else {
 			sourceIDs = difference.sources
 		}
-		let beforeID: UUID?
-		switch difference.destination.position {
-			case .before(let id): beforeID = id
-			case .end: beforeID = nil
+		let beforeID: UUID? = switch difference.destination.position {
+			case let .before(id): id
+			case .end: nil
 		}
 		switch difference.destination.collectionID {
 			case .favourite:
@@ -216,9 +213,9 @@ struct ShellSidebarListView: View {
 				browser.moveTabs(sourceIDs, to: .pinned, in: space.id, before: beforeID)
 			case .normal:
 				browser.moveTabs(sourceIDs, to: .normal, in: space.id, before: beforeID)
-			case .todayGroup(let groupID):
+			case let .todayGroup(groupID):
 				browser.moveTabs(sourceIDs, to: .normal, in: space.id, before: beforeID, todayGroupID: groupID)
-			case .folder(let id):
+			case let .folder(id):
 				browser.moveTabs(sourceIDs, to: .pinned, in: space.id, before: beforeID, folderID: id)
 		}
 		sidebarSelection.clear()

@@ -161,7 +161,6 @@ private struct NavigationBackButton: View {
 	let controller: BrowserController
 	let browser: Browser
 
-	@ViewBuilder
 	private var historyEntries: some View {
 		ForEach((0 ..< controller.historyIndex).reversed(), id: \.self) { index in
 			Button(controller.history[index].absoluteString, systemImage: "clock.arrow.circlepath") {
@@ -203,7 +202,6 @@ private struct NavigationForwardButton: View {
 	let controller: BrowserController
 	let browser: Browser
 
-	@ViewBuilder
 	private var historyEntries: some View {
 		ForEach(min(controller.historyIndex + 1, controller.history.count) ..< controller.history.count, id: \.self) { index in
 			Button(controller.history[index].absoluteString, systemImage: "clock.arrow.circlepath") {

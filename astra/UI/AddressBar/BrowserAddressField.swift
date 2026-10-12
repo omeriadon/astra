@@ -283,7 +283,6 @@ struct BrowserAddressField: View {
 		.task(id: searchEngineDiscoveryScope) {
 			await validateSearchEngineMetadata()
 		}
-
 	}
 
 	private var dimmedAddressText: AttributedString {
