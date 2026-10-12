@@ -472,21 +472,12 @@ private struct ShellSidebarColumn: View {
 					PrivateBrowserSidebar(browser: browser)
 						.sidebarScrollContentMargins(top: showsSidebarHeader ? sidebarHeaderHeight + 4 : 33)
 				} else {
-					ShellSidebarListView(
+					ShellSpaceTabList(
 						browser: browser,
-						space: browser.selectedSpace,
-						theme: browser.selectedSpace.theme,
-						favouriteTabIDs: browser.workspace.favouriteTabIDs
+						topMargin: showsSidebarHeader ? sidebarHeaderHeight + 4 : 33
 					)
-					.id(browser.selectedSpace.id)
-					.transition(.opacity)
-					.foregroundStyle(browser.selectedSpace.theme.foregroundColor)
-					.sidebarScrollContentMargins(top: showsSidebarHeader ? sidebarHeaderHeight + 4 : 33)
-					.accessibilityIdentifier("sidebar-space-pages")
 				}
 			}
-			// Animate space tab contents without affecting the persistent sidebar controls.
-			.animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: browser.selectedSpace.id)
 			.foregroundStyle(theme.foregroundColor)
 			.visualEffect { content, geometry in
 				content.offset(x: downloadsVisible ? geometry.size.width : 0)
@@ -561,6 +552,70 @@ private struct ShellSidebarColumn: View {
 			.foregroundStyle(theme.foregroundColor)
 		}
 		.fixedSize(horizontal: false, vertical: true)
+	}
+}
+
+/// Keep the previous space's tab tree mounted while fading it out. Replacing a
+/// SwiftUI view's identity with .transition(.opacity) is insufficient here:
+/// the pager selects spaces in a transaction without an implicit animation.
+private struct ShellSpaceTabList: View {
+	let browser: Browser
+	let topMargin: CGFloat
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	@State private var presentedSpaceID: UUID
+	@State private var listOpacity = 1.0
+	@State private var transitionGeneration = 0
+
+	init(browser: Browser, topMargin: CGFloat) {
+		self.browser = browser
+		self.topMargin = topMargin
+		_presentedSpaceID = State(initialValue: browser.selectedSpace.id)
+	}
+
+	private var presentedSpace: BrowserSpace {
+		browser.workspace.spaces.first(where: { $0.id == presentedSpaceID }) ?? browser.selectedSpace
+	}
+
+	var body: some View {
+		let space = presentedSpace
+		ShellSidebarListView(
+			browser: browser,
+			space: space,
+			theme: space.theme,
+			isActiveSpace: space.id == browser.selectedSpace.id,
+			favouriteTabIDs: browser.workspace.favouriteTabIDs
+		)
+		.id(space.id)
+		.foregroundStyle(space.theme.foregroundColor)
+		.sidebarScrollContentMargins(top: topMargin)
+		.accessibilityIdentifier("sidebar-space-pages")
+		.opacity(listOpacity)
+		.allowsHitTesting(space.id == browser.selectedSpace.id)
+		.onChange(of: browser.selectedSpace.id) { _, newID in
+			transitionGeneration += 1
+			let generation = transitionGeneration
+			guard !reduceMotion, presentedSpaceID != newID,
+			      browser.workspace.spaces.contains(where: { $0.id == presentedSpaceID })
+			else {
+				presentedSpaceID = newID
+				listOpacity = 1
+				return
+			}
+
+			// Two explicit phases guarantee that the old content remains visible
+			// for its fade-out and the new content fades in after the swap.
+			withAnimation(.easeInOut(duration: 0.1)) {
+				listOpacity = 0
+			}
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(105))
+				guard generation == transitionGeneration else { return }
+				presentedSpaceID = newID
+				withAnimation(.easeInOut(duration: 0.1)) {
+					listOpacity = 1
+				}
+			}
+		}
 	}
 }
 
