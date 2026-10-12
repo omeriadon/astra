@@ -1,3 +1,4 @@
+import Haze
 import SwiftUI
 
 struct BrowserSpacesBar: View {
@@ -150,8 +151,22 @@ struct BrowserSpacesBar: View {
 		@State private var showsDeleteAlert = false
 
 		var body: some View {
-			VStack(spacing: 4) {
+			ZStack(alignment: .bottom) {
 				spaceList
+
+				HazeEffect(
+					maskProvider: LinearGradientMaskProvider(
+						startPoint: .top,
+						endPoint: .bottom,
+						startOpacity: 0,
+						endOpacity: 1.0,
+						isSmooth: true
+					),
+					maxBlurRadius: 3
+				)
+				.ignoresSafeArea()
+				.frame(height: 25)
+
 				Button {
 					browser.createSpace()
 					onDismiss()
@@ -163,8 +178,10 @@ struct BrowserSpacesBar: View {
 				.buttonStyle(.plain)
 				.accessibilityLabel("Add Space")
 				.accessibilityIdentifier("space-picker-add")
+				.padding(5)
+				.frame(maxWidth: .infinity, alignment: .trailing)
 			}
-			.padding(10)
+			.safeAreaPadding(8)
 			.frame(width: 250)
 			.accessibilityIdentifier("space-picker-panel")
 			.onExitCommand(perform: onDismiss)
