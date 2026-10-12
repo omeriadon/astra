@@ -23,6 +23,7 @@ struct BrowserPageView: View {
 		}
 		return browser.selectedTab
 	}
+
 	private var toastManager: ToastManager {
 		browser.session.toastManager
 	}
@@ -115,39 +116,39 @@ struct BrowserPageView: View {
 				}
 			}
 		#endif
-		// Keep outgoing page content stable until the fade-out completes.
-		.opacity(contentOpacity)
-		.allowsHitTesting(presentedSpaceID == browser.selectedSpace.id)
-		.onChange(of: browser.selectedTabID) { _, id in
-			if presentedSpaceID == browser.selectedSpace.id {
-				presentedTabID = id
-			}
-		}
-		.onChange(of: browser.selectedSpace.id) { _, newID in
-			transitionGeneration += 1
-			let generation = transitionGeneration
-			guard !reduceMotion, presentedSpaceID != newID,
-			      browser.tab(withID: presentedTabID) != nil
-			else {
-				presentedSpaceID = newID
-				presentedTabID = browser.selectedTabID
-				contentOpacity = 1
-				return
-			}
-
-			withAnimation(.easeInOut(duration: 0.1)) {
-				contentOpacity = 0
-			}
-			Task { @MainActor in
-				try? await Task.sleep(for: .milliseconds(105))
-				guard generation == transitionGeneration else { return }
-				presentedSpaceID = browser.selectedSpace.id
-				presentedTabID = browser.selectedTabID
-				withAnimation(.easeInOut(duration: 0.1)) {
-					contentOpacity = 1
+			// Keep outgoing page content stable until the fade-out completes.
+			.opacity(contentOpacity)
+			.allowsHitTesting(presentedSpaceID == browser.selectedSpace.id)
+			.onChange(of: browser.selectedTabID) { _, id in
+				if presentedSpaceID == browser.selectedSpace.id {
+					presentedTabID = id
 				}
 			}
-		}
+			.onChange(of: browser.selectedSpace.id) { _, newID in
+				transitionGeneration += 1
+				let generation = transitionGeneration
+				guard !reduceMotion, presentedSpaceID != newID,
+				      browser.tab(withID: presentedTabID) != nil
+				else {
+					presentedSpaceID = newID
+					presentedTabID = browser.selectedTabID
+					contentOpacity = 1
+					return
+				}
+
+				withAnimation(.easeInOut(duration: 0.1)) {
+					contentOpacity = 0
+				}
+				Task { @MainActor in
+					try? await Task.sleep(for: .milliseconds(105))
+					guard generation == transitionGeneration else { return }
+					presentedSpaceID = browser.selectedSpace.id
+					presentedTabID = browser.selectedTabID
+					withAnimation(.easeInOut(duration: 0.1)) {
+						contentOpacity = 1
+					}
+				}
+			}
 	}
 }
 

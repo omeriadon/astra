@@ -28,7 +28,6 @@ struct BrowserSpacesBar: View {
 								}
 							)
 						}
-
 					Spacer()
 				}
 				.frame(height: 25)
