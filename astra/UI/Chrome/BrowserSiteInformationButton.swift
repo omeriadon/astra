@@ -273,8 +273,8 @@ struct BrowserSitePermissionPicker: View {
 }
 
 #if os(macOS)
-	// This presenter is mounted by the window shell, not the website-information popover.
-	// It remains accessible when the toolbar is hidden.
+	/// This presenter is mounted by the window shell, not the website-information popover.
+	/// It remains accessible when the toolbar is hidden.
 	struct BrowserSiteUserAgentPresenter: View {
 		let browser: Browser
 		let controller: BrowserController

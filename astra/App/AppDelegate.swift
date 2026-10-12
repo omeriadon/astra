@@ -1240,8 +1240,8 @@
 			viewMenu.addItem(.separator())
 			viewMenu.addItem(item("Translate Page…", action: #selector(translatePage(_:))))
 			viewMenu.addItem(item("Monitor Website…", action: #selector(monitorWebsite(_:))))
-			viewMenu.addItem(item("Custom User Agent…", action: #selector(editSiteUserAgent(_:))))
 			viewMenu.addItem(.separator())
+			viewMenu.addItem(item("Custom User Agent…", action: #selector(editSiteUserAgent(_:))))
 			viewMenu.addItem(item(
 				"Web Inspector",
 				action: #selector(showWebInspector(_:)),

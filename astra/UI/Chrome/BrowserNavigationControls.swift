@@ -3,7 +3,7 @@ import SwiftUI
 	import AppKit
 #endif
 
-// Use exactly the same control metrics and styling as Back, Forward and Reload.
+/// Use exactly the same control metrics and styling as Back, Forward and Reload.
 struct AstraTopBarButtonModifier: ViewModifier {
 	func body(content: Content) -> some View {
 		content
@@ -114,7 +114,7 @@ private struct BrowserZoomControls: View {
 		.astraTopBarButton()
 		.accessibilityLabel("Page Zoom, \(Int((controller.pageZoom * 100).rounded())) percent")
 		.accessibilityIdentifier("browser-zoom-controls")
-		.popover(isPresented: $showsZoom) {
+		.popover(isPresented: $showsZoom, arrowEdge: .top) {
 			HStack(spacing: 12) {
 				Button("Zoom Out", systemImage: "minus") { controller.zoomOut() }
 					.labelStyle(.iconOnly)

@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Menu commands and browser actions dispatch to the owning window's sheet presenter.
+/// Menu commands and browser actions dispatch to the owning window's sheet presenter.
 extension Notification.Name {
 	static let astraTranslatePage = Notification.Name("AstraTranslatePage")
 	static let astraMonitorWebsite = Notification.Name("AstraMonitorWebsite")
