@@ -435,7 +435,9 @@ private struct ShellSidebarColumn: View {
 	}
 
 	private var sidebarHeaderReservation: CGFloat {
-		sidebarHeaderHeight + 11
+		showsSidebarHeader
+			? sidebarHeaderHeight + 11
+			: BrowserChromeMetrics.topBarRegionHeight + 5
 	}
 
 	private var showsSidebarHeader: Bool {
@@ -518,10 +520,11 @@ private struct ShellSidebarColumn: View {
 		.ignoresSafeArea(.container, edges: .vertical)
 		.sidebarScrollOpacityFade(
 			top: sidebarHeaderReservation,
-			topOpacityHeight: sidebarHeaderHeight,
+			topOpacityHeight: showsSidebarHeader ? sidebarHeaderHeight : nil,
 			bottom: bottomOpacityHeight + 11,
 			bottomOpacityHeight: bottomOpacityHeight
 		)
+		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsSidebarHeader)
 		.task(id: showsDownloads) {
 			if showsDownloads {
 				keepsDownloadsMounted = true

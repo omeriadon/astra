@@ -262,8 +262,8 @@ final class BrowserAI {
 				"reasoning": request.reasoningEffort ?? "default",
 				"web_search": String(request.webSearch ?? false),
 				"image_count": String(request.images?.count ?? 0),
-				"image_bytes": String(request.images?.reduce(0, { $0 + $1.data.count }) ?? 0),
-				"file_count": String(request.files?.count ?? 0)
+				"image_bytes": String(request.images?.reduce(0) { $0 + $1.data.count } ?? 0),
+				"file_count": String(request.files?.count ?? 0),
 			])
 			BrowserLog.debug(.ai, "ai.prompt.debug", metadata: ["id": BrowserLog.id(id), "instructions": BrowserLog.value(request.instructions), "prompt": BrowserLog.value(request.prompt)])
 		#endif

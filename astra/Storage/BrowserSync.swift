@@ -460,7 +460,7 @@ final class BrowserSync {
 		request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
 		BrowserLog.debug(.ai, "ai.stream.request", metadata: [
 			"id": BrowserLog.id(requestID), "endpoint": BrowserLog.url(request.url),
-			"body_bytes": String(request.httpBody?.count ?? 0), "model_id": body.modelID
+			"body_bytes": String(request.httpBody?.count ?? 0), "model_id": body.modelID,
 		])
 		let configuration = URLSessionConfiguration.ephemeral
 		configuration.timeoutIntervalForRequest = 90
@@ -470,94 +470,94 @@ final class BrowserSync {
 		return try await withTaskCancellationHandler {
 			try Task.checkCancellation()
 			for attempt in 0 ..< 3 {
-			let attemptStarted = BrowserLog.clock()
-			BrowserLog.debug(.ai, "ai.stream.attempt", metadata: ["id": BrowserLog.id(requestID), "attempt": String(attempt + 1)])
-			let (bytes, response) = try await session.bytes(for: request)
-			try validateAIAuthentication(generation)
-			guard let response = response as? HTTPURLResponse else {
-				throw BrowserAIError.invalidStream
-			}
-			BrowserLog.debug(.ai, "ai.stream.headers", metadata: [
-				"id": BrowserLog.id(requestID), "attempt": String(attempt + 1),
-				"status": String(response.statusCode),
-				"first_headers_ms": String(Int((BrowserLog.clock() - attemptStarted) * 1000)),
-				"content_type": response.value(forHTTPHeaderField: "Content-Type") ?? "missing",
-				"server_request_id": response.value(forHTTPHeaderField: "X-Request-ID") ?? "missing",
-				"retry_after": response.value(forHTTPHeaderField: "Retry-After") ?? "missing"
-			])
-			if response.statusCode == 401 {
-				signOut()
-				throw BrowserAIError.signInRequired
-			}
-			guard response.statusCode == 200 else {
-				var message = ""
-				for try await line in bytes.lines {
-					message += String(line.prefix(16384 - min(message.utf8.count, 16384)))
-					if message.utf8.count >= 16384 {
-						break
-					}
-				}
-				BrowserLog.debug(.ai, "ai.stream.http-error-body", metadata: [
-					"id": BrowserLog.id(requestID), "attempt": String(attempt + 1),
-					"status": String(response.statusCode), "body": message
-				])
-				if attempt < 2, [500, 502, 503, 504].contains(response.statusCode) {
-					BrowserLog.warning(.ai, "ai.stream.retry", metadata: [
-						"id": BrowserLog.id(requestID), "attempt": String(attempt + 1),
-						"status": String(response.statusCode), "delay_seconds": String(attempt == 0 ? 1 : 3)
-					])
-					try await Task.sleep(for: .seconds(attempt == 0 ? 1 : 3))
-					continue
-				}
-				throw BrowserAIError.http(response.statusCode, data: Data(message.utf8))
-			}
-			guard response.value(forHTTPHeaderField: "Content-Type")?.lowercased().hasPrefix("text/event-stream") == true else {
-				throw BrowserAIError.invalidStream
-			}
-			var totalBytes = 0
-			var events = 0
-			for try await line in bytes.lines {
-				try Task.checkCancellation()
+				let attemptStarted = BrowserLog.clock()
+				BrowserLog.debug(.ai, "ai.stream.attempt", metadata: ["id": BrowserLog.id(requestID), "attempt": String(attempt + 1)])
+				let (bytes, response) = try await session.bytes(for: request)
 				try validateAIAuthentication(generation)
-				totalBytes += line.utf8.count
-				guard line.utf8.count <= 524_288, totalBytes <= 32 * 1024 * 1024 else {
+				guard let response = response as? HTTPURLResponse else {
 					throw BrowserAIError.invalidStream
 				}
-				guard line.hasPrefix("data: ") else { continue }
-				let event = try JSONDecoder().decode(BrowserAIStreamEvent.self, from: Data(line.dropFirst(6).utf8))
-				events += 1
-				BrowserLog.debug(.ai, "ai.stream.event", metadata: [
+				BrowserLog.debug(.ai, "ai.stream.headers", metadata: [
 					"id": BrowserLog.id(requestID), "attempt": String(attempt + 1),
-					"index": String(events), "total_bytes": String(totalBytes),
-					"text_bytes": String(event.text?.utf8.count ?? 0),
-					"is_final": String(event.isFinal ?? false)
+					"status": String(response.statusCode),
+					"first_headers_ms": String(Int((BrowserLog.clock() - attemptStarted) * 1000)),
+					"content_type": response.value(forHTTPHeaderField: "Content-Type") ?? "missing",
+					"server_request_id": response.value(forHTTPHeaderField: "X-Request-ID") ?? "missing",
+					"retry_after": response.value(forHTTPHeaderField: "Retry-After") ?? "missing",
 				])
-				if let error = event.error {
-					BrowserLog.error(.ai, "ai.stream.provider-error", metadata: [
-						"id": BrowserLog.id(requestID), "error": BrowserLog.value(error)
-					])
-					throw BrowserAIError.server(502, String(error.prefix(300)))
+				if response.statusCode == 401 {
+					signOut()
+					throw BrowserAIError.signInRequired
 				}
-				guard let text = event.text, let isFinal = event.isFinal else {
+				guard response.statusCode == 200 else {
+					var message = ""
+					for try await line in bytes.lines {
+						message += String(line.prefix(16384 - min(message.utf8.count, 16384)))
+						if message.utf8.count >= 16384 {
+							break
+						}
+					}
+					BrowserLog.debug(.ai, "ai.stream.http-error-body", metadata: [
+						"id": BrowserLog.id(requestID), "attempt": String(attempt + 1),
+						"status": String(response.statusCode), "body": message,
+					])
+					if attempt < 2, [500, 502, 503, 504].contains(response.statusCode) {
+						BrowserLog.warning(.ai, "ai.stream.retry", metadata: [
+							"id": BrowserLog.id(requestID), "attempt": String(attempt + 1),
+							"status": String(response.statusCode), "delay_seconds": String(attempt == 0 ? 1 : 3),
+						])
+						try await Task.sleep(for: .seconds(attempt == 0 ? 1 : 3))
+						continue
+					}
+					throw BrowserAIError.http(response.statusCode, data: Data(message.utf8))
+				}
+				guard response.value(forHTTPHeaderField: "Content-Type")?.lowercased().hasPrefix("text/event-stream") == true else {
 					throw BrowserAIError.invalidStream
 				}
-				onSnapshot(text)
-				if isFinal {
-					BrowserLog.debug(.ai, "ai.stream.finished", metadata: [
-						"id": BrowserLog.id(requestID), "events": String(events),
-						"total_bytes": String(totalBytes), "text": BrowserLog.value(String(text.prefix(8192)))
-					])
-					guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-						throw BrowserAIError.emptyResponse
+				var totalBytes = 0
+				var events = 0
+				for try await line in bytes.lines {
+					try Task.checkCancellation()
+					try validateAIAuthentication(generation)
+					totalBytes += line.utf8.count
+					guard line.utf8.count <= 524_288, totalBytes <= 32 * 1024 * 1024 else {
+						throw BrowserAIError.invalidStream
 					}
-					return text
+					guard line.hasPrefix("data: ") else { continue }
+					let event = try JSONDecoder().decode(BrowserAIStreamEvent.self, from: Data(line.dropFirst(6).utf8))
+					events += 1
+					BrowserLog.debug(.ai, "ai.stream.event", metadata: [
+						"id": BrowserLog.id(requestID), "attempt": String(attempt + 1),
+						"index": String(events), "total_bytes": String(totalBytes),
+						"text_bytes": String(event.text?.utf8.count ?? 0),
+						"is_final": String(event.isFinal ?? false),
+					])
+					if let error = event.error {
+						BrowserLog.error(.ai, "ai.stream.provider-error", metadata: [
+							"id": BrowserLog.id(requestID), "error": BrowserLog.value(error),
+						])
+						throw BrowserAIError.server(502, String(error.prefix(300)))
+					}
+					guard let text = event.text, let isFinal = event.isFinal else {
+						throw BrowserAIError.invalidStream
+					}
+					onSnapshot(text)
+					if isFinal {
+						BrowserLog.debug(.ai, "ai.stream.finished", metadata: [
+							"id": BrowserLog.id(requestID), "events": String(events),
+							"total_bytes": String(totalBytes), "text": BrowserLog.value(String(text.prefix(8192))),
+						])
+						guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+							throw BrowserAIError.emptyResponse
+						}
+						return text
+					}
 				}
-			}
-			BrowserLog.error(.ai, "ai.stream.eof-without-final", metadata: [
-				"id": BrowserLog.id(requestID), "attempt": String(attempt + 1),
-				"events": String(events), "total_bytes": String(totalBytes)
-			])
-			throw BrowserAIError.invalidStream
+				BrowserLog.error(.ai, "ai.stream.eof-without-final", metadata: [
+					"id": BrowserLog.id(requestID), "attempt": String(attempt + 1),
+					"events": String(events), "total_bytes": String(totalBytes),
+				])
+				throw BrowserAIError.invalidStream
 			}
 			throw BrowserAIError.invalidStream
 		} onCancel: {
@@ -599,7 +599,7 @@ final class BrowserSync {
 				try Task.checkCancellation()
 				BrowserLog.debug(isAI ? .ai : .sync, "http.attempt", metadata: [
 					"id": BrowserLog.id(diagnosticID), "path": path, "method": method,
-					"attempt": String(attempt + 1), "body_bytes": String(request.httpBody?.count ?? 0)
+					"attempt": String(attempt + 1), "body_bytes": String(request.httpBody?.count ?? 0),
 				])
 				let (data, response) = try await URLSession.shared.data(for: request)
 				guard let response = response as? HTTPURLResponse, data.count <= 16 * 1024 * 1024 else {
@@ -612,12 +612,12 @@ final class BrowserSync {
 					"response_bytes": String(data.count),
 					"content_type": response.value(forHTTPHeaderField: "Content-Type") ?? "missing",
 					"server_request_id": response.value(forHTTPHeaderField: "X-Request-ID") ?? "missing",
-					"retry_after": response.value(forHTTPHeaderField: "Retry-After") ?? "missing"
+					"retry_after": response.value(forHTTPHeaderField: "Retry-After") ?? "missing",
 				])
 				if !(200 ..< 300 ~= response.statusCode) {
 					BrowserLog.debug(isAI ? .ai : .sync, "http.error-body.debug", metadata: [
 						"id": BrowserLog.id(diagnosticID), "path": path, "attempt": String(attempt + 1),
-						"body": String(decoding: data.prefix(8192), as: UTF8.self)
+						"body": String(decoding: data.prefix(8192), as: UTF8.self),
 					])
 				}
 				if response.statusCode == 401, bearer != nil, sessionToken == bearer {
@@ -640,17 +640,17 @@ final class BrowserSync {
 				} else {
 					false
 				}
-				guard attempt < 2, transient, (["GET", "PUT"].contains(method) || (isAI && method == "POST")) else {
+				guard attempt < 2, transient, ["GET", "PUT"].contains(method) || (isAI && method == "POST") else {
 					BrowserLog.debug(isAI ? .ai : .sync, "http.terminal-failure", metadata: [
 						"id": BrowserLog.id(diagnosticID), "path": path,
-						"attempt": String(attempt + 1), "error": BrowserLog.errorDescription(error)
+						"attempt": String(attempt + 1), "error": BrowserLog.errorDescription(error),
 					])
 					throw error
 				}
 				BrowserLog.warning(isAI ? .ai : .sync, "http.retry", metadata: [
 					"id": BrowserLog.id(diagnosticID), "path": path,
 					"attempt": String(attempt + 1), "delay_seconds": String(attempt == 0 ? 1 : 3),
-					"error": BrowserLog.errorDescription(error)
+					"error": BrowserLog.errorDescription(error),
 				])
 				try await Task.sleep(for: .seconds(attempt == 0 ? 1 : 3))
 			}
