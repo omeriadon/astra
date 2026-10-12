@@ -265,3 +265,18 @@ final class BrowserSidebarTabSelection {
 	}
 }
 #endif
+
+#if os(iOS)
+import Foundation
+import Observation
+
+/// The macOS sidebar supplies real multi-selection; iOS rows do not.
+@MainActor
+@Observable
+final class BrowserSidebarTabSelection {
+	var tabIDs: Set<UUID> = []
+	func contains(_ id: UUID, area: Browser.TabArea, spaceID: UUID) -> Bool { false }
+	func orderedIDs(in ids: [UUID], area: Browser.TabArea, spaceID: UUID) -> [UUID] { [] }
+	func clear() {}
+}
+#endif
