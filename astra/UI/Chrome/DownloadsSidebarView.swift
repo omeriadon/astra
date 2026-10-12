@@ -114,9 +114,6 @@ private struct DownloadRowView: View {
 							.font(.caption.monospacedDigit())
 							.foregroundStyle(.secondary)
 					}
-					Text(manager.transferModeDescription(for: item))
-						.font(.caption)
-						.foregroundStyle(.secondary)
 					HStack(spacing: 3) {
 						if let segments = item.segments, !segments.isEmpty {
 							ForEach(segments.indices, id: \.self) { index in

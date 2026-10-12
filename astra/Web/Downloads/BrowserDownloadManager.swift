@@ -81,16 +81,6 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			?? "arrow.down.circle"
 	}
 
-	func transferModeDescription(for item: BrowserDownload) -> String {
-		if let segments = item.segments, !segments.isEmpty {
-			return "\(segments.count) download pieces"
-		}
-		if accelerationPending.contains(item.id) {
-			return "Checking connections…"
-		}
-		return "Single connection"
-	}
-
 	override private convenience init() {
 		self.init(privateDataStore: nil, toastManager: .shared)
 	}
