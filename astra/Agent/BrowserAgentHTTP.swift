@@ -116,22 +116,22 @@
 			guard let connection = connections[id] else { return }
 			connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, complete, error in
 				Task { @MainActor [weak self] in
-					guard let self, self.connections[id] != nil else { return }
+					guard let self, connections[id] != nil else { return }
 					var accumulated = buffer
 					if let data {
 						accumulated.append(data)
 					}
 					switch BrowserAgentHTTPParser.parse(accumulated) {
 						case .invalid:
-							self.write(Response(status: 400), id: id)
+							write(Response(status: 400), id: id)
 						case .incomplete:
 							if complete || error != nil {
-								self.finish(id)
+								finish(id)
 							} else {
-								self.receive(id, buffer: accumulated)
+								receive(id, buffer: accumulated)
 							}
 						case let .request(request):
-							self.requests[id] = Task { [weak self] in
+							requests[id] = Task { [weak self] in
 								guard let self else { return }
 								let response = await handler(request)
 								guard !Task.isCancelled else { return }
