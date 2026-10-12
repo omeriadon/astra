@@ -6,6 +6,8 @@ import SwiftUI
 struct BrowserContentView: View, Animatable {
 	let browser: Browser
 	var insets = BrowserViewportInsets()
+	/// Keeps the outgoing page visible for the first half of a space crossfade.
+	var displayedTabID: UUID?
 	@Environment(\.colorScheme) private var colorScheme
 
 	var animatableData: CGFloat {
@@ -15,12 +17,12 @@ struct BrowserContentView: View, Animatable {
 
 	var body: some View {
 		GeometryReader { proxy in
-			let selectedTab = browser.selectedTab
+			let selectedTab = displayedTabID.flatMap { browser.tab(withID: $0) } ?? browser.selectedTab
 			let hasActiveDuplicate = BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
 			ZStack {
-				KeepAliveWebStack(browser: browser, insets: insets)
+				KeepAliveWebStack(browser: browser, insets: insets, displayedTabID: selectedTab?.id)
 					.zIndex(0)
-				content(hasActiveDuplicate: hasActiveDuplicate)
+				content(hasActiveDuplicate: hasActiveDuplicate, tab: selectedTab)
 					.zIndex(1)
 			}
 			.animation(nil, value: browser.selectedTabID)
@@ -28,7 +30,7 @@ struct BrowserContentView: View, Animatable {
 			#if os(macOS)
 				.overlay(alignment: .bottomLeading) {
 					if !hasActiveDuplicate,
-					   let controller = browser.selectedTab?.activeController,
+					   let controller = selectedTab?.activeController,
 					   let url = controller.hoveredLinkURL
 					{
 						BrowserLinkPreview(url: url, isPrivate: browser.isPrivate)
@@ -47,30 +49,30 @@ struct BrowserContentView: View, Animatable {
 	}
 
 	@ViewBuilder
-	private func content(hasActiveDuplicate: Bool) -> some View {
+	private func content(hasActiveDuplicate: Bool, tab: BrowserTab?) -> some View {
 		#if os(macOS)
-			if let controller = browser.selectedTab?.activeController, controller.url != nil,
+			if let controller = tab?.activeController, controller.url != nil,
 			   hasActiveDuplicate
 			{
 				BrowserTabMirrorView(controller: controller)
 			} else {
-				selectedContent
+				selectedContent(tab: tab)
 			}
 		#else
-			selectedContent
+			selectedContent(tab: tab)
 		#endif
 	}
 
 	@ViewBuilder
-	private var selectedContent: some View {
-		if let tab = browser.selectedTab, tab.internalPage != nil {
-			InternalPageHost(browser: browser)
-		} else if let tab = browser.selectedTab, tab.controller?.url != nil {
+	private func selectedContent(tab: BrowserTab?) -> some View {
+		if let tab, tab.internalPage != nil {
+			InternalPageHost(browser: browser, tab: tab)
+		} else if let tab, tab.controller?.url != nil {
 			Color.clear
 				.allowsHitTesting(false)
-		} else if let tab = browser.selectedTab, tab.isHibernated {
+		} else if let tab, tab.isHibernated {
 			HibernatedPlaceholder(browser: browser, tab: tab)
-		} else if browser.selectedTab != nil {
+		} else if tab != nil {
 			NewTabView(browser: browser)
 				.padding(.top, insets.obscured.top)
 		} else {
@@ -81,13 +83,14 @@ struct BrowserContentView: View, Animatable {
 
 private struct InternalPageHost: View {
 	@Bindable var browser: Browser
+	let tab: BrowserTab
 	@State private var settingsSearchText = ""
 	#if DEBUG
 		@State private var failedStateRefreshID = 0
 	#endif
 
 	var body: some View {
-		if let tab = browser.selectedTab, let page = tab.internalPage {
+		if let page = tab.internalPage {
 			switch page {
 				case .themeEditor:
 					BrowserThemeEditorView(browser: browser)
@@ -116,9 +119,10 @@ private struct InternalPageHost: View {
 private struct KeepAliveWebStack: View {
 	let browser: Browser
 	let insets: BrowserViewportInsets
+	let displayedTabID: UUID?
 
 	var body: some View {
-		let selectedTab = browser.selectedTab
+		let selectedTab = displayedTabID.flatMap { browser.tab(withID: $0) } ?? browser.selectedTab
 		ZStack {
 			ForEach(browser.tabResources.controllersForDisplay()) { controller in
 				BrowserWebView(
