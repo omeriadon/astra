@@ -57,14 +57,14 @@ struct ShellDownloadsBarView: View {
 				}
 			}
 
-			if !browser.isPrivate {
+			if browser.isPrivate {
+				Spacer()
+			} else {
 				BrowserSpacesBar(
 					browser: browser,
 					onRequestDeleteSpace: onRequestDeleteSpace
 				)
 				.frame(maxWidth: .infinity)
-			} else {
-				Spacer()
 			}
 
 			if allAIFeatures, browser.canShowAISidebar, Defaults[.aiSidebar] {

@@ -15,10 +15,9 @@ struct BrowserSpacesBar: View {
 			Button {
 				showsSpacePicker.toggle()
 			} label: {
-				VStack {
+				HStack {
 					Label(browser.selectedSpace.name, systemImage: browser.selectedSpace.symbol)
 						.lineLimit(1)
-						.frame(height: 25)
 						.contentShape(Rectangle())
 						.popover(isPresented: $showsSpacePicker, arrowEdge: .bottom) {
 							BrowserSpacePickerPopover(
@@ -32,6 +31,7 @@ struct BrowserSpacesBar: View {
 
 					Spacer()
 				}
+				.frame(height: 25)
 			}
 			.buttonStyle(.plain)
 			.accessibilityLabel("Switch Space")
