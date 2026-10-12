@@ -479,11 +479,14 @@ private struct ShellSidebarColumn: View {
 						favouriteTabIDs: browser.workspace.favouriteTabIDs
 					)
 					.id(browser.selectedSpace.id)
+					.transition(.opacity)
 					.foregroundStyle(browser.selectedSpace.theme.foregroundColor)
 					.sidebarScrollContentMargins(top: showsSidebarHeader ? sidebarHeaderHeight + 4 : 33)
 					.accessibilityIdentifier("sidebar-space-pages")
 				}
 			}
+			// Animate space tab contents without affecting the persistent sidebar controls.
+			.animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: browser.selectedSpace.id)
 			.foregroundStyle(theme.foregroundColor)
 			.visualEffect { content, geometry in
 				content.offset(x: downloadsVisible ? geometry.size.width : 0)
