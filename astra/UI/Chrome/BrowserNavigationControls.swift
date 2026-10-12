@@ -3,6 +3,40 @@ import SwiftUI
 	import AppKit
 #endif
 
+// Use exactly the same control metrics and styling as Back, Forward and Reload.
+struct AstraTopBarButtonModifier: ViewModifier {
+	func body(content: Content) -> some View {
+		content
+			.controlSize(.regular)
+			.labelStyle(.iconOnly)
+			.buttonSizing(.fitted)
+			.buttonStyle(.bordered)
+			.foregroundStyle(.primary)
+			.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
+	}
+}
+
+extension View {
+	func astraTopBarButton() -> some View {
+		modifier(AstraTopBarButtonModifier())
+	}
+}
+
+struct AstraTopBarIcon: View {
+	let title: String
+	let systemImage: String
+
+	var body: some View {
+		Label(title, systemImage: systemImage)
+			.labelStyle(.iconOnly)
+			.font(.body.scaled(by: 0.9))
+			.frame(
+				width: BrowserChromeMetrics.topBarButtonLabelWidth,
+				height: BrowserChromeMetrics.topBarButtonLabelHeight
+			)
+	}
+}
+
 struct BrowserNavigationControls: View {
 	let controller: BrowserController
 	let browser: Browser
@@ -13,24 +47,25 @@ struct BrowserNavigationControls: View {
 				BrowserSiteInformationButton(controller: controller)
 			#endif
 			BrowserHistoryNavigationControls(controller: controller, browser: browser)
-			BrowserAdBlockingButton(controller: controller)
 			BrowserZoomControls(controller: controller)
 			if controller.isReaderAvailable || controller.readerHTML != nil {
-				Button(controller.readerHTML == nil ? "Show Reader" : "Hide Reader", systemImage: "doc.text") {
+				Button {
 					controller.toggleReader()
+				} label: {
+					AstraTopBarIcon(title: controller.readerHTML == nil ? "Show Reader" : "Hide Reader", systemImage: "doc.text")
 				}
-				.labelStyle(.iconOnly)
-				.buttonStyle(.glass)
+				.astraTopBarButton()
 				.disabled(controller.isPreparingReader)
 				.accessibilityLabel(controller.readerHTML == nil ? "Show Reader" : "Hide Reader")
 				.accessibilityValue(controller.readerHTML == nil ? "Off" : "On")
 				.accessibilityIdentifier("browser-reader-toggle")
 			}
-			Button("Zap Element", systemImage: "bolt.slash") {
+			Button {
 				controller.toggleZap()
+			} label: {
+				AstraTopBarIcon(title: "Zap Element", systemImage: "bolt.slash")
 			}
-			.labelStyle(.iconOnly)
-			.buttonStyle(.glass)
+			.astraTopBarButton()
 			.tint(controller.isZapping ? .red : nil)
 			.accessibilityLabel(controller.isZapping ? "Cancel Zap" : "Zap Element")
 			.accessibilityIdentifier("browser-zap-element")
@@ -68,36 +103,41 @@ struct BrowserHistoryNavigationControls: View {
 
 private struct BrowserZoomControls: View {
 	let controller: BrowserController
+	@State private var showsZoom = false
 
 	var body: some View {
-		HStack(spacing: 2) {
-			Button("Zoom Out", systemImage: "minus.magnifyingglass") {
-				controller.zoomOut()
-			}
-			.labelStyle(.iconOnly)
-			.accessibilityIdentifier("browser-zoom-out")
-
-			Button {
-				controller.resetZoom()
-			} label: {
-				VStack(spacing: 0) {
-					Image(systemName: "1.magnifyingglass")
-					Text(controller.pageZoom, format: .percent.precision(.fractionLength(0)))
-						.font(.caption2.monospacedDigit())
-				}
-			}
-			.accessibilityLabel("Reset Zoom, currently \(Int((controller.pageZoom * 100).rounded())) percent")
-			.accessibilityIdentifier("browser-zoom-reset")
-
-			Button("Zoom In", systemImage: "plus.magnifyingglass") {
-				controller.zoomIn()
-			}
-			.labelStyle(.iconOnly)
-			.accessibilityIdentifier("browser-zoom-in")
+		Button {
+			showsZoom.toggle()
+		} label: {
+			AstraTopBarIcon(title: "Page Zoom", systemImage: "magnifyingglass")
 		}
-		.buttonStyle(.glass)
-		.accessibilityElement(children: .contain)
+		.astraTopBarButton()
+		.accessibilityLabel("Page Zoom, \(Int((controller.pageZoom * 100).rounded())) percent")
 		.accessibilityIdentifier("browser-zoom-controls")
+		.popover(isPresented: $showsZoom) {
+			HStack(spacing: 12) {
+				Button("Zoom Out", systemImage: "minus") { controller.zoomOut() }
+					.labelStyle(.iconOnly)
+					.disabled(controller.pageZoom <= BrowserZoomPolicy.range.lowerBound)
+					.accessibilityIdentifier("browser-zoom-out")
+				Button {
+					controller.resetZoom()
+				} label: {
+					Text(controller.pageZoom, format: .percent.precision(.fractionLength(0)))
+						.monospacedDigit()
+						.frame(minWidth: 52)
+				}
+				.accessibilityLabel("Reset page zoom")
+				.accessibilityIdentifier("browser-zoom-reset")
+				Button("Zoom In", systemImage: "plus") { controller.zoomIn() }
+					.labelStyle(.iconOnly)
+					.disabled(controller.pageZoom >= BrowserZoomPolicy.range.upperBound)
+					.accessibilityIdentifier("browser-zoom-in")
+			}
+			.buttonStyle(.bordered)
+			.padding(12)
+			.accessibilityElement(children: .contain)
+		}
 	}
 }
 
