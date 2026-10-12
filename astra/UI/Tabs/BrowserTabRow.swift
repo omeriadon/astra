@@ -21,6 +21,8 @@ struct BrowserTabRow: View {
 	var isOpenElsewhere: Bool?
 	var onSelectTab: ((UUID) -> Void)?
 	var navigationNamespace: Namespace.ID?
+	var sidebarSelection: BrowserSidebarTabSelection?
+	var selectionOrder: [UUID] = []
 	@Namespace private var rowTransitions
 	private var theme: BrowserTheme {
 		rowTheme ?? browser.theme
@@ -36,9 +38,22 @@ struct BrowserTabRow: View {
 	@State private var renameText = ""
 	@Default(.developerModeEnabled) private var developerModeEnabled
 	@FocusState private var isTitleFocused: Bool
-	#if os(macOS)
-		@State private var tabDrag = BrowserTabDragCoordinator.shared
-	#endif
+	private var isMultiSelected: Bool {
+		sidebarSelection?.contains(tab.id, area: isPinned ? .pinned : .normal, spaceID: rowSpaceID ?? browser.workspace.selectedSpaceID) == true
+	}
+	private func activateTab() {
+		#if os(macOS)
+			if let sidebarSelection, onSelectTab == nil {
+				let activate = sidebarSelection.click(tab.id, area: isPinned ? .pinned : .normal,
+					spaceID: rowSpaceID ?? browser.workspace.selectedSpaceID,
+					orderedIDs: selectionOrder, currentID: browser.selectedTabID,
+					modifiers: NSEvent.modifierFlags)
+				guard activate else { return }
+			}
+		#endif
+		browser.selectTab(tab.id)
+		onSelectTab?(tab.id)
+	}
 
 	private var resolvedTabIndex: Int? {
 		tabIndex ?? browser.normalTabs.firstIndex(where: { $0.id == tab.id })
@@ -64,7 +79,7 @@ struct BrowserTabRow: View {
 	var body: some View {
 		let isOpenElsewhere = isOpenElsewhere ?? BrowserWindowRegistry.shared.isOpenInAnotherWindow(tab.id, than: browser)
 		return HStack(spacing: 6) {
-			TabIconView(tab: tab, browser: browser, onSelectTab: onSelectTab)
+			TabIconView(tab: tab, browser: browser, onSelectTab: onSelectTab, onActivate: activateTab)
 			if let match = tab.monitorMatch {
 				Button("Monitored condition met", systemImage: "bell.badge.fill") { browser.selectTab(tab.id) }
 					.labelStyle(.iconOnly)
@@ -95,7 +110,8 @@ struct BrowserTabRow: View {
 				onBeginRenaming: beginRenaming,
 				onCommitRenaming: commitRenaming,
 				onCancelRenaming: cancelRenaming,
-				onSelectTab: onSelectTab
+				onSelectTab: onSelectTab,
+				onActivate: activateTab
 			)
 			.overlay(alignment: .trailing) {
 				if isSelected || onSelectTab != nil {
@@ -119,6 +135,9 @@ struct BrowserTabRow: View {
 						.clear,
 						in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
 					)
+			} else if isMultiSelected {
+				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+					.fill(theme.foregroundColor.opacity(0.19))
 			} else if isHovered {
 				Color.clear
 					.glassEffect(
@@ -128,6 +147,11 @@ struct BrowserTabRow: View {
 			}
 		}
 		.overlay {
+			if isMultiSelected {
+				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+					.strokeBorder(theme.foregroundColor.opacity(0.50), lineWidth: 1)
+					.allowsHitTesting(false)
+			}
 			if isSelected, tab.internalPage == nil, developerModeEnabled || tab.isDeveloperMode {
 				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
 					.strokeBorder(Color(red: 0.55, green: 0.4, blue: 0), lineWidth: 2)
@@ -139,30 +163,6 @@ struct BrowserTabRow: View {
 					.accessibilityHidden(true)
 			}
 		}
-		#if os(macOS)
-		.background {
-			if tabDrag.activeTabID != nil {
-				BrowserDropZone(
-					browser: browser,
-					area: isPinned ? .pinned : .normal,
-					spaceID: rowSpaceID ?? browser.workspace.selectedSpaceID,
-					beforeTabID: tab.id
-				)
-			}
-		}
-		.highPriorityGesture(
-			DragGesture(minimumDistance: 8)
-				.onChanged { _ in
-					if tabDrag.activeTabID != tab.id {
-						tabDrag.begin(tab.id, from: browser)
-					}
-					tabDrag.update()
-				}
-				.onEnded { _ in
-					tabDrag.drop()
-				}
-		)
-		#endif
 		.onHover { hovering in
 			isHovered = hovering
 			#if os(macOS)
@@ -237,6 +237,15 @@ struct BrowserTabRow: View {
 		}
 		#endif
 		.contextMenu {
+			if let sidebarSelection, isMultiSelected, sidebarSelection.tabIDs.count > 1 {
+				SidebarSelectedTabsContextMenu(
+					browser: browser, selection: sidebarSelection,
+					ids: sidebarSelection.orderedIDs(in: selectionOrder, area: isPinned ? .pinned : .normal,
+						spaceID: rowSpaceID ?? browser.workspace.selectedSpaceID),
+					spaceID: rowSpaceID ?? browser.workspace.selectedSpaceID,
+					isPinned: isPinned
+				)
+			} else {
 			TabRowContextMenu(
 				tab: tab,
 				browser: browser,
@@ -244,10 +253,12 @@ struct BrowserTabRow: View {
 				canCloseAbove: canCloseAbove,
 				canCloseBelow: canCloseBelow,
 				normalCount: resolvedNormalCount,
+				spaceID: rowSpaceID,
 				onCopyURL: copyURL,
 				onBeginRenaming: beginRenaming,
 				onSelectTab: onSelectTab
 			)
+			}
 		}
 		.onChange(of: isSelected) { _, selected in
 			if !selected, isRenaming {
@@ -296,6 +307,8 @@ extension BrowserTabRow: Equatable {
 			&& lhs.isOpenElsewhere == rhs.isOpenElsewhere
 			&& (lhs.onSelectTab == nil) == (rhs.onSelectTab == nil)
 			&& lhs.navigationNamespace == rhs.navigationNamespace
+			&& lhs.sidebarSelection === rhs.sidebarSelection
+			&& lhs.selectionOrder == rhs.selectionOrder
 	}
 }
 
@@ -303,14 +316,17 @@ private struct TabIconView: View {
 	let tab: BrowserTab
 	let browser: Browser
 	var onSelectTab: ((UUID) -> Void)?
+	var onActivate: (() -> Void)?
 	#if os(macOS)
 		@State private var isMouseDown = false
 	#endif
 
 	var body: some View {
 		Button {
-			browser.selectTab(tab.id)
-			onSelectTab?(tab.id)
+			if let onActivate { onActivate() } else {
+				browser.selectTab(tab.id)
+				onSelectTab?(tab.id)
+			}
 		} label: {
 			Label {
 				Text("Select Tab")
@@ -336,7 +352,8 @@ private struct TabIconView: View {
 			.simultaneousGesture(
 				DragGesture(minimumDistance: 0)
 					.onChanged { _ in
-						guard onSelectTab == nil, !isMouseDown else { return }
+						guard onSelectTab == nil, !isMouseDown,
+							NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
 						isMouseDown = true
 						browser.selectTab(tab.id)
 					}
@@ -363,6 +380,7 @@ private struct TabTitleView: View {
 	let onCommitRenaming: () -> Void
 	let onCancelRenaming: () -> Void
 	var onSelectTab: ((UUID) -> Void)?
+	var onActivate: (() -> Void)?
 	#if os(macOS)
 		@State private var isMouseDown = false
 	#endif
@@ -386,8 +404,10 @@ private struct TabTitleView: View {
 				.accessibilityIdentifier("tab-name-\(tab.id.uuidString)")
 		} else {
 			Button {
-				browser.selectTab(tab.id)
-				onSelectTab?(tab.id)
+				if let onActivate { onActivate() } else {
+					browser.selectTab(tab.id)
+					onSelectTab?(tab.id)
+				}
 			} label: {
 				GeometryReader { proxy in
 					Text(verbatim: tab.title)
@@ -408,7 +428,8 @@ private struct TabTitleView: View {
 				.simultaneousGesture(
 					DragGesture(minimumDistance: 0)
 						.onChanged { _ in
-							guard onSelectTab == nil, !isMouseDown else { return }
+							guard onSelectTab == nil, !isMouseDown,
+								NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
 							isMouseDown = true
 							browser.selectTab(tab.id)
 						}
@@ -488,6 +509,7 @@ private struct TabRowContextMenu: View {
 	let canCloseAbove: Bool
 	let canCloseBelow: Bool
 	let normalCount: Int
+	var spaceID: UUID?
 	let onCopyURL: () -> Void
 	let onBeginRenaming: () -> Void
 	var onSelectTab: ((UUID) -> Void)?
@@ -510,6 +532,9 @@ private struct TabRowContextMenu: View {
 			.disabled(tab.isHibernated || !tab.canHibernate)
 			.accessibilityIdentifier("hibernate-tab-\(tab.id.uuidString)")
 
+			Button("New Folder with Tab", systemImage: "folder.badge.plus") {
+				browser.createPinnedFolder(with: [tab.id], in: spaceID)
+			}
 			if isPinned {
 				Button("Unpin Tab", systemImage: "pin.slash") {
 					browser.moveTab(tab.id, to: .normal)
@@ -548,6 +573,9 @@ private struct TabRowContextMenu: View {
 			Button("Copy URL", systemImage: "doc.on.doc", action: onCopyURL)
 				.disabled(tab.copyableURL == nil)
 				.accessibilityIdentifier("copy-tab-url-\(tab.id.uuidString)")
+			Button("Bookmark Tab", systemImage: "bookmark") {
+				browser.bookmarkTabs([tab.id])
+			}
 			Button("Add to Reading List", systemImage: "text.badge.plus") {
 				browser.addToReadingList(tabID: tab.id)
 			}
@@ -581,6 +609,43 @@ private struct TabRowContextMenu: View {
 			browser.closeTab(tab.id)
 		} label: {
 			Label(isPinned ? "Hibernate Tab" : "Close Tab", systemImage: isPinned ? "moon.zzz" : "xmark")
+		}
+	}
+}
+
+private struct SidebarSelectedTabsContextMenu: View {
+	let browser: Browser
+	let selection: BrowserSidebarTabSelection
+	let ids: [UUID]
+	let spaceID: UUID
+	let isPinned: Bool
+
+	var body: some View {
+		Button("New Folder from \(ids.count) Tabs", systemImage: "folder.badge.plus") {
+			browser.createPinnedFolder(with: ids, in: spaceID)
+			selection.clear()
+		}
+		Button(isPinned ? "Unpin Selected Tabs" : "Pin Selected Tabs", systemImage: isPinned ? "pin.slash" : "pin") {
+			browser.moveTabs(ids, to: isPinned ? .normal : .pinned, in: spaceID)
+			selection.clear()
+		}
+		Button("Add to Favourites", systemImage: "star") {
+			browser.moveTabs(ids, to: .favourite)
+			selection.clear()
+		}
+		Divider()
+		Button("Bookmark \(ids.count) Tabs", systemImage: "bookmark") {
+			browser.bookmarkTabs(ids)
+			selection.clear()
+		}
+		Button("Add to Reading List", systemImage: "text.badge.plus") {
+			for id in ids { browser.addToReadingList(tabID: id) }
+			selection.clear()
+		}
+		Divider()
+		Button(isPinned ? "Hibernate Selected Tabs" : "Close Selected Tabs", systemImage: isPinned ? "moon.zzz" : "xmark", role: .destructive) {
+			for id in ids { browser.closeTab(id) }
+			selection.clear()
 		}
 	}
 }
