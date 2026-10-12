@@ -61,6 +61,24 @@ struct BrowserSearchAction: Identifiable {
 				perform: { browser.createSpace() }
 			),
 		]
+		if let controller = browser.selectedTab?.activeController,
+		   controller.hasCurrentPageDocument,
+		   !controller.isLoading,
+		   controller.navigationFailure == nil,
+		   let url = controller.committedURL,
+		   BrowserTranslationPolicy.translationURL(for: url, language: "en", isPrivate: browser.isPrivate) != nil
+		{
+			actions.append(Self(
+				id: "translate-page",
+				title: "Translate Page",
+				symbol: "translate",
+				terms: ["translate website", "translation", "change page language"],
+				detail: "Browser Action",
+				perform: {
+					NotificationCenter.default.post(name: .astraTranslatePage, object: browser)
+				}
+			))
+		}
 		if Defaults[.aiFeaturesEnabled], browser.canShowAISidebar, Defaults[.aiSidebar] {
 			actions.append(Self(
 				id: "toggle-ai-sidebar", title: "AI Sidebar", symbol: "bubble.left.and.text.bubble.right",

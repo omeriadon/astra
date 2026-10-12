@@ -271,3 +271,90 @@ struct BrowserSitePermissionPicker: View {
 		.accessibilityIdentifier("site-permission-\(capability.rawValue)-\(origin)")
 	}
 }
+
+#if os(macOS)
+	// This presenter is mounted by the window shell, not the website-information popover.
+	// It remains accessible when the toolbar is hidden.
+	struct BrowserSiteUserAgentPresenter: View {
+		let browser: Browser
+		let controller: BrowserController
+		@State private var isPresented = false
+
+		private var origin: String? {
+			guard let url = controller.committedURL else { return nil }
+			return BrowserSitePermissions.origin(for: url)
+		}
+
+		var body: some View {
+			Color.clear
+				.frame(width: 0, height: 0)
+				.onReceive(NotificationCenter.default.publisher(for: .astraEditSiteUserAgent)) { notification in
+					guard let owner = notification.object as? Browser, owner === browser,
+					      origin != nil else { return }
+					isPresented = true
+				}
+				.sheet(isPresented: $isPresented) {
+					if let origin {
+						BrowserSiteUserAgentSheet(controller: controller, origin: origin)
+					}
+				}
+		}
+	}
+
+	private struct BrowserSiteUserAgentSheet: View {
+		let controller: BrowserController
+		let origin: String
+		@Environment(\.dismiss) private var dismiss
+		@State private var customUserAgent = ""
+
+		private var preferences: BrowserSitePreferences {
+			controller.session.sitePreferences
+		}
+
+		var body: some View {
+			NavigationStack {
+				Form {
+					Section("Custom User Agent") {
+						Text(verbatim: origin)
+							.font(.caption)
+							.foregroundStyle(.secondary)
+						TextField("User Agent", text: $customUserAgent, axis: .vertical)
+							.lineLimit(2 ... 4)
+							.disabled(preferences.isLocalDataReadOnly)
+							.accessibilityIdentifier("site-custom-user-agent-\(origin)")
+						Text("Applies to the next navigation. Leave blank to use Astra's default user agent.")
+							.font(.caption)
+							.foregroundStyle(.secondary)
+					}
+				}
+				.formStyle(.grouped)
+				.navigationTitle("Website User Agent")
+				.toolbar {
+					ToolbarItem(placement: .cancellationAction) {
+						Button("Cancel") { dismiss() }
+					}
+					ToolbarItem(placement: .automatic) {
+						Button("Use Default", systemImage: "arrow.counterclockwise") {
+							preferences.setCustomUserAgent("", for: origin)
+							dismiss()
+						}
+						.disabled(preferences.isLocalDataReadOnly)
+						.accessibilityIdentifier("reset-site-user-agent-\(origin)")
+					}
+					ToolbarItem(placement: .confirmationAction) {
+						Button("Save") {
+							preferences.setCustomUserAgent(customUserAgent, for: origin)
+							dismiss()
+						}
+						.disabled(preferences.isLocalDataReadOnly)
+						.accessibilityIdentifier("save-site-user-agent-\(origin)")
+					}
+				}
+			}
+			.task(id: origin) {
+				customUserAgent = preferences.customUserAgent(for: origin) ?? ""
+			}
+			.frame(width: 510, height: 270)
+		}
+	}
+#endif

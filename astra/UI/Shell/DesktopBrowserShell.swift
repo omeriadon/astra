@@ -299,6 +299,19 @@ struct DesktopBrowserShell: View {
 
 	var body: some View {
 		windowLayout
+			.background {
+				// Sheet presenters must outlive the optional toolbar and be window-scoped.
+				if let controller = browser.selectedTab?.activeController {
+					HStack(spacing: 0) {
+						BrowserTranslationButton(browser: browser, controller: controller)
+						BrowserWebsiteMonitorButton(browser: browser)
+						#if os(macOS)
+							BrowserSiteUserAgentPresenter(browser: browser, controller: controller)
+						#endif
+					}
+					.frame(width: 0, height: 0)
+				}
+			}
 			.alert("Delete Space?", isPresented: Binding(
 				get: { spaceToDelete != nil },
 				set: {

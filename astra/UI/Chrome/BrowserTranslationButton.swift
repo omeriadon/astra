@@ -1,5 +1,12 @@
 import SwiftUI
 
+// Menu commands and browser actions dispatch to the owning window's sheet presenter.
+extension Notification.Name {
+	static let astraTranslatePage = Notification.Name("AstraTranslatePage")
+	static let astraMonitorWebsite = Notification.Name("AstraMonitorWebsite")
+	static let astraEditSiteUserAgent = Notification.Name("AstraEditSiteUserAgent")
+}
+
 struct BrowserTranslationButton: View {
 	let browser: Browser
 	let controller: BrowserController
@@ -20,17 +27,13 @@ struct BrowserTranslationButton: View {
 	}
 
 	var body: some View {
-		Button("Translate Page", systemImage: "translate") {
-			pageURL = controller.committedURL
-			showsTranslation = true
-		}
-		.labelStyle(.iconOnly)
-		.buttonStyle(.glass)
-		.disabled(!canTranslate)
-		.help("Translate a public page with Google Translate in a new tab")
-		.accessibilityLabel("Translate Page with Google Translate")
-		.accessibilityIdentifier("browser-translate-page")
-		.matchedTransitionSource(id: "translate", in: presentations)
+		Color.clear
+			.frame(width: 0, height: 0)
+			.onReceive(NotificationCenter.default.publisher(for: .astraTranslatePage)) { notification in
+				guard let owner = notification.object as? Browser, owner === browser, canTranslate else { return }
+				pageURL = controller.committedURL
+				showsTranslation = true
+			}
 		.sheet(isPresented: $showsTranslation) {
 			NavigationStack {
 				List {
