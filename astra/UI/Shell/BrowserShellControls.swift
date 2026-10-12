@@ -63,9 +63,9 @@ struct ShellTopBarView: View {
 							theme: theme,
 							roundsLeadingButton: roundsLeadingButton
 						)
-						.offset(y: -1)
+						.offset(y: -0.5)
 						ShellExtensionControls(browser: browser, theme: theme)
-							.offset(y: -1)
+							.offset(y: -0.5)
 					}
 					.padding(.trailing, BrowserChromeMetrics.topBarTrailingInset)
 					.frame(height: BrowserChromeMetrics.topBarRegionHeight)
@@ -105,7 +105,7 @@ struct ShellTopBarView: View {
 				theme: theme,
 				roundsLeadingButton: roundsLeadingButton
 			)
-			.offset(y: -1)
+			.offset(y: -0.5)
 			.fixedSize(horizontal: true, vertical: false)
 			BrowserAddressField(browser: browser, acceptsFocusRequests: acceptsFocusRequests)
 				// Only the remaining width is available to the address field.
@@ -113,7 +113,7 @@ struct ShellTopBarView: View {
 				.layoutPriority(-1)
 				.transaction { $0.animation = nil }
 			ShellExtensionControls(browser: browser, theme: theme)
-				.offset(y: -1)
+				.offset(y: -0.5)
 				.fixedSize(horizontal: true, vertical: false)
 		}
 		.padding(.trailing, BrowserChromeMetrics.topBarTrailingInset)

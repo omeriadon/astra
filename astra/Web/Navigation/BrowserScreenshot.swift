@@ -25,11 +25,11 @@
 			return CGSize(width: size.width + inset * 2, height: size.height + inset * 2)
 		}
 
-		static func gradientColors(hue: Double, neutral: Bool, dark: Bool) -> [NSColor] {
-			if neutral {
-				return dark
-					? [NSColor(white: 0.3, alpha: 1), .black]
-					: [NSColor(white: 1, alpha: 1), NSColor(white: 0.9, alpha: 1)]
+		static func gradientColors(hue: Double, grayscale: Double, grayscaleEnabled: Bool) -> [NSColor] {
+			if grayscaleEnabled {
+				let light = NSColor(white: 1 - grayscale, alpha: 1)
+				let shade = NSColor(white: max(0, 0.9 - grayscale), alpha: 1)
+				return [shade, light]
 			}
 			return [
 				NSColor(calibratedHue: hue, saturation: 0.35, brightness: 0.88, alpha: 1),
@@ -37,7 +37,7 @@
 			]
 		}
 
-		func framed(hue: Double, neutral: Bool, dark: Bool, noiseAmount: Double) -> NSImage? {
+		func framed(hue: Double, grayscale: Double, grayscaleEnabled: Bool, dark: Bool, noiseAmount: Double) -> NSImage? {
 			let size = Self.framedSize(for: image.size)
 			guard let bitmap = NSBitmapImageRep(
 				bitmapDataPlanes: nil,
@@ -55,7 +55,7 @@
 			NSGraphicsContext.saveGraphicsState()
 			NSGraphicsContext.current = context
 			context.cgContext.scaleBy(x: scale, y: scale)
-			let colors = Self.gradientColors(hue: hue, neutral: neutral, dark: dark)
+			let colors = Self.gradientColors(hue: hue, grayscale: grayscale, grayscaleEnabled: grayscaleEnabled)
 			NSGradient(starting: colors[1], ending: colors[0])?.draw(in: CGRect(origin: .zero, size: size), angle: 90)
 			if noiseAmount > 0 {
 				guard let noise else {
