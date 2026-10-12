@@ -568,10 +568,17 @@ final class Browser {
 		case normal
 	}
 
-	func createPinnedFolder(named name: String = "New Folder") {
-		guard let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) else { return }
+	func createPinnedFolder(named name: String = "New Folder", with tabIDs: [UUID] = [], in spaceID: UUID? = nil) {
+		guard !isPrivate else { return }
+		let destinationID = spaceID ?? workspace.selectedSpaceID
+		guard workspace.spaces.contains(where: { $0.id == destinationID }) else { return }
+		let validIDs = Array(NSOrderedSet(array: tabIDs)) .compactMap { $0 as? UUID }.filter { tab(withID: $0) != nil }
+		if !validIDs.isEmpty {
+			moveTabs(validIDs, to: .pinned, in: destinationID)
+		}
+		guard let index = workspace.spaces.firstIndex(where: { $0.id == destinationID }) else { return }
 		let mutationDate = nextWorkspaceMutationDate()
-		workspace.spaces[index].pinnedFolders.append(PinnedTabFolder(name: name, modifiedAt: mutationDate))
+		workspace.spaces[index].pinnedFolders.append(PinnedTabFolder(name: name, tabIDs: validIDs, modifiedAt: mutationDate))
 		workspace.spaces[index].modifiedAt = mutationDate
 		workspace.modifiedAt = mutationDate
 		schedulePersistence()
@@ -629,6 +636,85 @@ final class Browser {
 		}
 		workspace.spaces[index].modifiedAt = destinationDate
 		workspace.modifiedAt = destinationDate
+		schedulePersistence()
+	}
+
+
+	/// Apply a native SwiftUI reorder difference atomically across favourite, pinned,
+	/// normal, and pinned-folder collections. The input order is the visual drag order.
+	func moveTabs(_ ids: [UUID], to area: TabArea, in spaceID: UUID? = nil, before targetID: UUID? = nil, folderID: UUID? = nil) {
+		guard !isPrivate else { return }
+		let existing = Set(tabs.map(\.id))
+		var seen = Set<UUID>()
+		let moving = ids.filter { existing.contains($0) && seen.insert($0).inserted }
+		guard !moving.isEmpty else { return }
+		let movingSet = Set(moving)
+		guard targetID.map({ !movingSet.contains($0) }) ?? true else { return }
+		let destinationID = spaceID ?? workspace.selectedSpaceID
+		guard area == .favourite || workspace.spaces.contains(where: { $0.id == destinationID }) else { return }
+		if let folderID {
+			guard area == .pinned, workspace.spaces.contains(where: { $0.id == destinationID && $0.pinnedFolders.contains(where: { $0.id == folderID }) }) else { return }
+		}
+		var next = workspace
+		let timestamp = nextWorkspaceMutationDate()
+		let destinationDate = timestamp.addingTimeInterval(0.001)
+		if next.favouriteTabIDs.contains(where: { movingSet.contains($0) }) {
+			next.favouritesModifiedAt = timestamp
+		}
+		next.favouriteTabIDs.removeAll { movingSet.contains($0) }
+		for index in next.spaces.indices {
+			let space = next.spaces[index]
+			if space.tabIDs.contains(where: { movingSet.contains($0) }) {
+				next.spaces[index].modifiedAt = timestamp
+			}
+			next.spaces[index].tabIDs.removeAll { movingSet.contains($0) }
+			next.spaces[index].pinnedTabIDs.removeAll { movingSet.contains($0) }
+			for folderIndex in next.spaces[index].pinnedFolders.indices {
+				let previous = next.spaces[index].pinnedFolders[folderIndex].tabIDs
+				next.spaces[index].pinnedFolders[folderIndex].tabIDs.removeAll { movingSet.contains($0) }
+				if previous != next.spaces[index].pinnedFolders[folderIndex].tabIDs {
+					next.spaces[index].pinnedFolders[folderIndex].modifiedAt = timestamp
+				}
+			}
+		}
+		if area == .favourite {
+			let insertAt = targetID.flatMap { next.favouriteTabIDs.firstIndex(of: $0) } ?? next.favouriteTabIDs.endIndex
+			next.favouriteTabIDs.insert(contentsOf: moving, at: insertAt)
+			next.favouritesModifiedAt = destinationDate
+		} else if let index = next.spaces.firstIndex(where: { $0.id == destinationID }) {
+			let insertAt = targetID.flatMap { next.spaces[index].tabIDs.firstIndex(of: $0) } ?? next.spaces[index].tabIDs.endIndex
+			next.spaces[index].tabIDs.insert(contentsOf: moving, at: insertAt)
+			if area == .pinned {
+				let pinnedIndex = targetID.flatMap { next.spaces[index].pinnedTabIDs.firstIndex(of: $0) } ?? next.spaces[index].pinnedTabIDs.endIndex
+				next.spaces[index].pinnedTabIDs.insert(contentsOf: moving, at: pinnedIndex)
+				if let folderID, let folderIndex = next.spaces[index].pinnedFolders.firstIndex(where: { $0.id == folderID }) {
+					let folderInsert = targetID.flatMap { next.spaces[index].pinnedFolders[folderIndex].tabIDs.firstIndex(of: $0) } ?? next.spaces[index].pinnedFolders[folderIndex].tabIDs.endIndex
+					next.spaces[index].pinnedFolders[folderIndex].tabIDs.insert(contentsOf: moving, at: folderInsert)
+					next.spaces[index].pinnedFolders[folderIndex].modifiedAt = destinationDate
+				}
+			}
+			next.spaces[index].modifiedAt = destinationDate
+			// Keep manually ordered Today groups consistent with the sidebar's order.
+			// Dropping into a grouped tab adds the moved tabs to that group; dropping
+			// outside a group leaves them in the ungrouped daily section.
+			if area == .normal, let targetID,
+				let groupIndex = next.spaces[index].todayTabGroups.firstIndex(where: { $0.tabIDs.contains(targetID) })
+			{
+				var group = next.spaces[index].todayTabGroups[groupIndex]
+				let groupInsert = group.tabIDs.firstIndex(of: targetID) ?? group.tabIDs.endIndex
+				group.tabIDs.insert(contentsOf: moving, at: groupInsert)
+				next.spaces[index].todayTabGroups[groupIndex] = group
+			}
+		}
+		for index in next.spaces.indices {
+			let normalIDs = next.spaces[index].tabIDs.filter { !next.spaces[index].pinnedTabIDs.contains($0) }
+			next.spaces[index].todayTabGroups = Self.filteredTodayTabGroups(next.spaces[index].todayTabGroups.map { group in
+				BrowserTabGroupingFeature.Group(name: group.name, tabIDs: group.tabIDs.filter { !movingSet.contains($0) || index == next.spaces.firstIndex(where: { $0.id == destinationID }) && area == .normal })
+			}, normalIDs: normalIDs)
+		}
+		next.modifiedAt = destinationDate
+		guard next != workspace else { return }
+		workspace = next
 		schedulePersistence()
 	}
 
@@ -1503,6 +1589,23 @@ final class Browser {
 		scheduleUserDataPersistence()
 	}
 
+	func bookmarkTabs(_ ids: [UUID]) {
+		guard !isPrivate, !isMini else { return }
+		var known = Set(bookmarks.map(\.url))
+		var didAdd = false
+		for id in ids {
+			guard let tab = tab(withID: id), tab.internalPage == nil,
+				let url = (tab.activeController?.committedURL ?? tab.currentURL).map(BrowserAddress.withoutCredentials),
+				url.absoluteString.utf8.count <= 16384, known.insert(url).inserted
+			else { continue }
+			let title = tab.activeController?.webViewIfLoaded?.title ?? tab.title
+			guard title.utf8.count <= 16384 else { continue }
+			bookmarks.append(Bookmark(name: title, url: url))
+			didAdd = true
+		}
+		if didAdd { scheduleUserDataPersistence() }
+	}
+
 	func bookmarkSelectedPage() {
 		guard let tab = selectedTab,
 		      let url = selectedPageBookmarkURL,
@@ -2374,12 +2477,12 @@ final class Browser {
 			guard let self, let tab, let controller else { return nil }
 			return createPopup(configuration: configuration, source: source, in: tab, depth: 1, parentZoom: controller.pageZoom, inBackground: inBackground)
 		}
-		controller.newTabRequested = { [weak self, weak controller] request, inBackground in
+		controller.newTabRequested = { [weak self, weak controller, weak tab] request, inBackground in
 			guard let self else { return }
 			if isMini {
 				controller?.navigate(request)
 			} else {
-				openNewTab(request, inBackground: inBackground)
+				openNewTab(request, inBackground: inBackground, after: tab?.id)
 			}
 		}
 		controller.closeRequested = { [weak self, weak tab] in
@@ -2516,6 +2619,9 @@ final class Browser {
 			tabs.append(popupTab)
 			reconcileWorkspace()
 			markWorkspaceStructureChanged()
+			if inBackground != nil {
+				placeOpenedTab(popupTab.id, after: tab.id)
+			}
 			if inBackground == true {
 				schedulePersistence(fullState: true)
 			} else {
@@ -2529,13 +2635,44 @@ final class Browser {
 		openNewTab(URLRequest(url: url), inBackground: false)
 	}
 
-	private func openNewTab(_ request: URLRequest, inBackground: Bool) {
+	private func openNewTab(_ request: URLRequest, inBackground: Bool, after sourceID: UUID? = nil) {
 		let tab = addTab(inBackground: inBackground)
+		if let sourceID { placeOpenedTab(tab.id, after: sourceID) }
 		#if os(macOS)
 			tab.controller?.previewSnapshotRefreshSuspended = inBackground
 		#endif
 		tab.controller?.navigate(request)
 		tab.controller?.prepareWebView()
+	}
+
+	/// Keep command-clicked links directly below the source rather than at the
+	/// bottom of Daily Tabs (or inside pinned/favourites).
+	private func placeOpenedTab(_ newID: UUID, after sourceID: UUID) {
+		guard newID != sourceID else { return }
+		if isPrivate {
+			guard let source = tabs.firstIndex(where: { $0.id == sourceID }),
+				let new = tabs.firstIndex(where: { $0.id == newID }) else { return }
+			let tab = tabs.remove(at: new)
+			tabs.insert(tab, at: min(source + 1, tabs.count))
+			return
+		}
+		guard let space = workspace.spaces.first(where: { $0.tabIDs.contains(sourceID) }) ?? workspace.spaces.first(where: { $0.id == workspace.selectedSpaceID }) else { return }
+		let isNormalSource = space.tabIDs.contains(sourceID) && !space.pinnedTabIDs.contains(sourceID)
+		let nextID: UUID? = isNormalSource
+			? space.tabIDs.drop(while: { $0 != sourceID }).dropFirst().first(where: { !space.pinnedTabIDs.contains($0) && $0 != newID })
+			: space.tabIDs.first(where: { !space.pinnedTabIDs.contains($0) && $0 != newID })
+		moveTab(newID, to: .normal, in: space.id, before: nextID)
+		if isNormalSource,
+			let index = workspace.spaces.firstIndex(where: { $0.id == space.id }),
+			let groupIndex = workspace.spaces[index].todayTabGroups.firstIndex(where: { $0.tabIDs.contains(sourceID) }),
+			let sourcePosition = workspace.spaces[index].todayTabGroups[groupIndex].tabIDs.firstIndex(of: sourceID)
+		{
+			var group = workspace.spaces[index].todayTabGroups[groupIndex]
+			group.tabIDs.insert(newID, at: sourcePosition + 1)
+			workspace.spaces[index].todayTabGroups[groupIndex] = group
+			markWorkspaceStructureChanged()
+			schedulePersistence()
+		}
 	}
 
 	private func removeTabs(_ ids: Set<UUID>, selecting selectedID: UUID, confirmed: Bool = false) {
