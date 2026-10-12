@@ -132,32 +132,31 @@ struct ShellSidebarListView: View {
 									.accessibilityIdentifier("today-tab-group-\(group.id)")
 									.transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
 									ForEach(groupTabs) { tab in
-										BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
+										BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions, sidebarSelection: sidebarSelection, selectionOrder: normalTabs.map(\.id))
 											.equatable()
 											.matchedGeometryEffect(id: tab.id, in: sidebarTransitions, properties: .position)
 											.transition(.identity)
 											.id(tab.id)
 									}
+									.reorderable(collectionID: SidebarTabCollection.normal)
 								}
 							}
-							ForEach(ungroupedNormalTabs, id: \.element.id) { index, tab in
-								BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: index, normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions)
+							ForEach(ungroupedNormalTabs) { tab in
+								BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions, sidebarSelection: sidebarSelection, selectionOrder: normalTabs.map(\.id))
 									.equatable()
 									.matchedGeometryEffect(id: tab.id, in: sidebarTransitions, properties: .position)
 									.transition(.identity)
 									.id(tab.id)
 							}
+							.reorderable(collectionID: SidebarTabCollection.normal)
 							ShellNewTabButton(browser: browser, theme: theme, onNewTab: onNewTab)
 								.matchedTransitionSource(id: "sidebar-new-tab", in: navigationNamespace ?? sidebarTransitions)
 						}
 						.animation(reduceMotion ? nil : .smooth(duration: 0.35), value: space.todayTabGroups)
-						#if os(macOS)
-							.background {
-								if tabDrag.activeTabID != nil {
-									BrowserDropZone(browser: browser, area: .normal, spaceID: space.id, beforeTabID: nil)
-								}
-							}
-						#endif
+
+					}
+					.reorderContainer(for: BrowserTab.self, in: SidebarTabCollection.self, isEnabled: !browser.isPrivate && onSelectTab == nil) { difference in
+						applyReorder(difference)
 					}
 					.padding(.horizontal, onSelectTab == nil ? BrowserChromeMetrics.shellEdgePadding : 16)
 					.padding(.top, 4)
@@ -188,6 +187,25 @@ struct ShellSidebarListView: View {
 			guard isActiveSpace || onSelectTab != nil else { return }
 			await performTabCleanup(in: space, tabs: normalTabs)
 		}
+	}
+
+	private func applyReorder(_ difference: ReorderDifference<UUID, SidebarTabCollection>) {
+		let beforeID: UUID?
+		switch difference.destination.position {
+			case .before(let id): beforeID = id
+			case .end: beforeID = nil
+		}
+		switch difference.destination.collectionID {
+			case .favourite:
+				browser.moveTabs(difference.sources, to: .favourite, before: beforeID)
+			case .pinned:
+				browser.moveTabs(difference.sources, to: .pinned, in: space.id, before: beforeID)
+			case .normal:
+				browser.moveTabs(difference.sources, to: .normal, in: space.id, before: beforeID)
+			case .folder(let id):
+				browser.moveTabs(difference.sources, to: .pinned, in: space.id, before: beforeID, folderID: id)
+		}
+		sidebarSelection.clear()
 	}
 
 	private func performTabCleanup(in space: BrowserSpace, tabs: [BrowserTab]) async {
@@ -321,6 +339,8 @@ private struct PinnedFolderRow: View {
 	let openElsewhereIDs: Set<UUID>
 	var onSelectTab: ((UUID) -> Void)?
 	let navigationNamespace: Namespace.ID
+	let sidebarSelection: BrowserSidebarTabSelection
+	let selectionOrder: [UUID]
 	@State private var isExpanded = true
 	@State private var isRenaming = false
 	@State private var name = ""
@@ -353,11 +373,12 @@ private struct PinnedFolderRow: View {
 			}
 			if isExpanded {
 				ForEach(folder.tabIDs.compactMap { tabsByID[$0] }) { tab in
-					BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalCount, pinned: true, rowSpaceID: spaceID, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace)
+					BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalCount, pinned: true, rowSpaceID: spaceID, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace, sidebarSelection: sidebarSelection, selectionOrder: selectionOrder)
 						.equatable()
 						.padding(.leading, 12)
 						.id(tab.id)
 				}
+				.reorderable(collectionID: SidebarTabCollection.folder(folder.id))
 			}
 		}
 	}
