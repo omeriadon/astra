@@ -392,6 +392,19 @@ final class Browser {
 		schedulePersistence()
 	}
 
+	/// Deleting internal browser pages alone does not require confirmation.
+	/// Any ordinary web tab, pinned tab, or pinned-folder tab does.
+	func requiresSpaceDeletionConfirmation(_ id: UUID) -> Bool {
+		guard let space = workspace.spaces.first(where: { $0.id == id }) else { return false }
+		if !space.pinnedTabIDs.isEmpty || space.pinnedFolders.contains(where: { !$0.tabIDs.isEmpty }) {
+			return true
+		}
+		let lookup = tabsByID
+		// Treat unresolved tab IDs conservatively: do not discard their
+		// workspace membership without asking.
+		return space.tabIDs.contains { lookup[$0]?.internalPage == nil }
+	}
+
 	func deleteSpace(_ id: UUID) {
 		BrowserLog.info(.spaces, "space.delete", metadata: ["window": BrowserLog.id(windowID), "space": BrowserLog.id(id), "count": String(workspace.spaces.count)])
 		guard workspace.spaces.count > 1,

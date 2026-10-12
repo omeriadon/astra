@@ -25,6 +25,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	@State private var showsDownloads = false
+	@State private var spaceToDelete: BrowserSpace?
 	@State private var flight: DownloadFlight?
 	@State private var flightProgress = 0.0
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -149,6 +150,17 @@ struct DesktopBrowserShell: View {
 		}
 	#endif
 
+	private func requestSpaceDeletion(_ space: BrowserSpace) {
+		guard browser.workspace.spaces.count > 1,
+		      browser.workspace.spaces.contains(where: { $0.id == space.id })
+		else { return }
+		if browser.requiresSpaceDeletionConfirmation(space.id) {
+			spaceToDelete = space
+		} else {
+			browser.deleteSpace(space.id)
+		}
+	}
+
 	private var windowLayout: some View {
 		GeometryReader { geometry in
 			let showsAI = isAISidebarVisible
@@ -167,7 +179,8 @@ struct DesktopBrowserShell: View {
 					topBarColorScheme: topBarColorScheme,
 					showsTopBar: showsTopBar,
 					showsDownloads: $showsDownloads,
-					downloads: downloads
+					downloads: downloads,
+					onRequestDeleteSpace: requestSpaceDeletion
 				)
 
 			} content: {
@@ -286,6 +299,20 @@ struct DesktopBrowserShell: View {
 
 	var body: some View {
 		windowLayout
+			.alert("Delete Space?", isPresented: Binding(
+				get: { spaceToDelete != nil },
+				set: { if !$0 { spaceToDelete = nil } }
+			), presenting: spaceToDelete) { space in
+				Button("Delete Space", role: .destructive) {
+					browser.deleteSpace(space.id)
+					spaceToDelete = nil
+				}
+				Button("Cancel", role: .cancel) {
+					spaceToDelete = nil
+				}
+			} message: { space in
+				Text("Tabs in \(space.name) will move to another Space.")
+			}
 			.overlay {
 				DownloadFlightOverlay(
 					flight: flight,
@@ -382,6 +409,7 @@ private struct ShellSidebarColumn: View {
 	let showsTopBar: Bool
 	@Binding var showsDownloads: Bool
 	let downloads: BrowserDownloadManager
+	let onRequestDeleteSpace: (BrowserSpace) -> Void
 	@State private var sidebarMediaHeight: CGFloat = 0
 	@State private var sidebarHeaderHeight: CGFloat = 0
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -520,7 +548,8 @@ private struct ShellSidebarColumn: View {
 				browser: browser,
 				theme: theme,
 				downloads: downloads,
-				showsDownloads: $showsDownloads
+				showsDownloads: $showsDownloads,
+				onRequestDeleteSpace: onRequestDeleteSpace
 			)
 			.foregroundStyle(theme.foregroundColor)
 		}
