@@ -106,7 +106,6 @@ struct ShellTopBarView: View {
 private struct ShellWebsiteNavigationControls: View {
 	let browser: Browser
 	let theme: BrowserTheme
-	@Default(.aiFeaturesEnabled) private var allAIFeatures
 	@Default(.developerModeEnabled) private var developerModeEnabled
 	@Default(.usageLimitsProvider) private var usageLimitsProvider
 
@@ -125,8 +124,7 @@ private struct ShellWebsiteNavigationControls: View {
 					Button("Inspect Element", systemImage: "cursorarrow.rays") {
 						BrowserDesktopCommands.showWebInspector(controller, selectingElement: true)
 					}
-					.labelStyle(.iconOnly)
-					.buttonStyle(.bordered)
+					.astraTopBarButton()
 					.disabled(!controller.hasCurrentPageDocument)
 					.help("Select an element to inspect in Web Inspector")
 					.accessibilityLabel("Inspect Element")
@@ -137,16 +135,6 @@ private struct ShellWebsiteNavigationControls: View {
 			#endif
 			if developerModeEnabled || browser.selectedTab?.isDeveloperMode == true, usageLimitsProvider != .none, !browser.isPrivate {
 				BrowserUsageLimitsButton(browser: browser)
-			}
-			BrowserWebsiteMonitorButton(browser: browser)
-			BrowserTranslationButton(browser: browser, controller: controller)
-			if allAIFeatures, browser.canShowAISidebar, Defaults[.aiSidebar] {
-				Button("AI Sidebar", systemImage: "bubble.left.and.text.bubble.right") {
-					browser.showsAISidebar.toggle()
-				}
-				.labelStyle(.iconOnly)
-				.buttonStyle(.bordered)
-				.accessibilityIdentifier("ai-sidebar-toggle")
 			}
 		}
 	}
@@ -163,11 +151,12 @@ private struct BrowserUsageLimitsButton: View {
 	}
 
 	var body: some View {
-		Button("Usage Limits", systemImage: "gauge.with.dots.needle.67percent") {
+		Button {
 			showsPopover.toggle()
+		} label: {
+			AstraTopBarIcon(title: "Usage Limits", systemImage: "gauge.with.dots.needle.67percent")
 		}
-		.labelStyle(.iconOnly)
-		.buttonStyle(.bordered)
+		.astraTopBarButton()
 		.help("Show provider usage limits")
 		.accessibilityLabel("Show \(provider.title) usage limits")
 		.accessibilityIdentifier("usage-limits-button")
@@ -244,6 +233,7 @@ struct ShellExtensionControls: View {
 					Task { await extensions.installFromChromeStore(listing) }
 				}
 				.disabled(extensions.isInstallingFromStore)
+				.astraTopBarButton()
 				.accessibilityIdentifier("install-chrome-store-extension")
 			}
 			let _ = extensions.actionsRevision
@@ -256,27 +246,26 @@ struct ShellExtensionControls: View {
 						if let icon = action?.icon(for: CGSize(width: 18, height: 18)) {
 							Image(nsImage: icon)
 								.resizable()
-								.frame(width: 18, height: 18)
+								.scaledToFit()
+								.frame(width: 16, height: 16)
+								.frame(width: BrowserChromeMetrics.topBarButtonLabelWidth, height: BrowserChromeMetrics.topBarButtonLabelHeight)
 						} else {
-							Label(action?.label ?? extensions.title(for: name), systemImage: "puzzlepiece.extension.fill")
-								.labelStyle(.iconOnly)
+							AstraTopBarIcon(title: action?.label ?? extensions.title(for: name), systemImage: "puzzlepiece.extension.fill")
 						}
 					#else
 						if let icon = action?.icon(for: CGSize(width: 18, height: 18)) {
 							Image(uiImage: icon)
 								.resizable()
-								.frame(width: 18, height: 18)
+								.scaledToFit()
+								.frame(width: 16, height: 16)
+								.frame(width: BrowserChromeMetrics.topBarButtonLabelWidth, height: BrowserChromeMetrics.topBarButtonLabelHeight)
 						} else {
-							Label(action?.label ?? extensions.title(for: name), systemImage: "puzzlepiece.extension.fill")
-								.labelStyle(.iconOnly)
+							AstraTopBarIcon(title: action?.label ?? extensions.title(for: name), systemImage: "puzzlepiece.extension.fill")
 						}
 					#endif
 				}
 				.disabled(action?.isEnabled == false)
-				.controlSize(.regular)
-				.buttonSizing(.fitted)
-				.buttonStyle(.bordered)
-				.foregroundStyle(.primary)
+				.astraTopBarButton()
 				.accessibilityLabel(action?.label ?? extensions.title(for: name))
 				.accessibilityIdentifier("extension-action-\(name)")
 			}
@@ -291,13 +280,10 @@ struct ShellExtensionControls: View {
 					browser.openInternalPage(.settings)
 				}
 			} label: {
-				Label("Extensions", systemImage: "puzzlepiece.extension")
-					.labelStyle(.iconOnly)
+				AstraTopBarIcon(title: "Extensions", systemImage: "puzzlepiece.extension")
 			}
-			.controlSize(.regular)
-			.buttonSizing(.fitted)
-			.buttonStyle(.bordered)
-			.foregroundStyle(.primary)
+			.menuIndicator(.hidden)
+			.astraTopBarButton()
 			.accessibilityLabel("Extensions")
 			.accessibilityIdentifier("browser-extensions")
 		}
