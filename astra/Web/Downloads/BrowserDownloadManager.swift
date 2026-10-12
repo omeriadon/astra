@@ -789,7 +789,9 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 	private func pauseTransfer(_ itemID: UUID) async {
 		guard let index = items.firstIndex(where: { $0.id == itemID && $0.status == .downloading }) else { return }
+
 		items[index].status = .paused
+		items[index].errorMessage = nil
 		items[index].throughput = nil
 		items[index].estimatedTimeRemaining = nil
 		rateSamples[itemID] = nil
@@ -1550,7 +1552,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		persist()
 
 		guard items[itemIndex].segments?.allSatisfy(\.completed) == true else { return }
-		segmented.stopMonitoring(itemID)
+
+		segmented.forget(itemID)
 		beginFinalization(itemID, temporaryURL: fileURL)
 	}
 
@@ -1573,7 +1576,9 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			await segmented.removeParts(itemID, count: segments.count)
 			await BrowserDownloadFileWorker.shared.removeFiles([failedFileURL])
 		}
+
 		items[index].segments = nil
+		items[index].errorMessage = nil
 		releaseScope(for: itemID)
 		items[index].rangeValidator = nil
 		items[index].totalBytes = nil
