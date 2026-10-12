@@ -136,6 +136,10 @@ private struct ShellWebsiteNavigationControls: View {
 			if developerModeEnabled || browser.selectedTab?.isDeveloperMode == true, usageLimitsProvider != .none, !browser.isPrivate {
 				BrowserUsageLimitsButton(browser: browser)
 			}
+			#if os(iOS)
+				BrowserWebsiteMonitorButton(browser: browser)
+				BrowserTranslationButton(browser: browser, controller: controller)
+			#endif
 		}
 	}
 }

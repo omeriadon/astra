@@ -14,13 +14,23 @@ struct BrowserWebsiteMonitorButton: View {
 
 	var body: some View {
 		if allFeatures, monitoringEnabled, browser.canShowAISidebar {
-			Color.clear
-				.frame(width: 0, height: 0)
-				.onReceive(NotificationCenter.default.publisher(for: .astraMonitorWebsite)) { notification in
-					guard let owner = notification.object as? Browser, owner === browser else { return }
-					guard browser.selectedTab?.activeController?.hasCurrentPageDocument == true else { return }
-					presented = true
-				}
+			Group {
+				#if os(macOS)
+					Color.clear
+						.frame(width: 0, height: 0)
+						.onReceive(NotificationCenter.default.publisher(for: .astraMonitorWebsite)) { notification in
+							guard let owner = notification.object as? Browser, owner === browser else { return }
+							guard browser.selectedTab?.activeController?.hasCurrentPageDocument == true else { return }
+							presented = true
+						}
+				#else
+					Button("Monitor Website", systemImage: "bell.and.waves.left.and.right") { presented = true }
+						.labelStyle(.iconOnly)
+						.astraTopBarButton()
+						.matchedTransitionSource(id: "monitor-website", in: transitions)
+						.accessibilityIdentifier("monitor-website")
+				#endif
+			}
 				.sheet(isPresented: $presented) {
 					NavigationStack {
 						List {

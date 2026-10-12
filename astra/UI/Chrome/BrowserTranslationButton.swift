@@ -27,13 +27,27 @@ struct BrowserTranslationButton: View {
 	}
 
 	var body: some View {
-		Color.clear
-			.frame(width: 0, height: 0)
-			.onReceive(NotificationCenter.default.publisher(for: .astraTranslatePage)) { notification in
-				guard let owner = notification.object as? Browser, owner === browser, canTranslate else { return }
-				pageURL = controller.committedURL
-				showsTranslation = true
-			}
+		Group {
+			#if os(macOS)
+				Color.clear
+					.frame(width: 0, height: 0)
+					.onReceive(NotificationCenter.default.publisher(for: .astraTranslatePage)) { notification in
+						guard let owner = notification.object as? Browser, owner === browser, canTranslate else { return }
+						pageURL = controller.committedURL
+						showsTranslation = true
+					}
+			#else
+				Button("Translate Page", systemImage: "translate") {
+					pageURL = controller.committedURL
+					showsTranslation = true
+				}
+				.labelStyle(.iconOnly)
+				.astraTopBarButton()
+				.disabled(!canTranslate)
+				.matchedTransitionSource(id: "translate", in: presentations)
+				.accessibilityIdentifier("browser-translate-page")
+			#endif
+		}
 		.sheet(isPresented: $showsTranslation) {
 			NavigationStack {
 				List {
