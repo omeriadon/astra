@@ -1,4 +1,3 @@
-import Haze
 import SwiftUI
 
 struct BrowserSpacesBar: View {
@@ -151,38 +150,8 @@ struct BrowserSpacesBar: View {
 		@State private var showsDeleteAlert = false
 
 		var body: some View {
-			ZStack(alignment: .bottom) {
+			VStack(alignment: .trailing, spacing: 8) {
 				spaceList
-
-				HazeEffect(
-					maskProvider: LinearGradientMaskProvider(
-						startPoint: .top,
-						endPoint: .bottom,
-						startOpacity: 0,
-						endOpacity: 1.0,
-						isSmooth: true
-					),
-					maxBlurRadius: 3
-				)
-				.ignoresSafeArea()
-				.frame(height: 25)
-
-				VStack {
-					HazeEffect(
-						maskProvider: LinearGradientMaskProvider(
-							startPoint: .bottom,
-							endPoint: .top,
-							startOpacity: 0,
-							endOpacity: 1.0,
-							isSmooth: true
-						),
-						maxBlurRadius: 2
-					)
-					.ignoresSafeArea()
-					.frame(height: 15)
-
-					Spacer()
-				}
 
 				Button {
 					browser.createSpace()
@@ -196,12 +165,10 @@ struct BrowserSpacesBar: View {
 				.frame(width: 20, height: 20)
 				.accessibilityLabel("Add Space")
 				.accessibilityIdentifier("space-picker-add")
-				.padding(.bottom, 12)
-				.padding(.trailing, 12)
-				.frame(maxWidth: .infinity, alignment: .trailing)
 			}
-			.contentMargins(.all, 8, for: .scrollContent)
+			.padding(8)
 			.frame(width: 250)
+			.fixedSize(horizontal: false, vertical: true)
 			.accessibilityIdentifier("space-picker-panel")
 			.onExitCommand(perform: onDismiss)
 			.alert("Delete Space?", isPresented: $showsDeleteAlert, presenting: spaceToDelete) { space in
@@ -219,16 +186,25 @@ struct BrowserSpacesBar: View {
 		@ViewBuilder
 		private var spaceList: some View {
 			if #available(macOS 27, *) {
-				ScrollView {
-					LazyVStack(spacing: 4) {
-						ForEach(browser.workspace.spaces) { space in
-							spaceRow(space)
-						}
-						.reorderable()
+				// Native swipe and reorder actions work directly in this
+				// content-sized stack; no scroll view or height cap is needed.
+				VStack(spacing: 4) {
+					ForEach(browser.workspace.spaces) { space in
+						spaceRow(space)
+							.swipeActions(edge: .trailing, allowsFullSwipe: false) {
+								if browser.workspace.spaces.count > 1 {
+									Button {
+										requestSpaceDeletion(space)
+									} label: {
+										Label("Delete Space", systemImage: "trash")
+									}
+									.tint(.red)
+								}
+							} onPresentationChanged: { _ in }
 					}
-					.padding(4)
+					.reorderable()
 				}
-				.frame(height: min(CGFloat(browser.workspace.spaces.count) * 36 + 8, 320))
+				.swipeActionsContainer()
 				.reorderContainer(for: BrowserSpace.self) { difference in
 					switch difference.destination.position {
 						case let .before(destinationID):
@@ -238,6 +214,8 @@ struct BrowserSpacesBar: View {
 					}
 				}
 			} else {
+				// Preserve List reordering on older macOS versions without
+				// limiting the number of rows shown in the popover.
 				List {
 					ForEach(browser.workspace.spaces) { space in
 						spaceRow(space)
@@ -259,10 +237,17 @@ struct BrowserSpacesBar: View {
 						browser.reorderSpaces(ids, before: destinationID)
 					}
 				}
-				.frame(height: min(CGFloat(browser.workspace.spaces.count) * 36 + 8, 320))
+				.frame(height: CGFloat(browser.workspace.spaces.count) * 36 + 8)
 				.listStyle(.plain)
+				.scrollDisabled(true)
 				.scrollContentBackground(.hidden)
 			}
+		}
+
+		private func requestSpaceDeletion(_ space: BrowserSpace) {
+			guard browser.workspace.spaces.count > 1 else { return }
+			spaceToDelete = space
+			showsDeleteAlert = true
 		}
 
 		private func spaceRow(_ space: BrowserSpace) -> some View {
@@ -312,8 +297,7 @@ struct BrowserSpacesBar: View {
 					onDismiss()
 				}
 				Button("Delete Space", systemImage: "trash", role: .destructive) {
-					spaceToDelete = space
-					showsDeleteAlert = true
+					requestSpaceDeletion(space)
 				}
 				.disabled(browser.workspace.spaces.count == 1)
 			}
