@@ -138,7 +138,7 @@ struct ShellSidebarListView: View {
 											.transition(.identity)
 											.id(tab.id)
 									}
-									.reorderable(collectionID: SidebarTabCollection.normal)
+									.reorderable(collectionID: SidebarTabCollection.todayGroup(group.id))
 								}
 							}
 							ForEach(ungroupedNormalTabs) { tab in
@@ -202,6 +202,8 @@ struct ShellSidebarListView: View {
 				browser.moveTabs(difference.sources, to: .pinned, in: space.id, before: beforeID)
 			case .normal:
 				browser.moveTabs(difference.sources, to: .normal, in: space.id, before: beforeID)
+			case .todayGroup(let groupID):
+				browser.moveTabs(difference.sources, to: .normal, in: space.id, before: beforeID, todayGroupID: groupID)
 			case .folder(let id):
 				browser.moveTabs(difference.sources, to: .pinned, in: space.id, before: beforeID, folderID: id)
 		}
