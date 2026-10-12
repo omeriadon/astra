@@ -22,7 +22,8 @@ struct BrowserSidebarHeader: View {
 				acceptsFocusRequests: acceptsFocusRequests
 			)
 		}
-		.padding(.horizontal, 5)
+		.padding(.leading, 5)
+		.padding(.trailing, 6)
 		.padding(.top, 0)
 		.padding(.bottom, 2)
 		.frame(maxWidth: .infinity)
@@ -35,7 +36,8 @@ struct BrowserSidebarHeader: View {
 			windowControlsReservation
 			navigationControls
 		}
-		.frame(height: 24, alignment: .top)
+		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
+		.padding(.top, 3)
 	}
 
 	private var compactHeader: some View {
@@ -44,9 +46,9 @@ struct BrowserSidebarHeader: View {
 				windowControlsReservation
 				Spacer(minLength: 0)
 			}
-			.frame(height: 24)
+			.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 			navigationControls
-				.frame(height: 24)
+				.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 		}
 	}
 
@@ -63,7 +65,7 @@ struct BrowserSidebarHeader: View {
 
 	private var windowControlsReservation: some View {
 		Color.clear
-			.frame(width: isFullScreen ? 0 : BrowserChromeMetrics.windowControlsAreaWidth)
+			.frame(width: isFullScreen ? 0 : BrowserChromeMetrics.windowControlsAreaWidth - 16)
 			.accessibilityHidden(true)
 	}
 }

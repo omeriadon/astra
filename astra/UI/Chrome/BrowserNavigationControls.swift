@@ -20,6 +20,19 @@ extension View {
 	func astraTopBarButton() -> some View {
 		modifier(AstraTopBarButtonModifier())
 	}
+
+	func astraTopBarOuterCorners(_ edge: HorizontalEdge?) -> some View {
+		clipShape(
+			UnevenRoundedRectangle(
+				cornerRadii: .init(
+					topLeading: edge == .leading ? BrowserChromeMetrics.topBarButtonCornerRadius * 2 : 0,
+					bottomLeading: edge == .leading ? BrowserChromeMetrics.topBarButtonCornerRadius * 2 : 0,
+					bottomTrailing: edge == .trailing ? BrowserChromeMetrics.topBarButtonCornerRadius * 2 : 0,
+					topTrailing: edge == .trailing ? BrowserChromeMetrics.topBarButtonCornerRadius * 2 : 0
+				)
+			)
+		)
+	}
 }
 
 struct AstraTopBarIcon: View {
@@ -40,10 +53,15 @@ struct AstraTopBarIcon: View {
 struct BrowserNavigationControls: View {
 	let controller: BrowserController
 	let browser: Browser
+	var roundsLeadingEdge = false
 
 	var body: some View {
 		HStack(spacing: 6) {
-			BrowserHistoryNavigationControls(controller: controller, browser: browser)
+			BrowserHistoryNavigationControls(
+				controller: controller,
+				browser: browser,
+				roundsLeadingEdge: roundsLeadingEdge
+			)
 			BrowserZoomControls(controller: controller)
 			if controller.isReaderAvailable || controller.readerHTML != nil {
 				Button {
@@ -79,10 +97,13 @@ struct BrowserHistoryNavigationControls: View {
 	let controller: BrowserController
 	let browser: Browser
 	var separatesReload = false
+	var roundsLeadingEdge = false
 
 	var body: some View {
 		HStack(spacing: 6) {
 			NavigationBackButton(controller: controller, browser: browser)
+				.astraTopBarOuterCorners(roundsLeadingEdge ? .leading : nil)
+				.padding(.leading, 1)
 			NavigationForwardButton(controller: controller, browser: browser)
 			Color.clear.frame(width: BrowserChromeMetrics.historyGroupSpacerWidth, height: 1)
 			if separatesReload {

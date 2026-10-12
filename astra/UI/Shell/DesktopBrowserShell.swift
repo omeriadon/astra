@@ -656,6 +656,7 @@ private struct ShellContentColumn: View {
 			sidebarShown: true,
 			topBarColorScheme: topBarColorScheme,
 			reservesWindowControls: !sidebarShown && !isFullScreen,
+			roundsLeadingButton: sidebarShown,
 			acceptsFocusRequests: topBarHeight > 0
 		)
 		#if os(macOS)

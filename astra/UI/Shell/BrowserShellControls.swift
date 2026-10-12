@@ -9,6 +9,7 @@ struct ShellTopBarView: View {
 	let topBarColorScheme: ColorScheme
 	var isCompact = false
 	var reservesWindowControls = false
+	var roundsLeadingButton = false
 	var acceptsFocusRequests = true
 	@Default(.developerModeEnabled) private var developerModeEnabled
 
@@ -57,8 +58,14 @@ struct ShellTopBarView: View {
 					BrowserAddressField(browser: browser, acceptsFocusRequests: acceptsFocusRequests)
 						.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 					HStack(spacing: 8) {
-						ShellWebsiteNavigationControls(browser: browser, theme: theme)
+						ShellWebsiteNavigationControls(
+							browser: browser,
+							theme: theme,
+							roundsLeadingButton: roundsLeadingButton
+						)
+						.offset(y: -1)
 						ShellExtensionControls(browser: browser, theme: theme)
+							.offset(y: -1)
 					}
 					.padding(.trailing, BrowserChromeMetrics.topBarTrailingInset)
 					.frame(height: BrowserChromeMetrics.topBarRegionHeight)
@@ -93,14 +100,20 @@ struct ShellTopBarView: View {
 
 	private var desktopWebsiteControls: some View {
 		HStack(spacing: 8) {
-			ShellWebsiteNavigationControls(browser: browser, theme: theme)
-				.fixedSize(horizontal: true, vertical: false)
+			ShellWebsiteNavigationControls(
+				browser: browser,
+				theme: theme,
+				roundsLeadingButton: roundsLeadingButton
+			)
+			.offset(y: -1)
+			.fixedSize(horizontal: true, vertical: false)
 			BrowserAddressField(browser: browser, acceptsFocusRequests: acceptsFocusRequests)
 				// Only the remaining width is available to the address field.
 				.frame(minWidth: 72, maxWidth: .infinity)
 				.layoutPriority(-1)
 				.transaction { $0.animation = nil }
 			ShellExtensionControls(browser: browser, theme: theme)
+				.offset(y: -1)
 				.fixedSize(horizontal: true, vertical: false)
 		}
 		.padding(.trailing, BrowserChromeMetrics.topBarTrailingInset)
@@ -110,18 +123,23 @@ struct ShellTopBarView: View {
 private struct ShellWebsiteNavigationControls: View {
 	let browser: Browser
 	let theme: BrowserTheme
+	let roundsLeadingButton: Bool
 	@Default(.developerModeEnabled) private var developerModeEnabled
 	@Default(.usageLimitsProvider) private var usageLimitsProvider
 
 	var body: some View {
 		if let controller = browser.selectedTab?.activeController {
-			BrowserNavigationControls(controller: controller, browser: browser)
-				.controlSize(.regular)
-				.labelStyle(.iconOnly)
-				.buttonSizing(.fitted)
-				.buttonStyle(.bordered)
-				.foregroundStyle(.primary)
-				.id(ObjectIdentifier(controller))
+			BrowserNavigationControls(
+				controller: controller,
+				browser: browser,
+				roundsLeadingEdge: roundsLeadingButton
+			)
+			.controlSize(.regular)
+			.labelStyle(.iconOnly)
+			.buttonSizing(.fitted)
+			.buttonStyle(.bordered)
+			.foregroundStyle(.primary)
+			.id(ObjectIdentifier(controller))
 			BrowserAgentControls(browser: browser)
 			#if os(macOS)
 				if developerModeEnabled || browser.selectedTab?.isDeveloperMode == true {
@@ -294,6 +312,7 @@ struct ShellExtensionControls: View {
 			}
 			.menuIndicator(.hidden)
 			.astraTopBarButton()
+			.astraTopBarOuterCorners(.trailing)
 			.accessibilityLabel("Extensions")
 			.accessibilityIdentifier("browser-extensions")
 		}
