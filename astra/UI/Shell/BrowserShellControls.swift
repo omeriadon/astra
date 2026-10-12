@@ -55,10 +55,17 @@ struct ShellTopBarView: View {
 				VStack(spacing: 0) {
 					BrowserAddressField(browser: browser)
 						.frame(height: BrowserChromeMetrics.topBarRegionHeight)
-					HStack(spacing: 10) {
+					HStack(spacing: 8) {
 						ShellWebsiteNavigationControls(browser: browser, theme: theme)
 						ShellExtensionControls(browser: browser, theme: theme)
+						#if os(macOS)
+							if let controller = browser.selectedTab?.activeController {
+								Spacer(minLength: 0)
+								BrowserSiteInformationButton(controller: controller)
+							}
+						#endif
 					}
+					.padding(.trailing, BrowserChromeMetrics.topBarEdgeInset)
 					.frame(height: BrowserChromeMetrics.topBarRegionHeight)
 				}
 			} else {
@@ -67,7 +74,7 @@ struct ShellTopBarView: View {
 		}
 		.padding(
 			.leading,
-			reservesWindowControls ? BrowserChromeMetrics.windowControlsAreaWidth : (sidebarShown ? 10 : BrowserChromeMetrics.persistentControlsAreaWidth)
+			reservesWindowControls ? BrowserChromeMetrics.windowControlsAreaWidth + BrowserChromeMetrics.topBarEdgeInset : (sidebarShown ? BrowserChromeMetrics.topBarEdgeInset : BrowserChromeMetrics.persistentControlsAreaWidth + BrowserChromeMetrics.topBarEdgeInset)
 		)
 		.frame(height: isCompact ? BrowserChromeMetrics.topBarRegionHeight * 2 : BrowserChromeMetrics.topBarRegionHeight)
 		.frame(maxWidth: .infinity, alignment: .leading)
@@ -90,16 +97,24 @@ struct ShellTopBarView: View {
 	}
 
 	private var desktopWebsiteControls: some View {
-		HStack(spacing: 10) {
+		HStack(spacing: 8) {
 			ShellWebsiteNavigationControls(browser: browser, theme: theme)
 				.fixedSize(horizontal: true, vertical: false)
 			BrowserAddressField(browser: browser)
-				// Use only the width remaining after navigation and extensions.
+				// Only the remaining width is available to the address field.
 				.frame(minWidth: 72, maxWidth: .infinity)
 				.layoutPriority(-1)
+				.transaction { $0.animation = nil }
 			ShellExtensionControls(browser: browser, theme: theme)
 				.fixedSize(horizontal: true, vertical: false)
+			#if os(macOS)
+				if let controller = browser.selectedTab?.activeController {
+					BrowserSiteInformationButton(controller: controller)
+						.id(ObjectIdentifier(controller))
+				}
+			#endif
 		}
+		.padding(.trailing, BrowserChromeMetrics.topBarEdgeInset)
 	}
 }
 

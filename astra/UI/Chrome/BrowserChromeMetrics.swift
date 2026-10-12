@@ -1,7 +1,7 @@
 import Foundation
 
 enum BrowserChromeMetrics {
-	static let topBarRegionHeight: CGFloat = 33
+	static let topBarRegionHeight: CGFloat = 28
 	static let expandedSidebarWidth: CGFloat = 224
 	static let sidebarWidthRange: ClosedRange<CGFloat> = 130 ... 330
 	static let aiSidebarWidthRange: ClosedRange<CGFloat> = 300 ... 600
@@ -42,6 +42,9 @@ enum BrowserChromeMetrics {
 	}
 
 	static let topBarContentHeight: CGFloat = 20
+	static let topBarButtonWidth: CGFloat = 22
+	static let historyGroupSpacerWidth: CGFloat = topBarButtonWidth * 0.6
+	static let topBarEdgeInset: CGFloat = 5
 
 	// macos 27 window radius is 20
 

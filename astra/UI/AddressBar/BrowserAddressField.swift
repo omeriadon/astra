@@ -168,21 +168,7 @@ struct BrowserAddressField: View {
 			usesGlassBackground ? .regular.interactive() : .identity,
 			in: Capsule()
 		)
-		.popover(
-			isPresented: Binding(
-				get: { showsAddressSuggestions },
-				set: { shown in
-					if !shown {
-						isFocused = false
-					}
-				}
-			),
-			attachmentAnchor: .rect(.bounds),
-			arrowEdge: .top
-		) {
-			addressSuggestions
-				.frame(width: 420)
-		}
+
 		.confirmationDialog(
 			"Use this site's search engine?",
 			isPresented: Binding(
@@ -297,35 +283,7 @@ struct BrowserAddressField: View {
 		.task(id: searchEngineDiscoveryScope) {
 			await validateSearchEngineMetadata()
 		}
-		.task(id: addressSuggestionRequest) {
-			let request = addressSuggestionRequest
-			addressRemoteSuggestions = []
-			addressSuggestionsRequest = nil
-			browser.addressSuggestionsRequest = request
-			guard isFocused,
-			      !browser.isShowingNewTab,
-			      request.suggestionsEnabled,
-			      let provider = searchConfiguration.suggestionsProvider(isPrivate: request.isPrivate),
-			      !request.query.isEmpty,
-			      let destination = BrowserAddress.destination(
-			      	for: request.query,
-			      	configuration: searchConfiguration,
-			      	isPrivate: browser.isPrivate
-			      ),
-			      BrowserAddress.isSearchURL(destination, configuration: searchConfiguration, isPrivate: browser.isPrivate)
-			else { return }
-			do {
-				try await Task.sleep(for: .milliseconds(250))
-				guard !Task.isCancelled, request == addressSuggestionRequest else { return }
-				let suggestions = try await BrowserSearchSuggestions.fetch(for: request.query, provider: provider)
-				try Task.checkCancellation()
-				guard !Task.isCancelled, request == addressSuggestionRequest else { return }
-				addressRemoteSuggestions = suggestions
-				addressSuggestionsRequest = request
-			} catch {
-				// Local address, bookmark, and history results remain available offline.
-			}
-		}
+
 	}
 
 	private var dimmedAddressText: AttributedString {

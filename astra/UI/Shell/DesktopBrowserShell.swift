@@ -457,9 +457,7 @@ private struct ShellSidebarColumn: View {
 						)
 						.fixedSize(horizontal: false, vertical: true)
 						.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-							withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
-								sidebarHeaderHeight = height
-							}
+							sidebarHeaderHeight = height
 						}
 					}
 				}
@@ -483,11 +481,11 @@ private struct ShellSidebarColumn: View {
 			Group {
 				if browser.isPrivate {
 					PrivateBrowserSidebar(browser: browser)
-						.sidebarScrollContentMargins(top: showsSidebarHeader ? sidebarHeaderHeight + 4 : 33)
+						.sidebarScrollContentMargins(top: BrowserChromeMetrics.topBarRegionHeight + 5)
 				} else {
 					ShellSpaceTabList(
 						browser: browser,
-						topMargin: showsSidebarHeader ? sidebarHeaderHeight + 4 : 33
+						topMargin: BrowserChromeMetrics.topBarRegionHeight + 5
 					)
 				}
 			}
@@ -502,7 +500,7 @@ private struct ShellSidebarColumn: View {
 						manager: downloads,
 						theme: theme
 					)
-					.sidebarScrollContentMargins(top: showsSidebarHeader ? sidebarHeaderHeight + 4 : 33)
+					.sidebarScrollContentMargins(top: BrowserChromeMetrics.topBarRegionHeight + 5)
 				} else {
 					// When tabs are displayed there is no reason to keep
 					// observing every download progress event or lay out a
@@ -681,20 +679,22 @@ private struct ShellContentColumn: View {
 
 	var body: some View {
 		ZStack(alignment: .top) {
-			if !sidebarShown || showsTopBar {
-				topBar
-					.frame(height: BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding, alignment: .top)
-					.frame(maxWidth: .infinity, alignment: .trailing)
-					.mask(alignment: .top) {
-						Rectangle().frame(height: topBarHeight)
-					}
-					.opacity(topBarOpacity)
-					.allowsHitTesting(topBarHeight > 0 && topBarOpacity > 0)
-					.accessibilityHidden(topBarHeight == 0)
-			}
+			// Never remove the toolbar on hide: its removal previously skipped
+			// the exit animation, and rebuilding animated the address text field.
+			topBar
+				.frame(height: BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding, alignment: .top)
+				.frame(maxWidth: .infinity, alignment: .trailing)
+				.mask(alignment: .top) {
+					Rectangle().frame(height: topBarHeight)
+				}
+				.opacity((showsTopBar || isTopBarRevealed ? 1.0 : 0.0) * topBarOpacity)
+				.allowsHitTesting(topBarHeight > 0 && topBarOpacity > 0)
+				.accessibilityHidden(topBarHeight == 0)
+				.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsTopBar)
 			VStack(spacing: 0) {
 				Spacer(minLength: 0)
 					.frame(height: topBarHeight)
+					.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsTopBar)
 				BrowserPageView(browser: browser, cornerRadius: contentCornerRadius)
 					.equatable()
 					.padding(.top, hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)

@@ -10,15 +10,16 @@ struct BrowserSidebarHeader: View {
 	}
 
 	var body: some View {
-		VStack(spacing: 4) {
+		VStack(spacing: 2) {
 			ViewThatFits(in: .horizontal) {
 				regularHeader
 				compactHeader
 			}
 			BrowserAddressField(browser: browser, usesGlassBackground: true)
 		}
-		.padding(.horizontal, 6)
-		.padding(.vertical, 4)
+		.padding(.horizontal, 5)
+		.padding(.top, 0)
+		.padding(.bottom, 2)
 		.frame(maxWidth: .infinity)
 		.foregroundStyle(theme.foregroundColor)
 		.environment(\.colorScheme, theme.foregroundColor == .black ? .light : .dark)
@@ -29,7 +30,7 @@ struct BrowserSidebarHeader: View {
 			windowControlsReservation
 			navigationControls
 		}
-		.frame(height: BrowserChromeMetrics.topBarRegionHeight)
+		.frame(height: 24, alignment: .top)
 	}
 
 	private var compactHeader: some View {
@@ -38,9 +39,9 @@ struct BrowserSidebarHeader: View {
 				windowControlsReservation
 				Spacer(minLength: 0)
 			}
-			.frame(height: BrowserChromeMetrics.topBarRegionHeight)
+			.frame(height: 24)
 			navigationControls
-				.frame(height: BrowserChromeMetrics.topBarRegionHeight)
+				.frame(height: 24)
 		}
 	}
 
