@@ -28,6 +28,7 @@ final class BrowserAIChat {
 	private(set) var error: String?
 	private(set) var canRetry = false
 	private(set) var isResponding = false
+	private(set) var activity = "Reading and Answering"
 	@ObservationIgnored private var pages: [UUID: BrowserAIPageText] = [:]
 	// A failed stream can have already issued browser actions before the
 	// provider returns an error. Do not offer to replay that turn blindly.
@@ -145,6 +146,7 @@ final class BrowserAIChat {
 		error = nil
 		canRetry = false
 		preview = ""
+		activity = "Checking AI Access"
 		BrowserLog.info(.ai, "ai.chat.send", metadata: [
 			"id": BrowserLog.id(sendID), "conversation": BrowserLog.id(conversationID),
 			"provider": BrowserLog.value(model.identifier),
@@ -158,6 +160,7 @@ final class BrowserAIChat {
 		do {
 			try await BrowserAI.shared.checkAccess(for: model, feature: "AI Sidebar")
 			BrowserLog.debug(.ai, "ai.chat.preflight-passed", metadata: ["id": BrowserLog.id(sendID)])
+			activity = "Reading Page Context"
 			let tabs = availableTabs(in: browser)
 			var ids = linkedTabIDs
 			for tab in tabs.sorted(by: { $0.title.count > $1.title.count }) {
@@ -202,6 +205,7 @@ final class BrowserAIChat {
 				"image_count": String(images.count)
 			])
 			for round in 0 ..< 5 {
+				activity = round == 0 ? "Generating Answer" : "Continuing Answer"
 				try Task.checkCancellation()
 				BrowserLog.debug(.ai, "ai.chat.turn-start", metadata: [
 					"id": BrowserLog.id(sendID), "round": String(round + 1),
@@ -223,6 +227,7 @@ final class BrowserAIChat {
 				preview = turn.response
 			}
 			guard !answer.isEmpty else { throw BrowserAIError.toolLimit }
+			activity = "Saving Conversation"
 			try Task.checkCancellation()
 			guard id == conversationID else { return }
 			pages = contextPages
@@ -264,7 +269,9 @@ final class BrowserAIChat {
 		} catch {
 			preview = ""
 			if !Task.isCancelled {
-				self.error = error.localizedDescription
+				self.error = attemptedBrowserAction
+					? "\(error.localizedDescription) Some browser actions may already have completed; review their effects before resending."
+					: error.localizedDescription
 				canRetry = !answerCommitted && !attemptedBrowserAction
 				BrowserLog.error(.ai, "ai.chat.failed", metadata: [
 					"id": BrowserLog.id(sendID), "conversation": BrowserLog.id(conversationID),
@@ -350,6 +357,7 @@ final class BrowserAIChat {
 				try Task.checkCancellation()
 				let toolStarted = BrowserLog.clock()
 				attemptedBrowserAction = true
+				activity = "Using Browser Tools"
 				BrowserLog.debug(.ai, "ai.chat.tool-start", metadata: [
 					"id": BrowserLog.id(turnID), "tool": call.name
 				])

@@ -386,7 +386,7 @@ private struct BrowserAIChatStreamingResponse: View {
 		Group {
 			if chat.isResponding {
 				if presentedPreview.isEmpty {
-					ProgressView("Reading and Answering")
+					ProgressView(chat.activity)
 				} else {
 					#if os(macOS)
 						BrowserAIChatMarkdown(
