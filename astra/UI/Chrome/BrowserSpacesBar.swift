@@ -15,25 +15,28 @@ struct BrowserSpacesBar: View {
 			Button {
 				showsSpacePicker.toggle()
 			} label: {
-				Label(browser.selectedSpace.name, systemImage: browser.selectedSpace.symbol)
-					.lineLimit(1)
-					.frame(maxWidth: .infinity, alignment: .leading)
-					.frame(height: 25)
-					.contentShape(Rectangle())
+				VStack {
+					Label(browser.selectedSpace.name, systemImage: browser.selectedSpace.symbol)
+						.lineLimit(1)
+						.frame(height: 25)
+						.contentShape(Rectangle())
+						.popover(isPresented: $showsSpacePicker, arrowEdge: .bottom) {
+							BrowserSpacePickerPopover(
+								browser: browser,
+								onDismiss: { showsSpacePicker = false },
+								onRequestDeleteSpace: { space in
+									onRequestDeleteSpace?(space)
+								}
+							)
+						}
+
+					Spacer()
+				}
 			}
 			.buttonStyle(.plain)
 			.accessibilityLabel("Switch Space")
 			.accessibilityValue(browser.selectedSpace.name)
 			.accessibilityIdentifier("space-picker-button")
-			.popover(isPresented: $showsSpacePicker, arrowEdge: .bottom) {
-				BrowserSpacePickerPopover(
-					browser: browser,
-					onDismiss: { showsSpacePicker = false },
-					onRequestDeleteSpace: { space in
-						onRequestDeleteSpace?(space)
-					}
-				)
-			}
 		#else
 			ScrollViewReader { reader in
 				ScrollView(.horizontal) {
@@ -167,10 +170,11 @@ struct BrowserSpacesBar: View {
 				.buttonStyle(.glass)
 				.buttonBorderShape(.roundedRectangle)
 				.frame(width: 20, height: 20)
+				.padding([.bottom, .trailing], 2)
 				.accessibilityLabel("Add Space")
 				.accessibilityIdentifier("space-picker-add")
 			}
-			.padding(8)
+			.padding(11)
 			.frame(width: 250)
 			.fixedSize(horizontal: false, vertical: true)
 			.accessibilityIdentifier("space-picker-panel")

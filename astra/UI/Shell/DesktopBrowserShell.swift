@@ -301,7 +301,11 @@ struct DesktopBrowserShell: View {
 		windowLayout
 			.alert("Delete Space?", isPresented: Binding(
 				get: { spaceToDelete != nil },
-				set: { if !$0 { spaceToDelete = nil } }
+				set: {
+					if !$0 {
+						spaceToDelete = nil
+					}
+				}
 			), presenting: spaceToDelete) { space in
 				Button("Delete Space", role: .destructive) {
 					browser.deleteSpace(space.id)

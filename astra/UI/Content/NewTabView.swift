@@ -247,10 +247,6 @@ struct NewTabView: View {
 					.accessibilityIdentifier("start-page-preferences")
 					.matchedTransitionSource(id: "start-page-preferences", in: transitions)
 				}
-				if browser.isPrivate {
-					Text("Tabs and website data are discarded when this window closes. Downloaded files are kept.")
-						.foregroundStyle(.secondary)
-				}
 			}
 			HStack(spacing: 10) {
 				Image(systemName: "magnifyingglass")

@@ -63,6 +63,8 @@ struct ShellDownloadsBarView: View {
 					onRequestDeleteSpace: onRequestDeleteSpace
 				)
 				.frame(maxWidth: .infinity)
+			} else {
+				Spacer()
 			}
 
 			if allAIFeatures, browser.canShowAISidebar, Defaults[.aiSidebar] {
