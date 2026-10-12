@@ -1,6 +1,8 @@
 name: Astra - macOS Debug Build
 
 on:
+  push:
+    branches: [fix/download-network-recovery]
   pull_request:
     branches: [main, 'release/0.1+3']
   push:
