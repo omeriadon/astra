@@ -167,21 +167,40 @@ struct BrowserSpacesBar: View {
 				.ignoresSafeArea()
 				.frame(height: 25)
 
+				VStack {
+					HazeEffect(
+						maskProvider: LinearGradientMaskProvider(
+							startPoint: .bottom,
+							endPoint: .top,
+							startOpacity: 0,
+							endOpacity: 1.0,
+							isSmooth: true
+						),
+						maxBlurRadius: 2
+					)
+					.ignoresSafeArea()
+					.frame(height: 15)
+
+					Spacer()
+				}
+
 				Button {
 					browser.createSpace()
 					onDismiss()
 				} label: {
 					Label("Add Space", systemImage: "plus")
 						.labelStyle(.iconOnly)
-						.frame(width: 25, height: 20)
 				}
-				.buttonStyle(.plain)
+				.buttonStyle(.glass)
+				.buttonBorderShape(.roundedRectangle)
+				.frame(width: 20, height: 20)
 				.accessibilityLabel("Add Space")
 				.accessibilityIdentifier("space-picker-add")
-				.padding(5)
+				.padding(.bottom, 12)
+				.padding(.trailing, 12)
 				.frame(maxWidth: .infinity, alignment: .trailing)
 			}
-			.safeAreaPadding(8)
+			.contentMargins(.all, 8, for: .scrollContent)
 			.frame(width: 250)
 			.accessibilityIdentifier("space-picker-panel")
 			.onExitCommand(perform: onDismiss)

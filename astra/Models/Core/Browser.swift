@@ -293,9 +293,8 @@ final class Browser {
 		schedulePersistence()
 	}
 
-
-	// New spaces receive their own editable appearance rather than inheriting the
-	// default blue/grey theme. Existing spaces are never re-randomised.
+	/// New spaces receive their own editable appearance rather than inheriting the
+	/// default blue/grey theme. Existing spaces are never re-randomised.
 	private func makeRandomSpace() -> BrowserSpace {
 		let palettes: [(primary: BrowserColor, accent: BrowserColor)] = [
 			(.init(red: 0.98, green: 0.68, blue: 0.66), .init(red: 0.91, green: 0.28, blue: 0.47)),
