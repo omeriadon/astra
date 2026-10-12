@@ -515,6 +515,9 @@ private struct TabRowContextMenu: View {
 	var onSelectTab: ((UUID) -> Void)?
 
 	var body: some View {
+		Button("New Folder with Tab", systemImage: "folder.badge.plus") {
+			browser.createPinnedFolder(with: [tab.id], in: spaceID)
+		}
 		if tab.internalPage == nil {
 			Button("Rename Tab", systemImage: "pencil", action: onBeginRenaming)
 			Button("Revert Tab Name", systemImage: "arrow.uturn.backward", action: tab.revertTitle)
@@ -532,9 +535,6 @@ private struct TabRowContextMenu: View {
 			.disabled(tab.isHibernated || !tab.canHibernate)
 			.accessibilityIdentifier("hibernate-tab-\(tab.id.uuidString)")
 
-			Button("New Folder with Tab", systemImage: "folder.badge.plus") {
-				browser.createPinnedFolder(with: [tab.id], in: spaceID)
-			}
 			if isPinned {
 				Button("Unpin Tab", systemImage: "pin.slash") {
 					browser.moveTab(tab.id, to: .normal)
