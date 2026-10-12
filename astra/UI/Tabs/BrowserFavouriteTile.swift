@@ -10,7 +10,6 @@ struct BrowserFavouriteTile: View {
 	@Default(.developerModeEnabled) private var developerModeEnabled
 	@Namespace private var tileTransitions
 	#if os(macOS)
-		@State private var tabDrag = BrowserTabDragCoordinator.shared
 		@State private var hoverFrame = CGRect.zero
 		@State private var hoverPreviewStarted = false
 		@State private var isHovered = false
@@ -40,8 +39,13 @@ struct BrowserFavouriteTile: View {
 		#endif
 			.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? tileTransitions)
 			.background {
-				RoundedRectangle(cornerRadius: 10)
-					.fill(isSelected ? .white.opacity(0.3) : .white.opacity(0.12))
+				if isSelected {
+					Color.clear
+						.glassEffect(.clear.interactive(), in: RoundedRectangle(cornerRadius: 10))
+				} else {
+					RoundedRectangle(cornerRadius: 10)
+						.fill(.white.opacity(0.12))
+				}
 			}
 			.overlay {
 				if isSelected, tab.internalPage == nil, developerModeEnabled || tab.isDeveloperMode {
@@ -55,30 +59,6 @@ struct BrowserFavouriteTile: View {
 						.accessibilityHidden(true)
 				}
 			}
-		#if os(macOS)
-			.background {
-				if tabDrag.activeTabID != nil {
-					BrowserDropZone(
-						browser: browser,
-						area: .favourite,
-						spaceID: nil,
-						beforeTabID: tab.id
-					)
-				}
-			}
-			.highPriorityGesture(
-				DragGesture(minimumDistance: 8)
-					.onChanged { _ in
-						if tabDrag.activeTabID != tab.id {
-							tabDrag.begin(tab.id, from: browser)
-						}
-						tabDrag.update()
-					}
-					.onEnded { _ in
-						tabDrag.drop()
-					}
-			)
-		#endif
 		#if os(macOS)
 			.modifier(
 			FavouriteHoverPreviewModifier(
