@@ -3,16 +3,16 @@ import SwiftUI
 struct BrowserSpacesBar: View {
 	let browser: Browser
 	var onOpenPage: (() -> Void)?
-	var onToggleSpacePicker: (() -> Void)?
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var spaceToDelete: BrowserSpace?
 	@State private var showsDeleteAlert = false
+	@State private var showsSpacePicker = false
 	@Namespace private var selectionAnimation
 
 	var body: some View {
 		#if os(macOS)
 			Button {
-				onToggleSpacePicker?()
+				showsSpacePicker.toggle()
 			} label: {
 				Label(browser.selectedSpace.name, systemImage: browser.selectedSpace.symbol)
 					.lineLimit(1)
@@ -24,6 +24,11 @@ struct BrowserSpacesBar: View {
 			.accessibilityLabel("Switch Space")
 			.accessibilityValue(browser.selectedSpace.name)
 			.accessibilityIdentifier("space-picker-button")
+			.popover(isPresented: $showsSpacePicker, arrowEdge: .bottom) {
+				BrowserSpacePickerPopover(browser: browser) {
+					showsSpacePicker = false
+				}
+			}
 		#else
 			ScrollViewReader { reader in
 				ScrollView(.horizontal) {
@@ -138,9 +143,8 @@ struct BrowserSpacesBar: View {
 }
 
 #if os(macOS)
-	struct BrowserSpacePickerPanel: View {
+	struct BrowserSpacePickerPopover: View {
 		let browser: Browser
-		let maximumHeight: CGFloat
 		let onDismiss: () -> Void
 		@State private var spaceToDelete: BrowserSpace?
 		@State private var showsDeleteAlert = false
@@ -160,8 +164,8 @@ struct BrowserSpacesBar: View {
 				.accessibilityLabel("Add Space")
 				.accessibilityIdentifier("space-picker-add")
 			}
-			.padding(6)
-			.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+			.padding(10)
+			.frame(width: 250)
 			.accessibilityIdentifier("space-picker-panel")
 			.onExitCommand(perform: onDismiss)
 			.alert("Delete Space?", isPresented: $showsDeleteAlert, presenting: spaceToDelete) { space in
@@ -180,7 +184,7 @@ struct BrowserSpacesBar: View {
 		private var spaceList: some View {
 			if #available(macOS 27, *) {
 				ScrollView {
-					LazyVStack(spacing: 2) {
+					LazyVStack(spacing: 4) {
 						ForEach(browser.workspace.spaces) { space in
 							spaceRow(space)
 						}
@@ -188,7 +192,7 @@ struct BrowserSpacesBar: View {
 					}
 					.padding(4)
 				}
-				.frame(height: min(CGFloat(browser.workspace.spaces.count) * 28 + 8, max(0, maximumHeight - 36)))
+				.frame(height: min(CGFloat(browser.workspace.spaces.count) * 36 + 8, 320))
 				.reorderContainer(for: BrowserSpace.self) { difference in
 					switch difference.destination.position {
 						case let .before(destinationID):
@@ -219,7 +223,7 @@ struct BrowserSpacesBar: View {
 						browser.reorderSpaces(ids, before: destinationID)
 					}
 				}
-				.frame(height: min(CGFloat(browser.workspace.spaces.count) * 28 + 8, max(0, maximumHeight - 36)))
+				.frame(height: min(CGFloat(browser.workspace.spaces.count) * 36 + 8, 320))
 				.listStyle(.plain)
 				.scrollContentBackground(.hidden)
 			}
@@ -242,12 +246,26 @@ struct BrowserSpacesBar: View {
 							.font(.caption.weight(.semibold))
 					}
 				}
-				.padding(.horizontal, 7)
-				.frame(height: 26)
-				.contentShape(Rectangle())
+				.padding(.horizontal, 10)
+				.frame(height: 32)
+				.contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
 			}
 			.buttonStyle(.plain)
-			.contentShape(Rectangle())
+			.foregroundStyle(space.theme.foregroundColor)
+			.background {
+				let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+				shape.fill(.ultraThinMaterial)
+				ThemeSurface(theme: space.theme)
+					.clipShape(shape)
+			}
+			.overlay {
+				RoundedRectangle(cornerRadius: 9, style: .continuous)
+					.strokeBorder(
+						space.theme.foregroundColor.opacity(isSelected ? 0.4 : 0.12),
+						lineWidth: isSelected ? 1.25 : 0.5
+					)
+					.allowsHitTesting(false)
+			}
 			.accessibilityLabel(space.name)
 			.accessibilityAddTraits(isSelected ? .isSelected : [])
 			.accessibilityIdentifier("space-picker-\(space.id.uuidString)")
