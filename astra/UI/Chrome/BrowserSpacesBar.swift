@@ -169,7 +169,8 @@ struct BrowserSpacesBar: View {
 				.buttonStyle(.glass)
 				.buttonBorderShape(.roundedRectangle)
 				.frame(width: 20, height: 20)
-				.padding([.bottom, .trailing], 2)
+				.padding(.trailing, 2)
+				.padding(.bottom, 1)
 				.accessibilityLabel("Add Space")
 				.accessibilityIdentifier("space-picker-add")
 			}
