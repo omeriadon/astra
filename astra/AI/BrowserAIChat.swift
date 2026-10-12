@@ -29,6 +29,9 @@ final class BrowserAIChat {
 	private(set) var canRetry = false
 	private(set) var isResponding = false
 	@ObservationIgnored private var pages: [UUID: BrowserAIPageText] = [:]
+	// A failed stream can have already issued browser actions before the
+	// provider returns an error. Do not offer to replay that turn blindly.
+	@ObservationIgnored private var attemptedBrowserAction = false
 
 	var effectiveModel: BrowserAIModel {
 		let provider = Defaults[.aiProvider]
@@ -122,6 +125,7 @@ final class BrowserAIChat {
 		preview = ""
 		error = nil
 		canRetry = false
+		attemptedBrowserAction = false
 	}
 
 	func send(in browser: Browser) async {
@@ -136,6 +140,7 @@ final class BrowserAIChat {
 		let sendID = UUID()
 		let started = BrowserLog.clock()
 		var answerCommitted = false
+		attemptedBrowserAction = false
 		isResponding = true
 		error = nil
 		canRetry = false
@@ -260,10 +265,11 @@ final class BrowserAIChat {
 			preview = ""
 			if !Task.isCancelled {
 				self.error = error.localizedDescription
-				canRetry = !answerCommitted
+				canRetry = !answerCommitted && !attemptedBrowserAction
 				BrowserLog.error(.ai, "ai.chat.failed", metadata: [
 					"id": BrowserLog.id(sendID), "conversation": BrowserLog.id(conversationID),
 					"stage": answerCommitted ? "save" : "generation",
+					"browser_action_attempted": String(attemptedBrowserAction),
 					"error": BrowserLog.errorDescription(error),
 					"elapsed_ms": String(Int((BrowserLog.clock() - started) * 1000))
 				])
@@ -343,6 +349,7 @@ final class BrowserAIChat {
 			for await call in pendingCalls {
 				try Task.checkCancellation()
 				let toolStarted = BrowserLog.clock()
+				attemptedBrowserAction = true
 				BrowserLog.debug(.ai, "ai.chat.tool-start", metadata: [
 					"id": BrowserLog.id(turnID), "tool": call.name
 				])
@@ -392,6 +399,7 @@ final class BrowserAIChat {
 		preview = ""
 		error = nil
 		canRetry = false
+		attemptedBrowserAction = false
 	}
 }
 
