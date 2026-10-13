@@ -49,6 +49,19 @@ enum AstraSystemActions {
         return existing
     }
 
+    /// Commands acting on "the current page" must not silently operate on an
+    /// unrelated normal window while the foreground window is private or Mini.
+    static func currentBrowser() async throws -> Browser {
+        guard let delegate, await delegate.awaitSystemActionsReady() else {
+            throw Failure.unavailable
+        }
+        guard let active = BrowserWindowRegistry.shared.activeBrowser,
+              active.isHydrationFinished, !active.isPrivate, !active.isMini else {
+            throw Failure.unsupportedAction
+        }
+        return active
+    }
+
     /// Interactive commands may open a normal window if no normal window exists.
     static func browser() async throws -> Browser {
         if let existing = try? await existingBrowser() {
@@ -131,7 +144,7 @@ enum AstraSystemActions {
     }
 
     static func selectedURL() async throws -> URL {
-        let browser = try await browser()
+        let browser = try await currentBrowser()
         guard let url = browser.selectedTab?.copyableURL else { throw Failure.missingItem }
         return try validated(url)
     }
