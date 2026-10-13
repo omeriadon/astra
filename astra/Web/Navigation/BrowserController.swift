@@ -1691,6 +1691,11 @@ final class BrowserController: NSObject, Identifiable {
 				in: .defaultClient
 			)
 		)
+		// Register after Astra's own user scripts are configured, before navigation.
+		// The store updates future navigation scripts and live pages on every edit.
+		if !session.isPrivate {
+			BrowserBoostStore.shared.register(webView)
+		}
 		webView.navigationDelegate = self
 		webView.uiDelegate = self
 		webView.onEscape = escapeRequested
