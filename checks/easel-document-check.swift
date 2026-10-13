@@ -25,8 +25,9 @@ struct EaselDocumentCheck {
 		quoteItem.quote = quoteSource
 		let quoteDocument = BrowserEaselDocument(items: [quoteItem])
 		precondition(quoteDocument.isValid)
-		try precondition(JSONDecoder().decode(BrowserEaselDocument.self,
-		                                      from: JSONEncoder().encode(quoteDocument)) == quoteDocument)
+		let encodedQuote = try JSONEncoder().encode(quoteDocument)
+		let decodedQuote = try JSONDecoder().decode(BrowserEaselDocument.self, from: encodedQuote)
+		precondition(decodedQuote == quoteDocument)
 		quoteItem.quote?.url = URL(fileURLWithPath: "/tmp/unsafe")
 		precondition(!BrowserEaselDocument(items: [quoteItem]).isValid)
 		quoteItem.quote = quoteSource
