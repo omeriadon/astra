@@ -269,7 +269,7 @@ private struct BoostCodeTextView: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: BoostCodeTextView
         var lastLanguage: BoostSourceLanguage
-        private var pendingHighlight: DispatchWorkItem?
+        private var pendingHighlight: Task<Void, Never>?
 
         init(_ parent: BoostCodeTextView) {
             self.parent = parent
@@ -280,12 +280,11 @@ private struct BoostCodeTextView: NSViewRepresentable {
             guard let editor = notification.object as? NSTextView else { return }
             parent.text = editor.string
             pendingHighlight?.cancel()
-            let work = DispatchWorkItem { [weak self, weak editor] in
-                guard let self, let editor else { return }
+            pendingHighlight = Task { @MainActor [weak self, weak editor] in
+                try? await Task.sleep(for: .milliseconds(75))
+                guard !Task.isCancelled, let self, let editor else { return }
                 self.highlight(editor)
             }
-            pendingHighlight = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.075, execute: work)
         }
 
         func highlight(_ editor: NSTextView) {
