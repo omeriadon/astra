@@ -8,6 +8,7 @@ struct ShellSidebarListView: View {
 	let theme: BrowserTheme
 	var isActiveSpace = true
 	let favouriteTabIDs: [UUID]
+	var topMargin: CGFloat = 0
 	var onSelectTab: ((UUID) -> Void)?
 	var onNewTab: (() -> Void)?
 	var navigationNamespace: Namespace.ID?
@@ -56,6 +57,11 @@ struct ShellSidebarListView: View {
 			ScrollViewReader { reader in
 				ScrollView {
 					VStack(spacing: onSelectTab == nil ? 2 : 8) {
+						// Keep the native scroll inset fixed and animate only the
+						// extra reservation when navigation controls appear.
+						Color.clear
+							.frame(height: max(0, topMargin - (BrowserChromeMetrics.topBarRegionHeight + 5)))
+							.accessibilityHidden(true)
 						if !favouriteTabs.isEmpty {
 							Grid(horizontalSpacing: 6, verticalSpacing: 6) {
 								ForEach(Array(stride(from: 0, to: favouriteTabs.count, by: 4)), id: \.self) { start in
@@ -159,6 +165,7 @@ struct ShellSidebarListView: View {
 					.reorderContainer(for: BrowserTab.self, in: SidebarTabCollection.self, isEnabled: !browser.isPrivate && onSelectTab == nil) { difference in
 						applyReorder(difference)
 					}
+					.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: topMargin)
 					.padding(.horizontal, onSelectTab == nil ? BrowserChromeMetrics.shellEdgePadding : 16)
 					.padding(.top, 4)
 					.padding(.bottom, 48)
