@@ -2601,7 +2601,7 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func recordProxyAuthenticationChallenge(_ challenge: URLAuthenticationChallenge, in webView: WKWebView) {
-		guard owns(webView), challenge.protectionSpace.isProxy else { return }
+		guard owns(webView), challenge.protectionSpace.isProxy() else { return }
 		encounteredProxyAuthentication = true
 	}
 
