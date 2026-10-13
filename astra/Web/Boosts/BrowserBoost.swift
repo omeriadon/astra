@@ -64,6 +64,10 @@ final class BrowserBoostStore {
             validationMessage = "Boosts have a combined 1 MB sync limit."
             return
         }
+        guard boosts.contains(where: { $0.id == boost.id }) || boosts.count < 512 else {
+            validationMessage = "Astra supports up to 512 Boosts."
+            return
+        }
         validationMessage = nil
         var value = boost
         value.modifiedAt = .now
@@ -96,15 +100,10 @@ final class BrowserBoostStore {
         for (id, date) in remoteDeleted where date.isFiniteBoostTimestamp {
             mergedDeleted[id] = max(mergedDeleted[id] ?? .distantPast, date)
         }
-        var byID = Dictionary(boosts.map { ($0.id, $0) }, uniquingKeysWith: { a, b in
-            a.modifiedAt >= b.modifiedAt ? a : b
-        })
+        var byID = Dictionary(boosts.map { ($0.id, $0) }, uniquingKeysWith: Self.preferred)
         for value in incoming {
             if let previous = byID[value.id] {
-                if value.modifiedAt > previous.modifiedAt
-                    || (value.modifiedAt == previous.modifiedAt && value.name < previous.name) {
-                    byID[value.id] = value
-                }
+                byID[value.id] = Self.preferred(previous, value)
             } else {
                 byID[value.id] = value
             }
@@ -120,6 +119,20 @@ final class BrowserBoostStore {
         boosts = next
         deletedAt = mergedDeleted
         changed(scheduleSync: false)
+    }
+
+    /// Match BrowserSyncDocument's deterministic Codable tie breaker so
+    /// equal-timestamp edits converge identically across devices.
+    private static func preferred(_ first: BrowserBoost, _ second: BrowserBoost) -> BrowserBoost {
+        if first.modifiedAt != second.modifiedAt {
+            return first.modifiedAt > second.modifiedAt ? first : second
+        }
+        if first == second { return first }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let lhs = (try? encoder.encode(first)) ?? Data()
+        let rhs = (try? encoder.encode(second)) ?? Data()
+        return lhs.lexicographicallyPrecedes(rhs) ? second : first
     }
 
     func register(_ webView: WKWebView) {
