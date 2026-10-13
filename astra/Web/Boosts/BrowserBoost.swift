@@ -196,7 +196,7 @@ final class BrowserBoostStore {
           if (domain && hostname !== domain && !hostname.endsWith('.' + domain)) return;
           const state = window.__astraBoostJavaScript || (window.__astraBoostJavaScript = Object.create(null));
           const boostID = "\(id)";
-          const signature = \(boost.modifiedAt.timeIntervalSince1970);
+          const signature = "\(boost.javascript.hashValue");
           if (state[boostID] === signature) return;
           state[boostID] = signature;
           try {
@@ -210,12 +210,18 @@ final class BrowserBoostStore {
         """
     }
 
+    private struct StylePayload: Encodable {
+        let id: UUID
+        let domain: String?
+        let css: String
+    }
+
     private static let scriptMarker = "/* astra-boost-runtime-v1 */"
 
     /// A snapshot is installed for every future navigation and evaluated in
     /// already-open documents. Only the active domain's code is executed.
     private var scriptSource: String {
-        let enabled = boosts.filter(\.isEnabled)
+        let enabled = boosts.filter(\.isEnabled).map { StylePayload(id: $0.id, domain: $0.domain, css: $0.css) }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let encoded = (try? encoder.encode(enabled)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
@@ -237,6 +243,7 @@ final class BrowserBoostStore {
               if (!current.has(id)) {
                 entry.style?.remove();
                 delete state[id];
+                if (window.__astraBoostJavaScript) delete window.__astraBoostJavaScript[id];
               }
             }
             for (const boost of applicable) {
