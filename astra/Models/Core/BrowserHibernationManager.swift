@@ -148,7 +148,7 @@ final class BrowserHibernationManager {
 		)
 		// Treat a selected tab anywhere as visible, even if the ownership map
 		// is changing. Conservative protection prevents a cross-window race.
-		let visibleTabIDs = Set(windows.flatMap { [$0.selectedTabID] + [$0.splitLeftTabID, $0.splitEaselTabID].compactMap(\.self) })
+		let visibleTabIDs = Set(windows.flatMap { [$0.selectedTabID] + [$0.splitLeftTabID, $0.splitRightTabID].compactMap(\.self) })
 		return EligibilityContext(
 			browserIsRegistered: windows.contains(where: { $0 === browser }),
 			ownedTabIDs: registry.ownedTabIDs(in: browser),
