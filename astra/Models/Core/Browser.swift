@@ -1401,7 +1401,7 @@ final class Browser {
 		isShowingTabSplit && splitRightTabID.flatMap { tab(withID: $0)?.internalPage } == .easel
 	}
 
-	enum SplitSide: Sendable {
+	enum SplitSide: Sendable, Equatable {
 		case left, right
 	}
 
