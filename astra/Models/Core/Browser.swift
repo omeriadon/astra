@@ -1415,7 +1415,7 @@ final class Browser {
 	/// Open any two eligible website/easel tabs side by side.
 	func openSplit(_ id: UUID, beside anchorID: UUID, onLeft: Bool) {
 		guard !isPrivate, !isMini, id != anchorID,
-		      let tab = tab(withID: id), let anchor = tab(withID: anchorID),
+		      let tab = tab(withID: id), let anchor = self.tab(withID: anchorID),
 		      tab.canAppearInEaselSplit, anchor.canAppearInEaselSplit,
 		      visibleTabs.contains(where: { $0.id == id }),
 		      visibleTabs.contains(where: { $0.id == anchorID })
