@@ -538,7 +538,7 @@ final class BrowserController: NSObject, Identifiable {
 		canvas.width = canvas.height = 1;
 		const context = canvas.getContext('2d', { willReadFrequently: true });
 		if (!context) return;
-		const cache = new Map();
+		const cache = new Map(), gradients = new Map();
 		const header = 'header, nav, [role="banner"], [role="navigation"], ' +
 			'[class*="header" i], [id*="header" i], [class*="navbar" i], [id*="navbar" i]';
 		let scheduled = 0, lastRun = 0, previous = '';
@@ -547,52 +547,142 @@ final class BrowserController: NSObject, Identifiable {
 			let rgba = null;
 			if (css && css !== 'transparent') {
 				try {
+					if (globalThis.CSS?.supports && !CSS.supports('color', css)) return null;
 					context.clearRect(0, 0, 1, 1);
-					context.fillStyle = '#000000';
+					context.fillStyle = '#010203';
 					context.fillStyle = css;
+					// Canvas silently ignores unrecognised CSS colours.
+					if (context.fillStyle === '#010203' && !/^(#010203|rgb\(1,\s*2,\s*3\))$/i.test(css.trim()))
+						return null;
 					context.fillRect(0, 0, 1, 1);
 					rgba = Array.from(context.getImageData(0, 0, 1, 1).data);
 				} catch (_) {}
 			}
-			// Animated colours can produce arbitrarily many values; cap the
-			// per-document lookup cache instead of retaining them indefinitely.
+			// Animations can create arbitrarily many CSS values; bound both caches.
 			if (cache.size >= 128) cache.clear();
 			cache.set(css, rgba);
 			return rgba;
 		};
+		// Inspired by Chromalift's gradient parsing, but only examines a hit-tested
+		// surface. No document-wide palette crawl or screenshot readback.
+		const split = value => {
+			let depth = 0, start = 0;
+			const parts = [];
+			for (let i = 0; i < value.length; i++) {
+				if (value[i] === '(') depth++;
+				else if (value[i] === ')') depth--;
+				else if (value[i] === ',' && depth === 0) {
+					parts.push(value.slice(start, i).trim());
+					start = i + 1;
+				}
+			}
+			parts.push(value.slice(start).trim());
+			return parts;
+		};
+		const gradient = css => {
+			if (gradients.has(css)) return gradients.get(css);
+			let result = null;
+			const match = /^(?:repeating-)?linear-gradient\((.*)\)$/is.exec(css);
+			if (match && !css.includes('url(')) {
+				let stops = split(match[1]), angle = 180;
+				if (/^to (top|bottom|left|right)/i.test(stops[0])) {
+					const dir = stops.shift().toLowerCase();
+					if (dir.includes('top') && dir.includes('right')) angle = 45;
+					else if (dir.includes('bottom') && dir.includes('right')) angle = 135;
+					else if (dir.includes('bottom') && dir.includes('left')) angle = 225;
+					else if (dir.includes('top') && dir.includes('left')) angle = 315;
+					else if (dir.includes('top')) angle = 0;
+					else if (dir.includes('right')) angle = 90;
+					else if (dir.includes('left')) angle = 270;
+				} else if (/^-?[\d.]+deg$/i.test(stops[0])) {
+					angle = Number(stops.shift().slice(0, -3));
+				} else if (/^-?[\d.]+turn$/i.test(stops[0])) {
+					angle = Number(stops.shift().slice(0, -4)) * 360;
+				}
+				const parsed = stops.map(stop => {
+					const color = /^(#[\da-f]{3,8}|(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^)]*\)|[a-z-]+)/i.exec(stop);
+					if (!color) return null;
+					const rgba = pixels(color[1]);
+					if (!rgba || rgba[3] === 0) return null;
+					const position = /^\s*(\d+(?:\.\d+)?)%/.exec(stop.slice(color[0].length));
+					return { rgba, position: position ? Number(position[1]) / 100 : null };
+				});
+				if (parsed.length >= 2 && parsed.length <= 8 && parsed.every(Boolean)) {
+					parsed[0].position ??= 0;
+					parsed[parsed.length - 1].position ??= 1;
+					// Distribute implicit CSS stop positions between fixed positions.
+					for (let i = 1; i < parsed.length - 1; i++) {
+						if (parsed[i].position !== null) continue;
+						let next = i + 1;
+						while (next < parsed.length && parsed[next].position === null) next++;
+						for (let n = i; n < next; n++)
+							parsed[n].position = parsed[i - 1].position +
+								(parsed[next].position - parsed[i - 1].position) * (n - i + 1) / (next - i + 1);
+						i = next - 1;
+					}
+					result = { stops: parsed, radians: angle * Math.PI / 180 };
+				}
+			}
+			if (gradients.size >= 32) gradients.clear();
+			gradients.set(css, result);
+			return result;
+		};
+		const gradientPixel = (css, rect, x, y) => {
+			const parsed = gradient(css);
+			if (!parsed || rect.width <= 0 || rect.height <= 0) return null;
+			const dx = (x - rect.left) / rect.width - .5;
+			const dy = (y - rect.top) / rect.height - .5;
+			const t = Math.max(0, Math.min(1, .5 +
+				dx * Math.sin(parsed.radians) - dy * Math.cos(parsed.radians)));
+			let left = parsed.stops[0], right = parsed.stops[parsed.stops.length - 1];
+			for (let i = 1; i < parsed.stops.length; i++) {
+				if (t <= parsed.stops[i].position) {
+					left = parsed.stops[i - 1]; right = parsed.stops[i]; break;
+				}
+			}
+			const ratio = Math.max(0, Math.min(1,
+				(t - left.position) / (right.position - left.position || 1)));
+			return left.rgba.map((channel, i) => Math.round(channel +
+				(right.rgba[i] - channel) * ratio));
+		};
 		const sample = (x, y, layoutCache) => {
 			let element = document.elementFromPoint(x, y);
-			let edge = false;
-			let covered = 0;
+			let edge = false, gradientAnchor = null, covered = 0;
 			const mixed = [0, 0, 0];
 			for (let depth = 0; element && depth < 14; depth++, element = element.parentElement) {
-				// The 40 hit tests often share the same navbar and body.
-				// Share layout/style reads within one pass, never across passes.
 				let layout = layoutCache.get(element);
 				if (!layout) {
 					layout = { style: getComputedStyle(element), rect: element.getBoundingClientRect() };
 					layoutCache.set(element, layout);
 				}
 				const { style, rect } = layout;
-				if (style.visibility === 'hidden' || Number(style.opacity) < 0.1) return null;
-				// A gradient/image obscures the ancestor's flat background.
-				if (style.backgroundImage !== 'none') return null;
-				const rgba = pixels(style.backgroundColor);
+				if (style.visibility === 'hidden') return null;
+				const opacity = Number(style.opacity);
+				if (opacity < .01) continue;
+				const image = style.backgroundImage;
+				let rgba = pixels(style.backgroundColor);
+				if (image && image !== 'none') {
+					// A background image cannot be faithfully inferred from CSS.
+					// A simple CSS linear gradient can be sampled analytically.
+					rgba = gradientPixel(image, rect, x, y);
+					if (!rgba) return null;
+					gradientAnchor ??= element;
+				}
 				if (!rgba || rgba[3] === 0) continue;
-				// Only a *painted* page element is a chrome candidate.
-				// A transparent header must not upgrade its ancestor body's
-				// background above the site's declared theme-color.
 				if (element !== document.body && element !== document.documentElement &&
 					rect.width >= innerWidth * .7 && rect.height >= 10 &&
 					rect.height <= 260 && rect.top <= 8 && rect.bottom >= y &&
 					(element.matches(header) || style.position === 'fixed' ||
 					 style.position === 'sticky' || rect.width >= innerWidth * .9)) edge = true;
-				const contribution = (rgba[3] / 255) * (1 - covered);
+				// CSS opacity applies to the entire layer, not just its fill.
+				// Exact compositing of nested opacity groups requires rendering;
+				// this bounded estimate avoids treating a faded bar as opaque.
+				const contribution = (rgba[3] / 255) * (Number.isFinite(opacity) ? opacity : 1) * (1 - covered);
 				for (let channel = 0; channel < 3; channel++)
 					mixed[channel] += rgba[channel] * contribution;
 				covered += contribution;
 				if (covered >= .98)
-					return { color: mixed.map(x => Math.round(x / covered)), edge };
+					return { color: mixed.map(v => Math.round(v / covered)), edge, gradientAnchor };
 			}
 			return null;
 		};
@@ -603,19 +693,41 @@ final class BrowserController: NSObject, Identifiable {
 			}
 			return best;
 		};
+		// OpenBrand's secondary branding metadata and CSS brand tokens can help
+		// when a page provides no reliable visible surface or WebKit theme.
+		// Never let them override painted page chrome or native theme-color.
+		const brand = () => {
+			const meta = document.querySelector?.('meta[name="msapplication-TileColor" i]');
+			let rgba = pixels(meta?.content);
+			if (rgba && rgba[3] === 255) return rgba.slice(0, 3);
+			for (const root of [document.documentElement, document.body]) {
+				if (!root) continue;
+				const style = getComputedStyle(root);
+				for (const key of [
+					'--theme-color', '--brand-color', '--color-brand', '--primary-color',
+					'--color-primary', '--accent-color', '--color-accent'
+				]) {
+					rgba = pixels(style.getPropertyValue?.(key)?.trim());
+					if (rgba && rgba[3] === 255) return rgba.slice(0, 3);
+				}
+			}
+			return null;
+		};
 		const run = () => {
 			scheduled = 0;
 			lastRun = performance.now();
 			if (document.hidden || innerWidth < 80 || innerHeight < 20) return;
-			const edge = new Map(), surface = new Map(), layoutCache = new Map();
+			const edges = new Map(), surfaces = new Map(), layoutCache = new Map();
 			const rows = [3, 16, 34, 56].filter(y => y < innerHeight);
 			const total = rows.length * 10;
 			for (const y of rows) for (let i = 0; i < 10; i++) {
 				const item = sample(innerWidth * (i + .5) / 10, y, layoutCache);
 				if (!item) continue;
-				// Merge near-identical colours rather than counting antialiasing noise.
-				const key = item.color.map(x => Math.round(x / 12)).join(',');
-				const map = item.edge ? edge : surface;
+				// Flat painted backgrounds cluster by RGB; all sampled pixels
+				// of one gradient surface share an identity and average together.
+				const key = item.gradientAnchor ||
+					item.color.map(v => Math.round(v / 12)).join(',');
+				const map = item.edge ? edges : surfaces;
 				let count = map.get(key);
 				if (!count) {
 					count = { count: 0, sum: [0, 0, 0] };
@@ -624,20 +736,20 @@ final class BrowserController: NSObject, Identifiable {
 				count.count++;
 				for (let c = 0; c < 3; c++) count.sum[c] += item.color[c];
 			}
-			const chrome = winner(edge), body = winner(surface);
+			const chrome = winner(edges), body = winner(surfaces);
 			const selected = chrome && chrome.count >= total * .45
 				? { count: chrome, source: 'chrome' }
 				: body && body.count >= total * .5
 				? { count: body, source: 'surface' } : null;
+			const fallback = selected ? null : brand();
 			const rgb = selected
 				? selected.count.sum.map(value => Math.round(value / selected.count.count))
-				: null;
-			const fingerprint = JSON.stringify([location.href, selected?.source, rgb]);
+				: fallback;
+			const source = selected?.source || (fallback ? 'brand' : 'none');
+			const fingerprint = JSON.stringify([location.href, source, rgb]);
 			if (fingerprint === previous) return;
 			previous = fingerprint;
-			window.webkit.messageHandlers.pageTintChanged.postMessage({
-				url: location.href, source: selected?.source || 'none', rgb
-			});
+			window.webkit.messageHandlers.pageTintChanged.postMessage({ url: location.href, source, rgb });
 		};
 		const schedule = () => {
 			if (document.hidden || scheduled) return;
@@ -655,8 +767,6 @@ final class BrowserController: NSObject, Identifiable {
 		};
 		addEventListener('scroll', schedule, { passive: true });
 		addEventListener('resize', schedule, { passive: true });
-		// CSS transitions, pseudo-class changes and animations can change
-		// computed backgrounds without mutating DOM attributes.
 		document.addEventListener('click', schedule, { passive: true });
 		for (const event of ['transitionend', 'transitioncancel', 'animationend', 'animationcancel']) {
 			document.addEventListener(event, schedule, { passive: true });
@@ -669,7 +779,6 @@ final class BrowserController: NSObject, Identifiable {
 		visible();
 	})();
 	"""
-
 	@ObservationIgnored
 	private var createdWebView: WKWebView?
 
