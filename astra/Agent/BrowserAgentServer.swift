@@ -67,7 +67,9 @@
 				stop()
 				guard enabled else { return }
 				var bytes = [UInt8](repeating: 0, count: 32)
-				guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+				let credentialStatus = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+				guard credentialStatus == errSecSuccess else {
+					BrowserLog.error(.agent, "agent.credential-generation.failed", metadata: ["os_status": String(credentialStatus)])
 					status = "Could not create access credential"
 					return
 				}
@@ -81,6 +83,7 @@
 								endpoint = "http://127.0.0.1:\(port)/mcp"
 								status = "Ready"
 							case let .failed(error):
+								BrowserLog.error(.agent, "agent.listener.failed", metadata: ["port": String(port), "error": BrowserLog.errorDescription(error)])
 								stop()
 								if case let .posix(code) = error, code == .EPERM || code == .EACCES {
 									status = "This build cannot accept Browser Use connections. Rebuild Astra with Incoming Connections enabled."
@@ -98,6 +101,7 @@
 					status = "Starting"
 					http?.start()
 				} catch {
+					BrowserLog.error(.agent, "agent.server-start.failed", metadata: ["error": BrowserLog.errorDescription(error)])
 					stop()
 					status = "Could not start: \(error.localizedDescription)"
 				}
@@ -179,6 +183,12 @@
 					guard isEnabled, generation == lifetime, !Task.isCancelled else { return .init(status: 401) }
 					return .init(status: response.statusCode, headers: response.headers, body: response.bodyData ?? Data())
 				} catch {
+					BrowserLog.error(.agent, "agent.request.failed", metadata: [
+						"method": request.method,
+						"path": request.path,
+						"body_bytes": String(request.body.count),
+						"error": BrowserLog.errorDescription(error),
+					])
 					await server.stop()
 					return .init(status: 500)
 				}
@@ -252,6 +262,10 @@
 						do {
 							return try await perform(params.name, args: args, grant: grant, tab: tab, controller: controller)
 						} catch {
+							BrowserLog.warning(.agent, "agent.tool.failed", metadata: [
+								"tool": BrowserLog.value(params.name),
+								"error": BrowserLog.errorDescription(error),
+							])
 							return .init(content: [.text(text: error.localizedDescription, annotations: nil, _meta: nil)], isError: true)
 						}
 					}
@@ -264,6 +278,10 @@
 					}
 					return output
 				} catch {
+					BrowserLog.warning(.agent, "agent.call.failed", metadata: [
+						"tool": BrowserLog.value(params.name),
+						"error": BrowserLog.errorDescription(error),
+					])
 					return .init(content: [.text(text: error.localizedDescription, annotations: nil, _meta: nil)], isError: true)
 				}
 			}

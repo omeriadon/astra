@@ -471,6 +471,10 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 				}
 			}
 		} catch {
+			BrowserLog.warning(.extensions, "extension.action.failed", metadata: [
+				"bundle": BrowserLog.path(candidate.bundleURL),
+				"error": BrowserLog.errorDescription(error),
+			])
 			ToastManager.shared.show(symbol: "exclamationmark.triangle", message: error.localizedDescription)
 		}
 	}
@@ -555,6 +559,10 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 				}
 				context.performAction(for: tab)
 			} catch {
+				BrowserLog.warning(.extensions, "extension.load.failed", metadata: [
+					"extension": BrowserLog.value(name),
+					"error": BrowserLog.errorDescription(error),
+				])
 				self?.loadErrors[name] = error.localizedDescription
 				ToastManager.shared.show(symbol: "exclamationmark.triangle", message: error.localizedDescription)
 			}
@@ -584,6 +592,9 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 				guard enabledNames.contains(name) else { continue }
 				try enable(name)
 			} catch {
+				BrowserLog.warning(.extensions, "extension.context-prepare.failed", metadata: [
+					"extension": BrowserLog.value(name), "error": BrowserLog.errorDescription(error),
+				])
 				loadErrors[name] = error.localizedDescription
 			}
 		}
@@ -817,6 +828,9 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 					setEnabled(true, for: name)
 				} catch {
 					guard enableIntentRevisions[name] == revision else { return }
+					BrowserLog.warning(.extensions, "extension.enable-prepare.failed", metadata: [
+						"extension": BrowserLog.value(name), "error": BrowserLog.errorDescription(error),
+					])
 					loadErrors[name] = error.localizedDescription
 				}
 			}

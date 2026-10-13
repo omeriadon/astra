@@ -30,8 +30,8 @@ final class BrowserAIChat {
 	private(set) var isResponding = false
 	private(set) var activity = "Reading and Answering"
 	@ObservationIgnored private var pages: [UUID: BrowserAIPageText] = [:]
-	// A failed stream can have already issued browser actions before the
-	// provider returns an error. Do not offer to replay that turn blindly.
+	/// A failed stream can have already issued browser actions before the
+	/// provider returns an error. Do not offer to replay that turn blindly.
 	@ObservationIgnored private var attemptedBrowserAction = false
 
 	var effectiveModel: BrowserAIModel {
@@ -154,7 +154,7 @@ final class BrowserAIChat {
 			"question_bytes": String(question.utf8.count),
 			"attachments": String(newAttachments.count),
 			"linked_tabs": String(linkedTabIDs.count),
-			"pending_pages": String(pendingPages.count)
+			"pending_pages": String(pendingPages.count),
 		])
 		defer { isResponding = false }
 		do {
@@ -185,7 +185,7 @@ final class BrowserAIChat {
 				BrowserLog.debug(.ai, "ai.chat.page-extracted", metadata: [
 					"id": BrowserLog.id(sendID), "tab": BrowserLog.id(id),
 					"url": BrowserLog.url(url), "context_bytes": String(page.prompt.utf8.count),
-					"elapsed_ms": String(Int((BrowserLog.clock() - pageStarted) * 1000))
+					"elapsed_ms": String(Int((BrowserLog.clock() - pageStarted) * 1000)),
 				])
 			}
 			try Task.checkCancellation()
@@ -202,14 +202,14 @@ final class BrowserAIChat {
 				"page_bytes": String(context.utf8.count),
 				"file_bytes": String(fileContext.utf8.count),
 				"conversation_bytes": String(conversation.utf8.count),
-				"image_count": String(images.count)
+				"image_count": String(images.count),
 			])
 			for round in 0 ..< 5 {
 				activity = round == 0 ? "Generating Answer" : "Continuing Answer"
 				try Task.checkCancellation()
 				BrowserLog.debug(.ai, "ai.chat.turn-start", metadata: [
 					"id": BrowserLog.id(sendID), "round": String(round + 1),
-					"tool_results_bytes": String(toolResults.utf8.count)
+					"tool_results_bytes": String(toolResults.utf8.count),
 				])
 				let (turn, results) = try await streamTurn(input: .init(context: context + "\n" + fileContext + "\n<conversation>\n" + conversation + "\n</conversation>\n" + BrowserAITools.inventory(browser) + "\n<tool-results>\n" + toolResults + "\n</tool-results>", question: question, catalog: BrowserAITools.catalog(), images: images, reasoning: selectedReasoning.isEmpty ? "provider-default" : selectedReasoning, files: files.compactMap(\.file)), model: model, browser: browser, spaceID: spaceID)
 				BrowserLog.debug(.ai, "ai.chat.turn-complete", metadata: [
@@ -217,7 +217,7 @@ final class BrowserAIChat {
 					"action_count": String(turn.actions.count),
 					"action_names": turn.actions.map(\.name).joined(separator: ","),
 					"response_bytes": String(turn.response.utf8.count),
-					"tool_results_bytes": String(results.utf8.count)
+					"tool_results_bytes": String(results.utf8.count),
 				])
 				toolResults += results
 				if turn.actions.isEmpty {
@@ -246,7 +246,7 @@ final class BrowserAIChat {
 			BrowserLog.info(.ai, "ai.chat.saved", metadata: [
 				"id": BrowserLog.id(sendID), "conversation": BrowserLog.id(conversationID),
 				"answer_bytes": String(answer.utf8.count),
-				"elapsed_ms": String(Int((BrowserLog.clock() - started) * 1000))
+				"elapsed_ms": String(Int((BrowserLog.clock() - started) * 1000)),
 			])
 			// Title generation is supplementary: do not block the composer or
 			// turn a successful, saved response into an apparent chat failure.
@@ -254,14 +254,14 @@ final class BrowserAIChat {
 				Task { @MainActor [weak self] in
 					guard let self else { return }
 					let generated = try? await BrowserAI.shared.perform(BrowserChatTitleFeature(), input: .init(question: question, answer: answer), model: model)
-					guard self.id == conversationID, !self.titleIsGenerated, let generated else { return }
-					self.title = generated
-					self.titleIsGenerated = true
+					guard id == conversationID, !titleIsGenerated, let generated else { return }
+					title = generated
+					titleIsGenerated = true
 					do {
-						try await self.save()
+						try await save()
 					} catch {
 						BrowserLog.warning(.ai, "ai.chat.title-save-failed", metadata: [
-							"id": BrowserLog.id(sendID), "error": BrowserLog.errorDescription(error)
+							"id": BrowserLog.id(sendID), "error": BrowserLog.errorDescription(error),
 						])
 					}
 				}
@@ -278,7 +278,7 @@ final class BrowserAIChat {
 					"stage": answerCommitted ? "save" : "generation",
 					"browser_action_attempted": String(attemptedBrowserAction),
 					"error": BrowserLog.errorDescription(error),
-					"elapsed_ms": String(Int((BrowserLog.clock() - started) * 1000))
+					"elapsed_ms": String(Int((BrowserLog.clock() - started) * 1000)),
 				])
 			} else {
 				BrowserLog.debug(.ai, "ai.chat.cancelled", metadata: ["id": BrowserLog.id(sendID)])
@@ -300,7 +300,7 @@ final class BrowserAIChat {
 			"context_bytes": String(input.context.utf8.count),
 			"question_bytes": String(input.question.utf8.count),
 			"images": String(input.images.count),
-			"model": BrowserLog.value(model.identifier)
+			"model": BrowserLog.value(model.identifier),
 		])
 		let generation = Task { @MainActor in
 			defer { continuation.finish() }
@@ -308,7 +308,7 @@ final class BrowserAIChat {
 			var latestPreview = ""
 			let turn = try await BrowserAI.shared.performStreaming(feature, input: input, model: model) { snapshot in
 				BrowserLog.trace(.ai, "ai.chat.stream-progress", metadata: [
-					"id": BrowserLog.id(turnID), "bytes": String(snapshot.utf8.count)
+					"id": BrowserLog.id(turnID), "bytes": String(snapshot.utf8.count),
 				])
 				latestPreview = BrowserAIOutput.streamedString("response", in: snapshot) ?? (snapshot.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") ? "" : snapshot)
 				// The Markdown view and scroll reader are relatively expensive.
@@ -336,7 +336,7 @@ final class BrowserAIChat {
 					guard let identifier = try? encoder.encode(call), seen.insert(identifier).inserted else { continue }
 					BrowserLog.debug(.ai, "ai.chat.tool-decoded", metadata: [
 						"id": BrowserLog.id(turnID), "tool": call.name,
-						"arguments_bytes": String(identifier.count)
+						"arguments_bytes": String(identifier.count),
 					])
 					continuation.yield(call)
 				}
@@ -347,7 +347,7 @@ final class BrowserAIChat {
 			BrowserLog.debug(.ai, "ai.chat.stream-turn-finished", metadata: [
 				"id": BrowserLog.id(turnID), "actions": String(turn.actions.count),
 				"response_bytes": String(turn.response.utf8.count),
-				"response": BrowserLog.value(String(turn.response.prefix(8192)))
+				"response": BrowserLog.value(String(turn.response.prefix(8192))),
 			])
 			return turn
 		}
@@ -359,7 +359,7 @@ final class BrowserAIChat {
 				attemptedBrowserAction = true
 				activity = "Using Browser Tools"
 				BrowserLog.debug(.ai, "ai.chat.tool-start", metadata: [
-					"id": BrowserLog.id(turnID), "tool": call.name
+					"id": BrowserLog.id(turnID), "tool": call.name,
 				])
 				do {
 					let result = try await BrowserAITools.execute(call, browser: browser, spaceID: spaceID, model: model)
@@ -367,7 +367,7 @@ final class BrowserAIChat {
 						"id": BrowserLog.id(turnID), "tool": call.name,
 						"elapsed_ms": String(Int((BrowserLog.clock() - toolStarted) * 1000)),
 						"result_bytes": String(result.utf8.count),
-						"result": BrowserLog.value(String(result.prefix(4096)))
+						"result": BrowserLog.value(String(result.prefix(4096))),
 					])
 					results += "\n\(call.name): \(result)\n"
 					await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "success", details: "phase=tool")
@@ -376,7 +376,7 @@ final class BrowserAIChat {
 					BrowserLog.error(.ai, "ai.chat.tool-failure", metadata: [
 						"id": BrowserLog.id(turnID), "tool": call.name,
 						"elapsed_ms": String(Int((BrowserLog.clock() - toolStarted) * 1000)),
-						"error": BrowserLog.errorDescription(error)
+						"error": BrowserLog.errorDescription(error),
 					])
 					results += "\n\(call.name): Failed. \(error.localizedDescription)\n"
 					await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "failed", details: "phase=tool")

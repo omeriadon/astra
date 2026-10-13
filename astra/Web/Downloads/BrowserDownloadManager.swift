@@ -1001,6 +1001,10 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				)
 			} catch {
 				guard let self else { return }
+				BrowserLog.error(.downloads, "download.delete.failed", metadata: [
+					"item": BrowserLog.id(itemID), "files": String(files.count),
+					"error": BrowserLog.errorDescription(error),
+				])
 				deletingItems.remove(itemID)
 				showToast(symbol: "exclamationmark.triangle", message: "Could not delete download: \(error.localizedDescription)")
 				return
@@ -1042,6 +1046,10 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				items[index].renamedByAppleIntelligence = false
 				persist()
 			} catch {
+				BrowserLog.warning(.downloads, "download.rename-revert.failed", metadata: [
+					"item": BrowserLog.id(itemID), "source": BrowserLog.path(source),
+					"error": BrowserLog.errorDescription(error),
+				])
 				self?.showToast(symbol: "exclamationmark.triangle", message: error.localizedDescription)
 			}
 		}
@@ -1321,6 +1329,10 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				segmentURL, ownedStagingDirectory: stagingDirectory
 			)
 		} catch {
+			BrowserLog.error(.downloads, "download.segment-file-prepare.failed", metadata: [
+				"item": BrowserLog.id(itemID), "file": BrowserLog.path(segmentURL),
+				"error": BrowserLog.errorDescription(error),
+			])
 			segmentFailed(itemID, fileURL: segmentURL)
 			return
 		}
@@ -1517,6 +1529,11 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 					self?.finishSegment(itemID, index: index, partSize: partSize, fileURL: operationURL)
 				}
 			} catch {
+				BrowserLog.error(.downloads, "download.segment-assembly.failed", metadata: [
+					"item": BrowserLog.id(itemID), "segment": String(index),
+					"source": BrowserLog.path(sourceURL), "destination": BrowserLog.path(destinationURL),
+					"error": BrowserLog.errorDescription(error),
+				])
 				await MainActor.run { [weak self] in
 					self?.segmentFailed(itemID, fileURL: operationURL)
 				}
@@ -1618,6 +1635,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 					Defaults[.downloadsFolderBookmark] = bookmark.base64EncodedString()
 					self.selectedDownloadFolderName = url.lastPathComponent
 				} catch {
+					BrowserLog.error(.downloads, "download.folder-bookmark.failed", metadata: ["folder": BrowserLog.path(url), "error": BrowserLog.errorDescription(error)])
 					self.showToast(symbol: "exclamationmark.triangle", message: "Could not save downloads folder: \(error.localizedDescription)")
 				}
 			}
@@ -2089,6 +2107,10 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			)
 			lastPersistedAt = .now
 		} catch {
+			BrowserLog.error(.downloads, "downloads.flush-failed", metadata: [
+				"store": BrowserLog.path(storeURL), "items": String(snapshot.count),
+				"error": BrowserLog.errorDescription(error),
+			])
 			showToast(symbol: "exclamationmark.triangle", message: "Could not save downloads: \(error.localizedDescription)")
 		}
 	}

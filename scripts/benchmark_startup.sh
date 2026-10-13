@@ -47,7 +47,7 @@ for ((run = 1; run <= RUNS; run++)); do
   if [[ "$PURGE" == "1" ]]; then
     sudo purge || { echo "purge failed; not treating this as a cold-ish run" >&2; exit 1; }
   fi
-  open -a "$APP"
+  open --env ASTRA_LOG_VERBOSE=1 -a "$APP"
   pid=""
   for ((attempt = 0; attempt < 150; attempt++)); do
     pid="$(pgrep -x astra | tail -n 1 || true)"

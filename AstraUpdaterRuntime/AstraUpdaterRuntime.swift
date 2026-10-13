@@ -1,10 +1,12 @@
 #if os(macOS)
 	import Foundation
+	import OSLog
 	import Sparkle
 
 	@MainActor
 	final class AstraUpdaterRuntime: NSObject, SPUUserDriver {
 		static let shared = AstraUpdaterRuntime()
+		private static let logger = Logger(subsystem: "com.omeriadon.astra", category: "updater")
 
 		struct UpdateDetails {
 			let version: String
@@ -146,6 +148,8 @@
 				automaticInstalls = updater.automaticallyDownloadsUpdates
 				publishState()
 			} catch {
+				let nsError = error as NSError
+				Self.logger.error("updater.start-failed domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) message=\(nsError.localizedDescription, privacy: .private)")
 				status = .message(error.localizedDescription)
 				isPresented = true
 			}

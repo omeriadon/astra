@@ -35,6 +35,7 @@ final class BrowserAIChatHistory {
 			guard !loaded else { return }
 			conversations = saved.sorted { $0.updatedAt > $1.updatedAt }
 		} catch {
+			BrowserLog.error(.ai, "ai.chat-history.load.failed", metadata: ["error": BrowserLog.errorDescription(error)])
 			writable = false
 			self.error = "Saved chats could not be read. The existing archive has been preserved."
 		}
@@ -51,6 +52,11 @@ final class BrowserAIChatHistory {
 			try await disk.save(conversations, revision: revision)
 			error = nil
 		} catch {
+			BrowserLog.error(.ai, "ai.chat-history.save.failed", metadata: [
+				"conversation": BrowserLog.id(conversation.id),
+				"messages": String(conversation.messages.count),
+				"error": BrowserLog.errorDescription(error),
+			])
 			self.error = "This chat is still open, but could not be saved to disk."
 			throw BrowserAIError.chatStorage
 		}

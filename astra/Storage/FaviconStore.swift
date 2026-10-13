@@ -150,6 +150,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		do {
 			persistence = isPrivate ? nil : try BrowserPersistence.makeShared()
 		} catch {
+			BrowserLog.warning(.favicons, "favicon.persistence-unavailable", metadata: ["error": BrowserLog.errorDescription(error)])
 			persistence = nil
 		}
 		self.persistence = persistence
@@ -379,11 +380,18 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	) async -> Data? {
 		do {
 			let (bytes, response) = try await session.bytes(for: request)
-			guard let response = response as? HTTPURLResponse,
-			      200 ..< 300 ~= response.statusCode,
-			      response.expectedContentLength <= Int64(maximumImageBytes)
-			      || response.expectedContentLength < 0
-			else { return nil }
+			guard let response = response as? HTTPURLResponse else { return nil }
+			guard 200 ..< 300 ~= response.statusCode else {
+				if response.statusCode >= 500 {
+					BrowserLog.warning(.favicons, "favicon.fetch.http-failed", metadata: [
+						"url": BrowserLog.url(request.url),
+						"status": String(response.statusCode),
+					])
+				}
+				return nil
+			}
+			guard response.expectedContentLength <= Int64(maximumImageBytes)
+				|| response.expectedContentLength < 0 else { return nil }
 
 			var data = Data()
 			if response.expectedContentLength > 0 {
@@ -393,9 +401,20 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 				guard !Task.isCancelled, data.count < maximumImageBytes else { return nil }
 				data.append(byte)
 			}
-			guard !data.isEmpty, isValidImage(data) else { return nil }
+			guard !data.isEmpty, isValidImage(data) else {
+				BrowserLog.debug(.favicons, "favicon.fetch.invalid-image", metadata: [
+					"url": BrowserLog.url(request.url),
+					"bytes": String(data.count),
+				])
+				return nil
+			}
 			return data
 		} catch {
+			guard !(error is CancellationError), (error as? URLError)?.code != .cancelled else { return nil }
+			BrowserLog.warning(.favicons, "favicon.fetch.failed", metadata: [
+				"url": BrowserLog.url(request.url),
+				"error": BrowserLog.errorDescription(error),
+			])
 			return nil
 		}
 	}

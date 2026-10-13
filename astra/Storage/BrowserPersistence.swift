@@ -484,6 +484,10 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 			} catch BrowserPersistenceError.unsupportedVersion {
 				throw BrowserPersistenceError.unsupportedVersion
 			} catch {
+				BrowserLog.warning(.persistence, "state.load.candidate-rejected", metadata: [
+					"source": name,
+					"error": BrowserLog.errorDescription(error),
+				])
 				continue
 			}
 		}
@@ -540,6 +544,10 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 			} catch BrowserPersistenceError.unsupportedVersion {
 				throw BrowserPersistenceError.unsupportedVersion
 			} catch {
+				BrowserLog.warning(.persistence, "window-records.candidate-rejected", metadata: [
+					"source": name,
+					"error": BrowserLog.errorDescription(error),
+				])
 				continue
 			}
 		}
@@ -792,6 +800,7 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		} catch BrowserPersistenceError.unsupportedVersion {
 			throw BrowserPersistenceError.unsupportedVersion
 		} catch {
+			BrowserLog.warning(.persistence, "selection-journal.ignored", metadata: ["error": BrowserLog.errorDescription(error)])
 			selectionJournal = nil
 		}
 		let scrollJournal: ScrollJournal?
@@ -800,6 +809,7 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		} catch BrowserPersistenceError.unsupportedVersion {
 			throw BrowserPersistenceError.unsupportedVersion
 		} catch {
+			BrowserLog.warning(.persistence, "scroll-journal.ignored", metadata: ["error": BrowserLog.errorDescription(error)])
 			scrollJournal = nil
 		}
 		let logStarted = BrowserLog.clock()
@@ -832,6 +842,7 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 			} catch BrowserPersistenceError.unsupportedVersion {
 				throw BrowserPersistenceError.unsupportedVersion
 			} catch {
+				BrowserLog.warning(.persistence, "state.previous-cache.rejected", metadata: ["error": BrowserLog.errorDescription(error)])
 				previousIndex = nil
 			}
 		} else {

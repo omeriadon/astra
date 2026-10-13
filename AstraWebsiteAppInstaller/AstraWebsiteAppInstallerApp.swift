@@ -1,9 +1,11 @@
 import AppKit
 import Foundation
+import OSLog
 import Security
 
 @main
 enum AstraWebsiteAppInstallerApp {
+	private static let logger = Logger(subsystem: "com.omeriadon.astra", category: "website-app-installer")
 	@MainActor
 	static func main() {
 		let application = NSApplication.shared
@@ -26,7 +28,12 @@ enum AstraWebsiteAppInstallerApp {
 		} catch {
 			message = error.localizedDescription
 		}
-		try? JSONEncoder().encode(message).write(to: response, options: .atomic)
+		do {
+			try JSONEncoder().encode(message).write(to: response, options: .atomic)
+		} catch {
+			let nsError = error as NSError
+			logger.error("installer.response-write-failed domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) message=\(nsError.localizedDescription, privacy: .private)")
+		}
 	}
 
 	private static var installationRoot: URL {

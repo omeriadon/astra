@@ -123,9 +123,13 @@
 					}
 					switch BrowserAgentHTTPParser.parse(accumulated) {
 						case .invalid:
+							BrowserLog.warning(.agent, "agent.http.invalid-request", metadata: ["bytes": String(accumulated.count)])
 							write(Response(status: 400), id: id)
 						case .incomplete:
 							if complete || error != nil {
+								if let error {
+									BrowserLog.warning(.agent, "agent.http.receive-failed", metadata: ["error": BrowserLog.errorDescription(error)])
+								}
 								finish(id)
 							} else {
 								receive(id, buffer: accumulated)

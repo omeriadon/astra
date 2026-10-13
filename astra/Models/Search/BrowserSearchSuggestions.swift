@@ -20,6 +20,26 @@ enum BrowserSearchSuggestions {
 		for query: String,
 		provider: BrowserSearchConfiguration.Engine
 	) async throws -> [String] {
+		do {
+			return try await fetchUnlogged(for: query, provider: provider)
+		} catch is CancellationError {
+			throw CancellationError()
+		} catch {
+			if Task.isCancelled || (error as? URLError)?.code == .cancelled {
+				throw error
+			}
+			BrowserLog.warning(.search, "suggestions.fetch.failed", metadata: [
+				"provider": String(describing: provider),
+				"error": BrowserLog.errorDescription(error),
+			])
+			throw error
+		}
+	}
+
+	private static func fetchUnlogged(
+		for query: String,
+		provider: BrowserSearchConfiguration.Engine
+	) async throws -> [String] {
 		BrowserLog.debug(.search, "suggestions.fetch", metadata: ["query": BrowserLog.value(query), "provider": String(describing: provider)])
 		guard (2 ... 500).contains(query.count),
 		      provider == .google || provider == .duckDuckGo,
@@ -31,9 +51,14 @@ enum BrowserSearchSuggestions {
 		request.timeoutInterval = 3
 		let (bytes, response) = try await session.bytes(for: request)
 		defer { bytes.task.cancel() }
-		guard let response = response as? HTTPURLResponse,
-		      response.statusCode == 200
-		else {
+		guard let response = response as? HTTPURLResponse else { return [] }
+		guard response.statusCode == 200 else {
+			if response.statusCode >= 500 || response.statusCode == 429 {
+				BrowserLog.warning(.search, "suggestions.http.failed", metadata: [
+					"provider": String(describing: provider), "status": String(response.statusCode),
+					"query_bytes": String(query.utf8.count),
+				])
+			}
 			return []
 		}
 		var data = Data()
@@ -47,6 +72,9 @@ enum BrowserSearchSuggestions {
 		guard let payload = try JSONSerialization.jsonObject(with: data) as? [Any],
 		      let suggestions = parsedSuggestions(payload, query: query, provider: provider)
 		else {
+			BrowserLog.warning(.search, "suggestions.response.invalid-shape", metadata: [
+				"provider": String(describing: provider), "response_bytes": String(data.count),
+			])
 			return []
 		}
 		var seen = Set<String>()

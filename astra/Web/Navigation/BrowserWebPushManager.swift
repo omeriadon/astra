@@ -81,6 +81,7 @@
 			do {
 				granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
 			} catch {
+				BrowserLog.warning(.permissions, "web-push.authorization.failed", metadata: ["error": BrowserLog.errorDescription(error)])
 				return false
 			}
 			guard controller.ownsPrompt(in: webView, documentID: documentID) else { return false }
@@ -179,6 +180,10 @@
 						trigger: nil
 					))
 				} catch {
+					BrowserLog.warning(.permissions, "web-push.delivery.failed", metadata: [
+						"origin": BrowserLog.url(URL(string: origin)),
+						"error": BrowserLog.errorDescription(error),
+					])
 					deliveryFailed = true
 				}
 			}
