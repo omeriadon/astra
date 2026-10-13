@@ -19,6 +19,8 @@ assert "LazyVStack(spacing: 2)" in sidebar
 assert "isHovered && onSelectTab == nil ? proxy.frame" in row
 assert "previewEnabled && isHovered ? proxy.frame" in favourite
 assert "Self.prepareImage(data)" in easel
+assert "private nonisolated struct PreparedImage: Sendable" in easel
+assert "encoded as CFMutableData" in easel
 assert "private nonisolated static func prepareImage" in easel
 assert "try Data(contentsOf: url)" in easel
 assert "Task.detached(priority: .userInitiated)" in easel
@@ -27,5 +29,6 @@ assert "for call in turn.actions where seen.count < 5" in chat
 assert "if preview != turn.response" in chat
 assert "abs(width - lastReportedWidth) < 8" in split
 assert "tabCollectionRevision &+= 1" in browser
+assert "chromeSummaryRevision != itemsRevision" in Path("astra/Web/Downloads/BrowserDownloadManager.swift").read_text()
 assert "if membershipChanged { visibleTabMembershipRevision &+= 1 }" in browser
 print("SwiftUI Observation/performance structural regression checks passed")

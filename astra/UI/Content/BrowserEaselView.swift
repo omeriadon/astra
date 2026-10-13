@@ -757,7 +757,7 @@ struct BrowserEaselView: View {
 		}
 	}
 
-	private struct PreparedImage: Sendable {
+	private nonisolated struct PreparedImage: Sendable {
 		let data: Data
 		let aspectRatio: Double
 	}
@@ -779,7 +779,7 @@ struct BrowserEaselView: View {
 		}
 		let encoded = NSMutableData()
 		let destinationType = (hasAlpha ? UTType.png : UTType.jpeg).identifier as CFString
-		guard let destination = CGImageDestinationCreateWithData(encoded, destinationType, 1, nil) else { return nil }
+		guard let destination = CGImageDestinationCreateWithData(encoded as CFMutableData, destinationType, 1, nil) else { return nil }
 		CGImageDestinationAddImage(destination, thumbnail, [
 			kCGImageDestinationLossyCompressionQuality: 0.75,
 		] as CFDictionary)
