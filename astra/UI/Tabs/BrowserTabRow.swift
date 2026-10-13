@@ -325,9 +325,6 @@ private struct TabIconView: View {
 	let browser: Browser
 	var onSelectTab: ((UUID) -> Void)?
 	var onActivate: (() -> Void)?
-	#if os(macOS)
-		@State private var isMouseDown = false
-	#endif
 
 	var body: some View {
 		Button {
@@ -359,18 +356,9 @@ private struct TabIconView: View {
 		}
 		.buttonStyle(.plain)
 		#if os(macOS)
-			.simultaneousGesture(
-				DragGesture(minimumDistance: 0)
-					.onChanged { _ in
-						guard onSelectTab == nil, !isMouseDown,
-						      NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
-						isMouseDown = true
-						browser.selectTab(tab.id)
-					}
-					.onEnded { _ in
-						isMouseDown = false
-					}
-			)
+			.onDrag {
+				NSItemProvider(object: ("astra-tab:" + tab.id.uuidString) as NSString)
+			}
 		#endif
 			.accessibilityIdentifier("select-tab-\(tab.id.uuidString)")
 	}
@@ -391,9 +379,6 @@ private struct TabTitleView: View {
 	let onCancelRenaming: () -> Void
 	var onSelectTab: ((UUID) -> Void)?
 	var onActivate: (() -> Void)?
-	#if os(macOS)
-		@State private var isMouseDown = false
-	#endif
 
 	var body: some View {
 		if isRenaming {
@@ -437,18 +422,9 @@ private struct TabTitleView: View {
 			}
 			.buttonStyle(.plain)
 			#if os(macOS)
-				.simultaneousGesture(
-					DragGesture(minimumDistance: 0)
-						.onChanged { _ in
-							guard onSelectTab == nil, !isMouseDown,
-							      NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
-							isMouseDown = true
-							browser.selectTab(tab.id)
-						}
-						.onEnded { _ in
-							isMouseDown = false
-						}
-				)
+				.onDrag {
+					NSItemProvider(object: ("astra-tab:" + tab.id.uuidString) as NSString)
+				}
 			#endif
 				.simultaneousGesture(
 					TapGesture(count: 2)
