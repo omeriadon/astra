@@ -20,8 +20,14 @@ runtime = next(exc for exc in astra_sources["membership-exceptions"]
                if exc["target"] == "AstraWebsiteAppRuntime")
 automation = {
     "Automation/AstraSystemActions.swift",
-    "Automation/Intents/AstraBrowserIntents.swift",
-    "Automation/Intents/AstraAdvancedIntents.swift",
+    "Automation/Intents/AstraEntities.swift",
+    "Automation/Intents/AstraNavigationIntents.swift",
+    "Automation/Intents/AstraTabIntents.swift",
+    "Automation/Intents/AstraSpaceIntents.swift",
+    "Automation/Intents/AstraLibraryIntents.swift",
+    "Automation/Intents/AstraUIIntents.swift",
+    "Automation/Intents/AstraDownloadIntents.swift",
+    "Automation/Intents/AstraAppShortcuts.swift",
     "Automation/Services/AstraServicesProvider.swift",
     "Automation/Spotlight/AstraSpotlightIndexer.swift",
 }
