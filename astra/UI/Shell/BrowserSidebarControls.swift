@@ -470,6 +470,8 @@ private final class SidebarProjectionCache {
 		{
 			return cached.projection
 		}
+		// Measure only structural cache misses; selection-only hits stay allocation-free.
+		let started = BrowserLog.clock()
 		let favouriteTabs = isPrivate ? [] : favouriteIDs.compactMap { tabsByID[$0] }
 		let pinnedTabs = space.pinnedTabIDs.compactMap { tabsByID[$0] }
 		let folderIDs = Set(space.pinnedFolders.flatMap(\.tabIDs))
@@ -501,6 +503,13 @@ private final class SidebarProjectionCache {
 			favouriteIDs: favouriteIDs, tabCollectionRevision: tabCollectionRevision,
 			isPrivate: isPrivate, projection: projection
 		)
+		BrowserLog.duration(.performance, "sidebar.projection.resolve",
+		                    since: started, warnAboveMilliseconds: 5,
+		                    metadata: [
+		                    	"normal_tabs": String(normalTabs.count),
+		                    	"pinned_tabs": String(pinnedTabs.count),
+		                    	"groups": String(space.todayTabGroups.count),
+		                    ])
 		return projection
 	}
 }
