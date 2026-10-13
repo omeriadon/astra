@@ -8,6 +8,7 @@
 	nonisolated enum BrowserWebsiteAppFileError: LocalizedError {
 		case templateMissing
 		case templateInvalid
+		case malformedTemplate(String)
 		case outsideOwnedDirectory
 		case signingFailed(String)
 		case registrationFailed(OSStatus)
@@ -17,6 +18,7 @@
 			switch self {
 				case .templateMissing: "The website-app helper template is not included in this build."
 				case .templateInvalid: "The website-app helper template is invalid."
+				case let .malformedTemplate(reason): "The website-app helper template is invalid: \(reason)"
 				case .outsideOwnedDirectory: "Astra refused to modify a website app outside its owned installation directory."
 				case let .signingFailed(message): "Website app signing failed: \(message)"
 				case let .registrationFailed(status): "macOS could not register the website app (\(status))."
@@ -195,18 +197,26 @@
 		}
 
 		private func configureBundle(at url: URL, id: UUID, name: String, launchURL: URL, iconData: Data?) async throws {
-			guard let templateURL,
-			      let template = NSDictionary(contentsOf: templateURL.appendingPathComponent("Contents/Info.plist")) as? [String: Any],
-			      let executable = template["CFBundleExecutable"] as? String,
-			      !executable.isEmpty, !executable.contains("/")
-			else { throw BrowserWebsiteAppFileError.templateInvalid }
-			let entitlements = try await signingEntitlements(from: templateURL)
+			guard let templateURL else { throw BrowserWebsiteAppFileError.templateMissing }
+			guard let template = NSDictionary(contentsOf: templateURL.appendingPathComponent("Contents/Info.plist")) as? [String: Any] else {
+				throw BrowserWebsiteAppFileError.malformedTemplate("The embedded app has no readable Contents/Info.plist.")
+			}
+			guard let executable = template["CFBundleExecutable"] as? String,
+			      !executable.isEmpty, executable != ".", executable != "..", !executable.contains("/"),
+			      FileManager.default.isExecutableFile(atPath: templateURL.appendingPathComponent("Contents/MacOS").appendingPathComponent(executable).path)
+			else {
+				throw BrowserWebsiteAppFileError.malformedTemplate("Its CFBundleExecutable is missing or not executable.")
+			}
+			let entitlements = try signingEntitlements(from: templateURL)
 			let contents = url.appendingPathComponent("Contents", isDirectory: true)
 			let plistURL = contents.appendingPathComponent("Info.plist")
-			guard var plist = NSDictionary(contentsOf: plistURL) as? [String: Any],
-			      let hostBundleIdentifier,
-			      let requirement = try? hostCodeRequirement()
-			else { throw BrowserWebsiteAppFileError.templateInvalid }
+			guard var plist = NSDictionary(contentsOf: plistURL) as? [String: Any] else {
+				throw BrowserWebsiteAppFileError.malformedTemplate("The copied app's Info.plist could not be read.")
+			}
+			guard let hostBundleIdentifier else {
+				throw BrowserWebsiteAppFileError.malformedTemplate("Astra's host bundle identifier is missing.")
+			}
+			let requirement = try hostCodeRequirement()
 			plist["CFBundleIdentifier"] = BrowserWebsiteAppPolicy.bundleIdentifier(for: id)
 			plist["CFBundleName"] = name
 			plist["CFBundleDisplayName"] = name
@@ -240,11 +250,15 @@
 			var requirement: SecRequirement?
 			var text: CFString?
 			guard SecStaticCodeCreateWithPath(hostBundleURL as CFURL, [], &hostCode) == errSecSuccess,
-			      let hostCode,
-			      SecCodeCopyDesignatedRequirement(hostCode, [], &requirement) == errSecSuccess,
+			      let hostCode else {
+				throw BrowserWebsiteAppFileError.malformedTemplate("Astra's host app has no readable code signature.")
+			}
+			guard SecCodeCopyDesignatedRequirement(hostCode, [], &requirement) == errSecSuccess,
 			      let requirement,
 			      SecRequirementCopyString(requirement, [], &text) == errSecSuccess,
-			      let text else { throw BrowserWebsiteAppFileError.templateInvalid }
+			      let text else {
+				throw BrowserWebsiteAppFileError.malformedTemplate("Astra's host signing requirement could not be obtained.")
+			}
 			return text as String
 		}
 
@@ -256,9 +270,11 @@
 			      	kCGImageSourceThumbnailMaxPixelSize: 256,
 			      ] as CFDictionary),
 			      let destination = CGImageDestinationCreateWithURL(url as CFURL, "com.apple.icns" as CFString, 1, nil)
-			else { throw BrowserWebsiteAppFileError.templateInvalid }
+			else { throw BrowserWebsiteAppFileError.malformedTemplate("The website icon could not be converted to ICNS.") }
 			CGImageDestinationAddImage(destination, image, nil)
-			guard CGImageDestinationFinalize(destination) else { throw BrowserWebsiteAppFileError.templateInvalid }
+			guard CGImageDestinationFinalize(destination) else {
+				throw BrowserWebsiteAppFileError.malformedTemplate("The website icon ICNS could not be written.")
+			}
 		}
 
 		private func registerGeneratedApp(at url: URL) throws {
@@ -266,26 +282,29 @@
 			guard let plist = NSDictionary(contentsOf: plistURL) as? [String: Any],
 			      let executable = plist["CFBundleExecutable"] as? String,
 			      !executable.isEmpty, !executable.contains("/"), executable != ".", executable != ".."
-			else { throw BrowserWebsiteAppFileError.templateInvalid }
+			else { throw BrowserWebsiteAppFileError.malformedTemplate("The generated app has no valid executable name.") }
 			let status = LSRegisterURL(url as CFURL, true)
 			guard status == noErr else { throw BrowserWebsiteAppFileError.registrationFailed(status) }
 		}
 
-		private func signingEntitlements(from url: URL) async throws -> Data {
-			let result = try await runCodesign(["-d", "--entitlements", ":-", url.path])
-			guard result.status == 0,
-			      let plist = entitlementPlist(result.stdout) ?? entitlementPlist(result.stderr),
-			      (try? PropertyListSerialization.propertyList(from: plist, options: [], format: nil)) is [String: Any]
-			else { throw BrowserWebsiteAppFileError.templateInvalid }
-			return plist
-		}
-
-		private func entitlementPlist(_ bytes: Data) -> Data? {
-			guard let text = String(data: bytes, encoding: .utf8),
-			      let start = text.range(of: "<?xml"),
-			      let end = text.range(of: "</plist>", options: .backwards)
-			else { return nil }
-			return String(text[start.lowerBound ..< end.upperBound]).data(using: .utf8)
+		/// Read the signed entitlement dictionary directly from Security.framework.
+		/// codesign -d --entitlements output isn't guaranteed to be UTF-8 XML;
+		/// it may contain binary data or diagnostic text on different macOS releases.
+		private func signingEntitlements(from url: URL) throws -> Data {
+			var code: SecStaticCode?
+			guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess,
+			      let code else {
+				throw BrowserWebsiteAppFileError.malformedTemplate("The embedded helper has no readable code signature.")
+			}
+			var signingInfo: CFDictionary?
+			let status = SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &signingInfo)
+			guard status == errSecSuccess,
+			      let info = signingInfo as? [String: Any],
+			      let entitlements = info[kSecCodeInfoEntitlementsDict as String] as? [String: Any],
+			      !entitlements.isEmpty else {
+				throw BrowserWebsiteAppFileError.malformedTemplate("The signed helper's entitlements are missing or unreadable (Security status: \(status)).")
+			}
+			return try PropertyListSerialization.data(fromPropertyList: entitlements, format: .xml, options: 0)
 		}
 
 		private func signBundle(_ url: URL, entitlements: Data) async throws {

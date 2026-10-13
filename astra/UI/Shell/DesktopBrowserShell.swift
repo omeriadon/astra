@@ -26,6 +26,9 @@ struct DesktopBrowserShell: View {
 
 	@State private var showsDownloads = false
 	@State private var spaceToDelete: BrowserSpace?
+	#if os(macOS)
+		@State private var spaceSwitcher: BrowserSpaceSwitcher
+	#endif
 	@State private var flight: DownloadFlight?
 	@State private var flightProgress = 0.0
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -43,6 +46,13 @@ struct DesktopBrowserShell: View {
 		@State private var hostWindow: NSWindow?
 		@State private var windowButtonAnimationGeneration = 0
 	#endif
+
+	init(browser: Browser) {
+		self.browser = browser
+		#if os(macOS)
+			_spaceSwitcher = State(initialValue: BrowserSpaceSwitcher(browser: browser))
+		#endif
+	}
 
 	private var topBarColorScheme: ColorScheme {
 		guard let themeColorIsLight = browser.selectedTab?.activeController?.themeColorIsLight else { return colorScheme }
@@ -250,6 +260,14 @@ struct DesktopBrowserShell: View {
 			isSidebarRevealed = false
 		}
 		#if os(macOS)
+		.onReceive(NotificationCenter.default.publisher(for: .cycleBrowserSpace)) { notification in
+			guard notification.object as? UUID == browser.windowID,
+			      hostWindow?.isKeyWindow == true,
+			      let direction = notification.userInfo?["direction"] as? Int else { return }
+			let shortcutName = direction < 0 ? "Previous Space" : "Next Space"
+			let modifiers = BrowserShortcutRegistry.shared.shortcut(shortcutName, section: "View")?.modifiers ?? []
+			spaceSwitcher.advance(direction: direction, modifiers: modifiers)
+		}
 		.onReceive(NotificationCenter.default.publisher(for: .toggleBrowserTopBar)) { notification in
 			guard notification.object as? UUID == browser.windowID,
 			      hostWindow?.isKeyWindow == true else { return }
@@ -265,6 +283,7 @@ struct DesktopBrowserShell: View {
 		.background {
 			WindowFocusReader { window in
 				hostWindow = window
+				spaceSwitcher.setWindow(window)
 				updateWindowButtons(in: window, animated: false)
 			}
 			.allowsHitTesting(false)
@@ -301,6 +320,10 @@ struct DesktopBrowserShell: View {
 
 	var body: some View {
 		windowLayout
+			#if os(macOS)
+			.blur(radius: spaceSwitcher.isPresented ? 3 : 0)
+			.animation(reduceMotion ? nil : .smooth(duration: 0.22), value: spaceSwitcher.isPresented)
+			#endif
 			.background {
 				#if os(macOS)
 					// Sheet presenters must outlive the optional toolbar and be window-scoped.
@@ -349,6 +372,13 @@ struct DesktopBrowserShell: View {
 			.overlay {
 				BrowserTabHoverPreviewOverlay(browser: browser)
 			}
+			.overlay {
+				BrowserSpaceSwitcherOverlay(browser: browser, switcher: spaceSwitcher)
+					.allowsHitTesting(false)
+			}
+			.onChange(of: browser.workspace.spaces.map(\.id)) { _, _ in
+				if spaceSwitcher.isPresented { spaceSwitcher.spacesDidChange() }
+			}
 		#endif
 			.onChange(of: showsDownloads) { _, shown in
 				if shown {
@@ -375,6 +405,13 @@ struct DesktopBrowserShell: View {
 		#if os(macOS)
 			.onAppear {
 				isFullScreen = hostWindow?.styleMask.contains(.fullScreen) == true
+			}
+			.onDisappear {
+				spaceSwitcher.stop()
+			}
+			.onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { notification in
+				guard notification.object as? NSWindow === hostWindow else { return }
+				spaceSwitcher.cancel()
 			}
 			.onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { notification in
 				guard notification.object as? NSWindow === hostWindow else { return }
@@ -447,7 +484,7 @@ private struct ShellSidebarColumn: View {
 		!showsTopBar && sidebarShown
 	}
 
-	@State private var keepsDownloadsMounted = false
+	@State private var librarySelection = 0
 
 	var body: some View {
 		ZStack(alignment: .topLeading) {
@@ -500,21 +537,15 @@ private struct ShellSidebarColumn: View {
 				content.offset(x: downloadsVisible ? geometry.size.width : 0)
 			}
 
-			Group {
-				if showsDownloads || keepsDownloadsMounted {
-					LibrarySidebarView(
-						browser: browser,
-						manager: downloads,
-						theme: theme
-					)
-					.sidebarScrollContentMargins(top: sidebarHeaderReservation)
-				} else {
-					// When tabs are displayed there is no reason to keep
-					// observing every download progress event or lay out a
-					// second offscreen scroll tree.
-					Color.clear
-				}
-			}
+			LibrarySidebarView(
+				browser: browser,
+				manager: downloads,
+				theme: theme,
+				topMargin: sidebarHeaderReservation,
+				selection: $librarySelection
+			)
+			.allowsHitTesting(downloadsVisible)
+			.accessibilityHidden(!downloadsVisible)
 			.foregroundStyle(theme.foregroundColor)
 			.visualEffect { content, geometry in
 				content.offset(x: downloadsVisible ? 0 : -geometry.size.width)
@@ -529,22 +560,7 @@ private struct ShellSidebarColumn: View {
 			bottomOpacityHeight: bottomOpacityHeight
 		)
 		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsSidebarHeader)
-		.task(id: showsDownloads) {
-			if showsDownloads {
-				keepsDownloadsMounted = true
-			} else {
-				guard keepsDownloadsMounted else { return }
-				// Preserve the full slide-out before dismantling the hidden
-				// content. The button animates this transition for 0.32 s.
-				do {
-					try await Task.sleep(for: .milliseconds(380))
-				} catch {
-					return
-				}
-				guard !Task.isCancelled else { return }
-				keepsDownloadsMounted = false
-			}
-		}
+
 		.overlay(alignment: .bottom) {
 			if sidebarShown {
 				sidebarBottomBar
@@ -602,11 +618,12 @@ private struct ShellSpaceTabList: View {
 			space: space,
 			theme: space.theme,
 			isActiveSpace: space.id == browser.selectedSpace.id,
-			favouriteTabIDs: browser.workspace.favouriteTabIDs
+			favouriteTabIDs: browser.workspace.favouriteTabIDs,
+			topMargin: topMargin
 		)
 		.id(space.id)
 		.foregroundStyle(space.theme.foregroundColor)
-		.sidebarScrollContentMargins(top: topMargin)
+		.sidebarScrollContentMargins(top: BrowserChromeMetrics.topBarRegionHeight + 5)
 		.accessibilityIdentifier("sidebar-space-pages")
 		.opacity(listOpacity)
 		.allowsHitTesting(space.id == browser.selectedSpace.id)
@@ -722,7 +739,7 @@ private struct ShellContentColumn: View {
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
 				#if os(macOS)
 					.onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tabSplitDropWidth = $0 }
-					.onDrop(of: [UTType(exportedAs: "com.omeriadon.astra.tab")],
+					.onDrop(of: [UTType.data],
 					        delegate: TabSplitDropDelegate(browser: browser, width: tabSplitDropWidth, side: $tabSplitDropSide))
 					.overlay {
 						if let side = tabSplitDropSide {
@@ -858,7 +875,7 @@ private struct ShellContentColumn: View {
 
 		func dropUpdated(info: DropInfo) -> DropProposal? {
 			side = desiredSide(at: info.location)
-			return DropProposal(operation: .copy)
+			return DropProposal(operation: .move)
 		}
 
 		func dropExited(info _: DropInfo) {

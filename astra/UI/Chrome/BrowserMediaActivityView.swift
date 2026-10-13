@@ -32,7 +32,9 @@ private struct BrowserMediaActivityCard: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	var body: some View {
-		if controller.isPlayingMedia || controller.hasPausedMedia || controller.isCapturing || controller.pausedFromBrowser || controller.areMediaElementsMuted || controller.canEnterPictureInPicture || controller.isPictureInPictureActive {
+		// Do not pin idle tabs here solely because WebKit has a paused player,
+		// a muted element or a video eligible for Picture in Picture.
+		if controller.isPlayingMedia || controller.isCapturing || controller.pausedFromBrowser || controller.isPictureInPictureActive || controller.isEnteringPictureInPicture {
 			HStack(spacing: 8) {
 				Button(action: openTab) {
 					Label {

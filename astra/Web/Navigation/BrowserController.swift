@@ -212,6 +212,12 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var mediaCaptureStateDocumentID: Int?
 	var popupRequested: ((WKWebViewConfiguration, UnitPoint, Bool?) -> WKWebView?)?
 	var newTabRequested: ((URLRequest, Bool) -> Void)?
+	@ObservationIgnored
+	var easelQuoteDestinations: (() -> [BrowserEaselQuoteDestination])?
+	@ObservationIgnored
+	var addQuoteToEasel: ((UUID, BrowserEaselQuote) -> Void)?
+	@ObservationIgnored
+	var easelQuoteHighlight: BrowserEaselQuote?
 	var closeRequested: (() -> Void)?
 	@ObservationIgnored
 	var promptOwnership: ((WKWebView) -> Bool)?
@@ -385,6 +391,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	private static let scrollPositionMessageName = "scrollPositionChanged"
 	private static let topEdgeMessageName = "topEdgeChanged"
+	private static let pageTintMessageName = "pageTintChanged"
 	private static let zapFinishedMessageName = "zapFinished"
 	private static let zapScript = """
 	(() => {
@@ -527,6 +534,292 @@ final class BrowserController: NSObject, Identifiable {
 	})();
 	"""
 
+	/// Live, bounded page-surface sampling inspired by Safari 26's edge tinting.
+	/// Runs in WebKit, not on the app's main actor. No network calls or image decoding.
+	private static let pageTintScript = """
+	(() => {
+		if (globalThis.__astraPageTintInstalled) return;
+		globalThis.__astraPageTintInstalled = true;
+		const canvas = document.createElement('canvas');
+		canvas.width = canvas.height = 1;
+		const context = canvas.getContext('2d', { willReadFrequently: true });
+		if (!context) return;
+		const cache = new Map(), gradients = new Map();
+		const header = 'header, nav, [role="banner"], [role="navigation"], ' +
+			'[class*="header" i], [id*="header" i], [class*="navbar" i], [id*="navbar" i]';
+		let queued = false, loaded = false, sampled = false;
+		const pixels = css => {
+			if (cache.has(css)) return cache.get(css);
+			let rgba = null;
+			if (css && css !== 'transparent') {
+				try {
+					if (globalThis.CSS?.supports && !CSS.supports('color', css)) return null;
+					context.clearRect(0, 0, 1, 1);
+					context.fillStyle = '#010203';
+					context.fillStyle = css;
+					// Canvas silently ignores unrecognised CSS colours.
+					if (context.fillStyle === '#010203' && !/^(#010203|rgb\(1,\s*2,\s*3\))$/i.test(css.trim()))
+						return null;
+					context.fillRect(0, 0, 1, 1);
+					rgba = Array.from(context.getImageData(0, 0, 1, 1).data);
+				} catch (_) {}
+			}
+			// Animations can create arbitrarily many CSS values; bound both caches.
+			if (cache.size >= 128) cache.clear();
+			cache.set(css, rgba);
+			return rgba;
+		};
+		// Inspired by Chromalift's gradient parsing, but only examines a hit-tested
+		// surface. No document-wide palette crawl or screenshot readback.
+		const split = value => {
+			let depth = 0, start = 0;
+			const parts = [];
+			for (let i = 0; i < value.length; i++) {
+				if (value[i] === '(') depth++;
+				else if (value[i] === ')') depth--;
+				else if (value[i] === ',' && depth === 0) {
+					parts.push(value.slice(start, i).trim());
+					start = i + 1;
+				}
+			}
+			parts.push(value.slice(start).trim());
+			return parts;
+		};
+		const gradient = css => {
+			if (gradients.has(css)) return gradients.get(css);
+			let result = null;
+			const match = /^(?:repeating-)?linear-gradient\((.*)\)$/is.exec(css);
+			if (match && !css.includes('url(')) {
+				let stops = split(match[1]), angle = 180;
+				if (/^to (top|bottom|left|right)/i.test(stops[0])) {
+					const dir = stops.shift().toLowerCase();
+					if (dir.includes('top') && dir.includes('right')) angle = 45;
+					else if (dir.includes('bottom') && dir.includes('right')) angle = 135;
+					else if (dir.includes('bottom') && dir.includes('left')) angle = 225;
+					else if (dir.includes('top') && dir.includes('left')) angle = 315;
+					else if (dir.includes('top')) angle = 0;
+					else if (dir.includes('right')) angle = 90;
+					else if (dir.includes('left')) angle = 270;
+				} else if (/^-?[\d.]+deg$/i.test(stops[0])) {
+					angle = Number(stops.shift().slice(0, -3));
+				} else if (/^-?[\d.]+turn$/i.test(stops[0])) {
+					angle = Number(stops.shift().slice(0, -4)) * 360;
+				}
+				const parsed = stops.map(stop => {
+					const color = /^(#[\da-f]{3,8}|(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^)]*\)|[a-z-]+)/i.exec(stop);
+					if (!color) return null;
+					const rgba = pixels(color[1]);
+					if (!rgba || rgba[3] === 0) return null;
+					const position = /^\s*(\d+(?:\.\d+)?)%/.exec(stop.slice(color[0].length));
+					return { rgba, position: position ? Number(position[1]) / 100 : null };
+				});
+				if (parsed.length >= 2 && parsed.length <= 8 && parsed.every(Boolean)) {
+					parsed[0].position ??= 0;
+					parsed[parsed.length - 1].position ??= 1;
+					// Distribute implicit CSS stop positions between fixed positions.
+					for (let i = 1; i < parsed.length - 1; i++) {
+						if (parsed[i].position !== null) continue;
+						let next = i + 1;
+						while (next < parsed.length && parsed[next].position === null) next++;
+						for (let n = i; n < next; n++)
+							parsed[n].position = parsed[i - 1].position +
+								(parsed[next].position - parsed[i - 1].position) * (n - i + 1) / (next - i + 1);
+						i = next - 1;
+					}
+					result = { stops: parsed, radians: angle * Math.PI / 180 };
+				}
+			}
+			if (gradients.size >= 32) gradients.clear();
+			gradients.set(css, result);
+			return result;
+		};
+		const gradientPixel = (css, rect, x, y) => {
+			const parsed = gradient(css);
+			if (!parsed || rect.width <= 0 || rect.height <= 0) return null;
+			const dx = (x - rect.left) / rect.width - .5;
+			const dy = (y - rect.top) / rect.height - .5;
+			const t = Math.max(0, Math.min(1, .5 +
+				dx * Math.sin(parsed.radians) - dy * Math.cos(parsed.radians)));
+			let left = parsed.stops[0], right = parsed.stops[parsed.stops.length - 1];
+			for (let i = 1; i < parsed.stops.length; i++) {
+				if (t <= parsed.stops[i].position) {
+					left = parsed.stops[i - 1]; right = parsed.stops[i]; break;
+				}
+			}
+			const ratio = Math.max(0, Math.min(1,
+				(t - left.position) / (right.position - left.position || 1)));
+			return left.rgba.map((channel, i) => Math.round(channel +
+				(right.rgba[i] - channel) * ratio));
+		};
+		const sample = (x, y, layoutCache) => {
+			let element = document.elementFromPoint(x, y);
+			let edge = false, gradientAnchor = null, covered = 0;
+			const mixed = [0, 0, 0];
+			for (let depth = 0; element && depth < 14; depth++, element = element.parentElement) {
+				let layout = layoutCache.get(element);
+				if (!layout) {
+					// Defer layout reads until a genuinely painted ancestor is found.
+					layout = { style: getComputedStyle(element), rect: null };
+					layoutCache.set(element, layout);
+				}
+				const { style } = layout;
+				if (style.visibility === 'hidden') return null;
+				const opacity = Number(style.opacity);
+				if (opacity < .01) continue;
+				const image = style.backgroundImage;
+				let rgba = pixels(style.backgroundColor);
+				if (image && image !== 'none') {
+					// A background image cannot be faithfully inferred from CSS.
+					// A simple CSS linear gradient can be sampled analytically.
+					layout.rect ??= element.getBoundingClientRect();
+					rgba = gradientPixel(image, layout.rect, x, y);
+					if (!rgba) return null;
+					gradientAnchor ??= element;
+				}
+				if (!rgba || rgba[3] === 0) continue;
+				layout.rect ??= element.getBoundingClientRect();
+				const rect = layout.rect;
+				if (element !== document.body && element !== document.documentElement &&
+					rect.width >= innerWidth * .7 && rect.height >= 10 &&
+					rect.height <= 260 && rect.top <= 8 && rect.bottom >= y &&
+					(element.matches(header) || style.position === 'fixed' ||
+					 style.position === 'sticky' || rect.width >= innerWidth * .9)) edge = true;
+				// CSS opacity applies to the entire layer, not just its fill.
+				// Exact compositing of nested opacity groups requires rendering;
+				// this bounded estimate avoids treating a faded bar as opaque.
+				const contribution = (rgba[3] / 255) * (Number.isFinite(opacity) ? opacity : 1) * (1 - covered);
+				for (let channel = 0; channel < 3; channel++)
+					mixed[channel] += rgba[channel] * contribution;
+				covered += contribution;
+				if (covered >= .98)
+					return { color: mixed.map(v => Math.round(v / covered)), edge, gradientAnchor };
+			}
+			return null;
+		};
+		// Chromalift-style perceptual clustering: DeltaE groups adjacent shades
+		// across RGB bucket boundaries without enumerating the page's palette.
+		const lab = rgb => {
+			const [r, g, b] = rgb.map(channel => {
+				const c = channel / 255;
+				return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4;
+			});
+			const x = (.4124564 * r + .3575761 * g + .1804375 * b) / .95047;
+			const y = .2126729 * r + .7151522 * g + .0721750 * b;
+			const z = (.0193339 * r + .1191920 * g + .9503041 * b) / 1.08883;
+			const f = v => v > .008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116;
+			const fx = f(x), fy = f(y), fz = f(z);
+			return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+		};
+		const add = (groups, item) => {
+			const colourLab = item.gradientAnchor ? null : lab(item.color);
+			let group = groups.find(candidate =>
+				item.gradientAnchor
+					? candidate.anchor === item.gradientAnchor
+					: !candidate.anchor && candidate.lab.every((value, index) =>
+						Math.abs(value - colourLab[index]) <= 12) &&
+					  Math.hypot(...candidate.lab.map((value, index) =>
+						  value - colourLab[index])) <= 12
+			);
+			if (!group) {
+				group = { count: 0, sum: [0, 0, 0], anchor: item.gradientAnchor, lab: colourLab };
+				groups.push(group);
+			}
+			group.count++;
+			for (let i = 0; i < 3; i++) group.sum[i] += item.color[i];
+			if (colourLab && group.count > 1)
+				for (let i = 0; i < 3; i++)
+					group.lab[i] += (colourLab[i] - group.lab[i]) / group.count;
+		};
+		const winner = groups => groups.reduce((best, candidate) =>
+			!best || candidate.count > best.count ? candidate : best, null);
+		// OpenBrand's secondary branding metadata and CSS brand tokens can help
+		// when a page provides no reliable visible surface or WebKit theme.
+		// Never let them override painted page chrome or native theme-color.
+		const brand = () => {
+			const meta = document.querySelector?.('meta[name="msapplication-TileColor" i]');
+			let rgba = pixels(meta?.content);
+			if (rgba && rgba[3] === 255) return rgba.slice(0, 3);
+			for (const root of [document.documentElement, document.body]) {
+				if (!root) continue;
+				const style = getComputedStyle(root);
+				if (!style) continue;
+				for (const key of [
+					'--theme-color', '--brand-color', '--color-brand', '--primary-color',
+					'--color-primary', '--accent-color', '--color-accent'
+				]) {
+					rgba = pixels(style.getPropertyValue?.(key)?.trim());
+					if (rgba && rgba[3] === 255) return rgba.slice(0, 3);
+				}
+			}
+			return null;
+		};
+		const run = () => {
+			// One colour extraction per document. Full navigations install
+			// a new user script; scroll, SPA mutations and CSS changes do not.
+			if (sampled || document.hidden) return;
+			sampled = true;
+			if (innerWidth < 80 || innerHeight < 20) return;
+			const edges = [], surfaces = [], layoutCache = new Map();
+			const rows = [3, 16, 34, 56].filter(y => y < innerHeight);
+			const scan = columns => {
+				for (const y of rows) for (const i of columns) {
+					const item = sample(innerWidth * (i + .5) / 10, y, layoutCache);
+					if (!item) continue;
+					add(item.edge ? edges : surfaces, item);
+				}
+			};
+			// Sample 16 uniformly distributed points first. Only take the
+			// remaining 24 of the original grid when the result is uncertain.
+			scan([1, 4, 5, 8]);
+			let total = rows.length * 4;
+			let chrome = winner(edges), body = winner(surfaces);
+			if (Math.max(chrome?.count ?? 0, body?.count ?? 0) < total * .75) {
+				scan([0, 2, 3, 6, 7, 9]);
+				total = rows.length * 10;
+				chrome = winner(edges);
+				body = winner(surfaces);
+			}
+			const selected = chrome && chrome.count >= total * .45
+				? { count: chrome, source: 'chrome' }
+				: body && body.count >= total * .5
+				? { count: body, source: 'surface' } : null;
+			const fallback = selected ? null : brand();
+			const rgb = selected
+				? selected.count.sum.map(value => Math.round(value / selected.count.count))
+				: fallback;
+			const source = selected?.source || (fallback ? 'brand' : 'none');
+			window.webkit.messageHandlers.pageTintChanged.postMessage({ url: location.href, source, rgb });
+		};
+		const schedule = () => {
+			if (!loaded || queued || sampled || document.hidden) return;
+			queued = true;
+			// The single extraction yields to page paint and user input.
+			const execute = () => {
+				queued = false;
+				run();
+			};
+			if (typeof requestIdleCallback === 'function')
+				requestIdleCallback(execute, { timeout: 1200 });
+			else
+				setTimeout(execute, 0);
+		};
+		const onLoad = () => {
+			loaded = true;
+			schedule();
+		};
+		// At documentEnd, wait for stylesheet/image load completion.
+		// Documents that already loaded (e.g. restored) execute once.
+		if (document.readyState === 'complete')
+			onLoad();
+		else
+			addEventListener('load', onLoad, { once: true });
+		// A background tab loaded while hidden is sampled only when
+		// first shown; it is never sampled again after that.
+		document.addEventListener('visibilitychange', () => {
+			if (!document.hidden) schedule();
+		});
+	})();
+	"""
 	@ObservationIgnored
 	private var createdWebView: WKWebView?
 
@@ -628,6 +921,13 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var hasTopEdgeContent = false
 	private(set) var themeColor: Color?
 	private(set) var themeColorIsLight: Bool?
+	@ObservationIgnored private var sampledChromeColor: PlatformColor?
+	@ObservationIgnored private var sampledSurfaceColor: PlatformColor?
+	@ObservationIgnored private var sampledBrandColor: PlatformColor?
+	@ObservationIgnored private var sampledFaviconColor: PlatformColor?
+	@ObservationIgnored private var pageTintHandledGeneration: Int?
+	@ObservationIgnored private var faviconTintTask: Task<Void, Never>?
+	@ObservationIgnored private var faviconTintAttemptedGeneration: Int?
 	private var pendingDownloadSource: UnitPoint?
 	private var pendingDownloadSiteURL: URL?
 	@ObservationIgnored
@@ -706,8 +1006,6 @@ final class BrowserController: NSObject, Identifiable {
 		hasCurrentPageDocument && navigationFailure == nil
 	}
 
-	@ObservationIgnored
-	private var hasDeclaredThemeColor = false
 	@ObservationIgnored
 	private var pendingRequest: URLRequest?
 	private var pendingWebArchive: (data: Data, baseURL: URL)?
@@ -965,6 +1263,7 @@ final class BrowserController: NSObject, Identifiable {
 			return {
 				videoPlaying: media.some(element => element.tagName === 'VIDEO' && !element.paused && !element.ended && element.readyState >= 2 && element.videoWidth > 0 && element.videoHeight > 0),
 				playing: media.some(element => !element.paused && !element.ended && element.readyState >= 2),
+				audible: media.some(element => !element.paused && !element.ended && element.readyState >= 2 && !element.muted && element.volume > 0),
 				paused: media.some(element => element.paused && !element.ended && element.currentTime > 0),
 				title: navigator.mediaSession?.metadata?.title ?? '',
 				artist: navigator.mediaSession?.metadata?.artist ?? ''
@@ -976,13 +1275,17 @@ final class BrowserController: NSObject, Identifiable {
 		      let state = value as? [String: Any],
 		      let videoPlaying = state["videoPlaying"] as? Bool,
 		      let playing = state["playing"] as? Bool,
+		      let audible = state["audible"] as? Bool,
 		      let paused = state["paused"] as? Bool,
 		      let title = state["title"] as? String,
 		      let artist = state["artist"] as? String
 		else { return false }
 		let playbackState = await webView.requestMediaPlaybackState()
 		guard owns(webView), documentID == navigationIdentifier else { return false }
-		isPlayingMedia = playing || playbackState == .playing
+		// A muted looping background video is not a Now Playing session. WebKit's
+		// aggregate playback state also includes silent page decoration; use the
+		// element state to disambiguate, while retaining cross-origin iframe audio.
+		isPlayingMedia = audible || (!playing && playbackState == .playing)
 		hasActiveVideoPlayback = videoPlaying
 		hasPausedMedia = paused || playbackState == .paused || playbackState == .suspended
 		cameraCaptureState = webView.cameraCaptureState
@@ -1468,6 +1771,8 @@ final class BrowserController: NSObject, Identifiable {
 		pictureInPictureControlUnavailable = false
 		faviconTask?.cancel()
 		faviconTask = nil
+		faviconTintTask?.cancel()
+		faviconTintTask = nil
 		#if os(macOS)
 			previewSnapshotRefreshTask?.cancel()
 			previewSnapshotRefreshTask = nil
@@ -1482,11 +1787,17 @@ final class BrowserController: NSObject, Identifiable {
 		createdWebView?.setAllMediaPlaybackSuspended(true, completionHandler: nil)
 		stopCapture()
 		(createdWebView as? PeekSourceWebView)?.onEscape = nil
+		#if os(macOS)
+			(createdWebView as? PeekSourceWebView)?.quoteDestinations = nil
+			(createdWebView as? PeekSourceWebView)?.onQuoteRequested = nil
+		#endif
+		easelQuoteDestinations = nil
+		addQuoteToEasel = nil
 		(createdWebView as? PeekSourceWebView)?.onLayout = nil
 		(createdWebView as? PeekSourceWebView)?.onZoomIn = nil
 		(createdWebView as? PeekSourceWebView)?.onZoomOut = nil
 		(createdWebView as? PeekSourceWebView)?.onResetZoom = nil
-		for name in [Self.scrollPositionMessageName, Self.topEdgeMessageName, Self.zapFinishedMessageName, "pageActivityChanged", "pictureInPictureChanged", "linkHoverChanged", "faviconChanged", "readerAvailabilityChanged"] {
+		for name in [Self.scrollPositionMessageName, Self.topEdgeMessageName, Self.zapFinishedMessageName, Self.pageTintMessageName, "pageActivityChanged", "pictureInPictureChanged", "linkHoverChanged", "faviconChanged", "readerAvailabilityChanged"] {
 			createdWebView?.configuration.userContentController.removeScriptMessageHandler(forName: name, contentWorld: .defaultClient)
 		}
 		createdWebView?.configuration.userContentController.removeAllUserScripts()
@@ -1630,6 +1941,10 @@ final class BrowserController: NSObject, Identifiable {
 		webViewStageStarted = BrowserLog.clock()
 		let webView = PeekSourceWebView(frame: .zero, configuration: configuration)
 		#if os(macOS)
+			webView.quoteDestinations = { [weak self] in self?.easelQuoteDestinations?() ?? [] }
+			webView.onQuoteRequested = { [weak self] destinationID in
+				self?.captureEaselQuote(for: destinationID)
+			}
 			BrowserDesktopCommands.configureWebInspector(webView, enabled: Defaults[.webInspectorEnabled])
 		#endif
 		createdWebView = webView
@@ -1649,6 +1964,11 @@ final class BrowserController: NSObject, Identifiable {
 			scrollHandler,
 			contentWorld: .defaultClient,
 			name: Self.topEdgeMessageName
+		)
+		webView.configuration.userContentController.add(
+			scrollHandler,
+			contentWorld: .defaultClient,
+			name: Self.pageTintMessageName
 		)
 		webView.configuration.userContentController.add(
 			scrollHandler,
@@ -1690,6 +2010,9 @@ final class BrowserController: NSObject, Identifiable {
 				forMainFrameOnly: true,
 				in: .defaultClient
 			)
+		)
+		webView.configuration.userContentController.addUserScript(
+			WKUserScript(source: Self.pageTintScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient)
 		)
 		webView.navigationDelegate = self
 		webView.uiDelegate = self
@@ -1750,13 +2073,15 @@ final class BrowserController: NSObject, Identifiable {
 			webView.observe(\.themeColor, options: [.initial, .new]) { [weak self] webView, change in
 				MainActor.assumeIsolated {
 					guard let self else { return }
-					guard let color = change.newValue ?? webView.themeColor else {
-						self.hasDeclaredThemeColor = false
-						return
+					let color = change.newValue ?? webView.themeColor
+					if let color {
+						webView.underPageBackgroundColor = color.withAlphaComponent(1)
 					}
-					self.hasDeclaredThemeColor = true
-					webView.underPageBackgroundColor = color.withAlphaComponent(1)
-					self.updateThemeColor(color)
+					// Once the document's one-shot sample has arrived,
+					// live metadata changes must not retint the toolbar.
+					if self.pageTintHandledGeneration != self.navigationGeneration {
+						self.resolveThemeColor(in: webView)
+					}
 				}
 			},
 			webView.observe(\.title, options: [.initial, .new]) { [weak self] webView, change in
@@ -1848,6 +2173,7 @@ final class BrowserController: NSObject, Identifiable {
 		#endif
 		mediaObservationTask?.cancel()
 		faviconTask?.cancel()
+		faviconTintTask?.cancel()
 		observations.forEach { $0.invalidate() }
 		#if os(macOS)
 			previewSnapshotRefreshTask?.cancel()
@@ -2053,6 +2379,8 @@ final class BrowserController: NSObject, Identifiable {
 			guard let self, let webView, owns(webView) else { return }
 			await session.favicons.loadFavicon(for: url, from: webView, onlyIfMissing: true)
 			guard owns(webView) else { return }
+			faviconTintAttemptedGeneration = nil
+			refreshCachedFaviconTint(in: webView)
 		}
 	}
 
@@ -2272,9 +2600,56 @@ final class BrowserController: NSObject, Identifiable {
 		load(pendingRequest)
 	}
 
+	private func resolveThemeColor(in webView: WKWebView) {
+		// Visible full-width page chrome wins. Explicit site metadata takes
+		// precedence over ordinary body colour; background is the last fallback.
+		let color = sampledChromeColor
+			?? webView.themeColor
+			?? sampledSurfaceColor
+			?? sampledBrandColor
+			?? sampledFaviconColor
+			?? webView.underPageBackgroundColor
+			?? PlatformColor.white
+		updateThemeColor(color)
+	}
+
+	/// Only a pre-existing cached favicon is eligible. Its palette extraction
+	/// runs off the main actor and never blocks scrolling or adds network work.
+	private func refreshCachedFaviconTint(in webView: WKWebView) {
+		guard owns(webView), !isInvalidated,
+		      sampledChromeColor == nil, sampledSurfaceColor == nil,
+		      sampledBrandColor == nil, webView.themeColor == nil,
+		      faviconTintTask == nil,
+		      faviconTintAttemptedGeneration != navigationGeneration,
+		      session.favicons.hasCachedFavicon(for: webView.url)
+		else { return }
+		let generation = navigationGeneration
+		let pageURL = webView.url
+		faviconTintAttemptedGeneration = generation
+		faviconTintTask = Task { @MainActor [weak self, weak webView] in
+			guard let self, let webView else { return }
+			let accent = await self.session.favicons.cachedAccentColor(for: pageURL)
+			guard owns(webView), generation == navigationGeneration,
+			      webView.url == pageURL
+			else { return }
+			faviconTintTask = nil
+			guard sampledChromeColor == nil, sampledSurfaceColor == nil,
+			      sampledBrandColor == nil, webView.themeColor == nil
+			else { return }
+			sampledFaviconColor = accent.map {
+				PlatformColor(
+					red: CGFloat($0.0), green: CGFloat($0.1),
+					blue: CGFloat($0.2), alpha: 1
+				)
+			}
+			resolveThemeColor(in: webView)
+		}
+	}
+
 	private func updateThemeColor(_ color: PlatformColor) {
 		#if os(macOS)
-			guard let color = color.usingColorSpace(.deviceRGB) else {
+			// WCAG luminance is defined in sRGB, not device-dependent RGB.
+			guard let color = color.usingColorSpace(.sRGB) else {
 				return
 			}
 		#endif
@@ -2290,8 +2665,12 @@ final class BrowserController: NSObject, Identifiable {
 			color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
 		#endif
 
-		themeColor = Color(color)
-		themeColorIsLight = red + green + blue > 1.5
+		let nextColor = Color(color.withAlphaComponent(1))
+		// WCAG contrast: black is the higher-contrast choice above 0.179 luminance.
+		let nextIsLight = BrowserColor(red: Double(red), green: Double(green), blue: Double(blue)).luminance > 0.179
+		// Avoid invalidating SwiftUI chrome on unchanged fallback/probe events.
+		if themeColor != nextColor { themeColor = nextColor }
+		if themeColorIsLight != nextIsLight { themeColorIsLight = nextIsLight }
 	}
 
 	#if os(macOS)
@@ -2696,7 +3075,14 @@ extension BrowserController: WKNavigationDelegate {
 		awaitsNavigationCommit = true
 		session.permissions.removeTemporaryDecisions(controllerID: id)
 		navigationGeneration += 1
-		hasDeclaredThemeColor = false
+		sampledChromeColor = nil
+		sampledSurfaceColor = nil
+		sampledBrandColor = nil
+		sampledFaviconColor = nil
+		pageTintHandledGeneration = nil
+		faviconTintTask?.cancel()
+		faviconTintTask = nil
+		faviconTintAttemptedGeneration = nil
 		hasTopEdgeContent = false
 		webView.underPageBackgroundColor = nil
 	}
@@ -2797,16 +3183,13 @@ extension BrowserController: WKNavigationDelegate {
 			}
 		#endif
 		refreshContentBlocking(for: webView.url)
+		applyEaselQuoteHighlight(in: webView)
 		webView.evaluateJavaScript("globalThis.astraProbeReader?.(true)", in: nil, in: .defaultClient, completionHandler: nil)
 		updateHistory()
 		if showsFind, !findText.isEmpty {
 			findNext()
 		}
-		if !hasDeclaredThemeColor,
-		   let pageBackgroundColor = webView.underPageBackgroundColor
-		{
-			updateThemeColor(pageBackgroundColor)
-		}
+		resolveThemeColor(in: webView)
 		restoreScrollPositionIfNeeded(in: webView)
 		let generation = navigationGeneration
 		if let url {
@@ -2907,6 +3290,36 @@ extension BrowserController: WKScriptMessageHandler {
 			return
 		}
 
+		if message.name == Self.pageTintMessageName {
+			guard pageTintHandledGeneration != navigationGeneration,
+			      message.frameInfo.isMainFrame, let webView = message.webView,
+			      owns(webView), hasCurrentPageDocument, navigationFailure == nil,
+			      let result = message.body as? [String: Any],
+			      let urlString = result["url"] as? String, urlString == webView.url?.absoluteString,
+			      let source = result["source"] as? String
+			else { return }
+			let color: PlatformColor?
+			if let rgb = result["rgb"] as? [NSNumber], rgb.count == 3,
+			   rgb.allSatisfy({ $0.doubleValue.isFinite && (0 ... 255).contains($0.doubleValue) })
+			{
+				color = PlatformColor(
+					red: CGFloat(rgb[0].doubleValue / 255),
+					green: CGFloat(rgb[1].doubleValue / 255),
+					blue: CGFloat(rgb[2].doubleValue / 255),
+					alpha: 1
+				)
+			} else {
+				color = nil
+			}
+			pageTintHandledGeneration = navigationGeneration
+			sampledChromeColor = source == "chrome" ? color : nil
+			sampledSurfaceColor = source == "surface" ? color : nil
+			sampledBrandColor = source == "brand" ? color : nil
+			resolveThemeColor(in: webView)
+			refreshCachedFaviconTint(in: webView)
+			return
+		}
+
 		if message.name == Self.topEdgeMessageName {
 			if let occupied = message.body as? Bool {
 				hasTopEdgeContent = occupied
@@ -2929,6 +3342,76 @@ extension BrowserController: WKScriptMessageHandler {
 		} else {
 			navigationDidChange?()
 		}
+	}
+}
+
+
+extension BrowserController {
+	#if os(macOS)
+		/// Query at action time, avoiding races between WebKit's contextmenu event
+		/// and AppKit's synchronous willOpenMenu callback.
+		private func captureEaselQuote(for destinationID: UUID) {
+			guard !session.isPrivate,
+			      easelQuoteDestinations?().contains(where: { $0.id == destinationID }) == true,
+			      hasCurrentPageDocument, let webView = createdWebView,
+			      let url = webView.url.map(BrowserAddress.withoutCredentials),
+			      BrowserEaselDocument.isSafeLink(url) else { return }
+			let documentID = navigationIdentifier
+			let script = """
+			(() => {
+			  const sel = window.getSelection();
+			  if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+			  const text = sel.toString().trim();
+			  if (!text || text.length > 8192) return null;
+			  let prefix = '', suffix = '';
+			  try {
+			    const range = sel.getRangeAt(0);
+			    if (document.body?.contains(range.startContainer) &&
+			        document.body?.contains(range.endContainer)) {
+			      const before = document.createRange();
+			      before.selectNodeContents(document.body);
+			      before.setEnd(range.startContainer, range.startOffset);
+			      prefix = before.toString().slice(-48);
+			      const after = document.createRange();
+			      after.selectNodeContents(document.body);
+			      after.setStart(range.endContainer, range.endOffset);
+			      suffix = after.toString().slice(0, 48);
+			    }
+			  } catch (_) {}
+			  return {text, prefix, suffix};
+			})()
+			"""
+			webView.evaluateJavaScript(script, in: nil, in: .defaultClient) { [weak self, weak webView] result in
+				guard let self, let webView, owns(webView),
+				      navigationIdentifier == documentID, hasCurrentPageDocument,
+				      let currentURL = webView.url.map(BrowserAddress.withoutCredentials),
+				      currentURL == url, case let .success(value) = result,
+				      let capture = value as? [String: String],
+				      let text = capture["text"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+				else { return }
+				let quote = BrowserEaselQuote(url: url, text: text,
+					prefix: String((capture["prefix"] ?? "").suffix(48)),
+					suffix: String((capture["suffix"] ?? "").prefix(48)))
+				guard quote.isValid,
+				      easelQuoteDestinations?().contains(where: { $0.id == destinationID }) == true else { return }
+				addQuoteToEasel?(destinationID, quote)
+			}
+		}
+	#endif
+
+	private func applyEaselQuoteHighlight(in webView: WKWebView) {
+		guard let quote = easelQuoteHighlight, quote.isValid, let url = webView.url,
+		      var current = URLComponents(url: url, resolvingAgainstBaseURL: false),
+		      var original = URLComponents(url: quote.url, resolvingAgainstBaseURL: false) else { return }
+		current.fragment = nil
+		original.fragment = nil
+		guard current.url == original.url,
+		      let payload = try? JSONSerialization.data(withJSONObject: [
+		      	"text": quote.text, "prefix": quote.prefix, "suffix": quote.suffix,
+		      ]),
+		      let json = String(data: payload, encoding: .utf8) else { return }
+		let script = BrowserEaselQuote.highlightScript.replacingOccurrences(of: "__ASTRA_QUOTE__", with: json)
+		webView.evaluateJavaScript(script, in: nil, in: .defaultClient, completionHandler: nil)
 	}
 }
 
@@ -3315,6 +3798,35 @@ extension BrowserController: WKUIDelegate {
 }
 
 private final class PeekSourceWebView: WKWebView {
+	#if os(macOS)
+		var quoteDestinations: (() -> [BrowserEaselQuoteDestination])?
+		var onQuoteRequested: ((UUID) -> Void)?
+
+		override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+			super.willOpenMenu(menu, with: event)
+			guard menu.items.contains(where: {
+				$0.identifier?.rawValue == "WKMenuItemIdentifierCopy" || $0.title == "Copy"
+			}), let destinations = quoteDestinations?(), !destinations.isEmpty else { return }
+			let submenu = NSMenu(title: "Add to Easel")
+			for destination in destinations {
+				let option = NSMenuItem(title: destination.title, action: #selector(addSelectedQuote(_:)), keyEquivalent: "")
+				option.target = self
+				option.representedObject = destination.id.uuidString
+				submenu.addItem(option)
+			}
+			menu.addItem(.separator())
+			let item = NSMenuItem(title: "Add to Easel", action: nil, keyEquivalent: "")
+			item.submenu = submenu
+			menu.addItem(item)
+		}
+
+		@objc private func addSelectedQuote(_ sender: NSMenuItem) {
+			guard let identifier = sender.representedObject as? String,
+			      let id = UUID(uuidString: identifier) else { return }
+			onQuoteRequested?(id)
+		}
+	#endif
+
 	var onEscape: (() -> Void)?
 	var onLayout: (() -> Void)?
 	var onZoomIn: (() -> Void)?

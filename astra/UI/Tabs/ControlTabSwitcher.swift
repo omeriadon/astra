@@ -1,5 +1,6 @@
 #if os(macOS)
 	import AppKit
+	import KeyboardShortcuts
 	import Observation
 	import SwiftUI
 
@@ -21,6 +22,8 @@
 		private var previewTask: Task<Void, Never>?
 		@ObservationIgnored
 		private var sessionForward = true
+		@ObservationIgnored private var heldModifiers: NSEvent.ModifierFlags = []
+		@ObservationIgnored private var suppressionModifiers: NSEvent.ModifierFlags = []
 		@ObservationIgnored
 		private var isCancelledUntilControlRelease = false
 
@@ -34,34 +37,31 @@
 
 		func start() {
 			guard !browser.isMini, eventMonitor == nil else { return }
-			eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
+			eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
 				let isKeyDown = event.type == .keyDown
 				let isEscape = event.keyCode == 53
 				let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-				let isControlPressed = modifiers.contains(.control)
-				let hasDisallowedModifiers = modifiers.contains(.command) || modifiers.contains(.option)
 				let isHandled = MainActor.assumeIsolated {
 					guard let self else { return false }
+					let expectedModifiers = self.isCancelledUntilControlRelease
+						? self.suppressionModifiers
+						: self.heldModifiers
+					let isControlPressed = !expectedModifiers.isEmpty && modifiers.isSuperset(of: expectedModifiers)
 					let isFocusedWindow = BrowserKeyboardMenuPolicy.ownsFocusedTarget(
 						isKeyWindow: self.window?.isKeyWindow == true,
 						matchesKeyWindow: self.window === NSApp.keyWindow
 					)
 					let hasMarkedText = (self.window?.firstResponder as? NSTextInputClient)?.hasMarkedText() == true
-					let ownsTabSwitch = BrowserKeyboardMenuPolicy.ownsTabSwitch(
-						isFocusedWindow: isFocusedWindow,
-						hasMarkedText: hasMarkedText,
-						isKeyDown: isKeyDown,
-						keyCode: event.keyCode,
-						modifiers: modifiers
-					)
+					let forward = isKeyDown ? BrowserShortcutRegistry.shared.tabDirection(for: event) : nil
+					let ownsTabSwitch = isFocusedWindow && !hasMarkedText && forward != nil
 					return self.handle(
 						isKeyDown: isKeyDown,
 						keyCode: event.keyCode,
 						isEscape: isEscape,
 						isControlPressed: isControlPressed,
-						hasDisallowedModifiers: hasDisallowedModifiers,
 						hasMarkedText: hasMarkedText,
-						ownsTabSwitch: ownsTabSwitch
+						ownsTabSwitch: ownsTabSwitch,
+						isForwardKey: forward
 					)
 				}
 				return isHandled ? nil : event
@@ -76,6 +76,7 @@
 			previewTask?.cancel()
 			previewTask = nil
 			isCancelledUntilControlRelease = false
+			suppressionModifiers = []
 			endSession()
 		}
 
@@ -97,7 +98,9 @@
 		func select(_ tabID: UUID) {
 			guard candidateIDs.contains(tabID) else { return }
 			browser.commitTabSwitch(to: tabID)
-			isCancelledUntilControlRelease = NSEvent.modifierFlags.contains(.control)
+			suppressionModifiers = heldModifiers
+			isCancelledUntilControlRelease = !heldModifiers.isEmpty
+				&& NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask).isSuperset(of: heldModifiers)
 			endSession()
 		}
 
@@ -115,9 +118,9 @@
 			keyCode: UInt16,
 			isEscape: Bool,
 			isControlPressed: Bool,
-			hasDisallowedModifiers: Bool,
 			hasMarkedText: Bool,
-			ownsTabSwitch: Bool
+			ownsTabSwitch: Bool,
+			isForwardKey: Bool?
 		) -> Bool {
 			guard BrowserKeyboardMenuPolicy.ownsFocusedTarget(
 				isKeyWindow: window?.isKeyWindow == true,
@@ -134,6 +137,7 @@
 			if isCancelledUntilControlRelease {
 				if !isControlPressed {
 					isCancelledUntilControlRelease = false
+					suppressionModifiers = []
 				} else if ownsTabSwitch {
 					return true
 				}
@@ -144,17 +148,18 @@
 				}
 				endSession()
 			}
-			guard !hasDisallowedModifiers else { return false }
-
 			if isKeyDown {
 				if isEscape, !candidateIDs.isEmpty {
-					isCancelledUntilControlRelease = isControlPressed
+					suppressionModifiers = heldModifiers
+					isCancelledUntilControlRelease = isControlPressed && !heldModifiers.isEmpty
 					endSession()
 					return true
 				}
 				guard ownsTabSwitch else { return false }
 				if candidateIDs.isEmpty {
-					sessionForward = keyCode == 48
+					sessionForward = isForwardKey ?? true
+					let title = sessionForward ? "Next Tab" : "Previous Tab"
+					heldModifiers = BrowserShortcutRegistry.shared.shortcut(title, section: "Tab")?.modifiers ?? []
 					let order = browser.switchCandidates(forward: sessionForward)
 					guard !order.isEmpty else { return true }
 					candidateIDs = order
@@ -168,7 +173,7 @@
 					let cycleCount = min(candidateIDs.count, visibleCandidateCount)
 					let visibleIDs = candidateIDs.prefix(cycleCount)
 					let currentIndex = visibleIDs.firstIndex(of: highlightedTabID ?? candidateIDs[0]) ?? 0
-					let isForward = keyCode == 48
+					let isForward = isForwardKey ?? sessionForward
 					let step = isForward == sessionForward ? 1 : -1
 					highlightedTabID = candidateIDs[(currentIndex + step + cycleCount) % cycleCount]
 				}
@@ -183,6 +188,7 @@
 			candidateIDs = []
 			highlightedTabID = nil
 			isPreviewVisible = false
+			heldModifiers = []
 		}
 	}
 

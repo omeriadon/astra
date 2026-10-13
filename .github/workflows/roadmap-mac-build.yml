@@ -30,8 +30,19 @@ jobs:
           bash -n scripts/benchmark_startup.sh
           bash -n scripts/audit_sparkle_bundle.sh
 
+      - name: Validate Mini Astra shared chrome
+        run: node checks/mini-astra-shared-chrome-check.mjs
+
       - name: Select Xcode 27
         run: bash scripts/ci/select-xcode-27.sh
+
+      - name: SwiftUI Observation regression checks
+        run: |
+          python3 checks/swiftui-observation-performance-check.py
+          python3 checks/control-tab-observation-check.py
+
+      - name: Verify Swift 6.4 compiler and strict safety settings
+        run: python3 checks/compiler-safety-settings-check.py
 
       - name: Verify proxy navigation classification
         shell: bash
@@ -39,6 +50,13 @@ jobs:
           set -euo pipefail
           swiftc -swift-version 6 astra/Web/Navigation/BrowserNavigationFailure.swift checks/proxy-navigation-failure-check.swift -o "$RUNNER_TEMP/astra-proxy-navigation-check"
           "$RUNNER_TEMP/astra-proxy-navigation-check"
+
+      - name: Verify Easel quote persistence
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 6 astra/Models/Tabs/BrowserEasel.swift checks/easel-document-check.swift -o "$RUNNER_TEMP/astra-easel-document-check"
+          "$RUNNER_TEMP/astra-easel-document-check"
 
       - name: Validate native automation target boundaries
         shell: bash

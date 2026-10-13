@@ -11,6 +11,9 @@ struct ShellTopBarView: View {
 	var reservesWindowControls = false
 	var roundsLeadingButton = false
 	var acceptsFocusRequests = true
+	/// Optional window-specific action; all navigation and address controls remain shared.
+	var trailingAccessory: AnyView?
+	var usesThemeSurface = false
 	@Default(.developerModeEnabled) private var developerModeEnabled
 
 	private var showsDeveloperMode: Bool {
@@ -24,7 +27,11 @@ struct ShellTopBarView: View {
 				.frame(height: isCompact ? BrowserChromeMetrics.topBarRegionHeight * 2 : BrowserChromeMetrics.topBarRegionHeight)
 				.background {
 					ZStack {
-						browser.selectedTab?.activeController?.themeColor ?? theme.tabColor
+						if usesThemeSurface {
+							ThemeSurface(theme: theme)
+						} else {
+							browser.selectedTab?.activeController?.themeColor ?? theme.tabColor
+						}
 						if showsDeveloperMode {
 							Canvas { context, size in
 								for x in stride(from: -size.height, through: size.width, by: 24) {
@@ -45,6 +52,7 @@ struct ShellTopBarView: View {
 	}
 
 	private var controlsColorScheme: ColorScheme {
+		if usesThemeSurface { return theme.appearanceMode == .light ? .light : .dark }
 		if let isLight = browser.selectedTab?.activeController?.themeColorIsLight {
 			return isLight ? .light : .dark
 		}
@@ -115,6 +123,9 @@ struct ShellTopBarView: View {
 			ShellExtensionControls(browser: browser, theme: theme)
 				.offset(y: -0.5)
 				.fixedSize(horizontal: true, vertical: false)
+			if let trailingAccessory {
+				trailingAccessory.fixedSize(horizontal: true, vertical: false)
+			}
 		}
 		.padding(.trailing, BrowserChromeMetrics.topBarTrailingInset)
 	}
@@ -344,9 +355,9 @@ private struct ShellTopBarLoadingBar: View {
 		BrowserLoadingBar(
 			isLoading: controller.isLoading,
 			estimatedProgress: controller.estimatedProgress,
-			theme: theme
+			barColor: (controller.themeColorIsLight ?? theme.tabColorIsLight) ? .black : .white
 		)
-		.frame(height: 1.5)
+		.frame(height: 2)
 		.id(tabID)
 	}
 }
