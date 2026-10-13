@@ -8,42 +8,34 @@ struct DownloadsSidebarView: View {
 	@State private var scopedPreviewURL: URL?
 
 	var body: some View {
-		GeometryReader { geometry in
-			ScrollView {
-				LazyVStack(alignment: .leading, spacing: 5) {
-					#if os(macOS)
-						Text("Downloads")
-							.font(.headline)
-							.padding(.horizontal, 8)
-							.padding(.bottom, 6)
-					#endif
-
-					ForEach(manager.items) { item in
-						DownloadRowView(
-							item: item,
-							manager: manager,
-							theme: theme,
-							previewURL: $previewURL,
-							scopedPreviewURL: $scopedPreviewURL
-						)
-						.equatable()
+		List {
+			ForEach(manager.items) { item in
+				DownloadRowView(
+					item: item,
+					manager: manager,
+					theme: theme,
+					previewURL: $previewURL,
+					scopedPreviewURL: $scopedPreviewURL
+				)
+				.equatable()
+				.listRowInsets(EdgeInsets(top: 3, leading: BrowserChromeMetrics.shellEdgePadding, bottom: 3, trailing: BrowserChromeMetrics.shellEdgePadding))
+				.listRowBackground(Color.clear)
+				.listRowSeparator(.hidden)
+				.swipeActions(edge: .trailing, allowsFullSwipe: true) {
+					if item.status == .downloading || item.status == .paused || item.status == .finalizing {
+						Button("Cancel", systemImage: "xmark.circle", role: .destructive) { manager.cancel(item.id) }
+					} else {
+						Button("Delete", systemImage: "trash", role: .destructive) { manager.delete(item.id) }
 					}
 				}
-				.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
-				#if os(macOS)
-					.padding(.top, 35)
-					.padding(.bottom, 48)
-				#else
-					.padding(.vertical, 16)
-				#endif
-					.frame(minHeight: geometry.size.height, alignment: .top)
-				#if os(macOS)
-					.background {
-						WindowDragBackground()
-					}
-				#endif
 			}
 		}
+		.listStyle(.plain)
+		.scrollContentBackground(.hidden)
+		#if os(macOS)
+			.contentMargins(.top, 35)
+			.contentMargins(.bottom, 48)
+		#endif
 		.overlay {
 			if manager.items.isEmpty {
 				DownloadsEmptyView()
