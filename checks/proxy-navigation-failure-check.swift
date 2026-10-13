@@ -16,7 +16,7 @@ struct ProxyNavigationFailureCheck {
 			(308, .proxyConfigurationFailed),
 			(311, .proxyConnectionFailed),
 			(110, .proxyConnectionFailed),
-			(124, .proxyConnectionFailed),
+			(124, .proxyAuthenticationFailed), // No mutually acceptable SOCKS authentication method.
 		] {
 			let error = NSError(domain: cfNetwork, code: code)
 			let result = BrowserNavigationFailure(error: error, url: url)
