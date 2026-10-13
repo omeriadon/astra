@@ -69,6 +69,9 @@
     }, {
       "kind": "local",
       "path": "Packages/Haze",
+    }, {
+      "kind": "local",
+      "path": "Packages/AstraAutomationCore",
     },
   ],
   "files": [
@@ -92,6 +95,11 @@
             "AI/BrowserAIChatHistory.swift",
             "AI/Features/BrowserChatTitleFeature.swift",
             "App/AppDelegate.swift",
+            "Automation/AstraSystemActions.swift",
+            "Automation/Intents/AstraAdvancedIntents.swift",
+            "Automation/Intents/AstraBrowserIntents.swift",
+            "Automation/Services/AstraServicesProvider.swift",
+            "Automation/Spotlight/AstraSpotlightIndexer.swift",
             "App/BrowserAuthenticationSessionHandler.swift",
             "App/BrowserDataTransfer.swift",
             "App/BrowserDiagnostics.swift",
@@ -235,6 +243,10 @@
         }, {
           "package": "Sparkle",
           "product-name": "Sparkle",
+          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
+        }, {
+          "package": "AstraAutomationCore",
+          "product-name": "AstraAutomationCore",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
         },
       ],
