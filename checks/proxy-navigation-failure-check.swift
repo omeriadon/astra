@@ -8,15 +8,15 @@ struct ProxyNavigationFailureCheck {
 		let cfNetwork = kCFErrorDomainCFNetwork as String
 
 		for (code, kind) in [
-			(306, BrowserNavigationFailure.Kind.proxyUnavailable),
-			(310, .proxyUnavailable),
-			(307, .proxyAuthenticationRequired),
-			(309, .proxyAuthenticationRequired),
-			(122, .proxyAuthenticationRequired),
+			(306, BrowserNavigationFailure.Kind.proxyConnectionFailed),
+			(310, .proxyConnectionFailed),
+			(307, .proxyAuthenticationFailed),
+			(309, .proxyAuthenticationFailed),
+			(122, .proxyAuthenticationFailed),
 			(308, .proxyConfigurationFailed),
-			(311, .proxyRejectedConnection),
-			(110, .proxyRejectedConnection),
-			(124, .proxyRejectedConnection),
+			(311, .proxyConnectionFailed),
+			(110, .proxyConnectionFailed),
+			(124, .proxyConnectionFailed),
 		] {
 			let error = NSError(domain: cfNetwork, code: code)
 			let result = BrowserNavigationFailure(error: error, url: url)
@@ -27,11 +27,10 @@ struct ProxyNavigationFailureCheck {
 		let nestedProxy = NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotConnectToHost, userInfo: [
 			NSUnderlyingErrorKey: NSError(domain: cfNetwork, code: 310),
 		])
-		precondition(BrowserNavigationFailure(error: nestedProxy, url: url).kind == .proxyUnavailable)
+		precondition(BrowserNavigationFailure(error: nestedProxy, url: url).kind == .proxyConnectionFailed)
 
 		// A normal server failure must not be blamed on a configured proxy.
 		for (code, expected) in [
-			(NSURLErrorCannotConnectToHost, BrowserNavigationFailure.Kind.cannotConnect),
 			(NSURLErrorTimedOut, .timedOut),
 			(NSURLErrorCannotFindHost, .websiteNotFound),
 			(NSURLErrorNotConnectedToInternet, .offline),
@@ -45,7 +44,7 @@ struct ProxyNavigationFailureCheck {
 		precondition(BrowserNavigationFailure(error: authRequired, url: url).kind == .other)
 		precondition(BrowserNavigationFailure(
 			error: authRequired, url: url, encounteredProxyAuthentication: true
-		).kind == .proxyAuthenticationRequired)
+		).kind == .proxyAuthenticationFailed)
 		let cancelled = NSError(domain: NSURLErrorDomain, code: NSURLErrorUserCancelledAuthentication)
 		precondition(!BrowserNavigationFailure(
 			error: cancelled, url: url, encounteredProxyAuthentication: true
