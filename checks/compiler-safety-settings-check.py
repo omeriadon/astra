@@ -31,7 +31,9 @@ def main():
 
     require({target["name"] for target in data["targets"]}, EXPECTED_TARGETS, "project targets")
     require(settings["ENABLE_SECURITY_COMPILER_WARNINGS"], "YES", "Clang security warnings")
-    require(settings["CLANG_WARN_UNSAFE_BUFFER_USAGE"], "YES", "unsafe-buffer warnings")
+    require(settings["CLANG_WARN_SUSPICIOUS_IMPLICIT_CONVERSION"], "YES", "suspicious conversions")
+    require(settings["CLANG_WARN_OBJC_REPEATED_USE_OF_WEAK"], "YES", "repeated weak access")
+    require(settings["GCC_WARN_SHADOW"], "YES", "variable shadowing")
     require(settings["GCC_TREAT_WARNINGS_AS_ERRORS"], "NO", "Clang warnings remain warnings")
     require(settings["SWIFT_TREAT_WARNINGS_AS_ERRORS"], "NO", "Swift warnings remain warnings")
     require(settings["SWIFT_DISABLE_SAFETY_CHECKS"], "NO", "runtime safety checks")
