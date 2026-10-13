@@ -177,22 +177,8 @@ struct BrowserTabRow: View {
 			#if os(macOS)
 				guard onSelectTab == nil else { return }
 				if hovering {
-					// Frame arrives via the always-on geometry observer below;
-					// if we already have one, begin immediately so short hovers register.
-					if hoverPreviewStarted {
-						BrowserTabHoverPreviewCoordinator.shared.updateFrame(
-							for: tab.id,
-							windowID: browser.windowID,
-							frame: hoverFrame
-						)
-					} else if hoverFrame != .zero {
-						hoverPreviewStarted = true
-						BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
-							tabID: tab.id,
-							windowID: browser.windowID,
-							sourceFrame: hoverFrame
-						)
-					}
+					// Begin from the current position, never a stale offscreen frame.
+					hoverFrame = .zero
 				} else {
 					if hoverPreviewStarted {
 						BrowserTabHoverPreviewCoordinator.shared.hoverEnded(
@@ -201,29 +187,36 @@ struct BrowserTabRow: View {
 						)
 					}
 					hoverPreviewStarted = false
+					hoverFrame = .zero
 				}
 			#endif
 		}
 		#if os(macOS)
-		.onGeometryChange(for: CGRect.self) { proxy in
-			proxy.frame(in: .global)
-		} action: { frame in
-			guard onSelectTab == nil else { return }
-			hoverFrame = frame
-			guard isHovered else { return }
-			if hoverPreviewStarted {
-				BrowserTabHoverPreviewCoordinator.shared.updateFrame(
-					for: tab.id,
-					windowID: browser.windowID,
-					frame: frame
-				)
-			} else {
-				hoverPreviewStarted = true
-				BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
-					tabID: tab.id,
-					windowID: browser.windowID,
-					sourceFrame: frame
-				)
+		.background {
+			// Scrolling used to update @State for *every* tab row on each
+			// global-frame change. Only the hovered row needs a preview anchor.
+			if isHovered && onSelectTab == nil {
+				Color.clear
+					.onGeometryChange(for: CGRect.self) { proxy in
+						proxy.frame(in: .global)
+					} action: { frame in
+						guard frame != hoverFrame else { return }
+						hoverFrame = frame
+						if hoverPreviewStarted {
+							BrowserTabHoverPreviewCoordinator.shared.updateFrame(
+								for: tab.id,
+								windowID: browser.windowID,
+								frame: frame
+							)
+						} else if frame != .zero {
+							hoverPreviewStarted = true
+							BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
+								tabID: tab.id,
+								windowID: browser.windowID,
+								sourceFrame: frame
+							)
+						}
+					}
 			}
 		}
 		.onChange(of: tab.id) { oldID, _ in
@@ -414,18 +407,31 @@ private struct TabTitleView: View {
 					onSelectTab?(tab.id)
 				}
 			} label: {
-				GeometryReader { proxy in
-					Text(verbatim: tab.title)
-						.contentTransition(.opacity)
-						.animation(reduceMotion ? nil : .smooth(duration: 0.2), value: tab.title)
-						.lineLimit(1)
-						.fixedSize(horizontal: true, vertical: false)
-						.frame(width: proxy.size.width, alignment: .leading)
-						.mask(titleFadeMask(width: proxy.size.width))
-						.frame(height: proxy.size.height, alignment: .leading)
-						.clipped()
-				}
-				.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+				Text(verbatim: tab.title)
+					.contentTransition(.opacity)
+					.animation(reduceMotion ? nil : .smooth(duration: 0.2), value: tab.title)
+					.lineLimit(1)
+					.fixedSize(horizontal: true, vertical: false)
+					.frame(maxWidth: .infinity, alignment: .leading)
+					.mask {
+						// A flexible opaque region plus a fixed-width trailing fade
+						// avoids measuring each title with a GeometryReader on scroll.
+						HStack(spacing: 0) {
+							Color.white
+							LinearGradient(
+								colors: [.white, .clear],
+								startPoint: .leading,
+								endPoint: .trailing
+							)
+							.frame(width: isHovered ? max(0, closeFadeWidth + 28 - hoverClearWidth) : closeFadeWidth)
+							if isHovered {
+								Color.clear.frame(width: hoverClearWidth)
+							}
+						}
+						.frame(maxWidth: .infinity)
+					}
+					.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+					.clipped()
 				.contentShape(Rectangle())
 			}
 			.buttonStyle(.plain)
@@ -454,21 +460,10 @@ private struct TabTitleView: View {
 		}
 	}
 
-	private func titleFadeMask(width: CGFloat) -> some View {
-		let fadeWidth = isHovered ? closeFadeWidth + 28 : closeFadeWidth
-		let fadeStart = max(0, 1 - fadeWidth / max(width, 1))
-		let fadeEnd = isHovered ? max(0, 1 - (onSelectTab == nil ? 20 : 44) / max(width, 1)) : 1
-		return LinearGradient(
-			stops: [
-				.init(color: .white, location: 0),
-				.init(color: .white, location: fadeStart),
-				.init(color: .clear, location: fadeEnd),
-				.init(color: .clear, location: 1),
-			],
-			startPoint: .leading,
-			endPoint: .trailing
-		)
+	private var hoverClearWidth: CGFloat {
+		onSelectTab == nil ? 20 : 44
 	}
+
 }
 
 private struct TabCloseButton: View {
