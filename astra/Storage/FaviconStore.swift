@@ -106,6 +106,10 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	private(set) var favicons: [String: Data]
 	@ObservationIgnored
 	private var fetchedAt: [String: Date] = [:]
+	/// Optional vibrant logo colours, computed once per cached icon on a
+	/// background executor. Neutral favicons deliberately have no accent.
+	@ObservationIgnored private var faviconAccents: [String: (Double, Double, Double)] = [:]
+	@ObservationIgnored private var faviconAccentMisses: Set<String> = []
 	/// Bounded URL-to-origin cache: sidebar rows can be reevaluated frequently
 	/// without reparsing every unchanged URL into URLComponents.
 	@ObservationIgnored private var visibleOriginCache: [URL: String] = [:]
@@ -246,6 +250,87 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		return Self.swiftUIImage(decoded)
 	}
 
+	/// OpenBrand/Color Tailor-style logo accent fallback, never used when
+	/// Astra can see a painted page surface or explicit theme metadata.
+	/// ImageIO downsamples to 32 px on a detached utility task, and never
+	/// decodes an icon during a scrollbar/toolbar animation.
+	func cachedAccentColor(for pageURL: URL?) async -> (Double, Double, Double)? {
+		guard let key = visibleOrigin(for: pageURL),
+		      let data = favicons[key] else { return nil }
+		if let cached = faviconAccents[key] { return cached }
+		if faviconAccentMisses.contains(key) { return nil }
+		let accent = await Task.detached(priority: .utility) {
+			Self.extractFaviconAccent(data)
+		}.value
+		// An icon may have changed while extraction ran.
+		guard favicons[key] == data else { return nil }
+		if let accent {
+			faviconAccents[key] = accent
+		} else {
+			faviconAccentMisses.insert(key)
+		}
+		return accent
+	}
+
+	private nonisolated static func extractFaviconAccent(_ data: Data) -> (Double, Double, Double)? {
+		guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+		      let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+			kCGImageSourceCreateThumbnailFromImageAlways: true,
+			kCGImageSourceCreateThumbnailWithTransform: true,
+			kCGImageSourceThumbnailMaxPixelSize: 32
+		] as CFDictionary) else { return nil }
+		let width = 32, height = 32, stride = 32 * 4
+		var pixels = [UInt8](repeating: 0, count: height * stride)
+		let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+			guard let context = CGContext(
+				data: buffer.baseAddress, width: width, height: height,
+				bitsPerComponent: 8, bytesPerRow: stride,
+				space: CGColorSpaceCreateDeviceRGB(),
+				bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue |
+					CGImageAlphaInfo.premultipliedLast.rawValue
+			) else { return false }
+			context.interpolationQuality = .medium
+			context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+			return true
+		}
+		guard drawn else { return nil }
+		// Hue buckets favour sufficiently saturated brand regions while
+		// ignoring transparent, white, grey and generic dark backgrounds.
+		var buckets = [(weight: Double, red: Double, green: Double, blue: Double)](
+			repeating: (0, 0, 0, 0), count: 36
+		)
+		for offset in stride(from: 0, to: pixels.count, by: 4) {
+			let a = Double(pixels[offset + 3]) / 255
+			guard a > 0.45 else { continue }
+			let r = min(1, Double(pixels[offset]) / 255 / a)
+			let g = min(1, Double(pixels[offset + 1]) / 255 / a)
+			let b = min(1, Double(pixels[offset + 2]) / 255 / a)
+			let maxChannel = max(r, g, b)
+			let minChannel = min(r, g, b)
+			let chroma = maxChannel - minChannel
+			guard chroma > 0.2, maxChannel > 0.15 else { continue }
+			let saturation = chroma / maxChannel
+			var hue: Double
+			if maxChannel == r {
+				hue = ((g - b) / chroma).truncatingRemainder(dividingBy: 6)
+			} else if maxChannel == g {
+				hue = (b - r) / chroma + 2
+			} else {
+				hue = (r - g) / chroma + 4
+			}
+			if hue < 0 { hue += 6 }
+			let bucket = min(17, Int(hue / 6 * 18)) * 2 + (maxChannel > 0.6 ? 1 : 0)
+			let weight = a * saturation
+			buckets[bucket].weight += weight
+			buckets[bucket].red += r * weight
+			buckets[bucket].green += g * weight
+			buckets[bucket].blue += b * weight
+		}
+		guard let best = buckets.max(by: { $0.weight < $1.weight }),
+		      best.weight >= 4 else { return nil }
+		return (best.red / best.weight, best.green / best.weight, best.blue / best.weight)
+	}
+
 	func loadFavicon(for pageURL: URL, from webView: WKWebView, onlyIfMissing: Bool = false) async {
 		BrowserLog.trace(.favicons, "favicon.load", metadata: ["url": BrowserLog.url(pageURL), "only_if_missing": String(onlyIfMissing)])
 		guard let key = FaviconKey.origin(for: pageURL),
@@ -308,6 +393,8 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 
 		fetchedAt[key] = .now
 		favicons[key] = data
+		faviconAccents[key] = nil
+		faviconAccentMisses.remove(key)
 		decodedImages.setObject(platformImage, forKey: key as NSString, cost: Self.decodedImageCost(platformImage))
 		trimCache()
 		scheduleFaviconSave()
@@ -315,6 +402,8 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 
 	func clear() {
 		BrowserLog.notice(.favicons, "favicon.clear")
+		faviconAccents.removeAll()
+		faviconAccentMisses.removeAll()
 		cacheGeneration += 1
 		activeRequests.removeAll()
 		decodedImages.removeAllObjects()
