@@ -7,6 +7,9 @@ import Defaults
 import Foundation
 import Observation
 import SwiftUI
+#if os(macOS)
+	import UniformTypeIdentifiers
+#endif
 
 struct BrowserTabRow: View {
 	let tab: BrowserTab
@@ -36,6 +39,8 @@ struct BrowserTabRow: View {
 	#if os(macOS)
 		@State private var hoverFrame = CGRect.zero
 		@State private var hoverPreviewStarted = false
+		@State private var splitDropSide: Browser.SplitSide?
+		@State private var splitDropWidth: CGFloat = 1
 	#endif
 	@State private var renameText = ""
 	@Default(.developerModeEnabled) private var developerModeEnabled
@@ -177,7 +182,7 @@ struct BrowserTabRow: View {
 			isHovered = hovering
 			#if os(macOS)
 				guard onSelectTab == nil else { return }
-				if hovering {
+				if hovering && NSEvent.pressedMouseButtons == 0 {
 					// Frame arrives via the always-on geometry observer below;
 					// if we already have one, begin immediately so short hovers register.
 					if hoverPreviewStarted {
@@ -211,7 +216,7 @@ struct BrowserTabRow: View {
 		} action: { frame in
 			guard onSelectTab == nil else { return }
 			hoverFrame = frame
-			guard isHovered else { return }
+			guard isHovered, NSEvent.pressedMouseButtons == 0 else { return }
 			if hoverPreviewStarted {
 				BrowserTabHoverPreviewCoordinator.shared.updateFrame(
 					for: tab.id,
@@ -244,6 +249,44 @@ struct BrowserTabRow: View {
 				)
 			}
 			hoverPreviewStarted = false
+		}
+		#endif
+		#if os(macOS)
+		// Drag the whole tab, not merely its title or icon. Tab and page drop
+		// zones consume the same in-process tab identity.
+		.onGeometryChange(for: CGFloat.self) { $0.size.width } action: { splitDropWidth = $0 }
+		.onDrag {
+			BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
+			let data = tab.id.uuidString.data(using: .utf8) ?? Data()
+			let provider = NSItemProvider()
+			provider.registerDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab", visibility: .ownProcess) { completion in
+				completion(data, nil)
+				return nil
+			}
+			return provider
+		} preview: {
+			HStack(spacing: 8) {
+				Image(systemName: tab.internalPage?.symbol ?? "globe")
+				Text(verbatim: tab.title).lineLimit(1)
+				Spacer(minLength: 0)
+			}
+			.padding(.horizontal, 10)
+			.frame(width: max(splitDropWidth, 140), height: 28)
+			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
+		}
+		.onDrop(of: [UTType(exportedAs: "com.omeriadon.astra.tab")],
+		        delegate: BrowserTabRowSplitDropDelegate(
+				browser: browser, anchorID: tab.id, width: splitDropWidth, side: $splitDropSide
+			))
+		.overlay {
+			if let splitDropSide {
+				HStack(spacing: 0) {
+					(splitDropSide == .left ? Color.accentColor.opacity(0.19) : Color.clear)
+					(splitDropSide == .right ? Color.accentColor.opacity(0.19) : Color.clear)
+				}
+				.clipShape(RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
+				.allowsHitTesting(false)
+			}
 		}
 		#endif
 		.contextMenu {
@@ -359,17 +402,6 @@ private struct TabIconView: View {
 			.frame(width: onSelectTab == nil ? 16 : 22, height: onSelectTab == nil ? 16 : 22)
 		}
 		.buttonStyle(.plain)
-		#if os(macOS)
-			.onDrag {
-				let data = tab.id.uuidString.data(using: .utf8) ?? Data()
-				let provider = NSItemProvider()
-				provider.registerDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab", visibility: .ownProcess) { completion in
-					completion(data, nil)
-					return nil
-				}
-				return provider
-			}
-		#endif
 			.accessibilityIdentifier("select-tab-\(tab.id.uuidString)")
 	}
 }
@@ -431,17 +463,6 @@ private struct TabTitleView: View {
 				.contentShape(Rectangle())
 			}
 			.buttonStyle(.plain)
-			#if os(macOS)
-				.onDrag {
-					let data = tab.id.uuidString.data(using: .utf8) ?? Data()
-					let provider = NSItemProvider()
-					provider.registerDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab", visibility: .ownProcess) { completion in
-						completion(data, nil)
-						return nil
-					}
-					return provider
-				}
-			#endif
 				.simultaneousGesture(
 					TapGesture(count: 2)
 						.onEnded { _ in onBeginRenaming() }
@@ -851,4 +872,53 @@ private struct SidebarSelectedTabsContextMenu: View {
 			ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
 		}
 	}
+#endif
+
+#if os(macOS)
+private struct BrowserTabRowSplitDropDelegate: DropDelegate {
+	let browser: Browser
+	let anchorID: UUID
+	let width: CGFloat
+	@Binding var side: Browser.SplitSide?
+
+	private func locationSide(_ info: DropInfo) -> Browser.SplitSide {
+		info.location.x < width / 2 ? .left : .right
+	}
+
+	func validateDrop(info: DropInfo) -> Bool {
+		!browser.isPrivate && !browser.isMini
+			&& browser.tab(withID: anchorID)?.canAppearInEaselSplit == true
+			&& info.hasItemsConforming(to: ["com.omeriadon.astra.tab"])
+	}
+
+	func dropEntered(info: DropInfo) {
+		guard validateDrop(info: info) else { return }
+		side = locationSide(info)
+		BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
+	}
+
+	func dropUpdated(info: DropInfo) -> DropProposal? {
+		guard validateDrop(info: info) else { return DropProposal(operation: .forbidden) }
+		side = locationSide(info)
+		return DropProposal(operation: .move)
+	}
+
+	func dropExited(info _: DropInfo) { side = nil }
+
+	func performDrop(info: DropInfo) -> Bool {
+		defer { side = nil }
+		guard validateDrop(info: info),
+		      let provider = info.itemProviders(for: ["com.omeriadon.astra.tab"]).first
+		else { return false }
+		let onLeft = locationSide(info) == .left
+		_ = provider.loadDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab") { data, _ in
+			guard let data, let raw = String(data: data, encoding: .utf8),
+			      let id = UUID(uuidString: raw), id != anchorID else { return }
+			Task { @MainActor in
+				browser.openSplit(id, beside: anchorID, onLeft: onLeft)
+			}
+		}
+		return true
+	}
+}
 #endif
