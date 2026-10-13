@@ -79,8 +79,8 @@ private struct BrowserBoostEditorView: View {
             if loaded {
                 BoostCodeTextView(text: activeCode, language: language)
                     .overlay(alignment: .bottomLeading) {
-                        if let syntaxIssue {
-                            Text(syntaxIssue)
+                        if let message = syntaxIssue ?? store.validationMessage {
+                            Text(message)
                                 .font(.caption.monospaced())
                                 .foregroundStyle(.orange)
                                 .padding(8)
