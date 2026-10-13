@@ -73,7 +73,6 @@ private actor AstraSpotlightWriter {
                 let attributes = CSSearchableItemAttributeSet(contentType: .text)
                 attributes.title = record.title
                 attributes.contentDescription = record.detail
-                attributes.relatedUniqueIdentifier = record.url
                 attributes.keywords = ["Astra", record.kind]
                 let item = CSSearchableItem(uniqueIdentifier: record.identifier,
                                             domainIdentifier: domain, attributeSet: attributes)
