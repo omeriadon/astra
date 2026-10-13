@@ -193,3 +193,85 @@ struct BrowserEaselDocument: Codable, Equatable, Sendable {
 		return !host.unicodeScalars.contains { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) }
 	}
 }
+
+
+extension BrowserEaselQuote {
+	/// Runs only in the source peek. CSS Custom Highlights survive ordinary
+	/// selection changes and clicks because they do not use window selection.
+	static let highlightScript = """
+	((quote) => {
+	  if (!document.body || !globalThis.CSS?.highlights || typeof Highlight === 'undefined') return;
+	  const key = 'astra-easel-quote';
+	  window.__astraQuoteObserver?.disconnect();
+	  const normalize = s => s.replace(/\\s+/g, ' ').trim();
+	  const target = normalize(quote.text);
+	  if (!target) return;
+	  const prefix = normalize(quote.prefix), suffix = normalize(quote.suffix);
+	  function locate() {
+	    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+	    const parts = [];
+	    let raw = '', node, count = 0;
+	    while ((node = walker.nextNode()) && count++ < 20000 && raw.length < 500000) {
+	      if (!node.nodeValue || node.parentElement?.closest('script,style,noscript,template')) continue;
+	      parts.push({node, start: raw.length});
+	      raw += node.nodeValue;
+	    }
+	    if (!raw) return null;
+	    let normalized = '', offsets = [];
+	    for (let i = 0; i < raw.length; i++) {
+	      const c = raw[i];
+	      if (/\\s/.test(c)) {
+	        if (normalized && normalized[normalized.length - 1] !== ' ') {
+	          normalized += ' '; offsets.push(i);
+	        }
+	      } else {
+	        normalized += c; offsets.push(i);
+	      }
+	    }
+	    let best = -1, bestScore = -1, at = 0;
+	    for (let n = 0; n < 100; n++) {
+	      const found = normalized.indexOf(target, at);
+	      if (found < 0) break;
+	      const before = normalized.slice(Math.max(0, found - prefix.length), found).trim();
+	      const after = normalized.slice(found + target.length, found + target.length + suffix.length).trim();
+	      const score = (prefix && before.endsWith(prefix) ? 2 : 0)
+	        + (suffix && after.startsWith(suffix) ? 2 : 0);
+	      if (score > bestScore) { best = found; bestScore = score; }
+	      at = found + 1;
+	      if (score === 4) break;
+	    }
+	    if (best < 0) return null;
+	    const start = offsets[best], end = offsets[best + target.length - 1] + 1;
+	    const first = parts.find((p, i) => start >= p.start && (i + 1 === parts.length || start < parts[i + 1].start));
+	    const last = parts.find((p, i) => end > p.start && (i + 1 === parts.length || end <= parts[i + 1].start));
+	    if (!first || !last) return null;
+	    const range = document.createRange();
+	    range.setStart(first.node, start - first.start);
+	    range.setEnd(last.node, end - last.start);
+	    return range;
+	  }
+	  let active;
+	  function highlight() {
+	    if (active?.startContainer?.isConnected && active?.endContainer?.isConnected) return;
+	    active = locate();
+	    if (!active) return;
+	    CSS.highlights.set(key, new Highlight(active));
+	    active.startContainer.parentElement?.scrollIntoView({block:'center', behavior:'instant'});
+	  }
+	  if (!document.getElementById('astra-easel-quote-style')) {
+	    const style = document.createElement('style');
+	    style.id = 'astra-easel-quote-style';
+	    style.textContent = '::highlight(astra-easel-quote){background-color:rgba(255,211,65,.85);color:#181818;text-decoration:underline;text-decoration-color:#916200}';
+	    document.head?.appendChild(style);
+	  }
+	  highlight();
+	  let queued = false;
+	  window.__astraQuoteObserver = new MutationObserver(() => {
+	    if (queued || active?.startContainer?.isConnected) return;
+	    queued = true;
+	    requestAnimationFrame(() => { queued = false; highlight(); });
+	  });
+	  window.__astraQuoteObserver.observe(document.body, {childList:true, subtree:true});
+	})(__ASTRA_QUOTE__);
+	"""
+}

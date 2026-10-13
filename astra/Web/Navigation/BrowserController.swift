@@ -212,6 +212,12 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var mediaCaptureStateDocumentID: Int?
 	var popupRequested: ((WKWebViewConfiguration, UnitPoint, Bool?) -> WKWebView?)?
 	var newTabRequested: ((URLRequest, Bool) -> Void)?
+	@ObservationIgnored
+	var easelQuoteDestinations: (() -> [BrowserEaselQuoteDestination])?
+	@ObservationIgnored
+	var addQuoteToEasel: ((UUID, BrowserEaselQuote) -> Void)?
+	@ObservationIgnored
+	var easelQuoteHighlight: BrowserEaselQuote?
 	var closeRequested: (() -> Void)?
 	@ObservationIgnored
 	var promptOwnership: ((WKWebView) -> Bool)?
@@ -1482,6 +1488,12 @@ final class BrowserController: NSObject, Identifiable {
 		createdWebView?.setAllMediaPlaybackSuspended(true, completionHandler: nil)
 		stopCapture()
 		(createdWebView as? PeekSourceWebView)?.onEscape = nil
+		#if os(macOS)
+			(createdWebView as? PeekSourceWebView)?.quoteDestinations = nil
+			(createdWebView as? PeekSourceWebView)?.onQuoteRequested = nil
+		#endif
+		easelQuoteDestinations = nil
+		addQuoteToEasel = nil
 		(createdWebView as? PeekSourceWebView)?.onLayout = nil
 		(createdWebView as? PeekSourceWebView)?.onZoomIn = nil
 		(createdWebView as? PeekSourceWebView)?.onZoomOut = nil
@@ -1630,6 +1642,10 @@ final class BrowserController: NSObject, Identifiable {
 		webViewStageStarted = BrowserLog.clock()
 		let webView = PeekSourceWebView(frame: .zero, configuration: configuration)
 		#if os(macOS)
+			webView.quoteDestinations = { [weak self] in self?.easelQuoteDestinations?() ?? [] }
+			webView.onQuoteRequested = { [weak self] destinationID in
+				self?.captureEaselQuote(for: destinationID)
+			}
 			BrowserDesktopCommands.configureWebInspector(webView, enabled: Defaults[.webInspectorEnabled])
 		#endif
 		createdWebView = webView
@@ -2797,6 +2813,7 @@ extension BrowserController: WKNavigationDelegate {
 			}
 		#endif
 		refreshContentBlocking(for: webView.url)
+		applyEaselQuoteHighlight(in: webView)
 		webView.evaluateJavaScript("globalThis.astraProbeReader?.(true)", in: nil, in: .defaultClient, completionHandler: nil)
 		updateHistory()
 		if showsFind, !findText.isEmpty {
@@ -2931,6 +2948,74 @@ extension BrowserController: WKScriptMessageHandler {
 		}
 	}
 }
+
+
+	#if os(macOS)
+		/// Query at action time, avoiding races between WebKit's contextmenu event
+		/// and AppKit's synchronous willOpenMenu callback.
+		private func captureEaselQuote(for destinationID: UUID) {
+			guard !session.isPrivate,
+			      easelQuoteDestinations?().contains(where: { $0.id == destinationID }) == true,
+			      hasCurrentPageDocument, let webView = createdWebView,
+			      let url = webView.url.map(BrowserAddress.withoutCredentials),
+			      BrowserEaselDocument.isSafeLink(url) else { return }
+			let documentID = navigationIdentifier
+			let script = """
+			(() => {
+			  const sel = window.getSelection();
+			  if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+			  const text = sel.toString().trim();
+			  if (!text || text.length > 8192) return null;
+			  let prefix = '', suffix = '';
+			  try {
+			    const range = sel.getRangeAt(0);
+			    if (document.body?.contains(range.startContainer) &&
+			        document.body?.contains(range.endContainer)) {
+			      const before = document.createRange();
+			      before.selectNodeContents(document.body);
+			      before.setEnd(range.startContainer, range.startOffset);
+			      prefix = before.toString().slice(-48);
+			      const after = document.createRange();
+			      after.selectNodeContents(document.body);
+			      after.setStart(range.endContainer, range.endOffset);
+			      suffix = after.toString().slice(0, 48);
+			    }
+			  } catch (_) {}
+			  return {text, prefix, suffix};
+			})()
+			"""
+			webView.evaluateJavaScript(script, in: nil, in: .defaultClient) { [weak self, weak webView] result in
+				guard let self, let webView, owns(webView),
+				      navigationIdentifier == documentID, hasCurrentPageDocument,
+				      let currentURL = webView.url.map(BrowserAddress.withoutCredentials),
+				      currentURL == url, case let .success(value) = result,
+				      let capture = value as? [String: String],
+				      let text = capture["text"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+				else { return }
+				let quote = BrowserEaselQuote(url: url, text: text,
+					prefix: String((capture["prefix"] ?? "").suffix(48)),
+					suffix: String((capture["suffix"] ?? "").prefix(48)))
+				guard quote.isValid,
+				      easelQuoteDestinations?().contains(where: { $0.id == destinationID }) == true else { return }
+				addQuoteToEasel?(destinationID, quote)
+			}
+		}
+	#endif
+
+	private func applyEaselQuoteHighlight(in webView: WKWebView) {
+		guard let quote = easelQuoteHighlight, quote.isValid, let url = webView.url,
+		      var current = URLComponents(url: url, resolvingAgainstBaseURL: false),
+		      var original = URLComponents(url: quote.url, resolvingAgainstBaseURL: false) else { return }
+		current.fragment = nil
+		original.fragment = nil
+		guard current.url == original.url,
+		      let payload = try? JSONSerialization.data(withJSONObject: [
+		      	"text": quote.text, "prefix": quote.prefix, "suffix": quote.suffix,
+		      ]),
+		      let json = String(data: payload, encoding: .utf8) else { return }
+		let script = BrowserEaselQuote.highlightScript.replacingOccurrences(of: "__ASTRA_QUOTE__", with: json)
+		webView.evaluateJavaScript(script, in: nil, in: .defaultClient, completionHandler: nil)
+	}
 
 extension BrowserController: WKUIDelegate {
 	#if os(macOS)
@@ -3315,6 +3400,35 @@ extension BrowserController: WKUIDelegate {
 }
 
 private final class PeekSourceWebView: WKWebView {
+	#if os(macOS)
+		var quoteDestinations: (() -> [BrowserEaselQuoteDestination])?
+		var onQuoteRequested: ((UUID) -> Void)?
+
+		override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+			super.willOpenMenu(menu, with: event)
+			guard menu.items.contains(where: {
+				$0.identifier?.rawValue == "WKMenuItemIdentifierCopy" || $0.title == "Copy"
+			}), let destinations = quoteDestinations?(), !destinations.isEmpty else { return }
+			let submenu = NSMenu(title: "Add to Easel")
+			for destination in destinations {
+				let option = NSMenuItem(title: destination.title, action: #selector(addSelectedQuote(_:)), keyEquivalent: "")
+				option.target = self
+				option.representedObject = destination.id.uuidString
+				submenu.addItem(option)
+			}
+			menu.addItem(.separator())
+			let item = NSMenuItem(title: "Add to Easel", action: nil, keyEquivalent: "")
+			item.submenu = submenu
+			menu.addItem(item)
+		}
+
+		@objc private func addSelectedQuote(_ sender: NSMenuItem) {
+			guard let identifier = sender.representedObject as? String,
+			      let id = UUID(uuidString: identifier) else { return }
+			onQuoteRequested?(id)
+		}
+	#endif
+
 	var onEscape: (() -> Void)?
 	var onLayout: (() -> Void)?
 	var onZoomIn: (() -> Void)?
