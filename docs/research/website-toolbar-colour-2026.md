@@ -9,21 +9,23 @@
 | Source | Technique | Applicability to Astra |
 | --- | --- | --- |
 | [MDN: meta theme-color](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/meta/name/theme-color) | Explicit per-page CSS colour, including media-dependent variants | Keep the native WebKit `themeColor` as an authoritative input when no convincing page header is visible |
-| [MDN: web app theme_color](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest/Reference/theme_color) | Manifest fallback; metadata can be overridden by each page | Native WebKit handles these signals; avoid a second manifest fetch |
-| [Safari Color Tinting (andesco)](https://github.com/andesco/safari-color-tinting) | Safari 26+ prefers body surface or qualifying fixed/sticky top-of-page elements | Sample the rendered document's full-width header or visible top-edge surface |
+| [MDN: web app theme_color](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest/Reference/theme_color) | Web-app manifest defines an optional theme preference, distinct from `<meta>` | Do not infer current visible chrome from the manifest; Apple's `WKWebView.themeColor` documentation specifically describes the first valid page meta tag |
+| [Safari Color Tinting (andesco)](https://github.com/andesco/safari-color-tinting) | Empirical Safari 26+ research finds body backgrounds or qualifying full-width top-edge fixed/sticky elements, rather than only meta tags | Sample the current viewport's painted header/top-edge surfaces rather than hardcoding the brand domain |
 | [Safari 26 investigations](https://grooovinger.com/notes/2026-02-27-safari-26-header-background) | Empirical comparison of meta theme and CSS header/background sampling | Confirms an explicit `<meta>` alone can diverge from the site's visible chrome |
 | [branding-go](https://github.com/julianmarshall911/branding-go) | Scrapes CSS, boosts `--primary`/brand tokens, and ranks saturation/frequency | Useful for brand identity, but not reliable as the exact colour of the current page's toolbar, dark mode, route or scroll state |
 | [Color Thief](https://github.com/lokesh/color-thief) | Image palette extraction / quantisation | Useful for a later image-logo/hero fallback, but requires image decoding and risks extracting incidental imagery |
 | [Vibrant](https://github.com/Vibrant-Colors/node-vibrant) | Vibrant/muted image clusters | Same tradeoff; no need for a new JS bundle or image-worker pipeline for a solid-colour toolbar |
 | [Brand Colors](https://github.com/reimertz/brand-colors) | Curated historical brand colour JSON | Company brand colours are not keyed to website routes, user's colour scheme or redesigns |
 | [Simple Icons](https://github.com/simple-icons/simple-icons) | Thousands of brand icons with reference HEX values | Domain-to-brand mapping is ambiguous; icon HEX need not match currently visible site UI |
+| [Apple WebKit themeColor](https://developer.apple.com/documentation/webkit/wkwebview/themecolor) | Native property reads the first valid theme-color meta tag | Use as a fallback to current on-screen header colours, even though Safari 26's own toolbar tinting may use a different source |
+| [Apple WebKit underPageBackgroundColor](https://developer.apple.com/documentation/webkit/wkwebview/underpagebackgroundcolor) | Derives scrolling background from the body/html/webview backgrounds; is also publicly settable | Last fallback only: this may differ from a fixed/sticky page header |
 | [W3C WCAG luminance](https://www.w3.org/WAI/WCAG21/Understanding/relative-luminance.html) | Linearised sRGB weighted luminance | Exact black-vs-white contrast choice with crossover luminance ≈ 0.179 |
 
 **Decision:** No remote catalogue, domain allowlist, API or image-processing dependency. A local, bounded live surface sampler adapts to each actual page, its light/dark appearance, SPA changes, and sticky-header behaviour. Existing WebKit metadata remains in the priority chain.
 
 ## Implemented resolution order
 
-1. **Visible website chrome:** in the page's isolated WebKit content world, inspect 40 hit-tested points across four shallow horizontal rows at the viewport top. Walk a maximum of 14 ancestors per point, accepting opaque computed backgrounds from qualifying full-width header/nav/fixed/sticky elements. Quantise RGB into small buckets and require at least 45% of all sampled points to agree on the dominant header colour. Transparent foreground controls do not obscure an opaque ancestor.
+1. **Visible website chrome:** in the page's isolated WebKit content world, inspect 40 hit-tested points across four shallow horizontal rows at the viewport top. Walk a maximum of 14 ancestors per point, compositing translucent computed backgrounds over opaque ancestors and accepting painted full-width headers, navbars and top-edge surfaces. A fully transparent header must not claim an opaque body colour as its own. Quantise RGB into small buckets and require at least 45% of all sampled points to agree on the dominant header colour. Transparent foreground controls do not obscure an opaque ancestor.
 2. **Native WebKit theme colour:** respect `WKWebView.themeColor`, which accounts for page metadata and may update as a site's theme changes. Unlike scanning `<meta>` manually, this uses WebKit's own implementation.
 3. **Visible page surface:** if no convincing header and no WebKit theme colour exist, accept an opaque surface only when it covers at least half the samples.
 4. **Under-page background:** use WebKit's `underPageBackgroundColor`; otherwise white.
@@ -38,9 +40,9 @@ The progress bar is solid black or solid white, chosen against the **actual top-
 
 ## Behavioural validation
 
-`node checks/website-chrome-tint-check.mjs` checks the injected script itself for: solid header detection, body fallback, gradient rejection, dynamic colour mutation, debounce, deduplication, hidden-tab suppression, duplicate-install protection, and the SwiftUI progress-colour wiring.
+`node checks/website-chrome-tint-check.mjs` checks the injected script itself for: solid/translucent/fully transparent header handling, body fallback, gradient rejection, dynamic colour mutation, debounce, deduplication, hidden-tab suppression, duplicate-install protection, and the SwiftUI progress-colour wiring.
 
-The macOS WebKit runtime still needs a genuine Xcode build and interactive checks on representative sites. Test fixed vs sticky headers, gradients, responsive navigation, dark-mode transitions, SPA route changes, website apps and Mini Astra. The script does not claim pixel-accurate colour extraction for image/gradient headers; that would require a separate screenshot or image pipeline and profiling before adoption.
+The JavaScript regression checks passed in an isolated V8 harness using the exact checked-in Swift script; GitHub Actions has not produced a run for this PR yet. The macOS WebKit runtime still needs a genuine Xcode build and interactive checks on representative sites. Test fixed vs sticky headers, gradients, responsive navigation, dark-mode transitions, SPA route changes, website apps and Mini Astra. The script does not claim pixel-accurate colour extraction for image/gradient headers; that would require a separate screenshot or image pipeline and profiling before adoption.
 
 ## Rejected shortcuts
 
