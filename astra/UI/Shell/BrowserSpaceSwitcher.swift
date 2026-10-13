@@ -136,6 +136,14 @@ struct BrowserSpaceSwitcherOverlay: View {
     private let cardHeight: CGFloat = 150
     private let cardSpacing: CGFloat = 18
 
+    private var isDarkTheme: Bool {
+        switch browser.theme.appearanceMode {
+        case .dark: true
+        case .light: false
+        case .auto: colorScheme == .dark
+        }
+    }
+
     private var selectedIndex: Int {
         browser.workspace.spaces.firstIndex { $0.id == switcher.highlightedSpaceID } ?? 0
     }
@@ -145,7 +153,7 @@ struct BrowserSpaceSwitcherOverlay: View {
             GeometryReader { geometry in
                 ZStack {
                     Rectangle()
-                        .fill(colorScheme == .dark ? Color.white.opacity(0.075) : Color.black.opacity(0.14))
+                        .fill(isDarkTheme ? Color.white.opacity(0.075) : Color.black.opacity(0.14))
                         .ignoresSafeArea()
 
                     GlassEffectContainer {

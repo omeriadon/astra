@@ -433,6 +433,11 @@
       ],
       "package-product-members": [
         {
+          "package": "KeyboardShortcuts",
+          "product-name": "KeyboardShortcuts",
+          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
+        },
+        {
           "product-name": "Haze",
           "build-phase": { "build-phase": "frameworks" },
         }, {

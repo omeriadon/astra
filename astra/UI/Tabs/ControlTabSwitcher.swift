@@ -23,6 +23,7 @@
 		@ObservationIgnored
 		private var sessionForward = true
 		@ObservationIgnored private var heldModifiers: NSEvent.ModifierFlags = []
+		@ObservationIgnored private var suppressionModifiers: NSEvent.ModifierFlags = []
 		@ObservationIgnored
 		private var isCancelledUntilControlRelease = false
 
@@ -42,7 +43,10 @@
 				let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 				let isHandled = MainActor.assumeIsolated {
 					guard let self else { return false }
-					let isControlPressed = modifiers.isSuperset(of: self.heldModifiers.isEmpty ? [.control] : self.heldModifiers)
+					let expectedModifiers = self.isCancelledUntilControlRelease
+						? self.suppressionModifiers
+						: self.heldModifiers.isEmpty ? [.control] : self.heldModifiers
+					let isControlPressed = modifiers.isSuperset(of: expectedModifiers)
 					let isFocusedWindow = BrowserKeyboardMenuPolicy.ownsFocusedTarget(
 						isKeyWindow: self.window?.isKeyWindow == true,
 						matchesKeyWindow: self.window === NSApp.keyWindow
@@ -93,7 +97,9 @@
 		func select(_ tabID: UUID) {
 			guard candidateIDs.contains(tabID) else { return }
 			browser.commitTabSwitch(to: tabID)
-			isCancelledUntilControlRelease = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask).isSuperset(of: heldModifiers)
+			suppressionModifiers = heldModifiers
+			isCancelledUntilControlRelease = !heldModifiers.isEmpty
+				&& NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask).isSuperset(of: heldModifiers)
 			endSession()
 		}
 
@@ -130,6 +136,7 @@
 			if isCancelledUntilControlRelease {
 				if !isControlPressed {
 					isCancelledUntilControlRelease = false
+					suppressionModifiers = []
 				} else if ownsTabSwitch {
 					return true
 				}
@@ -142,7 +149,8 @@
 			}
 			if isKeyDown {
 				if isEscape, !candidateIDs.isEmpty {
-					isCancelledUntilControlRelease = isControlPressed
+					suppressionModifiers = heldModifiers
+					isCancelledUntilControlRelease = isControlPressed && !heldModifiers.isEmpty
 					endSession()
 					return true
 				}
