@@ -740,6 +740,24 @@
 			}
 		}
 
+		@objc private func previousSpace(_: Any?) {
+			guard let controller = focusedBrowserWindow else { return }
+			NotificationCenter.default.post(
+				name: .cycleBrowserSpace,
+				object: controller.browser.windowID,
+				userInfo: ["direction": -1]
+			)
+		}
+
+		@objc private func nextSpace(_: Any?) {
+			guard let controller = focusedBrowserWindow else { return }
+			NotificationCenter.default.post(
+				name: .cycleBrowserSpace,
+				object: controller.browser.windowID,
+				userInfo: ["direction": 1]
+			)
+		}
+
 		@objc private func editSpace(_: Any?) {
 			guard activeAuthenticationBrowser == nil else { return }
 			activeBrowser?.openInternalPage(.themeEditor)
@@ -1333,6 +1351,8 @@
 			viewMenu.addItem(item("Toggle Top Bar", action: #selector(toggleTopBar(_:)), key: "d"))
 			viewMenu.addItem(item("Toggle AI Sidebar", action: #selector(toggleAISidebar(_:)), key: "l", modifiers: [.command, .option]))
 			viewMenu.addItem(item("Edit Space", action: #selector(editSpace(_:))))
+			viewMenu.addItem(item("Previous Space", action: #selector(previousSpace(_:)), key: "←", modifiers: [.control, .option]))
+			viewMenu.addItem(item("Next Space", action: #selector(nextSpace(_:)), key: "→", modifiers: [.control, .option]))
 			viewMenu.addItem(.separator())
 			viewMenu.addItem(item("Translate Page…", action: #selector(translatePage(_:))))
 			viewMenu.addItem(item("Monitor Website…", action: #selector(monitorWebsite(_:))))
@@ -1408,6 +1428,7 @@
 			NSApp.helpMenu = helpMenu
 
 			NSApp.mainMenu = mainMenu
+			BrowserShortcutRegistry.shared.attach(menu: mainMenu)
 		}
 
 		@objc private func quitFromMenu(_: Any?) {
