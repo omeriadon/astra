@@ -2950,6 +2950,7 @@ extension BrowserController: WKScriptMessageHandler {
 }
 
 
+extension BrowserController {
 	#if os(macOS)
 		/// Query at action time, avoiding races between WebKit's contextmenu event
 		/// and AppKit's synchronous willOpenMenu callback.
@@ -3016,6 +3017,7 @@ extension BrowserController: WKScriptMessageHandler {
 		let script = BrowserEaselQuote.highlightScript.replacingOccurrences(of: "__ASTRA_QUOTE__", with: json)
 		webView.evaluateJavaScript(script, in: nil, in: .defaultClient, completionHandler: nil)
 	}
+}
 
 extension BrowserController: WKUIDelegate {
 	#if os(macOS)
