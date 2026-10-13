@@ -163,8 +163,8 @@ struct BrowserSpacesBar: View {
 
 				Button {
 					browser.createSpace()
-					onSelectSpace?(browser.selectedSpace)
 					onDismiss()
+					onSelectSpace?(browser.selectedSpace)
 				} label: {
 					Label("Add Space", systemImage: "plus")
 						.labelStyle(.iconOnly)
@@ -259,11 +259,12 @@ struct BrowserSpacesBar: View {
 			let isSelected = browser.workspace.selectedSpaceID == space.id
 			return Button {
 				if let onSelectSpace {
+					onDismiss()
 					onSelectSpace(space)
 				} else {
 					browser.selectSpace(space.id)
+					onDismiss()
 				}
-				onDismiss()
 			} label: {
 				HStack(spacing: 8) {
 					Image(systemName: space.symbol)
