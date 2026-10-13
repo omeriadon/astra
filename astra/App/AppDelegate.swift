@@ -7,6 +7,7 @@
 
 #if os(macOS)
 	import AppKit
+	import AppIntents
 	import AuthenticationServices
 	import Carbon
 	import CoreSpotlight
