@@ -703,6 +703,7 @@ final class BrowserController: NSObject, Identifiable {
 			for (const root of [document.documentElement, document.body]) {
 				if (!root) continue;
 				const style = getComputedStyle(root);
+				if (!style) continue;
 				for (const key of [
 					'--theme-color', '--brand-color', '--color-brand', '--primary-color',
 					'--color-primary', '--accent-color', '--color-accent'
