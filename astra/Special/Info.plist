@@ -36,6 +36,16 @@
 				<string>x-webkit-app-launch</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>Astra Library Links</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>astra</string>
+			</array>
+		</dict>
 	</array>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
@@ -48,6 +58,49 @@
 			<array>
 				<string>public.data</string>
 			</array>
+		</dict>
+	</array>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict><key>default</key><string>Search Web with Astra</string></dict>
+			<key>NSMessage</key><string>searchInAstra</string>
+			<key>NSPortName</key><string>com.omeriadon.astra</string>
+			<key>NSSendTypes</key>
+			<array><string>public.utf8-plain-text</string></array>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict><key>default</key><string>Open in Astra</string></dict>
+			<key>NSMessage</key><string>openInAstra</string>
+			<key>NSPortName</key><string>com.omeriadon.astra</string>
+			<key>NSSendTypes</key>
+			<array><string>public.utf8-plain-text</string><string>public.url</string></array>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict><key>default</key><string>Open in Mini Astra</string></dict>
+			<key>NSMessage</key><string>openInMiniAstra</string>
+			<key>NSPortName</key><string>com.omeriadon.astra</string>
+			<key>NSSendTypes</key>
+			<array><string>public.utf8-plain-text</string><string>public.url</string></array>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict><key>default</key><string>Save in Astra Reading List</string></dict>
+			<key>NSMessage</key><string>saveToAstraReadingList</string>
+			<key>NSPortName</key><string>com.omeriadon.astra</string>
+			<key>NSSendTypes</key>
+			<array><string>public.utf8-plain-text</string><string>public.url</string></array>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict><key>default</key><string>Create Astra Easel from Selection</string></dict>
+			<key>NSMessage</key><string>createAstraEasel</string>
+			<key>NSPortName</key><string>com.omeriadon.astra</string>
+			<key>NSSendTypes</key>
+			<array><string>public.utf8-plain-text</string><string>public.url</string></array>
 		</dict>
 	</array>
 	<key>LSFileQuarantineEnabled</key>
