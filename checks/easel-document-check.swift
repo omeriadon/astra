@@ -47,6 +47,28 @@ struct EaselDocumentCheck {
 		precondition(BrowserEaselDocument(items: [image]).isValid)
 		image.imageData = Data([0, 1, 2, 3])
 		precondition(!BrowserEaselDocument(items: [image]).isValid)
-		print("Easel persistence, limits, images, links, palette and endpoint checks passed")
+		// Every tool must create a valid item before SwiftUI observes the document.
+		let pixel = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==")!
+		for kind in BrowserEaselDocument.Item.Kind.allCases {
+			var candidate = BrowserEaselDocument.Item(kind: kind)
+			switch kind {
+				case .image: candidate.imageData = pixel
+				case .link: candidate.url = URL(string: "https://example.com/item")
+				case .line, .arrow:
+					candidate.points = [.init(x: 0, y: 0), .init(x: 240, y: 120)]
+				case .freehand:
+					candidate.points = [.init(x: 0, y: 0), .init(x: 30, y: 60)]
+				default: break
+			}
+			precondition(BrowserEaselDocument(items: [candidate]).isValid, "Invalid new \(kind)")
+			var duplicate = candidate
+			duplicate.id = UUID()
+			precondition(BrowserEaselDocument(items: [candidate, duplicate]).isValid, "Invalid duplicate \(kind)")
+			duplicate.rotation = 45
+			duplicate.width += 20
+			duplicate.height += 10
+			precondition(BrowserEaselDocument(items: [candidate, duplicate]).isValid, "Invalid transformed \(kind)")
+		}
+		print("Easel persistence, limits, images, links, palette, endpoints, creation and duplication checks passed")
 	}
 }

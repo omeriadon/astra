@@ -8,15 +8,17 @@
 		let fontSize: CGFloat
 		let color: NSColor
 		let onSelect: () -> Void
+		let onFinish: () -> Void
 
 		func makeNSView(context: Context) -> TextView {
 			let view = TextView()
 			view.delegate = context.coordinator
+			view.onFinish = onFinish
 			view.isRichText = false
 			view.allowsUndo = true
 			view.drawsBackground = false
 			view.isHorizontallyResizable = false
-			view.isVerticallyResizable = true
+			view.isVerticallyResizable = false
 			view.textContainerInset = .zero
 			view.textContainer?.lineFragmentPadding = 0
 			view.textContainer?.widthTracksTextView = true
@@ -25,29 +27,23 @@
 		}
 
 		func updateNSView(_ view: TextView, context: Context) {
-			view.onSelect = onSelect
 			context.coordinator.parent = self
+			view.onSelect = onSelect
+			view.onFinish = onFinish
 			if view.string != text {
 				view.string = text
 			}
-			view.font = NSFont(name: fontName, size: fontSize) ?? .monospacedSystemFont(ofSize: fontSize, weight: .regular)
-			view.textColor = color
-			let paragraph = NSMutableParagraphStyle()
-			paragraph.lineHeightMultiple = 1.5
-			view.defaultParagraphStyle = paragraph
-			view.typingAttributes = [.font: view.font!, .foregroundColor: color, .paragraphStyle: paragraph]
-			if let storage = view.textStorage, storage.length > 0 {
-				storage.addAttributes(view.typingAttributes, range: NSRange(location: 0, length: storage.length))
+			let desiredFont = NSFont(name: fontName, size: fontSize)
+				?? .monospacedSystemFont(ofSize: fontSize, weight: .regular)
+			if view.font != desiredFont {
+				view.font = desiredFont
 			}
-		}
-
-		func sizeThatFits(_ proposal: ProposedViewSize, nsView view: TextView, context _: Context) -> CGSize? {
-			let width = proposal.width ?? 224
-			view.textContainer?.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
-			guard let container = view.textContainer, let layout = view.layoutManager else { return nil }
-			layout.ensureLayout(for: container)
-			let height = layout.usedRect(for: container).height
-			return CGSize(width: width, height: max(height + 4, fontSize * 1.5 + 4))
+			if view.textColor != color {
+				view.textColor = color
+			}
+			// NSTextView manages its own wrapping within the fixed item frame.
+			// Do not call ensureLayout or mutate the text container from sizeThatFits:
+			// doing so during SwiftUI measurement can recurse into AppKit constraints.
 		}
 
 		func makeCoordinator() -> Coordinator {
@@ -56,18 +52,25 @@
 
 		final class TextView: NSTextView {
 			var onSelect: (() -> Void)?
+			var onFinish: (() -> Void)?
+
+			override func viewDidMoveToWindow() {
+				super.viewDidMoveToWindow()
+				guard window != nil else { return }
+				DispatchQueue.main.async { [weak self] in
+					guard let self, let window = self.window else { return }
+					window.makeFirstResponder(self)
+				}
+			}
 
 			override func becomeFirstResponder() -> Bool {
 				let accepted = super.becomeFirstResponder()
-				if accepted {
-					onSelect?()
-				}
+				if accepted { onSelect?() }
 				return accepted
 			}
 
-			override func mouseDown(with event: NSEvent) {
-				onSelect?()
-				super.mouseDown(with: event)
+			override func cancelOperation(_ sender: Any?) {
+				onFinish?()
 			}
 		}
 
