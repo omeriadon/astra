@@ -90,7 +90,7 @@ import Foundation
 			sync.attach(browser)
 			// The source device may still be pushing its latest tab snapshot.
 			// Refresh on receipt, then retry briefly if that UUID is absent.
-			for attempt in 0..<3 {
+			for attempt in 0..<4 {
 				guard !Task.isCancelled else { return }
 				for _ in 0..<100 where sync.isSyncing && !Task.isCancelled {
 					try? await Task.sleep(for: .milliseconds(100))
@@ -110,8 +110,9 @@ import Foundation
 					browser.selectTab(reference.tabID)
 					return
 				}
-				if attempt < 2 {
-					try? await Task.sleep(for: .milliseconds(attempt == 0 ? 900 : 1500))
+				if attempt < 3 {
+					let retryDelay: Int = [750, 1500, 2500][attempt]
+					try? await Task.sleep(for: .milliseconds(retryDelay))
 				}
 			}
 			guard !Task.isCancelled else { return }
