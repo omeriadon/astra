@@ -830,8 +830,6 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	@ObservationIgnored
-	private var hasDeclaredThemeColor = false
-	@ObservationIgnored
 	private var pendingRequest: URLRequest?
 	private var pendingWebArchive: (data: Data, baseURL: URL)?
 	@ObservationIgnored
@@ -1882,7 +1880,6 @@ final class BrowserController: NSObject, Identifiable {
 				MainActor.assumeIsolated {
 					guard let self else { return }
 					let color = change.newValue ?? webView.themeColor
-					self.hasDeclaredThemeColor = color != nil
 					if let color {
 						webView.underPageBackgroundColor = color.withAlphaComponent(1)
 					}
@@ -2431,7 +2428,7 @@ final class BrowserController: NSObject, Identifiable {
 			color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
 		#endif
 
-		themeColor = Color(color)
+		themeColor = Color(color.withAlphaComponent(1))
 		// WCAG contrast: black is the higher-contrast choice above 0.179 luminance.
 		themeColorIsLight = BrowserColor(red: Double(red), green: Double(green), blue: Double(blue)).luminance > 0.179
 	}
@@ -2838,7 +2835,6 @@ extension BrowserController: WKNavigationDelegate {
 		awaitsNavigationCommit = true
 		session.permissions.removeTemporaryDecisions(controllerID: id)
 		navigationGeneration += 1
-		hasDeclaredThemeColor = false
 		sampledChromeColor = nil
 		sampledSurfaceColor = nil
 		hasTopEdgeContent = false
