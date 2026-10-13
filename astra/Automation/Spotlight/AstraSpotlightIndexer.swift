@@ -1,5 +1,6 @@
 #if os(macOS) && !ASTRA_WEBSITE_APP_RUNTIME && !ASTRA_WEBSITE_APP_HELPER
 import AppKit
+import AstraAutomationCore
 import Foundation
 import CoreSpotlight
 import UniformTypeIdentifiers
