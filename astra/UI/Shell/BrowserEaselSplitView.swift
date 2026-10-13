@@ -65,7 +65,7 @@ struct BrowserEaselSplitView: View {
 				.clipShape(RoundedRectangle(cornerRadius: cornerRadius))
 			}
 			.overlay {
-				if !rightTab.peeks.isEmpty {
+				if rightTab.internalPage == .easel, !rightTab.peeks.isEmpty {
 					PeekStackView(tab: rightTab, browser: browser)
 				} else if leftTab.internalPage == .easel, !leftTab.peeks.isEmpty {
 					PeekStackView(tab: leftTab, browser: browser)
