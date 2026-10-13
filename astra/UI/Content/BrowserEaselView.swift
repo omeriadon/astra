@@ -347,10 +347,14 @@ struct BrowserEaselView: View {
 			.onTapGesture {
 				guard activeTool == .cursor else { return }
 				selectedID = item.id
-				if editingTextID != item.id { editingTextID = nil }
+				if editingTextID != item.id {
+					editingTextID = nil
+				}
 				browser.selectTab(tab.id)
 				#if os(macOS)
-					if editingTextID == nil { canvasFocused = true }
+					if editingTextID == nil {
+						canvasFocused = true
+					}
 				#endif
 			}
 			.highPriorityGesture(TapGesture(count: 2).onEnded {
@@ -558,14 +562,13 @@ struct BrowserEaselView: View {
 
 	private func deleteItem(_ id: UUID) {
 		document.items.removeAll { $0.id == id }
-<<<<<<< HEAD
+
 		if selectedID == id {
 			selectedID = nil
 		}
-=======
-		if selectedID == id { selectedID = nil }
-		if editingTextID == id { editingTextID = nil }
->>>>>>> refs/remotes/origin/release/0.1+3
+		if editingTextID == id {
+			editingTextID = nil
+		}
 	}
 
 	private func deleteSelectedItem() {
@@ -602,7 +605,7 @@ struct BrowserEaselView: View {
 	}
 
 	private func drag(_ item: BrowserEaselDocument.Item, translation: CGSize, canvasWidth: CGFloat) {
-		if baseline?.id != item.id && draggedCopy?.source != item.id {
+		if baseline?.id != item.id, draggedCopy?.source != item.id {
 			#if os(macOS)
 				let duplicate = optionIsPressed || NSEvent.modifierFlags.contains(.option)
 			#else
@@ -619,7 +622,8 @@ struct BrowserEaselView: View {
 			}
 		}
 		if let copy = draggedCopy, copy.source == item.id,
-		   let duplicated = document.items.first(where: { $0.id == copy.copy }) {
+		   let duplicated = document.items.first(where: { $0.id == copy.copy })
+		{
 			move(duplicated, translation: translation, canvasWidth: canvasWidth)
 		} else {
 			move(item, translation: translation, canvasWidth: canvasWidth)
@@ -627,7 +631,9 @@ struct BrowserEaselView: View {
 	}
 
 	private func rotate(_ item: BrowserEaselDocument.Item, translation: CGSize) {
-		if baseline?.id != item.id { baseline = item }
+		if baseline?.id != item.id {
+			baseline = item
+		}
 		guard let baseline else { return }
 		edit(item.id) {
 			$0.rotation = min(360, max(-360, baseline.rotation + Double(translation.width) * 0.7))
@@ -635,7 +641,9 @@ struct BrowserEaselView: View {
 	}
 
 	private func move(_ item: BrowserEaselDocument.Item, translation: CGSize, canvasWidth: CGFloat) {
-		if baseline?.id != item.id { baseline = item }
+		if baseline?.id != item.id {
+			baseline = item
+		}
 		guard let baseline else { return }
 		edit(item.id) {
 			$0.x = min(max(0, baseline.x + translation.width), min(10000, max(0, canvasWidth - baseline.width)))
@@ -695,19 +703,20 @@ struct BrowserEaselView: View {
 				? UTType.fileURL.identifier : UTType.url.identifier
 			guard provider.hasItemConformingToTypeIdentifier(type) else { continue }
 			_ = provider.loadItem(forTypeIdentifier: type, options: nil) { value, _ in
-				let url: URL?
-				switch value {
-					case let item as URL: url = item
+				let url: URL? = switch value {
+					case let item as URL: item
 					case let item as Data:
-						url = String(data: item, encoding: .utf8).flatMap { URL(string: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
-					case let item as String: url = URL(string: item)
-					default: url = nil
+						String(data: item, encoding: .utf8).flatMap { URL(string: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+					case let item as String: URL(string: item)
+					default: nil
 				}
 				guard let url else { return }
 				if url.isFileURL {
 					let data = try? Data(contentsOf: url)
 					Task { @MainActor in
-						if let data { addImageData(data, at: location) }
+						if let data {
+							addImageData(data, at: location)
+						}
 					}
 				} else {
 					Task { @MainActor in addDroppedLink(url, at: location) }
@@ -732,9 +741,11 @@ struct BrowserEaselView: View {
 			let url = try result.get()
 			let access = url.startAccessingSecurityScopedResource()
 			defer {
-				if access { url.stopAccessingSecurityScopedResource() }
+				if access {
+					url.stopAccessingSecurityScopedResource()
+				}
 			}
-			addImageData(try Data(contentsOf: url))
+			try addImageData(Data(contentsOf: url))
 		} catch {
 			if (error as NSError).code != NSUserCancelledError {
 				editorError = error.localizedDescription
@@ -776,7 +787,6 @@ struct BrowserEaselView: View {
 		}
 		append(item)
 	}
-
 }
 
 private struct EaselLinkCard: View {
