@@ -31,7 +31,7 @@ struct ProxyNavigationFailureCheck {
 
 		// A normal server failure must not be blamed on a configured proxy.
 		for (code, expected) in [
-			(NSURLErrorTimedOut, .timedOut),
+			(NSURLErrorTimedOut, BrowserNavigationFailure.Kind.timedOut),
 			(NSURLErrorCannotFindHost, .websiteNotFound),
 			(NSURLErrorNotConnectedToInternet, .offline),
 		] {
