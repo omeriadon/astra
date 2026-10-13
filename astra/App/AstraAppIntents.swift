@@ -1,5 +1,6 @@
 #if os(macOS) && !ASTRA_WEBSITE_APP_RUNTIME && !ASTRA_WEBSITE_APP_HELPER
 import AppIntents
+import AstraAutomationCore
 import Foundation
 
 // Intents use small, value-type projections rather than retaining Browser or WebKit objects.
@@ -8,8 +9,8 @@ import Foundation
 struct AstraBookmarkEntity {
     static let defaultQuery = Query()
     let id: String
-    var name: String
-    var url: URL
+    @Property(title: "Name") var name: String
+    @Property(title: "URL") var url: URL
 
     init(id: String, name: String, url: URL) {
         self.id = id
@@ -52,9 +53,9 @@ struct AstraBookmarkEntity {
 struct AstraTabEntity {
     static let defaultQuery = Query()
     let id: String
-    var name: String
-    var url: URL?
-    var isPrivate: Bool
+    @Property(title: "Name") var name: String
+    @Property(title: "URL") var url: URL?
+    @Property(title: "Private") var isPrivate: Bool
 
     init(id: String, name: String, url: URL?, isPrivate: Bool = false) {
         self.id = id
@@ -74,7 +75,7 @@ struct AstraTabEntity {
                 browser.tabs.compactMap { tab in
                     guard BrowserWindowRegistry.shared.ownsTab(tab.id, in: browser) else { return nil }
                     return AstraTabEntity(
-                        id: browser.windowID.uuidString + ":" + tab.id.uuidString,
+                        id: AstraTabReference(windowID: browser.windowID, tabID: tab.id).rawValue,
                         name: tab.title, url: tab.currentURL
                     )
                 }
