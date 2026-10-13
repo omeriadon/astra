@@ -6,7 +6,7 @@ import SwiftUI
 		let browser: Browser
 		let manager: BrowserDownloadManager
 		let theme: BrowserTheme
-		@State private var selection = 0
+		@Binding var selection: Int
 
 		var body: some View {
 			VStack(spacing: 0) {
