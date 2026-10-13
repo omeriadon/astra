@@ -19,6 +19,7 @@ struct BrowserTabRow: View {
 	var rowSpaceID: UUID?
 	var rowTheme: BrowserTheme?
 	var splitSide: Browser.SplitSide?
+	var compactSplitStyle = false
 	var isOpenElsewhere: Bool?
 	var onSelectTab: ((UUID) -> Void)?
 	var navigationNamespace: Namespace.ID?
@@ -100,7 +101,7 @@ struct BrowserTabRow: View {
 					}
 			}
 
-			if let side = splitSide {
+			if let side = splitSide, !compactSplitStyle {
 				Image(systemName: side == .left ? "rectangle.lefthalf.filled" : "rectangle.righthalf.filled")
 					.font(.system(size: 11))
 					.foregroundStyle(theme.foregroundColor.opacity(0.75))
@@ -138,16 +139,16 @@ struct BrowserTabRow: View {
 		.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? rowTransitions)
 		.foregroundStyle(theme.foregroundColor)
 		.background {
-			if isSelected || splitSide != nil {
+			if !compactSplitStyle && (isSelected || splitSide != nil) {
 				Color.clear
 					.glassEffect(
 						.clear,
 						in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
 					)
-			} else if isMultiSelected {
+			} else if !compactSplitStyle && isMultiSelected {
 				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
 					.fill(theme.foregroundColor.opacity(0.19))
-			} else if isHovered {
+			} else if !compactSplitStyle && isHovered {
 				Color.clear
 					.glassEffect(
 						.regular,
@@ -315,6 +316,7 @@ extension BrowserTabRow: Equatable {
 			&& lhs.rowTheme == rhs.rowTheme
 			&& lhs.isOpenElsewhere == rhs.isOpenElsewhere
 			&& lhs.splitSide == rhs.splitSide
+			&& lhs.compactSplitStyle == rhs.compactSplitStyle
 			&& (lhs.onSelectTab == nil) == (rhs.onSelectTab == nil)
 			&& lhs.navigationNamespace == rhs.navigationNamespace
 			&& lhs.sidebarSelection === rhs.sidebarSelection
@@ -518,26 +520,14 @@ private struct TabRowContextMenu: View {
 
 	var body: some View {
 		if tab.canAppearInEaselSplit, !browser.isPrivate, !browser.isMini {
-			Menu("Split View", systemImage: "rectangle.split.2x1") {
-				if let selected = browser.selectedTab, selected.id != tab.id, selected.canAppearInEaselSplit {
-					Button("Open to Left of Current Tab", systemImage: "rectangle.lefthalf.filled") {
-						browser.openSplit(tab.id, beside: selected.id, onLeft: true)
-					}
-					Button("Open to Right of Current Tab", systemImage: "rectangle.righthalf.filled") {
-						browser.openSplit(tab.id, beside: selected.id, onLeft: false)
-					}
-					Divider()
+			if let selected = browser.selectedTab, selected.id != tab.id, selected.canAppearInEaselSplit {
+				Button("Add to Current Tab on Left", systemImage: "rectangle.lefthalf.filled") {
+					browser.openSplit(tab.id, beside: selected.id, onLeft: true)
 				}
-				ForEach(browser.visibleTabs.filter { $0.id != tab.id && $0.canAppearInEaselSplit }) { other in
-					Button("Place Left of \(other.title)", systemImage: "rectangle.lefthalf.filled") {
-						browser.openSplit(tab.id, beside: other.id, onLeft: true)
-					}
-					Button("Place Right of \(other.title)", systemImage: "rectangle.righthalf.filled") {
-						browser.openSplit(tab.id, beside: other.id, onLeft: false)
-					}
+				Button("Add to Current Tab on Right", systemImage: "rectangle.righthalf.filled") {
+					browser.openSplit(tab.id, beside: selected.id, onLeft: false)
 				}
 			}
-			.disabled(browser.visibleTabs.filter { $0.id != tab.id && $0.canAppearInEaselSplit }.isEmpty)
 			if browser.splitSide(for: tab.id) != nil {
 				Button("Close Split View", systemImage: "rectangle.split.2x1.slash") {
 					browser.closeEaselSplit()
