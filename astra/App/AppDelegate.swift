@@ -24,6 +24,7 @@
 		private var startupWindowRestorationFinished = false
 		private var startupStartedAt = BrowserLog.mainEntryUptime ?? BrowserLog.clock()
 		private var queuedStartupURLs: [URL] = []
+		private var queuedHandoffActivity: NSUserActivity?
 		private var shouldReopenAfterStartup = false
 		private var memoryPressureSource: DispatchSourceMemoryPressure?
 		private var didScheduleDeferredStartupServices = false
@@ -420,6 +421,31 @@
 			}
 		}
 
+		func application(
+			_: NSApplication,
+			continue userActivity: NSUserActivity,
+			restorationHandler _: @escaping ([any NSUserActivityRestoring]) -> Void
+		) -> Bool {
+			guard BrowserHandoff.reference(from: userActivity) != nil else { return false }
+			// AppKit may deliver Handoff before window/session hydration. Keep the
+			// identity intact and resolve it only after restored windows are ready.
+			guard startupWindowRestorationFinished else {
+				queuedHandoffActivity = userActivity
+				return true
+			}
+			openHandoff(userActivity)
+			return true
+		}
+
+		private func openHandoff(_ activity: NSUserActivity) {
+			let destination = windows.first { $0.window.isKeyWindow && !$0.browser.isPrivate }
+				?? windows.first { !$0.browser.isPrivate }
+				?? openBrowserWindow()
+			destination.showWindow()
+			NSApp.activate()
+			_ = BrowserHandoff.shared.continueActivity(activity, in: destination.browser)
+		}
+
 		private func openAfterStartupRestoration(_ url: URL) {
 			BrowserLog.debug(.lifecycle, "startup.open-after-restoration", metadata: ["url": BrowserLog.url(url)])
 			guard startupWindowRestorationFinished else {
@@ -461,6 +487,10 @@
 			queuedStartupURLs.removeAll()
 			for url in urls {
 				openAfterStartupRestoration(url)
+			}
+			if let activity = queuedHandoffActivity {
+				queuedHandoffActivity = nil
+				openHandoff(activity)
 			}
 		}
 
