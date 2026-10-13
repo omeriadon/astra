@@ -2014,6 +2014,10 @@ final class BrowserController: NSObject, Identifiable {
 		webView.configuration.userContentController.addUserScript(
 			WKUserScript(source: Self.pageTintScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient)
 		)
+		// Install Boosts after Astra's own scripts and before navigation.
+		if !session.isPrivate {
+			BrowserBoostStore.shared.register(webView)
+		}
 		webView.navigationDelegate = self
 		webView.uiDelegate = self
 		webView.onEscape = escapeRequested

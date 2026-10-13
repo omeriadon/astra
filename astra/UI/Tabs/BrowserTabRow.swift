@@ -149,16 +149,16 @@ struct BrowserTabRow: View {
 		.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? rowTransitions)
 		.foregroundStyle(theme.foregroundColor)
 		.background {
-			if !compactSplitStyle, isSelected || splitSide != nil {
+			if !compactSplitStyle && (isSelected || splitSide != nil) {
 				Color.clear
 					.glassEffect(
 						.clear,
 						in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
 					)
-			} else if !compactSplitStyle, isMultiSelected {
+			} else if !compactSplitStyle && isMultiSelected {
 				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
 					.fill(theme.foregroundColor.opacity(0.19))
-			} else if !compactSplitStyle, isHovered {
+			} else if !compactSplitStyle && isHovered {
 				Color.clear
 					.glassEffect(
 						.regular,
@@ -187,7 +187,7 @@ struct BrowserTabRow: View {
 			isHovered = hovering
 			#if os(macOS)
 				guard onSelectTab == nil else { return }
-				if hovering, NSEvent.pressedMouseButtons == 0 {
+				if hovering && NSEvent.pressedMouseButtons == 0 {
 					// Hover-only geometry observation below supplies the initial frame;
 					// subsequent movements keep the preview anchored during scrolling.
 					if hoverPreviewStarted {
@@ -278,12 +278,12 @@ struct BrowserTabRow: View {
 		}
 		.onDrop(of: [UTType.data],
 		        delegate: BrowserTabRowSplitDropDelegate(
-		        	browser: browser, anchorID: tab.id, width: splitDropWidth, side: $splitDropSide
-		        ))
+				browser: browser, anchorID: tab.id, width: splitDropWidth, side: $splitDropSide
+			))
 		.overlay {
 			if let splitDropSide {
 				HStack(spacing: 0) {
-					splitDropSide == .left ? Color.accentColor.opacity(0.19) : Color.clear
+					(splitDropSide == .left ? Color.accentColor.opacity(0.19) : Color.clear)
 					(splitDropSide == .right ? Color.accentColor.opacity(0.19) : Color.clear)
 				}
 				.clipShape(RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
@@ -422,7 +422,7 @@ private struct TabIconView: View {
 			.frame(width: onSelectTab == nil ? 16 : 22, height: onSelectTab == nil ? 16 : 22)
 		}
 		.buttonStyle(.plain)
-		.accessibilityIdentifier("select-tab-\(tab.id.uuidString)")
+			.accessibilityIdentifier("select-tab-\(tab.id.uuidString)")
 	}
 }
 
@@ -496,17 +496,17 @@ private struct TabTitleView: View {
 					.contentShape(Rectangle())
 			}
 			.buttonStyle(.plain)
-			.simultaneousGesture(
-				TapGesture(count: 2)
-					.onEnded { _ in onBeginRenaming() }
-			)
-			.accessibilityLabel(Text(verbatim: tab.title))
-			.accessibilityActions {
-				if tab.internalPage == nil || tab.internalPage == .easel {
-					Button("Rename", systemImage: "pencil") { onBeginRenaming() }
+				.simultaneousGesture(
+					TapGesture(count: 2)
+						.onEnded { _ in onBeginRenaming() }
+				)
+				.accessibilityLabel(Text(verbatim: tab.title))
+				.accessibilityActions {
+					if tab.internalPage == nil || tab.internalPage == .easel {
+						Button("Rename", systemImage: "pencil") { onBeginRenaming() }
+					}
 				}
-			}
-			.accessibilityIdentifier("tab-title-\(tab.id.uuidString)")
+				.accessibilityIdentifier("tab-title-\(tab.id.uuidString)")
 		}
 	}
 
@@ -896,52 +896,50 @@ private struct SidebarSelectedTabsContextMenu: View {
 #endif
 
 #if os(macOS)
-	private struct BrowserTabRowSplitDropDelegate: DropDelegate {
-		let browser: Browser
-		let anchorID: UUID
-		let width: CGFloat
-		@Binding var side: Browser.SplitSide?
+private struct BrowserTabRowSplitDropDelegate: DropDelegate {
+	let browser: Browser
+	let anchorID: UUID
+	let width: CGFloat
+	@Binding var side: Browser.SplitSide?
 
-		private func locationSide(_ info: DropInfo) -> Browser.SplitSide {
-			info.location.x < width / 2 ? .left : .right
-		}
-
-		func validateDrop(info: DropInfo) -> Bool {
-			!browser.isPrivate && !browser.isMini
-				&& browser.tab(withID: anchorID)?.canAppearInEaselSplit == true
-				&& info.hasItemsConforming(to: ["com.omeriadon.astra.tab"])
-		}
-
-		func dropEntered(info: DropInfo) {
-			guard validateDrop(info: info) else { return }
-			side = locationSide(info)
-			BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
-		}
-
-		func dropUpdated(info: DropInfo) -> DropProposal? {
-			guard validateDrop(info: info) else { return DropProposal(operation: .forbidden) }
-			side = locationSide(info)
-			return DropProposal(operation: .move)
-		}
-
-		func dropExited(info _: DropInfo) {
-			side = nil
-		}
-
-		func performDrop(info: DropInfo) -> Bool {
-			defer { side = nil }
-			guard validateDrop(info: info),
-			      let provider = info.itemProviders(for: ["com.omeriadon.astra.tab"]).first
-			else { return false }
-			let onLeft = locationSide(info) == .left
-			_ = provider.loadDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab") { data, _ in
-				guard let data, let raw = String(data: data, encoding: .utf8),
-				      let id = UUID(uuidString: raw), id != anchorID else { return }
-				Task { @MainActor in
-					browser.openSplit(id, beside: anchorID, onLeft: onLeft)
-				}
-			}
-			return true
-		}
+	private func locationSide(_ info: DropInfo) -> Browser.SplitSide {
+		info.location.x < width / 2 ? .left : .right
 	}
+
+	func validateDrop(info: DropInfo) -> Bool {
+		!browser.isPrivate && !browser.isMini
+			&& browser.tab(withID: anchorID)?.canAppearInEaselSplit == true
+			&& info.hasItemsConforming(to: ["com.omeriadon.astra.tab"])
+	}
+
+	func dropEntered(info: DropInfo) {
+		guard validateDrop(info: info) else { return }
+		side = locationSide(info)
+		BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
+	}
+
+	func dropUpdated(info: DropInfo) -> DropProposal? {
+		guard validateDrop(info: info) else { return DropProposal(operation: .forbidden) }
+		side = locationSide(info)
+		return DropProposal(operation: .move)
+	}
+
+	func dropExited(info _: DropInfo) { side = nil }
+
+	func performDrop(info: DropInfo) -> Bool {
+		defer { side = nil }
+		guard validateDrop(info: info),
+		      let provider = info.itemProviders(for: ["com.omeriadon.astra.tab"]).first
+		else { return false }
+		let onLeft = locationSide(info) == .left
+		_ = provider.loadDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab") { data, _ in
+			guard let data, let raw = String(data: data, encoding: .utf8),
+			      let id = UUID(uuidString: raw), id != anchorID else { return }
+			Task { @MainActor in
+				browser.openSplit(id, beside: anchorID, onLeft: onLeft)
+			}
+		}
+		return true
+	}
+}
 #endif

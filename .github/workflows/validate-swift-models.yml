@@ -26,6 +26,8 @@ jobs:
         run: |
           set -euo pipefail
           P="$RUNNER_TEMP"
+          swiftc -swift-version 6 astra/Models/Library/BrowserBoost.swift checks/boosts-model-check.swift -o "$P/astra-boost-check"
+          "$P/astra-boost-check"
           swiftc -swift-version 6 astra/Models/Library/Bookmark.swift checks/bookmark-projection-check.swift -o "$P/astra-bookmark-check"
           "$P/astra-bookmark-check"
           swiftc -O -swift-version 6 astra/Models/Library/Bookmark.swift checks/library-scaling-benchmark.swift -o "$P/astra-library-scaling"

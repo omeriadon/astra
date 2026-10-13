@@ -680,6 +680,26 @@
 			activeBrowser?.createEasel()
 		}
 
+		@objc private func createSiteBoost(_: Any?) {
+			guard let browser = activeBrowser, !browser.isPrivate,
+			      let host = browser.selectedTab?.currentURL?.host else { return }
+			let boost = BrowserBoostStore.shared.create(domain: host)
+			BrowserBoostEditorWindowController.open(boost.id)
+		}
+
+		@objc private func createGlobalBoost(_: Any?) {
+			let boost = BrowserBoostStore.shared.create(domain: nil)
+			BrowserBoostEditorWindowController.open(boost.id)
+		}
+
+		@objc private func openBoostsLibrary(_: Any?) {
+			guard let browser = activeBrowser, !browser.isMini, !browser.isPrivate else { return }
+			NotificationCenter.default.post(
+				name: .showBrowserDownloads, object: browser.windowID,
+				userInfo: ["librarySelection": 2]
+			)
+		}
+
 		@objc private func newTab(_: Any?) {
 			if activeAuthenticationBrowser != nil {
 				openBrowserWindow()
@@ -1098,6 +1118,12 @@
 		}
 
 		func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+			if menuItem.action == #selector(createSiteBoost(_:)) {
+				return activeBrowser?.isPrivate == false && activeBrowser?.selectedTab?.currentURL?.host != nil
+			}
+			if menuItem.action == #selector(openBoostsLibrary(_:)) {
+				return activeBrowser?.isPrivate == false && activeBrowser?.isMini == false
+			}
 			if menuItem.action == #selector(createEasel(_:)) {
 				return activeAuthenticationBrowser == nil && activeBrowser?.isPrivate == false && activeBrowser?.isMini == false
 			}
@@ -1412,6 +1438,13 @@
 				key: "c",
 				modifiers: [.option]
 			))
+
+			let boostsMenu = NSMenu(title: "Boosts")
+			mainMenu.addItem(menuRoot("Boosts", submenu: boostsMenu))
+			boostsMenu.addItem(item("Create Boost for This Site", action: #selector(createSiteBoost(_:))))
+			boostsMenu.addItem(item("Create Global Boost", action: #selector(createGlobalBoost(_:))))
+			boostsMenu.addItem(.separator())
+			boostsMenu.addItem(item("Show Boosts Library", action: #selector(openBoostsLibrary(_:))))
 
 			let windowMenu = NSMenu(title: "Window")
 			mainMenu.addItem(menuRoot("Window", submenu: windowMenu))

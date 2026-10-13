@@ -15,6 +15,9 @@ import SwiftUI
 				Picker("Library", selection: $selection) {
 					Text("Downloads").tag(0)
 					Text("Easels").tag(1)
+					#if os(macOS)
+						Text("Boosts").tag(2)
+					#endif
 				}
 				.pickerStyle(.segmented)
 				.labelsHidden()
@@ -25,6 +28,12 @@ import SwiftUI
 					.padding(8)
 				if selection == 0 {
 					DownloadsSidebarView(manager: manager, theme: theme)
+				} else if selection == 2 {
+					#if os(macOS)
+						BoostsLibraryView(browser: browser)
+					#else
+						EmptyView()
+					#endif
 				} else {
 					List {
 						Section("Favourites") {

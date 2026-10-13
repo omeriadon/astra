@@ -26,6 +26,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	@State private var showsDownloads = false
+	@State private var librarySelection = 0
 	@State private var spaceToDelete: BrowserSpace?
 	#if os(macOS)
 		@State private var spaceSwitcher: BrowserSpaceSwitcher
@@ -193,6 +194,7 @@ struct DesktopBrowserShell: View {
 					topBarColorScheme: topBarColorScheme,
 					showsTopBar: showsTopBar,
 					showsDownloads: $showsDownloads,
+					librarySelection: $librarySelection,
 					downloads: downloads,
 					onRequestDeleteSpace: requestSpaceDeletion
 				)
@@ -281,6 +283,9 @@ struct DesktopBrowserShell: View {
 		.onReceive(NotificationCenter.default.publisher(for: .showBrowserDownloads)) { notification in
 			guard notification.object as? UUID == browser.windowID,
 			      hostWindow?.isKeyWindow == true else { return }
+			if let category = notification.userInfo?["librarySelection"] as? Int {
+				librarySelection = category
+			}
 			showsDownloads = true
 		}
 		.background {
@@ -469,6 +474,7 @@ private struct ShellSidebarColumn: View {
 	let topBarColorScheme: ColorScheme
 	let showsTopBar: Bool
 	@Binding var showsDownloads: Bool
+	@Binding var librarySelection: Int
 	let downloads: BrowserDownloadManager
 	let onRequestDeleteSpace: (BrowserSpace) -> Void
 	@State private var sidebarMediaHeight: CGFloat = 0
@@ -490,6 +496,7 @@ private struct ShellSidebarColumn: View {
 	}
 
 	@State private var librarySelection = 0
+	@State private var keepsDownloadsMounted = false
 
 	var body: some View {
 		ZStack(alignment: .topLeading) {
@@ -542,16 +549,26 @@ private struct ShellSidebarColumn: View {
 				content.offset(x: downloadsVisible ? geometry.size.width : 0)
 			}
 
-			LibrarySidebarView(
-				browser: browser,
-				manager: downloads,
-				theme: theme,
-				topMargin: sidebarHeaderReservation,
-				selection: $librarySelection
-			)
+			Group {
+				if showsDownloads || keepsDownloadsMounted {
+					LibrarySidebarView(
+						browser: browser,
+						manager: downloads,
+						theme: theme,
+						topMargin: sidebarHeaderReservation,
+						selection: $librarySelection
+					)
+					.sidebarScrollContentMargins(top: sidebarHeaderReservation)
+				} else {
+					// When tabs are displayed there is no reason to keep
+					// observing every download progress event or lay out a
+					// second offscreen scroll tree.
+					Color.clear
+				}
+			}
+			.foregroundStyle(theme.foregroundColor)
 			.allowsHitTesting(downloadsVisible)
 			.accessibilityHidden(!downloadsVisible)
-			.foregroundStyle(theme.foregroundColor)
 			.visualEffect { content, geometry in
 				content.offset(x: downloadsVisible ? 0 : -geometry.size.width)
 			}
@@ -565,6 +582,20 @@ private struct ShellSidebarColumn: View {
 			bottomOpacityHeight: bottomOpacityHeight
 		)
 		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsSidebarHeader)
+		.task(id: showsDownloads) {
+			if showsDownloads {
+				keepsDownloadsMounted = true
+			} else {
+				guard keepsDownloadsMounted else { return }
+				do {
+					try await Task.sleep(for: .milliseconds(380))
+				} catch {
+					return
+				}
+				guard !Task.isCancelled else { return }
+				keepsDownloadsMounted = false
+			}
+		}
 		.overlay(alignment: .bottom) {
 			if sidebarShown {
 				sidebarBottomBar

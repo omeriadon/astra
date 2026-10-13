@@ -23,6 +23,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node checks/boosts-runtime-check.mjs
           node checks/favicon-observer-check.mjs
           node checks/website-chrome-tint-check.mjs
           node checks/reader-availability-check.mjs
