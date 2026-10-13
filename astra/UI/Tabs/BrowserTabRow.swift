@@ -124,8 +124,13 @@ struct BrowserTabRow: View {
 			)
 			.overlay(alignment: .trailing) {
 				if isSelected || onSelectTab != nil {
-					TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
-						.keyboardShortcut("W", modifiers: .command)
+					#if os(macOS)
+						TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
+							.keyboardShortcut(BrowserShortcutRegistry.shared.menuKeyboardShortcut("Close Tab", section: "File"))
+					#else
+						TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
+							.keyboardShortcut("W", modifiers: .command)
+					#endif
 				} else if isHovered {
 					TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
 				}

@@ -1,10 +1,13 @@
 #if os(macOS)
 import AppKit
 import KeyboardShortcuts
+import Observation
+import SwiftUI
 
 /// App-local shortcuts are menu equivalents, not global hotkeys. The recorder
 /// owns storage; AppKit retains first-responder routing and menu validation.
 @MainActor
+@Observable
 final class BrowserShortcutRegistry {
     static let shared = BrowserShortcutRegistry()
 
@@ -26,7 +29,8 @@ final class BrowserShortcutRegistry {
     }
 
     private(set) var definitions: [Definition] = []
-    private var menuBindings: [MenuBinding] = []
+    private(set) var revision = 0
+    @ObservationIgnored private var menuBindings: [MenuBinding] = []
 
     private init() {
         registerSpecial("Next Tab", section: "Tab", key: .tab, modifiers: [.control])
@@ -106,7 +110,13 @@ final class BrowserShortcutRegistry {
         }
     }
 
+    func menuKeyboardShortcut(_ title: String, section: String) -> KeyboardShortcut? {
+        _ = revision
+        return shortcut(title, section: section)?.toSwiftUI
+    }
+
     func didEditShortcut() {
+        revision &+= 1
         refreshMenus()
         MiniAstraShortcut.shared.update()
     }
