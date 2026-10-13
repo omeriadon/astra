@@ -52,6 +52,8 @@ struct BrowserTabProcessMemorySnapshot: Sendable {}
     final class Session { let downloads = Downloads() }
     var tabs: [BrowserTab]
     var selectedTabID = UUID()
+    var splitLeftTabID: UUID?
+    var splitRightTabID: UUID?
     var favouriteTabs: [BrowserTab] = []
     var workspace = Workspace()
     let session = Session()
@@ -126,6 +128,14 @@ extension BrowserHibernationManager {
             let second = Browser([tab])
             second.selectedTabID = tab.id
             BrowserWindowRegistry.shared.openBrowsers.append(second)
+            await manager.exerciseSweep()
+            precondition(browser.reclaimed.isEmpty)
+        }
+        // Both split panes must remain protected from automatic hibernation.
+        for side in 0..<2 {
+            let (tab, browser, manager) = make()
+            if side == 0 { browser.splitLeftTabID = tab.id }
+            else { browser.splitRightTabID = tab.id }
             await manager.exerciseSweep()
             precondition(browser.reclaimed.isEmpty)
         }
