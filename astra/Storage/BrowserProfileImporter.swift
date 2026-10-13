@@ -66,12 +66,19 @@ nonisolated enum BrowserProfileImporter {
 						}
 				}
 			} catch {
+				BrowserLog.warning(.persistence, "profile-import.bookmarks.failed", metadata: [
+					"source": String(describing: profile.source), "directory": BrowserLog.path(profile.directory),
+					"error": BrowserLog.errorDescription(error),
+				])
 				warnings.append("Bookmarks could not be read: \(error.localizedDescription)")
 			}
 			if profile.source == .arc, let sidebar = profile.sidebar {
 				do {
 					bookmarks += try arcBookmarks(readFile(sidebar))
 				} catch {
+					BrowserLog.warning(.persistence, "profile-import.arc-sidebar.failed", metadata: [
+						"file": BrowserLog.path(sidebar), "error": BrowserLog.errorDescription(error),
+					])
 					warnings.append("Arc sidebar could not be read: \(error.localizedDescription)")
 				}
 			}
@@ -106,6 +113,10 @@ nonisolated enum BrowserProfileImporter {
 					history.append(BrowserVisit(url: url, title: String(string(statement, 1).prefix(4096)), visitedAt: date, modifiedAt: .now))
 				}
 			} catch {
+				BrowserLog.warning(.persistence, "profile-import.history.failed", metadata: [
+					"source": String(describing: profile.source), "directory": BrowserLog.path(profile.directory),
+					"error": BrowserLog.errorDescription(error),
+				])
 				history = []
 				warnings.append("History could not be read: \(error.localizedDescription)")
 			}

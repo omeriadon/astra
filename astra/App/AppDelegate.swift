@@ -167,9 +167,20 @@
 				guard let self else { return }
 				defer { finishStartupWindowRestoration() }
 				guard !authentication.wasLaunchedByAuthenticationServices else { return }
-				let persistence = try? BrowserPersistence.makeShared()
+				let persistence: BrowserPersistence?
+				do {
+					persistence = try BrowserPersistence.makeShared()
+				} catch {
+					BrowserLog.error(.persistence, "startup.window-record-store.failed", metadata: ["error": BrowserLog.errorDescription(error)])
+					persistence = nil
+				}
 				let records = await Task.detached(priority: .utility) {
-					(try? persistence?.loadWindowRecords()) ?? []
+					do {
+						return try persistence?.loadWindowRecords() ?? []
+					} catch {
+						BrowserLog.error(.persistence, "startup.window-records-load.failed", metadata: ["error": BrowserLog.errorDescription(error)])
+						return []
+					}
 				}.value
 				BrowserWindowRegistry.shared.beginWindowRestoration(records)
 				// Preserve the old foreground window (the last restored record)

@@ -886,6 +886,10 @@ final class Browser {
 				persistenceStore = try BrowserPersistence.makeShared()
 			}
 		} catch {
+			BrowserLog.error(.persistence, "browser.persistence.initialize-failed", metadata: [
+				"window": BrowserLog.id(windowID),
+				"error": BrowserLog.errorDescription(error),
+			])
 			persistenceError = error.localizedDescription
 		}
 		tabs = initialTabs
@@ -1049,6 +1053,10 @@ final class Browser {
 					self.applyHydratedState(loaded, placeholderID: placeholderID, placeholderModifiedAt: placeholderModifiedAt)
 				}
 			} catch {
+				BrowserLog.error(.persistence, "browser.hydration.failed", metadata: [
+					"window": BrowserLog.id(windowID),
+					"error": BrowserLog.errorDescription(error),
+				])
 				guard let self else { return }
 				hydrationFailed = true
 				didFinishHydration = true
@@ -1888,6 +1896,11 @@ final class Browser {
 				do {
 					generation = try persistence.saveReadingArchive(data, id: item.id, url: item.url)
 				} catch {
+					BrowserLog.error(.persistence, "reading-list.archive-save.failed", metadata: [
+						"item": BrowserLog.id(item.id),
+						"bytes": String(data.count),
+						"error": BrowserLog.errorDescription(error),
+					])
 					await MainActor.run {
 						guard browser.ownsReadingListCapture(capturedTab, controller: capturedController, item: item),
 						      capturedController.navigationIdentifier == documentID else { return }
@@ -2262,6 +2275,10 @@ final class Browser {
 				try persistence.saveShutdownMetadata(clean: true)
 			}.value
 		} catch {
+			BrowserLog.error(.persistence, "browser.shutdown-metadata.failed", metadata: [
+				"window": BrowserLog.id(windowID),
+				"error": BrowserLog.errorDescription(error),
+			])
 			persistenceErrorDescription = error.localizedDescription
 		}
 	}
@@ -3491,7 +3508,7 @@ final class Browser {
 		// Encode + file IO off-main so Cmd+T / history-open stay instant.
 		// Scroll-only saves skip cross-window fan-out and sync: no structural change.
 		let previousWrite = session.persistenceWriteTask
-		session.persistenceWriteTask = Task.detached(priority: .utility) { [persistence, state] in
+		session.persistenceWriteTask = Task.detached(priority: .utility) { [persistence, state, windowID] in
 			await previousWrite?.value
 			do {
 				try persistence.savePersistedState(state)
@@ -3504,6 +3521,10 @@ final class Browser {
 				}
 			} catch {
 				let message = error.localizedDescription
+				BrowserLog.error(.persistence, "browser.persist.failed", metadata: [
+					"window": BrowserLog.id(windowID),
+					"error": BrowserLog.errorDescription(error),
+				])
 				await MainActor.run { [weak self] in
 					self?.persistenceErrorDescription = message
 				}

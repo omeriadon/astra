@@ -172,9 +172,16 @@ final class BrowserAIPageLoader: NSObject, WKNavigationDelegate, WKScriptMessage
 		guard message.frameInfo.isMainFrame, message.webView === webView,
 		      completion != nil, earlyExtraction == nil else { return }
 		earlyExtraction = Task { @MainActor in
-			if let page = try? await BrowserAIPageText.extract(from: webView), !Task.isCancelled, completion != nil {
-				earlyPage = page
-				finish(.success(()))
+			do {
+				let page = try await BrowserAIPageText.extract(from: webView)
+				if !Task.isCancelled, completion != nil {
+					earlyPage = page
+					finish(.success(()))
+				}
+			} catch is CancellationError {
+				return
+			} catch {
+				BrowserLog.warning(.ai, "ai.page-text.early-extraction-failed", metadata: ["error": BrowserLog.errorDescription(error)])
 			}
 		}
 	}

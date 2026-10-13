@@ -499,6 +499,10 @@ nonisolated struct BrowserAICommandResponse {
 				}
 			}
 			do { try process.run() } catch {
+				BrowserLog.error(.ai, "ai.cli.process-start.failed", metadata: [
+					"command": BrowserLog.value(process.executableURL?.lastPathComponent),
+					"error": BrowserLog.errorDescription(error),
+				])
 				stop()
 				throw BrowserAIError.commandFailed(name.capitalized, "The installed command could not be started. Check its permissions.")
 			}
@@ -509,7 +513,13 @@ nonisolated struct BrowserAICommandResponse {
 					if closeInput {
 						try handle.close()
 					}
-				} catch { continuation.finish() }
+				} catch {
+					BrowserLog.warning(.ai, "ai.cli.stdin-write.failed", metadata: [
+						"bytes": String(text.utf8.count),
+						"error": BrowserLog.errorDescription(error),
+					])
+					continuation.finish()
+				}
 			}
 			timeout = Task { [weak self] in
 				do { try await Task.sleep(for: .seconds(180)) } catch { return }

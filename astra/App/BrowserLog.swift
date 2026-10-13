@@ -38,6 +38,7 @@ enum BrowserLog {
 		case search
 		case favicons
 		case websiteApps = "website-apps"
+		case agent
 		case performance
 		case diagnostics
 	}
@@ -53,6 +54,13 @@ enum BrowserLog {
 	}
 
 	nonisolated static let subsystem = "com.omeriadon.astra"
+	/// Routine lifecycle and success events stay out of the default console. Failure
+	/// boundaries remain enabled; DEBUG tooling can opt into the quieter levels.
+	nonisolated static let verboseEnabled = ["1", "true", "yes"].contains(
+		ProcessInfo.processInfo.environment["ASTRA_LOG_VERBOSE"]?.lowercased()
+	) || ["1", "true", "yes"].contains(
+		ProcessInfo.processInfo.environment["ASTRA_PERFORMANCE_BENCHMARK"]?.lowercased()
+	)
 	private nonisolated static let loggers = Dictionary(
 		uniqueKeysWithValues: Category.allCases.map {
 			($0, Logger(subsystem: subsystem, category: $0.rawValue))
@@ -104,9 +112,8 @@ enum BrowserLog {
 		function: StaticString = #function,
 		line: UInt = #line
 	) {
-		#if DEBUG
-			emit(.trace, category, event, message(), metadata: metadata(), file: file, function: function, line: line)
-		#endif
+		guard isEnabled(.trace) else { return }
+		emit(.trace, category, event, message(), metadata: metadata(), file: file, function: function, line: line)
 	}
 
 	nonisolated static func debug(
@@ -118,9 +125,8 @@ enum BrowserLog {
 		function: StaticString = #function,
 		line: UInt = #line
 	) {
-		#if DEBUG
-			emit(.debug, category, event, message(), metadata: metadata(), file: file, function: function, line: line)
-		#endif
+		guard isEnabled(.debug) else { return }
+		emit(.debug, category, event, message(), metadata: metadata(), file: file, function: function, line: line)
 	}
 
 	nonisolated static func info(
@@ -132,6 +138,7 @@ enum BrowserLog {
 		function: StaticString = #function,
 		line: UInt = #line
 	) {
+		guard isEnabled(.info) else { return }
 		emit(.info, category, event, message(), metadata: metadata(), file: file, function: function, line: line)
 	}
 
@@ -144,6 +151,7 @@ enum BrowserLog {
 		function: StaticString = #function,
 		line: UInt = #line
 	) {
+		guard isEnabled(.notice) else { return }
 		emit(.notice, category, event, message(), metadata: metadata(), file: file, function: function, line: line)
 	}
 
@@ -156,6 +164,7 @@ enum BrowserLog {
 		function: StaticString = #function,
 		line: UInt = #line
 	) {
+		guard isEnabled(.warning) else { return }
 		emit(.warning, category, event, message(), metadata: metadata(), file: file, function: function, line: line)
 	}
 
@@ -168,6 +177,7 @@ enum BrowserLog {
 		function: StaticString = #function,
 		line: UInt = #line
 	) {
+		guard isEnabled(.error) else { return }
 		emit(.error, category, event, message(), metadata: metadata(), file: file, function: function, line: line)
 	}
 
@@ -180,7 +190,15 @@ enum BrowserLog {
 		function: StaticString = #function,
 		line: UInt = #line
 	) {
+		guard isEnabled(.fault) else { return }
 		emit(.fault, category, event, message(), metadata: metadata(), file: file, function: function, line: line)
+	}
+
+	nonisolated static func isEnabled(_ level: Level) -> Bool {
+		switch level {
+			case .warning, .error, .fault: true
+			default: verboseEnabled
+		}
 	}
 
 	@discardableResult
@@ -195,6 +213,7 @@ enum BrowserLog {
 		warnAboveMilliseconds: Double = 250,
 		metadata: @autoclosure () -> [String: String] = [:]
 	) {
+		guard verboseEnabled else { return }
 		let milliseconds = max(0, (clock() - started) * 1000)
 		if milliseconds >= warnAboveMilliseconds {
 			var values = metadata()
@@ -291,13 +310,113 @@ enum BrowserLog {
 	}
 
 	nonisolated static func errorDescription(_ error: Error) -> String {
-		let nsError = error as NSError
-		#if DEBUG
-			let keys = nsError.userInfo.keys.map { String(describing: $0) }.sorted().joined(separator: ",")
-			return "\(nsError.domain):\(nsError.code) \(nsError.localizedDescription) userInfoKeys=[\(keys)]"
-		#else
-			return "\(nsError.domain):\(nsError.code)"
-		#endif
+		let chain = errorChain(error)
+		let rendered = chain.map { item in
+			var value = "\(item.domain):\(item.code) type=\(item.typeName)"
+			if let decoding = item.decoding {
+				value += " decoding=\(decoding)"
+			}
+			if !item.safeContext.isEmpty {
+				value += " " + item.safeContext
+			}
+			if let decodingDetail = item.decodingDetail {
+				value += " \(decodingDetail)"
+			}
+			#if DEBUG
+				value += " \(redactSensitive(clean(item.message)))"
+			#else
+				if !item.message.isEmpty {
+					value += " message_bytes=\(item.message.utf8.count)"
+				}
+			#endif
+			#if DEBUG
+				if !item.userInfoKeys.isEmpty {
+					value += " userInfoKeys=[\(item.userInfoKeys.joined(separator: ","))]"
+				}
+				if !item.codingPath.isEmpty {
+					value += " codingPath=\(item.codingPath.joined(separator: "."))"
+				}
+			#else
+				if !item.userInfoKeys.isEmpty {
+					value += " userInfoCount=\(item.userInfoKeys.count)"
+				}
+				if !item.codingPath.isEmpty {
+					value += " codingPathCount=\(item.codingPath.count)"
+				}
+			#endif
+			return value
+		}.joined(separator: " <- ")
+		guard rendered.count > 4096 else { return rendered }
+		return String(rendered.prefix(4000)) + " <truncated:\(rendered.count)chars>"
+	}
+
+	private struct ErrorItem {
+		let domain: String
+		let code: Int
+		let message: String
+		let userInfoKeys: [String]
+		let codingPath: [String]
+		let typeName: String
+		let decoding: String?
+		let decodingDetail: String?
+		let safeContext: String
+	}
+
+	private nonisolated static func errorChain(_ error: Error) -> [ErrorItem] {
+		var result: [ErrorItem] = []
+		var current: Error? = error
+		var seen = Set<ObjectIdentifier>()
+		while let value = current, result.count < 8 {
+			let nsError = value as NSError
+			let identity = ObjectIdentifier(nsError)
+			guard seen.insert(identity).inserted else { break }
+			let codingPath: [String]
+			let decoding: String?
+			let decodingDetail: String?
+			var decodingCause: Error?
+			if case let DecodingError.dataCorrupted(context) = value {
+				decoding = "dataCorrupted"
+				decodingDetail = nil
+				codingPath = context.codingPath.map(\.stringValue)
+				decodingCause = context.underlyingError
+			} else if case let DecodingError.keyNotFound(key, context) = value {
+				decoding = "keyNotFound"
+				#if DEBUG
+					decodingDetail = "missingKey=\(clean(key.stringValue))"
+				#else
+					decodingDetail = "missingKeyPresent=true"
+				#endif
+				codingPath = context.codingPath.map(\.stringValue)
+				decodingCause = context.underlyingError
+			} else if case let DecodingError.typeMismatch(expected, context) = value {
+				decoding = "typeMismatch"
+				decodingDetail = "expectedType=\(String(reflecting: expected))"
+				codingPath = context.codingPath.map(\.stringValue)
+				decodingCause = context.underlyingError
+			} else if case let DecodingError.valueNotFound(expected, context) = value {
+				decoding = "valueNotFound"
+				decodingDetail = "expectedType=\(String(reflecting: expected))"
+				codingPath = context.codingPath.map(\.stringValue)
+				decodingCause = context.underlyingError
+			} else {
+				decoding = nil
+				decodingDetail = nil
+				codingPath = []
+			}
+			result.append(ErrorItem(
+				domain: nsError.domain,
+				code: nsError.code,
+				message: nsError.localizedDescription,
+				userInfoKeys: nsError.userInfo.keys.map { String(describing: $0) }.sorted(),
+				codingPath: codingPath,
+				typeName: String(reflecting: type(of: value)),
+				decoding: decoding,
+				decodingDetail: decodingDetail,
+				safeContext: safeErrorContext(nsError)
+			))
+			current = decodingCause ?? nsError.userInfo[NSUnderlyingErrorKey] as? Error
+		}
+		return result
 	}
 
 	private nonisolated static func emit(
@@ -322,8 +441,8 @@ enum BrowserLog {
 				.joined(separator: " ")
 			components.append("| \(rendered)")
 		}
+		components.append("| source=\(String(describing: file)):\(line) \(String(describing: function))")
 		#if DEBUG
-			components.append("| source=\(String(describing: file)):\(line) \(String(describing: function))")
 			components.append("thread=\(Thread.isMainThread ? "main" : "background")")
 		#endif
 		let rendered = components.joined(separator: " ")
@@ -344,10 +463,53 @@ enum BrowserLog {
 	}
 
 	private nonisolated static func clean(_ value: String) -> String {
-		value
+		let bounded = value.count > 4096
+			? String(value.prefix(4000)) + " <truncated:\(value.count)chars>"
+			: value
+		return bounded
 			.replacingOccurrences(of: "\n", with: "\\n")
 			.replacingOccurrences(of: "\r", with: "\\r")
 			.replacingOccurrences(of: "\t", with: "\\t")
+	}
+
+	private nonisolated static func safeErrorContext(_ error: NSError) -> String {
+		var fields: [String] = []
+		if [NSCocoaErrorDomain, NSURLErrorDomain, NSPOSIXErrorDomain, NSOSStatusErrorDomain].contains(error.domain) {
+			let reason = NSError(domain: error.domain, code: error.code).localizedDescription
+			fields.append("reason=\(clean(reason))")
+		}
+		for key in [NSURLErrorFailingURLErrorKey, "NSErrorFailingURLStringKey"] {
+			if let value = error.userInfo[key] as? URL {
+				fields.append("failing_url=\(url(value))")
+				break
+			}
+			if let value = error.userInfo[key] as? String, let valueURL = URL(string: value) {
+				fields.append("failing_url=\(url(valueURL))")
+				break
+			}
+		}
+		if let value = error.userInfo[NSFilePathErrorKey] as? String {
+			fields.append("failing_path=\(path(URL(fileURLWithPath: value)))")
+		}
+		for key in ["NSURLErrorNetworkUnavailableReasonKey", "NSURLErrorBackgroundTaskCancelledReasonKey"] {
+			if let value = error.userInfo[key] as? NSNumber {
+				fields.append("\(key)=\(value)")
+			}
+		}
+		return fields.joined(separator: " ")
+	}
+
+	private nonisolated static func redactSensitive(_ value: String) -> String {
+		var result = value
+		let patterns = [
+			#"(?i)\bBearer\s+[^\s,;"'<>]+"#,
+			#"(?i)(?:["']?(?:[a-z_]*token|password|passwd|secret|api[_-]?key|authorization|cookies?|private[_-]?key)["']?)\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\s,;}]+)"#,
+			#"(?i)https?://[^\s"<>]+"#,
+		]
+		for pattern in patterns {
+			result = result.replacingOccurrences(of: pattern, with: "<redacted>", options: .regularExpression)
+		}
+		return result
 	}
 
 	private nonisolated static func startMainThreadWatchdog() {

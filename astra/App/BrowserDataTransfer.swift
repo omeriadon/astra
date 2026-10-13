@@ -89,6 +89,10 @@
 						guard isCurrent() else { return }
 					} catch {
 						guard isCurrent() else { return }
+						BrowserLog.error(.persistence, "data-transfer.export.failed", metadata: [
+							"destination": BrowserLog.path(url), "bookmarks_only": String(bookmarksOnly),
+							"error": BrowserLog.errorDescription(error),
+						])
 						ToastManager.shared.show(symbol: "exclamationmark.triangle", message: "Could not export data: \(error.localizedDescription)")
 					}
 				}

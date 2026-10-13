@@ -34,7 +34,12 @@ final class BrowserSync {
 		let storedVersions = UserDefaults.standard.dictionary(forKey: "syncSettingVersions") as? [String: Double] ?? [:]
 		settingVersions = storedVersions.mapValues(Date.init(timeIntervalSince1970:))
 		tokenEndpoint = UserDefaults.standard.string(forKey: "syncTokenEndpoint")
-		knownSettings = (try? Self.readSettings()) ?? [:]
+		do {
+			knownSettings = try Self.readSettings()
+		} catch {
+			knownSettings = [:]
+			BrowserLog.error(.sync, "sync.settings.initial-load-failed", metadata: ["error": BrowserLog.errorDescription(error)])
+		}
 		observedServerAddress = SyncServerAddress.normalized(Defaults[.syncServerURL], allowLocalHTTP: Self.allowsLocalHTTP)?.absoluteString
 		for key in knownSettings.keys where settingVersions[key] == nil {
 			settingVersions[key] = .distantPast
@@ -73,16 +78,20 @@ final class BrowserSync {
 
 		// Keychain can block on crypto/disk; never on the launch path.
 		Task.detached(priority: .utility) {
-			guard let token = try? BrowserSessionStore.load() else { return }
-			await MainActor.run { [weak self] in
-				guard let self, sessionToken == nil,
-				      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
-				else { return }
-				sessionToken = token
-				isSignedIn = true
-				if browser != nil {
-					Task { await self.syncNow() }
+			do {
+				let token = try BrowserSessionStore.load()
+				await MainActor.run { [weak self] in
+					guard let self, sessionToken == nil,
+					      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
+					else { return }
+					sessionToken = token
+					isSignedIn = true
+					if browser != nil {
+						Task { await self.syncNow() }
+					}
 				}
+			} catch {
+				BrowserLog.warning(.sync, "sync.session-load-failed", metadata: ["error": BrowserLog.errorDescription(error)])
 			}
 		}
 	}
@@ -125,6 +134,7 @@ final class BrowserSync {
 			)
 			scheduleSync()
 		} catch {
+			BrowserLog.error(.sync, "sync.settings.changed-failed", metadata: ["error": BrowserLog.errorDescription(error)])
 			errorDescription = error.localizedDescription
 		}
 	}
@@ -209,6 +219,7 @@ final class BrowserSync {
 			scheduledSync?.cancel()
 			errorDescription = nil
 		} catch {
+			BrowserLog.error(.sync, "sync.sign-out.failed", metadata: ["error": BrowserLog.errorDescription(error)])
 			errorDescription = error.localizedDescription
 		}
 	}
@@ -595,6 +606,10 @@ final class BrowserSync {
 		let isAI = path.hasPrefix("v1/ai/")
 		for attempt in 0 ..< 3 {
 			let attemptStarted = BrowserLog.clock()
+			var lastStatus: String?
+			var lastResponseBytes = 0
+			var lastServerRequestID: String?
+			var lastContentType: String?
 			do {
 				try Task.checkCancellation()
 				BrowserLog.debug(isAI ? .ai : .sync, "http.attempt", metadata: [
@@ -602,9 +617,13 @@ final class BrowserSync {
 					"attempt": String(attempt + 1), "body_bytes": String(request.httpBody?.count ?? 0),
 				])
 				let (data, response) = try await URLSession.shared.data(for: request)
+				lastResponseBytes = data.count
 				guard let response = response as? HTTPURLResponse, data.count <= 16 * 1024 * 1024 else {
 					throw BrowserSyncError.invalidResponse
 				}
+				lastStatus = String(response.statusCode)
+				lastServerRequestID = response.value(forHTTPHeaderField: "X-Request-ID")
+				lastContentType = response.value(forHTTPHeaderField: "Content-Type")
 				BrowserLog.debug(isAI ? .ai : .sync, "http.response", metadata: [
 					"id": BrowserLog.id(diagnosticID), "path": path, "attempt": String(attempt + 1),
 					"status": String(response.statusCode),
@@ -631,6 +650,9 @@ final class BrowserSync {
 				}
 				return try JSONDecoder().decode(Response.self, from: data)
 			} catch {
+				if error is CancellationError || (error as? URLError)?.code == .cancelled {
+					throw error
+				}
 				let transient: Bool = if case let BrowserSyncError.http(status) = error {
 					[429, 500, 502, 503, 504].contains(status)
 				} else if case let BrowserAIError.server(status, _) = error {
@@ -641,9 +663,16 @@ final class BrowserSync {
 					false
 				}
 				guard attempt < 2, transient, ["GET", "PUT"].contains(method) || (isAI && method == "POST") else {
-					BrowserLog.debug(isAI ? .ai : .sync, "http.terminal-failure", metadata: [
+					BrowserLog.error(isAI ? .ai : .sync, "http.terminal-failure", metadata: [
 						"id": BrowserLog.id(diagnosticID), "path": path,
-						"attempt": String(attempt + 1), "error": BrowserLog.errorDescription(error),
+						"method": method, "attempt": String(attempt + 1),
+						"status": lastStatus ?? "unknown",
+						"response_bytes": String(lastResponseBytes),
+						"server_request_id": lastServerRequestID.flatMap(UUID.init(uuidString:))?.uuidString ?? "missing-or-invalid",
+						"content_type": BrowserLog.value(lastContentType),
+						"request": BrowserLog.request(request),
+						"elapsed_ms": String(Int((BrowserLog.clock() - attemptStarted) * 1000)),
+						"error": BrowserLog.errorDescription(error),
 					])
 					throw error
 				}

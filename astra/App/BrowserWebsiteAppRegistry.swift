@@ -122,7 +122,11 @@
 				.appendingPathComponent("Website Apps", isDirectory: true)
 			self.rootURL = rootURL
 			registryURL = rootURL.appendingPathComponent("registry.json", isDirectory: false)
-			try? fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+			do {
+				try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+			} catch {
+				BrowserLog.error(.websiteApps, "website-app.registry-directory.failed", metadata: ["directory": BrowserLog.path(rootURL), "error": BrowserLog.errorDescription(error)])
+			}
 			load()
 		}
 
@@ -272,14 +276,25 @@
 
 		private func load() {
 			BrowserLog.debug(.websiteApps, "website-app.registry-load")
-			guard let data = try? Data(contentsOf: registryURL),
-			      data.count <= 1_048_576,
-			      let decoded = try? JSONDecoder().decode([BrowserWebsiteAppInstallation].self, from: data)
-			else { return }
-			installations = decoded.filter {
-				isOwnedInstallation($0.bundleURL)
-					&& BrowserWebsiteAppPolicy.validatedName($0.name) != nil
-					&& BrowserWebsiteAppPolicy.validatedURL($0.launchURL) != nil
+			do {
+				let data = try Data(contentsOf: registryURL)
+				guard data.count <= 1_048_576 else {
+					BrowserLog.error(.websiteApps, "website-app.registry-oversized", metadata: ["bytes": String(data.count), "limit": "1048576"])
+					return
+				}
+				let decoded = try JSONDecoder().decode([BrowserWebsiteAppInstallation].self, from: data)
+				installations = decoded.filter {
+					isOwnedInstallation($0.bundleURL)
+						&& BrowserWebsiteAppPolicy.validatedName($0.name) != nil
+						&& BrowserWebsiteAppPolicy.validatedURL($0.launchURL) != nil
+				}
+				if installations.count != decoded.count {
+					BrowserLog.warning(.websiteApps, "website-app.registry-invalid-entries", metadata: ["discarded": String(decoded.count - installations.count)])
+				}
+			} catch {
+				let failure = error as NSError
+				guard failure.domain != NSCocoaErrorDomain || ![CocoaError.fileNoSuchFile.rawValue, CocoaError.fileReadNoSuchFile.rawValue].contains(failure.code) else { return }
+				BrowserLog.error(.websiteApps, "website-app.registry-load.failed", metadata: ["file": BrowserLog.path(registryURL), "error": BrowserLog.errorDescription(error)])
 			}
 		}
 

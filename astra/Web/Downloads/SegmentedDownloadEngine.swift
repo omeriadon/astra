@@ -432,6 +432,10 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 				self?.manager?.completeSegment(itemID, index: index, taskID: taskID, partURL: partURL, response: response)
 			}
 		} catch {
+			BrowserLog.error(.downloads, "segmented.part-move.failed", metadata: [
+				"item": BrowserLog.id(itemID), "segment": String(index),
+				"part": BrowserLog.path(partURL), "error": BrowserLog.errorDescription(error),
+			])
 			Task { @MainActor [weak self] in
 				guard let self else { return }
 				if acceptsCompletion(itemID, index: index, taskID: taskID) {

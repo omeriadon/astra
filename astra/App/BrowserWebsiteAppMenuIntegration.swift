@@ -66,6 +66,9 @@
 						try await registry.beginKeepInDockFlow(installation.id)
 						candidate.browser.session.toastManager.show(symbol: "checkmark", message: "Website app added to the Dock.")
 					} catch {
+						BrowserLog.error(.websiteApps, "website-app.menu-install.failed", metadata: [
+							"url": BrowserLog.url(candidate.url), "error": BrowserLog.errorDescription(error),
+						])
 						candidate.browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error.localizedDescription)
 					}
 				}

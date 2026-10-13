@@ -146,14 +146,17 @@ final class BrowserUsageLimitsStore {
 		} catch is CancellationError {
 			return
 		} catch let error as BrowserUsageLimitsError {
+			BrowserLog.warning(.ai, "usage-limits.refresh.failed", metadata: ["provider": provider.rawValue, "cause": error.errorDescription ?? "provider-error"])
 			guard self.generation == generation, self.provider == provider else { return }
 			self.error = error
 			windows = []
-		} catch is DecodingError {
+		} catch let error as DecodingError {
+			BrowserLog.warning(.ai, "usage-limits.decode.failed", metadata: ["provider": provider.rawValue, "error": BrowserLog.errorDescription(error)])
 			guard self.generation == generation, self.provider == provider else { return }
 			self.error = .invalidResponse
 			windows = []
 		} catch {
+			BrowserLog.warning(.ai, "usage-limits.refresh.unexpected-failed", metadata: ["provider": provider.rawValue, "error": BrowserLog.errorDescription(error)])
 			guard self.generation == generation, self.provider == provider else { return }
 			self.error = .network
 			windows = []
@@ -245,10 +248,24 @@ private struct BrowserUsageLimitsClient {
 			if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
 				throw CancellationError()
 			}
+			BrowserLog.warning(.ai, "usage-limits.transport.failed", metadata: ["request": BrowserLog.request(request), "error": BrowserLog.errorDescription(error)])
 			throw BrowserUsageLimitsError.network
 		}
 		try Task.checkCancellation()
 		guard let response = response as? HTTPURLResponse else { throw BrowserUsageLimitsError.invalidResponse }
+		BrowserLog.debug(.ai, "usage-limits.response", metadata: [
+			"host": host,
+			"status": String(response.statusCode),
+			"bytes": String(data.count),
+			"url": BrowserLog.url(url),
+		])
+		if response.statusCode >= 400, response.statusCode != 401 {
+			BrowserLog.warning(.ai, "usage-limits.http.failed", metadata: [
+				"request": BrowserLog.request(request),
+				"status": String(response.statusCode),
+				"response_bytes": String(data.count),
+			])
+		}
 		switch response.statusCode {
 			case 200 ..< 300: return (data, response)
 			case 401: throw BrowserUsageLimitsError.unauthorized

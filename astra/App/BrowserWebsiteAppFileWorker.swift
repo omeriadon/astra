@@ -65,6 +65,11 @@
 				try registerGeneratedApp(at: appURL)
 				try saveRegistry(nextRegistry)
 			} catch {
+				BrowserLog.error(.websiteApps, "website-app.install.failed", metadata: [
+					"app": BrowserLog.id(installation.id),
+					"published": String(published),
+					"error": BrowserLog.errorDescription(error),
+				])
 				// If persistence or registration fails, never publish a broken app.
 				try? FileManager.default.removeItem(at: staging)
 				if published {
@@ -99,14 +104,36 @@
 				}
 				try? FileManager.default.removeItem(at: backupURL)
 			} catch {
+				BrowserLog.error(.websiteApps, "website-app.replace.failed", metadata: [
+					"app": BrowserLog.id(installation.id),
+					"replaced": String(replaced),
+					"error": BrowserLog.errorDescription(error),
+				])
 				try? FileManager.default.removeItem(at: staging)
 				if replaced, FileManager.default.fileExists(atPath: backupURL.path) {
 					// A signed, previously valid bundle remains recoverable even
 					// when replacing it or writing the registry fails.
-					_ = try? FileManager.default.replaceItemAt(
-						original, withItemAt: backupURL, backupItemName: nil
-					)
-					try? registerGeneratedApp(at: original)
+					do {
+						_ = try FileManager.default.replaceItemAt(
+							original, withItemAt: backupURL, backupItemName: nil
+						)
+					} catch {
+						BrowserLog.fault(.websiteApps, "website-app.replace.rollback-failed", metadata: [
+							"app": BrowserLog.id(installation.id),
+							"original": BrowserLog.path(original),
+							"backup": BrowserLog.path(backupURL),
+							"error": BrowserLog.errorDescription(error),
+						])
+					}
+					do {
+						try registerGeneratedApp(at: original)
+					} catch {
+						BrowserLog.fault(.websiteApps, "website-app.replace.rollback-registration-failed", metadata: [
+							"app": BrowserLog.id(installation.id),
+							"original": BrowserLog.path(original),
+							"error": BrowserLog.errorDescription(error),
+						])
+					}
 				}
 				throw error
 			}
@@ -122,8 +149,21 @@
 			do {
 				try saveRegistry(nextRegistry)
 			} catch {
+				BrowserLog.error(.websiteApps, "website-app.uninstall.registry-failed", metadata: [
+					"app": BrowserLog.id(installation.id),
+					"error": BrowserLog.errorDescription(error),
+				])
 				if let trashURL, !FileManager.default.fileExists(atPath: url.path) {
-					try? FileManager.default.moveItem(at: trashURL as URL, to: url)
+					do {
+						try FileManager.default.moveItem(at: trashURL as URL, to: url)
+					} catch {
+						BrowserLog.fault(.websiteApps, "website-app.uninstall.rollback-failed", metadata: [
+							"app": BrowserLog.id(installation.id),
+							"trash": BrowserLog.path(trashURL as URL),
+							"destination": BrowserLog.path(url),
+							"error": BrowserLog.errorDescription(error),
+						])
+					}
 				}
 				throw error
 			}

@@ -72,13 +72,22 @@ final class BrowserWebsiteMonitoring {
 		BrowserLog.notice(.ai, "website-monitoring.set-enabled", metadata: ["enabled": String(enabled)])
 		guard BrowserSync.shared.isSignedIn else { return }
 		do { try await BrowserSync.shared.setWebsiteMonitorsEnabled(enabled); await refresh() }
-		catch { self.error = error.localizedDescription }
+		catch {
+			BrowserLog.error(.ai, "website-monitor.set-enabled.failed", metadata: ["error": BrowserLog.errorDescription(error)])
+			self.error = error.localizedDescription
+		}
 	}
 
 	func remove(_ id: UUID) async {
 		BrowserLog.info(.ai, "website-monitor.remove", metadata: ["id": BrowserLog.id(id)])
 		do { try await BrowserSync.shared.deleteWebsiteMonitor(id); monitors.removeAll { $0.id == id } }
-		catch { self.error = error.localizedDescription }
+		catch {
+			BrowserLog.error(.ai, "website-monitor.remove.failed", metadata: [
+				"id": BrowserLog.id(id),
+				"error": BrowserLog.errorDescription(error),
+			])
+			self.error = error.localizedDescription
+		}
 	}
 
 	func refresh() async {
@@ -119,11 +128,19 @@ final class BrowserWebsiteMonitoring {
 				content.sound = .default
 				content.categoryIdentifier = Self.category
 				content.userInfo = ["monitorID": key]
-				try? await UNUserNotificationCenter.current().add(.init(identifier: "astra.monitor.\(key)", content: content, trigger: nil))
+				do {
+					try await UNUserNotificationCenter.current().add(.init(identifier: "astra.monitor.\(key)", content: content, trigger: nil))
+				} catch {
+					BrowserLog.warning(.ai, "website-monitor.notification.failed", metadata: [
+						"monitor": BrowserLog.id(monitor.id),
+						"error": BrowserLog.errorDescription(error),
+					])
+				}
 				await BrowserAIUsageLog.shared.record(id: monitor.id, feature: "Website Monitoring", provider: "Default", event: "success", details: "phase=fulfilled server_checks=\(monitor.checks)")
 			}
 		} catch {
 			if !Task.isCancelled {
+				BrowserLog.error(.ai, "website-monitor.refresh.failed", metadata: ["error": BrowserLog.errorDescription(error)])
 				self.error = error.localizedDescription
 			}
 		}

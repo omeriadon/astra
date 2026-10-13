@@ -9,11 +9,13 @@ final class BrowserAIUsageLog {
 	@ObservationIgnored private let writer = BrowserAIUsageLogWriter()
 
 	func record(id: UUID, feature: String, provider: String, event: String, details: String) async {
+		guard BrowserLog.verboseEnabled || !["request", "success", "cancelled"].contains(event) else { return }
 		let line = "\(Date().ISO8601Format()) request=\(id.uuidString) feature=\(Self.field(feature)) provider=\(Self.field(provider)) event=\(Self.field(event)) \(Self.field(details))\n"
 		do {
 			try await writer.append(line)
 			errorDescription = nil
 		} catch {
+			BrowserLog.warning(.ai, "ai.usage-log.append-failed", metadata: ["error": BrowserLog.errorDescription(error)])
 			errorDescription = "The AI usage log could not be written. Check available disk space and folder permissions."
 		}
 	}
@@ -24,6 +26,7 @@ final class BrowserAIUsageLog {
 			errorDescription = nil
 			return url
 		} catch {
+			BrowserLog.warning(.ai, "ai.usage-log.location-failed", metadata: ["error": BrowserLog.errorDescription(error)])
 			errorDescription = "The AI usage log could not be opened. Check available disk space and folder permissions."
 			return nil
 		}

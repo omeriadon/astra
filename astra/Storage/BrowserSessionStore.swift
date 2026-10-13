@@ -61,9 +61,24 @@ nonisolated enum BrowserSessionStore {
 	}
 }
 
-enum BrowserSessionStoreError: LocalizedError {
+nonisolated enum BrowserSessionStoreError: LocalizedError, CustomNSError {
 	case keychain(OSStatus)
 	case invalidToken
+
+	static var errorDomain: String {
+		"com.omeriadon.astra.keychain"
+	}
+
+	var errorCode: Int {
+		switch self {
+			case let .keychain(status): Int(status)
+			case .invalidToken: 1
+		}
+	}
+
+	var errorUserInfo: [String: Any] {
+		[NSLocalizedDescriptionKey: errorDescription ?? "Keychain failure"]
+	}
 
 	var errorDescription: String? {
 		switch self {

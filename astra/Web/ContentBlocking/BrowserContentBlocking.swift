@@ -77,6 +77,7 @@ final class BrowserContentBlocking {
 				builtInCompiledRuleList = try await compile(builtIn, using: store)
 			}
 		} catch {
+			BrowserLog.error(.contentBlocking, "content-blocking.prepare.failed", metadata: ["error": BrowserLog.errorDescription(error)])
 			errorDescription = error.localizedDescription
 		}
 
@@ -111,6 +112,7 @@ final class BrowserContentBlocking {
 				compiledRuleList = try await compile(source, using: store)
 			}
 		} catch {
+			BrowserLog.error(.contentBlocking, "content-blocking.restore-compile.failed", metadata: ["error": BrowserLog.errorDescription(error)])
 			errorDescription = error.localizedDescription
 		}
 	}
@@ -201,6 +203,7 @@ final class BrowserContentBlocking {
 				try? await store.removeContentRuleList(forIdentifier: previousIdentifier)
 			}
 		} catch {
+			BrowserLog.warning(.contentBlocking, "content-blocking.import.failed", metadata: ["error": BrowserLog.errorDescription(error)])
 			errorDescription = error.localizedDescription
 		}
 	}
@@ -227,6 +230,7 @@ final class BrowserContentBlocking {
 			compiledRuleList = list
 			errorDescription = nil
 		} catch {
+			BrowserLog.warning(.contentBlocking, "content-blocking.refresh.failed", metadata: ["error": BrowserLog.errorDescription(error)])
 			errorDescription = error.localizedDescription
 		}
 	}
@@ -249,6 +253,7 @@ final class BrowserContentBlocking {
 			do {
 				try await store.removeContentRuleList(forIdentifier: source.identifier)
 			} catch {
+				BrowserLog.warning(.contentBlocking, "content-blocking.cache-remove.failed", metadata: ["error": BrowserLog.errorDescription(error)])
 				cacheRemovalFailed = true
 			}
 		}
@@ -288,6 +293,7 @@ final class BrowserContentBlocking {
 			self.privateStoreDirectory = nil
 			errorDescription = nil
 		} catch {
+			BrowserLog.warning(.contentBlocking, "content-blocking.private-cleanup.failed", metadata: ["error": BrowserLog.errorDescription(error)])
 			errorDescription = "Temporary compiled content rules could not be removed."
 		}
 	}
