@@ -6,7 +6,9 @@ import SwiftUI
 		let browser: Browser
 		let manager: BrowserDownloadManager
 		let theme: BrowserTheme
+		var topMargin: CGFloat = BrowserChromeMetrics.topBarRegionHeight
 		@Binding var selection: Int
+		@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 		var body: some View {
 			VStack(spacing: 0) {
@@ -17,7 +19,7 @@ import SwiftUI
 				.pickerStyle(.segmented)
 				.labelsHidden()
 				#if os(macOS)
-					.padding(.top, BrowserChromeMetrics.topBarRegionHeight)
+					.padding(.top, topMargin)
 				#endif
 					.accessibilityIdentifier("library-category")
 					.padding(8)
@@ -49,6 +51,7 @@ import SwiftUI
 					}
 				}
 			}
+			.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: topMargin)
 			.accessibilityIdentifier("library-sidebar")
 		}
 	}
