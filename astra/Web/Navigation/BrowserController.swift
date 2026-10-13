@@ -566,14 +566,18 @@ final class BrowserController: NSObject, Identifiable {
 				const style = getComputedStyle(element);
 				if (style.visibility === 'hidden' || Number(style.opacity) < 0.1) return null;
 				const rect = element.getBoundingClientRect();
-				if (element.matches(header) || style.position === 'fixed' || style.position === 'sticky') {
-					if (rect.width >= innerWidth * .7 && rect.height >= 10 &&
-						rect.height <= 260 && rect.top <= 8 && rect.bottom >= y) edge = true;
-				}
 				// A gradient/image obscures the ancestor's flat background.
 				if (style.backgroundImage !== 'none') return null;
 				const rgba = pixels(style.backgroundColor);
 				if (!rgba || rgba[3] === 0) continue;
+				// Only a *painted* page element is a chrome candidate.
+				// A transparent header must not upgrade its ancestor body's
+				// background above the site's declared theme-color.
+				if (element !== document.body && element !== document.documentElement &&
+					rect.width >= innerWidth * .7 && rect.height >= 10 &&
+					rect.height <= 260 && rect.top <= 8 && rect.bottom >= y &&
+					(element.matches(header) || style.position === 'fixed' ||
+					 style.position === 'sticky' || rect.width >= innerWidth * .9)) edge = true;
 				const contribution = (rgba[3] / 255) * (1 - covered);
 				for (let channel = 0; channel < 3; channel++)
 					mixed[channel] += rgba[channel] * contribution;
