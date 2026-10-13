@@ -37,7 +37,7 @@
 
 		func start() {
 			guard !browser.isMini, eventMonitor == nil else { return }
-			eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
+			eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
 				let isKeyDown = event.type == .keyDown
 				let isEscape = event.keyCode == 53
 				let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -45,8 +45,8 @@
 					guard let self else { return false }
 					let expectedModifiers = self.isCancelledUntilControlRelease
 						? self.suppressionModifiers
-						: self.heldModifiers.isEmpty ? [.control] : self.heldModifiers
-					let isControlPressed = modifiers.isSuperset(of: expectedModifiers)
+						: self.heldModifiers
+					let isControlPressed = !expectedModifiers.isEmpty && modifiers.isSuperset(of: expectedModifiers)
 					let isFocusedWindow = BrowserKeyboardMenuPolicy.ownsFocusedTarget(
 						isKeyWindow: self.window?.isKeyWindow == true,
 						matchesKeyWindow: self.window === NSApp.keyWindow
@@ -76,6 +76,7 @@
 			previewTask?.cancel()
 			previewTask = nil
 			isCancelledUntilControlRelease = false
+			suppressionModifiers = []
 			endSession()
 		}
 

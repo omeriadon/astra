@@ -27,13 +27,15 @@ struct BrowserKeyboardShortcutsSettingsView: View {
                     ForEach(registry.definitions.filter { $0.section == section }) { definition in
                         HStack(spacing: 12) {
                             KeyboardShortcuts.Recorder(definition.title, name: definition.name) { _ in
-                                changed()
+                                MainActor.assumeIsolated { changed() }
                             }
                             .shortcutValidation { candidate in
-                                if let conflict = registry.conflict(for: candidate, excluding: definition) {
-                                    return .disallow(reason: "Already assigned to \(conflict.title).")
+                                return MainActor.assumeIsolated {
+                                    if let conflict = registry.conflict(for: candidate, excluding: definition) {
+                                        return .disallow(reason: "Already assigned to \(conflict.title).")
+                                    }
+                                    return .allow
                                 }
-                                return .allow
                             }
                             Spacer(minLength: 8)
                             Button {

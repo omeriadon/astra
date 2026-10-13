@@ -18,7 +18,7 @@ final class BrowserSpaceSwitcher {
     @ObservationIgnored private let browser: Browser
     @ObservationIgnored private weak var window: NSWindow?
     @ObservationIgnored private var monitor: Any?
-     @ObservationIgnored private var requiredModifiers: NSEvent.ModifierFlags = []
+    @ObservationIgnored private var requiredModifiers: NSEvent.ModifierFlags = []
     @ObservationIgnored private var fallbackCommitTask: Task<Void, Never>?
 
     init(browser: Browser) {
@@ -31,7 +31,7 @@ final class BrowserSpaceSwitcher {
 
     func start() {
         guard monitor == nil else { return }
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown]) { [weak self] event in
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown, .keyUp]) { [weak self] event in
             let consumed = MainActor.assumeIsolated {
                 guard let self, self.isPresented else { return false }
                 guard self.window === NSApp.keyWindow, self.window?.isKeyWindow == true else {
@@ -41,6 +41,9 @@ final class BrowserSpaceSwitcher {
                 if event.type == .keyDown, event.keyCode == 53 {
                     self.cancel()
                     return true
+                }
+                if event.type == .keyUp && self.requiredModifiers.isEmpty {
+                    self.commit()
                 }
                 if event.type == .flagsChanged {
                     let pressed = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -68,7 +71,7 @@ final class BrowserSpaceSwitcher {
               direction == 1 || direction == -1 else { return }
 
         if !isPresented {
-             highlightedSpaceID = browser.selectedSpace.id
+            highlightedSpaceID = browser.selectedSpace.id
             requiredModifiers = modifiers.intersection(.deviceIndependentFlagsMask)
             withAnimation(.smooth(duration: 0.22)) {
                 isPresented = true
@@ -119,7 +122,7 @@ final class BrowserSpaceSwitcher {
         fallbackCommitTask?.cancel()
         fallbackCommitTask = nil
         requiredModifiers = []
-         withAnimation(.smooth(duration: 0.18)) {
+        withAnimation(.smooth(duration: 0.18)) {
             isPresented = false
         }
         highlightedSpaceID = nil
