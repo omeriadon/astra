@@ -30,9 +30,10 @@
 					return
 				}
 			}
+			guard let shortcut = BrowserShortcutRegistry.shared.shortcut("Open Mini Astra Globally", section: "Window") else { return }
 			let status = RegisterEventHotKey(
-				UInt32(kVK_ANSI_N),
-				UInt32(cmdKey | controlKey | optionKey),
+				UInt32(shortcut.carbonKeyCode),
+				UInt32(shortcut.carbonModifiers),
 				EventHotKeyID(signature: 0x4153_5452, id: 1),
 				GetApplicationEventTarget(),
 				0,

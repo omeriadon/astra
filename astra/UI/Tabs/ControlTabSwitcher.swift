@@ -1,5 +1,6 @@
 #if os(macOS)
 	import AppKit
+	import KeyboardShortcuts
 	import Observation
 	import SwiftUI
 
@@ -21,6 +22,7 @@
 		private var previewTask: Task<Void, Never>?
 		@ObservationIgnored
 		private var sessionForward = true
+		@ObservationIgnored private var heldModifiers: NSEvent.ModifierFlags = []
 		@ObservationIgnored
 		private var isCancelledUntilControlRelease = false
 
@@ -38,8 +40,7 @@
 				let isKeyDown = event.type == .keyDown
 				let isEscape = event.keyCode == 53
 				let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-				let isControlPressed = modifiers.contains(.control)
-				let hasDisallowedModifiers = modifiers.contains(.command) || modifiers.contains(.option)
+				let isControlPressed = modifiers.isSuperset(of: self?.heldModifiers ?? [.control])
 				let isHandled = MainActor.assumeIsolated {
 					guard let self else { return false }
 					let isFocusedWindow = BrowserKeyboardMenuPolicy.ownsFocusedTarget(
@@ -47,21 +48,16 @@
 						matchesKeyWindow: self.window === NSApp.keyWindow
 					)
 					let hasMarkedText = (self.window?.firstResponder as? NSTextInputClient)?.hasMarkedText() == true
-					let ownsTabSwitch = BrowserKeyboardMenuPolicy.ownsTabSwitch(
-						isFocusedWindow: isFocusedWindow,
-						hasMarkedText: hasMarkedText,
-						isKeyDown: isKeyDown,
-						keyCode: event.keyCode,
-						modifiers: modifiers
-					)
+					let forward = isKeyDown ? BrowserShortcutRegistry.shared.tabDirection(for: event) : nil
+					let ownsTabSwitch = isFocusedWindow && !hasMarkedText && forward != nil
 					return self.handle(
 						isKeyDown: isKeyDown,
 						keyCode: event.keyCode,
 						isEscape: isEscape,
 						isControlPressed: isControlPressed,
-						hasDisallowedModifiers: hasDisallowedModifiers,
 						hasMarkedText: hasMarkedText,
-						ownsTabSwitch: ownsTabSwitch
+						ownsTabSwitch: ownsTabSwitch,
+						isForwardKey: forward
 					)
 				}
 				return isHandled ? nil : event
@@ -115,9 +111,9 @@
 			keyCode: UInt16,
 			isEscape: Bool,
 			isControlPressed: Bool,
-			hasDisallowedModifiers: Bool,
 			hasMarkedText: Bool,
-			ownsTabSwitch: Bool
+			ownsTabSwitch: Bool,
+			isForwardKey: Bool?
 		) -> Bool {
 			guard BrowserKeyboardMenuPolicy.ownsFocusedTarget(
 				isKeyWindow: window?.isKeyWindow == true,
@@ -144,8 +140,6 @@
 				}
 				endSession()
 			}
-			guard !hasDisallowedModifiers else { return false }
-
 			if isKeyDown {
 				if isEscape, !candidateIDs.isEmpty {
 					isCancelledUntilControlRelease = isControlPressed
@@ -154,7 +148,9 @@
 				}
 				guard ownsTabSwitch else { return false }
 				if candidateIDs.isEmpty {
-					sessionForward = keyCode == 48
+					sessionForward = isForwardKey ?? true
+					let title = sessionForward ? "Next Tab" : "Previous Tab"
+					heldModifiers = BrowserShortcutRegistry.shared.shortcut(title, section: "Tab")?.modifiers ?? []
 					let order = browser.switchCandidates(forward: sessionForward)
 					guard !order.isEmpty else { return true }
 					candidateIDs = order
@@ -168,7 +164,7 @@
 					let cycleCount = min(candidateIDs.count, visibleCandidateCount)
 					let visibleIDs = candidateIDs.prefix(cycleCount)
 					let currentIndex = visibleIDs.firstIndex(of: highlightedTabID ?? candidateIDs[0]) ?? 0
-					let isForward = keyCode == 48
+					let isForward = isForwardKey ?? sessionForward
 					let step = isForward == sessionForward ? 1 : -1
 					highlightedTabID = candidateIDs[(currentIndex + step + cycleCount) % cycleCount]
 				}
@@ -183,6 +179,7 @@
 			candidateIDs = []
 			highlightedTabID = nil
 			isPreviewVisible = false
+			heldModifiers = []
 		}
 	}
 
