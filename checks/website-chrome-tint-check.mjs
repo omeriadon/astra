@@ -15,7 +15,8 @@ const script = controller.slice(start, end);
 function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
                        headerOpacity = '1', bodyColor = 'rgb(248, 249, 250)',
                        bodyImage = 'none', hasHeader = true, tileColor = null,
-                       cssVars = {}, headerVariants = null, supportsIdle = false } = {}) {
+                       cssVars = {}, headerVariants = null, supportsIdle = false,
+                       readyState = 'complete' } = {}) {
     const timers = [];
     const posts = [];
     const listeners = new Map();
@@ -69,7 +70,7 @@ function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
         }
     };
     const document = {
-        hidden: false, body, documentElement: html,
+        hidden: false, readyState, body, documentElement: html,
         querySelector() { return tileColor ? { content: tileColor } : null; },
         createElement(type) {
             assert.equal(type, 'canvas');
@@ -151,7 +152,7 @@ function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
     state.flushIdle = () => {
         while (idleRequests.length) idleRequests.shift().fn();
     };
-    state.mutate = () => mutation();
+    state.mutate = () => mutation?.();
     state.listeners = listeners;
     state.timers = timers;
     state.reinstall = () => runInNewContext(script, sandbox);
@@ -160,51 +161,47 @@ function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
 
 const withHeader = environment();
 withHeader.flush();
-assert.equal(withHeader.posts.length, 1);
+assert.equal(withHeader.posts.length, 1, 'Exactly one sample per loaded document');
 assert.equal(withHeader.posts[0].source, 'chrome');
 assert.equal(JSON.stringify(withHeader.posts[0].rgb), '[18,32,54]');
 assert.ok(withHeader.styleReads <= 3 && withHeader.geometryReads <= 2,
     'Only painted elements should trigger geometry reads');
 assert.equal(withHeader.hitTests, 16,
-    'Uniform header must use the 16-point fast path, not 40 hit tests');
-withHeader.mutate();
-withHeader.mutate();
-assert.equal(withHeader.timers.length, 1, 'Mutations must be coalesced');
-withHeader.flush();
-assert.equal(withHeader.posts.length, 1, 'Unchanged tint must not update SwiftUI');
+    'Uniform header should use the 16-point fast path');
+assert.equal(withHeader.timers.length, 0, 'Sampling should not leave a timer running');
+
+// Subsequent changes in page style and visibility must not resample.
+const initialHits = withHeader.hitTests;
 withHeader.header.style.backgroundColor = 'rgb(210, 95, 45)';
 withHeader.mutate();
-withHeader.flush();
-assert.equal(JSON.stringify(withHeader.posts.at(-1).rgb), '[210,95,45]');
-assert.equal(withHeader.posts.length, 2, 'SPA theme changes must propagate');
-withHeader.header.style.backgroundColor = 'rgb(45, 85, 155)';
-withHeader.listeners.get('load')();
-withHeader.flush();
-assert.equal(JSON.stringify(withHeader.posts.at(-1).rgb), '[45,85,155]',
-    'Late-loading CSS should trigger a resample');
-withHeader.header.style.backgroundColor = 'rgb(40, 100, 180)';
-withHeader.listeners.get('pageshow')();
-withHeader.flush();
-assert.equal(JSON.stringify(withHeader.posts.at(-1).rgb), '[40,100,180]',
-    'Back-forward cache restoration must trigger a fresh tint');
-withHeader.header.style.backgroundColor = 'rgb(90, 110, 150)';
-withHeader.listeners.get('transitionend')();
-withHeader.flush();
-assert.equal(JSON.stringify(withHeader.posts.at(-1).rgb), '[90,110,150]',
-    'A finished CSS transition must trigger a resample');
-withHeader.header.style.backgroundColor = 'rgb(35, 80, 125)';
-withHeader.listeners.get('animationend')();
-withHeader.flush();
-assert.equal(JSON.stringify(withHeader.posts.at(-1).rgb), '[35,80,125]',
-    'A finished CSS animation must trigger a resample');
-withHeader.document.hidden = true;
-withHeader.mutate();
-assert.equal(withHeader.timers.length, 0, 'Hidden tab must do no sampling');
-withHeader.document.hidden = false;
 withHeader.listeners.get('visibilitychange')();
 withHeader.flush();
 withHeader.reinstall();
-assert.equal(withHeader.posts.length, 6, 'Duplicate installation must not duplicate events');
+assert.equal(withHeader.hitTests, initialHits,
+    'Visibility changes, DOM changes and duplicate installation must not resample');
+assert.equal(withHeader.posts.length, 1,
+    'One document must send exactly one native tint message');
+for (const name of [
+    'scroll', 'resize', 'click', 'pageshow', 'popstate',
+    'transitionend', 'transitioncancel', 'animationend', 'animationcancel'
+]) {
+    assert.ok(!withHeader.listeners.has(name),
+        'Do not register repeat tint sampling for ' + name);
+}
+
+// At documentEnd, wait until the page has finished loading.
+const delayedLoad = environment({ readyState: 'loading' });
+delayedLoad.flush();
+assert.equal(delayedLoad.hitTests, 0,
+    'Do not force early layout before the complete page load');
+delayedLoad.header.style.backgroundColor = 'rgb(45, 85, 155)';
+delayedLoad.listeners.get('load')();
+delayedLoad.flush();
+assert.equal(JSON.stringify(delayedLoad.posts[0].rgb), '[45,85,155]');
+assert.equal(delayedLoad.posts.length, 1);
+delayedLoad.listeners.get('load')();
+delayedLoad.flush();
+assert.equal(delayedLoad.hitTests, 16, 'Repeated load events must not resample');
 
 // Four nearby colours fall into distinct 12-RGB buckets but remain
 // one perceptual painted header; the old quantisation missed consensus.
@@ -225,40 +222,33 @@ mixedHeaders.flush();
 assert.equal(mixedHeaders.hitTests, 40,
     'Heterogeneous headers should trigger the full grid without repeating probes');
 
-// Sampling is never performed in the active scroll window.
-const scrolling = environment();
-scrolling.listeners.get('scroll')();
-scrolling.advance(100);
-scrolling.listeners.get('scroll')();
-scrolling.advance(259);
-assert.equal(scrolling.hitTests, 0, 'Do not force layout during continuous scrolling');
-scrolling.advance(1);
-assert.equal(scrolling.hitTests, 16, 'Sample after 260 ms of scroll inactivity');
-
-// Prefer WebContent idle periods; scrolling invalidates pending idle probes.
+// A single idle callback is preferred over immediately sampling on load.
 const idle = environment({ supportsIdle: true });
 idle.advance(0);
 assert.equal(idle.pendingIdle, 1);
 assert.equal(idle.hitTests, 0, 'Idle sampling must not run synchronously');
-idle.listeners.get('scroll')();
-assert.equal(idle.pendingIdle, 0, 'Scrolling must cancel a queued idle sample');
-idle.advance(260);
-assert.equal(idle.pendingIdle, 1);
 idle.flushIdle();
 assert.equal(idle.hitTests, 16);
 assert.equal(idle.posts.length, 1);
+idle.listeners.get('visibilitychange')();
+idle.flushIdle();
+assert.equal(idle.hitTests, 16, 'No later idle sample is allowed');
 
-// Hiding a tab must cancel both timers and pending idle work.
+// Tabs loaded in the background can defer their only sample until visible.
 const hiddenIdle = environment({ supportsIdle: true });
 hiddenIdle.advance(0);
 hiddenIdle.document.hidden = true;
-hiddenIdle.listeners.get('visibilitychange')();
-assert.equal(hiddenIdle.pendingIdle, 0, 'Hidden tabs must cancel idle work');
+hiddenIdle.flushIdle();
+assert.equal(hiddenIdle.hitTests, 0);
 hiddenIdle.document.hidden = false;
 hiddenIdle.listeners.get('visibilitychange')();
-hiddenIdle.advance(0);
+assert.equal(hiddenIdle.pendingIdle, 1);
 hiddenIdle.flushIdle();
-assert.equal(hiddenIdle.posts.length, 1, 'Resuming visibility must resample');
+assert.equal(hiddenIdle.posts.length, 1);
+assert.equal(hiddenIdle.hitTests, 16);
+hiddenIdle.listeners.get('visibilitychange')();
+hiddenIdle.flushIdle();
+assert.equal(hiddenIdle.hitTests, 16, 'Repeated foreground events must not resample');
 
 const bodyOnly = environment({ hasHeader: false });
 bodyOnly.flush();
@@ -325,6 +315,14 @@ assert.match(controller, /sampledFaviconColor\s*\?\? webView\.underPageBackgroun
     'Favicon accent is a last resort before WebKit default background');
 assert.match(controller, /generation == navigationGeneration/,
     'Do not apply a late favicon colour to a different navigation');
+assert.match(controller, /pageTintHandledGeneration != navigationGeneration/,
+    'Reject duplicate native samples for the same full navigation');
+assert.match(controller, /pageTintHandledGeneration = navigationGeneration/,
+    'Record when the one-shot native sample is applied');
+assert.ok(!script.includes('MutationObserver'),
+    'Page tint must not observe continuous page mutations');
+assert.ok(!script.includes("addEventListener('scroll'"),
+    'Page tint must not subscribe to scrolling');
 assert.match(favicons, /Task\.detached\(priority: \.utility\)/,
     'Favicon quantisation must not decode on the browser main actor');
 assert.match(favicons, /kCGImageSourceThumbnailMaxPixelSize: 32/,
