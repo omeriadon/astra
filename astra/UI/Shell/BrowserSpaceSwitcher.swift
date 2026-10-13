@@ -168,6 +168,11 @@ struct BrowserSpaceSwitcherOverlay: View {
                                             .frame(width: cardWidth, height: cardHeight)
                                     }
                                 }
+                                // Keep intrinsic card widths, even if the content is many
+                                // times wider than the visible strip. Align the leading edge
+                                // before applying the center-on-selection transform.
+                                .fixedSize(horizontal: true, vertical: false)
+                                .frame(width: viewport.size.width, alignment: .leading)
                                 // Every card, including the first and last, can occupy the
                                 // true viewport center. There is no user-driven scroll state.
                                 .offset(x: viewport.size.width / 2
