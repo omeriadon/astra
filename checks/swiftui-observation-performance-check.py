@@ -34,4 +34,6 @@ assert "registry.hasCompetingNormalWindow(for: browser)" in Path("astra/UI/Conte
 fade = Path("astra/UI/Shell/topVariableBlur.swift").read_text()
 assert "SidebarScrollVariableBlurModifier" in fade
 assert "accessibilityReduceTransparency" in fade
+assert "SidebarScrollAlphaGradient: View, Equatable" in fade
+assert "SidebarScrollAlphaGradient(" in fade
 print("SwiftUI Observation/performance structural regression checks passed")

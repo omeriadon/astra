@@ -10,6 +10,42 @@ import SwiftUI
 	import Haze
 #endif
 
+// Fade geometry depends only on the viewport and the four edge dimensions.
+// Keep it equatable so unrelated tab-selection and download updates don't
+// re-evaluate the mask's six gradient stops.
+private struct SidebarScrollAlphaGradient: View, Equatable {
+	let top: CGFloat
+	let topOpacityHeight: CGFloat?
+	let bottom: CGFloat
+	let bottomOpacityHeight: CGFloat
+
+	var body: some View {
+		GeometryReader { geometry in
+			let height = max(geometry.size.height, 1)
+			let topEnd = min(max(top / height, 0), 1)
+			let bottomStart = max(topEnd, 1 - min(max(bottom / height, 0), 1))
+			let topOpacityPoint = min(max((topOpacityHeight ?? 20) / height, 0), topEnd)
+			let bottomOpacityPoint = max(
+				bottomStart,
+				1 - min(max(bottomOpacityHeight / height, 0), 1)
+			)
+			LinearGradient(
+				stops: [
+					.init(color: topOpacityHeight == nil ? .clear : .white.opacity(0.3), location: 0),
+					.init(color: .white.opacity(0.3), location: topOpacityPoint),
+					.init(color: .white, location: topEnd),
+					.init(color: .white, location: bottomStart),
+					.init(color: .white.opacity(0.3), location: bottomOpacityPoint),
+					.init(color: .white.opacity(0.3), location: 1),
+				],
+				startPoint: .top,
+				endPoint: .bottom
+			)
+			.frame(width: geometry.size.width, height: geometry.size.height)
+		}
+	}
+}
+
 private extension View {
 	func sidebarScrollAlphaMask(
 		top: CGFloat,
@@ -18,30 +54,12 @@ private extension View {
 		bottomOpacityHeight: CGFloat = 34
 	) -> some View {
 		mask {
-			GeometryReader { geometry in
-				let height = max(geometry.size.height, 1)
-				let topEnd = min(max(top / height, 0), 1)
-				let bottomStart = max(topEnd, 1 - min(max(bottom / height, 0), 1))
-				let topOpacityPoint = min(max((topOpacityHeight ?? 20) / height, 0), topEnd)
-				let bottomOpacityPoint = max(
-					bottomStart,
-					1 - min(max(bottomOpacityHeight / height, 0), 1)
-				)
-
-				LinearGradient(
-					stops: [
-						.init(color: topOpacityHeight == nil ? .clear : .white.opacity(0.3), location: 0),
-						.init(color: .white.opacity(0.3), location: topOpacityPoint),
-						.init(color: .white, location: topEnd),
-						.init(color: .white, location: bottomStart),
-						.init(color: .white.opacity(0.3), location: bottomOpacityPoint),
-						.init(color: .white.opacity(0.3), location: 1),
-					],
-					startPoint: .top,
-					endPoint: .bottom
-				)
-				.frame(width: geometry.size.width, height: geometry.size.height)
-			}
+			SidebarScrollAlphaGradient(
+				top: top,
+				topOpacityHeight: topOpacityHeight,
+				bottom: bottom,
+				bottomOpacityHeight: bottomOpacityHeight
+			).equatable()
 		}
 	}
 }
