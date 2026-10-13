@@ -42,6 +42,7 @@ struct ShellSidebarListView: View {
 		// A selection-only workspace mutation reuses the same tab arrays and selection orders.
 		let projection = projectionCache.resolve(
 			space: space, favouriteIDs: favouriteTabIDs, tabsByID: tabsByID,
+			structureRevision: browser.sidebarStructureRevision,
 			tabCollectionRevision: browser.tabCollectionRevision, isPrivate: browser.isPrivate
 		)
 		let openElsewhereIDs = BrowserWindowRegistry.shared.tabIDsOpenInAnotherWindow(than: browser)
@@ -493,10 +494,7 @@ private final class SidebarProjectionCache {
 
 	private struct Entry {
 		let spaceID: UUID
-		let tabIDs: [UUID]
-		let pinnedIDs: [UUID]
-		let folders: [PinnedTabFolder]
-		let groups: [BrowserTabGroupingFeature.Group]
+		let structureRevision: Int
 		let favouriteIDs: [UUID]
 		let tabCollectionRevision: Int
 		let isPrivate: Bool
@@ -507,20 +505,19 @@ private final class SidebarProjectionCache {
 
 	func resolve(
 		space: BrowserSpace, favouriteIDs: [UUID], tabsByID: [UUID: BrowserTab],
-		tabCollectionRevision: Int, isPrivate: Bool
+		structureRevision: Int, tabCollectionRevision: Int, isPrivate: Bool
 	) -> Projection {
 		if let cached,
 		   cached.spaceID == space.id,
-		   cached.tabIDs == space.tabIDs,
-		   cached.pinnedIDs == space.pinnedTabIDs,
-		   cached.folders == space.pinnedFolders,
-		   cached.groups == space.todayTabGroups,
+		   cached.structureRevision == structureRevision,
 		   cached.favouriteIDs == favouriteIDs,
 		   cached.tabCollectionRevision == tabCollectionRevision,
 		   cached.isPrivate == isPrivate
 		{
 			return cached.projection
 		}
+		// Measure only structural cache misses; selection-only hits stay allocation-free.
+		let started = BrowserLog.clock()
 		let favouriteTabs = isPrivate ? [] : favouriteIDs.compactMap { tabsByID[$0] }
 		let pinnedTabs = space.pinnedTabIDs.compactMap { tabsByID[$0] }
 		let folderIDs = Set(space.pinnedFolders.flatMap(\.tabIDs))
@@ -548,11 +545,17 @@ private final class SidebarProjectionCache {
 			groupedTabs: groupedTabs
 		)
 		cached = Entry(
-			spaceID: space.id, tabIDs: space.tabIDs, pinnedIDs: space.pinnedTabIDs,
-			folders: space.pinnedFolders, groups: space.todayTabGroups,
+			spaceID: space.id, structureRevision: structureRevision,
 			favouriteIDs: favouriteIDs, tabCollectionRevision: tabCollectionRevision,
 			isPrivate: isPrivate, projection: projection
 		)
+		BrowserLog.duration(.performance, "sidebar.projection.resolve",
+		                    since: started, warnAboveMilliseconds: 5,
+		                    metadata: [
+		                    	"normal_tabs": String(normalTabs.count),
+		                    	"pinned_tabs": String(pinnedTabs.count),
+		                    	"groups": String(space.todayTabGroups.count),
+		                    ])
 		return projection
 	}
 }

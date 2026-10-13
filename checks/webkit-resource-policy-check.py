@@ -15,7 +15,9 @@ policy = view.split("final class BrowserTabResourceManager", 1)[1].split("privat
 for text in (
     "private(set) var warmControllerLimit = 4",
     "for id in browser.recentlyUsedTabIDs where result.count < warmControllerLimit",
-    "let ownedTabIDs = BrowserWindowRegistry.shared.ownedTabIDs(in: browser)",
+    "let ownedTabIDs = registry.hasCompetingNormalWindow(for: browser)",
+    "? registry.ownedTabIDs(in: browser) : nil",
+    "func isOwned(_ id: UUID) -> Bool { ownedTabIDs?.contains(id) ?? true }",
     "guard let controller, controller.url != nil, seen.insert(controller.id).inserted",
     "append(tab.controller?.shouldKeepWebViewAttached == true ? tab.controller : nil)",
     "if peek.controller.shouldKeepWebViewAttached",

@@ -191,7 +191,12 @@ final class BrowserTabResourceManager {
 		guard let browser else { return [] }
 		let started = BrowserLog.clock()
 		let selectedTab = browser.selectedTab
-		let ownedTabIDs = BrowserWindowRegistry.shared.ownedTabIDs(in: browser)
+		let registry = BrowserWindowRegistry.shared
+		// All tabs belong to this window when there is no competing normal
+		// window. Skip materializing the otherwise redundant UUID ownership set.
+		let ownedTabIDs = registry.hasCompetingNormalWindow(for: browser)
+			? registry.ownedTabIDs(in: browser) : nil
+		func isOwned(_ id: UUID) -> Bool { ownedTabIDs?.contains(id) ?? true }
 		let tabsByID = browser.tabsByID
 		var result: [BrowserController] = []
 		var seen = Set<UUID>()
@@ -201,22 +206,22 @@ final class BrowserTabResourceManager {
 		}
 		if browser.isShowingTabSplit {
 			for splitID in [browser.splitLeftTabID, browser.splitRightTabID].compactMap(\.self)
-				where ownedTabIDs.contains(splitID)
+				where isOwned(splitID)
 			{
 				append(tabsByID[splitID]?.controller)
 			}
 		}
-		if let selectedTab, ownedTabIDs.contains(selectedTab.id) {
+		if let selectedTab, isOwned(selectedTab.id) {
 			append(selectedTab.controller)
 		}
 		// Pressure applies only to idle recency retention. Independently
 		// protected controllers are always included below regardless of budget.
 		for id in browser.recentlyUsedTabIDs where result.count < warmControllerLimit {
-			guard ownedTabIDs.contains(id),
+			guard isOwned(id),
 			      let tab = tabsByID[id], tab.internalPage == nil else { continue }
 			append(tab.controller)
 		}
-		for tab in browser.tabs where ownedTabIDs.contains(tab.id) {
+		for tab in browser.tabs where isOwned(tab.id) {
 			append(tab.controller?.shouldKeepWebViewAttached == true ? tab.controller : nil)
 			for peek in tab.id == selectedTab?.id ? [] : tab.peeks {
 				if peek.controller.shouldKeepWebViewAttached {

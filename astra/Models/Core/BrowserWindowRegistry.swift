@@ -126,6 +126,19 @@ final class BrowserWindowRegistry {
 	/// Resolve ownership for an entire window in one pass. Hot rendering paths
 	/// must use this instead of calling ownsTab once per tab: the fallback owner
 	/// rule otherwise rescans every window's tab array for every row.
+	/// Avoid building an O(tabs) ownership index in the common single-window
+	/// case. The full index is still required whenever ownership is shared.
+	func hasCompetingNormalWindow(for browser: Browser) -> Bool {
+		guard !browser.isPrivate, !browser.isMini else { return false }
+		var normalWindowCount = 0
+		for entry in browsers {
+			guard let candidate = entry.browser, !candidate.isPrivate, !candidate.isMini else { continue }
+			normalWindowCount += 1
+			if normalWindowCount > 1 { return true }
+		}
+		return false
+	}
+
 	func ownedTabIDs(in browser: Browser) -> Set<UUID> {
 		let browserIDs = Set(browser.tabs.map(\.id))
 		guard !browser.isPrivate, !browser.isMini else { return browserIDs }
@@ -213,7 +226,7 @@ final class BrowserWindowRegistry {
 	/// owned by other normal windows once instead of rescanning all windows and
 	/// their tab arrays from every row body.
 	func tabIDsOpenInAnotherWindow(than browser: Browser) -> Set<UUID> {
-		guard !browser.isPrivate, !browser.isMini else { return [] }
+		guard hasCompetingNormalWindow(for: browser) else { return [] }
 		let normalBrowsers = openBrowsers.filter { !$0.isPrivate && !$0.isMini }
 		guard normalBrowsers.count > 1 else { return [] }
 
