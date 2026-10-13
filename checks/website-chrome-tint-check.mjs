@@ -19,14 +19,19 @@ function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
     const listeners = new Map();
     let mutation;
     let now = 0;
+    let styleReads = 0;
+    let geometryReads = 0;
     const element = (name, background, image, parent, isHeader = false) => ({
         name, parentElement: parent, isHeader,
         style: { backgroundColor: background, backgroundImage: image, opacity: '1',
                  visibility: 'visible', position: 'static' },
         matches: () => isHeader,
-        getBoundingClientRect: () => isHeader
-            ? { width: 1000, height: 70, top: 0, bottom: 70 }
-            : { width: 1000, height: 800, top: 0, bottom: 800 }
+        getBoundingClientRect: () => {
+            geometryReads++;
+            return isHeader
+                ? { width: 1000, height: 70, top: 0, bottom: 70 }
+                : { width: 1000, height: 800, top: 0, bottom: 800 };
+        }
     });
     const body = element('body', bodyColor, 'none', null);
     const header = element('header', headerColor, headerImage, body, true);
@@ -55,13 +60,17 @@ function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
         observe() {}
         disconnect() {}
     }
-    const state = { hasHeader, header, body, document, posts };
+    const state = {
+        hasHeader, header, body, document, posts,
+        get styleReads() { return styleReads; },
+        get geometryReads() { return geometryReads; }
+    };
     const sandbox = {
         document, MutationObserver,
         performance: { now: () => now },
         innerWidth: 1000, innerHeight: 800,
         location: { href: 'https://example.test/page' },
-        getComputedStyle: node => node.style,
+        getComputedStyle: node => { styleReads++; return node.style; },
         addEventListener(name, fn) { listeners.set(name, fn); },
         matchMedia: () => ({ addEventListener() {} }),
         setTimeout(fn) { timers.push(fn); return timers.length; },
@@ -88,6 +97,8 @@ withHeader.flush();
 assert.equal(withHeader.posts.length, 1);
 assert.equal(withHeader.posts[0].source, 'chrome');
 assert.equal(JSON.stringify(withHeader.posts[0].rgb), '[18,32,54]');
+assert.ok(withHeader.styleReads <= 3 && withHeader.geometryReads <= 3,
+    'Shared header and body must require O(unique elements), not 40 duplicate layouts');
 withHeader.mutate();
 withHeader.mutate();
 assert.equal(withHeader.timers.length, 1, 'Mutations must be coalesced');
