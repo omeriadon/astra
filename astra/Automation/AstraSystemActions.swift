@@ -34,7 +34,8 @@ enum AstraSystemActions {
         }
     }
 
-    static func browser() async throws -> Browser {
+    /// Read-only entity queries must not create browser windows as a side effect.
+    static func existingBrowser() async throws -> Browser {
         guard let delegate, await delegate.awaitSystemActionsReady() else {
             throw Failure.unavailable
         }
@@ -42,7 +43,20 @@ enum AstraSystemActions {
            !preferred.isPrivate && !preferred.isMini && preferred.isHydrationFinished {
             return preferred
         }
-        if let existing = normalBrowsers().first { return existing }
+        guard let existing = normalBrowsers().first else {
+            throw Failure.unavailable
+        }
+        return existing
+    }
+
+    /// Interactive commands may open a normal window if no normal window exists.
+    static func browser() async throws -> Browser {
+        if let existing = try? await existingBrowser() {
+            return existing
+        }
+        guard let delegate, await delegate.awaitSystemActionsReady() else {
+            throw Failure.unavailable
+        }
         let created = delegate.openBrowserWindow().browser
         for _ in 0 ..< 200 {
             if created.isHydrationFinished { return created }
