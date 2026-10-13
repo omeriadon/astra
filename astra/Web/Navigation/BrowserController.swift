@@ -385,6 +385,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	private static let scrollPositionMessageName = "scrollPositionChanged"
 	private static let topEdgeMessageName = "topEdgeChanged"
+	private static let pageTintMessageName = "pageTintChanged"
 	private static let zapFinishedMessageName = "zapFinished"
 	private static let zapScript = """
 	(() => {
@@ -527,6 +528,118 @@ final class BrowserController: NSObject, Identifiable {
 	})();
 	"""
 
+	/// Live, bounded page-surface sampling inspired by Safari 26's edge tinting.
+	/// Runs in WebKit, not on the app's main actor. No network calls or image decoding.
+	private static let pageTintScript = """
+	(() => {
+		if (globalThis.__astraPageTintInstalled) return;
+		globalThis.__astraPageTintInstalled = true;
+		const canvas = document.createElement('canvas');
+		canvas.width = canvas.height = 1;
+		const context = canvas.getContext('2d', { willReadFrequently: true });
+		if (!context) return;
+		const cache = new Map();
+		const header = 'header, nav, [role="banner"], [role="navigation"], ' +
+			'[class*="header" i], [id*="header" i], [class*="navbar" i], [id*="navbar" i]';
+		let scheduled = 0, lastRun = 0, previous = '';
+		const pixels = css => {
+			if (cache.has(css)) return cache.get(css);
+			let rgba = null;
+			if (css && css !== 'transparent') {
+				try {
+					context.clearRect(0, 0, 1, 1);
+					context.fillStyle = '#000000';
+					context.fillStyle = css;
+					context.fillRect(0, 0, 1, 1);
+					rgba = Array.from(context.getImageData(0, 0, 1, 1).data);
+				} catch (_) {}
+			}
+			cache.set(css, rgba);
+			return rgba;
+		};
+		const sample = (x, y) => {
+			let element = document.elementFromPoint(x, y);
+			let edge = false;
+			for (let depth = 0; element && depth < 14; depth++, element = element.parentElement) {
+				const style = getComputedStyle(element);
+				if (style.visibility === 'hidden' || Number(style.opacity) < 0.1) return null;
+				const rect = element.getBoundingClientRect();
+				if (element.matches(header) || style.position === 'fixed' || style.position === 'sticky') {
+					if (rect.width >= innerWidth * .7 && rect.height >= 10 &&
+						rect.height <= 260 && rect.top <= 8 && rect.bottom >= y) edge = true;
+				}
+				// A gradient/image obscures the ancestor's flat background.
+				if (style.backgroundImage !== 'none') return null;
+				const rgba = pixels(style.backgroundColor);
+				if (rgba && rgba[3] >= 245) return { color: rgba.slice(0, 3), edge };
+			}
+			return null;
+		};
+		const winner = map => {
+			let best = null;
+			for (const candidate of map.values()) {
+				if (!best || candidate.count > best.count) best = candidate;
+			}
+			return best;
+		};
+		const run = () => {
+			scheduled = 0;
+			lastRun = performance.now();
+			if (document.hidden || innerWidth < 80 || innerHeight < 20) return;
+			const edge = new Map(), surface = new Map();
+			const rows = [3, 16, 34, 56].filter(y => y < innerHeight);
+			const total = rows.length * 10;
+			for (const y of rows) for (let i = 0; i < 10; i++) {
+				const item = sample(innerWidth * (i + .5) / 10, y);
+				if (!item) continue;
+				// Merge near-identical colours rather than counting antialiasing noise.
+				const key = item.color.map(x => Math.round(x / 12)).join(',');
+				const map = item.edge ? edge : surface;
+				let count = map.get(key);
+				if (!count) {
+					count = { count: 0, sum: [0, 0, 0] };
+					map.set(key, count);
+				}
+				count.count++;
+				for (let c = 0; c < 3; c++) count.sum[c] += item.color[c];
+			}
+			const chrome = winner(edge), body = winner(surface);
+			const selected = chrome && chrome.count >= total * .45
+				? { count: chrome, source: 'chrome' }
+				: body && body.count >= total * .5
+				? { count: body, source: 'surface' } : null;
+			const rgb = selected
+				? selected.count.sum.map(value => Math.round(value / selected.count.count))
+				: null;
+			const fingerprint = JSON.stringify([location.href, selected?.source, rgb]);
+			if (fingerprint === previous) return;
+			previous = fingerprint;
+			window.webkit.messageHandlers.pageTintChanged.postMessage({
+				url: location.href, source: selected?.source || 'none', rgb
+			});
+		};
+		const schedule = () => {
+			if (document.hidden || scheduled) return;
+			scheduled = setTimeout(run, Math.max(250, 750 - (performance.now() - lastRun)));
+		};
+		const observer = new MutationObserver(schedule);
+		const visible = () => {
+			observer.disconnect();
+			if (document.hidden) return;
+			observer.observe(document.documentElement, {
+				subtree: true, childList: true, attributes: true,
+				attributeFilter: ['class', 'style', 'hidden', 'data-theme']
+			});
+			schedule();
+		};
+		addEventListener('scroll', schedule, { passive: true });
+		addEventListener('resize', schedule, { passive: true });
+		document.addEventListener('visibilitychange', visible);
+		try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', schedule); } catch (_) {}
+		visible();
+	})();
+	"""
+
 	@ObservationIgnored
 	private var createdWebView: WKWebView?
 
@@ -628,6 +741,8 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var hasTopEdgeContent = false
 	private(set) var themeColor: Color?
 	private(set) var themeColorIsLight: Bool?
+	@ObservationIgnored private var sampledChromeColor: PlatformColor?
+	@ObservationIgnored private var sampledSurfaceColor: PlatformColor?
 	private var pendingDownloadSource: UnitPoint?
 	private var pendingDownloadSiteURL: URL?
 	@ObservationIgnored
@@ -1486,7 +1601,7 @@ final class BrowserController: NSObject, Identifiable {
 		(createdWebView as? PeekSourceWebView)?.onZoomIn = nil
 		(createdWebView as? PeekSourceWebView)?.onZoomOut = nil
 		(createdWebView as? PeekSourceWebView)?.onResetZoom = nil
-		for name in [Self.scrollPositionMessageName, Self.topEdgeMessageName, Self.zapFinishedMessageName, "pageActivityChanged", "pictureInPictureChanged", "linkHoverChanged", "faviconChanged", "readerAvailabilityChanged"] {
+		for name in [Self.scrollPositionMessageName, Self.topEdgeMessageName, Self.zapFinishedMessageName, Self.pageTintMessageName, "pageActivityChanged", "pictureInPictureChanged", "linkHoverChanged", "faviconChanged", "readerAvailabilityChanged"] {
 			createdWebView?.configuration.userContentController.removeScriptMessageHandler(forName: name, contentWorld: .defaultClient)
 		}
 		createdWebView?.configuration.userContentController.removeAllUserScripts()
@@ -1653,6 +1768,11 @@ final class BrowserController: NSObject, Identifiable {
 		webView.configuration.userContentController.add(
 			scrollHandler,
 			contentWorld: .defaultClient,
+			name: Self.pageTintMessageName
+		)
+		webView.configuration.userContentController.add(
+			scrollHandler,
+			contentWorld: .defaultClient,
 			name: Self.zapFinishedMessageName
 		)
 		#if os(macOS)
@@ -1690,6 +1810,9 @@ final class BrowserController: NSObject, Identifiable {
 				forMainFrameOnly: true,
 				in: .defaultClient
 			)
+		)
+		webView.configuration.userContentController.addUserScript(
+			WKUserScript(source: Self.pageTintScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient)
 		)
 		webView.navigationDelegate = self
 		webView.uiDelegate = self
@@ -1750,13 +1873,12 @@ final class BrowserController: NSObject, Identifiable {
 			webView.observe(\.themeColor, options: [.initial, .new]) { [weak self] webView, change in
 				MainActor.assumeIsolated {
 					guard let self else { return }
-					guard let color = change.newValue ?? webView.themeColor else {
-						self.hasDeclaredThemeColor = false
-						return
+					let color = change.newValue ?? webView.themeColor
+					self.hasDeclaredThemeColor = color != nil
+					if let color {
+						webView.underPageBackgroundColor = color.withAlphaComponent(1)
 					}
-					self.hasDeclaredThemeColor = true
-					webView.underPageBackgroundColor = color.withAlphaComponent(1)
-					self.updateThemeColor(color)
+					self.resolveThemeColor(in: webView)
 				}
 			},
 			webView.observe(\.title, options: [.initial, .new]) { [weak self] webView, change in
@@ -2272,6 +2394,17 @@ final class BrowserController: NSObject, Identifiable {
 		load(pendingRequest)
 	}
 
+	private func resolveThemeColor(in webView: WKWebView) {
+		// Visible full-width page chrome wins. Explicit site metadata takes
+		// precedence over ordinary body colour; background is the last fallback.
+		let color = sampledChromeColor
+			?? webView.themeColor
+			?? sampledSurfaceColor
+			?? webView.underPageBackgroundColor
+			?? PlatformColor.white
+		updateThemeColor(color)
+	}
+
 	private func updateThemeColor(_ color: PlatformColor) {
 		#if os(macOS)
 			guard let color = color.usingColorSpace(.deviceRGB) else {
@@ -2291,7 +2424,8 @@ final class BrowserController: NSObject, Identifiable {
 		#endif
 
 		themeColor = Color(color)
-		themeColorIsLight = red + green + blue > 1.5
+		// WCAG contrast: black is the higher-contrast choice above 0.179 luminance.
+		themeColorIsLight = BrowserColor(red: Double(red), green: Double(green), blue: Double(blue)).luminance > 0.179
 	}
 
 	#if os(macOS)
@@ -2697,6 +2831,8 @@ extension BrowserController: WKNavigationDelegate {
 		session.permissions.removeTemporaryDecisions(controllerID: id)
 		navigationGeneration += 1
 		hasDeclaredThemeColor = false
+		sampledChromeColor = nil
+		sampledSurfaceColor = nil
 		hasTopEdgeContent = false
 		webView.underPageBackgroundColor = nil
 	}
@@ -2802,11 +2938,7 @@ extension BrowserController: WKNavigationDelegate {
 		if showsFind, !findText.isEmpty {
 			findNext()
 		}
-		if !hasDeclaredThemeColor,
-		   let pageBackgroundColor = webView.underPageBackgroundColor
-		{
-			updateThemeColor(pageBackgroundColor)
-		}
+		resolveThemeColor(in: webView)
 		restoreScrollPositionIfNeeded(in: webView)
 		let generation = navigationGeneration
 		if let url {
@@ -2904,6 +3036,32 @@ extension BrowserController: WKScriptMessageHandler {
 		guard message.frameInfo.isMainFrame else { return }
 		if message.name == Self.zapFinishedMessageName {
 			isZapping = false
+			return
+		}
+
+		if message.name == Self.pageTintMessageName {
+			guard message.frameInfo.isMainFrame, let webView = message.webView,
+			      owns(webView), hasCurrentPageDocument, navigationFailure == nil,
+			      let result = message.body as? [String: Any],
+			      let urlString = result["url"] as? String, urlString == webView.url?.absoluteString,
+			      let source = result["source"] as? String
+			else { return }
+			let color: PlatformColor?
+			if let rgb = result["rgb"] as? [NSNumber], rgb.count == 3,
+			   rgb.allSatisfy({ $0.doubleValue.isFinite && (0 ... 255).contains($0.doubleValue) })
+			{
+				color = PlatformColor(
+					red: CGFloat(rgb[0].doubleValue / 255),
+					green: CGFloat(rgb[1].doubleValue / 255),
+					blue: CGFloat(rgb[2].doubleValue / 255),
+					alpha: 1
+				)
+			} else {
+				color = nil
+			}
+			sampledChromeColor = source == "chrome" ? color : nil
+			sampledSurfaceColor = source == "surface" ? color : nil
+			resolveThemeColor(in: webView)
 			return
 		}
 
