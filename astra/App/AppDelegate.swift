@@ -501,7 +501,7 @@
 			let parts = identifier.split(separator: ":", maxSplits: 1)
 			guard parts.count == 2, ["bookmark", "reading", "space"].contains(String(parts[0])),
 			      UUID(uuidString: String(parts[1])) != nil,
-			      let url = URL(string: "astra://" + parts[0] + "/" + parts[1]) else { return false }
+			      let url = URL(string: "astra://" + String(parts[0]) + "/" + String(parts[1])) else { return false }
 			Task { @MainActor in await AstraSystemActions.openSpotlightURL(url) }
 			return true
 		}
