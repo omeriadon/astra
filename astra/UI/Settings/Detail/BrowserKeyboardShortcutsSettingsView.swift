@@ -7,7 +7,8 @@ struct BrowserKeyboardShortcutsSettingsView: View {
     private let registry = BrowserShortcutRegistry.shared
 
     private var sections: [String] {
-        Array(NSOrderedSet(array: registry.definitions.map(\.section))) as? [String] ?? []
+        var seen = Set<String>()
+        return registry.definitions.map(\.section).filter { seen.insert($0).inserted }
     }
 
     var body: some View {

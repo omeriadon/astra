@@ -40,9 +40,9 @@
 				let isKeyDown = event.type == .keyDown
 				let isEscape = event.keyCode == 53
 				let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-				let isControlPressed = modifiers.isSuperset(of: self?.heldModifiers ?? [.control])
 				let isHandled = MainActor.assumeIsolated {
 					guard let self else { return false }
+					let isControlPressed = modifiers.isSuperset(of: self.heldModifiers.isEmpty ? [.control] : self.heldModifiers)
 					let isFocusedWindow = BrowserKeyboardMenuPolicy.ownsFocusedTarget(
 						isKeyWindow: self.window?.isKeyWindow == true,
 						matchesKeyWindow: self.window === NSApp.keyWindow
@@ -93,7 +93,7 @@
 		func select(_ tabID: UUID) {
 			guard candidateIDs.contains(tabID) else { return }
 			browser.commitTabSwitch(to: tabID)
-			isCancelledUntilControlRelease = NSEvent.modifierFlags.contains(.control)
+			isCancelledUntilControlRelease = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask).isSuperset(of: heldModifiers)
 			endSession()
 		}
 

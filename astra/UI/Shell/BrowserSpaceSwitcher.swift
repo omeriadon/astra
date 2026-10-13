@@ -18,8 +18,7 @@ final class BrowserSpaceSwitcher {
     @ObservationIgnored private let browser: Browser
     @ObservationIgnored private weak var window: NSWindow?
     @ObservationIgnored private var monitor: Any?
-    @ObservationIgnored private var originalSpaceID: UUID?
-    @ObservationIgnored private var requiredModifiers: NSEvent.ModifierFlags = []
+     @ObservationIgnored private var requiredModifiers: NSEvent.ModifierFlags = []
     @ObservationIgnored private var fallbackCommitTask: Task<Void, Never>?
 
     init(browser: Browser) {
@@ -69,8 +68,7 @@ final class BrowserSpaceSwitcher {
               direction == 1 || direction == -1 else { return }
 
         if !isPresented {
-            originalSpaceID = browser.selectedSpace.id
-            highlightedSpaceID = browser.selectedSpace.id
+             highlightedSpaceID = browser.selectedSpace.id
             requiredModifiers = modifiers.intersection(.deviceIndependentFlagsMask)
             withAnimation(.smooth(duration: 0.22)) {
                 isPresented = true
@@ -121,8 +119,7 @@ final class BrowserSpaceSwitcher {
         fallbackCommitTask?.cancel()
         fallbackCommitTask = nil
         requiredModifiers = []
-        originalSpaceID = nil
-        withAnimation(.smooth(duration: 0.18)) {
+         withAnimation(.smooth(duration: 0.18)) {
             isPresented = false
         }
         highlightedSpaceID = nil
@@ -155,7 +152,7 @@ struct BrowserSpaceSwitcherOverlay: View {
                         VStack(spacing: 17) {
                             Text("Spaces")
                                 .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(.primary.opacity(0.75))
+                                .foregroundStyle(Color.primary.opacity(0.75))
                             GeometryReader { viewport in
                                 HStack(spacing: cardSpacing) {
                                     ForEach(browser.workspace.spaces) { space in
