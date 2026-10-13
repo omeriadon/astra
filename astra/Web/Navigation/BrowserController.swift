@@ -686,13 +686,42 @@ final class BrowserController: NSObject, Identifiable {
 			}
 			return null;
 		};
-		const winner = map => {
-			let best = null;
-			for (const candidate of map.values()) {
-				if (!best || candidate.count > best.count) best = candidate;
-			}
-			return best;
+		// Chromalift-style perceptual clustering: DeltaE groups adjacent shades
+		// across RGB bucket boundaries without enumerating the page's palette.
+		const lab = rgb => {
+			const [r, g, b] = rgb.map(channel => {
+				const c = channel / 255;
+				return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4;
+			});
+			const x = (.4124564 * r + .3575761 * g + .1804375 * b) / .95047;
+			const y = .2126729 * r + .7151522 * g + .0721750 * b;
+			const z = (.0193339 * r + .1191920 * g + .9503041 * b) / 1.08883;
+			const f = v => v > .008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116;
+			const fx = f(x), fy = f(y), fz = f(z);
+			return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
 		};
+		const add = (groups, item) => {
+			const colourLab = item.gradientAnchor ? null : lab(item.color);
+			let group = groups.find(candidate =>
+				item.gradientAnchor
+					? candidate.anchor === item.gradientAnchor
+					: !candidate.anchor && candidate.lab.every((value, index) =>
+						Math.abs(value - colourLab[index]) <= 12) &&
+					  Math.hypot(...candidate.lab.map((value, index) =>
+						  value - colourLab[index])) <= 12
+			);
+			if (!group) {
+				group = { count: 0, sum: [0, 0, 0], anchor: item.gradientAnchor, lab: colourLab };
+				groups.push(group);
+			}
+			group.count++;
+			for (let i = 0; i < 3; i++) group.sum[i] += item.color[i];
+			if (colourLab && group.count > 1)
+				for (let i = 0; i < 3; i++)
+					group.lab[i] += (colourLab[i] - group.lab[i]) / group.count;
+		};
+		const winner = groups => groups.reduce((best, candidate) =>
+			!best || candidate.count > best.count ? candidate : best, null);
 		// OpenBrand's secondary branding metadata and CSS brand tokens can help
 		// when a page provides no reliable visible surface or WebKit theme.
 		// Never let them override painted page chrome or native theme-color.
@@ -718,24 +747,15 @@ final class BrowserController: NSObject, Identifiable {
 			scheduled = 0;
 			lastRun = performance.now();
 			if (document.hidden || innerWidth < 80 || innerHeight < 20) return;
-			const edges = new Map(), surfaces = new Map(), layoutCache = new Map();
+			const edges = [], surfaces = [], layoutCache = new Map();
 			const rows = [3, 16, 34, 56].filter(y => y < innerHeight);
 			const total = rows.length * 10;
 			for (const y of rows) for (let i = 0; i < 10; i++) {
 				const item = sample(innerWidth * (i + .5) / 10, y, layoutCache);
 				if (!item) continue;
-				// Flat painted backgrounds cluster by RGB; all sampled pixels
-				// of one gradient surface share an identity and average together.
-				const key = item.gradientAnchor ||
-					item.color.map(v => Math.round(v / 12)).join(',');
-				const map = item.edge ? edges : surfaces;
-				let count = map.get(key);
-				if (!count) {
-					count = { count: 0, sum: [0, 0, 0] };
-					map.set(key, count);
-				}
-				count.count++;
-				for (let c = 0; c < 3; c++) count.sum[c] += item.color[c];
+				// Gradient pixels group by surface; flat colours by perceptual
+				// distance (a small bounded set of <= 40 samples).
+				add(item.edge ? edges : surfaces, item);
 			}
 			const chrome = winner(edges), body = winner(surfaces);
 			const selected = chrome && chrome.count >= total * .45
