@@ -100,7 +100,7 @@ final class BrowserBoostStore {
         for (id, date) in remoteDeleted where date.isFiniteBoostTimestamp {
             mergedDeleted[id] = max(mergedDeleted[id] ?? .distantPast, date)
         }
-        var byID = Dictionary(boosts.map { ($0.id, $0) }, uniquingKeysWith: Self.preferred)
+        var byID = Dictionary(boosts.map { ($0.id, $0) }, uniquingKeysWith: { Self.preferred($0, $1) })
         for value in incoming {
             if let previous = byID[value.id] {
                 byID[value.id] = Self.preferred(previous, value)
