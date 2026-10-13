@@ -98,6 +98,16 @@ withHeader.mutate();
 withHeader.flush();
 assert.equal(JSON.stringify(withHeader.posts.at(-1).rgb), '[210,95,45]');
 assert.equal(withHeader.posts.length, 2, 'SPA theme changes must propagate');
+withHeader.header.style.backgroundColor = 'rgb(45, 85, 155)';
+withHeader.listeners.get('load')();
+withHeader.flush();
+assert.equal(JSON.stringify(withHeader.posts.at(-1).rgb), '[45,85,155]',
+    'Late-loading CSS should trigger a resample');
+withHeader.header.style.backgroundColor = 'rgb(40, 100, 180)';
+withHeader.listeners.get('pageshow')();
+withHeader.flush();
+assert.equal(JSON.stringify(withHeader.posts.at(-1).rgb), '[40,100,180]',
+    'Back-forward cache restoration must trigger a fresh tint');
 withHeader.document.hidden = true;
 withHeader.mutate();
 assert.equal(withHeader.timers.length, 0, 'Hidden tab must do no sampling');
@@ -105,7 +115,7 @@ withHeader.document.hidden = false;
 withHeader.listeners.get('visibilitychange')();
 withHeader.flush();
 withHeader.reinstall();
-assert.equal(withHeader.posts.length, 2, 'Duplicate installation must not duplicate events');
+assert.equal(withHeader.posts.length, 4, 'Duplicate installation must not duplicate events');
 
 const bodyOnly = environment({ hasHeader: false });
 bodyOnly.flush();
