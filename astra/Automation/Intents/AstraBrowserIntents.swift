@@ -24,14 +24,14 @@ struct AstraBookmarkEntity {
 
     struct Query: EntityStringQuery {
         func entities(for identifiers: [String]) async throws -> [AstraBookmarkEntity] {
-            let browser = try await AstraSystemActions.browser()
+            let browser = try await AstraSystemActions.existingBrowser()
             let lookup = Set(identifiers)
             return browser.bookmarks.filter { lookup.contains($0.id.uuidString) }.map {
                 AstraBookmarkEntity(id: $0.id.uuidString, name: $0.name, url: $0.url)
             }
         }
         func entities(matching string: String) async throws -> [AstraBookmarkEntity] {
-            let browser = try await AstraSystemActions.browser()
+            let browser = try await AstraSystemActions.existingBrowser()
             return browser.bookmarks.filter {
                 $0.name.localizedCaseInsensitiveContains(string)
                     || $0.url.absoluteString.localizedCaseInsensitiveContains(string)
@@ -41,7 +41,7 @@ struct AstraBookmarkEntity {
             }
         }
         func suggestedEntities() async throws -> [AstraBookmarkEntity] {
-            let browser = try await AstraSystemActions.browser()
+            let browser = try await AstraSystemActions.existingBrowser()
             return browser.bookmarks.prefix(25).map {
                 AstraBookmarkEntity(id: $0.id.uuidString, name: $0.name, url: $0.url)
             }
@@ -83,19 +83,19 @@ struct AstraTabEntity {
         }
 
         func entities(for identifiers: [String]) async throws -> [AstraTabEntity] {
-            _ = try await AstraSystemActions.browser()
+            _ = try await AstraSystemActions.existingBrowser()
             let requested = Set(identifiers)
             return await live().filter { requested.contains($0.id) }
         }
         func entities(matching string: String) async throws -> [AstraTabEntity] {
-            _ = try await AstraSystemActions.browser()
+            _ = try await AstraSystemActions.existingBrowser()
             return await live().filter {
                 $0.name.localizedCaseInsensitiveContains(string)
                     || ($0.url?.absoluteString.localizedCaseInsensitiveContains(string) ?? false)
             }.prefix(40).map { $0 }
         }
         func suggestedEntities() async throws -> [AstraTabEntity] {
-            _ = try await AstraSystemActions.browser()
+            _ = try await AstraSystemActions.existingBrowser()
             return Array(await live().prefix(30))
         }
     }
@@ -115,18 +115,18 @@ struct AstraSpaceEntity: AppEntity {
 
     struct Query: EntityStringQuery {
         func entities(for identifiers: [String]) async throws -> [AstraSpaceEntity] {
-            let browser = try await AstraSystemActions.browser()
+            let browser = try await AstraSystemActions.existingBrowser()
             let desired = Set(identifiers)
             return browser.workspace.spaces.filter { desired.contains($0.id.uuidString) }
                 .map { AstraSpaceEntity(id: $0.id.uuidString, name: $0.name) }
         }
         func entities(matching string: String) async throws -> [AstraSpaceEntity] {
-            let browser = try await AstraSystemActions.browser()
+            let browser = try await AstraSystemActions.existingBrowser()
             return browser.workspace.spaces.filter { $0.name.localizedCaseInsensitiveContains(string) }
                 .map { AstraSpaceEntity(id: $0.id.uuidString, name: $0.name) }
         }
         func suggestedEntities() async throws -> [AstraSpaceEntity] {
-            let browser = try await AstraSystemActions.browser()
+            let browser = try await AstraSystemActions.existingBrowser()
             return browser.workspace.spaces.map { AstraSpaceEntity(id: $0.id.uuidString, name: $0.name) }
         }
     }
@@ -152,13 +152,13 @@ struct AstraReadingEntity {
     }
     struct Query: EntityStringQuery {
         func entities(for identifiers: [String]) async throws -> [AstraReadingEntity] {
-            let browser = try await AstraSystemActions.browser()
+            let browser = try await AstraSystemActions.existingBrowser()
             let requested = Set(identifiers)
             return browser.readingList.filter { requested.contains($0.id.uuidString) }
                 .map { AstraReadingEntity(id: $0.id.uuidString, title: $0.title, url: $0.url, isRead: $0.isRead) }
         }
         func entities(matching string: String) async throws -> [AstraReadingEntity] {
-            let browser = try await AstraSystemActions.browser()
+            let browser = try await AstraSystemActions.existingBrowser()
             return browser.readingList.filter {
                 $0.title.localizedCaseInsensitiveContains(string)
                     || $0.url.absoluteString.localizedCaseInsensitiveContains(string)
@@ -167,7 +167,7 @@ struct AstraReadingEntity {
             }
         }
         func suggestedEntities() async throws -> [AstraReadingEntity] {
-            let browser = try await AstraSystemActions.browser()
+            let browser = try await AstraSystemActions.existingBrowser()
             return browser.readingList.prefix(25).map {
                 AstraReadingEntity(id: $0.id.uuidString, title: $0.title, url: $0.url, isRead: $0.isRead)
             }
