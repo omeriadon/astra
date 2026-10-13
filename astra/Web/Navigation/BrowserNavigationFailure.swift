@@ -109,12 +109,12 @@ struct BrowserNavigationFailure {
 	private static func hasManualSystemProxy(for url: URL) -> Bool {
 		guard let scheme = url.scheme?.lowercased(),
 		      scheme == "http" || scheme == "https",
-		      let settings = CFNetworkCopySystemProxySettings()?.takeRetainedValue()
+		      let settings = unsafe CFNetworkCopySystemProxySettings()?.takeRetainedValue()
 		else { return false }
 
 		// Respects per-destination exclusions. A PAC entry is not proof that
 		// the failed request actually used a proxy, so leave it unclassified.
-		let proxies = CFNetworkCopyProxiesForURL(url as CFURL, settings).takeRetainedValue()
+		let proxies = unsafe CFNetworkCopyProxiesForURL(url as CFURL, settings).takeRetainedValue()
 		guard let first = (proxies as NSArray).firstObject as? [String: Any],
 		      let type = first[kCFProxyTypeKey as String] as? String else { return false }
 		return type == (kCFProxyTypeHTTP as String)

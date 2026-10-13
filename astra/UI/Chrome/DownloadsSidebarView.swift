@@ -36,31 +36,31 @@ struct DownloadsSidebarView: View {
 			.contentMargins(.top, 35)
 			.contentMargins(.bottom, 48)
 		#endif
-		.overlay {
-			if manager.items.isEmpty {
-				DownloadsEmptyView()
+			.overlay {
+				if manager.items.isEmpty {
+					DownloadsEmptyView()
+				}
 			}
-		}
-		.quickLookPreview($previewURL)
-		.onChange(of: previewURL) { previousURL, currentURL in
-			#if os(macOS)
-				if let previousURL, previousURL != currentURL {
-					if scopedPreviewURL == previousURL {
-						manager.endPreview(at: previousURL)
-						scopedPreviewURL = nil
+			.quickLookPreview($previewURL)
+			.onChange(of: previewURL) { previousURL, currentURL in
+				#if os(macOS)
+					if let previousURL, previousURL != currentURL {
+						if scopedPreviewURL == previousURL {
+							manager.endPreview(at: previousURL)
+							scopedPreviewURL = nil
+						}
 					}
-				}
-			#endif
-		}
-		.onDisappear {
-			#if os(macOS)
-				if let scopedPreviewURL {
-					manager.endPreview(at: scopedPreviewURL)
-					self.scopedPreviewURL = nil
-				}
-			#endif
-		}
-		.accessibilityIdentifier("downloads-list")
+				#endif
+			}
+			.onDisappear {
+				#if os(macOS)
+					if let scopedPreviewURL {
+						manager.endPreview(at: scopedPreviewURL)
+						self.scopedPreviewURL = nil
+					}
+				#endif
+			}
+			.accessibilityIdentifier("downloads-list")
 	}
 }
 

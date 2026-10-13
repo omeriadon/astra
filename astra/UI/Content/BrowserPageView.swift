@@ -108,7 +108,7 @@ struct BrowserPageView: View {
 					BrowserToastView(toast: toast)
 						.padding(.top, 12)
 						.padding(.trailing, 14)
-						.transition(reduceMotion ? .opacity : .move(edge: .trailing))
+						.transition(unsafe reduceMotion ? .opacity : .move(edge: .trailing))
 				}
 			}
 			.animation(.easeOut(duration: 0.1), value: toastManager.toast != nil)

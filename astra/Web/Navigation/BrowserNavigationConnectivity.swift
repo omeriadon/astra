@@ -3,7 +3,7 @@ import Network
 
 final class BrowserNavigationConnectivity {
 	static let shared = BrowserNavigationConnectivity()
-	static let didChangeNotification = Notification.Name("BrowserNavigationConnectivityDidChange")
+	nonisolated static let didChangeNotification = Notification.Name("BrowserNavigationConnectivityDidChange")
 
 	private let monitor = NWPathMonitor()
 

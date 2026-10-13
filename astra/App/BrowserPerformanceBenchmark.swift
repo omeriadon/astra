@@ -99,9 +99,9 @@
 			let dispatchStart = BrowserLog.clock()
 			BrowserLog.info(.performance, "benchmark.input-key-down", metadata: [
 				"sequence": String(sequence),
-				"native_event_uptime_ms": String(format: "%.3f", event.timestamp * 1000),
-				"native_to_monitor_ms": String(format: "%.1f", (dispatchStart - event.timestamp) * 1000),
-				"dispatch_start_ms": String(format: "%.1f", (dispatchStart - (BrowserLog.mainEntryUptime ?? dispatchStart)) * 1000),
+				"native_event_uptime_ms": unsafe String(format: "%.3f", event.timestamp * 1000),
+				"native_to_monitor_ms": unsafe String(format: "%.1f", (dispatchStart - event.timestamp) * 1000),
+				"dispatch_start_ms": unsafe String(format: "%.1f", (dispatchStart - (BrowserLog.mainEntryUptime ?? dispatchStart)) * 1000),
 				"window_key": String(event.window?.isKeyWindow == true),
 			])
 			DispatchQueue.main.async {
@@ -122,7 +122,7 @@
 			BrowserLog.info(.performance, "benchmark.address-text-acknowledged", metadata: [
 				"sequence": String(sequence),
 				"elapsed_ms": elapsedMilliseconds(),
-				"native_to_change_ms": String(format: "%.1f", (BrowserLog.clock() - eventTimestamp) * 1000),
+				"native_to_change_ms": unsafe String(format: "%.1f", (BrowserLog.clock() - eventTimestamp) * 1000),
 			])
 		}
 
@@ -303,7 +303,7 @@
 
 		private static func elapsedMilliseconds() -> String {
 			let start = BrowserLog.mainEntryUptime ?? BrowserLog.clock()
-			return String(format: "%.1f", (BrowserLog.clock() - start) * 1000)
+			return unsafe String(format: "%.1f", (BrowserLog.clock() - start) * 1000)
 		}
 	}
 #endif

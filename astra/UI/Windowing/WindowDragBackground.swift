@@ -19,7 +19,7 @@
 			}
 
 			override func mouseDown(with event: NSEvent) {
-				window?.performDrag(with: event)
+				unsafe window?.performDrag(with: event)
 			}
 		}
 	}

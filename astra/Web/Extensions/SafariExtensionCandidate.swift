@@ -16,7 +16,7 @@ struct SafariExtensionCandidate: Identifiable, Sendable {
 					let bundles = (try? FileManager.default.contentsOfDirectory(at: plugins, includingPropertiesForKeys: nil)) ?? []
 					for bundle in bundles where bundle.pathExtension == "appex" {
 						guard let data = try? Data(contentsOf: bundle.appendingPathComponent("Contents/Info.plist")),
-						      let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+						      let info = try? unsafe PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
 						      let extensionInfo = info["NSExtension"] as? [String: Any],
 						      extensionInfo["NSExtensionPointIdentifier"] as? String == "com.apple.Safari.web-extension",
 						      let id = info["CFBundleIdentifier"] as? String else { continue }

@@ -36,7 +36,7 @@
 			}
 
 			func invalidateWindowDragRegion() {
-				guard let window else { return }
+				guard let window = unsafe window else { return }
 
 				// AppKit caches the draggable area assembled from visible views.
 				// Reassigning this property to false causes that area to be rebuilt.

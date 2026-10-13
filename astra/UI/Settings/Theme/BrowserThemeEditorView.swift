@@ -202,7 +202,7 @@ private struct AppearanceModeOverlay: View {
 						.accessibilityIdentifier("theme-appearance-\(mode.rawValue)")
 					}
 				}
-				.transition(.opacity.combined(with: .scale(scale: 0.7)))
+				.transition(unsafe .opacity.combined(with: .scale(scale: 0.7)))
 			}
 		}
 		.padding(12)

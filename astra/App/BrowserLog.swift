@@ -75,9 +75,9 @@ enum BrowserLog {
 
 	nonisolated static func bootstrap() {
 		stateLock.lock()
-		let shouldStart = !bootstrapped
+		let shouldStart = unsafe !bootstrapped
 		if shouldStart {
-			bootstrapped = true
+			unsafe bootstrapped = true
 		}
 		stateLock.unlock()
 		guard shouldStart else { return }
@@ -217,13 +217,13 @@ enum BrowserLog {
 		let milliseconds = max(0, (clock() - started) * 1000)
 		if milliseconds >= warnAboveMilliseconds {
 			var values = metadata()
-			values["elapsed_ms"] = String(format: "%.1f", milliseconds)
+			values["elapsed_ms"] = unsafe String(format: "%.1f", milliseconds)
 			warning(category, event, metadata: values)
 			return
 		}
 		#if DEBUG
 			var values = metadata()
-			values["elapsed_ms"] = String(format: "%.1f", milliseconds)
+			values["elapsed_ms"] = unsafe String(format: "%.1f", milliseconds)
 			debug(category, event, metadata: values)
 		#endif
 	}
@@ -514,13 +514,13 @@ enum BrowserLog {
 
 	private nonisolated static func startMainThreadWatchdog() {
 		stateLock.lock()
-		guard watchdogTimer == nil else {
+		guard unsafe watchdogTimer == nil else {
 			stateLock.unlock()
 			return
 		}
-		lastMainAckNanoseconds = DispatchTime.now().uptimeNanoseconds
+		unsafe lastMainAckNanoseconds = DispatchTime.now().uptimeNanoseconds
 		let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "com.omeriadon.astra.watchdog", qos: .utility))
-		watchdogTimer = timer
+		unsafe watchdogTimer = timer
 		stateLock.unlock()
 
 		#if DEBUG
@@ -540,8 +540,8 @@ enum BrowserLog {
 	private nonisolated static func watchdogTick() {
 		let now = DispatchTime.now().uptimeNanoseconds
 		stateLock.lock()
-		let acknowledged = lastMainAckNanoseconds
-		let lastReport = lastStallReportNanoseconds
+		let acknowledged = unsafe lastMainAckNanoseconds
+		let lastReport = unsafe lastStallReportNanoseconds
 		stateLock.unlock()
 
 		#if DEBUG
@@ -554,17 +554,17 @@ enum BrowserLog {
 			fault(
 				.performance,
 				"main-thread.stall",
-				metadata: ["unresponsive_ms": String(format: "%.0f", milliseconds)]
+				metadata: ["unresponsive_ms": unsafe String(format: "%.0f", milliseconds)]
 			)
 			stateLock.lock()
-			lastStallReportNanoseconds = now
+			unsafe lastStallReportNanoseconds = now
 			stateLock.unlock()
 		}
 
 		DispatchQueue.main.async {
 			let acknowledged = DispatchTime.now().uptimeNanoseconds
 			stateLock.lock()
-			lastMainAckNanoseconds = acknowledged
+			unsafe lastMainAckNanoseconds = acknowledged
 			stateLock.unlock()
 		}
 	}

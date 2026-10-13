@@ -329,10 +329,10 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 
 	private func presentationWindow(for download: WKDownload) -> AnyObject? {
 		#if os(macOS)
-			download.webView?.window
+			unsafe download.webView?.window
 				?? (BrowserWindowRegistry.shared.activeBrowser?.session.downloads === self ? NSApp.keyWindow : nil)
 		#else
-			download.webView?.window
+			unsafe download.webView?.window
 		#endif
 	}
 
@@ -465,7 +465,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	func download(
 		_ download: WKDownload,
 		didReceive challenge: URLAuthenticationChallenge,
-		completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+		completionHandler: @escaping @MainActor (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
 	) {
 		#if os(macOS)
 			Task { @MainActor in
@@ -503,7 +503,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		_ download: WKDownload,
 		willPerformHTTPRedirection response: HTTPURLResponse,
 		newRequest: URLRequest,
-		decisionHandler: @escaping (WKDownload.RedirectPolicy) -> Void
+		decisionHandler: @escaping @MainActor (WKDownload.RedirectPolicy) -> Void
 	) {
 		guard let url = newRequest.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
 			decisionHandler(.cancel)

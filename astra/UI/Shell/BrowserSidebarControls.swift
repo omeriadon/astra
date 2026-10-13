@@ -52,7 +52,7 @@ struct ShellSidebarListView: View {
 			      let right = browser.splitRightTabID.flatMap({ tabsByID[$0] }) else { return nil }
 			return (left, right)
 		}()
-		let splitIDs = Set([splitTabs?.0.id, splitTabs?.1.id].compactMap { $0 })
+		let splitIDs = Set([splitTabs?.0.id, splitTabs?.1.id].compactMap(\.self))
 		let favouriteTabs = projection.favouriteTabs.filter { !splitIDs.contains($0.id) }
 		let pinnedTabs = projection.pinnedTabs.filter { !splitIDs.contains($0.id) }
 		let ungroupedPinnedTabs = projection.ungroupedPinnedTabs.filter { !splitIDs.contains($0.id) }
@@ -103,7 +103,7 @@ struct ShellSidebarListView: View {
 							PinnedFolderRow(folder: folder, browser: browser, tabsByID: tabsByID,
 							                selectedID: selectedID, isActiveSpace: isActiveSpace, normalCount: normalTabs.count,
 							                spaceID: space.id, theme: theme, openElsewhereIDs: openElsewhereIDs,
-								                excludedTabIDs: splitIDs,
+							                excludedTabIDs: splitIDs,
 							                onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions,
 							                sidebarSelection: sidebarSelection, selectionOrder: pinnedSelectionOrder)
 						}
@@ -152,7 +152,7 @@ struct ShellSidebarListView: View {
 									.padding(.horizontal, 10)
 									.padding(.top, 8)
 									.accessibilityIdentifier("today-tab-group-\(group.id)")
-									.transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+									.transition(unsafe(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity)))
 								}
 							}
 						}
@@ -488,7 +488,7 @@ private final class SidebarProjectionCache {
 		let normalIndexes: [UUID: Int]
 		let normalSelectionOrder: [UUID]
 		let pinnedSelectionOrder: [UUID]
-		let groupedTabs: [UUID: [BrowserTab]]
+		let groupedTabs: [String: [BrowserTab]]
 	}
 
 	private struct Entry {
@@ -535,7 +535,7 @@ private final class SidebarProjectionCache {
 			+ ungroupedNormalTabs.map(\.id)
 		let pinnedSelectionOrder = space.pinnedFolders.flatMap(\.tabIDs).filter { tabsByID[$0] != nil }
 			+ ungroupedPinnedTabs.map(\.id)
-		var groupedTabs: [UUID: [BrowserTab]] = [:]
+		var groupedTabs: [String: [BrowserTab]] = [:]
 		groupedTabs.reserveCapacity(space.todayTabGroups.count)
 		for group in space.todayTabGroups {
 			groupedTabs[group.id] = group.tabIDs.compactMap { tabsByID[$0] }.filter { normalIDs.contains($0.id) }

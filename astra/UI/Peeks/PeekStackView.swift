@@ -126,11 +126,11 @@ private struct PeekLayerView: View {
 					NSEvent.removeMonitor(escapeMonitor)
 					self.escapeMonitor = nil
 				}
-				guard window != nil else { return }
+				guard unsafe window != nil else { return }
 				escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
 					guard let self,
 					      isTopmost,
-					      let window,
+					      let window = unsafe window,
 					      event.window === window,
 					      event.keyCode == 53
 					else { return event }

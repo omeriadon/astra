@@ -67,7 +67,7 @@
 				stop()
 				guard enabled else { return }
 				var bytes = [UInt8](repeating: 0, count: 32)
-				let credentialStatus = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+				let credentialStatus = unsafe SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
 				guard credentialStatus == errSecSuccess else {
 					BrowserLog.error(.agent, "agent.credential-generation.failed", metadata: ["os_status": String(credentialStatus)])
 					status = "Could not create access credential"

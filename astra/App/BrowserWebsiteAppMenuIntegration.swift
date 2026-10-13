@@ -85,7 +85,7 @@
 			      !controller.isLoading,
 			      BrowserWebsiteAppPolicy.validatedURL(url) != nil,
 			      let webView = controller.webViewIfLoaded,
-			      let window = webView.window
+			      let window = unsafe webView.window
 			else { return nil }
 			let name = BrowserWebsiteAppPolicy.validatedName(tab.title)
 				?? BrowserWebsiteAppPolicy.validatedName(url.host ?? "Website")

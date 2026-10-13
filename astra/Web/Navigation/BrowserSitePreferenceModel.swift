@@ -15,12 +15,12 @@ nonisolated enum BrowserSiteOrigin {
 		if host.hasPrefix("["), host.hasSuffix("]"), !host.contains("%") {
 			let addressText = String(host.dropFirst().dropLast())
 			var address = in6_addr()
-			guard addressText.withCString({ inet_pton(AF_INET6, $0, &address) }) == 1 else { return nil }
+			guard addressText.withCString({ unsafe inet_pton(AF_INET6, $0, &address) }) == 1 else { return nil }
 			var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
-			guard buffer.withUnsafeMutableBufferPointer({
-				inet_ntop(AF_INET6, &address, $0.baseAddress, socklen_t($0.count))
+			guard unsafe buffer.withUnsafeMutableBufferPointer({
+				unsafe inet_ntop(AF_INET6, &address, $0.baseAddress, socklen_t($0.count))
 			}) != nil else { return nil }
-			host = "[\(String(cString: buffer).lowercased())]"
+			host = "[\(String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self).lowercased())]"
 		}
 		parts.scheme = scheme
 		parts.host = host
@@ -177,7 +177,7 @@ nonisolated struct BrowserSiteZoomDocument: Codable, Equatable, Sendable {
 	static func isPreservableSyncValue(_ value: Data?) -> Bool {
 		guard let value,
 		      value.count <= 16 * 1024 * 1024,
-		      let object = try? PropertyListSerialization.propertyList(from: value, format: nil) as? [String: Data],
+		      let object = try? unsafe PropertyListSerialization.propertyList(from: value, format: nil) as? [String: Data],
 		      Set(object.keys) == ["value"],
 		      let document = object["value"] else { return false }
 		return document.count <= 16 * 1024 * 1024
@@ -185,7 +185,7 @@ nonisolated struct BrowserSiteZoomDocument: Codable, Equatable, Sendable {
 
 	private static func decodeSyncDocument(_ data: Data?) -> Self? {
 		guard let data,
-		      let object = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Data],
+		      let object = try? unsafe PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Data],
 		      let documentData = object["value"] else { return nil }
 		return decodeSupported(documentData)
 	}

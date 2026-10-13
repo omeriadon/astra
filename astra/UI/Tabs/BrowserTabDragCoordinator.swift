@@ -157,7 +157,7 @@
 			}
 
 			func updateTarget() {
-				guard let browser, !browser.isPrivate, !browser.isMini, let window, !bounds.isEmpty else {
+				guard let browser, !browser.isPrivate, !browser.isMini, let window = unsafe window, !bounds.isEmpty else {
 					registeredTarget = nil
 					BrowserTabDragCoordinator.shared.unregister(id)
 					return

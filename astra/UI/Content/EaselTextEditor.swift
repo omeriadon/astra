@@ -20,8 +20,8 @@
 			view.isHorizontallyResizable = false
 			view.isVerticallyResizable = false
 			view.textContainerInset = .zero
-			view.textContainer?.lineFragmentPadding = 0
-			view.textContainer?.widthTracksTextView = true
+			unsafe view.textContainer?.lineFragmentPadding = 0
+			unsafe view.textContainer?.widthTracksTextView = true
 			view.setAccessibilityLabel("Easel text")
 			return view
 		}
@@ -56,9 +56,9 @@
 
 			override func viewDidMoveToWindow() {
 				super.viewDidMoveToWindow()
-				guard window != nil else { return }
+				guard unsafe window != nil else { return }
 				DispatchQueue.main.async { [weak self] in
-					guard let self, let window else { return }
+					guard let self, let window = unsafe window else { return }
 					window.makeFirstResponder(self)
 				}
 			}

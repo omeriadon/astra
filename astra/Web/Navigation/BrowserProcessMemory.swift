@@ -91,8 +91,8 @@
 		private nonisolated static func physicalFootprint(_ processIdentifier: pid_t) -> (bytes: UInt64, startTime: UInt64)? {
 			var usage = rusage_info_v4()
 			let result = withUnsafeMutablePointer(to: &usage) { usagePointer in
-				let infoPointer = UnsafeMutableRawPointer(usagePointer).assumingMemoryBound(to: rusage_info_t?.self)
-				return proc_pid_rusage(processIdentifier, Int32(RUSAGE_INFO_V4), infoPointer)
+				let infoPointer = unsafe UnsafeMutableRawPointer(usagePointer).assumingMemoryBound(to: rusage_info_t?.self)
+				return unsafe proc_pid_rusage(processIdentifier, Int32(RUSAGE_INFO_V4), infoPointer)
 			}
 			guard result == 0, usage.ri_proc_start_abstime > 0 else { return nil }
 			return (usage.ri_phys_footprint, usage.ri_proc_start_abstime)

@@ -6,21 +6,22 @@
 	/// Transfer the completed dyld image handle to the main actor only after
 	/// dlopen/dlsym have completed on a utility thread. The loader owns the
 	/// handle until the application's process exits (no premature dlclose).
+	@safe
 	private nonisolated struct DeferredUpdaterImage: @unchecked Sendable {
 		let handle: UnsafeMutableRawPointer?
 		let entry: UnsafeMutableRawPointer?
 		let failure: String?
 
 		nonisolated static func open(at path: String) -> Self {
-			guard let handle = dlopen(path, RTLD_NOW | RTLD_LOCAL) else {
-				let message = dlerror().map { String(cString: $0) } ?? "Unknown dynamic-loader error"
-				return Self(handle: nil, entry: nil, failure: message)
+			guard let handle = unsafe dlopen(path, RTLD_NOW | RTLD_LOCAL) else {
+				let message = unsafe dlerror().map { unsafe String(cString: $0) } ?? "Unknown dynamic-loader error"
+				return unsafe Self(handle: nil, entry: nil, failure: message)
 			}
-			guard let entry = dlsym(handle, "AstraUpdaterRuntimeStart") else {
-				dlclose(handle)
-				return Self(handle: nil, entry: nil, failure: "Astra's updater runtime is incompatible.")
+			guard let entry = unsafe dlsym(handle, "AstraUpdaterRuntimeStart") else {
+				unsafe dlclose(handle)
+				return unsafe Self(handle: nil, entry: nil, failure: "Astra's updater runtime is incompatible.")
 			}
-			return Self(handle: handle, entry: entry, failure: nil)
+			return unsafe Self(handle: handle, entry: entry, failure: nil)
 		}
 	}
 
@@ -28,6 +29,7 @@
 	/// Sparkle; only AstraUpdaterRuntime loads it after first-frame readiness.
 	@MainActor
 	@Observable
+	@safe
 	final class UpdateManager: NSObject {
 		static let shared = UpdateManager()
 
@@ -112,18 +114,18 @@
 					DeferredUpdaterImage.open(at: path)
 				}.value
 				guard let self else {
-					if let handle = loaded.handle {
-						dlclose(handle)
+					if let handle = unsafe loaded.handle {
+						unsafe dlclose(handle)
 					}
 					return
 				}
 				libraryLoadTask = nil
-				guard let handle = loaded.handle, let entry = loaded.entry else {
+				guard let handle = unsafe loaded.handle, let entry = unsafe loaded.entry else {
 					fail("Could not load Astra's updater: " + (loaded.failure ?? "Unknown error"))
 					return
 				}
-				runtimeHandle = handle
-				runtimeEntry = unsafeBitCast(entry, to: (@convention(c) () -> Void).self)
+				unsafe runtimeHandle = handle
+				runtimeEntry = unsafe unsafeBitCast(entry, to: (@convention(c) () -> Void).self)
 				started = true
 				BrowserLog.duration(.lifecycle, "updater.runtime-load", since: startedAt, warnAboveMilliseconds: 200)
 				let initializeStartedAt = BrowserLog.clock()

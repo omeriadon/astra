@@ -824,7 +824,7 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		let cacheKey = currentURL.standardizedFileURL.path as NSString
 		let currentSignature = CheckpointSignature(at: currentURL)
 		let cached = currentSignature.flatMap { signature -> CachedCheckpoint? in
-			guard let candidate = Self.checkpointCache.object(forKey: cacheKey),
+			guard let candidate = unsafe Self.checkpointCache.object(forKey: cacheKey),
 			      candidate.signature == signature else { return nil }
 			return candidate
 		}
@@ -956,7 +956,7 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 					+ state.readingList.count * 128
 			)
 			if cacheCost <= 24 * 1024 * 1024 {
-				Self.checkpointCache.setObject(
+				unsafe Self.checkpointCache.setObject(
 					CachedCheckpoint(
 						signature: signature, backupSignature: CheckpointSignature(at: backupURL),
 						data: data, privacy: PrivacyDeletionIndex(state)
@@ -965,7 +965,7 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 					cost: cacheCost
 				)
 			} else {
-				Self.checkpointCache.removeObject(forKey: cacheKey)
+				unsafe Self.checkpointCache.removeObject(forKey: cacheKey)
 			}
 		}
 	}

@@ -519,7 +519,7 @@ private struct BrowserAIChatStreamingResponse: View {
 		override func viewDidMoveToWindow() {
 			super.viewDidMoveToWindow()
 			stopMonitoring()
-			if window != nil {
+			if unsafe window != nil {
 				ChatMarkdownEventDispatcher.shared.register(self)
 			}
 		}
@@ -533,7 +533,7 @@ private struct BrowserAIChatStreamingResponse: View {
 
 		func updateTrackedHover(for event: NSEvent) {
 			let location = event.type == .flagsChanged
-				? window?.convertPoint(fromScreen: NSEvent.mouseLocation) ?? event.locationInWindow
+				? unsafe window?.convertPoint(fromScreen: NSEvent.mouseLocation) ?? event.locationInWindow
 				: event.locationInWindow
 			let point = textLabelView.convert(location, from: nil)
 			let region = textLabelView.highlightRegion(at: point)
@@ -604,7 +604,7 @@ private struct BrowserAIChatStreamingResponse: View {
 		private func route(_ event: NSEvent) {
 			// A scroll ends link hover. Flag changes still use the actual
 			// pointer position, as the event's window coordinates may be stale.
-			let eventWindow = event.window ?? (event.type == .flagsChanged ? activeView?.window : nil)
+			let eventWindow = unsafe event.window ?? (event.type == .flagsChanged ? activeView?.window : nil)
 			var hit: NSView?
 			if event.type != .scrollWheel, let window = eventWindow,
 			   let content = window.contentView
@@ -623,7 +623,7 @@ private struct BrowserAIChatStreamingResponse: View {
 					target = markdown
 					break
 				}
-				hit = view.superview
+				hit = unsafe view.superview
 			}
 			if activeView !== target {
 				activeView?.clearTrackedHover()

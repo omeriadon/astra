@@ -45,10 +45,10 @@
 			window.isReleasedWhenClosed = false
 			window.hidesOnDeactivate = false
 			window.becomesKeyOnlyIfNeeded = false
-			(window as? MiniAstraWindow)?.onPromote = { [weak self] in self?.promote() }
+			(window as? MiniAstraWindow)?.onPromote = { [weak self] in self?.promote(toSpace: nil) }
 			let zoomButton = window.standardWindowButton(.zoomButton)
 			zoomButton?.target = self
-			zoomButton?.action = #selector(promote)
+			zoomButton?.action = #selector(promoteFromWindow)
 			zoomButton?.toolTip = "Move to Workspace"
 			zoomButton?.setAccessibilityLabel("Move to Workspace")
 			zoomButton?.setAccessibilityIdentifier("mini-astra-window-promote")
@@ -94,7 +94,7 @@
 			}
 		}
 
-		@objc func promote() {
+		@objc func promoteFromWindow() {
 			promote(toSpace: nil)
 		}
 

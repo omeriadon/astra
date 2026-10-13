@@ -12,7 +12,7 @@ nonisolated enum BrowserSessionStore {
 		query[kSecMatchLimit as String] = kSecMatchLimitOne
 
 		var result: CFTypeRef?
-		let status = SecItemCopyMatching(query as CFDictionary, &result)
+		let status = unsafe SecItemCopyMatching(query as CFDictionary, &result)
 		if status == errSecItemNotFound {
 			return nil
 		}

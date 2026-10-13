@@ -14,10 +14,10 @@ enum BrowserResources {
 				return .main
 			}
 			let anchor: @convention(c) () -> Void = browserResourcesImageAnchor
-			var image = Dl_info()
-			guard dladdr(unsafeBitCast(anchor, to: UnsafeRawPointer.self), &image) != 0,
-			      let path = image.dli_fname else { return .main }
-			var hostURL = URL(fileURLWithPath: String(cString: path))
+			var image = unsafe Dl_info()
+			guard unsafe dladdr(unsafeBitCast(anchor, to: UnsafeRawPointer.self), &image) != 0,
+			      let path = unsafe image.dli_fname else { return .main }
+			var hostURL = URL(fileURLWithPath: unsafe String(cString: path))
 			while hostURL.path != "/" {
 				if hostURL.pathExtension == "app", let bundle = Bundle(url: hostURL) {
 					return bundle

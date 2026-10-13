@@ -1,10 +1,12 @@
 #if os(macOS)
 	import Carbon
 	import Defaults
+	import KeyboardShortcuts
 	import Observation
 
 	@MainActor
 	@Observable
+	@safe
 	final class MiniAstraShortcut {
 		static let shared = MiniAstraShortcut()
 		static let notification = Notification.Name("MiniAstraShortcutPressed")
@@ -13,15 +15,15 @@
 		@ObservationIgnored private var handler: EventHandlerRef?
 
 		func update() {
-			if let hotKey {
-				UnregisterEventHotKey(hotKey)
-				self.hotKey = nil
+			if let hotKey = unsafe hotKey {
+				unsafe UnregisterEventHotKey(hotKey)
+				unsafe self.hotKey = nil
 			}
 			registrationFailed = false
 			guard Defaults[.miniAstraShortcutEnabled] else { return }
-			if handler == nil {
+			if unsafe handler == nil {
 				var event = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-				let status = InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
+				let status = unsafe InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
 					NotificationCenter.default.post(name: Notification.Name("MiniAstraShortcutPressed"), object: nil)
 					return noErr
 				}, 1, &event, nil, &handler)
@@ -31,7 +33,7 @@
 				}
 			}
 			guard let shortcut = BrowserShortcutRegistry.shared.shortcut("Open Mini Astra Globally", section: "Window") else { return }
-			let status = RegisterEventHotKey(
+			let status = unsafe RegisterEventHotKey(
 				UInt32(shortcut.carbonKeyCode),
 				UInt32(shortcut.carbonModifiers),
 				EventHotKeyID(signature: 0x4153_5452, id: 1),

@@ -565,7 +565,7 @@ nonisolated struct SyncedSetting: Codable, Equatable, Sendable {
 
 	nonisolated var hasValidPropertyListValue: Bool {
 		guard let value else { return true }
-		guard let propertyList = try? PropertyListSerialization.propertyList(from: value, format: nil),
+		guard let propertyList = try? unsafe PropertyListSerialization.propertyList(from: value, format: nil),
 		      let dictionary = propertyList as? [String: Any],
 		      dictionary["value"] != nil
 		else { return false }

@@ -81,7 +81,7 @@ import WebKit
 		) async -> BrowserSitePermissions.PromptResponse {
 			let alert = alert(title: title, message: message, confirm: "Allow Once", cancel: "Don't Allow")
 			alert.addButton(withTitle: "Always Allow")
-			return switch await present(alert, in: webView.window, isCurrent: isCurrent) {
+			return switch await present(alert, in: unsafe webView.window, isCurrent: isCurrent) {
 				case .alertFirstButtonReturn: BrowserSitePermissions.PromptResponse.allowOnce
 				case .alertSecondButtonReturn: BrowserSitePermissions.PromptResponse.deny
 				case .alertThirdButtonReturn: BrowserSitePermissions.PromptResponse.allowAlways
@@ -160,7 +160,7 @@ import WebKit
 					confirm: "OK",
 					cancel: nil
 				)
-				_ = await BrowserWebsiteUI.present(alert, in: webView.window) { [self] in
+				_ = await BrowserWebsiteUI.present(alert, in: unsafe webView.window) { [self] in
 					ownsPrompt(in: webView, documentID: documentID)
 				}
 				completionHandler()
@@ -178,7 +178,7 @@ import WebKit
 			Task { @MainActor in
 				defer { endLifecycleOperation() }
 				let alert = BrowserWebsiteUI.alert(title: frame.securityOrigin.host, message: message, confirm: "OK")
-				let response = await BrowserWebsiteUI.present(alert, in: webView.window) { [self] in
+				let response = await BrowserWebsiteUI.present(alert, in: unsafe webView.window) { [self] in
 					ownsPrompt(in: webView, documentID: documentID)
 				}
 				completionHandler(response == .alertFirstButtonReturn && ownsPrompt(in: webView, documentID: documentID))
@@ -202,7 +202,7 @@ import WebKit
 				field.setAccessibilityLabel(prompt)
 				alert.accessoryView = field
 				alert.window.initialFirstResponder = field
-				let response = await BrowserWebsiteUI.present(alert, in: webView.window) { [self] in
+				let response = await BrowserWebsiteUI.present(alert, in: unsafe webView.window) { [self] in
 					ownsPrompt(in: webView, documentID: documentID)
 				}
 				completionHandler(response == .alertFirstButtonReturn && ownsPrompt(in: webView, documentID: documentID) ? field.stringValue : nil)
@@ -225,7 +225,7 @@ import WebKit
 					confirm: "Leave",
 					cancel: "Stay"
 				)
-				let response = await BrowserWebsiteUI.present(alert, in: webView.window) { [self] in
+				let response = await BrowserWebsiteUI.present(alert, in: unsafe webView.window) { [self] in
 					ownsPrompt(in: webView, documentID: documentID)
 				}
 				completionHandler(response == .alertFirstButtonReturn)
@@ -238,7 +238,7 @@ import WebKit
 			initiatedByFrame frame: WKFrameInfo,
 			completionHandler: @escaping ([URL]?) -> Void
 		) {
-			guard let window = webView.window,
+			guard let window = unsafe webView.window,
 			      ownsPrompt(in: webView, documentID: navigationIdentifier)
 			else {
 				completionHandler(nil)
@@ -360,7 +360,7 @@ import WebKit
 			beginLifecycleOperation()
 			Task { @MainActor in
 				defer { endLifecycleOperation() }
-				let response = await BrowserWebsiteUI.authenticate(challenge, in: webView.window) { [self] in
+				let response = await BrowserWebsiteUI.authenticate(challenge, in: unsafe webView.window) { [self] in
 					ownsPrompt(in: webView, documentID: documentID)
 				}
 				guard ownsPrompt(in: webView, documentID: documentID) else {

@@ -187,7 +187,7 @@ final class BrowserHibernationManager {
 		      !current.pinnedTabIDs.contains(tab.id),
 		      tab.peeks.isEmpty,
 		      tab.controller?.webViewIfLoaded != nil,
-		      tab.controller?.webViewIfLoaded?.window == nil,
+		      unsafe tab.controller?.webViewIfLoaded?.window == nil,
 		      !current.anyDownloadActive
 		else { return false }
 		return idleTime == .zero || now.timeIntervalSince(tab.lastInteractionAt) >= idleTime.timeInterval

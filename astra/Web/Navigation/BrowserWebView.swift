@@ -287,13 +287,12 @@ struct BrowserWebView {
 
 		override func viewDidMoveToWindow() {
 			super.viewDidMoveToWindow()
-			if window == nil {
+			if unsafe window == nil {
 				pageGestures.detach()
 				unmountWebView()
 			}
 			mountIfReady()
 		}
-
 
 		func update(specification: BrowserWebView) {
 			if self.specification.controller !== specification.controller
@@ -313,7 +312,7 @@ struct BrowserWebView {
 				unmountWebView()
 				return
 			}
-			guard window != nil, !bounds.isEmpty else {
+			guard unsafe window != nil, !bounds.isEmpty else {
 				if !remainsAttached {
 					unmountWebView()
 				}
@@ -327,7 +326,7 @@ struct BrowserWebView {
 				return
 			}
 			let webView = controller.webView
-			if webView.superview !== self {
+			if unsafe webView.superview !== self {
 				// Reparenting an existing WKWebView can itself stall AppKit's
 				// main thread independently of WebKit's initial creation.
 				// Time the synchronous host handoff separately so switching
@@ -352,7 +351,7 @@ struct BrowserWebView {
 				webView.autoresizingMask = [.width, .height]
 				addSubview(webView, positioned: .below, relativeTo: curtain)
 				if webView.responds(to: NSSelectorFromString("_inspector")),
-				   let inspector = webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
+				   let inspector = unsafe webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
 				   inspector.value(forKey: "isVisible") as? Bool == true,
 				   inspector.responds(to: NSSelectorFromString("attach"))
 				{
@@ -374,7 +373,7 @@ struct BrowserWebView {
 								return
 							}
 						}
-						guard !Task.isCancelled, let self, let webView, webView.superview === self,
+						guard !Task.isCancelled, let self, let webView, unsafe webView.superview === self,
 						      specification.windowID == nil || specification.windowID == controller.displayWindowID else { return }
 						curtain.isHidden = true
 						curtain.image = nil
@@ -416,7 +415,7 @@ struct BrowserWebView {
 			pageGestures.detach()
 			specification.controller.hasDockedWebInspector = false
 			guard let webView = specification.controller.webViewIfLoaded,
-			      webView.superview === self else { return }
+			      unsafe webView.superview === self else { return }
 			webView.removeFromSuperview()
 			webView.isHidden = true
 			webView.setAccessibilityHidden(true)
@@ -484,8 +483,8 @@ struct BrowserWebView {
 
 		private func handle(_ event: NSEvent) -> NSEvent? {
 			guard let host, let controller,
-			      event.window === host.window,
-			      controller.webView.superview === host,
+			      unsafe event.window === host.window,
+			      unsafe controller.webView.superview === host,
 			      !host.isHiddenOrHasHiddenAncestor,
 			      event.hasPreciseScrollingDeltas else { return event }
 
@@ -501,7 +500,7 @@ struct BrowserWebView {
 				suppressMomentum = false
 				let point = host.convert(event.locationInWindow, from: nil)
 				guard host.bounds.contains(point),
-				      let hitView = host.window?.contentView?.hitTest(event.locationInWindow),
+				      let hitView = unsafe host.window?.contentView?.hitTest(event.locationInWindow),
 				      hitView.isDescendant(of: controller.webView) else { return event }
 				checkPage(at: point)
 			}
@@ -556,7 +555,7 @@ struct BrowserWebView {
 		}
 
 		private var threshold: CGFloat {
-120
+			120
 		}
 
 		private var distance: CGFloat {

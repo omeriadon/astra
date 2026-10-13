@@ -360,7 +360,7 @@ final class BrowserSync {
 			      )
 			else { continue }
 			if let data = setting.value {
-				let object = try PropertyListSerialization.propertyList(from: data, format: nil)
+				let object = try unsafe PropertyListSerialization.propertyList(from: data, format: nil)
 				guard let wrapped = object as? [String: Any], let value = wrapped["value"] else {
 					throw BrowserSyncError.invalidSetting
 				}

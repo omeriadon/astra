@@ -253,7 +253,7 @@ final class BrowserSitePreferences {
 		return BrowserSiteOrigin.canonical(for: url)
 	}
 
-	deinit {
+	isolated deinit {
 		if let defaultsObserver {
 			NotificationCenter.default.removeObserver(defaultsObserver)
 		}

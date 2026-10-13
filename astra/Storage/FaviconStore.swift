@@ -286,7 +286,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		let width = 32, height = 32, bytesPerRow = 32 * 4
 		var pixels = [UInt8](repeating: 0, count: height * bytesPerRow)
 		let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
-			guard let context = CGContext(
+			guard let context = unsafe CGContext(
 				data: buffer.baseAddress, width: width, height: height,
 				bitsPerComponent: 8, bytesPerRow: bytesPerRow,
 				space: CGColorSpaceCreateDeviceRGB(),

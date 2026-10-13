@@ -65,7 +65,7 @@ actor BrowserDownloadFileWorker {
 		// Never create the parent directory: disappearing or unplugged external
 		// volumes must fail instead of writing somewhere unexpected.
 		var isDirectory: ObjCBool = false
-		guard manager.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+		guard unsafe manager.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue else {
 			throw FinalizationError.destinationUnavailable
 		}
 

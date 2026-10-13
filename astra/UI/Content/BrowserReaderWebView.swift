@@ -56,7 +56,7 @@ struct BrowserReaderWebView {
 			applyAppearance(in: webView)
 		}
 
-		func webView(_: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+		func webView(_: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
 			if action.navigationType == .other, action.request.url?.absoluteString == "about:blank" {
 				decisionHandler(.allow)
 				return

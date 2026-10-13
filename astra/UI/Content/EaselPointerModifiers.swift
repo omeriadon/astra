@@ -23,9 +23,9 @@
 					NSEvent.removeMonitor(monitor)
 					self.monitor = nil
 				}
-				guard window != nil else { return }
+				guard unsafe window != nil else { return }
 				monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged]) { [weak self] event in
-					if let self, let window, event.window === window {
+					if let self, let window = unsafe window, event.window === window {
 						// Button actions can run after mouse-up, so retain the pointer event's modifiers.
 						onChange?(event.modifierFlags.contains(.shift))
 					}

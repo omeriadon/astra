@@ -39,7 +39,7 @@
 
 		func framed(hue: Double, grayscale: Double, grayscaleEnabled: Bool, dark: Bool, noiseAmount: Double) -> NSImage? {
 			let size = Self.framedSize(for: image.size)
-			guard let bitmap = NSBitmapImageRep(
+			guard let bitmap = unsafe NSBitmapImageRep(
 				bitmapDataPlanes: nil,
 				pixelsWide: Int(ceil(size.width * scale)),
 				pixelsHigh: Int(ceil(size.height * scale)),

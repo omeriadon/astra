@@ -58,7 +58,7 @@
 		func applicationWillFinishLaunching(_: Notification) {
 			BrowserPerformanceBenchmark.install()
 			startupStartedAt = BrowserLog.mainEntryUptime ?? BrowserLog.clock()
-			BrowserLog.info(.lifecycle, "app.will-finish-launching", metadata: [
+			unsafe BrowserLog.info(.lifecycle, "app.will-finish-launching", metadata: [
 				"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
 			])
 			#if DEBUG
@@ -89,7 +89,7 @@
 				guard let self,
 				      let browser = activeBrowser,
 				      let keyWindow = NSApp.keyWindow,
-				      BrowserKeyboardMenuPolicy.canPromptForAddressAction(
+				      unsafe BrowserKeyboardMenuPolicy.canPromptForAddressAction(
 				      	isFocusedBrowser: keyWindow.isKeyWindow && activeBrowser === browser,
 				      	isSelectedController: browser.selectedTab?.activeController === controller,
 				      	isSameSession: browser.session === controller.session,
@@ -240,7 +240,7 @@
 							continuation.yield(())
 							continuation.finish()
 							guard let self else { return }
-							BrowserLog.notice(.lifecycle, "startup.first-visible-window-update", metadata: [
+							unsafe BrowserLog.notice(.lifecycle, "startup.first-visible-window-update", metadata: [
 								"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
 							])
 							scheduleDeferredStartupServices(trigger: "first-window-update")
@@ -257,14 +257,14 @@
 									try? await Task.sleep(for: .milliseconds(25))
 								}
 								guard !Task.isCancelled else { return }
-								let readiness: [String: String] = [
+								let readiness: [String: String] = unsafe[
 									"visible": String(foreground.window.isVisible),
 									"key": String(foreground.window.isKeyWindow),
 									"can_become_key": String(foreground.window.canBecomeKey),
 									"hydrated": String(foreground.browser.isHydrationFinished),
 									"first_responder": String(foreground.window.firstResponder != nil),
 									"observed_update": "true",
-									"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - self.startupStartedAt) * 1000),
+									"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - self.startupStartedAt) * 1000)
 								]
 								BrowserLog.notice(.lifecycle, "startup.first-window-readiness", metadata: readiness)
 								BrowserPerformanceBenchmark.recordForegroundReadiness(window: foreground.window, browser: foreground.browser)
@@ -287,7 +287,7 @@
 						foreground.showWindow()
 						NSApp.activate()
 					}
-					BrowserLog.notice(.lifecycle, "startup.first-window-presented", metadata: [
+					unsafe BrowserLog.notice(.lifecycle, "startup.first-window-presented", metadata: [
 						"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
 						"records": String(records.count),
 					])
@@ -306,7 +306,7 @@
 						group.cancelAll()
 						return updated
 					}
-					BrowserLog.notice(.lifecycle, "startup.first-window-frame-gate", metadata: [
+					unsafe BrowserLog.notice(.lifecycle, "startup.first-window-frame-gate", metadata: [
 						"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
 						"observed_update": String(didUpdate),
 					])
@@ -322,7 +322,7 @@
 					// Keep all restored windows visible without stealing key focus.
 					controller.window.orderBack(nil)
 				}
-				BrowserLog.notice(.lifecycle, "startup.windows-presented", metadata: [
+				unsafe BrowserLog.notice(.lifecycle, "startup.windows-presented", metadata: [
 					"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
 					"windows": String(windows.count),
 					"records": String(records.count),
@@ -347,7 +347,7 @@
 		private func scheduleDeferredStartupServices(trigger: String) {
 			guard !didScheduleDeferredStartupServices else { return }
 			didScheduleDeferredStartupServices = true
-			BrowserLog.notice(.lifecycle, "startup.deferred-services-scheduled", metadata: [
+			unsafe BrowserLog.notice(.lifecycle, "startup.deferred-services-scheduled", metadata: [
 				"trigger": trigger,
 				"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
 			])
@@ -484,7 +484,7 @@
 		}
 
 		private func finishStartupWindowRestoration() {
-			BrowserLog.notice(.lifecycle, "startup.restoration-complete", metadata: [
+			unsafe BrowserLog.notice(.lifecycle, "startup.restoration-complete", metadata: [
 				"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
 				"windows": String(windows.count),
 				"tabs": String(windows.reduce(0) { $0 + $1.browser.tabs.count }),

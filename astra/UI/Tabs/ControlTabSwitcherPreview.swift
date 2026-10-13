@@ -29,16 +29,15 @@
 
 			await withTaskGroup(of: Void.self) { group in
 				for controller in controllers {
-					group.addTask { @MainActor in
+					let refresh: @MainActor @Sendable () async -> Void = { [controller] in
 						try? await Task.sleep(for: .milliseconds(Int.random(in: 0 ... 40)))
 						guard !Task.isCancelled else { return }
-						// Most tabs already have a retained navigation/sidebar
-						// snapshot. Opening the switcher must not queue a burst
-						// of redundant WebKit captures on every candidate.
+						// Reuse retained snapshots instead of recapturing every candidate.
 						if !controller.hasCurrentPreviewSnapshot {
 							await controller.refreshPreviewSnapshot()
 						}
 					}
+					group.addTask(operation: refresh)
 				}
 			}
 		}

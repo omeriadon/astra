@@ -18,7 +18,7 @@
 
 			func isCurrent() -> Bool {
 				guard let browser, let controller, let webView, let window else { return false }
-				return BrowserPageExportPolicy.ownsDocument(
+				return unsafe BrowserPageExportPolicy.ownsDocument(
 					capturedGeneration: documentID,
 					currentGeneration: controller.navigationIdentifier,
 					capturedURL: url,
@@ -49,10 +49,10 @@
 			}
 			if !enabled,
 			   webView.responds(to: NSSelectorFromString("_inspector")),
-			   let inspector = webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
+			   let inspector = unsafe webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
 			   inspector.responds(to: NSSelectorFromString("close"))
 			{
-				inspector.perform(NSSelectorFromString("close"))
+				unsafe inspector.perform(NSSelectorFromString("close"))
 			}
 		}
 
@@ -65,7 +65,7 @@
 			Defaults[.webInspectorEnabled] = true
 			configureWebInspector(webView, enabled: true)
 			guard webView.responds(to: NSSelectorFromString("_inspector")),
-			      let inspector = webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
+			      let inspector = unsafe webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
 			      inspector.responds(to: NSSelectorFromString("show")),
 			      inspector.responds(to: NSSelectorFromString("close")),
 			      inspector.responds(to: NSSelectorFromString("attach"))
@@ -83,19 +83,19 @@
 				}
 				if inspector.value(forKey: "isElementSelectionActive") as? Bool != true {
 					// Connect without showing the inspector until an element has been selected.
-					inspector.perform(NSSelectorFromString("toggleElementSelection"))
+					unsafe inspector.perform(NSSelectorFromString("toggleElementSelection"))
 				}
 			} else {
 				let isVisible = inspector.value(forKey: "isVisible") as? Bool == true
-				inspector.perform(NSSelectorFromString(isVisible ? "close" : "show"))
+				unsafe inspector.perform(NSSelectorFromString(isVisible ? "close" : "show"))
 			}
 		}
 
 		static func attachWebInspector(_ inspector: NSObject) {
 			// The C entry point preserves the configured side; Objective-C attach defaults to bottom.
-			guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "WKInspectorAttach") else { return }
-			let attach = unsafeBitCast(symbol, to: (@convention(c) (UnsafeRawPointer) -> Void).self)
-			attach(UnsafeRawPointer(Unmanaged.passUnretained(inspector).toOpaque()))
+			guard let symbol = unsafe dlsym(UnsafeMutableRawPointer(bitPattern: -2), "WKInspectorAttach") else { return }
+			let attach = unsafe unsafeBitCast(symbol, to: (@convention(c) (UnsafeRawPointer) -> Void).self)
+			unsafe attach(UnsafeRawPointer(Unmanaged.passUnretained(inspector).toOpaque()))
 		}
 
 		static func openFile(in browser: Browser, window: NSWindow?) {
@@ -117,12 +117,12 @@
 			      controller.hasCurrentPageDocument,
 			      !controller.isLoading,
 			      let window,
-			      webView.window === window
+			      unsafe webView.window === window
 			else { return }
 			let operation = webView.printOperation(with: .shared)
 			operation.showsPrintPanel = true
 			operation.showsProgressPanel = true
-			operation.runModal(
+			unsafe operation.runModal(
 				for: window,
 				delegate: nil,
 				didRun: nil,

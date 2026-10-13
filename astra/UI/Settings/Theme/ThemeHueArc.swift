@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ThemeHueArc: Shape {
+nonisolated struct ThemeHueArc: Shape {
 	let start: Double
 	let length: Double
 	let lineWidth: CGFloat

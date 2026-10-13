@@ -146,7 +146,7 @@
 			guard isOwned(url) else { throw BrowserWebsiteAppFileError.outsideOwnedDirectory }
 			var trashURL: NSURL?
 			if FileManager.default.fileExists(atPath: url.path) {
-				_ = try FileManager.default.trashItem(at: url, resultingItemURL: &trashURL)
+				_ = try unsafe FileManager.default.trashItem(at: url, resultingItemURL: &trashURL)
 			}
 			do {
 				try saveRegistry(nextRegistry)
@@ -249,14 +249,14 @@
 			var hostCode: SecStaticCode?
 			var requirement: SecRequirement?
 			var text: CFString?
-			guard SecStaticCodeCreateWithPath(hostBundleURL as CFURL, [], &hostCode) == errSecSuccess,
+			guard unsafe SecStaticCodeCreateWithPath(hostBundleURL as CFURL, [], &hostCode) == errSecSuccess,
 			      let hostCode
 			else {
 				throw BrowserWebsiteAppFileError.malformedTemplate("Astra's host app has no readable code signature.")
 			}
-			guard SecCodeCopyDesignatedRequirement(hostCode, [], &requirement) == errSecSuccess,
+			guard unsafe SecCodeCopyDesignatedRequirement(hostCode, [], &requirement) == errSecSuccess,
 			      let requirement,
-			      SecRequirementCopyString(requirement, [], &text) == errSecSuccess,
+			      unsafe SecRequirementCopyString(requirement, [], &text) == errSecSuccess,
 			      let text
 			else {
 				throw BrowserWebsiteAppFileError.malformedTemplate("Astra's host signing requirement could not be obtained.")
@@ -294,13 +294,13 @@
 		/// it may contain binary data or diagnostic text on different macOS releases.
 		private func signingEntitlements(from url: URL) throws -> Data {
 			var code: SecStaticCode?
-			guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess,
+			guard unsafe SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess,
 			      let code
 			else {
 				throw BrowserWebsiteAppFileError.malformedTemplate("The embedded helper has no readable code signature.")
 			}
 			var signingInfo: CFDictionary?
-			let status = SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &signingInfo)
+			let status = unsafe SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &signingInfo)
 			guard status == errSecSuccess,
 			      let info = signingInfo as? [String: Any],
 			      let entitlements = info[kSecCodeInfoEntitlementsDict as String] as? [String: Any],

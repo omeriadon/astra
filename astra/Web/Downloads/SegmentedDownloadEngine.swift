@@ -387,10 +387,10 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		let now = Date()
 		progressThrottle.lock()
 		let due: Bool
-		if let last = lastProgressHop[key], now.timeIntervalSince(last) < 0.1 {
+		if let last = unsafe lastProgressHop[key], now.timeIntervalSince(last) < 0.1 {
 			due = false
 		} else {
-			lastProgressHop[key] = now
+			unsafe lastProgressHop[key] = now
 			due = true
 		}
 		progressThrottle.unlock()
@@ -413,7 +413,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		guard let (itemID, index) = Self.identify(downloadTask) else { return }
 		if let description = downloadTask.taskDescription {
 			progressThrottle.lock()
-			lastProgressHop[description] = nil
+			unsafe lastProgressHop[description] = nil
 			progressThrottle.unlock()
 		}
 
@@ -455,7 +455,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		else { return }
 		if let description = task.taskDescription {
 			progressThrottle.lock()
-			lastProgressHop[description] = nil
+			unsafe lastProgressHop[description] = nil
 			progressThrottle.unlock()
 		}
 

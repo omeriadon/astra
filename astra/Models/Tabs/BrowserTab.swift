@@ -451,7 +451,7 @@ final class BrowserTab: Identifiable {
 						message: "Closing this peek will stop its media playback.",
 						confirm: "Close Peek"
 					)
-					let window = self?.activeController?.webViewIfLoaded?.window
+					let window = unsafe self?.activeController?.webViewIfLoaded?.window
 					if await BrowserWebsiteUI.present(alert, in: window) == .alertFirstButtonReturn {
 						self?.dismissPeek(id, confirmed: true)
 					}

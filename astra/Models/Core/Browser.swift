@@ -1069,11 +1069,11 @@ final class Browser {
 					self.applyHydratedState(loaded, placeholderID: placeholderID, placeholderModifiedAt: placeholderModifiedAt)
 				}
 			} catch {
+				guard let self else { return }
 				BrowserLog.error(.persistence, "browser.hydration.failed", metadata: [
 					"window": BrowserLog.id(windowID),
 					"error": BrowserLog.errorDescription(error),
 				])
-				guard let self else { return }
 				hydrationFailed = true
 				didFinishHydration = true
 				persistenceErrorDescription = error.localizedDescription
@@ -1457,7 +1457,7 @@ final class Browser {
 	func deleteEasel(_ id: UUID, confirmed: Bool = false) {
 		guard !isPrivate, let tab = tab(withID: id), tab.internalPage == .easel else { return }
 		// Empty easels have no content to lose, so deleting them is immediate.
-		if !confirmed && tab.easelDocument.items.isEmpty {
+		if !confirmed, tab.easelDocument.items.isEmpty {
 			deleteEasel(id, confirmed: true)
 			return
 		}
@@ -2150,7 +2150,7 @@ final class Browser {
 						? "Changes may not be saved, and closing will stop media playback."
 						: hasUnsavedChanges ? "Changes you made may not be saved." : "Closing will stop media playback."
 					let alert = BrowserWebsiteUI.alert(title: "Close this tab?", message: message, confirm: "Close Tab")
-					let window = tab.activeController?.webViewIfLoaded?.window
+					let window = unsafe tab.activeController?.webViewIfLoaded?.window
 					if await BrowserWebsiteUI.present(alert, in: window) == .alertFirstButtonReturn {
 						self?.closeTab(id, confirmed: true)
 					}
@@ -2696,7 +2696,7 @@ final class Browser {
 			selectTab(tab.id)
 			tab.showPictureInPictureController(controller)
 			#if os(macOS)
-				controller.webViewIfLoaded?.window?.makeKeyAndOrderFront(nil)
+				unsafe controller.webViewIfLoaded?.window?.makeKeyAndOrderFront(nil)
 				NSApp.activate(ignoringOtherApps: true)
 			#endif
 		}
@@ -2705,7 +2705,7 @@ final class Browser {
 			      tabs.contains(where: { $0 === tab }),
 			      selectedTabID == tab.id,
 			      tab.activeController === controller else { return false }
-			return webView.window != nil
+			return unsafe webView.window != nil
 		}
 		controller.extensionStateDidChange = { [weak self, id = tab.id] in
 			guard let self else { return }
@@ -2801,7 +2801,7 @@ final class Browser {
 			selectTab(tab.id)
 			tab.showPictureInPictureController(controller)
 			#if os(macOS)
-				controller.webViewIfLoaded?.window?.makeKeyAndOrderFront(nil)
+				unsafe controller.webViewIfLoaded?.window?.makeKeyAndOrderFront(nil)
 				NSApp.activate(ignoringOtherApps: true)
 			#endif
 		}
@@ -2810,7 +2810,7 @@ final class Browser {
 			      tabs.contains(where: { $0 === tab }),
 			      selectedTabID == tab.id,
 			      tab.activeController === controller else { return false }
-			return webView.window != nil
+			return unsafe webView.window != nil
 		}
 		peek.controller.popupRequested = { [weak self, weak tab, weak peek] configuration, source, inBackground in
 			guard let self, let tab, let peek else { return nil }

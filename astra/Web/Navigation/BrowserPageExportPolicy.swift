@@ -25,7 +25,7 @@ enum BrowserPageExportPolicy {
 			.appendingPathComponent(".astra-export-\(UUID().uuidString)")
 		defer { try? FileManager.default.removeItem(at: staging) }
 		try data.write(to: staging, options: .atomic)
-		guard link(staging.path, destination.path) == 0 else {
+		guard unsafe link(staging.path, destination.path) == 0 else {
 			throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
 		}
 	}

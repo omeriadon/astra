@@ -284,7 +284,7 @@ final class BrowserController: NSObject, Identifiable {
 		else { return false }
 		guard createdWebView == nil || displayCaptureState == false else { return false }
 		#if os(macOS)
-			guard createdWebView?.window?.attachedSheet == nil else { return false }
+			guard unsafe createdWebView?.window?.attachedSheet == nil else { return false }
 		#endif
 		return true
 	}
@@ -536,7 +536,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	/// Live, bounded page-surface sampling inspired by Safari 26's edge tinting.
 	/// Runs in WebKit, not on the app's main actor. No network calls or image decoding.
-	private static let pageTintScript = """
+	private static let pageTintScript = #"""
 	(() => {
 		if (globalThis.__astraPageTintInstalled) return;
 		globalThis.__astraPageTintInstalled = true;
@@ -819,7 +819,7 @@ final class BrowserController: NSObject, Identifiable {
 			if (!document.hidden) schedule();
 		});
 	})();
-	"""
+	"""#
 	@ObservationIgnored
 	private var createdWebView: WKWebView?
 
@@ -1224,7 +1224,7 @@ final class BrowserController: NSObject, Identifiable {
 					|| self?.isCapturing == true
 					|| self?.isPictureInPictureActive == true
 					|| self?.isEnteringPictureInPicture == true
-				let isDetached = self?.createdWebView?.window == nil
+				let isDetached = unsafe self?.createdWebView?.window == nil
 				#if os(macOS)
 					let isBackground = isDetached || self?.previewSnapshotRefreshSuspended == true
 				#else
@@ -1544,7 +1544,7 @@ final class BrowserController: NSObject, Identifiable {
 		findText = ""
 		findNext()
 		#if os(macOS)
-			createdWebView?.window?.makeFirstResponder(createdWebView)
+			unsafe createdWebView?.window?.makeFirstResponder(createdWebView)
 		#endif
 	}
 
@@ -1666,10 +1666,10 @@ final class BrowserController: NSObject, Identifiable {
 		guard owns(webView), navigationIdentifier == documentID,
 		      promptOwnership?(webView) == true else { return false }
 		#if os(macOS)
-			guard let window = webView.window, window.isVisible else { return false }
+			guard let window = unsafe webView.window, window.isVisible else { return false }
 			return window.isKeyWindow || window.attachedSheet?.isKeyWindow == true
 		#else
-			guard let window = webView.window, !window.isHidden,
+			guard let window = unsafe webView.window, !window.isHidden,
 			      window.windowScene?.activationState == .foregroundActive else { return false }
 			return true
 		#endif
@@ -1688,7 +1688,7 @@ final class BrowserController: NSObject, Identifiable {
 				isSameSession: owner.browser.session === session,
 				isCurrentWebView: webViewIfLoaded === webView && owns(webView),
 				isSameNavigation: navigationIdentifier == documentID && !isInvalidated,
-				webViewMatchesOwnerWindow: webView.window == nil || webView.window === owner.window
+				webViewMatchesOwnerWindow: unsafe webView.window == nil || (unsafe webView.window === owner.window)
 			)
 		}
 	#endif
@@ -2162,7 +2162,7 @@ final class BrowserController: NSObject, Identifiable {
 		refreshContentBlocking(forOrigin: origin)
 	}
 
-	deinit {
+	isolated deinit {
 		if let connectivityObserver {
 			NotificationCenter.default.removeObserver(connectivityObserver)
 		}
@@ -2628,7 +2628,7 @@ final class BrowserController: NSObject, Identifiable {
 		faviconTintAttemptedGeneration = generation
 		faviconTintTask = Task { @MainActor [weak self, weak webView] in
 			guard let self, let webView else { return }
-			let accent = await self.session.favicons.cachedAccentColor(for: pageURL)
+			let accent = await session.favicons.cachedAccentColor(for: pageURL)
 			guard owns(webView), generation == navigationGeneration,
 			      webView.url == pageURL
 			else { return }
@@ -2658,19 +2658,23 @@ final class BrowserController: NSObject, Identifiable {
 		var blue: CGFloat = 0
 		var alpha: CGFloat = 0
 		#if os(iOS)
-			guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+			guard unsafe color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
 				return
 			}
 		#elseif os(macOS)
-			color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+			unsafe color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
 		#endif
 
 		let nextColor = Color(color.withAlphaComponent(1))
 		// WCAG contrast: black is the higher-contrast choice above 0.179 luminance.
 		let nextIsLight = BrowserColor(red: Double(red), green: Double(green), blue: Double(blue)).luminance > 0.179
 		// Avoid invalidating SwiftUI chrome on unchanged fallback/probe events.
-		if themeColor != nextColor { themeColor = nextColor }
-		if themeColorIsLight != nextIsLight { themeColorIsLight = nextIsLight }
+		if themeColor != nextColor {
+			themeColor = nextColor
+		}
+		if themeColorIsLight != nextIsLight {
+			themeColorIsLight = nextIsLight
+		}
 	}
 
 	#if os(macOS)
@@ -2685,7 +2689,7 @@ final class BrowserController: NSObject, Identifiable {
 			let wasReader = readerHTML != nil
 			let configuration = WKSnapshotConfiguration()
 			configuration.rect = view.bounds
-			let scale = view.window?.backingScaleFactor ?? 2
+			let scale = unsafe view.window?.backingScaleFactor ?? 2
 			let image = try await view.takeSnapshot(configuration: configuration)
 			guard !isInvalidated, navigationIdentifier == documentID,
 			      wasReader == (readerHTML != nil)
@@ -2747,7 +2751,7 @@ extension BrowserController: WKNavigationDelegate {
 		_ webView: WKWebView,
 		decidePolicyFor navigationAction: WKNavigationAction,
 		preferences: WKWebpagePreferences,
-		decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
+		decisionHandler: @escaping @MainActor (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
 	) {
 		guard owns(webView) else {
 			decisionHandler(.cancel, preferences)
@@ -2881,7 +2885,7 @@ extension BrowserController: WKNavigationDelegate {
 	func webView(
 		_ webView: WKWebView,
 		decidePolicyFor navigationResponse: WKNavigationResponse,
-		decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+		decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void
 	) {
 		guard owns(webView) else {
 			decisionHandler(.cancel)
@@ -3298,18 +3302,17 @@ extension BrowserController: WKScriptMessageHandler {
 			      let urlString = result["url"] as? String, urlString == webView.url?.absoluteString,
 			      let source = result["source"] as? String
 			else { return }
-			let color: PlatformColor?
-			if let rgb = result["rgb"] as? [NSNumber], rgb.count == 3,
-			   rgb.allSatisfy({ $0.doubleValue.isFinite && (0 ... 255).contains($0.doubleValue) })
+			let color: PlatformColor? = if let rgb = result["rgb"] as? [NSNumber], rgb.count == 3,
+			                               rgb.allSatisfy({ $0.doubleValue.isFinite && (0 ... 255).contains($0.doubleValue) })
 			{
-				color = PlatformColor(
+				PlatformColor(
 					red: CGFloat(rgb[0].doubleValue / 255),
 					green: CGFloat(rgb[1].doubleValue / 255),
 					blue: CGFloat(rgb[2].doubleValue / 255),
 					alpha: 1
 				)
 			} else {
-				color = nil
+				nil
 			}
 			pageTintHandledGeneration = navigationGeneration
 			sampledChromeColor = source == "chrome" ? color : nil
@@ -3344,7 +3347,6 @@ extension BrowserController: WKScriptMessageHandler {
 		}
 	}
 }
-
 
 extension BrowserController {
 	#if os(macOS)
@@ -3390,8 +3392,8 @@ extension BrowserController {
 				      let text = capture["text"]?.trimmingCharacters(in: .whitespacesAndNewlines)
 				else { return }
 				let quote = BrowserEaselQuote(url: url, text: text,
-					prefix: String((capture["prefix"] ?? "").suffix(48)),
-					suffix: String((capture["suffix"] ?? "").prefix(48)))
+				                              prefix: String((capture["prefix"] ?? "").suffix(48)),
+				                              suffix: String((capture["suffix"] ?? "").prefix(48)))
 				guard quote.isValid,
 				      easelQuoteDestinations?().contains(where: { $0.id == destinationID }) == true else { return }
 				addQuoteToEasel?(destinationID, quote)
@@ -3751,7 +3753,7 @@ extension BrowserController: WKUIDelegate {
 						return ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: explicitOwner)
 					}
 				} else {
-					guard let window = webView.window else { return }
+					guard let window = unsafe webView.window else { return }
 					promptWindow = window
 					promptOwnerIsCurrent = { [weak self, weak webView] in
 						guard let self, let webView else { return false }
@@ -3899,7 +3901,7 @@ private final class PeekSourceWebView: WKWebView {
 			let target = super.hitTest(point)
 			if target != nil,
 			   let event = NSApp.currentEvent,
-			   event.window === window,
+			   unsafe event.window === window,
 			   event.type == .leftMouseDown || event.type == .otherMouseDown
 			{
 				recordSource(at: convert(event.locationInWindow, from: nil))

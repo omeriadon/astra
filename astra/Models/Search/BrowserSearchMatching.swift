@@ -73,7 +73,7 @@ enum BrowserSearchMatching {
 		guard !declarations.contains("<!DOCTYPE"), !declarations.contains("<!ENTITY") else { return nil }
 		let parser = XMLParser(data: data)
 		let delegate = OpenSearchTemplateParser()
-		parser.delegate = delegate
+		unsafe parser.delegate = delegate
 		parser.shouldProcessNamespaces = true
 		parser.externalEntityResolvingPolicy = .never
 		guard parser.parse(), delegate.isOpenSearchDocument,

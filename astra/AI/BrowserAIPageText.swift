@@ -190,7 +190,7 @@ final class BrowserAIPageLoader: NSObject, WKNavigationDelegate, WKScriptMessage
 		["https", "http"].contains(url.scheme?.lowercased() ?? "") && url.host != nil && url.user == nil && url.password == nil
 	}
 
-	func webView(_: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+	func webView(_: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
 		if action.targetFrame?.isMainFrame == false {
 			let allowed = action.request.url.map { Self.allowed($0) || $0.absoluteString == "about:blank" } ?? false
 			decisionHandler(allowed ? .allow : .cancel)
@@ -204,7 +204,7 @@ final class BrowserAIPageLoader: NSObject, WKNavigationDelegate, WKScriptMessage
 		decisionHandler(.allow)
 	}
 
-	func webView(_: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+	func webView(_: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
 		guard response.isForMainFrame else {
 			decisionHandler(response.canShowMIMEType ? .allow : .cancel)
 			return

@@ -397,7 +397,7 @@ nonisolated struct BrowserAICommandResponse {
 		private let continuation: AsyncStream<Data>.Continuation
 
 		static var realHome: URL {
-			getpwuid(getuid()).map { URL(fileURLWithPath: String(cString: $0.pointee.pw_dir)) } ?? FileManager.default.homeDirectoryForCurrentUser
+			unsafe getpwuid(getuid()).map { URL(fileURLWithPath: unsafe String(cString: $0.pointee.pw_dir)) } ?? FileManager.default.homeDirectoryForCurrentUser
 		}
 
 		var workingDirectory: URL {

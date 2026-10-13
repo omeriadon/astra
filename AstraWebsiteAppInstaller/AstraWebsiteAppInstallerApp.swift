@@ -134,7 +134,7 @@ enum AstraWebsiteAppInstallerApp {
 			throw failure("Astra refused to prepare an app with an executable outside its bundle.")
 		}
 		var code: SecStaticCode?
-		let createStatus = SecStaticCodeCreateWithPath(appURL as CFURL, [], &code)
+		let createStatus = unsafe SecStaticCodeCreateWithPath(appURL as CFURL, [], &code)
 		guard createStatus == errSecSuccess, let code,
 		      SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), nil) == errSecSuccess
 		else { throw failure("The website app's signature is invalid.") }
@@ -143,10 +143,10 @@ enum AstraWebsiteAppInstallerApp {
 	}
 
 	private static func removeQuarantineMetadata(from appURL: URL, executableURL: URL) throws {
-		for path in [appURL, executableURL] where removexattr(path.path, "com.apple.quarantine", XATTR_NOFOLLOW) != 0 {
+		for path in [appURL, executableURL] where unsafe removexattr(path.path, "com.apple.quarantine", XATTR_NOFOLLOW) != 0 {
 			let code = errno
 			guard code == ENOATTR else {
-				throw failure("Astra could not remove website app quarantine metadata: \(String(cString: strerror(code))).")
+				throw failure("Astra could not remove website app quarantine metadata: \(unsafe String(cString: strerror(code))).")
 			}
 		}
 	}

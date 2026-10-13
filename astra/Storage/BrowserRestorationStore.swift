@@ -63,7 +63,7 @@ enum BrowserRestorationStore {
 		lookup[kSecReturnData as String] = true
 		lookup[kSecMatchLimit as String] = kSecMatchLimitOne
 		var result: CFTypeRef?
-		let status = SecItemCopyMatching(lookup as CFDictionary, &result)
+		let status = unsafe SecItemCopyMatching(lookup as CFDictionary, &result)
 		if status == errSecSuccess {
 			guard let data = result as? Data, data.count == 32 else {
 				BrowserLog.error(.persistence, "restoration.key.invalid-keychain-data")
@@ -75,7 +75,7 @@ enum BrowserRestorationStore {
 			BrowserLog.error(.persistence, "restoration.keychain.read-failed", metadata: ["status": String(status)])
 			return nil
 		}
-		let created = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
+		let created = unsafe SymmetricKey(size: .bits256).withUnsafeBytes { unsafe Data($0) }
 		var item = query
 		item[kSecValueData as String] = created
 		item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
@@ -84,7 +84,7 @@ enum BrowserRestorationStore {
 			return created
 		}
 		if added == errSecDuplicateItem,
-		   SecItemCopyMatching(lookup as CFDictionary, &result) == errSecSuccess,
+		   unsafe SecItemCopyMatching(lookup as CFDictionary, &result) == errSecSuccess,
 		   let existing = result as? Data, existing.count == 32
 		{
 			return existing

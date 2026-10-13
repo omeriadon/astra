@@ -1,4 +1,5 @@
 import Defaults
+import KeyboardShortcuts
 import SwiftUI
 import WebKit
 #if os(macOS)
@@ -153,9 +154,11 @@ struct DesktopBrowserShell: View {
 					button.animator().alphaValue = hidden ? 0 : 1
 				}
 			} completionHandler: {
-				guard generation == windowButtonAnimationGeneration, hidden else { return }
-				for button in buttons {
-					button.isHidden = true
+				Task { @MainActor in
+					guard generation == windowButtonAnimationGeneration, hidden else { return }
+					for button in buttons {
+						button.isHidden = true
+					}
 				}
 			}
 		}
@@ -562,7 +565,6 @@ private struct ShellSidebarColumn: View {
 			bottomOpacityHeight: bottomOpacityHeight
 		)
 		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsSidebarHeader)
-
 		.overlay(alignment: .bottom) {
 			if sidebarShown {
 				sidebarBottomBar

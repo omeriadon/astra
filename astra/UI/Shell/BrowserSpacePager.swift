@@ -356,12 +356,12 @@ struct BrowserSpacePager<Content: View>: View {
 			let duration = now - lastReport
 			guard duration >= 2 else { return }
 			BrowserLog.notice(.performance, "paging.layout-sample", metadata: [
-				"seconds": String(format: "%.2f", duration),
+				"seconds": unsafe String(format: "%.2f", duration),
 				"page_host_layouts": String(layouts),
 				"active_page_layouts": String(activeLayouts),
 				"layout_near_clip_move": String(layoutNearClipMove),
-				"host_layout_total_ms": String(format: "%.1f", layoutTotalMilliseconds),
-				"host_layout_max_ms": String(format: "%.2f", layoutMaximumMilliseconds),
+				"host_layout_total_ms": unsafe String(format: "%.1f", layoutTotalMilliseconds),
+				"host_layout_max_ms": unsafe String(format: "%.2f", layoutMaximumMilliseconds),
 				"page_root_replacements": String(rootReplacements),
 				"page_host_creations": String(hostCreations),
 				"native_update_calls": String(updateCalls),
@@ -371,10 +371,10 @@ struct BrowserSpacePager<Content: View>: View {
 				"viewport_method": "scrollTo",
 				"spring_gap_samples": String(springTicks),
 				"spring_late_gaps": String(springLateTicks),
-				"spring_max_gap_ms": String(format: "%.2f", springMaximumGapMs),
+				"spring_max_gap_ms": unsafe String(format: "%.2f", springMaximumGapMs),
 				"pager_render_calls": String(pagerRenders),
-				"pager_render_total_ms": String(format: "%.1f", pagerRenderTotalMs),
-				"pager_render_max_ms": String(format: "%.2f", pagerRenderMaximumMs),
+				"pager_render_total_ms": unsafe String(format: "%.1f", pagerRenderTotalMs),
+				"pager_render_max_ms": unsafe String(format: "%.2f", pagerRenderMaximumMs),
 				"pager_renders_over_8ms": String(pagerRendersOver8ms),
 				"clip_moves": String(clipMoves),
 				"page_window_updates": String(updates),
@@ -711,7 +711,7 @@ struct BrowserSpacePager<Content: View>: View {
 				let host: BrowserSpacePageHost
 				if let retained = pageHosts[id] {
 					host = retained
-					if refreshContent || changedPageIDs.contains(id) || retained.superview == nil {
+					if refreshContent || changedPageIDs.contains(id) || (unsafe retained.superview == nil) {
 						BrowserSpacePagingMetrics.rootReplaced()
 						retained.rootView = pageFactory(space, active)
 					}
@@ -735,7 +735,7 @@ struct BrowserSpacePager<Content: View>: View {
 				if host.frame != frame {
 					host.frame = frame
 				}
-				if host.superview !== documentView {
+				if unsafe host.superview !== documentView {
 					documentView.addSubview(host)
 				}
 			}
@@ -773,7 +773,7 @@ struct BrowserSpacePager<Content: View>: View {
 			// shortcut: uses Apple's spring and local stop tolerances; match captured Arc traces if the remaining feel differs.
 			stopSettling()
 			rawOffset = target
-			guard !reduceMotion, window != nil, pageWidth > 0,
+			guard !reduceMotion, unsafe window != nil, pageWidth > 0,
 			      abs(offset - target) > 0.1 || abs(velocity) > 1
 			else {
 				render(target, deferred: true)
@@ -837,7 +837,7 @@ struct BrowserSpacePager<Content: View>: View {
 
 		override func viewDidMoveToWindow() {
 			super.viewDidMoveToWindow()
-			if window == nil {
+			if unsafe window == nil {
 				teardown()
 			} else if monitor == nil {
 				needsLayout = true
@@ -871,7 +871,7 @@ struct BrowserSpacePager<Content: View>: View {
 		}
 
 		private func eventIsInside(_ event: NSEvent) -> Bool {
-			guard let window, event.window === window,
+			guard let window = unsafe window, event.window === window,
 			      window.isVisible, !isHiddenOrHasHiddenAncestor,
 			      bounds.contains(convert(event.locationInWindow, from: nil)),
 			      let contentView = window.contentView,
@@ -881,7 +881,7 @@ struct BrowserSpacePager<Content: View>: View {
 		}
 
 		private func handle(_ event: NSEvent) -> NSEvent? {
-			guard let window, event.window === window,
+			guard let window = unsafe window, event.window === window,
 			      window.isVisible, !isHiddenOrHasHiddenAncestor
 			else { return event }
 
