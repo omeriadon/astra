@@ -54,6 +54,12 @@
         "up-to-next-major-version": "0.12.1",
       },
     }, {
+      "kind": "remote",
+      "repository": "https://github.com/chrisrecalis/swiftui-infinite-canvas",
+      "version": {
+        "revision": "7f20ade269e6d7a79534d56ac8bcdd2be0cb197e",
+      },
+    }, {
       "kind": "local",
       "path": "Packages/Haze",
     },
@@ -181,6 +187,10 @@
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
         }, {
           "product-name": "MaterialView",
+          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
+        }, {
+          "package": "swiftui-infinite-canvas",
+          "product-name": "InfiniteCanvas",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
         }, {
           "package": "Defaults",
@@ -427,6 +437,10 @@
         }, {
           "package": "MaterialView",
           "product-name": "MaterialView",
+          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
+        }, {
+          "package": "swiftui-infinite-canvas",
+          "product-name": "InfiniteCanvas",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
         }, {
           "package": "Noise",
