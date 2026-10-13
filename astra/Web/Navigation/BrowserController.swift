@@ -560,6 +560,8 @@ final class BrowserController: NSObject, Identifiable {
 		const sample = (x, y) => {
 			let element = document.elementFromPoint(x, y);
 			let edge = false;
+			let covered = 0;
+			const mixed = [0, 0, 0];
 			for (let depth = 0; element && depth < 14; depth++, element = element.parentElement) {
 				const style = getComputedStyle(element);
 				if (style.visibility === 'hidden' || Number(style.opacity) < 0.1) return null;
@@ -571,7 +573,13 @@ final class BrowserController: NSObject, Identifiable {
 				// A gradient/image obscures the ancestor's flat background.
 				if (style.backgroundImage !== 'none') return null;
 				const rgba = pixels(style.backgroundColor);
-				if (rgba && rgba[3] >= 245) return { color: rgba.slice(0, 3), edge };
+				if (!rgba || rgba[3] === 0) continue;
+				const contribution = (rgba[3] / 255) * (1 - covered);
+				for (let channel = 0; channel < 3; channel++)
+					mixed[channel] += rgba[channel] * contribution;
+				covered += contribution;
+				if (covered >= .98)
+					return { color: mixed.map(x => Math.round(x / covered)), edge };
 			}
 			return null;
 		};
