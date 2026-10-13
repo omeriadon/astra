@@ -9,6 +9,8 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 	var history: [BrowserVisit]
 	var browser: BrowserSnapshot
 	var settings: [String: SyncedSetting]
+	var boosts: [BrowserBoost]
+	var deletedBoostsAt: [UUID: Date]
 
 	init(
 		tabs: [OpenTab],
@@ -17,7 +19,9 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		readingList: [ReadingListItem] = [],
 		history: [BrowserVisit] = [],
 		browser: BrowserSnapshot,
-		settings: [String: SyncedSetting]
+		settings: [String: SyncedSetting],
+		boosts: [BrowserBoost] = [],
+		deletedBoostsAt: [UUID: Date] = [:]
 	) {
 		self.tabs = tabs
 		self.workspace = workspace
@@ -26,10 +30,12 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		self.history = history
 		self.browser = browser
 		self.settings = settings
+		self.boosts = boosts
+		self.deletedBoostsAt = deletedBoostsAt
 	}
 
 	private enum CodingKeys: String, CodingKey {
-		case version, tabs, workspace, bookmarks, readingList, history, browser, settings
+		case version, tabs, workspace, bookmarks, readingList, history, browser, settings, boosts, deletedBoostsAt
 	}
 
 	nonisolated init(from decoder: Decoder) throws {
@@ -42,6 +48,8 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		history = try values.decodeIfPresent([BrowserVisit].self, forKey: .history) ?? []
 		browser = try values.decode(BrowserSnapshot.self, forKey: .browser)
 		settings = try values.decode([String: SyncedSetting].self, forKey: .settings)
+		boosts = try values.decodeIfPresent([BrowserBoost].self, forKey: .boosts) ?? []
+		deletedBoostsAt = try values.decodeIfPresent([UUID: Date].self, forKey: .deletedBoostsAt) ?? [:]
 	}
 
 	nonisolated func encode(to encoder: Encoder) throws {
@@ -54,6 +62,8 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		try values.encode(history, forKey: .history)
 		try values.encode(browser, forKey: .browser)
 		try values.encode(settings, forKey: .settings)
+		try values.encode(boosts, forKey: .boosts)
+		try values.encode(deletedBoostsAt, forKey: .deletedBoostsAt)
 	}
 
 	nonisolated func portableProjection() -> Self {
@@ -226,6 +236,10 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		Set(tabs.map(\.id)).count == tabs.count
 			&& Set(bookmarks.map(\.id)).count == bookmarks.count
 			&& Set(history.map(\.id)).count == history.count
+			&& Set(boosts.map(\.id)).count == boosts.count
+			&& boosts.count <= 512
+			&& boosts.allSatisfy(\.isValidForSync)
+			&& deletedBoostsAt.values.allSatisfy { $0.timeIntervalSince1970.isFinite && $0.timeIntervalSince1970 >= 0 && $0.timeIntervalSince1970 < 4_102_444_800 }
 			&& tabs.allSatisfy { tab in
 				isPortableSyncTab(tab)
 					&& tab.pageZoom.isFinite && (0.25 ... 5).contains(tab.pageZoom)
@@ -285,6 +299,13 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		result.browser.deletedSpacesAt.merge(other.browser.deletedSpacesAt) { max($0, $1) }
 		result.browser.deletedVisitsAt.merge(other.browser.deletedVisitsAt) { max($0, $1) }
 		result.browser.historyClearedAt = max(browser.historyClearedAt, other.browser.historyClearedAt)
+		result.deletedBoostsAt.merge(other.deletedBoostsAt) { max($0, $1) }
+		let boostsByID = Dictionary((boosts + other.boosts).map { ($0.id, $0) }, uniquingKeysWith: { first, next in
+			preferred(first, first.modifiedAt, next, next.modifiedAt)
+		})
+		result.boosts = boostsByID.values.filter {
+			$0.modifiedAt > (result.deletedBoostsAt[$0.id] ?? .distantPast)
+		}.sorted { $0.id.uuidString < $1.id.uuidString }
 		if other.browser.selectedTabModifiedAt > browser.selectedTabModifiedAt
 			|| (other.browser.selectedTabModifiedAt == browser.selectedTabModifiedAt
 				&& other.browser.selectedTabID.uuidString < browser.selectedTabID.uuidString)
