@@ -85,6 +85,7 @@
             "AI/BrowserAIChatHistory.swift",
             "AI/Features/BrowserChatTitleFeature.swift",
             "App/AppDelegate.swift",
+            "App/AstraAdvancedIntents.swift",
             "App/AstraAppIntents.swift",
             "App/AstraSystemIntegration.swift",
             "App/BrowserAuthenticationSessionHandler.swift",
