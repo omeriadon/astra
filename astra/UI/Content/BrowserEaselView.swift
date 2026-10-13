@@ -24,6 +24,7 @@ struct BrowserEaselView: View {
 	@State private var activeTool: Tool = .cursor
 	#if os(macOS)
 		@StateObject private var canvasController = InfiniteCanvasController()
+		@FocusState private var canvasFocused: Bool
 	#endif
 	@State private var constrainsShape = false
 	@State private var shiftIsPressed = false
@@ -62,6 +63,8 @@ struct BrowserEaselView: View {
 			.padding(12)
 		}
 		#if os(macOS)
+		.focusable()
+		.focused($canvasFocused)
 		.onDeleteCommand { deleteSelectedItem() }
 		#endif
 		.onChange(of: document) { _, value in
@@ -329,6 +332,11 @@ struct BrowserEaselView: View {
 			.onTapGesture {
 				selectedID = displayedItem.id
 				browser.selectTab(tab.id)
+				#if os(macOS)
+					if displayedItem.kind != .text {
+						canvasFocused = true
+					}
+				#endif
 			}
 			.contextMenu {
 				Button("Bring to Front", systemImage: "square.2.layers.3d.top.filled") {
@@ -518,7 +526,7 @@ struct BrowserEaselView: View {
 	}
 
 	private func deleteSelectedItem() {
-		guard let selectedID else { return }
+		guard activeTool == .cursor, let selectedID else { return }
 		deleteItem(selectedID)
 	}
 
