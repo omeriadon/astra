@@ -17,9 +17,11 @@ updater runtime) opt into:
   APIs (warnings by design, requiring acknowledgement where appropriate).
 - `SWIFT_TREAT_WARNINGS_AS_ERRORS = NO`: ordinary warnings remain warnings.
 
-At project level, `ENABLE_SECURITY_COMPILER_WARNINGS` and
-`CLANG_WARN_UNSAFE_BUFFER_USAGE` are enabled and
-`GCC_TREAT_WARNINGS_AS_ERRORS = NO`.
+At project level, `ENABLE_SECURITY_COMPILER_WARNINGS`,
+`CLANG_WARN_SUSPICIOUS_IMPLICIT_CONVERSION`, `CLANG_WARN_OBJC_REPEATED_USE_OF_WEAK`,
+and `GCC_WARN_SHADOW` are enabled and
+`GCC_TREAT_WARNINGS_AS_ERRORS = NO`. Exclusive-access enforcement is `full`,
+while disabling runtime safety checks is explicitly prohibited.
 
 The current `SWIFT_APPROACHABLE_CONCURRENCY` and per-target default actor
 isolation settings are retained. The former doesn't disable Swift 6 safety;
