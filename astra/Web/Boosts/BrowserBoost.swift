@@ -150,6 +150,9 @@ final class BrowserBoostStore {
                 // Hot-swap existing pages, including disabled/deleted CSS.
                 // Arbitrary JavaScript side effects cannot be rolled back.
                 webView.evaluateJavaScript(scriptSource, in: nil, in: .page, completionHandler: nil)
+                for boost in boosts where boost.isEnabled && !boost.javascript.isEmpty {
+                    webView.evaluateJavaScript(nativeJavaScriptSource(for: boost), in: nil, in: .page, completionHandler: nil)
+                }
             }
         }
         if scheduleSync {
@@ -168,6 +171,43 @@ final class BrowserBoostStore {
             forMainFrameOnly: true,
             in: .page
         ))
+        for boost in boosts where boost.isEnabled && !boost.javascript.isEmpty {
+            controller.addUserScript(WKUserScript(
+                source: nativeJavaScriptSource(for: boost),
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true,
+                in: .page
+            ))
+        }
+    }
+
+    /// WebKit compiles each user's script separately; we do not rely on eval(),
+    /// which is prohibited by the Content Security Policy of many websites.
+    private func nativeJavaScriptSource(for boost: BrowserBoost) -> String {
+        let id = boost.id.uuidString
+        let host = boost.domain ?? ""
+        let encodedHost = (try? JSONEncoder().encode(host)).flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
+        let source = boost.javascript
+        return Self.scriptMarker + """
+        (() => {
+          if (location.protocol !== 'https:' && location.protocol !== 'http:') return;
+          const domain = \(encodedHost);
+          const hostname = location.hostname.toLowerCase();
+          if (domain && hostname !== domain && !hostname.endsWith('.' + domain)) return;
+          const state = window.__astraBoostJavaScript || (window.__astraBoostJavaScript = Object.create(null));
+          const boostID = "\(id)";
+          const signature = \(boost.modifiedAt.timeIntervalSince1970);
+          if (state[boostID] === signature) return;
+          state[boostID] = signature;
+          try {
+            (function() {
+              \(source)
+            }).call(window);
+          } catch (error) {
+            console.error('[Astra Boost]', boostID, error);
+          }
+        })();
+        """
     }
 
     private static let scriptMarker = "/* astra-boost-runtime-v1 */"
@@ -209,11 +249,7 @@ final class BrowserBoostStore {
                 entry.style = style;
               }
               if (entry.style.textContent !== boost.css) entry.style.textContent = boost.css;
-              if (boost.javascript && entry.script !== boost.javascript) {
-                entry.script = boost.javascript;
-                try { (0, eval)(boost.javascript); }
-                catch (error) { console.error('[Astra Boost]', boost.name, error); }
-              }
+
             }
           };
           run();
