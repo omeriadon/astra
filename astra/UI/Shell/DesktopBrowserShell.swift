@@ -447,7 +447,7 @@ private struct ShellSidebarColumn: View {
 		!showsTopBar && sidebarShown
 	}
 
-	@State private var keepsDownloadsMounted = false
+	@State private var librarySelection = 0
 
 	var body: some View {
 		ZStack(alignment: .topLeading) {
@@ -500,21 +500,15 @@ private struct ShellSidebarColumn: View {
 				content.offset(x: downloadsVisible ? geometry.size.width : 0)
 			}
 
-			Group {
-				if showsDownloads || keepsDownloadsMounted {
-					LibrarySidebarView(
-						browser: browser,
-						manager: downloads,
-						theme: theme
-					)
-					.sidebarScrollContentMargins(top: sidebarHeaderReservation)
-				} else {
-					// When tabs are displayed there is no reason to keep
-					// observing every download progress event or lay out a
-					// second offscreen scroll tree.
-					Color.clear
-				}
-			}
+			LibrarySidebarView(
+				browser: browser,
+				manager: downloads,
+				theme: theme,
+				selection: $librarySelection
+			)
+			.sidebarScrollContentMargins(top: sidebarHeaderReservation)
+			.allowsHitTesting(downloadsVisible)
+			.accessibilityHidden(!downloadsVisible)
 			.foregroundStyle(theme.foregroundColor)
 			.visualEffect { content, geometry in
 				content.offset(x: downloadsVisible ? 0 : -geometry.size.width)
@@ -529,22 +523,7 @@ private struct ShellSidebarColumn: View {
 			bottomOpacityHeight: bottomOpacityHeight
 		)
 		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsSidebarHeader)
-		.task(id: showsDownloads) {
-			if showsDownloads {
-				keepsDownloadsMounted = true
-			} else {
-				guard keepsDownloadsMounted else { return }
-				// Preserve the full slide-out before dismantling the hidden
-				// content. The button animates this transition for 0.32 s.
-				do {
-					try await Task.sleep(for: .milliseconds(380))
-				} catch {
-					return
-				}
-				guard !Task.isCancelled else { return }
-				keepsDownloadsMounted = false
-			}
-		}
+
 		.overlay(alignment: .bottom) {
 			if sidebarShown {
 				sidebarBottomBar
