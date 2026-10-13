@@ -150,37 +150,31 @@ struct BrowserFavouriteTile: View {
 					guard previewEnabled else { return }
 					isHovered = hovering
 					if hovering {
-						if hoverPreviewStarted {
-							BrowserTabHoverPreviewCoordinator.shared.updateFrame(
-								for: tabID,
-								windowID: windowID,
-								frame: hoverFrame
-							)
-						} else if hoverFrame != .zero {
-							hoverPreviewStarted = true
-							BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
-								tabID: tabID,
-								windowID: windowID,
-								sourceFrame: hoverFrame
-							)
-						}
+						// The frame is observed only while hovered; discard old coordinates.
+						hoverFrame = .zero
 					} else {
 						if hoverPreviewStarted {
 							BrowserTabHoverPreviewCoordinator.shared.hoverEnded(tabID: tabID, windowID: windowID)
 						}
 						hoverPreviewStarted = false
+						hoverFrame = .zero
 					}
 				}
-				.onGeometryChange(for: CGRect.self) { proxy in
-					proxy.frame(in: .global)
-				} action: { frame in
-					hoverFrame = frame
-					guard previewEnabled, isHovered else { return }
-					if hoverPreviewStarted {
-						BrowserTabHoverPreviewCoordinator.shared.updateFrame(for: tabID, windowID: windowID, frame: frame)
-					} else {
-						hoverPreviewStarted = true
-						BrowserTabHoverPreviewCoordinator.shared.hoverBegan(tabID: tabID, windowID: windowID, sourceFrame: frame)
+				.background {
+					if previewEnabled && isHovered {
+						Color.clear
+							.onGeometryChange(for: CGRect.self) { proxy in
+								proxy.frame(in: .global)
+							} action: { frame in
+								guard frame != hoverFrame else { return }
+								hoverFrame = frame
+								if hoverPreviewStarted {
+									BrowserTabHoverPreviewCoordinator.shared.updateFrame(for: tabID, windowID: windowID, frame: frame)
+								} else if frame != .zero {
+									hoverPreviewStarted = true
+									BrowserTabHoverPreviewCoordinator.shared.hoverBegan(tabID: tabID, windowID: windowID, sourceFrame: frame)
+								}
+							}
 					}
 				}
 				.onChange(of: tabID) { oldID, _ in
