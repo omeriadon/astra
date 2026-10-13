@@ -611,6 +611,8 @@ final class BrowserController: NSObject, Identifiable {
 
 	private(set) var isLoading = false
 	private(set) var estimatedProgress = 0.0
+	@ObservationIgnored
+	private var encounteredProxyAuthentication = false
 	private(set) var navigationFailure: BrowserNavigationFailure? {
 		didSet {
 			guard let failure = navigationFailure, !isAuthenticationSessionBrowser else { return }
@@ -2598,6 +2600,11 @@ extension BrowserController: WKNavigationDelegate {
 		handleNavigationFailure(navigation, error: error)
 	}
 
+	func recordProxyAuthenticationChallenge(_ challenge: URLAuthenticationChallenge, in webView: WKWebView) {
+		guard owns(webView), challenge.protectionSpace.isProxy else { return }
+		encounteredProxyAuthentication = true
+	}
+
 	private func handleNavigationFailure(_ navigation: WKNavigation!, error: Error) {
 		BrowserLog.error(.navigation, "navigation.failure.callback", metadata: ["controller": BrowserLog.id(id), "error": BrowserLog.errorDescription(error), "url": BrowserLog.url(url)])
 		guard navigation === currentNavigation else { return }
@@ -2616,7 +2623,20 @@ extension BrowserController: WKNavigationDelegate {
 		historyManager.cancelVisit()
 		failedRequest = isAuthenticationSessionBrowser ? nil : currentRequest
 		if let failedURL = error.userInfo[NSURLErrorFailingURLErrorKey] as? URL ?? url {
-			navigationFailure = BrowserNavigationFailure(error: error, url: failedURL)
+			let failure = BrowserNavigationFailure(
+				error: error,
+				url: failedURL,
+				encounteredProxyAuthentication: encounteredProxyAuthentication
+			)
+			navigationFailure = failure
+			if failure.isProxyFailure {
+				BrowserLog.notice(.navigation, "navigation.proxy-failure", metadata: [
+					"controller": BrowserLog.id(id),
+					"kind": failure.kind.rawValue,
+					"error_domain": error.domain,
+					"error_code": String(error.code),
+				])
+			}
 		}
 	}
 
@@ -2670,6 +2690,7 @@ extension BrowserController: WKNavigationDelegate {
 		hasPausedMedia = false
 		areMediaElementsMuted = false
 		currentNavigation = navigation
+		encounteredProxyAuthentication = false
 		failedRequest = nil
 		navigationFailure = nil
 		awaitsNavigationCommit = true
