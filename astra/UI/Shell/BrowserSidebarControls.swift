@@ -27,6 +27,7 @@ struct ShellSidebarListView: View {
 			tab: tab,
 			browser: browser,
 			isSelected: selected,
+			splitSide: browser.splitSide(for: tab.id),
 			onSelectTab: onSelectTab,
 			navigationNamespace: namespace
 		)
