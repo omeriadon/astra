@@ -112,6 +112,12 @@ bodyOnly.flush();
 assert.equal(bodyOnly.posts[0].source, 'surface');
 assert.equal(JSON.stringify(bodyOnly.posts[0].rgb), '[248,249,250]');
 
+const translucent = environment({ headerColor: 'rgba(0, 0, 0, 0.8)' });
+translucent.flush();
+assert.equal(translucent.posts[0].source, 'chrome');
+assert.equal(JSON.stringify(translucent.posts[0].rgb), '[50,50,50]',
+    'Alpha-composite a translucent sticky header against the body surface');
+
 const gradient = environment({ headerImage: 'linear-gradient(red, blue)' });
 gradient.flush();
 assert.equal(gradient.posts[0].source, 'none', 'Do not pretend a gradient is a solid colour');
