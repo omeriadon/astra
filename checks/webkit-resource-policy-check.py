@@ -5,7 +5,11 @@ view = Path("astra/UI/Content/BrowserContentView.swift").read_text()
 assert "lazy var tabResources = BrowserTabResourceManager(browser: self)" in browser
 assert "tabResources.updateMemoryPressure(level)" in browser
 assert "automaticHibernationManager?.handleMemoryPressure(level)" in browser
-assert "ForEach(browser.tabResources.controllersForDisplay())" in view
+# Split panes attach only their own WebKit host; ordinary tabs keep the warm stack.
+assert "let controllers = browser.isShowingTabSplit" in view
+assert "browser.tabResources.controllersForDisplay().filter { $0 === selectedTab?.controller }" in view
+assert ": browser.tabResources.controllersForDisplay()" in view
+assert "ForEach(controllers) { controller in" in view
 assert "private func keepAliveControllers()" not in view
 policy = view.split("final class BrowserTabResourceManager", 1)[1].split("private struct HibernatedPlaceholder", 1)[0]
 for text in (
