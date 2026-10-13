@@ -39,7 +39,7 @@
 			window.titleVisibility = .hidden
 			window.titlebarAppearsTransparent = true
 			window.titlebarSeparatorStyle = .none
-			window.contentMinSize = NSSize(width: 480, height: 320)
+			window.contentMinSize = NSSize(width: BrowserChromeMetrics.minimumPageWidth(isSettings: false), height: 320)
 			window.tabbingMode = .disallowed
 			window.collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace]
 			window.isReleasedWhenClosed = false
