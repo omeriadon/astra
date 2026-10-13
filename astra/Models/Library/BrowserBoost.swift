@@ -10,6 +10,13 @@ struct BrowserBoost: Codable, Equatable, Identifiable, Sendable {
     var isEnabled: Bool = true
     var modifiedAt: Date = .now
 
+    /// Reserve a bounded portion of Astra's server sync payload for Boosts.
+    nonisolated static let maximumCollectionCodeBytes = 1_000_000
+
+    nonisolated var codeByteCount: Int {
+        name.utf8.count + (domain?.utf8.count ?? 0) + css.utf8.count + javascript.utf8.count
+    }
+
     nonisolated var isValidForSync: Bool {
         name.utf8.count <= 512
             && (domain?.utf8.count ?? 0) <= 253
@@ -31,7 +38,7 @@ struct BrowserBoost: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
-private extension Date {
+extension Date {
     nonisolated var isFiniteBoostTimestamp: Bool {
         timeIntervalSince1970.isFinite && timeIntervalSince1970 >= 0
             && timeIntervalSince1970 < 4_102_444_800
