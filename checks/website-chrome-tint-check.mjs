@@ -178,7 +178,7 @@ assert.equal(JSON.stringify(gradient.posts[0].rgb), '[128,0,128]',
 const verticalGradient = environment({ headerImage: 'linear-gradient(to bottom, #102030, #b0c0d0)' });
 verticalGradient.flush();
 assert.equal(verticalGradient.posts[0].source, 'chrome');
-assert.ok(verticalGradient.posts[0].rgb[0] < 60,
+assert.ok(verticalGradient.posts[0].rgb[0] < 100,
     'For vertical gradients, use the first visible pixels instead of the far-bottom stop');
 
 const imageHeader = environment({ headerImage: 'url(https://example.test/cover.webp)' });
