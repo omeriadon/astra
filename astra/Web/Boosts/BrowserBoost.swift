@@ -186,6 +186,7 @@ final class BrowserBoostStore {
         return Self.scriptMarker + """
         (() => {
           const incoming = \(json);
+          if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
           const host = location.hostname.toLowerCase();
           const applicable = incoming.filter(b => !b.domain || host === b.domain || host.endsWith('.' + b.domain));
           const run = () => {
