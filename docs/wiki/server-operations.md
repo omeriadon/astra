@@ -37,7 +37,7 @@ by repeated pushes.
 401 means an Astra session problem, not an OpenRouter key prompt. 429 can be
 local quota or provider throttling. 502 is a sanitized provider/protocol failure.
 503 means cloud AI is unconfigured. SSE can fail after HTTP 200; require its
-final event. For 413 sync errors, check the client/server limit mismatch.
+final event. For 413 sync errors, verify the 5,000,000-byte raw snapshot limit and the 7 MB Base64-encoded PUT body limit; the client is expected to enforce the same limits.
 
 Related: [AI API](https://omeriadon.github.io/browser_server/server-api.html), [sync](sync-and-conflicts.md),
 [authentication](authentication.md).

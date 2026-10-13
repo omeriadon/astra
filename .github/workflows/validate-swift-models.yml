@@ -32,4 +32,6 @@ jobs:
           "$P/astra-window-ownership"
           swiftc -swift-version 6 astra/Models/Tabs/BrowserVisit.swift checks/history-search-cancellation-check.swift -o "$P/astra-history-search"
           "$P/astra-history-search"
+          swiftc -swift-version 6 astra/Storage/BrowserSyncPayloadLimits.swift checks/sync-large-account-check.swift -o "$P/astra-sync-large-account"
+          "$P/astra-sync-large-account"
           python3 checks/automatic-hibernation-runtime-check.py
