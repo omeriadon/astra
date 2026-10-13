@@ -504,9 +504,9 @@ private struct ShellSidebarColumn: View {
 				browser: browser,
 				manager: downloads,
 				theme: theme,
+				topMargin: sidebarHeaderReservation,
 				selection: $librarySelection
 			)
-			.sidebarScrollContentMargins(top: sidebarHeaderReservation)
 			.allowsHitTesting(downloadsVisible)
 			.accessibilityHidden(!downloadsVisible)
 			.foregroundStyle(theme.foregroundColor)
