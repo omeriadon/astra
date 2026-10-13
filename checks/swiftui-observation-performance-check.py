@@ -16,8 +16,10 @@ assert ".id(controller.historyIndex)" not in navigation
 assert "projectionCache.resolve(" in sidebar
 assert "cached.tabIDs == space.tabIDs" in sidebar
 assert "LazyVStack(spacing: 2)" in sidebar
-assert "isHovered && onSelectTab == nil ? proxy.frame" in row
-assert "previewEnabled && isHovered ? proxy.frame" in favourite
+assert "if isHovered && onSelectTab == nil" in row
+assert "if previewEnabled && isHovered" in favourite
+assert "onAppear { updateHoveredFrame" in row
+assert "onAppear { recordHoverFrame" in favourite
 assert "Self.prepareImage(data)" in easel
 assert "private nonisolated struct PreparedImage: Sendable" in easel
 assert "encoded as CFMutableData" in easel
