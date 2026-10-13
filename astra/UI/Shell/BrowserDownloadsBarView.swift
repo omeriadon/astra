@@ -22,7 +22,7 @@ struct ShellDownloadsBarView: View {
 			} label: {
 				HStack(spacing: 9) {
 					ZStack {
-						Image(systemName: downloads.buttonSymbol)
+						Image(systemName: "books.vertical")
 						if let progress = downloads.activeProgress {
 							Circle()
 								.trim(from: 0, to: progress)

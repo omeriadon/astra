@@ -484,7 +484,7 @@ private struct ShellSidebarColumn: View {
 		!showsTopBar && sidebarShown
 	}
 
-	@State private var keepsDownloadsMounted = false
+	@State private var librarySelection = 0
 
 	var body: some View {
 		ZStack(alignment: .topLeading) {
@@ -537,21 +537,15 @@ private struct ShellSidebarColumn: View {
 				content.offset(x: downloadsVisible ? geometry.size.width : 0)
 			}
 
-			Group {
-				if showsDownloads || keepsDownloadsMounted {
-					LibrarySidebarView(
-						browser: browser,
-						manager: downloads,
-						theme: theme
-					)
-					.sidebarScrollContentMargins(top: sidebarHeaderReservation)
-				} else {
-					// When tabs are displayed there is no reason to keep
-					// observing every download progress event or lay out a
-					// second offscreen scroll tree.
-					Color.clear
-				}
-			}
+			LibrarySidebarView(
+				browser: browser,
+				manager: downloads,
+				theme: theme,
+				topMargin: sidebarHeaderReservation,
+				selection: $librarySelection
+			)
+			.allowsHitTesting(downloadsVisible)
+			.accessibilityHidden(!downloadsVisible)
 			.foregroundStyle(theme.foregroundColor)
 			.visualEffect { content, geometry in
 				content.offset(x: downloadsVisible ? 0 : -geometry.size.width)
@@ -566,22 +560,7 @@ private struct ShellSidebarColumn: View {
 			bottomOpacityHeight: bottomOpacityHeight
 		)
 		.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsSidebarHeader)
-		.task(id: showsDownloads) {
-			if showsDownloads {
-				keepsDownloadsMounted = true
-			} else {
-				guard keepsDownloadsMounted else { return }
-				// Preserve the full slide-out before dismantling the hidden
-				// content. The button animates this transition for 0.32 s.
-				do {
-					try await Task.sleep(for: .milliseconds(380))
-				} catch {
-					return
-				}
-				guard !Task.isCancelled else { return }
-				keepsDownloadsMounted = false
-			}
-		}
+
 		.overlay(alignment: .bottom) {
 			if sidebarShown {
 				sidebarBottomBar
@@ -639,11 +618,12 @@ private struct ShellSpaceTabList: View {
 			space: space,
 			theme: space.theme,
 			isActiveSpace: space.id == browser.selectedSpace.id,
-			favouriteTabIDs: browser.workspace.favouriteTabIDs
+			favouriteTabIDs: browser.workspace.favouriteTabIDs,
+			topMargin: topMargin
 		)
 		.id(space.id)
 		.foregroundStyle(space.theme.foregroundColor)
-		.sidebarScrollContentMargins(top: topMargin)
+		.sidebarScrollContentMargins(top: BrowserChromeMetrics.topBarRegionHeight + 5)
 		.accessibilityIdentifier("sidebar-space-pages")
 		.opacity(listOpacity)
 		.allowsHitTesting(space.id == browser.selectedSpace.id)
@@ -895,7 +875,7 @@ private struct ShellContentColumn: View {
 
 		func dropUpdated(info: DropInfo) -> DropProposal? {
 			side = desiredSide(at: info.location)
-			return DropProposal(operation: .copy)
+			return DropProposal(operation: .move)
 		}
 
 		func dropExited(info _: DropInfo) {
