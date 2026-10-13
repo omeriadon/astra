@@ -155,7 +155,7 @@ struct BrowserEaselView: View {
 	@ViewBuilder
 	private func canvasContents(width: CGFloat, viewportHeight: CGFloat) -> some View {
 		let surface = ZStack(alignment: .topLeading) {
-			Color.clear.contentShape(Rectangle()).onTapGesture { selectedID = nil }
+			Color.clear.contentShape(Rectangle()).onTapGesture { selectedID = nil; editingTextID = nil }
 			ForEach(document.items) { item in
 				itemView(item, canvasWidth: width)
 			}
@@ -334,7 +334,16 @@ struct BrowserEaselView: View {
 					drag(item, translation: value.translation, canvasWidth: canvasWidth)
 				}
 				.onEnded { _ in baseline = nil; draggedCopy = nil })
-			.onTapGesture(count: 2) {
+			.onTapGesture {
+				guard activeTool == .cursor else { return }
+				selectedID = item.id
+				if editingTextID != item.id { editingTextID = nil }
+				browser.selectTab(tab.id)
+				#if os(macOS)
+					if editingTextID == nil { canvasFocused = true }
+				#endif
+			}
+			.highPriorityGesture(TapGesture(count: 2).onEnded {
 				guard activeTool == .cursor else { return }
 				selectedID = item.id
 				if item.kind == .text {
@@ -342,15 +351,7 @@ struct BrowserEaselView: View {
 				} else if item.kind == .link, let url = item.url {
 					browser.openEaselLink(url, in: tab)
 				}
-			}
-			.onTapGesture {
-				guard activeTool == .cursor else { return }
-				selectedID = item.id
-				browser.selectTab(tab.id)
-				#if os(macOS)
-					canvasFocused = true
-				#endif
-			}
+			})
 			.contextMenu {
 				Button("Bring to Front", systemImage: "square.2.layers.3d.top.filled") {
 					reorder(item.id, front: true)
