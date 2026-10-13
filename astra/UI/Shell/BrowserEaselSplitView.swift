@@ -61,6 +61,7 @@ struct BrowserEaselSplitView: View {
 					}
 				}
 				.frame(width: usableWidth - leftWidth)
+				.simultaneousGesture(TapGesture().onEnded { browser.selectTab(rightTab.id) })
 				.background(browser.theme.contentShade(for: colorScheme))
 				.clipShape(RoundedRectangle(cornerRadius: cornerRadius))
 			}
