@@ -405,7 +405,6 @@ struct DesktopBrowserShell: View {
 		#if os(macOS)
 			.onAppear {
 				isFullScreen = hostWindow?.styleMask.contains(.fullScreen) == true
-				spaceSwitcher.start()
 			}
 			.onDisappear {
 				spaceSwitcher.stop()

@@ -62,7 +62,8 @@ final class BrowserShortcutRegistry {
     }
 
     func tabDirection(for event: NSEvent) -> Bool? {
-        guard let pressed = KeyboardShortcuts.Shortcut(event: event) else { return nil }
+        guard !event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+              let pressed = KeyboardShortcuts.Shortcut(event: event) else { return nil }
         if pressed == shortcut("Next Tab", section: "Tab") { return true }
         if pressed == shortcut("Previous Tab", section: "Tab") { return false }
         return nil

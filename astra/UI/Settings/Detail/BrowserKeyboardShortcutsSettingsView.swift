@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import KeyboardShortcuts
 import SwiftUI
 
@@ -12,6 +13,7 @@ struct BrowserKeyboardShortcutsSettingsView: View {
     }
 
     var body: some View {
+        let _ = revision
         List {
             Section {
                 Text("Record a shortcut to replace its default. Clear removes a binding; Reset restores the original. Changes take effect immediately.")
@@ -31,6 +33,9 @@ struct BrowserKeyboardShortcutsSettingsView: View {
                             }
                             .shortcutValidation { candidate in
                                 return MainActor.assumeIsolated {
+                                    if candidate.modifiers.intersection([.command, .control, .option]).isEmpty {
+                                        return .disallow(reason: "Use Command, Control, or Option to avoid overriding text input.")
+                                    }
                                     if let conflict = registry.conflict(for: candidate, excluding: definition) {
                                         return .disallow(reason: "Already assigned to \(conflict.title).")
                                     }
@@ -69,7 +74,6 @@ struct BrowserKeyboardShortcutsSettingsView: View {
                 .accessibilityIdentifier("reset-all-shortcuts")
             }
         }
-        .id(revision)
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
         .accessibilityIdentifier("keyboard-shortcuts-settings")

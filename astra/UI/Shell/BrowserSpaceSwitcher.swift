@@ -71,6 +71,7 @@ final class BrowserSpaceSwitcher {
               direction == 1 || direction == -1 else { return }
 
         if !isPresented {
+            start()
             highlightedSpaceID = browser.selectedSpace.id
             requiredModifiers = modifiers.intersection(.deviceIndependentFlagsMask)
             withAnimation(.smooth(duration: 0.22)) {
@@ -119,6 +120,10 @@ final class BrowserSpaceSwitcher {
     }
 
     private func end() {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
         fallbackCommitTask?.cancel()
         fallbackCommitTask = nil
         requiredModifiers = []
