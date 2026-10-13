@@ -882,6 +882,7 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var themeColorIsLight: Bool?
 	@ObservationIgnored private var sampledChromeColor: PlatformColor?
 	@ObservationIgnored private var sampledSurfaceColor: PlatformColor?
+	@ObservationIgnored private var sampledBrandColor: PlatformColor?
 	private var pendingDownloadSource: UnitPoint?
 	private var pendingDownloadSiteURL: URL?
 	@ObservationIgnored
@@ -2536,6 +2537,7 @@ final class BrowserController: NSObject, Identifiable {
 		let color = sampledChromeColor
 			?? webView.themeColor
 			?? sampledSurfaceColor
+			?? sampledBrandColor
 			?? webView.underPageBackgroundColor
 			?? PlatformColor.white
 		updateThemeColor(color)
@@ -2972,6 +2974,7 @@ extension BrowserController: WKNavigationDelegate {
 		navigationGeneration += 1
 		sampledChromeColor = nil
 		sampledSurfaceColor = nil
+		sampledBrandColor = nil
 		hasTopEdgeContent = false
 		webView.underPageBackgroundColor = nil
 	}
@@ -3200,6 +3203,7 @@ extension BrowserController: WKScriptMessageHandler {
 			}
 			sampledChromeColor = source == "chrome" ? color : nil
 			sampledSurfaceColor = source == "surface" ? color : nil
+			sampledBrandColor = source == "brand" ? color : nil
 			resolveThemeColor(in: webView)
 			return
 		}
