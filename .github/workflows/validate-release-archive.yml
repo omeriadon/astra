@@ -23,6 +23,8 @@ jobs:
           fetch-depth: 0
       - name: Select Xcode 27
         run: bash scripts/ci/select-xcode-27.sh
+      - name: Verify Swift 6.4 compiler and strict safety settings
+        run: python3 checks/compiler-safety-settings-check.py
       - name: Install Metal Toolchain
         run: xcodebuild -downloadComponent MetalToolchain
       - name: Build archive and verify distribution layout
