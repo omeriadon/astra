@@ -101,6 +101,8 @@ private struct SidebarScrollOpacityFadeModifier: ViewModifier {
 	let topOpacityHeight: CGFloat?
 	let bottom: CGFloat
 	let bottomOpacityHeight: CGFloat
+	@Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+	@State private var lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
 
 	func body(content: Content) -> some View {
 		let faded = content
@@ -111,9 +113,24 @@ private struct SidebarScrollOpacityFadeModifier: ViewModifier {
 				bottom: bottom,
 				bottomOpacityHeight: bottomOpacityHeight
 			)
-			.modifier(SidebarScrollVariableBlurModifier(top: top, bottom: bottom))
-			.compositingGroup()
-			.clipShape(Rectangle())
+
+		Group {
+			#if os(macOS)
+				if lowPowerMode || reduceTransparency {
+					faded.clipShape(Rectangle())
+				} else {
+					faded
+						.modifier(SidebarScrollVariableBlurModifier(top: top, bottom: bottom))
+						.compositingGroup()
+						.clipShape(Rectangle())
+				}
+			#else
+				faded.clipShape(Rectangle())
+			#endif
+		}
+		.onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
+			lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+		}
 	}
 }
 
@@ -122,45 +139,36 @@ private struct SidebarScrollOpacityFadeModifier: ViewModifier {
 private struct SidebarScrollVariableBlurModifier: ViewModifier {
 	let top: CGFloat
 	let bottom: CGFloat
-	@Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-	@State private var lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
 
 	func body(content: Content) -> some View {
 		content
 			.overlay(alignment: .bottom) {
 				#if os(macOS)
-					if !lowPowerMode && !reduceTransparency {
-						HazeEffect(
-							maskProvider: LinearGradientMaskProvider(
-								startPoint: .bottom, endPoint: .top,
-								startOpacity: 1, endOpacity: 0, isSmooth: true
-							),
-							maxBlurRadius: 2, isolatesBackdrop: true
-						)
-						.frame(height: bottom)
-						.allowsHitTesting(false)
-						.accessibilityHidden(true)
-					}
+					HazeEffect(
+						maskProvider: LinearGradientMaskProvider(
+							startPoint: .bottom, endPoint: .top,
+							startOpacity: 1, endOpacity: 0, isSmooth: true
+						),
+						maxBlurRadius: 2, isolatesBackdrop: true
+					)
+					.frame(height: bottom)
+					.allowsHitTesting(false)
+					.accessibilityHidden(true)
 				#endif
 			}
 			.overlay(alignment: .top) {
 				#if os(macOS)
-					if !lowPowerMode && !reduceTransparency {
-						HazeEffect(
-							maskProvider: LinearGradientMaskProvider(
-								startPoint: .top, endPoint: .bottom,
-								startOpacity: 1, endOpacity: 0, isSmooth: true
-							),
-							maxBlurRadius: 1, isolatesBackdrop: true
-						)
-						.frame(height: top)
-						.allowsHitTesting(false)
-						.accessibilityHidden(true)
-					}
+					HazeEffect(
+						maskProvider: LinearGradientMaskProvider(
+							startPoint: .top, endPoint: .bottom,
+							startOpacity: 1, endOpacity: 0, isSmooth: true
+						),
+						maxBlurRadius: 1, isolatesBackdrop: true
+					)
+					.frame(height: top)
+					.allowsHitTesting(false)
+					.accessibilityHidden(true)
 				#endif
-			}
-			.onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
-				lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
 			}
 	}
 }

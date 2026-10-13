@@ -5,10 +5,11 @@ import AstraAutomationCore
 import Foundation
 
 struct AstraOpenURLIntent: AppIntent {
-    static var title: LocalizedStringResource = "Open URL in Astra"
-    static var description = IntentDescription("Open a website in a new Astra tab.")
+    static let title: LocalizedStringResource = "Open URL in Astra"
+    static let description = IntentDescription("Open a website in a new Astra tab.")
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "URL") var url: URL
+    @MainActor
     func perform() async throws -> some IntentResult {
         try await AstraSystemActions.open(url)
         return .result()
@@ -16,9 +17,10 @@ struct AstraOpenURLIntent: AppIntent {
 }
 
 struct AstraSearchWebIntent: AppIntent {
-    static var title: LocalizedStringResource = "Search Web with Astra"
+    static let title: LocalizedStringResource = "Search Web with Astra"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Search Text") var query: String
+    @MainActor
     func perform() async throws -> some IntentResult {
         try await AstraSystemActions.search(query)
         return .result()
@@ -26,8 +28,9 @@ struct AstraSearchWebIntent: AppIntent {
 }
 
 struct AstraNewTabIntent: AppIntent {
-    static var title: LocalizedStringResource = "New Astra Tab"
+    static let title: LocalizedStringResource = "New Astra Tab"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         try await AstraSystemActions.newTab()
         return .result()
@@ -35,9 +38,10 @@ struct AstraNewTabIntent: AppIntent {
 }
 
 struct AstraNewWindowIntent: AppIntent {
-    static var title: LocalizedStringResource = "New Astra Window"
+    static let title: LocalizedStringResource = "New Astra Window"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Private", default: false) var isPrivate: Bool
+    @MainActor
     func perform() async throws -> some IntentResult {
         try await AstraSystemActions.newWindow(isPrivate: isPrivate)
         return .result()
@@ -45,8 +49,9 @@ struct AstraNewWindowIntent: AppIntent {
 }
 
 struct AstraMiniAstraIntent: AppIntent {
-    static var title: LocalizedStringResource = "Open Mini Astra"
+    static let title: LocalizedStringResource = "Open Mini Astra"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         try await AstraSystemActions.mini(nil)
         return .result()
@@ -55,11 +60,12 @@ struct AstraMiniAstraIntent: AppIntent {
 
 @AppIntent(schema: .browser.openURLInTab)
 struct AstraNavigateTabIntent {
-    static var title: LocalizedStringResource = "Open URL in Astra Tab"
+    static let title: LocalizedStringResource = "Open URL in Astra Tab"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     var url: URL
     var tab: AstraTabEntity
 
+    @MainActor
     func perform() async throws -> some IntentResult {
         let checked = try AstraSystemActions.validated(url)
         let (browser, target) = try await AstraSystemActions.resolveTab(id: tab.id)
@@ -71,8 +77,9 @@ struct AstraNavigateTabIntent {
 }
 
 struct AstraCurrentURLIntent: AppIntent {
-    static var title: LocalizedStringResource = "Get Current Astra URL"
+    static let title: LocalizedStringResource = "Get Current Astra URL"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some ReturnsValue<URL> {
         let url = try await AstraSystemActions.selectedURL()
         return .result(value: url)
@@ -80,8 +87,9 @@ struct AstraCurrentURLIntent: AppIntent {
 }
 
 struct AstraGetPageTitleIntent: AppIntent {
-    static var title: LocalizedStringResource = "Get Current Astra Page Title"
+    static let title: LocalizedStringResource = "Get Current Astra Page Title"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some ReturnsValue<String> {
         let browser = try await AstraSystemActions.currentBrowser()
         guard let tab = browser.selectedTab else { throw AstraSystemActions.Failure.missingItem }
@@ -90,8 +98,9 @@ struct AstraGetPageTitleIntent: AppIntent {
 }
 
 struct AstraReloadIntent: AppIntent {
-    static var title: LocalizedStringResource = "Reload Astra Page"
+    static let title: LocalizedStringResource = "Reload Astra Page"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.currentBrowser()
         guard let controller = browser.selectedTab?.activeController else {
@@ -103,8 +112,9 @@ struct AstraReloadIntent: AppIntent {
 }
 
 struct AstraHardReloadIntent: AppIntent {
-    static var title: LocalizedStringResource = "Hard Reload Astra Page"
+    static let title: LocalizedStringResource = "Hard Reload Astra Page"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.currentBrowser()
         guard let controller = browser.selectedTab?.activeController else {
@@ -116,8 +126,9 @@ struct AstraHardReloadIntent: AppIntent {
 }
 
 struct AstraGoBackIntent: AppIntent {
-    static var title: LocalizedStringResource = "Go Back in Astra"
+    static let title: LocalizedStringResource = "Go Back in Astra"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.currentBrowser()
         guard let controller = browser.selectedTab?.activeController else {
@@ -129,8 +140,9 @@ struct AstraGoBackIntent: AppIntent {
 }
 
 struct AstraGoForwardIntent: AppIntent {
-    static var title: LocalizedStringResource = "Go Forward in Astra"
+    static let title: LocalizedStringResource = "Go Forward in Astra"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.currentBrowser()
         guard let controller = browser.selectedTab?.activeController else {
@@ -142,8 +154,9 @@ struct AstraGoForwardIntent: AppIntent {
 }
 
 struct AstraReaderModeIntent: AppIntent {
-    static var title: LocalizedStringResource = "Toggle Astra Reader Mode"
+    static let title: LocalizedStringResource = "Toggle Astra Reader Mode"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.currentBrowser()
         guard let controller = browser.selectedTab?.activeController else {
@@ -155,8 +168,9 @@ struct AstraReaderModeIntent: AppIntent {
 }
 
 struct AstraZoomInIntent: AppIntent {
-    static var title: LocalizedStringResource = "Zoom In Astra Page"
+    static let title: LocalizedStringResource = "Zoom In Astra Page"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.currentBrowser()
         guard let controller = browser.selectedTab?.activeController else {
@@ -168,8 +182,9 @@ struct AstraZoomInIntent: AppIntent {
 }
 
 struct AstraZoomOutIntent: AppIntent {
-    static var title: LocalizedStringResource = "Zoom Out Astra Page"
+    static let title: LocalizedStringResource = "Zoom Out Astra Page"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.currentBrowser()
         guard let controller = browser.selectedTab?.activeController else {
@@ -181,8 +196,9 @@ struct AstraZoomOutIntent: AppIntent {
 }
 
 struct AstraResetZoomIntent: AppIntent {
-    static var title: LocalizedStringResource = "Reset Astra Page Zoom"
+    static let title: LocalizedStringResource = "Reset Astra Page Zoom"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.currentBrowser()
         guard let controller = browser.selectedTab?.activeController else {
@@ -194,8 +210,9 @@ struct AstraResetZoomIntent: AppIntent {
 }
 
 struct AstraTranslatePageIntent: AppIntent {
-    static var title: LocalizedStringResource = "Translate Current Astra Page"
+    static let title: LocalizedStringResource = "Translate Current Astra Page"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.currentBrowser()
         guard browser.selectedTab?.activeController?.hasCurrentPageDocument == true else {
@@ -207,8 +224,9 @@ struct AstraTranslatePageIntent: AppIntent {
 }
 
 struct AstraTogglePictureInPictureIntent: AppIntent {
-    static var title: LocalizedStringResource = "Picture in Picture in Astra"
+    static let title: LocalizedStringResource = "Picture in Picture in Astra"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.currentBrowser()
         guard let controller = browser.selectedTab?.activeController,

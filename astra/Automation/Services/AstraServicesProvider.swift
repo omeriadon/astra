@@ -24,7 +24,7 @@ final class AstraServicesProvider: NSObject {
     func searchInAstra(_ pasteboard: NSPasteboard, userData: String?,
                        error: AutoreleasingUnsafeMutablePointer<NSString?>?) {
         guard let text = value(pasteboard) else {
-            error?.pointee = "Select some text to search." as NSString
+            unsafe error?.pointee = "Select some text to search." as NSString
             return
         }
         Task { @MainActor in
@@ -37,7 +37,7 @@ final class AstraServicesProvider: NSObject {
     func openInAstra(_ pasteboard: NSPasteboard, userData: String?,
                      error: AutoreleasingUnsafeMutablePointer<NSString?>?) {
         guard let link = url(pasteboard) else {
-            error?.pointee = "Select a valid HTTP or HTTPS URL." as NSString
+            unsafe error?.pointee = "Select a valid HTTP or HTTPS URL." as NSString
             return
         }
         Task { @MainActor in
@@ -50,7 +50,7 @@ final class AstraServicesProvider: NSObject {
     func openInMiniAstra(_ pasteboard: NSPasteboard, userData: String?,
                          error: AutoreleasingUnsafeMutablePointer<NSString?>?) {
         guard let link = url(pasteboard) else {
-            error?.pointee = "Select a valid HTTP or HTTPS URL." as NSString
+            unsafe error?.pointee = "Select a valid HTTP or HTTPS URL." as NSString
             return
         }
         Task { @MainActor in
@@ -63,7 +63,7 @@ final class AstraServicesProvider: NSObject {
     func saveToAstraReadingList(_ pasteboard: NSPasteboard, userData: String?,
                                 error: AutoreleasingUnsafeMutablePointer<NSString?>?) {
         guard let link = url(pasteboard) else {
-            error?.pointee = "Select a valid HTTP or HTTPS URL." as NSString
+            unsafe error?.pointee = "Select a valid HTTP or HTTPS URL." as NSString
             return
         }
         Task { @MainActor in
@@ -76,7 +76,7 @@ final class AstraServicesProvider: NSObject {
     func createAstraEasel(_ pasteboard: NSPasteboard, userData: String?,
                           error: AutoreleasingUnsafeMutablePointer<NSString?>?) {
         guard let text = value(pasteboard) else {
-            error?.pointee = "Select text or a URL to add to an easel." as NSString
+            unsafe error?.pointee = "Select text or a URL to add to an easel." as NSString
             return
         }
         let link = url(pasteboard)

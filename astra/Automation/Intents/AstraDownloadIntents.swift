@@ -19,34 +19,42 @@ struct AstraDownloadEntity: AppEntity {
     var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(name)", subtitle: "\(status)") }
 
     struct Query: EntityStringQuery {
+		static let persistentIdentifier = "com.omeriadon.astra.query.downloads"
+
+		@MainActor
         private func live() -> [AstraDownloadEntity] {
             BrowserDownloadManager.shared.items.map {
                 AstraDownloadEntity(id: $0.id.uuidString, name: $0.name, status: $0.status.rawValue)
             }
         }
-        func entities(for identifiers: [String]) async throws -> [AstraDownloadEntity] {
+		@MainActor
+		func entities(for identifiers: [String]) async throws -> [AstraDownloadEntity] {
             let wanted = Set(identifiers)
             return live().filter { wanted.contains($0.id) }
         }
-        func entities(matching string: String) async throws -> [AstraDownloadEntity] {
+		@MainActor
+		func entities(matching string: String) async throws -> [AstraDownloadEntity] {
             live().filter { $0.name.localizedCaseInsensitiveContains(string) }
         }
-        func suggestedEntities() async throws -> [AstraDownloadEntity] { Array(live().prefix(30)) }
+		@MainActor
+		func suggestedEntities() async throws -> [AstraDownloadEntity] { Array(live().prefix(30)) }
     }
 }
 
 struct AstraListDownloadsIntent: AppIntent {
-    static var title: LocalizedStringResource = "List Astra Downloads"
+    static let title: LocalizedStringResource = "List Astra Downloads"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some ReturnsValue<[AstraDownloadEntity]> {
         return .result(value: try await AstraDownloadEntity.Query().suggestedEntities())
     }
 }
 
 struct AstraPauseDownloadIntent: AppIntent {
-    static var title: LocalizedStringResource = "Pause Astra Download"
+    static let title: LocalizedStringResource = "Pause Astra Download"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Download") var download: AstraDownloadEntity
+    @MainActor
     func perform() async throws -> some IntentResult {
         guard let id = UUID(uuidString: download.id),
               BrowserDownloadManager.shared.items.contains(where: { $0.id == id && $0.status == .downloading }) else {
@@ -58,9 +66,10 @@ struct AstraPauseDownloadIntent: AppIntent {
 }
 
 struct AstraResumeDownloadIntent: AppIntent {
-    static var title: LocalizedStringResource = "Resume Astra Download"
+    static let title: LocalizedStringResource = "Resume Astra Download"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Download") var download: AstraDownloadEntity
+    @MainActor
     func perform() async throws -> some IntentResult {
         guard let id = UUID(uuidString: download.id),
               BrowserDownloadManager.shared.items.contains(where: { $0.id == id && $0.canResume }) else {

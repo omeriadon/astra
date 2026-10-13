@@ -22,6 +22,9 @@ struct AstraBookmarkEntity {
     }
 
     struct Query: EntityStringQuery {
+        static let persistentIdentifier = "com.omeriadon.astra.query.bookmarks"
+
+        @MainActor
         func entities(for identifiers: [String]) async throws -> [AstraBookmarkEntity] {
             let browser = try await AstraSystemActions.existingBrowser()
             let lookup = Set(identifiers)
@@ -29,6 +32,7 @@ struct AstraBookmarkEntity {
                 AstraBookmarkEntity(id: $0.id.uuidString, name: $0.name, url: $0.url)
             }
         }
+        @MainActor
         func entities(matching string: String) async throws -> [AstraBookmarkEntity] {
             let browser = try await AstraSystemActions.existingBrowser()
             return browser.bookmarks.filter {
@@ -39,6 +43,7 @@ struct AstraBookmarkEntity {
                 AstraBookmarkEntity(id: $0.id.uuidString, name: $0.name, url: $0.url)
             }
         }
+        @MainActor
         func suggestedEntities() async throws -> [AstraBookmarkEntity] {
             let browser = try await AstraSystemActions.existingBrowser()
             return browser.bookmarks.prefix(25).map {
@@ -68,6 +73,8 @@ struct AstraTabEntity {
     }
 
     struct Query: EntityStringQuery {
+        static let persistentIdentifier = "com.omeriadon.astra.query.tabs"
+
         @MainActor
         private func live() -> [AstraTabEntity] {
             AstraSystemActions.normalBrowsers().flatMap { browser in
@@ -81,21 +88,24 @@ struct AstraTabEntity {
             }
         }
 
+        @MainActor
         func entities(for identifiers: [String]) async throws -> [AstraTabEntity] {
             _ = try await AstraSystemActions.existingBrowser()
             let requested = Set(identifiers)
-            return await live().filter { requested.contains($0.id) }
+            return live().filter { requested.contains($0.id) }
         }
+        @MainActor
         func entities(matching string: String) async throws -> [AstraTabEntity] {
             _ = try await AstraSystemActions.existingBrowser()
-            return await live().filter {
+            return live().filter {
                 $0.name.localizedCaseInsensitiveContains(string)
                     || ($0.url?.absoluteString.localizedCaseInsensitiveContains(string) ?? false)
             }.prefix(40).map { $0 }
         }
+        @MainActor
         func suggestedEntities() async throws -> [AstraTabEntity] {
             _ = try await AstraSystemActions.existingBrowser()
-            return Array(await live().prefix(30))
+            return Array(live().prefix(30))
         }
     }
 }
@@ -113,17 +123,22 @@ struct AstraSpaceEntity: AppEntity {
     var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(name)") }
 
     struct Query: EntityStringQuery {
+        static let persistentIdentifier = "com.omeriadon.astra.query.spaces"
+
+        @MainActor
         func entities(for identifiers: [String]) async throws -> [AstraSpaceEntity] {
             let browser = try await AstraSystemActions.existingBrowser()
             let desired = Set(identifiers)
             return browser.workspace.spaces.filter { desired.contains($0.id.uuidString) }
                 .map { AstraSpaceEntity(id: $0.id.uuidString, name: $0.name) }
         }
+        @MainActor
         func entities(matching string: String) async throws -> [AstraSpaceEntity] {
             let browser = try await AstraSystemActions.existingBrowser()
             return browser.workspace.spaces.filter { $0.name.localizedCaseInsensitiveContains(string) }
                 .map { AstraSpaceEntity(id: $0.id.uuidString, name: $0.name) }
         }
+        @MainActor
         func suggestedEntities() async throws -> [AstraSpaceEntity] {
             let browser = try await AstraSystemActions.existingBrowser()
             return browser.workspace.spaces.map { AstraSpaceEntity(id: $0.id.uuidString, name: $0.name) }
@@ -150,12 +165,16 @@ struct AstraReadingEntity {
         DisplayRepresentation(title: "\(title)", subtitle: "\(url.absoluteString)")
     }
     struct Query: EntityStringQuery {
+        static let persistentIdentifier = "com.omeriadon.astra.query.reading-list"
+
+        @MainActor
         func entities(for identifiers: [String]) async throws -> [AstraReadingEntity] {
             let browser = try await AstraSystemActions.existingBrowser()
             let requested = Set(identifiers)
             return browser.readingList.filter { requested.contains($0.id.uuidString) }
                 .map { AstraReadingEntity(id: $0.id.uuidString, title: $0.title, url: $0.url, isRead: $0.isRead) }
         }
+        @MainActor
         func entities(matching string: String) async throws -> [AstraReadingEntity] {
             let browser = try await AstraSystemActions.existingBrowser()
             return browser.readingList.filter {
@@ -165,6 +184,7 @@ struct AstraReadingEntity {
                 AstraReadingEntity(id: $0.id.uuidString, title: $0.title, url: $0.url, isRead: $0.isRead)
             }
         }
+        @MainActor
         func suggestedEntities() async throws -> [AstraReadingEntity] {
             let browser = try await AstraSystemActions.existingBrowser()
             return browser.readingList.prefix(25).map {

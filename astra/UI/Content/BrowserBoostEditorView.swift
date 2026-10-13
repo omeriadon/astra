@@ -246,7 +246,7 @@ private struct BoostCodeTextView: NSViewRepresentable {
         editor.isContinuousSpellCheckingEnabled = false
         editor.isHorizontallyResizable = false
         editor.isVerticallyResizable = true
-        editor.textContainer?.widthTracksTextView = true
+        unsafe editor.textContainer?.widthTracksTextView = true
         editor.textContainerInset = NSSize(width: 16, height: 16)
         editor.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
         editor.string = text
@@ -293,7 +293,7 @@ private struct BoostCodeTextView: NSViewRepresentable {
         }
 
         func highlight(_ editor: NSTextView) {
-            guard let storage = editor.textStorage else { return }
+            guard let storage = unsafe editor.textStorage else { return }
             let value = editor.string
             let range = NSRange(location: 0, length: (value as NSString).length)
             let base: [NSAttributedString.Key: Any] = [

@@ -1,4 +1,5 @@
 """WebKit resource manager must enforce pressure budgets without sacrificing active media."""
+import re
 from pathlib import Path
 browser = Path("astra/Models/Core/Browser.swift").read_text()
 view = Path("astra/UI/Content/BrowserContentView.swift").read_text()
@@ -36,7 +37,7 @@ print("Adaptive WebKit tab resource budget and protected media/peek retention ch
 # Startup page attachment must not poll expensive WebKit screenshots without
 # an actual handoff curtain. Only reparenting an existing preview needs it.
 webview = Path("astra/Web/Navigation/BrowserWebView.swift").read_text()
-handoff = webview.split("if webView.superview !== self {", 1)[1].split(
+handoff = re.split(r"if (?:unsafe )?webView\.superview !== self \{", webview, maxsplit=1)[1].split(
     "// WebKit owns the page frame while its inspector is docked", 1
 )[0]
 assert "curtain.isHidden = !specification.isVisible || curtain.image == nil" in handoff

@@ -6,11 +6,12 @@ import Foundation
 
 @AppIntent(schema: .browser.bookmarkURL)
 struct AstraBookmarkURLIntent {
-    static var title: LocalizedStringResource = "Bookmark URL in Astra"
+    static let title: LocalizedStringResource = "Bookmark URL in Astra"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     var url: URL
     var name: String?
 
+    @MainActor
     func perform() async throws -> some ReturnsValue<AstraBookmarkEntity> {
         try await AstraSystemActions.bookmark(url, title: name)
         let browser = try await AstraSystemActions.browser()
@@ -24,8 +25,9 @@ struct AstraBookmarkURLIntent {
 }
 
 struct AstraBookmarkCurrentPageIntent: AppIntent {
-    static var title: LocalizedStringResource = "Bookmark Current Astra Page"
+    static let title: LocalizedStringResource = "Bookmark Current Astra Page"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let url = try await AstraSystemActions.selectedURL()
         try await AstraSystemActions.bookmark(url)
@@ -34,9 +36,10 @@ struct AstraBookmarkCurrentPageIntent: AppIntent {
 }
 
 struct AstraOpenBookmarkIntent: AppIntent {
-    static var title: LocalizedStringResource = "Open Astra Bookmark"
+    static let title: LocalizedStringResource = "Open Astra Bookmark"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Bookmark") var bookmark: AstraBookmarkEntity
+    @MainActor
     func perform() async throws -> some IntentResult {
         try await AstraSystemActions.openBookmark(id: bookmark.id)
         return .result()
@@ -44,9 +47,10 @@ struct AstraOpenBookmarkIntent: AppIntent {
 }
 
 struct AstraSaveToReadingListIntent: AppIntent {
-    static var title: LocalizedStringResource = "Save URL to Astra Reading List"
+    static let title: LocalizedStringResource = "Save URL to Astra Reading List"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "URL") var url: URL
+    @MainActor
     func perform() async throws -> some IntentResult {
         try await AstraSystemActions.readLater(url)
         return .result()
@@ -54,8 +58,9 @@ struct AstraSaveToReadingListIntent: AppIntent {
 }
 
 struct AstraSaveCurrentPageIntent: AppIntent {
-    static var title: LocalizedStringResource = "Save Current Astra Page"
+    static let title: LocalizedStringResource = "Save Current Astra Page"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let url = try await AstraSystemActions.selectedURL()
         try await AstraSystemActions.readLater(url)
@@ -64,9 +69,10 @@ struct AstraSaveCurrentPageIntent: AppIntent {
 }
 
 struct AstraOpenReadingListIntent: AppIntent {
-    static var title: LocalizedStringResource = "Open Astra Reading List Page"
+    static let title: LocalizedStringResource = "Open Astra Reading List Page"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Saved Page") var page: AstraReadingEntity
+    @MainActor
     func perform() async throws -> some IntentResult {
         try await AstraSystemActions.openReadingList(id: page.id)
         return .result()
@@ -74,8 +80,9 @@ struct AstraOpenReadingListIntent: AppIntent {
 }
 
 struct AstraListBookmarksIntent: AppIntent {
-    static var title: LocalizedStringResource = "List Astra Bookmarks"
+    static let title: LocalizedStringResource = "List Astra Bookmarks"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some ReturnsValue<[AstraBookmarkEntity]> {
         let bookmarks = try await AstraBookmarkEntity.Query().suggestedEntities()
         return .result(value: bookmarks)
@@ -86,10 +93,11 @@ struct AstraListBookmarksIntent: AppIntent {
 /// individually discoverable as an action inside the Shortcuts app.
 
 struct AstraSetReadingStatusIntent: AppIntent {
-    static var title: LocalizedStringResource = "Mark Astra Reading List Page"
+    static let title: LocalizedStringResource = "Mark Astra Reading List Page"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Saved Page") var page: AstraReadingEntity
     @Parameter(title: "Read") var isRead: Bool
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.browser()
         guard let id = UUID(uuidString: page.id),
@@ -102,8 +110,9 @@ struct AstraSetReadingStatusIntent: AppIntent {
 }
 
 struct AstraListReadingListIntent: AppIntent {
-    static var title: LocalizedStringResource = "List Astra Reading List"
+    static let title: LocalizedStringResource = "List Astra Reading List"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some ReturnsValue<[AstraReadingEntity]> {
         let browser = try await AstraSystemActions.existingBrowser()
         let records = browser.readingList.map {

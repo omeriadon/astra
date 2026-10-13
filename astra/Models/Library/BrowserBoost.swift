@@ -1,7 +1,7 @@
 import Foundation
 
 /// A portable, per-domain user stylesheet and userscript. A nil domain applies everywhere.
-struct BrowserBoost: Codable, Equatable, Identifiable, Sendable {
+nonisolated struct BrowserBoost: Codable, Equatable, Identifiable, Sendable {
     var id: UUID = UUID()
     var name: String
     var domain: String?

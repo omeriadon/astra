@@ -4,7 +4,7 @@ import { runInNewContext } from 'node:vm';
 
 // Exercise the actual injected JavaScript, not a rewritten approximation.
 const controller = readFileSync('astra/Web/Navigation/BrowserController.swift', 'utf8');
-const marker = 'private static let pageTintScript = """';
+const marker = 'private static let pageTintScript = #"""';
 const from = controller.indexOf(marker);
 assert.ok(from >= 0, 'Website page-tint script must exist');
 const start = from + marker.length;

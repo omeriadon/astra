@@ -124,7 +124,7 @@ struct ShellSidebarListView: View {
 								.reorderable(collectionID: SidebarTabCollection.pinned)
 						}
 						BrowserAITabDivider(browser: browser, tabs: normalTabs, action: $cleanupAction, error: $cleanupError, canUndoGrouping: todayGroupsUndo != nil)
-						ForEach(space.todayTabGroups) { group in
+						ForEach(space.todayTabGroups, id: \.id) { (group: BrowserTabGroupingFeature.Group) in
 							let groupTabs = (projection.groupedTabs[group.id] ?? []).filter { !splitIDs.contains($0.id) }
 							if !groupTabs.isEmpty {
 								// Keep each group virtualized while retaining its own native reorder collection.
@@ -153,7 +153,7 @@ struct ShellSidebarListView: View {
 									.padding(.horizontal, 10)
 									.padding(.top, 8)
 									.accessibilityIdentifier("today-tab-group-\(group.id)")
-									.transition(unsafe(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity)))
+									.transition(unsafe reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
 								}
 							}
 						}

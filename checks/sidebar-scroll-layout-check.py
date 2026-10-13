@@ -1,5 +1,6 @@
 """Regression guards for smooth sidebar scroll; runtime pacing still needs Instruments."""
 
+import re
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
@@ -20,8 +21,8 @@ assert ".reorderContainer(for: BrowserTab.self, in: SidebarTabCollection.self" i
 
 # Global geometry changes during a wheel gesture must not mutate every
 # non-hovered row's SwiftUI state.
-assert "if isHovered && onSelectTab == nil {" in row
-assert "if previewEnabled && isHovered {" in favourite
+assert re.search(r"if isHovered\s*(?:&&|,)\s*onSelectTab == nil \{", row)
+assert re.search(r"if previewEnabled\s*(?:&&|,)\s*isHovered \{", favourite)
 assert row.count(".onGeometryChange(for: CGRect.self)") == 1
 assert favourite.count(".onGeometryChange(for: CGRect.self)") == 1
 assert "hoverFrame = .zero" in row and "hoverFrame = .zero" in favourite

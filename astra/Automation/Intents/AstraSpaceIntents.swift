@@ -5,9 +5,10 @@ import AstraAutomationCore
 import Foundation
 
 struct AstraSwitchSpaceIntent: AppIntent {
-    static var title: LocalizedStringResource = "Switch Astra Space"
+    static let title: LocalizedStringResource = "Switch Astra Space"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Space") var space: AstraSpaceEntity
+    @MainActor
     func perform() async throws -> some IntentResult {
         try await AstraSystemActions.switchSpace(id: space.id)
         return .result()
@@ -15,8 +16,9 @@ struct AstraSwitchSpaceIntent: AppIntent {
 }
 
 struct AstraCreateSpaceIntent: AppIntent {
-    static var title: LocalizedStringResource = "Create Astra Space"
+    static let title: LocalizedStringResource = "Create Astra Space"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.browser()
         browser.createSpace()
@@ -25,8 +27,9 @@ struct AstraCreateSpaceIntent: AppIntent {
 }
 
 struct AstraListSpacesIntent: AppIntent {
-    static var title: LocalizedStringResource = "List Astra Spaces"
+    static let title: LocalizedStringResource = "List Astra Spaces"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some ReturnsValue<[AstraSpaceEntity]> {
         let spaces = try await AstraSpaceEntity.Query().suggestedEntities()
         return .result(value: spaces)
@@ -34,9 +37,10 @@ struct AstraListSpacesIntent: AppIntent {
 }
 
 struct AstraNewNamedSpaceIntent: AppIntent {
-    static var title: LocalizedStringResource = "Create Named Astra Space"
+    static let title: LocalizedStringResource = "Create Named Astra Space"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Name") var name: String
+    @MainActor
     func perform() async throws -> some IntentResult {
         let text = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text.utf8.count <= 128 else {
@@ -50,10 +54,11 @@ struct AstraNewNamedSpaceIntent: AppIntent {
 }
 
 struct AstraRenameSpaceIntent: AppIntent {
-    static var title: LocalizedStringResource = "Rename Astra Space"
+    static let title: LocalizedStringResource = "Rename Astra Space"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Space") var space: AstraSpaceEntity
     @Parameter(title: "New Name") var newName: String
+    @MainActor
     func perform() async throws -> some IntentResult {
         let text = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text.utf8.count <= 128,

@@ -5,9 +5,10 @@ import AstraAutomationCore
 import Foundation
 
 struct AstraSwitchTabIntent: AppIntent {
-    static var title: LocalizedStringResource = "Switch Astra Tab"
+    static let title: LocalizedStringResource = "Switch Astra Tab"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Tab") var tab: AstraTabEntity
+    @MainActor
     func perform() async throws -> some IntentResult {
         try await AstraSystemActions.switchTab(id: tab.id)
         return .result()
@@ -15,8 +16,9 @@ struct AstraSwitchTabIntent: AppIntent {
 }
 
 struct AstraListTabsIntent: AppIntent {
-    static var title: LocalizedStringResource = "List Astra Tabs"
+    static let title: LocalizedStringResource = "List Astra Tabs"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some ReturnsValue<[AstraTabEntity]> {
         let tabs = try await AstraTabEntity.Query().suggestedEntities()
         return .result(value: tabs)
@@ -24,8 +26,9 @@ struct AstraListTabsIntent: AppIntent {
 }
 
 struct AstraReopenClosedTabIntent: AppIntent {
-    static var title: LocalizedStringResource = "Reopen Closed Astra Tab"
+    static let title: LocalizedStringResource = "Reopen Closed Astra Tab"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.browser()
         browser.reopenLastClosedTab()
@@ -34,9 +37,10 @@ struct AstraReopenClosedTabIntent: AppIntent {
 }
 
 struct AstraCloseTabIntent: AppIntent {
-    static var title: LocalizedStringResource = "Close Astra Tab"
+    static let title: LocalizedStringResource = "Close Astra Tab"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Tab") var tab: AstraTabEntity
+    @MainActor
     func perform() async throws -> some IntentResult {
         let (browser, target) = try await AstraSystemActions.resolveTab(id: tab.id)
         browser.closeTab(target.id)
@@ -45,8 +49,9 @@ struct AstraCloseTabIntent: AppIntent {
 }
 
 struct AstraCloseCurrentTabIntent: AppIntent {
-    static var title: LocalizedStringResource = "Close Current Astra Tab"
+    static let title: LocalizedStringResource = "Close Current Astra Tab"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.browser()
         browser.closeTab(browser.selectedTabID)
@@ -55,9 +60,10 @@ struct AstraCloseCurrentTabIntent: AppIntent {
 }
 
 struct AstraDuplicateTabIntent: AppIntent {
-    static var title: LocalizedStringResource = "Duplicate Astra Tab"
+    static let title: LocalizedStringResource = "Duplicate Astra Tab"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Tab") var tab: AstraTabEntity
+    @MainActor
     func perform() async throws -> some IntentResult {
         let (browser, target) = try await AstraSystemActions.resolveTab(id: tab.id)
         guard browser.duplicateTab(target.id) != nil else {
@@ -76,11 +82,12 @@ enum AstraTabDestination: String, AppEnum {
 }
 
 struct AstraMoveTabIntent: AppIntent {
-    static var title: LocalizedStringResource = "Move Astra Tab"
+    static let title: LocalizedStringResource = "Move Astra Tab"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Tab") var tab: AstraTabEntity
     @Parameter(title: "Destination") var destination: AstraTabDestination
     @Parameter(title: "Space") var space: AstraSpaceEntity?
+    @MainActor
     func perform() async throws -> some IntentResult {
         let (browser, target) = try await AstraSystemActions.resolveTab(id: tab.id)
         let area: Browser.TabArea = switch destination {
@@ -98,9 +105,10 @@ struct AstraMoveTabIntent: AppIntent {
 }
 
 struct AstraHibernateTabIntent: AppIntent {
-    static var title: LocalizedStringResource = "Hibernate Astra Tab"
+    static let title: LocalizedStringResource = "Hibernate Astra Tab"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Tab") var tab: AstraTabEntity
+    @MainActor
     func perform() async throws -> some IntentResult {
         let (browser, target) = try await AstraSystemActions.resolveTab(id: tab.id)
         guard target.canHibernate else { throw AstraSystemActions.Failure.unsupportedAction }
@@ -110,9 +118,10 @@ struct AstraHibernateTabIntent: AppIntent {
 }
 
 struct AstraBookmarkTabIntent: AppIntent {
-    static var title: LocalizedStringResource = "Bookmark Astra Tab"
+    static let title: LocalizedStringResource = "Bookmark Astra Tab"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Tab") var tab: AstraTabEntity
+    @MainActor
     func perform() async throws -> some IntentResult {
         let (browser, target) = try await AstraSystemActions.resolveTab(id: tab.id)
         guard target.currentURL != nil else { throw AstraSystemActions.Failure.unsupportedAction }
@@ -122,9 +131,10 @@ struct AstraBookmarkTabIntent: AppIntent {
 }
 
 struct AstraReadTabLaterIntent: AppIntent {
-    static var title: LocalizedStringResource = "Save Astra Tab to Reading List"
+    static let title: LocalizedStringResource = "Save Astra Tab to Reading List"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Tab") var tab: AstraTabEntity
+    @MainActor
     func perform() async throws -> some IntentResult {
         let (browser, target) = try await AstraSystemActions.resolveTab(id: tab.id)
         guard browser.canAddToReadingList(tabID: target.id) else {

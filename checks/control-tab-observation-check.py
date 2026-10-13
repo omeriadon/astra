@@ -1,4 +1,5 @@
 """Control-Tab active-session invalidation must not enumerate tabs on each body."""
+import re
 from pathlib import Path
 browser = Path("astra/Models/Core/Browser.swift").read_text()
 root = Path("astra/UI/Content/BrowserRootView.swift").read_text()
@@ -8,7 +9,7 @@ assert "private(set) var visibleTabMembershipRevision = 0" in browser
 tabs = browser.split("private(set) var tabs: [BrowserTab]", 1)[1].split("@ObservationIgnored", 1)[0]
 assert "visibleTabMembershipRevision &+= 1" in tabs
 workspace = browser.split("private(set) var workspace: BrowserWorkspace", 1)[1].split("private(set) var recentlyUsedTabIDs", 1)[0]
-assert "if membershipChanged { visibleTabMembershipRevision &+= 1 }" in workspace
+assert re.search(r"if membershipChanged\s*\{\s*visibleTabMembershipRevision &\+= 1\s*\}", workspace)
 assert "oldValue.selectedSpaceID != workspace.selectedSpaceID" in workspace
 assert "old.tabIDs == new.tabIDs" in workspace
 assert "tabCollectionRevision &+= 1" in tabs

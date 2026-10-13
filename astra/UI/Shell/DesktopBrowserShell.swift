@@ -495,7 +495,6 @@ private struct ShellSidebarColumn: View {
 		!showsTopBar && sidebarShown
 	}
 
-	@State private var librarySelection = 0
 	@State private var keepsDownloadsMounted = false
 
 	var body: some View {

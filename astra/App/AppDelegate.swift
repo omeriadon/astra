@@ -261,7 +261,7 @@
 									try? await Task.sleep(for: .milliseconds(25))
 								}
 								guard !Task.isCancelled else { return }
-								let readiness: [String: String] = unsafe[
+								let readiness: [String: String] = unsafe [
 									"visible": String(foreground.window.isVisible),
 									"key": String(foreground.window.isKeyWindow),
 									"can_become_key": String(foreground.window.canBecomeKey),
@@ -486,14 +486,27 @@
 			continue userActivity: NSUserActivity,
 			restorationHandler _: @escaping ([any NSUserActivityRestoring]) -> Void
 		) -> Bool {
-			guard BrowserHandoff.reference(from: userActivity) != nil else { return false }
-			// AppKit may deliver Handoff before window/session hydration. Keep the
-			// identity intact and resolve it only after restored windows are ready.
-			guard startupWindowRestorationFinished else {
-				queuedHandoffActivity = userActivity
+			if BrowserHandoff.reference(from: userActivity) != nil {
+				// AppKit may deliver Handoff before window/session hydration. Keep the
+				// identity intact and resolve it only after restored windows are ready.
+				guard startupWindowRestorationFinished else {
+					queuedHandoffActivity = userActivity
+					return true
+				}
+				openHandoff(userActivity)
 				return true
 			}
-			openHandoff(userActivity)
+
+			guard userActivity.activityType == CSSearchableItemActionType,
+			      let identifier = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String
+			else { return false }
+			let parts = identifier.split(separator: ":", maxSplits: 1)
+			guard parts.count == 2,
+			      ["bookmark", "reading", "space"].contains(String(parts[0])),
+			      UUID(uuidString: String(parts[1])) != nil,
+			      let url = URL(string: "astra://" + String(parts[0]) + "/" + String(parts[1]))
+			else { return false }
+			Task { @MainActor in await AstraSystemActions.openSpotlightURL(url) }
 			return true
 		}
 
@@ -571,22 +584,6 @@
 			guard let controller = windows.first(where: { $0.browser === browser }) else { return }
 			controller.showWindow()
 			NSApp.activate()
-		}
-
-		func application(
-			_ application: NSApplication,
-			continue userActivity: NSUserActivity,
-			restorationHandler: @escaping ([NSUserActivityRestoring]) -> Void
-		) -> Bool {
-			guard userActivity.activityType == CSSearchableItemActionType,
-			      let identifier = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String
-			else { return false }
-			let parts = identifier.split(separator: ":", maxSplits: 1)
-			guard parts.count == 2, ["bookmark", "reading", "space"].contains(String(parts[0])),
-			      UUID(uuidString: String(parts[1])) != nil,
-			      let url = URL(string: "astra://" + String(parts[0]) + "/" + String(parts[1])) else { return false }
-			Task { @MainActor in await AstraSystemActions.openSpotlightURL(url) }
-			return true
 		}
 
 		func requestQuit() {

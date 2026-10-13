@@ -5,8 +5,9 @@ import AstraAutomationCore
 import Foundation
 
 struct AstraCreateEaselIntent: AppIntent {
-    static var title: LocalizedStringResource = "Create Astra Easel"
+    static let title: LocalizedStringResource = "Create Astra Easel"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         try await AstraSystemActions.createEasel()
         return .result()
@@ -14,8 +15,9 @@ struct AstraCreateEaselIntent: AppIntent {
 }
 
 struct AstraToggleSidebarIntent: AppIntent {
-    static var title: LocalizedStringResource = "Toggle Astra Sidebar"
+    static let title: LocalizedStringResource = "Toggle Astra Sidebar"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.currentBrowser()
         browser.sidebarShown.toggle()
@@ -24,8 +26,9 @@ struct AstraToggleSidebarIntent: AppIntent {
 }
 
 struct AstraToggleAISidebarIntent: AppIntent {
-    static var title: LocalizedStringResource = "Toggle Astra AI Sidebar"
+    static let title: LocalizedStringResource = "Toggle Astra AI Sidebar"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.currentBrowser()
         guard browser.canShowAISidebar else { throw AstraSystemActions.Failure.unsupportedAction }
@@ -43,9 +46,10 @@ enum AstraInternalPage: String, AppEnum {
 }
 
 struct AstraShowPageIntent: AppIntent {
-    static var title: LocalizedStringResource = "Show Astra Page"
+    static let title: LocalizedStringResource = "Show Astra Page"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     @Parameter(title: "Page") var page: AstraInternalPage
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.browser()
         switch page {
@@ -59,8 +63,9 @@ struct AstraShowPageIntent: AppIntent {
 }
 
 struct AstraShowDownloadsIntent: AppIntent {
-    static var title: LocalizedStringResource = "Show Astra Downloads"
+    static let title: LocalizedStringResource = "Show Astra Downloads"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.currentBrowser()
         NotificationCenter.default.post(name: .showBrowserDownloads, object: browser.windowID)
@@ -69,8 +74,9 @@ struct AstraShowDownloadsIntent: AppIntent {
 }
 
 struct AstraToggleTopBarIntent: AppIntent {
-    static var title: LocalizedStringResource = "Toggle Astra Top Bar"
+    static let title: LocalizedStringResource = "Toggle Astra Top Bar"
     static var supportedModes: IntentModes { .foreground(.immediate) }
+    @MainActor
     func perform() async throws -> some IntentResult {
         let browser = try await AstraSystemActions.currentBrowser()
         NotificationCenter.default.post(name: .toggleBrowserTopBar, object: browser.windowID)
