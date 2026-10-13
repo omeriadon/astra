@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main, 'release/0.1+3']
   push:
-    branches: [astra/roadmap/integration, fix/download-network-recovery]
+    branches: [astra/roadmap/integration, fix/download-network-recovery, feat/split-view-easel-workflow]
   workflow_dispatch:
 
 permissions:
