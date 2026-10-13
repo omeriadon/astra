@@ -301,26 +301,27 @@ final class BrowserSync {
 				partial.merging(peer.syncDocument(settings: settingSnapshot()))
 			}
 			let deviceID = deviceID
-			let pushPayload: SyncRequest? = try await Task.detached(priority: .utility) {
+			let pushBody: Data? = try await Task.detached(priority: .utility) {
 				let decoder = JSONDecoder()
 				let ownDocument = try snapshots
 					.first(where: { $0.deviceID == deviceID })
 					.map { try decoder.decode(BrowserSyncDocument.self, from: $0.payload) }
 				guard ownDocument != outgoing else { return nil }
-				return try BrowserSyncPayloadLimits.makeUpload(deviceID: deviceID, document: outgoing)
+				return try BrowserSyncPayloadLimits.makeEncodedUpload(deviceID: deviceID, document: outgoing)
 			}.value
 			guard self.sessionToken == sessionToken,
 			      authGeneration == syncGeneration,
 			      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
-			if let payload = pushPayload {
+			if let body = pushBody {
 				guard self.sessionToken == sessionToken,
 				      authGeneration == syncGeneration,
 				      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 				let _: ServerSnapshot = try await request(
 					path: "v1/sync",
 					method: "PUT",
-					body: payload,
-					bearer: sessionToken
+					body: String?.none,
+					bearer: sessionToken,
+					encodedBody: body
 				)
 				guard self.sessionToken == sessionToken,
 				      authGeneration == syncGeneration,
@@ -581,6 +582,7 @@ final class BrowserSync {
 		method: String,
 		body: (some Encodable)?,
 		bearer: String?,
+		encodedBody: Data? = nil,
 		timeout: TimeInterval = 30,
 		diagnosticID: UUID? = nil
 	) async throws -> Response {
@@ -593,7 +595,10 @@ final class BrowserSync {
 		request.httpMethod = method
 		request.timeoutInterval = timeout
 		request.setValue("application/json", forHTTPHeaderField: "Accept")
-		if let body {
+		if let encodedBody {
+			request.httpBody = encodedBody
+			request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+		} else if let body {
 			request.httpBody = try JSONEncoder().encode(body)
 			request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 		}

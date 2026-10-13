@@ -35,7 +35,7 @@ not an instruction to clear it.
 The client and server enforce **5,000,000 bytes of raw JSON per device snapshot**
 (not 5 MiB or 16 MiB). Before each PUT, the client serializes the portable sync
 document off the main actor and checks its actual encoded byte count. The server
-also enforces this limit. The JSON PUT envelope carries the payload as Base64:
+also enforces this limit. The full PUT envelope is also encoded and checked off the main actor before network I/O. The JSON PUT envelope carries the payload as Base64:
 a maximum-size snapshot encodes to 6,666,668 Base64 bytes, plus a small JSON
 wrapper, within the server's **7 MB collected request-body limit**.
 
