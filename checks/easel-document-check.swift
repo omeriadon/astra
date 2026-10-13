@@ -17,6 +17,24 @@ struct EaselDocumentCheck {
 			precondition(!BrowserEaselDocument.isSafeLink(URL(string: value)!))
 		}
 		precondition(BrowserEaselDocument.isSafeLink(URL(string: "https://example.com/page")!))
+		let quoteSource = BrowserEaselQuote(url: URL(string: "https://example.com/page")!,
+			text: "Selected text", prefix: "Before ", suffix: " after")
+		precondition(quoteSource.isValid)
+		var quoteItem = BrowserEaselDocument.Item(kind: .quote)
+		precondition(!BrowserEaselDocument(items: [quoteItem]).isValid)
+		quoteItem.quote = quoteSource
+		let quoteDocument = BrowserEaselDocument(items: [quoteItem])
+		precondition(quoteDocument.isValid)
+		precondition(try JSONDecoder().decode(BrowserEaselDocument.self,
+			from: JSONEncoder().encode(quoteDocument)) == quoteDocument)
+		quoteItem.quote?.url = URL(fileURLWithPath: "/tmp/unsafe")
+		precondition(!BrowserEaselDocument(items: [quoteItem]).isValid)
+		quoteItem.quote = quoteSource
+		quoteItem.quote?.text = String(repeating: "x", count: 8193)
+		precondition(!BrowserEaselDocument(items: [quoteItem]).isValid)
+		quoteItem.quote = quoteSource
+		quoteItem.quote?.prefix = String(repeating: "x", count: 257)
+		precondition(!BrowserEaselDocument(items: [quoteItem]).isValid)
 		precondition(BrowserEaselDocument.Item.Background.none.next == .mint)
 		precondition(BrowserEaselDocument.Item.Background.purple.next == .none)
 		precondition(BrowserEaselDocument.Item.Background.mint.isLight)
@@ -54,6 +72,7 @@ struct EaselDocumentCheck {
 			switch kind {
 				case .image: candidate.imageData = pixel
 				case .link: candidate.url = URL(string: "https://example.com/item")
+				case .quote: candidate.quote = quoteSource
 				case .line, .arrow:
 					candidate.points = [.init(x: 0, y: 0), .init(x: 240, y: 120)]
 				case .freehand:
@@ -69,6 +88,6 @@ struct EaselDocumentCheck {
 			duplicate.height += 10
 			precondition(BrowserEaselDocument(items: [candidate, duplicate]).isValid, "Invalid transformed \(kind)")
 		}
-		print("Easel persistence, limits, images, links, palette, endpoints, creation and duplication checks passed")
+		print("Easel persistence, quotes, limits, images, links, palette, endpoints, creation and duplication checks passed")
 	}
 }

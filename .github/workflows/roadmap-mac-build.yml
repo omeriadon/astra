@@ -40,6 +40,13 @@ jobs:
           swiftc -swift-version 6 astra/Web/Navigation/BrowserNavigationFailure.swift checks/proxy-navigation-failure-check.swift -o "$RUNNER_TEMP/astra-proxy-navigation-check"
           "$RUNNER_TEMP/astra-proxy-navigation-check"
 
+      - name: Verify Easel quote persistence
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 6 astra/Models/Tabs/BrowserEasel.swift checks/easel-document-check.swift -o "$RUNNER_TEMP/astra-easel-document-check"
+          "$RUNNER_TEMP/astra-easel-document-check"
+
       - name: Install Metal Toolchain
         shell: bash
         run: xcodebuild -downloadComponent MetalToolchain
