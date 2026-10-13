@@ -64,10 +64,14 @@ struct SyncLargeAccountCheck {
 		let wireBody = try BrowserSyncPayloadLimits.makeEncodedUpload(deviceID: deviceID, document: account)
 		assert(wireBody.count <= BrowserSyncPayloadLimits.maximumCollectedRequestBytes)
 		let encodedUpload = try JSONDecoder().decode(DeviceSnapshot.self, from: wireBody)
-		assert(encodedUpload.payload == upload.payload)
+		// Separate JSONEncoder instances may serialize dictionary keys in different
+		// orders. Compare decoded content, not raw byte-for-byte JSON output.
+		let sourceDocument = try JSONSerialization.jsonObject(with: upload.payload) as! NSDictionary
+		let uploadedDocument = try JSONSerialization.jsonObject(with: encodedUpload.payload) as! NSDictionary
+		assert(sourceDocument.isEqual(uploadedDocument))
 		let wire = try JSONSerialization.jsonObject(with: wireBody) as! [String: Any]
 		assert(wire["deviceID"] as? String == deviceID.uuidString)
-		assert(Data(base64Encoded: wire["payload"] as! String) == upload.payload)
+		assert(Data(base64Encoded: wire["payload"] as! String) == encodedUpload.payload)
 
 		// Exact 5,000,000-byte raw payload: Base64 must still fit the 7 MB body.
 		let boundary = Data(repeating: 0x71, count: BrowserSyncPayloadLimits.maximumOutgoingBytes)
