@@ -61,7 +61,7 @@ struct DesktopBrowserShell: View {
 
 	private var minimumPageWidth: CGFloat {
 		let page = BrowserChromeMetrics.minimumPageWidth(isSettings: browser.selectedTab?.internalPage == .settings)
-		return browser.isShowingEaselSplit ? max(page, 728) : page
+		return browser.isShowingTabSplit ? max(page, 728) : page
 	}
 
 	private var isSidebarPinned: Bool {
@@ -703,13 +703,13 @@ private struct ShellContentColumn: View {
 					.frame(height: topBarHeight)
 					.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsTopBar)
 				Group {
-					if browser.isShowingEaselSplit,
+					if browser.isShowingTabSplit,
 					   let leftID = browser.splitLeftTabID,
-					   let easelID = browser.splitEaselTabID,
+					   let rightID = browser.splitRightTabID,
 					   let leftTab = browser.tab(withID: leftID),
-					   let easel = browser.tab(withID: easelID)
+					   let rightTab = browser.tab(withID: rightID)
 					{
-						BrowserEaselSplitView(browser: browser, leftTab: leftTab, easel: easel, cornerRadius: contentCornerRadius)
+						BrowserEaselSplitView(browser: browser, leftTab: leftTab, rightTab: rightTab, cornerRadius: contentCornerRadius)
 					} else {
 						BrowserPageView(browser: browser, cornerRadius: contentCornerRadius)
 							.equatable()

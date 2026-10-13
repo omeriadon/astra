@@ -99,6 +99,13 @@ struct BrowserTabRow: View {
 					}
 			}
 
+			if let side = browser.splitSide(for: tab.id) {
+				Image(systemName: side == .left ? "rectangle.lefthalf.filled" : "rectangle.righthalf.filled")
+					.font(.system(size: 11))
+					.foregroundStyle(theme.foregroundColor.opacity(0.75))
+					.help(side == .left ? "Left split pane" : "Right split pane")
+					.accessibilityIdentifier("split-tab-\(tab.id.uuidString)")
+			}
 			TabTitleView(
 				tab: tab,
 				browser: browser,
@@ -130,7 +137,7 @@ struct BrowserTabRow: View {
 		.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? rowTransitions)
 		.foregroundStyle(theme.foregroundColor)
 		.background {
-			if isSelected {
+			if isSelected || browser.splitSide(for: tab.id) != nil {
 				Color.clear
 					.glassEffect(
 						.clear,
@@ -520,6 +527,25 @@ private struct TabRowContextMenu: View {
 	var onSelectTab: ((UUID) -> Void)?
 
 	var body: some View {
+		if tab.canAppearInEaselSplit, !browser.isPrivate, !browser.isMini {
+			Menu("Split View", systemImage: "rectangle.split.2x1") {
+				ForEach(browser.visibleTabs.filter { $0.id != tab.id && $0.canAppearInEaselSplit }) { other in
+					Button("Place Left of \(other.title)", systemImage: "rectangle.lefthalf.filled") {
+						browser.openSplit(tab.id, beside: other.id, onLeft: true)
+					}
+					Button("Place Right of \(other.title)", systemImage: "rectangle.righthalf.filled") {
+						browser.openSplit(tab.id, beside: other.id, onLeft: false)
+					}
+				}
+			}
+			.disabled(browser.visibleTabs.filter { $0.id != tab.id && $0.canAppearInEaselSplit }.isEmpty)
+			if browser.splitSide(for: tab.id) != nil {
+				Button("Close Split View", systemImage: "rectangle.split.2x1.slash") {
+					browser.closeEaselSplit()
+				}
+			}
+			Divider()
+		}
 		if tab.internalPage == .easel {
 			Button("Rename Easel", systemImage: "pencil", action: onBeginRenaming)
 			Button("Revert Easel Name", systemImage: "arrow.uturn.backward", action: tab.revertTitle)
