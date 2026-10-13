@@ -14,7 +14,7 @@ struct BrowserEaselSplitView: View {
 			let minimum = min(300, usableWidth / 2)
 			let leftWidth = min(max(minimum, usableWidth * fraction), usableWidth - minimum)
 			HStack(spacing: 0) {
-				BrowserPageView(browser: browser, cornerRadius: cornerRadius, tabID: leftTab.id, showsPeeks: leftTab.internalPage != .rightTab)
+				BrowserPageView(browser: browser, cornerRadius: cornerRadius, tabID: leftTab.id, showsPeeks: leftTab.internalPage != .easel)
 					.frame(width: leftWidth)
 					.simultaneousGesture(TapGesture().onEnded { browser.selectTab(leftTab.id) })
 				Rectangle()
@@ -67,7 +67,7 @@ struct BrowserEaselSplitView: View {
 			.overlay {
 				if !rightTab.peeks.isEmpty {
 					PeekStackView(tab: rightTab, browser: browser)
-				} else if leftTab.internalPage == .rightTab, !leftTab.peeks.isEmpty {
+				} else if leftTab.internalPage == .easel, !leftTab.peeks.isEmpty {
 					PeekStackView(tab: leftTab, browser: browser)
 				}
 			}
