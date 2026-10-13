@@ -6,7 +6,7 @@ import SwiftUI
 		let browser: Browser
 		let manager: BrowserDownloadManager
 		let theme: BrowserTheme
-		@State private var selection = 0
+		@Binding var selection: Int
 
 		var body: some View {
 			VStack(spacing: 0) {
@@ -69,8 +69,11 @@ import SwiftUI
 				}
 				.disabled((browser.selectedTab?.canAppearInEaselSplit != true && !browser.isShowingEaselSplit) || !browser.visibleTabs.contains(where: { $0.id == tab.id }) || browser.selectedTabID == tab.id)
 				Button("Delete Easel", systemImage: "trash", role: .destructive) {
-					confirmsDeletion = true
+					requestDeletion()
 				}
+			}
+			.swipeActions(edge: .trailing, allowsFullSwipe: true) {
+				Button("Delete", systemImage: "trash", role: .destructive) { requestDeletion() }
 			}
 			.confirmationDialog("Delete this easel? Its contents will be permanently deleted from your devices and open peeks will close.", isPresented: $confirmsDeletion, titleVisibility: .visible) {
 				Button("Delete Easel", systemImage: "trash", role: .destructive) {
@@ -78,6 +81,14 @@ import SwiftUI
 				}
 			}
 			.accessibilityIdentifier("library-easel-\(tab.id.uuidString)")
+		}
+
+		private func requestDeletion() {
+			if tab.easelDocument.items.isEmpty {
+				browser.deleteEasel(tab.id, confirmed: true)
+			} else {
+				confirmsDeletion = true
+			}
 		}
 	}
 #endif
