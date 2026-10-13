@@ -195,7 +195,7 @@ final class BrowserBoostStore {
           if (domain && hostname !== domain && !hostname.endsWith('.' + domain)) return;
           const state = window.__astraBoostJavaScript || (window.__astraBoostJavaScript = Object.create(null));
           const boostID = "\(id)";
-          const signature = "\(boost.javascript.hashValue");
+          const signature = "\(boost.javascript.hashValue)";
           if (state[boostID] === signature) return;
           state[boostID] = signature;
           try {
