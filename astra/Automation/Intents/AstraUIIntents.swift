@@ -17,7 +17,7 @@ struct AstraToggleSidebarIntent: AppIntent {
     static var title: LocalizedStringResource = "Toggle Astra Sidebar"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     func perform() async throws -> some IntentResult {
-        let browser = try await AstraSystemActions.browser()
+        let browser = try await AstraSystemActions.currentBrowser()
         browser.sidebarShown.toggle()
         return .result()
     }
@@ -27,7 +27,7 @@ struct AstraToggleAISidebarIntent: AppIntent {
     static var title: LocalizedStringResource = "Toggle Astra AI Sidebar"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     func perform() async throws -> some IntentResult {
-        let browser = try await AstraSystemActions.browser()
+        let browser = try await AstraSystemActions.currentBrowser()
         guard browser.canShowAISidebar else { throw AstraSystemActions.Failure.unsupportedAction }
         browser.showsAISidebar.toggle()
         return .result()
@@ -62,7 +62,7 @@ struct AstraShowDownloadsIntent: AppIntent {
     static var title: LocalizedStringResource = "Show Astra Downloads"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     func perform() async throws -> some IntentResult {
-        let browser = try await AstraSystemActions.browser()
+        let browser = try await AstraSystemActions.currentBrowser()
         NotificationCenter.default.post(name: .showBrowserDownloads, object: browser.windowID)
         return .result()
     }
@@ -72,7 +72,7 @@ struct AstraToggleTopBarIntent: AppIntent {
     static var title: LocalizedStringResource = "Toggle Astra Top Bar"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     func perform() async throws -> some IntentResult {
-        let browser = try await AstraSystemActions.browser()
+        let browser = try await AstraSystemActions.currentBrowser()
         NotificationCenter.default.post(name: .toggleBrowserTopBar, object: browser.windowID)
         return .result()
     }
