@@ -355,6 +355,7 @@ import WebKit
 			didReceive challenge: URLAuthenticationChallenge,
 			completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
 		) {
+			recordProxyAuthenticationChallenge(challenge, in: webView)
 			let documentID = navigationIdentifier
 			beginLifecycleOperation()
 			Task { @MainActor in
@@ -647,6 +648,7 @@ import WebKit
 			didReceive challenge: URLAuthenticationChallenge,
 			completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
 		) {
+			recordProxyAuthenticationChallenge(challenge, in: webView)
 			let documentID = navigationIdentifier
 			beginLifecycleOperation()
 			Task { @MainActor in

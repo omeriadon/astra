@@ -33,6 +33,13 @@ jobs:
       - name: Select Xcode 27
         run: bash scripts/ci/select-xcode-27.sh
 
+      - name: Verify proxy navigation classification
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 6 astra/Web/Navigation/BrowserNavigationFailure.swift checks/proxy-navigation-failure-check.swift -o "$RUNNER_TEMP/astra-proxy-navigation-check"
+          "$RUNNER_TEMP/astra-proxy-navigation-check"
+
       - name: Install Metal Toolchain
         shell: bash
         run: xcodebuild -downloadComponent MetalToolchain

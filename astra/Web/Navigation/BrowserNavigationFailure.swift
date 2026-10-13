@@ -10,12 +10,19 @@ struct BrowserNavigationFailure {
 		self.url = url
 	}
 
-	init(error: NSError, url: URL) {
+	init(error: NSError, url: URL, encounteredProxyAuthentication: Bool = false) {
 		self.url = url
 		// WebKit often wraps a CFNetwork proxy error in a generic URL-loading
 		// error. Examine the underlying chain before classifying that wrapper.
 		if let proxyFailure = Self.proxyFailureKind(in: error) {
 			kind = proxyFailure
+			return
+		}
+		if encounteredProxyAuthentication,
+		   error.domain == NSURLErrorDomain,
+		   error.code == NSURLErrorUserAuthenticationRequired
+		{
+			kind = .proxyAuthenticationFailed
 			return
 		}
 		guard error.domain == NSURLErrorDomain else {
@@ -113,6 +120,13 @@ struct BrowserNavigationFailure {
 		return type == (kCFProxyTypeHTTP as String)
 			|| type == (kCFProxyTypeHTTPS as String)
 			|| type == (kCFProxyTypeSOCKS as String)
+	}
+
+	var isProxyFailure: Bool {
+		switch kind {
+			case .proxyConnectionFailed, .proxyAuthenticationFailed, .proxyConfigurationFailed: true
+			default: false
+		}
 	}
 
 	static func canRetryAutomatically(_ request: URLRequest?) -> Bool {
