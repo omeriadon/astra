@@ -25,6 +25,8 @@
 		private var startupStartedAt = BrowserLog.mainEntryUptime ?? BrowserLog.clock()
 		private var queuedStartupURLs: [URL] = []
 		private var shouldReopenAfterStartup = false
+		private var lastExternalForegroundApplication: NSRunningApplication?
+		private var lastActivationUptime: TimeInterval?
 		private var memoryPressureSource: DispatchSourceMemoryPressure?
 		private var didScheduleDeferredStartupServices = false
 		#if DEBUG
@@ -64,6 +66,17 @@
 					return
 				}
 			#endif
+			if let foreground = NSWorkspace.shared.frontmostApplication,
+			   foreground.processIdentifier != ProcessInfo.processInfo.processIdentifier
+			{
+				lastExternalForegroundApplication = foreground
+			}
+			NSWorkspace.shared.notificationCenter.addObserver(
+				self,
+				selector: #selector(workspaceApplicationDidActivate(_:)),
+				name: NSWorkspace.didActivateApplicationNotification,
+				object: nil
+			)
 			installMainMenu()
 			NSAppleEventManager.shared().setEventHandler(
 				self,
@@ -109,6 +122,35 @@
 				object: NSWorkspace.shared
 			)
 			MiniAstraShortcut.shared.update()
+		}
+
+		func applicationDidBecomeActive(_: Notification) {
+			lastActivationUptime = BrowserLog.clock()
+		}
+
+		@objc private func workspaceApplicationDidActivate(_ notification: Notification) {
+			guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+			      application.processIdentifier != ProcessInfo.processInfo.processIdentifier
+			else { return }
+			lastExternalForegroundApplication = application
+		}
+
+		/// An external URL can reactivate Astra before AppKit dispatches the open
+		/// event. Yield activation back to the source application before presenting
+		/// the nonactivating Mini Astra panel, not a normal browser window.
+		private func restoreExternalFocusForMiniAstra(force: Bool = false) {
+			guard let application = lastExternalForegroundApplication,
+			      !application.isTerminated,
+			      application.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+			      NSApp.isActive
+			else { return }
+			if !force {
+				guard let lastActivationUptime,
+				      BrowserLog.clock() - lastActivationUptime < 2
+				else { return }
+			}
+			NSApp.yieldActivation(to: application)
+			_ = application.activate(from: .current)
 		}
 
 		@objc private func applicationWillSleep(_: Notification) {
@@ -236,8 +278,15 @@
 							}
 						}
 					}
-					foreground.showWindow()
-					NSApp.activate()
+					// When launched by a link, keep the restored workspace behind
+					// other applications; only Mini Astra should be brought forward.
+					let launchIntoMini = Defaults[.miniAstraEnabled] && !queuedStartupURLs.isEmpty
+					if launchIntoMini {
+						foreground.window.orderBack(nil)
+					} else {
+						foreground.showWindow()
+						NSApp.activate()
+					}
 					BrowserLog.notice(.lifecycle, "startup.first-window-presented", metadata: [
 						"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
 						"records": String(records.count),
@@ -420,14 +469,15 @@
 			}
 		}
 
-		private func openAfterStartupRestoration(_ url: URL) {
+		private func openAfterStartupRestoration(_ url: URL, wasQueuedAtStartup: Bool = false) {
 			BrowserLog.debug(.lifecycle, "startup.open-after-restoration", metadata: ["url": BrowserLog.url(url)])
 			guard startupWindowRestorationFinished else {
 				queuedStartupURLs.append(url)
 				return
 			}
 			if Defaults[.miniAstraEnabled] {
-				openMiniAstra(url: url)
+				restoreExternalFocusForMiniAstra(force: wasQueuedAtStartup)
+				openMiniAstra(url: url, floatsOverSourceApplication: true)
 			} else {
 				open(url)
 			}
@@ -446,7 +496,8 @@
 			BrowserWindowRegistry.shared.finishWindowRestoration()
 			startupWindowRestorationFinished = true
 			BrowserWebPushManager.shared.drainPendingMessages()
-			if shouldReopenAfterStartup {
+			let openingQueuedMini = Defaults[.miniAstraEnabled] && !queuedStartupURLs.isEmpty
+			if shouldReopenAfterStartup && !openingQueuedMini {
 				shouldReopenAfterStartup = false
 				if let controller = windows.first {
 					controller.showWindow()
@@ -457,10 +508,11 @@
 					openBrowserWindow()
 				}
 			}
+			shouldReopenAfterStartup = false
 			let urls = queuedStartupURLs
 			queuedStartupURLs.removeAll()
 			for url in urls {
-				openAfterStartupRestoration(url)
+				openAfterStartupRestoration(url, wasQueuedAtStartup: true)
 			}
 		}
 
@@ -553,8 +605,11 @@
 				?? openBrowserWindow()
 		}
 
-		func openMiniAstra(url: URL? = nil) {
+		func openMiniAstra(url: URL? = nil, floatsOverSourceApplication: Bool = false) {
 			let controller = MiniAstraWindowController(url: url)
+			if floatsOverSourceApplication {
+				controller.window.level = .floating
+			}
 			controller.onClose = { [weak self, weak controller] in
 				guard let self, let controller else { return }
 				miniWindows.removeAll { $0 === controller }
