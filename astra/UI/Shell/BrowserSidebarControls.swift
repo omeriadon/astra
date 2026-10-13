@@ -8,6 +8,7 @@ struct ShellSidebarListView: View {
 	let theme: BrowserTheme
 	var isActiveSpace = true
 	let favouriteTabIDs: [UUID]
+	var topMargin: CGFloat = 0
 	var onSelectTab: ((UUID) -> Void)?
 	var onNewTab: (() -> Void)?
 	var navigationNamespace: Namespace.ID?
@@ -44,12 +45,20 @@ struct ShellSidebarListView: View {
 			tabCollectionRevision: browser.tabCollectionRevision, isPrivate: browser.isPrivate
 		)
 		let openElsewhereIDs = BrowserWindowRegistry.shared.tabIDsOpenInAnotherWindow(than: browser)
-		let favouriteTabs = projection.favouriteTabs
-		let pinnedTabs = projection.pinnedTabs
-		let ungroupedPinnedTabs = projection.ungroupedPinnedTabs
-		let normalTabs = projection.normalTabs
+		// Represent an active split as one sidebar item, without rebuilding cached tab projections.
+		let splitTabs: (BrowserTab, BrowserTab)? = {
+			guard isActiveSpace, browser.isShowingTabSplit,
+			      let left = browser.splitLeftTabID.flatMap({ tabsByID[$0] }),
+			      let right = browser.splitRightTabID.flatMap({ tabsByID[$0] }) else { return nil }
+			return (left, right)
+		}()
+		let splitIDs = Set([splitTabs?.0.id, splitTabs?.1.id].compactMap { $0 })
+		let favouriteTabs = projection.favouriteTabs.filter { !splitIDs.contains($0.id) }
+		let pinnedTabs = projection.pinnedTabs.filter { !splitIDs.contains($0.id) }
+		let ungroupedPinnedTabs = projection.ungroupedPinnedTabs.filter { !splitIDs.contains($0.id) }
+		let normalTabs = projection.normalTabs.filter { !splitIDs.contains($0.id) }
 		let normalIndexes = projection.normalIndexes
-		let ungroupedNormalTabs = projection.ungroupedNormalTabs
+		let ungroupedNormalTabs = projection.ungroupedNormalTabs.filter { !splitIDs.contains($0.id) }
 		let normalSelectionOrder = projection.normalSelectionOrder
 		let pinnedSelectionOrder = projection.pinnedSelectionOrder
 		let selectedID = space.selectedTabID
@@ -57,6 +66,16 @@ struct ShellSidebarListView: View {
 			ScrollViewReader { reader in
 				ScrollView {
 					LazyVStack(spacing: onSelectTab == nil ? 2 : 8) {
+						// Only animate the reserved space for the optional navigation header.
+						Color.clear
+							.frame(height: max(0, topMargin - (BrowserChromeMetrics.topBarRegionHeight + 5)))
+							.accessibilityHidden(true)
+						if let splitTabs {
+							BrowserUnifiedSplitRow(
+								browser: browser, left: splitTabs.0, right: splitTabs.1,
+								theme: theme, spaceID: space.id, selectedID: selectedID
+							)
+						}
 						if !favouriteTabs.isEmpty {
 							LazyVGrid(
 								columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4),
@@ -84,6 +103,7 @@ struct ShellSidebarListView: View {
 							PinnedFolderRow(folder: folder, browser: browser, tabsByID: tabsByID,
 							                selectedID: selectedID, isActiveSpace: isActiveSpace, normalCount: normalTabs.count,
 							                spaceID: space.id, theme: theme, openElsewhereIDs: openElsewhereIDs,
+								                excludedTabIDs: splitIDs,
 							                onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions,
 							                sidebarSelection: sidebarSelection, selectionOrder: pinnedSelectionOrder)
 						}
@@ -104,7 +124,7 @@ struct ShellSidebarListView: View {
 						}
 						BrowserAITabDivider(browser: browser, tabs: normalTabs, action: $cleanupAction, error: $cleanupError, canUndoGrouping: todayGroupsUndo != nil)
 						ForEach(space.todayTabGroups) { group in
-							let groupTabs = projection.groupedTabs[group.id] ?? []
+							let groupTabs = (projection.groupedTabs[group.id] ?? []).filter { !splitIDs.contains($0.id) }
 							if !groupTabs.isEmpty {
 								// Keep each group virtualized while retaining its own native reorder collection.
 								Section {
@@ -148,6 +168,7 @@ struct ShellSidebarListView: View {
 					.reorderContainer(for: BrowserTab.self, in: SidebarTabCollection.self, isEnabled: !browser.isPrivate && onSelectTab == nil) { difference in
 						applyReorder(difference)
 					}
+					.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: topMargin)
 					.padding(.horizontal, onSelectTab == nil ? BrowserChromeMetrics.shellEdgePadding : 16)
 					.padding(.top, 4)
 					.padding(.bottom, 48)
@@ -340,6 +361,7 @@ private struct PinnedFolderRow: View {
 	let spaceID: UUID
 	let theme: BrowserTheme
 	let openElsewhereIDs: Set<UUID>
+	let excludedTabIDs: Set<UUID>
 	var onSelectTab: ((UUID) -> Void)?
 	let navigationNamespace: Namespace.ID
 	let sidebarSelection: BrowserSidebarTabSelection
@@ -375,7 +397,7 @@ private struct PinnedFolderRow: View {
 				Button(role: .cancel) {}
 			}
 			if isExpanded {
-				ForEach(folder.tabIDs.compactMap { tabsByID[$0] }) { tab in
+				ForEach(folder.tabIDs.compactMap { tabsByID[$0] }.filter { !excludedTabIDs.contains($0.id) }) { tab in
 					BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalCount, pinned: true, rowSpaceID: spaceID, rowTheme: theme, splitSide: browser.splitSide(for: tab.id), isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace, sidebarSelection: sidebarSelection, selectionOrder: selectionOrder)
 						.equatable()
 						.padding(.leading, 12)
@@ -417,6 +439,41 @@ private struct ShellNewTabButton: View {
 			}
 		}
 		.accessibilityIdentifier("new-tab")
+	}
+}
+
+private struct BrowserUnifiedSplitRow: View {
+	let browser: Browser
+	let left: BrowserTab
+	let right: BrowserTab
+	let theme: BrowserTheme
+	let spaceID: UUID
+	let selectedID: UUID?
+
+	var body: some View {
+		HStack(spacing: 0) {
+			BrowserTabRow(
+				tab: left, browser: browser, isSelected: selectedID == left.id,
+				rowSpaceID: spaceID, rowTheme: theme, splitSide: .left,
+				compactSplitStyle: true
+			)
+			.frame(maxWidth: .infinity)
+			Rectangle()
+				.fill(theme.foregroundColor.opacity(0.25))
+				.frame(width: 1, height: 19)
+			BrowserTabRow(
+				tab: right, browser: browser, isSelected: selectedID == right.id,
+				rowSpaceID: spaceID, rowTheme: theme, splitSide: .right,
+				compactSplitStyle: true
+			)
+			.frame(maxWidth: .infinity)
+		}
+		.frame(height: 28)
+		.background {
+			Color.clear.glassEffect(.clear, in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
+		}
+		.accessibilityElement(children: .contain)
+		.accessibilityIdentifier("sidebar-unified-split-tab")
 	}
 }
 

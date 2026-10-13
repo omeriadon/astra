@@ -1263,6 +1263,7 @@ final class BrowserController: NSObject, Identifiable {
 			return {
 				videoPlaying: media.some(element => element.tagName === 'VIDEO' && !element.paused && !element.ended && element.readyState >= 2 && element.videoWidth > 0 && element.videoHeight > 0),
 				playing: media.some(element => !element.paused && !element.ended && element.readyState >= 2),
+				audible: media.some(element => !element.paused && !element.ended && element.readyState >= 2 && !element.muted && element.volume > 0),
 				paused: media.some(element => element.paused && !element.ended && element.currentTime > 0),
 				title: navigator.mediaSession?.metadata?.title ?? '',
 				artist: navigator.mediaSession?.metadata?.artist ?? ''
@@ -1274,13 +1275,17 @@ final class BrowserController: NSObject, Identifiable {
 		      let state = value as? [String: Any],
 		      let videoPlaying = state["videoPlaying"] as? Bool,
 		      let playing = state["playing"] as? Bool,
+		      let audible = state["audible"] as? Bool,
 		      let paused = state["paused"] as? Bool,
 		      let title = state["title"] as? String,
 		      let artist = state["artist"] as? String
 		else { return false }
 		let playbackState = await webView.requestMediaPlaybackState()
 		guard owns(webView), documentID == navigationIdentifier else { return false }
-		isPlayingMedia = playing || playbackState == .playing
+		// A muted looping background video is not a Now Playing session. WebKit's
+		// aggregate playback state also includes silent page decoration; use the
+		// element state to disambiguate, while retaining cross-origin iframe audio.
+		isPlayingMedia = audible || (!playing && playbackState == .playing)
 		hasActiveVideoPlayback = videoPlaying
 		hasPausedMedia = paused || playbackState == .paused || playbackState == .suspended
 		cameraCaptureState = webView.cameraCaptureState
