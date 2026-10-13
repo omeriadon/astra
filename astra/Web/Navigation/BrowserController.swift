@@ -541,7 +541,8 @@ final class BrowserController: NSObject, Identifiable {
 		const cache = new Map(), gradients = new Map();
 		const header = 'header, nav, [role="banner"], [role="navigation"], ' +
 			'[class*="header" i], [id*="header" i], [class*="navbar" i], [id*="navbar" i]';
-		let scheduled = 0, lastRun = 0, previous = '';
+		let scheduled = 0, idleHandle = 0, lastRun = -Infinity, lastScroll = -Infinity, previous = '';
+		const minimumInterval = 750, scrollQuietPeriod = 260;
 		const pixels = css => {
 			if (cache.has(css)) return cache.get(css);
 			let rgba = null;
@@ -652,10 +653,11 @@ final class BrowserController: NSObject, Identifiable {
 			for (let depth = 0; element && depth < 14; depth++, element = element.parentElement) {
 				let layout = layoutCache.get(element);
 				if (!layout) {
-					layout = { style: getComputedStyle(element), rect: element.getBoundingClientRect() };
+					// Defer layout reads until a genuinely painted ancestor is found.
+					layout = { style: getComputedStyle(element), rect: null };
 					layoutCache.set(element, layout);
 				}
-				const { style, rect } = layout;
+				const { style } = layout;
 				if (style.visibility === 'hidden') return null;
 				const opacity = Number(style.opacity);
 				if (opacity < .01) continue;
@@ -664,11 +666,14 @@ final class BrowserController: NSObject, Identifiable {
 				if (image && image !== 'none') {
 					// A background image cannot be faithfully inferred from CSS.
 					// A simple CSS linear gradient can be sampled analytically.
-					rgba = gradientPixel(image, rect, x, y);
+					layout.rect ??= element.getBoundingClientRect();
+					rgba = gradientPixel(image, layout.rect, x, y);
 					if (!rgba) return null;
 					gradientAnchor ??= element;
 				}
 				if (!rgba || rgba[3] === 0) continue;
+				layout.rect ??= element.getBoundingClientRect();
+				const rect = layout.rect;
 				if (element !== document.body && element !== document.documentElement &&
 					rect.width >= innerWidth * .7 && rect.height >= 10 &&
 					rect.height <= 260 && rect.top <= 8 && rect.bottom >= y &&
@@ -744,20 +749,28 @@ final class BrowserController: NSObject, Identifiable {
 			return null;
 		};
 		const run = () => {
-			scheduled = 0;
-			lastRun = performance.now();
 			if (document.hidden || innerWidth < 80 || innerHeight < 20) return;
+			lastRun = performance.now();
 			const edges = [], surfaces = [], layoutCache = new Map();
 			const rows = [3, 16, 34, 56].filter(y => y < innerHeight);
-			const total = rows.length * 10;
-			for (const y of rows) for (let i = 0; i < 10; i++) {
-				const item = sample(innerWidth * (i + .5) / 10, y, layoutCache);
-				if (!item) continue;
-				// Gradient pixels group by surface; flat colours by perceptual
-				// distance (a small bounded set of <= 40 samples).
-				add(item.edge ? edges : surfaces, item);
+			const scan = columns => {
+				for (const y of rows) for (const i of columns) {
+					const item = sample(innerWidth * (i + .5) / 10, y, layoutCache);
+					if (!item) continue;
+					add(item.edge ? edges : surfaces, item);
+				}
+			};
+			// Sample 16 uniformly distributed points first. Only take the
+			// remaining 24 of the original grid when the result is uncertain.
+			scan([1, 4, 5, 8]);
+			let total = rows.length * 4;
+			let chrome = winner(edges), body = winner(surfaces);
+			if (Math.max(chrome?.count ?? 0, body?.count ?? 0) < total * .75) {
+				scan([0, 2, 3, 6, 7, 9]);
+				total = rows.length * 10;
+				chrome = winner(edges);
+				body = winner(surfaces);
 			}
-			const chrome = winner(edges), body = winner(surfaces);
 			const selected = chrome && chrome.count >= total * .45
 				? { count: chrome, source: 'chrome' }
 				: body && body.count >= total * .5
@@ -772,21 +785,71 @@ final class BrowserController: NSObject, Identifiable {
 			previous = fingerprint;
 			window.webkit.messageHandlers.pageTintChanged.postMessage({ url: location.href, source, rgb });
 		};
+		// Idle callbacks run in WebContent but yield to input/painting first.
+		// Keep the throttle when requestIdleCallback is unavailable.
+		const attempt = () => {
+			scheduled = 0;
+			if (document.hidden) return;
+			const now = performance.now();
+			const delay = Math.max(0, minimumInterval - (now - lastRun),
+				scrollQuietPeriod - (now - lastScroll));
+			if (delay > 0) {
+				scheduled = setTimeout(attempt, delay);
+				return;
+			}
+			if (typeof requestIdleCallback === 'function') {
+				idleHandle = requestIdleCallback(() => {
+					idleHandle = 0;
+					if (document.hidden) return;
+					if (performance.now() - lastScroll < scrollQuietPeriod) {
+						schedule();
+						return;
+					}
+					run();
+				}, { timeout: 1200 });
+			} else {
+				run();
+			}
+		};
 		const schedule = () => {
-			if (document.hidden || scheduled) return;
-			scheduled = setTimeout(run, Math.max(250, 750 - (performance.now() - lastRun)));
+			if (document.hidden || scheduled || idleHandle) return;
+			const now = performance.now();
+			const delay = Math.max(0, minimumInterval - (now - lastRun),
+				scrollQuietPeriod - (now - lastScroll));
+			scheduled = setTimeout(attempt, delay);
+		};
+		const cancelPending = () => {
+			if (scheduled) {
+				clearTimeout(scheduled);
+				scheduled = 0;
+			}
+			if (idleHandle && typeof cancelIdleCallback === 'function') {
+				cancelIdleCallback(idleHandle);
+				idleHandle = 0;
+			}
+		};
+		const scrolled = () => {
+			lastScroll = performance.now();
+			if (idleHandle && typeof cancelIdleCallback === 'function') {
+				cancelIdleCallback(idleHandle);
+				idleHandle = 0;
+			}
+			schedule();
 		};
 		const observer = new MutationObserver(schedule);
 		const visible = () => {
 			observer.disconnect();
-			if (document.hidden) return;
+			if (document.hidden) {
+				cancelPending();
+				return;
+			}
 			observer.observe(document.documentElement, {
 				subtree: true, childList: true, attributes: true,
 				attributeFilter: ['class', 'style', 'hidden', 'data-theme']
 			});
 			schedule();
 		};
-		addEventListener('scroll', schedule, { passive: true });
+		addEventListener('scroll', scrolled, { passive: true, capture: true });
 		addEventListener('resize', schedule, { passive: true });
 		document.addEventListener('click', schedule, { passive: true });
 		for (const event of ['transitionend', 'transitioncancel', 'animationend', 'animationcancel']) {
