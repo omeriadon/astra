@@ -33,6 +33,11 @@ jobs:
       - name: Select Xcode 27
         run: bash scripts/ci/select-xcode-27.sh
 
+      - name: SwiftUI Observation regression checks
+        run: |
+          python3 checks/swiftui-observation-performance-check.py
+          python3 checks/control-tab-observation-check.py
+
       - name: Verify proxy navigation classification
         shell: bash
         run: |

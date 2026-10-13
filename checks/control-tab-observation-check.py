@@ -8,7 +8,10 @@ assert "private(set) var visibleTabMembershipRevision = 0" in browser
 tabs = browser.split("private(set) var tabs: [BrowserTab]", 1)[1].split("@ObservationIgnored", 1)[0]
 assert "visibleTabMembershipRevision &+= 1" in tabs
 workspace = browser.split("private(set) var workspace: BrowserWorkspace", 1)[1].split("private(set) var recentlyUsedTabIDs", 1)[0]
-assert "didSet { visibleTabMembershipRevision &+= 1 }" in workspace
+assert "if membershipChanged { visibleTabMembershipRevision &+= 1 }" in workspace
+assert "oldValue.selectedSpaceID != workspace.selectedSpaceID" in workspace
+assert "old.tabIDs == new.tabIDs" in workspace
+assert "tabCollectionRevision &+= 1" in tabs
 assert ".onChange(of: browser.visibleTabMembershipRevision)" in root
 assert ".onChange(of: browser.visibleTabs.map(\\.id))" not in root
 changed = switcher.split("func tabsDidChange()", 1)[1].split("func select(", 1)[0]

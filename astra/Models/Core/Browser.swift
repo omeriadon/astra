@@ -24,11 +24,14 @@ final class Browser {
 		didSet {
 			tabLookup = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
 			visibleTabMembershipRevision &+= 1
+			tabCollectionRevision &+= 1
 		}
 	}
 
 	@ObservationIgnored
 	private var tabLookup: [UUID: BrowserTab] = [:]
+	/// Changes only when the tab-object collection is replaced, not on selection.
+	private(set) var tabCollectionRevision = 0
 	private(set) var selectedTabID: UUID
 	private(set) var splitLeftTabID: UUID?
 	private(set) var splitRightTabID: UUID?
@@ -37,7 +40,18 @@ final class Browser {
 	/// array of BrowserTab references in each SwiftUI update is unnecessary.
 	private(set) var visibleTabMembershipRevision = 0
 	private(set) var workspace: BrowserWorkspace {
-		didSet { visibleTabMembershipRevision &+= 1 }
+		didSet {
+			// Selection timestamps and the active tab are not membership changes.
+			// Keep the Control-Tab observer dormant for normal tab selections.
+			let membershipChanged = oldValue.selectedSpaceID != workspace.selectedSpaceID
+				|| oldValue.favouriteTabIDs != workspace.favouriteTabIDs
+				|| oldValue.spaces.count != workspace.spaces.count
+				|| !zip(oldValue.spaces, workspace.spaces).allSatisfy { old, new in
+					old.id == new.id && old.tabIDs == new.tabIDs
+						&& old.pinnedTabIDs == new.pinnedTabIDs
+				}
+			if membershipChanged { visibleTabMembershipRevision &+= 1 }
+		}
 	}
 
 	private(set) var recentlyUsedTabIDs: [UUID]
