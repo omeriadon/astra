@@ -4,7 +4,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 #if os(macOS)
 	import AppKit
-	import InfiniteCanvas
 #else
 	import UIKit
 #endif
@@ -17,18 +16,21 @@ struct BrowserEaselView: View {
 	@State private var importingImage = false
 	@State private var editorError: String?
 	@State private var showingLinkEntry = false
+	@State private var linkSearch = ""
+	@State private var editingTextID: UUID?
+	@State private var optionIsPressed = false
+	@State private var draggedCopy: (source: UUID, copy: UUID)?
+	@State private var isDropTargeted = false
 	@State private var linkText = "https://"
 	@State private var baseline: BrowserEaselDocument.Item?
 	@State private var drawingPoints: [BrowserEaselDocument.Item.Point] = []
 	private enum Tool { case cursor, pen, eraser }
 	@State private var activeTool: Tool = .cursor
 	#if os(macOS)
-		@StateObject private var canvasController = InfiniteCanvasController()
 		@FocusState private var canvasFocused: Bool
 	#endif
 	@State private var constrainsShape = false
 	@State private var shiftIsPressed = false
-	@State private var measuredHeights: [UUID: CGFloat] = [:]
 	@Namespace private var transitions
 	@Environment(\.colorScheme) private var colorScheme
 
@@ -42,30 +44,28 @@ struct BrowserEaselView: View {
 	var body: some View {
 		ZStack(alignment: .topLeading) {
 			GeometryReader { geometry in
-				#if os(macOS)
-				InfiniteCanvas(controller: canvasController) {
-					canvasContents(width: max(1200, geometry.size.width), viewportHeight: geometry.size.height)
-						.canvasPosition(position: .zero, controller: canvasController)
-				}
-				#else
 				ScrollView([.horizontal, .vertical]) {
-					canvasContents(width: max(1200, geometry.size.width), viewportHeight: geometry.size.height)
+					canvasContents(width: canvasWidth(geometry.size.width), viewportHeight: geometry.size.height)
 				}
 				.scrollDisabled(activeTool != .cursor)
-				#endif
 			}
-			HStack(alignment: .top, spacing: 10) {
-				toolbar
-				if let item = document.items.first(where: { $0.id == selectedID }) {
-					selectionControls(item)
-				}
+			if let item = document.items.first(where: { $0.id == selectedID }) {
+				selectionControls(item).padding(12)
 			}
-			.padding(12)
+		}
+		.overlay(alignment: .bottomTrailing) {
+			toolbar.padding(12)
 		}
 		#if os(macOS)
 		.focusable()
 		.focused($canvasFocused)
 		.onDeleteCommand { deleteSelectedItem() }
+		.onExitCommand {
+			selectedID = nil
+			editingTextID = nil
+			activeTool = .cursor
+			baseline = nil
+		}
 		#endif
 		.onChange(of: document) { _, value in
 			if !tab.updateEasel(value) {
@@ -85,8 +85,9 @@ struct BrowserEaselView: View {
 			#endif
 		}
 		#if os(macOS)
-		.onModifierKeysChanged(mask: .shift) { _, modifiers in
+		.onModifierKeysChanged(mask: [.shift, .option]) { _, modifiers in
 			shiftIsPressed = modifiers.contains(.shift)
+			optionIsPressed = modifiers.contains(.option)
 		}
 		#endif
 		.disabled(!browser.isHydrationFinished)
@@ -107,30 +108,44 @@ struct BrowserEaselView: View {
 		.sheet(isPresented: $showingLinkEntry) {
 			NavigationStack {
 				List {
-					Section("Link URL") {
+					Section("Open Tabs") {
+						ForEach(linkableTabs, id: \.id) { openTab in
+							if let url = openTab.currentURL {
+								Button {
+									linkText = BrowserAddress.withoutCredentials(url).absoluteString
+									addLink()
+								} label: {
+									VStack(alignment: .leading, spacing: 3) {
+										Text(openTab.title).lineLimit(1)
+										Text(url.absoluteString).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+									}
+								}
+								.accessibilityIdentifier("easel-link-tab-\(openTab.id)")
+							}
+						}
+					}
+					Section("Custom URL") {
 						TextField("https://example.com", text: $linkText)
 							.accessibilityIdentifier("easel-link-url")
 					}
 				}
+				.searchable(text: $linkSearch, prompt: "Search open tabs")
 				.navigationTitle("Add Link")
 				.toolbar {
 					ToolbarItem(placement: .cancellationAction) {
-						Button(role: .cancel) { showingLinkEntry = false }
+						Button("Cancel") { showingLinkEntry = false }
 					}
 					ToolbarItem(placement: .confirmationAction) {
-						Button("Add Link", systemImage: "plus", role: .confirm, action: addLink)
-							.buttonStyle(.glassProminent)
+						Button("Add URL", systemImage: "plus", action: addLink)
 							.disabled(URL(string: linkText).map(BrowserEaselDocument.isSafeLink) != true)
 							.accessibilityIdentifier("easel-confirm-link")
 					}
 				}
 			}
 			#if os(macOS)
-			.frame(width: 440, height: 300)
-			#endif
-			.presentationDetents([.fraction(0.5)])
-			#if os(iOS)
-				.navigationTransition(.zoom(sourceID: "add-link", in: transitions))
+			.frame(width: 480, height: 490)
+			#else
+			.navigationTransition(.zoom(sourceID: "add-link", in: transitions))
 			#endif
 		}
 	}
@@ -155,6 +170,9 @@ struct BrowserEaselView: View {
 		.accessibilityElement(children: .contain)
 		.accessibilityLabel("Easel canvas")
 		.accessibilityIdentifier("easel-canvas")
+		.onDrop(of: [.image, .fileURL, .url], isTargeted: $isDropTargeted) { providers, location in
+			receiveDrop(providers, at: location)
+		}
 		if activeTool == .cursor {
 			surface
 		} else {
@@ -171,7 +189,7 @@ struct BrowserEaselView: View {
 	}
 
 	private var toolbar: some View {
-		VStack(spacing: 10) {
+		HStack(spacing: 10) {
 			Button("Cursor", systemImage: "cursorarrow") { activeTool = .cursor }
 				.accessibilityIdentifier("easel-cursor")
 				.tint(activeTool == .cursor ? .accentColor : .primary)
@@ -181,7 +199,7 @@ struct BrowserEaselView: View {
 			Button("Eraser", systemImage: "eraser") { activeTool = .eraser; selectedID = nil }
 				.accessibilityIdentifier("easel-eraser")
 				.tint(activeTool == .eraser ? .accentColor : .primary)
-			Divider().frame(width: 22)
+			Divider().frame(height: 22)
 			Button("Text", systemImage: "textformat") { activeTool = .cursor; add(.text) }
 				.accessibilityIdentifier("easel-add-text")
 			Button("Image", systemImage: "photo") { activeTool = .cursor; importingImage = true }
@@ -190,6 +208,7 @@ struct BrowserEaselView: View {
 				activeTool = .cursor
 				let source = browser.splitLeftTabID.flatMap { browser.tab(withID: $0)?.currentURL } ?? browser.selectedTab?.currentURL
 				linkText = source.map(BrowserAddress.withoutCredentials)?.absoluteString ?? "https://"
+				linkSearch = ""
 				showingLinkEntry = true
 			}
 			.matchedTransitionSource(id: "add-link", in: transitions)
@@ -236,15 +255,6 @@ struct BrowserEaselView: View {
 				.accessibilityValue(item.background.rawValue)
 				.accessibilityIdentifier("easel-colour")
 			}
-			if item.kind == .image {
-				Slider(value: Binding(
-					get: { document.items.first(where: { $0.id == item.id })?.rotation ?? 0 },
-					set: { angle in edit(item.id) { $0.rotation = angle } }
-				), in: -180 ... 180)
-					.frame(width: 92)
-					.accessibilityLabel("Image rotation")
-					.accessibilityIdentifier("easel-image-rotation")
-			}
 		}
 		.labelStyle(.iconOnly)
 		.buttonStyle(.plain)
@@ -253,8 +263,20 @@ struct BrowserEaselView: View {
 		.accessibilityIdentifier("easel-item-controls")
 	}
 
+	private func canvasWidth(_ viewport: CGFloat) -> CGFloat {
+		min(10000, max(1600, viewport, document.items.map { $0.x + $0.width + 400 }.max() ?? 0))
+	}
+
 	private func canvasHeight(_ viewport: CGFloat) -> CGFloat {
-		max(viewport, document.items.map { $0.y + (measuredHeights[$0.id] ?? $0.height) + 400 }.max() ?? 1200)
+		min(1_000_000, max(1200, viewport, document.items.map { $0.y + $0.height + 400 }.max() ?? 0))
+	}
+
+	private var linkableTabs: [BrowserTab] {
+		browser.tabs.filter { candidate in
+			guard let url = candidate.currentURL, BrowserEaselDocument.isSafeLink(url) else { return false }
+			let query = linkSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+			return query.isEmpty || candidate.title.localizedCaseInsensitiveContains(query) || url.absoluteString.localizedCaseInsensitiveContains(query)
+		}
 	}
 
 	private func ink(_ item: BrowserEaselDocument.Item) -> Color {
