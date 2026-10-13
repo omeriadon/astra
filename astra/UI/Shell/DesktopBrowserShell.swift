@@ -838,7 +838,7 @@ private struct ShellContentColumn: View {
 
 		func dropUpdated(info: DropInfo) -> DropProposal? {
 			side = desiredSide(at: info.location)
-			return DropProposal(operation: .copy)
+			return DropProposal(operation: .move)
 		}
 
 		func dropExited(info _: DropInfo) {
