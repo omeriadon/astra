@@ -13,7 +13,8 @@ browser = Path("astra/Models/Core/Browser.swift").read_text()
 assert ".id(controller.history)" not in navigation
 assert ".id(controller.historyIndex)" not in navigation
 assert "projectionCache.resolve(" in sidebar
-assert "cached.tabIDs == space.tabIDs" in sidebar
+assert "cached.structureRevision == structureRevision" in sidebar
+assert "cached.tabIDs == space.tabIDs" not in sidebar
 assert "LazyVStack(spacing: 2)" in sidebar
 assert "if isHovered && onSelectTab == nil" in row
 assert "if previewEnabled && isHovered" in favourite
@@ -24,6 +25,7 @@ assert "for call in turn.actions where seen.count < 5" in chat
 assert "if preview != turn.response" in chat
 assert "abs(width - lastReportedWidth) < 8" in split
 assert "tabCollectionRevision &+= 1" in browser
+assert "sidebarStructureRevision &+= 1" in browser
 assert "chromeSummaryRevision != itemsRevision" in Path("astra/Web/Downloads/BrowserDownloadManager.swift").read_text()
 assert "if membershipChanged { visibleTabMembershipRevision &+= 1 }" in browser
 assert "BrowserReaderScript.prewarm()" in Path("astra/UI/Content/BrowserRootView.swift").read_text()
