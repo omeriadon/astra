@@ -40,6 +40,8 @@ final class Browser {
 	/// array of BrowserTab references in each SwiftUI update is unnecessary.
 	private(set) var visibleTabMembershipRevision = 0
 	@ObservationIgnored private var publishingTabSelection = false
+	/// Monotonic token for structural workspace changes, excluding same-space tab selection.
+	private(set) var sidebarStructureRevision = 0
 	private(set) var workspace: BrowserWorkspace {
 		didSet {
 			// The frequent, same-space tab-selection path only changes selection
@@ -47,6 +49,7 @@ final class Browser {
 			if publishingTabSelection && oldValue.selectedSpaceID == workspace.selectedSpaceID {
 				return
 			}
+			sidebarStructureRevision &+= 1
 			// Selection timestamps and the active tab are not membership changes.
 			// Keep the Control-Tab observer dormant for normal tab selections.
 			let membershipChanged = oldValue.selectedSpaceID != workspace.selectedSpaceID
