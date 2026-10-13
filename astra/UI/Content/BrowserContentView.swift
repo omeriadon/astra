@@ -126,8 +126,13 @@ private struct KeepAliveWebStack: View {
 
 	var body: some View {
 		let selectedTab = displayedTabID.flatMap { browser.tab(withID: $0) } ?? browser.selectedTab
+		// Each WebKit view can have exactly one AppKit parent. A split contains
+		// two BrowserPageViews, so only attach the current pane's web view.
+		let controllers = browser.isShowingTabSplit
+			? browser.tabResources.controllersForDisplay().filter { $0 === selectedTab?.controller }
+			: browser.tabResources.controllersForDisplay()
 		ZStack {
-			ForEach(browser.tabResources.controllersForDisplay()) { controller in
+			ForEach(controllers) { controller in
 				BrowserWebView(
 					controller: controller,
 					windowID: browser.windowID,
@@ -148,10 +153,10 @@ private struct KeepAliveWebStack: View {
 				}
 			}
 		}
-		.task(id: browser.selectedTabID) {
-			// Controller is usually already prepared by openHistory/addTab;
-			// this is just the fallback for restored/hibernated tabs.
-			if let controller = browser.selectedTab?.controller, !controller.isWebViewReady {
+		.task(id: selectedTab?.id) {
+			// Each side prepares its own WebKit controller, even when the
+			// globally selected tab is the other split pane.
+			if let controller = selectedTab?.controller, !controller.isWebViewReady {
 				controller.prepareWebView()
 			}
 		}
@@ -194,8 +199,11 @@ final class BrowserTabResourceManager {
 			guard let controller, controller.url != nil, seen.insert(controller.id).inserted else { return }
 			result.append(controller)
 		}
-		if let splitID = browser.splitLeftTabID, browser.isShowingEaselSplit, ownedTabIDs.contains(splitID) {
-			append(tabsByID[splitID]?.controller)
+		if browser.isShowingTabSplit {
+			for splitID in [browser.splitLeftTabID, browser.splitRightTabID].compactMap({ $0 })
+			where ownedTabIDs.contains(splitID) {
+				append(tabsByID[splitID]?.controller)
+			}
 		}
 		if let selectedTab, ownedTabIDs.contains(selectedTab.id) {
 			append(selectedTab.controller)
