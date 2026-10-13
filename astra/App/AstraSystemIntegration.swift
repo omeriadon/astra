@@ -2,6 +2,7 @@
 import AppIntents
 import AppKit
 import CoreSpotlight
+import UniformTypeIdentifiers
 import Foundation
 
 /// The only entry point used by App Intents, Services, and Spotlight navigation.
