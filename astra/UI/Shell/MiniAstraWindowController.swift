@@ -79,6 +79,14 @@
 			window.orderFrontRegardless()
 		}
 
+		func windowDidResignKey(_: Notification) {
+			// External-link panels only float while they are being used.
+			// Switching to another app should not leave Mini Astra always on top.
+			if window.level == .floating {
+				window.level = .normal
+			}
+		}
+
 		@objc func promote() {
 			guard let tab = browser.selectedTab, let onPromote else { return }
 			isPromoting = true
