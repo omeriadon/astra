@@ -519,6 +519,15 @@ private struct TabRowContextMenu: View {
 	var body: some View {
 		if tab.canAppearInEaselSplit, !browser.isPrivate, !browser.isMini {
 			Menu("Split View", systemImage: "rectangle.split.2x1") {
+				if let selected = browser.selectedTab, selected.id != tab.id, selected.canAppearInEaselSplit {
+					Button("Open to Left of Current Tab", systemImage: "rectangle.lefthalf.filled") {
+						browser.openSplit(tab.id, beside: selected.id, onLeft: true)
+					}
+					Button("Open to Right of Current Tab", systemImage: "rectangle.righthalf.filled") {
+						browser.openSplit(tab.id, beside: selected.id, onLeft: false)
+					}
+					Divider()
+				}
 				ForEach(browser.visibleTabs.filter { $0.id != tab.id && $0.canAppearInEaselSplit }) { other in
 					Button("Place Left of \(other.title)", systemImage: "rectangle.lefthalf.filled") {
 						browser.openSplit(tab.id, beside: other.id, onLeft: true)
