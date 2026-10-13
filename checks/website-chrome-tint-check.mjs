@@ -42,7 +42,7 @@ function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
         }
     };
     const document = {
-        hidden: false, documentElement: {},
+        hidden: false, body, documentElement: {},
         createElement(type) {
             assert.equal(type, 'canvas');
             return { getContext() { return context; } };
@@ -111,6 +111,11 @@ const bodyOnly = environment({ hasHeader: false });
 bodyOnly.flush();
 assert.equal(bodyOnly.posts[0].source, 'surface');
 assert.equal(JSON.stringify(bodyOnly.posts[0].rgb), '[248,249,250]');
+
+const transparent = environment({ headerColor: 'rgba(0, 0, 0, 0)' });
+transparent.flush();
+assert.equal(transparent.posts[0].source, 'surface',
+    'A fully transparent header must not outrank declared page metadata');
 
 const translucent = environment({ headerColor: 'rgba(0, 0, 0, 0.8)' });
 translucent.flush();
