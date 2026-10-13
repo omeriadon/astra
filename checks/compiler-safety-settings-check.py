@@ -34,6 +34,8 @@ def main():
     require(settings["CLANG_WARN_UNSAFE_BUFFER_USAGE"], "YES", "unsafe-buffer warnings")
     require(settings["GCC_TREAT_WARNINGS_AS_ERRORS"], "NO", "Clang warnings remain warnings")
     require(settings["SWIFT_TREAT_WARNINGS_AS_ERRORS"], "NO", "Swift warnings remain warnings")
+    require(settings["SWIFT_DISABLE_SAFETY_CHECKS"], "NO", "runtime safety checks")
+    require(settings["SWIFT_ENFORCE_EXCLUSIVE_ACCESS"], "full", "exclusive memory access")
     require(settings["SWIFT_OPTIMIZATION_LEVEL[config=Debug]"], "-Onone", "Debug optimisations")
     require(settings["SWIFT_COMPILATION_MODE[config=Release]"], "wholemodule", "Release compilation")
 
