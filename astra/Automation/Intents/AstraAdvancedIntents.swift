@@ -182,7 +182,7 @@ struct AstraListReadingListIntent: AppIntent {
     static var title: LocalizedStringResource = "List Astra Reading List"
     static var supportedModes: IntentModes { .foreground(.immediate) }
     func perform() async throws -> some ReturnsValue<[AstraReadingEntity]> {
-        let browser = try await AstraSystemActions.browser()
+        let browser = try await AstraSystemActions.existingBrowser()
         let records = browser.readingList.map {
             AstraReadingEntity(id: $0.id.uuidString, title: $0.title, url: $0.url, isRead: $0.isRead)
         }
