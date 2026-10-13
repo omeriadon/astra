@@ -79,6 +79,11 @@ struct BrowserTheme: Codable, Equatable, Sendable {
 		return (isDark ? Color.black : .white).opacity(0.3)
 	}
 
+	/// Contrast with the space-derived fallback toolbar tint when no page is loaded.
+	var tabColorIsLight: Bool {
+		(nearestMeshColor(to: .zero)?.color.luminance ?? firstColor.luminance) > 0.179
+	}
+
 	var progressColor: Color {
 		meshColorPoints.max { $0.color.chroma < $1.color.chroma }?.color.color ?? .clear
 	}
