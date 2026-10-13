@@ -409,6 +409,10 @@ struct DesktopBrowserShell: View {
 			.onDisappear {
 				spaceSwitcher.stop()
 			}
+			.onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { notification in
+				guard notification.object as? NSWindow === hostWindow else { return }
+				spaceSwitcher.cancel()
+			}
 			.onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { notification in
 				guard notification.object as? NSWindow === hostWindow else { return }
 				isFullScreen = true
