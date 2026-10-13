@@ -131,7 +131,8 @@ struct AstraSpaceEntity: AppEntity {
     }
 }
 
-struct AstraReadingEntity: AppEntity {
+@AppEntity(schema: .browser.readingListItem)
+struct AstraReadingEntity {
     static var typeDisplayRepresentation: TypeDisplayRepresentation { "Astra Reading List Page" }
     static let defaultQuery = Query()
     let id: String
