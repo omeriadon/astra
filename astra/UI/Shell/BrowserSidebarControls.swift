@@ -97,7 +97,7 @@ struct ShellSidebarListView: View {
 								BrowserTabRow(tab: tab, browser: browser,
 								              isSelected: isActiveSpace && selectedID == tab.id,
 								              tabIndex: nil, normalCount: normalTabs.count, pinned: true,
-								              rowSpaceID: space.id, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id),
+								              rowSpaceID: space.id, rowTheme: theme, splitSide: browser.splitSide(for: tab.id), isOpenElsewhere: openElsewhereIDs.contains(tab.id),
 								              onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions,
 								              sidebarSelection: sidebarSelection, selectionOrder: pinnedSelectionOrder)
 									.equatable()
@@ -133,7 +133,7 @@ struct ShellSidebarListView: View {
 									.accessibilityIdentifier("today-tab-group-\(group.id)")
 									.transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
 									ForEach(groupTabs) { tab in
-										BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions, sidebarSelection: sidebarSelection, selectionOrder: normalSelectionOrder)
+										BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, splitSide: browser.splitSide(for: tab.id), isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions, sidebarSelection: sidebarSelection, selectionOrder: normalSelectionOrder)
 											.equatable()
 											.matchedGeometryEffect(id: tab.id, in: sidebarTransitions, properties: .position)
 											.transition(.identity)
@@ -143,7 +143,7 @@ struct ShellSidebarListView: View {
 								}
 							}
 							ForEach(ungroupedNormalTabs) { tab in
-								BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions, sidebarSelection: sidebarSelection, selectionOrder: normalSelectionOrder)
+								BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, splitSide: browser.splitSide(for: tab.id), isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions, sidebarSelection: sidebarSelection, selectionOrder: normalSelectionOrder)
 									.equatable()
 									.matchedGeometryEffect(id: tab.id, in: sidebarTransitions, properties: .position)
 									.transition(.identity)
@@ -386,7 +386,7 @@ private struct PinnedFolderRow: View {
 			}
 			if isExpanded {
 				ForEach(folder.tabIDs.compactMap { tabsByID[$0] }) { tab in
-					BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalCount, pinned: true, rowSpaceID: spaceID, rowTheme: theme, isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace, sidebarSelection: sidebarSelection, selectionOrder: selectionOrder)
+					BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalCount, pinned: true, rowSpaceID: spaceID, rowTheme: theme, splitSide: browser.splitSide(for: tab.id), isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace, sidebarSelection: sidebarSelection, selectionOrder: selectionOrder)
 						.equatable()
 						.padding(.leading, 12)
 						.id(tab.id)
