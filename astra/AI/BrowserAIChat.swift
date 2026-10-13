@@ -306,6 +306,7 @@ final class BrowserAIChat {
 			defer { continuation.finish() }
 			var lastPreviewPublishedAt: ContinuousClock.Instant?
 			var latestPreview = ""
+			var lastActionScanAt: ContinuousClock.Instant?
 			let turn = try await BrowserAI.shared.performStreaming(feature, input: input, model: model) { snapshot in
 				BrowserLog.trace(.ai, "ai.chat.stream-progress", metadata: [
 					"id": BrowserLog.id(turnID), "bytes": String(snapshot.utf8.count),
@@ -322,6 +323,11 @@ final class BrowserAIChat {
 				// The JSON actions array comes after response text. Avoid
 				// reparsing all completed JSON objects before it even exists.
 				guard seen.count < 5, snapshot.contains("\"actions\"") else { return }
+				// Completed-action JSON scanning is relatively expensive because each
+				// snapshot includes previously streamed text. Throttle scans, then
+				// perform a guaranteed final reconciliation after stream completion.
+				if lastActionScanAt.map({ $0.duration(to: now) < .milliseconds(100) }) == true { return }
+				lastActionScanAt = now
 				for data in BrowserAIOutput.completedObjects(in: snapshot) {
 					guard seen.count < 5,
 					      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -343,6 +349,15 @@ final class BrowserAIChat {
 			// streaming callback occurred inside the UI throttle interval.
 			if preview != turn.response {
 				preview = turn.response
+			}
+			// A tool object may have completed inside the final throttle window.
+			// Reconcile by action identity so every emitted action is executed once.
+			for call in turn.actions where seen.count < 5 {
+				let encoder = JSONEncoder()
+				encoder.outputFormatting = .sortedKeys
+				guard let identifier = try? encoder.encode(call),
+				      seen.insert(identifier).inserted else { continue }
+				continuation.yield(call)
 			}
 			BrowserLog.debug(.ai, "ai.chat.stream-turn-finished", metadata: [
 				"id": BrowserLog.id(turnID), "actions": String(turn.actions.count),

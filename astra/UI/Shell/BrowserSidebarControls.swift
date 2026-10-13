@@ -83,7 +83,7 @@ struct ShellSidebarListView: View {
 							Color.clear.frame(height: 14)
 						}
 
-						VStack(spacing: 2) {
+						LazyVStack(spacing: 2) {
 							HStack {
 								Text("Pinned Tabs").font(.caption)
 								Spacer()
@@ -112,7 +112,7 @@ struct ShellSidebarListView: View {
 							}
 						}
 						BrowserAITabDivider(browser: browser, tabs: normalTabs, action: $cleanupAction, error: $cleanupError, canUndoGrouping: todayGroupsUndo != nil)
-						VStack(spacing: 2) {
+						LazyVStack(spacing: 2) {
 							ForEach(space.todayTabGroups) { group in
 								let groupTabs = projection.groupedTabs[group.id] ?? []
 								if !groupTabs.isEmpty {
