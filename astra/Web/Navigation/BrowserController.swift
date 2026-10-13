@@ -541,8 +541,7 @@ final class BrowserController: NSObject, Identifiable {
 		const cache = new Map(), gradients = new Map();
 		const header = 'header, nav, [role="banner"], [role="navigation"], ' +
 			'[class*="header" i], [id*="header" i], [class*="navbar" i], [id*="navbar" i]';
-		let scheduled = 0, idleHandle = 0, lastRun = -Infinity, lastScroll = -Infinity, previous = '';
-		const minimumInterval = 750, scrollQuietPeriod = 260;
+		let queued = false, loaded = false, sampled = false;
 		const pixels = css => {
 			if (cache.has(css)) return cache.get(css);
 			let rgba = null;
@@ -749,8 +748,11 @@ final class BrowserController: NSObject, Identifiable {
 			return null;
 		};
 		const run = () => {
-			if (document.hidden || innerWidth < 80 || innerHeight < 20) return;
-			lastRun = performance.now();
+			// One colour extraction per document. Full navigations install
+			// a new user script; scroll, SPA mutations and CSS changes do not.
+			if (sampled || document.hidden) return;
+			sampled = true;
+			if (innerWidth < 80 || innerHeight < 20) return;
 			const edges = [], surfaces = [], layoutCache = new Map();
 			const rows = [3, 16, 34, 56].filter(y => y < innerHeight);
 			const scan = columns => {
@@ -780,87 +782,36 @@ final class BrowserController: NSObject, Identifiable {
 				? selected.count.sum.map(value => Math.round(value / selected.count.count))
 				: fallback;
 			const source = selected?.source || (fallback ? 'brand' : 'none');
-			const fingerprint = JSON.stringify([location.href, source, rgb]);
-			if (fingerprint === previous) return;
-			previous = fingerprint;
 			window.webkit.messageHandlers.pageTintChanged.postMessage({ url: location.href, source, rgb });
 		};
-		// Idle callbacks run in WebContent but yield to input/painting first.
-		// Keep the throttle when requestIdleCallback is unavailable.
-		const attempt = () => {
-			scheduled = 0;
-			if (document.hidden) return;
-			const now = performance.now();
-			const delay = Math.max(0, minimumInterval - (now - lastRun),
-				scrollQuietPeriod - (now - lastScroll));
-			if (delay > 0) {
-				scheduled = setTimeout(attempt, delay);
-				return;
-			}
-			if (typeof requestIdleCallback === 'function') {
-				idleHandle = requestIdleCallback(() => {
-					idleHandle = 0;
-					if (document.hidden) return;
-					if (performance.now() - lastScroll < scrollQuietPeriod) {
-						schedule();
-						return;
-					}
-					run();
-				}, { timeout: 1200 });
-			} else {
-				run();
-			}
-		};
 		const schedule = () => {
-			if (document.hidden || scheduled || idleHandle) return;
-			const now = performance.now();
-			const delay = Math.max(0, minimumInterval - (now - lastRun),
-				scrollQuietPeriod - (now - lastScroll));
-			scheduled = setTimeout(attempt, delay);
+			if (!loaded || queued || sampled || document.hidden) return;
+			queued = true;
+			// The single extraction yields to page paint and user input.
+			const execute = () => {
+				queued = false;
+				run();
+			};
+			if (typeof requestIdleCallback === 'function')
+				requestIdleCallback(execute, { timeout: 1200 });
+			else
+				setTimeout(execute, 0);
 		};
-		const cancelPending = () => {
-			if (scheduled) {
-				clearTimeout(scheduled);
-				scheduled = 0;
-			}
-			if (idleHandle && typeof cancelIdleCallback === 'function') {
-				cancelIdleCallback(idleHandle);
-				idleHandle = 0;
-			}
-		};
-		const scrolled = () => {
-			lastScroll = performance.now();
-			if (idleHandle && typeof cancelIdleCallback === 'function') {
-				cancelIdleCallback(idleHandle);
-				idleHandle = 0;
-			}
+		const onLoad = () => {
+			loaded = true;
 			schedule();
 		};
-		const observer = new MutationObserver(schedule);
-		const visible = () => {
-			observer.disconnect();
-			if (document.hidden) {
-				cancelPending();
-				return;
-			}
-			observer.observe(document.documentElement, {
-				subtree: true, childList: true, attributes: true,
-				attributeFilter: ['class', 'style', 'hidden', 'data-theme']
-			});
-			schedule();
-		};
-		addEventListener('scroll', scrolled, { passive: true, capture: true });
-		addEventListener('resize', schedule, { passive: true });
-		document.addEventListener('click', schedule, { passive: true });
-		for (const event of ['transitionend', 'transitioncancel', 'animationend', 'animationcancel']) {
-			document.addEventListener(event, schedule, { passive: true });
-		}
-		addEventListener('load', schedule, { once: true });
-		addEventListener('pageshow', schedule);
-		addEventListener('popstate', schedule);
-		document.addEventListener('visibilitychange', visible);
-		try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', schedule); } catch (_) {}
-		visible();
+		// At documentEnd, wait for stylesheet/image load completion.
+		// Documents that already loaded (e.g. restored) execute once.
+		if (document.readyState === 'complete')
+			onLoad();
+		else
+			addEventListener('load', onLoad, { once: true });
+		// A background tab loaded while hidden is sampled only when
+		// first shown; it is never sampled again after that.
+		document.addEventListener('visibilitychange', () => {
+			if (!document.hidden) schedule();
+		});
 	})();
 	"""
 	@ObservationIgnored
@@ -968,6 +919,7 @@ final class BrowserController: NSObject, Identifiable {
 	@ObservationIgnored private var sampledSurfaceColor: PlatformColor?
 	@ObservationIgnored private var sampledBrandColor: PlatformColor?
 	@ObservationIgnored private var sampledFaviconColor: PlatformColor?
+	@ObservationIgnored private var pageTintHandledGeneration: Int?
 	@ObservationIgnored private var faviconTintTask: Task<Void, Never>?
 	@ObservationIgnored private var faviconTintAttemptedGeneration: Int?
 	private var pendingDownloadSource: UnitPoint?
@@ -2104,7 +2056,11 @@ final class BrowserController: NSObject, Identifiable {
 					if let color {
 						webView.underPageBackgroundColor = color.withAlphaComponent(1)
 					}
-					self.resolveThemeColor(in: webView)
+					// Once the document's one-shot sample has arrived,
+					// live metadata changes must not retint the toolbar.
+					if self.pageTintHandledGeneration != self.navigationGeneration {
+						self.resolveThemeColor(in: webView)
+					}
 				}
 			},
 			webView.observe(\.title, options: [.initial, .new]) { [weak self] webView, change in
@@ -3102,6 +3058,7 @@ extension BrowserController: WKNavigationDelegate {
 		sampledSurfaceColor = nil
 		sampledBrandColor = nil
 		sampledFaviconColor = nil
+		pageTintHandledGeneration = nil
 		faviconTintTask?.cancel()
 		faviconTintTask = nil
 		faviconTintAttemptedGeneration = nil
@@ -3312,7 +3269,8 @@ extension BrowserController: WKScriptMessageHandler {
 		}
 
 		if message.name == Self.pageTintMessageName {
-			guard message.frameInfo.isMainFrame, let webView = message.webView,
+			guard pageTintHandledGeneration != navigationGeneration,
+			      message.frameInfo.isMainFrame, let webView = message.webView,
 			      owns(webView), hasCurrentPageDocument, navigationFailure == nil,
 			      let result = message.body as? [String: Any],
 			      let urlString = result["url"] as? String, urlString == webView.url?.absoluteString,
@@ -3331,6 +3289,7 @@ extension BrowserController: WKScriptMessageHandler {
 			} else {
 				color = nil
 			}
+			pageTintHandledGeneration = navigationGeneration
 			sampledChromeColor = source == "chrome" ? color : nil
 			sampledSurfaceColor = source == "surface" ? color : nil
 			sampledBrandColor = source == "brand" ? color : nil
