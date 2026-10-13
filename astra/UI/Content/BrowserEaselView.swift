@@ -702,15 +702,8 @@ struct BrowserEaselView: View {
 			let type = provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
 				? UTType.fileURL.identifier : UTType.url.identifier
 			guard provider.hasItemConformingToTypeIdentifier(type) else { continue }
-			_ = provider.loadItem(forTypeIdentifier: type, options: nil) { value, _ in
-				let url: URL? = switch value {
-					case let item as URL: item
-					case let item as Data:
-						String(data: item, encoding: .utf8).flatMap { URL(string: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
-					case let item as String: URL(string: item)
-					default: nil
-				}
-				guard let url else { return }
+			_ = provider.loadObject(ofClass: NSURL.self) { object, _ in
+				guard let url = object as? URL else { return }
 				if url.isFileURL {
 					let data = try? Data(contentsOf: url)
 					Task { @MainActor in
