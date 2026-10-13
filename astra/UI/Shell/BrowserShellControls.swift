@@ -344,9 +344,9 @@ private struct ShellTopBarLoadingBar: View {
 		BrowserLoadingBar(
 			isLoading: controller.isLoading,
 			estimatedProgress: controller.estimatedProgress,
-			theme: theme
+			barColor: (controller.themeColorIsLight ?? theme.tabColorIsLight) ? .black : .white
 		)
-		.frame(height: 1.5)
+		.frame(height: 2)
 		.id(tabID)
 	}
 }
