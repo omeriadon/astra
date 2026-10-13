@@ -64,22 +64,43 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	private let stagingDirectory: URL
 	private let privateDataStore: WKWebsiteDataStore?
 	private let toastManager: ToastManager
-	private(set) var items: [BrowserDownload] = []
+	/// Cached aggregate consumed by the chrome. Progress events can arrive many
+	/// times per second, and the toolbar reads both the aggregate and its symbol.
+	@ObservationIgnored private var itemsRevision = 0
+	@ObservationIgnored private var chromeSummaryRevision = -1
+	@ObservationIgnored private var chromeSummary: (progress: Double?, symbol: String) = (nil, "arrow.down.circle")
+	private(set) var items: [BrowserDownload] = [] {
+		didSet { itemsRevision &+= 1 }
+	}
 	private(set) var selectedDownloadFolderName = ""
 	private(set) var latestStart: (id: UUID, source: UnitPoint)?
 	@ObservationIgnored private var downloadHydrationTask: Task<Void, Never>?
 
-	var activeProgress: Double? {
-		let active = items.filter { $0.status == .downloading || $0.status == .finalizing }
-		guard !active.isEmpty else { return nil }
-		return active.reduce(0) { $0 + $1.progress } / Double(active.count)
+	private func computedChromeSummary() -> (progress: Double?, symbol: String) {
+		// Keep an Observation dependency on items, while avoiding two full scans
+		// of download history on each toolbar evaluation.
+		_ = items.count
+		guard chromeSummaryRevision != itemsRevision else { return chromeSummary }
+		var activeCount = 0
+		var progressSum = 0.0
+		var downloadingSymbol: String?
+		for item in items where item.status == .downloading || item.status == .finalizing {
+			activeCount += 1
+			progressSum += item.progress
+			if item.status == .downloading, downloadingSymbol == nil {
+				downloadingSymbol = item.symbol
+			}
+		}
+		chromeSummary = (
+			activeCount == 0 ? nil : progressSum / Double(activeCount),
+			downloadingSymbol ?? items.first?.symbol ?? "arrow.down.circle"
+		)
+		chromeSummaryRevision = itemsRevision
+		return chromeSummary
 	}
 
-	var buttonSymbol: String {
-		items.first(where: { $0.status == .downloading })?.symbol
-			?? items.first?.symbol
-			?? "arrow.down.circle"
-	}
+	var activeProgress: Double? { computedChromeSummary().progress }
+	var buttonSymbol: String { computedChromeSummary().symbol }
 
 	override private convenience init() {
 		self.init(privateDataStore: nil, toastManager: .shared)

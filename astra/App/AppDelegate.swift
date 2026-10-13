@@ -25,6 +25,8 @@
 		private var startupStartedAt = BrowserLog.mainEntryUptime ?? BrowserLog.clock()
 		private var queuedStartupURLs: [URL] = []
 		private var shouldReopenAfterStartup = false
+		private var lastExternalForegroundApplication: NSRunningApplication?
+		private var lastActivationUptime: TimeInterval?
 		private var memoryPressureSource: DispatchSourceMemoryPressure?
 		private var didScheduleDeferredStartupServices = false
 		#if DEBUG
@@ -64,6 +66,17 @@
 					return
 				}
 			#endif
+			if let foreground = NSWorkspace.shared.frontmostApplication,
+			   foreground.processIdentifier != ProcessInfo.processInfo.processIdentifier
+			{
+				lastExternalForegroundApplication = foreground
+			}
+			NSWorkspace.shared.notificationCenter.addObserver(
+				self,
+				selector: #selector(workspaceApplicationDidActivate(_:)),
+				name: NSWorkspace.didActivateApplicationNotification,
+				object: nil
+			)
 			installMainMenu()
 			NSAppleEventManager.shared().setEventHandler(
 				self,
@@ -109,6 +122,35 @@
 				object: NSWorkspace.shared
 			)
 			MiniAstraShortcut.shared.update()
+		}
+
+		func applicationDidBecomeActive(_: Notification) {
+			lastActivationUptime = BrowserLog.clock()
+		}
+
+		@objc private func workspaceApplicationDidActivate(_ notification: Notification) {
+			guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+			      application.processIdentifier != ProcessInfo.processInfo.processIdentifier
+			else { return }
+			lastExternalForegroundApplication = application
+		}
+
+		/// An external URL can reactivate Astra before AppKit dispatches the open
+		/// event. Yield activation back to the source application before presenting
+		/// the nonactivating Mini Astra panel, not a normal browser window.
+		private func restoreExternalFocusForMiniAstra(force: Bool = false) {
+			guard let application = lastExternalForegroundApplication,
+			      !application.isTerminated,
+			      application.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+			      NSApp.isActive
+			else { return }
+			if !force {
+				guard let lastActivationUptime,
+				      BrowserLog.clock() - lastActivationUptime < 2
+				else { return }
+			}
+			NSApp.yieldActivation(to: application)
+			_ = application.activate(from: .current)
 		}
 
 		@objc private func applicationWillSleep(_: Notification) {
@@ -236,8 +278,15 @@
 							}
 						}
 					}
-					foreground.showWindow()
-					NSApp.activate()
+					// When launched by a link, keep the restored workspace behind
+					// other applications; only Mini Astra should be brought forward.
+					let launchIntoMini = Defaults[.miniAstraEnabled] && !queuedStartupURLs.isEmpty
+					if launchIntoMini {
+						foreground.window.orderBack(nil)
+					} else {
+						foreground.showWindow()
+						NSApp.activate()
+					}
 					BrowserLog.notice(.lifecycle, "startup.first-window-presented", metadata: [
 						"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
 						"records": String(records.count),
@@ -420,14 +469,15 @@
 			}
 		}
 
-		private func openAfterStartupRestoration(_ url: URL) {
+		private func openAfterStartupRestoration(_ url: URL, wasQueuedAtStartup: Bool = false) {
 			BrowserLog.debug(.lifecycle, "startup.open-after-restoration", metadata: ["url": BrowserLog.url(url)])
 			guard startupWindowRestorationFinished else {
 				queuedStartupURLs.append(url)
 				return
 			}
 			if Defaults[.miniAstraEnabled] {
-				openMiniAstra(url: url)
+				restoreExternalFocusForMiniAstra(force: wasQueuedAtStartup)
+				openMiniAstra(url: url, floatsOverSourceApplication: true)
 			} else {
 				open(url)
 			}
@@ -446,7 +496,8 @@
 			BrowserWindowRegistry.shared.finishWindowRestoration()
 			startupWindowRestorationFinished = true
 			BrowserWebPushManager.shared.drainPendingMessages()
-			if shouldReopenAfterStartup {
+			let openingQueuedMini = Defaults[.miniAstraEnabled] && !queuedStartupURLs.isEmpty
+			if shouldReopenAfterStartup && !openingQueuedMini {
 				shouldReopenAfterStartup = false
 				if let controller = windows.first {
 					controller.showWindow()
@@ -457,10 +508,11 @@
 					openBrowserWindow()
 				}
 			}
+			shouldReopenAfterStartup = false
 			let urls = queuedStartupURLs
 			queuedStartupURLs.removeAll()
 			for url in urls {
-				openAfterStartupRestoration(url)
+				openAfterStartupRestoration(url, wasQueuedAtStartup: true)
 			}
 		}
 
@@ -547,25 +599,38 @@
 			focusedMiniWindow
 		}
 
-		private var mainWindow: BrowserWindowController {
-			windows.first { $0.browser === BrowserWindowRegistry.shared.activeBrowser }
-				?? windows.first
-				?? openBrowserWindow()
+		/// Resolve a normal window lazily so opening a Mini panel never raises another window.
+		private var miniDestinationWindow: BrowserWindowController {
+			windows.first { $0.browser === BrowserWindowRegistry.shared.activeBrowser && !$0.browser.isPrivate }
+				?? windows.first { !$0.browser.isPrivate }
+				?? openBrowserWindow(showImmediately: false)
 		}
 
-		func openMiniAstra(url: URL? = nil) {
+		func openMiniAstra(url: URL? = nil, floatsOverSourceApplication: Bool = false) {
 			let controller = MiniAstraWindowController(url: url)
+			if floatsOverSourceApplication {
+				controller.window.level = .floating
+			}
 			controller.onClose = { [weak self, weak controller] in
 				guard let self, let controller else { return }
 				miniWindows.removeAll { $0 === controller }
 			}
-			controller.onPromote = { [weak self] tab in
+			controller.resolveSpaceBrowser = { [weak self] in self?.miniDestinationWindow.browser }
+			controller.revealSpaceBrowser = { [weak self] in
 				guard let self else { return }
-				let destination = mainWindow
+				self.miniDestinationWindow.showWindow()
+				NSApp.activate()
+			}
+			controller.onPromote = { [weak self] tab, spaceID in
+				guard let self else { return }
+				let destination = miniDestinationWindow
 				#if DEBUG
 					let webView = tab.controller?.webViewIfLoaded
 				#endif
 				destination.browser.adoptMiniTab(tab)
+				if let spaceID, destination.browser.workspace.spaces.contains(where: { $0.id == spaceID }) {
+					destination.browser.moveTab(tab.id, to: .normal, in: spaceID)
+				}
 				destination.showWindow()
 				NSApp.activate()
 				#if DEBUG
@@ -684,7 +749,7 @@
 		}
 
 		@objc private func toggleTopBar(_: Any?) {
-			guard let browser = activeBrowser, !browser.isMini else { return }
+			guard let browser = activeBrowser else { return }
 			NotificationCenter.default.post(name: .toggleBrowserTopBar, object: browser.windowID)
 		}
 
@@ -693,6 +758,24 @@
 			withAnimation(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .smooth(duration: 0.3)) {
 				browser.showsAISidebar.toggle()
 			}
+		}
+
+		@objc private func previousSpace(_: Any?) {
+			guard let controller = focusedBrowserWindow else { return }
+			NotificationCenter.default.post(
+				name: .cycleBrowserSpace,
+				object: controller.browser.windowID,
+				userInfo: ["direction": -1]
+			)
+		}
+
+		@objc private func nextSpace(_: Any?) {
+			guard let controller = focusedBrowserWindow else { return }
+			NotificationCenter.default.post(
+				name: .cycleBrowserSpace,
+				object: controller.browser.windowID,
+				userInfo: ["direction": 1]
+			)
 		}
 
 		@objc private func editSpace(_: Any?) {
@@ -1103,7 +1186,7 @@
 				return activeBrowser?.canShowAISidebar == true && Defaults[.aiFeaturesEnabled] && Defaults[.aiSidebar]
 			}
 			if menuItem.action == #selector(toggleTopBar(_:)) {
-				return activeBrowser?.isMini == false
+				return activeBrowser != nil
 			}
 			if menuItem.action == #selector(toggleSidebar(_:)) {
 				return activeBrowser?.isMini == false
@@ -1294,6 +1377,8 @@
 			viewMenu.addItem(item("Toggle Top Bar", action: #selector(toggleTopBar(_:)), key: "d"))
 			viewMenu.addItem(item("Toggle AI Sidebar", action: #selector(toggleAISidebar(_:)), key: "l", modifiers: [.command, .option]))
 			viewMenu.addItem(item("Edit Space", action: #selector(editSpace(_:))))
+			viewMenu.addItem(item("Previous Space", action: #selector(previousSpace(_:)), key: "←", modifiers: [.control, .option]))
+			viewMenu.addItem(item("Next Space", action: #selector(nextSpace(_:)), key: "→", modifiers: [.control, .option]))
 			viewMenu.addItem(.separator())
 			viewMenu.addItem(item("Translate Page…", action: #selector(translatePage(_:))))
 			viewMenu.addItem(item("Monitor Website…", action: #selector(monitorWebsite(_:))))
@@ -1376,6 +1461,7 @@
 			NSApp.helpMenu = helpMenu
 
 			NSApp.mainMenu = mainMenu
+			BrowserShortcutRegistry.shared.attach(menu: mainMenu)
 		}
 
 		@objc private func quitFromMenu(_: Any?) {

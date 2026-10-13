@@ -154,6 +154,8 @@ struct BrowserSpacesBar: View {
 		let browser: Browser
 		let onDismiss: () -> Void
 		let onRequestDeleteSpace: (BrowserSpace) -> Void
+		var onSelectSpace: ((BrowserSpace) -> Void)?
+		var onRevealSpace: (() -> Void)?
 
 		var body: some View {
 			VStack(alignment: .trailing, spacing: 8) {
@@ -162,6 +164,7 @@ struct BrowserSpacesBar: View {
 				Button {
 					browser.createSpace()
 					onDismiss()
+					onSelectSpace?(browser.selectedSpace)
 				} label: {
 					Label("Add Space", systemImage: "plus")
 						.labelStyle(.iconOnly)
@@ -255,8 +258,13 @@ struct BrowserSpacesBar: View {
 		private func spaceRow(_ space: BrowserSpace) -> some View {
 			let isSelected = browser.workspace.selectedSpaceID == space.id
 			return Button {
-				browser.selectSpace(space.id)
-				onDismiss()
+				if let onSelectSpace {
+					onDismiss()
+					onSelectSpace(space)
+				} else {
+					browser.selectSpace(space.id)
+					onDismiss()
+				}
 			} label: {
 				HStack(spacing: 8) {
 					Image(systemName: space.symbol)
@@ -297,6 +305,7 @@ struct BrowserSpacesBar: View {
 					browser.selectSpace(space.id)
 					browser.openInternalPage(.themeEditor)
 					onDismiss()
+					onRevealSpace?()
 				}
 				Button("Delete Space", systemImage: "trash", role: .destructive) {
 					requestSpaceDeletion(space)

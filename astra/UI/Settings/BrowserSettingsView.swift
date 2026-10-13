@@ -12,6 +12,9 @@ struct BrowserSettingsView: View {
 	nonisolated enum Page: CaseIterable {
 		case ui
 		case ai
+		#if os(macOS)
+			case keyboardShortcuts
+		#endif
 		case account
 		case importData
 		case privacyAndSecurity
@@ -66,6 +69,16 @@ struct BrowserSettingsView: View {
 						identifier: "settings-ai",
 						terms: ["All AI Features", "Rename Downloads", "Rename downloads with Apple Intelligence", "Link Previews", "Today Tabs", "Clean Tab Titles", "Ask in Find", "AI Sidebar", "Usage Log", "Show Usage Log", "Codex", "Claude", "Tokens"]
 					)
+				#if os(macOS)
+					case .keyboardShortcuts:
+						Definition(
+							title: "Keyboard Shortcuts",
+							symbol: "keyboard",
+							section: .ui,
+							identifier: "settings-keyboard-shortcuts",
+							terms: ["Hotkeys", "Next Space", "Previous Space", "Control", "Option", "Keyboard", "Edit", "Clear", "Reset", "Rebind", "Keybindings"]
+						)
+				#endif
 				case .account:
 					Definition(
 						title: "Account & Sync",
@@ -220,6 +233,10 @@ struct BrowserSettingsView: View {
 									BrowserAISettingsView()
 								case .ui:
 									BrowserGeneralSettingsView()
+								#if os(macOS)
+									case .keyboardShortcuts:
+										BrowserKeyboardShortcutsSettingsView()
+								#endif
 								case .importData:
 									BrowserImportView(browser: browser)
 								case .account:

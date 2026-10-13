@@ -138,6 +138,12 @@ final class BrowserTab: Identifiable {
 		customTitle != nil
 	}
 
+	var pendingQuotePlacementID: UUID?
+
+	func consumeQuotePlacement(_ id: UUID) {
+		if pendingQuotePlacementID == id { pendingQuotePlacementID = nil }
+	}
+
 	var easelDocument: BrowserEaselDocument {
 		storedEasel ?? .empty
 	}

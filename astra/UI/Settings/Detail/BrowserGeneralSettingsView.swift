@@ -218,8 +218,8 @@ struct BrowserGeneralSettingsView: View {
 							.foregroundStyle(.secondary)
 					}
 
-					Toggle("Enable global shortcut: ⌃⌥⌘N", isOn: $miniAstraShortcutEnabled)
-						.accessibilityLabel("Enable global Mini Astra shortcut: Control Option Command N")
+					Toggle("Enable global Mini Astra shortcut", isOn: $miniAstraShortcutEnabled)
+						.accessibilityLabel("Enable the shortcut configured under Keyboard Shortcuts settings")
 						.accessibilityIdentifier("mini-astra-shortcut-enabled")
 						.onChange(of: miniAstraShortcutEnabled) { _, _ in
 							MiniAstraShortcut.shared.update()

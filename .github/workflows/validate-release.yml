@@ -2,7 +2,7 @@ name: Astra - Release Metadata
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'release/0.1+3']
   workflow_dispatch:
 
 permissions:
@@ -47,6 +47,7 @@ jobs:
           python3 scripts/release/validate_artifact.py --self-test
           python3 checks/website-app-bundle-check.py --self-test
           python3 checks/workflow-diagnostics-check.py
+          python3 checks/ci-toolchain-workflows-check.py
       - name: Verify lazy startup architecture
         run: python3 checks/launch-framework-architecture-check.py
       - name: Startup and Sparkle audit script syntax
