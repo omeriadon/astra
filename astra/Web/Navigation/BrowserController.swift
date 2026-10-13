@@ -560,15 +560,21 @@ final class BrowserController: NSObject, Identifiable {
 			cache.set(css, rgba);
 			return rgba;
 		};
-		const sample = (x, y) => {
+		const sample = (x, y, layoutCache) => {
 			let element = document.elementFromPoint(x, y);
 			let edge = false;
 			let covered = 0;
 			const mixed = [0, 0, 0];
 			for (let depth = 0; element && depth < 14; depth++, element = element.parentElement) {
-				const style = getComputedStyle(element);
+				// The 40 hit tests often share the same navbar and body.
+				// Share layout/style reads within one pass, never across passes.
+				let layout = layoutCache.get(element);
+				if (!layout) {
+					layout = { style: getComputedStyle(element), rect: element.getBoundingClientRect() };
+					layoutCache.set(element, layout);
+				}
+				const { style, rect } = layout;
 				if (style.visibility === 'hidden' || Number(style.opacity) < 0.1) return null;
-				const rect = element.getBoundingClientRect();
 				// A gradient/image obscures the ancestor's flat background.
 				if (style.backgroundImage !== 'none') return null;
 				const rgba = pixels(style.backgroundColor);
@@ -601,11 +607,11 @@ final class BrowserController: NSObject, Identifiable {
 			scheduled = 0;
 			lastRun = performance.now();
 			if (document.hidden || innerWidth < 80 || innerHeight < 20) return;
-			const edge = new Map(), surface = new Map();
+			const edge = new Map(), surface = new Map(), layoutCache = new Map();
 			const rows = [3, 16, 34, 56].filter(y => y < innerHeight);
 			const total = rows.length * 10;
 			for (const y of rows) for (let i = 0; i < 10; i++) {
-				const item = sample(innerWidth * (i + .5) / 10, y);
+				const item = sample(innerWidth * (i + .5) / 10, y, layoutCache);
 				if (!item) continue;
 				// Merge near-identical colours rather than counting antialiasing noise.
 				const key = item.color.map(x => Math.round(x / 12)).join(',');
