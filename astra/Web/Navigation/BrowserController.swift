@@ -2412,7 +2412,8 @@ final class BrowserController: NSObject, Identifiable {
 
 	private func updateThemeColor(_ color: PlatformColor) {
 		#if os(macOS)
-			guard let color = color.usingColorSpace(.deviceRGB) else {
+			// WCAG luminance is defined in sRGB, not device-dependent RGB.
+			guard let color = color.usingColorSpace(.sRGB) else {
 				return
 			}
 		#endif
@@ -2428,9 +2429,12 @@ final class BrowserController: NSObject, Identifiable {
 			color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
 		#endif
 
-		themeColor = Color(color.withAlphaComponent(1))
+		let nextColor = Color(color.withAlphaComponent(1))
 		// WCAG contrast: black is the higher-contrast choice above 0.179 luminance.
-		themeColorIsLight = BrowserColor(red: Double(red), green: Double(green), blue: Double(blue)).luminance > 0.179
+		let nextIsLight = BrowserColor(red: Double(red), green: Double(green), blue: Double(blue)).luminance > 0.179
+		// Avoid invalidating SwiftUI chrome on unchanged fallback/probe events.
+		if themeColor != nextColor { themeColor = nextColor }
+		if themeColorIsLight != nextIsLight { themeColorIsLight = nextIsLight }
 	}
 
 	#if os(macOS)
