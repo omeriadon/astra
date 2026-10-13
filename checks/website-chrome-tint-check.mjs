@@ -13,7 +13,9 @@ assert.ok(end > start, 'Website page-tint script must terminate');
 const script = controller.slice(start, end);
 
 function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
-                       bodyColor = 'rgb(248, 249, 250)', hasHeader = true } = {}) {
+                       headerOpacity = '1', bodyColor = 'rgb(248, 249, 250)',
+                       bodyImage = 'none', hasHeader = true, tileColor = null,
+                       cssVars = {} } = {}) {
     const timers = [];
     const posts = [];
     const listeners = new Map();
@@ -24,22 +26,34 @@ function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
     const element = (name, background, image, parent, isHeader = false) => ({
         name, parentElement: parent, isHeader,
         style: { backgroundColor: background, backgroundImage: image, opacity: '1',
-                 visibility: 'visible', position: 'static' },
+                 visibility: 'visible', position: 'static',
+                 getPropertyValue: key => cssVars[key] ?? '' },
         matches: () => isHeader,
         getBoundingClientRect: () => {
             geometryReads++;
             return isHeader
-                ? { width: 1000, height: 70, top: 0, bottom: 70 }
-                : { width: 1000, height: 800, top: 0, bottom: 800 };
+                ? { left: 0, width: 1000, height: 70, top: 0, bottom: 70 }
+                : { left: 0, width: 1000, height: 800, top: 0, bottom: 800 };
         }
     });
-    const body = element('body', bodyColor, 'none', null);
+    const html = element('html', 'rgba(0, 0, 0, 0)', 'none', null);
+    const body = element('body', bodyColor, bodyImage, html);
     const header = element('header', headerColor, headerImage, body, true);
+    header.style.opacity = headerOpacity;
     const child = element('span', 'rgba(0, 0, 0, 0)', 'none', header);
     const context = {
         fillStyle: 'rgb(0, 0, 0)',
         clearRect() {}, fillRect() {},
         getImageData() {
+            const hex = /^#([a-f0-9]{3}|[a-f0-9]{6})$/i.exec(this.fillStyle);
+            if (hex) {
+                let digits = hex[1];
+                if (digits.length === 3) digits = [...digits].map(ch => ch + ch).join('');
+                return { data: [0, 2, 4].map(i => parseInt(digits.slice(i, i + 2), 16)).concat(255) };
+            }
+            const named = { red: [255, 0, 0, 255], blue: [0, 0, 255, 255],
+                            transparent: [0, 0, 0, 0] }[this.fillStyle];
+            if (named) return { data: named };
             const numbers = [...this.fillStyle.matchAll(/[\d.]+/g)].map(match => Number(match[0]));
             if (numbers.length < 3) return { data: [0, 0, 0, 0] };
             const alpha = numbers.length > 3 ? Math.round(numbers[3] * 255) : 255;
@@ -47,7 +61,8 @@ function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
         }
     };
     const document = {
-        hidden: false, body, documentElement: {},
+        hidden: false, body, documentElement: html,
+        querySelector() { return tileColor ? { content: tileColor } : null; },
         createElement(type) {
             assert.equal(type, 'canvas');
             return { getContext() { return context; } };
@@ -61,7 +76,7 @@ function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
         disconnect() {}
     }
     const state = {
-        hasHeader, header, body, document, posts,
+        hasHeader, header, body, html, document, posts,
         get styleReads() { return styleReads; },
         get geometryReads() { return geometryReads; }
     };
@@ -154,9 +169,41 @@ assert.equal(translucent.posts[0].source, 'chrome');
 assert.equal(JSON.stringify(translucent.posts[0].rgb), '[50,50,50]',
     'Alpha-composite a translucent sticky header against the body surface');
 
-const gradient = environment({ headerImage: 'linear-gradient(red, blue)' });
+const gradient = environment({ headerImage: 'linear-gradient(90deg, rgb(0, 0, 255), rgb(255, 0, 0))' });
 gradient.flush();
-assert.equal(gradient.posts[0].source, 'none', 'Do not pretend a gradient is a solid colour');
+assert.equal(gradient.posts[0].source, 'chrome', 'Linear gradient headers should yield a sampled tint');
+assert.equal(JSON.stringify(gradient.posts[0].rgb), '[128,0,128]',
+    'Average the CSS gradient across the top edge, not just its first stop');
+
+const verticalGradient = environment({ headerImage: 'linear-gradient(to bottom, #102030, #b0c0d0)' });
+verticalGradient.flush();
+assert.equal(verticalGradient.posts[0].source, 'chrome');
+assert.ok(verticalGradient.posts[0].rgb[0] < 60,
+    'For vertical gradients, use the first visible pixels instead of the far-bottom stop');
+
+const imageHeader = environment({ headerImage: 'url(https://example.test/cover.webp)' });
+imageHeader.flush();
+assert.equal(imageHeader.posts[0].source, 'none',
+    'A photographic or unknown CSS image must not be mistaken for a solid tint');
+
+const brandFallback = environment({ hasHeader: false, bodyImage: 'url(hero.jpg)',
+                                    cssVars: { '--brand-color': '#3c50dc' } });
+brandFallback.flush();
+assert.equal(brandFallback.posts[0].source, 'brand',
+    'Use a bounded known CSS brand token only if no painted colour exists');
+assert.equal(JSON.stringify(brandFallback.posts[0].rgb), '[60,80,220]');
+
+const tileFallback = environment({ hasHeader: false, bodyImage: 'url(hero.jpg)',
+                                   tileColor: '#12a3b4', cssVars: { '--brand-color': '#3c50dc' } });
+tileFallback.flush();
+assert.equal(JSON.stringify(tileFallback.posts[0].rgb), '[18,163,180]',
+    'OpenBrand-style tile metadata must precede heuristic CSS variables');
+
+const fadedHeader = environment({ headerColor: 'rgb(0, 0, 0)', headerOpacity: '0.5' });
+fadedHeader.flush();
+assert.equal(fadedHeader.posts[0].source, 'chrome');
+assert.ok(fadedHeader.posts[0].rgb[0] > 110,
+    'Composite CSS element opacity with the opaque body behind the header');
 
 const loading = readFileSync('astra/UI/Chrome/BrowserLoadingBar.swift', 'utf8');
 const shell = readFileSync('astra/UI/Shell/BrowserShellControls.swift', 'utf8');
