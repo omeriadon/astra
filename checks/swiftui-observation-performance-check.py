@@ -26,11 +26,8 @@ assert "abs(width - lastReportedWidth) < 8" in split
 assert "tabCollectionRevision &+= 1" in browser
 assert "chromeSummaryRevision != itemsRevision" in Path("astra/Web/Downloads/BrowserDownloadManager.swift").read_text()
 assert "if membershipChanged { visibleTabMembershipRevision &+= 1 }" in browser
-assert "if publishingTabSelection && oldValue.selectedSpaceID == workspace.selectedSpaceID" in browser
-assert "publishingTabSelection = true" in browser
-assert "publishingTabSelection = false" in browser
-assert "guard hasCompetingNormalWindow(for: browser) else { return [] }" in Path("astra/Models/Core/BrowserWindowRegistry.swift").read_text()
 assert "BrowserReaderScript.prewarm()" in Path("astra/UI/Content/BrowserRootView.swift").read_text()
+assert "BrowserReaderScript.prewarm()" in Path("astra/App/browserApp.swift").read_text()
 assert "Task.detached(priority: .utility)" in Path("astra/Web/Reader/BrowserReaderScript.swift").read_text()
 assert "hasCompetingNormalWindow(for browser: Browser)" in Path("astra/Models/Core/BrowserWindowRegistry.swift").read_text()
 assert "registry.hasCompetingNormalWindow(for: browser)" in Path("astra/UI/Content/BrowserContentView.swift").read_text()

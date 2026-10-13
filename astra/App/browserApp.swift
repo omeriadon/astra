@@ -27,6 +27,9 @@ extension Color {
 			static func main() {
 				BrowserLog.markMainEntry()
 				BrowserLog.bootstrap()
+				// Begin Reader bundle decoding before AppKit creates its first WebView.
+				// The worker does I/O; the synchronous first-WebView fallback remains.
+				BrowserReaderScript.prewarm()
 				let application = NSApplication.shared
 				let delegate = AppDelegate()
 
