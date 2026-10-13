@@ -600,6 +600,10 @@
 			openBrowserWindow()
 		}
 
+		@objc private func createEasel(_: Any?) {
+			activeBrowser?.createEasel()
+		}
+
 		@objc private func newTab(_: Any?) {
 			if activeAuthenticationBrowser != nil {
 				openBrowserWindow()
@@ -1000,6 +1004,9 @@
 		}
 
 		func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+			if menuItem.action == #selector(createEasel(_:)) {
+				return activeAuthenticationBrowser == nil && activeBrowser?.isPrivate == false && activeBrowser?.isMini == false
+			}
 			if menuItem.action == #selector(translatePage(_:)) {
 				guard activeAuthenticationBrowser == nil,
 				      let browser = activeBrowser,
@@ -1190,6 +1197,7 @@
 			privateWindowItem.keyEquivalentModifierMask = [.command, .shift]
 			fileMenu.addItem(privateWindowItem)
 			fileMenu.addItem(item("New Tab", action: #selector(newTab(_:)), key: "t"))
+			fileMenu.addItem(item("Create Easel", action: #selector(createEasel(_:))))
 			fileMenu.addItem(item("New Mini Astra", action: #selector(newMiniAstra(_:))))
 			fileMenu.addItem(.separator())
 			fileMenu.addItem(item("Close Tab", action: #selector(closeTab(_:)), key: "w"))
@@ -1279,7 +1287,7 @@
 			navigationMenu.delegate = self
 			navigationMenu.addItem(item("History", action: #selector(openHistory(_:)), key: "y"))
 			navigationMenu.addItem(.separator())
-			navigationMenu.addItem(item("Show Downloads", action: #selector(showDownloads(_:)), key: "j"))
+			navigationMenu.addItem(item("Show Library", action: #selector(showDownloads(_:)), key: "j"))
 			navigationMenu.addItem(item("Open Location", action: #selector(openLocation(_:)), key: "l"))
 			navigationMenu.addItem(item("Back", action: #selector(goBack(_:)), key: "["))
 			navigationMenu.addItem(item("Forward", action: #selector(goForward(_:)), key: "]"))

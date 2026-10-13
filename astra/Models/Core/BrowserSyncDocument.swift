@@ -1,7 +1,7 @@
 import Foundation
 
 struct BrowserSyncDocument: Codable, Equatable, Sendable {
-	var version: Int = 3
+	var version: Int = 4
 	var tabs: [OpenTab]
 	var workspace: BrowserWorkspace?
 	var bookmarks: [Bookmark]
@@ -124,10 +124,14 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 
 	nonisolated func preservingLocalOnlyData(from local: Self) -> Self {
 		var projected = self
-		let localTabs = local.tabs.filter { !isPortableSyncTab($0) && $0.internalPage == nil }
+		let assignedIDs = Set((workspace?.favouriteTabIDs ?? []) + (workspace?.spaces.flatMap(\.tabIDs) ?? []))
+		let unassignedEaselIDs = Set(tabs.filter { $0.internalPage == "easel" && !assignedIDs.contains($0.id) }.map(\.id))
+		let localTabs = local.tabs.filter {
+			(!isPortableSyncTab($0) && $0.internalPage == nil) || unassignedEaselIDs.contains($0.id)
+		}
 		let localTabIDs = Set(localTabs.map(\.id))
 		var tabsByID = Dictionary(projected.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-		for tab in localTabs {
+		for tab in localTabs where !unassignedEaselIDs.contains(tab.id) {
 			tabsByID[tab.id] = tab
 		}
 		projected.tabs = tabsByID.values.sorted { $0.id.uuidString < $1.id.uuidString }
@@ -215,7 +219,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 	}
 
 	nonisolated var hasSupportedVersion: Bool {
-		(1 ... 3).contains(version)
+		(1 ... 4).contains(version)
 	}
 
 	nonisolated var hasValidStructure: Bool {
@@ -223,9 +227,10 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 			&& Set(bookmarks.map(\.id)).count == bookmarks.count
 			&& Set(history.map(\.id)).count == history.count
 			&& tabs.allSatisfy { tab in
-				tab.internalPage == nil
+				isPortableSyncTab(tab)
 					&& tab.pageZoom.isFinite && (0.25 ... 5).contains(tab.pageZoom)
 					&& tab.restorationState == nil && tab.fileAccessBookmark == nil
+					&& (tab.easel.map(isValidSyncEasel) ?? true)
 					&& (tab.history + [tab.url].compactMap(\.self) + tab.peeks.compactMap(\.url)).allSatisfy(isSafeSyncURL)
 					&& tab.modifiedAt.isSaneSyncTimestamp
 			}
@@ -289,7 +294,14 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		}
 
 		let tabsByID = Dictionary((tabs + other.tabs).map { ($0.id, $0) }, uniquingKeysWith: { first, next in
-			preferred(first, first.modifiedAt, next, next.modifiedAt)
+			// Cached shells and older clients cannot turn an easel into a web tab.
+			if first.internalPage == "easel", next.internalPage != "easel" {
+				return first
+			}
+			if next.internalPage == "easel", first.internalPage != "easel" {
+				return next
+			}
+			return preferred(first, first.modifiedAt, next, next.modifiedAt)
 		})
 		result.tabs = tabsByID.values.filter { tab in
 			!isDeleted(tab.id, modifiedAt: tab.modifiedAt, dates: result.browser.closedTabsAt, legacyIDs: result.browser.closedTabIDs)
@@ -400,9 +412,13 @@ private nonisolated func appendUnique(_ existing: [UUID], _ incoming: [UUID]) ->
 }
 
 private nonisolated func isPortableSyncTab(_ tab: OpenTab) -> Bool {
-	tab.internalPage == nil
+	(tab.internalPage == nil || tab.internalPage == "easel")
 		&& tab.fileAccessBookmark == nil
 		&& (tab.url.map(isPortableSyncURL) ?? true)
+}
+
+private nonisolated func isValidSyncEasel(_ easel: BrowserEaselDocument) -> Bool {
+	easel.isValid
 }
 
 private nonisolated func isPortableSyncURL(_ url: URL) -> Bool {

@@ -9,6 +9,7 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View, Animatable {
 	let minimumContentWidth: CGFloat
 	let edge: HorizontalEdge
 	let sidebarOverlaysContent: Bool
+	let onWidthChange: ((CGFloat) -> Void)?
 	private var sidebarVisibility: CGFloat
 	private var sidebarReservation: CGFloat
 	private var followingSidebarWidth: CGFloat
@@ -37,6 +38,7 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View, Animatable {
 		edge: HorizontalEdge = .leading,
 		sidebarOverlaysContent: Bool = false,
 		followingSidebarWidth: CGFloat = 0,
+		onWidthChange: ((CGFloat) -> Void)? = nil,
 		@ViewBuilder sidebar: () -> Sidebar,
 		@ViewBuilder content: () -> Content
 	) {
@@ -46,6 +48,7 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View, Animatable {
 		self.minimumContentWidth = minimumContentWidth
 		self.edge = edge
 		self.sidebarOverlaysContent = sidebarOverlaysContent
+		self.onWidthChange = onWidthChange
 		sidebarVisibility = sidebarShown.wrappedValue ? 1 : 0
 		sidebarReservation = sidebarOverlaysContent ? 0 : sidebarVisibility
 		self.followingSidebarWidth = followingSidebarWidth
@@ -139,7 +142,11 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View, Animatable {
 								minimumContentWidth: minimumContentWidth + followingSidebarWidth
 							)
 						}
-						.offset(x: (edge == .leading ? width : geometry.size.width - width) - 4)
+						.offset(
+							x: edge == .leading
+								? width - 4
+								: geometry.size.width - width - BrowserChromeMetrics.shellEdgePadding / 2 - 4
+						)
 				}
 			}
 			.frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
@@ -148,6 +155,9 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View, Animatable {
 			.animation(nil, value: geometry.size)
 			.animation(nil, value: visibleWidth)
 			.animation(nil, value: reservedWidth)
+			.onChange(of: width, initial: true) { _, width in
+				onWidthChange?(width)
+			}
 		}
 	}
 }

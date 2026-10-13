@@ -48,7 +48,7 @@ struct ShellDownloadsBarView: View {
 			}
 			.buttonStyle(.plain)
 			.keyboardShortcut("J", modifiers: .command)
-			.accessibilityLabel(showsDownloads ? "Show Tabs" : "Show Downloads")
+			.accessibilityLabel(showsDownloads ? "Show Tabs" : "Show Library")
 			.accessibilityValue(downloads.activeProgress.map { "\(Int($0 * 100)) percent" } ?? "No active downloads")
 			.accessibilityIdentifier("downloads-button")
 			.onHover { i in
@@ -74,6 +74,15 @@ struct ShellDownloadsBarView: View {
 				.labelStyle(.iconOnly)
 				.buttonStyle(.plain)
 				.accessibilityIdentifier("sidebar-ai-toggle")
+			}
+
+			if !browser.isPrivate {
+				Button("Create Easel", systemImage: "paintbrush.pointed") {
+					browser.createEasel()
+				}
+				.labelStyle(.iconOnly)
+				.buttonStyle(.plain)
+				.accessibilityIdentifier("sidebar-create-easel")
 			}
 
 			#if os(iOS)

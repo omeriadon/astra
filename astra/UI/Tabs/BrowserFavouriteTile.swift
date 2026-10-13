@@ -78,8 +78,10 @@ struct BrowserFavouriteTile: View {
 				Button("Move to Pinned Tabs", systemImage: "pin") {
 					browser.moveTab(tab.id, to: .pinned)
 				}
-				Button("Move to Normal Tabs", systemImage: "rectangle") {
-					browser.moveTab(tab.id, to: .normal)
+				if tab.internalPage != .easel {
+					Button("Move to Normal Tabs", systemImage: "rectangle") {
+						browser.moveTab(tab.id, to: .normal)
+					}
 				}
 				if tab.internalPage == nil {
 					Button("Add to Reading List", systemImage: "text.badge.plus") {

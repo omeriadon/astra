@@ -14,12 +14,13 @@ enum BrowserInternalPage: Equatable, CaseIterable {
 	case settings
 	case history
 	case bookmarks
+	case easel
 	#if DEBUG
 		case failedWebsiteState(BrowserNavigationFailure.Kind)
 	#endif
 
 	static var allCases: [Self] {
-		var pages: [Self] = [.themeEditor, .settings, .history, .bookmarks]
+		var pages: [Self] = [.themeEditor, .settings, .history, .bookmarks, .easel]
 		#if DEBUG
 			pages += BrowserNavigationFailure.Kind.allCases.map { .failedWebsiteState($0) }
 		#endif
@@ -32,6 +33,7 @@ enum BrowserInternalPage: Equatable, CaseIterable {
 			case .settings: "settings"
 			case .history: "history"
 			case .bookmarks: "bookmarks"
+			case .easel: "easel"
 			#if DEBUG
 				case let .failedWebsiteState(kind): "failedWebsiteState:\(kind.rawValue)"
 			#endif
@@ -44,6 +46,7 @@ enum BrowserInternalPage: Equatable, CaseIterable {
 			case "settings": self = .settings
 			case "history": self = .history
 			case "bookmarks": self = .bookmarks
+			case "easel": self = .easel
 			default:
 				#if DEBUG
 					if persistenceID.hasPrefix("failedWebsiteState:"),
@@ -69,6 +72,8 @@ enum BrowserInternalPage: Equatable, CaseIterable {
 				"History"
 			case .bookmarks:
 				"Bookmarks"
+			case .easel:
+				"Easel"
 			#if DEBUG
 				case let .failedWebsiteState(kind):
 					String(localized: kind.title)
@@ -86,6 +91,8 @@ enum BrowserInternalPage: Equatable, CaseIterable {
 				"clock.arrow.circlepath"
 			case .bookmarks:
 				"bookmark"
+			case .easel:
+				"paintbrush.pointed"
 			#if DEBUG
 				case let .failedWebsiteState(kind):
 					kind.systemImage
@@ -117,11 +124,31 @@ final class BrowserTab: Identifiable {
 	}
 
 	var title: String {
-		internalPage?.title ?? customTitle ?? pageTitle
+		if internalPage == .easel {
+			return customTitle ?? internalPage?.title ?? pageTitle
+		}
+		return internalPage?.title ?? customTitle ?? pageTitle
+	}
+
+	var canAppearInEaselSplit: Bool {
+		internalPage == .easel || (internalPage == nil && currentURL != nil)
 	}
 
 	var hasCustomTitle: Bool {
 		customTitle != nil
+	}
+
+	var easelDocument: BrowserEaselDocument {
+		storedEasel ?? .empty
+	}
+
+	@discardableResult
+	func updateEasel(_ document: BrowserEaselDocument) -> Bool {
+		guard internalPage == .easel, document.isValid else { return false }
+		guard storedEasel != document else { return true }
+		storedEasel = document
+		markModified()
+		return true
 	}
 
 	private(set) var controller: BrowserController?
@@ -188,6 +215,7 @@ final class BrowserTab: Identifiable {
 	private var storedPageZoom: Double
 	private var storedScrollPosition: BrowserScrollPosition
 	private var storedPeeks: [OpenPeek]
+	private var storedEasel: BrowserEaselDocument?
 	private(set) var modifiedAt: Date
 	/// Transient activity used by automatic hibernation; restored tabs get a fresh window.
 	private(set) var lastInteractionAt: Date
@@ -230,7 +258,8 @@ final class BrowserTab: Identifiable {
 			peeks: recordsNavigationHistory ? (isHibernated ? storedPeeks : peeks.map(\.openPeek)) : [],
 			recordsNavigationHistory: recordsNavigationHistory,
 			restorationState: recordsNavigationHistory && !session.isPrivate ? controller?.encryptedInteractionState ?? storedRestorationState : nil,
-			fileAccessBookmark: controller?.fileAccessBookmark ?? storedFileAccessBookmark
+			fileAccessBookmark: controller?.fileAccessBookmark ?? storedFileAccessBookmark,
+			easel: storedEasel
 		)
 		openTabCache = next
 		return next
@@ -255,12 +284,13 @@ final class BrowserTab: Identifiable {
 		recordsNavigationHistory: Bool = true,
 		restorationState: Data? = nil,
 		fileAccessBookmark: Data? = nil,
+		easel: BrowserEaselDocument? = nil,
 		suppressInitialHistoryVisit: Bool = false,
 		initialRestorationBaseline: OpenTab? = nil
 	) {
 		let session = existingController?.session ?? session ?? .shared
 		self.id = id
-		self.internalPage = internalPage
+		self.internalPage = internalPage ?? (easel == nil ? nil : .easel)
 		self.session = existingController?.session ?? session
 		self.pageTitle = pageTitle
 		self.customTitle = customTitle
@@ -275,10 +305,11 @@ final class BrowserTab: Identifiable {
 		storedPageZoom = initialPageZoom
 		storedScrollPosition = scrollPosition
 		storedPeeks = openPeeks
+		storedEasel = easel
 		self.modifiedAt = modifiedAt
 		lastInteractionAt = .now
 		peeks = isHibernated ? [] : openPeeks.map { BrowserPeek(openPeek: $0, session: session) }
-		controller = if isHibernated || internalPage != nil {
+		controller = if isHibernated || self.internalPage != nil {
 			nil
 		} else {
 			existingController ?? BrowserController(
@@ -321,6 +352,7 @@ final class BrowserTab: Identifiable {
 			recordsNavigationHistory: saved.recordsNavigationHistory,
 			restorationState: saved.restorationState,
 			fileAccessBookmark: saved.fileAccessBookmark,
+			easel: saved.easel,
 			suppressInitialHistoryVisit: true,
 			initialRestorationBaseline: saved
 		)
@@ -488,6 +520,7 @@ final class BrowserTab: Identifiable {
 		monitorMatch = updated.monitorMatch
 		recordsNavigationHistory = updated.recordsNavigationHistory
 		storedPageZoom = updated.pageZoom
+		storedEasel = updated.easel
 		if !updated.recordsNavigationHistory {
 			storedHistory = currentURL.map { [$0] } ?? []
 			storedHistoryIndex = 0
@@ -515,12 +548,12 @@ final class BrowserTab: Identifiable {
 	}
 
 	func rename(to title: String) {
-		guard internalPage == nil else { return }
+		guard internalPage == nil || internalPage == .easel else { return }
 		customTitle = title
 	}
 
 	func revertTitle() {
-		guard internalPage == nil else { return }
+		guard internalPage == nil || internalPage == .easel else { return }
 		customTitle = nil
 	}
 
@@ -582,7 +615,7 @@ final class BrowserTab: Identifiable {
 	}
 
 	private func markModified() {
-		modifiedAt = .now
+		modifiedAt = BrowserUserDataMutation.nextDate(after: modifiedAt, deletion: .distantPast)
 		openTabCache = nil
 		didChange?()
 	}
@@ -620,7 +653,7 @@ final class BrowserTab: Identifiable {
 			return
 		}
 		restorationBaseline = nil
-		modifiedAt = .now
+		modifiedAt = BrowserUserDataMutation.nextDate(after: modifiedAt, deletion: .distantPast)
 		openTabCache = nil
 		didScrollChange?(isPeek)
 	}

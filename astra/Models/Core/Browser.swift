@@ -30,6 +30,8 @@ final class Browser {
 	@ObservationIgnored
 	private var tabLookup: [UUID: BrowserTab] = [:]
 	private(set) var selectedTabID: UUID
+	private(set) var splitLeftTabID: UUID?
+	private(set) var splitEaselTabID: UUID?
 	/// A compact dependency for consumers that only need to know whether
 	/// visible tab membership *might* have changed. Comparing the entire
 	/// array of BrowserTab references in each SwiftUI update is unnecessary.
@@ -444,6 +446,7 @@ final class Browser {
 		BrowserLog.debug(.spaces, "space.select", metadata: ["window": BrowserLog.id(windowID), "from": BrowserLog.id(workspace.selectedSpaceID), "to": BrowserLog.id(id)])
 		guard id != workspace.selectedSpaceID,
 		      let nextIndex = workspace.spaces.firstIndex(where: { $0.id == id }) else { return }
+		closeEaselSplit()
 		let space = workspace.spaces[nextIndex]
 		let targetID: UUID? = {
 			if let preferred = space.selectedTabID,
@@ -648,6 +651,7 @@ final class Browser {
 		var seen = Set<UUID>()
 		let moving = ids.filter { existing.contains($0) && seen.insert($0).inserted }
 		guard !moving.isEmpty else { return }
+		guard area != .normal || moving.allSatisfy({ tab(withID: $0)?.internalPage != .easel }) else { return }
 		let movingSet = Set(moving)
 		guard targetID.map({ !movingSet.contains($0) }) ?? true else { return }
 		let destinationID = spaceID ?? workspace.selectedSpaceID
@@ -726,6 +730,7 @@ final class Browser {
 
 	func moveTab(_ id: UUID, to area: TabArea, in spaceID: UUID? = nil, before targetID: UUID? = nil) {
 		guard !isPrivate, tabs.contains(where: { $0.id == id }), targetID != id else { return }
+		guard area != .normal || tab(withID: id)?.internalPage != .easel else { return }
 		let destinationIndex = area == .favourite
 			? nil
 			: workspace.spaces.firstIndex(where: { $0.id == (spaceID ?? workspace.selectedSpaceID) })
@@ -794,7 +799,7 @@ final class Browser {
 	}
 
 	private func isSyncableTab(_ tab: OpenTab) -> Bool {
-		guard tab.internalPage == nil, tab.fileAccessBookmark == nil else { return false }
+		guard tab.internalPage == nil || tab.internalPage == "easel", tab.fileAccessBookmark == nil else { return false }
 		guard let url = tab.url else { return true }
 		return ["http", "https"].contains(url.scheme?.lowercased() ?? "")
 	}
@@ -804,7 +809,7 @@ final class Browser {
 	}
 
 	private var persistedSelectedTabID: UUID {
-		selectedTab?.internalPage == nil ? selectedTabID : webTabs.first?.id ?? selectedTabID
+		(selectedTab?.internalPage == nil || selectedTab?.internalPage == .easel) ? selectedTabID : webTabs.first?.id ?? selectedTabID
 	}
 
 	init(isMini: Bool = false, isPrivate: Bool = false, windowRecord: BrowserWindowRecord? = nil) {
@@ -832,7 +837,9 @@ final class Browser {
 		let cachedTabs = launchCache?.tabs.sorted { $0.order < $1.order }.map { cached in
 			BrowserTab(
 				id: cached.id,
+				internalPage: cached.internalPage.flatMap(BrowserInternalPage.init(persistenceID:)),
 				pageTitle: cached.title,
+				customTitle: cached.internalPage == "easel" ? cached.title : nil,
 				initialURL: cached.url,
 				pageZoom: cachedDefaultPageZoom,
 				isHibernated: true,
@@ -1148,7 +1155,9 @@ final class Browser {
 		let restoredTabs = loaded.tabs.compactMap { saved -> BrowserTab? in
 			let internalPage = saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:))
 			guard saved.internalPage == nil || internalPage != nil else { return nil }
-			if let shared = BrowserWindowRegistry.shared.sharedTab(withID: saved.id, for: self) {
+			if let shared = BrowserWindowRegistry.shared.sharedTab(withID: saved.id, for: self),
+			   shared.internalPage == internalPage
+			{
 				return shared
 			}
 			return BrowserTab(
@@ -1168,6 +1177,7 @@ final class Browser {
 				recordsNavigationHistory: saved.recordsNavigationHistory,
 				restorationState: saved.restorationState,
 				fileAccessBookmark: saved.fileAccessBookmark,
+				easel: saved.easel,
 				suppressInitialHistoryVisit: true,
 				initialRestorationBaseline: saved
 			)
@@ -1229,6 +1239,7 @@ final class Browser {
 	}
 
 	func requestNewTab() {
+		closeEaselSplit()
 		let clipboardURL = NSPasteboard.general.string(forType: .string).flatMap(BrowserSearchMatching.pastedHTTPURL)
 		if Defaults[.newTabStyle] == .overlay, !isMini {
 			newTabClipboardURL = clipboardURL
@@ -1347,6 +1358,7 @@ final class Browser {
 	func openInternalPage(_ page: BrowserInternalPage, inNewTab: Bool = false) {
 		BrowserLog.info(.navigation, "internal.open", metadata: ["page": String(describing: page), "new_tab": String(inNewTab)])
 		guard !isPrivate || page == .settings else { return }
+		guard page != .easel || !isMini else { return }
 		if isPrivate {
 			settingsPage = .privacyAndSecurity
 		}
@@ -1360,6 +1372,102 @@ final class Browser {
 		markWorkspaceStructureChanged()
 		selectTab(tab.id)
 		schedulePersistence(fullState: true)
+	}
+
+	@discardableResult
+	func createEasel() -> BrowserTab? {
+		guard !isPrivate, !isMini else { return nil }
+		let leftID = selectedTab?.canAppearInEaselSplit == true ? selectedTabID : splitLeftTabID
+		let before = Set(tabs.map(\.id))
+		openInternalPage(.easel, inNewTab: true)
+		guard let tab = tabs.first(where: { !before.contains($0.id) }) else { return nil }
+		moveTab(tab.id, to: .pinned, in: workspace.selectedSpaceID)
+		if let leftID {
+			splitLeftTabID = leftID
+			splitEaselTabID = tab.id
+			selectTab(leftID)
+		}
+		return tab
+	}
+
+	var isShowingEaselSplit: Bool {
+		guard let leftID = splitLeftTabID, let easelID = splitEaselTabID else { return false }
+		return visibleTabs.contains(where: { $0.id == leftID && $0.canAppearInEaselSplit })
+			&& visibleTabs.contains(where: { $0.id == easelID && $0.internalPage == .easel })
+	}
+
+	func deleteEasel(_ id: UUID, confirmed: Bool = false) {
+		guard !isPrivate, let tab = tab(withID: id), tab.internalPage == .easel else { return }
+		#if os(macOS)
+			if !confirmed {
+				Task { @MainActor [weak self] in
+					let alert = BrowserWebsiteUI.alert(title: "Delete this easel?", message: "Its contents will be permanently deleted from your devices, and any open peeks will close.", confirm: "Delete Easel")
+					if await BrowserWebsiteUI.present(alert, in: NSApp.keyWindow) == .alertFirstButtonReturn {
+						self?.deleteEasel(id, confirmed: true)
+					}
+				}
+				return
+			}
+		#else
+			guard confirmed else { return }
+		#endif
+		let fallback = visibleTabs.first(where: { $0.id != id })?.id
+		let date = BrowserUserDataMutation.nextDate(after: max(tab.modifiedAt, nextWorkspaceMutationDate()), deletion: closedTabsAt[id] ?? .distantPast)
+		if workspace.favouriteTabIDs.contains(id) {
+			workspace.favouriteTabIDs.removeAll { $0 == id }
+			workspace.favouritesModifiedAt = date
+		}
+		for index in workspace.spaces.indices where workspace.spaces[index].tabIDs.contains(id) {
+			workspace.spaces[index].tabIDs.removeAll { $0 == id }
+			workspace.spaces[index].pinnedTabIDs.removeAll { $0 == id }
+			for folderIndex in workspace.spaces[index].pinnedFolders.indices {
+				workspace.spaces[index].pinnedFolders[folderIndex].tabIDs.removeAll { $0 == id }
+			}
+			workspace.spaces[index].modifiedAt = date
+		}
+		if splitEaselTabID == id {
+			closeEaselSplit()
+		}
+		releaseAfterTabUpdate([tab])
+		tabs.removeAll { $0.id == id }
+		closedTabIDs.insert(id)
+		closedTabsAt[id] = date
+		reconcileWorkspace()
+		markWorkspaceStructureChanged()
+		if selectedTabID == id {
+			if let fallback {
+				selectTab(fallback)
+			} else {
+				addTab()
+			}
+		}
+		schedulePersistence(fullState: true)
+	}
+
+	func openEaselInSplit(_ id: UUID) {
+		guard let easel = tab(withID: id), easel.internalPage == .easel,
+		      let leftTab = splitLeftTabID.flatMap({ tab(withID: $0) }) ?? selectedTab,
+		      leftTab.canAppearInEaselSplit, leftTab.id != easel.id,
+		      visibleTabs.contains(where: { $0.id == leftTab.id }),
+		      visibleTabs.contains(where: { $0.id == easel.id })
+		else { return }
+		selectTab(easel.id)
+		splitLeftTabID = leftTab.id
+		splitEaselTabID = easel.id
+		selectTab(leftTab.id)
+	}
+
+	func openEaselLink(_ url: URL, in tab: BrowserTab) {
+		guard tab.internalPage == .easel, BrowserEaselDocument.isSafeLink(url) else { return }
+		selectTab(tab.id)
+		let peek = BrowserPeek(url: url, depth: tab.peeks.count + 1, source: .trailing, parentZoom: 1, zoomsOut: Defaults[.zoomOutInPeeks], session: session)
+		configure(peek, in: tab)
+		tab.addPeek(peek)
+	}
+
+	func closeEaselSplit() {
+		splitLeftTabID = nil
+		splitEaselTabID = nil
 	}
 
 	var openHistoryTabs: [OpenTab] {
@@ -1464,6 +1572,9 @@ final class Browser {
 		let selectionStartedAt = BrowserLog.clock()
 		BrowserLog.debug(.tabs, "tab.select", metadata: ["window": BrowserLog.id(windowID), "from": BrowserLog.id(selectedTabID), "to": BrowserLog.id(id)])
 		guard let tab = tab(withID: id) else { return }
+		if isShowingEaselSplit, id != splitLeftTabID, id != splitEaselTabID {
+			closeEaselSplit()
+		}
 		defer {
 			BrowserLog.duration(
 				.performance,
@@ -1942,8 +2053,15 @@ final class Browser {
 				return
 			}
 		#endif
+		if id == splitLeftTabID || id == splitEaselTabID {
+			closeEaselSplit()
+		}
 		if workspace.favouriteTabIDs.contains(id) || workspace.spaces.contains(where: { $0.pinnedTabIDs.contains(id) }) {
-			hibernateTab(id)
+			if tabs[index].internalPage == .easel, let peek = tabs[index].peeks.first {
+				tabs[index].dismissPeek(peek.id, confirmed: true)
+			} else {
+				hibernateTab(id)
+			}
 			if selectedTabID == id {
 				if let next = visibleTabs.first(where: { $0.id != id }) {
 					selectTab(next.id)
@@ -1964,7 +2082,7 @@ final class Browser {
 		if !wasInternal {
 			archiveHistory(of: [tabs[index]])
 		}
-		let shouldCreateSyncTombstone = !wasInternal && isSyncableTab(tabs[index].openTab)
+		let shouldCreateSyncTombstone = isSyncableTab(tabs[index].openTab)
 		releaseAfterTabUpdate([tabs[index]])
 		tabs.remove(at: index)
 		if shouldCreateSyncTombstone {
@@ -2443,8 +2561,15 @@ final class Browser {
 	}
 
 	private func configure(_ tab: BrowserTab, ownershipVerified: Bool = false) {
-		guard ownershipVerified || BrowserWindowRegistry.shared.ownsTab(tab.id, in: self),
-		      let controller = tab.controller else { return }
+		guard ownershipVerified || BrowserWindowRegistry.shared.ownsTab(tab.id, in: self) else { return }
+		if tab.internalPage == .easel {
+			attachPersistence(to: tab)
+			for peek in tab.peeks {
+				configure(peek, in: tab)
+			}
+			return
+		}
+		guard let controller = tab.controller else { return }
 		controller.displayWindowID = windowID
 		controller.navigationIntercept = navigationIntercept
 		if controller.browserConfigurationWindowID == windowID {
@@ -2861,7 +2986,9 @@ final class Browser {
 		let changedTabs = document.tabs.compactMap { saved -> BrowserTab? in
 			let internalPage = saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:))
 			guard saved.internalPage == nil || internalPage != nil else { return nil }
-			if let current = currentTabs[saved.id] ?? BrowserWindowRegistry.shared.sharedTab(withID: saved.id, for: self) {
+			if let current = currentTabs[saved.id] ?? BrowserWindowRegistry.shared.sharedTab(withID: saved.id, for: self),
+			   current.internalPage == internalPage
+			{
 				if localPortableTabs[saved.id] == saved
 					|| current.modifiedAt > saved.modifiedAt
 					|| !current.canHibernate
@@ -2891,6 +3018,7 @@ final class Browser {
 				recordsNavigationHistory: saved.recordsNavigationHistory,
 				restorationState: saved.restorationState,
 				fileAccessBookmark: saved.fileAccessBookmark,
+				easel: saved.easel,
 				suppressInitialHistoryVisit: true
 			)
 			configure(tab)
@@ -2898,7 +3026,7 @@ final class Browser {
 		}
 		let changedTabIDs = Set(changedTabs.map(\.id))
 		let retainedInternalTabs = tabs.filter {
-			$0.internalPage != nil && !changedTabIDs.contains($0.id)
+			$0.internalPage != nil && $0.internalPage != .easel && !changedTabIDs.contains($0.id)
 		}
 		if changedTabs.isEmpty, retainedInternalTabs.isEmpty {
 			let tab = BrowserTab(session: session)
@@ -3137,6 +3265,14 @@ final class Browser {
 		let assignedIDs = Set(workspace.favouriteTabIDs + workspace.spaces.flatMap(\.tabIDs))
 		let unassignedIDs = tabs.map(\.id).filter { !assignedIDs.contains($0) }
 		workspace.reconcileMembership(existingTabIDs: existingIDs, unassignedTabIDs: unassignedIDs)
+		let easelIDs = Set(tabs.filter { $0.internalPage == .easel }.map(\.id))
+		if !easelIDs.isEmpty {
+			for index in workspace.spaces.indices {
+				for id in workspace.spaces[index].tabIDs where easelIDs.contains(id) && !workspace.spaces[index].pinnedTabIDs.contains(id) {
+					workspace.spaces[index].pinnedTabIDs.append(id)
+				}
+			}
+		}
 		if let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }),
 		   workspace.spaces[index].tabIDs.contains(selectedTabID)
 		   || workspace.favouriteTabIDs.contains(selectedTabID)
@@ -3370,7 +3506,8 @@ final class Browser {
 					id: tab.id,
 					url: url.flatMap { $0.absoluteString.utf8.count <= 4096 ? $0 : nil },
 					title: String(tab.title.prefix(240)),
-					order: index
+					order: index,
+					internalPage: tab.internalPage == .easel ? "easel" : nil
 				)
 			},
 			spaces: workspace.spaces.map { space in

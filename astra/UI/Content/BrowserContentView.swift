@@ -104,6 +104,9 @@ private struct InternalPageHost: View {
 					BrowserHistoryView(browser: browser)
 				case .bookmarks:
 					BrowserBookmarksView(browser: browser)
+				case .easel:
+					BrowserEaselView(browser: browser, tab: tab)
+						.id(tab.id)
 				#if DEBUG
 					case let .failedWebsiteState(kind):
 						BrowserNavigationErrorView(kind: kind) {
@@ -190,6 +193,9 @@ final class BrowserTabResourceManager {
 		func append(_ controller: BrowserController?) {
 			guard let controller, controller.url != nil, seen.insert(controller.id).inserted else { return }
 			result.append(controller)
+		}
+		if let splitID = browser.splitLeftTabID, browser.isShowingEaselSplit, ownedTabIDs.contains(splitID) {
+			append(tabsByID[splitID]?.controller)
 		}
 		if let selectedTab, ownedTabIDs.contains(selectedTab.id) {
 			append(selectedTab.controller)

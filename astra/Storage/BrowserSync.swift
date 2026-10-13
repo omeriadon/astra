@@ -293,7 +293,7 @@ final class BrowserSync {
 					.map { try decoder.decode(BrowserSyncDocument.self, from: $0.payload) }
 				guard ownDocument != outgoing else { return nil }
 				let payload = try JSONEncoder().encode(outgoing)
-				guard payload.count <= 16 * 1024 * 1024 else {
+				guard payload.count <= 5_000_000 else {
 					throw BrowserSyncError.payloadTooLarge
 				}
 				return payload

@@ -36,6 +36,8 @@ struct DesktopBrowserShell: View {
 	@State private var presentedSidebarShown = false
 	@State private var presentedAISidebarShown = false
 	@State private var reservedMinimumWidth: CGFloat = 0
+	@State private var leftPaneWidth = BrowserChromeMetrics.expandedSidebarWidth
+	@State private var rightPaneWidth: CGFloat = 364
 	@State private var paneTransitionGeneration = 0
 	#if os(macOS)
 		@State private var hostWindow: NSWindow?
@@ -52,15 +54,14 @@ struct DesktopBrowserShell: View {
 	}
 
 	private var minimumWindowWidth: CGFloat {
-		BrowserChromeMetrics.minimumWindowWidth(
-			sidebarShown: sidebarShown,
-			aiSidebarShown: showsAISidebar,
-			minimumContentWidth: minimumPageWidth
-		)
+		minimumPageWidth
+			+ (sidebarShown ? leftPaneWidth : 0)
+			+ (showsAISidebar ? rightPaneWidth : 0)
 	}
 
 	private var minimumPageWidth: CGFloat {
-		BrowserChromeMetrics.minimumPageWidth(isSettings: browser.selectedTab?.internalPage == .settings)
+		let page = BrowserChromeMetrics.minimumPageWidth(isSettings: browser.selectedTab?.internalPage == .settings)
+		return browser.isShowingEaselSplit ? max(page, 728) : page
 	}
 
 	private var isSidebarPinned: Bool {
@@ -167,7 +168,8 @@ struct DesktopBrowserShell: View {
 			BrowserSplitView(
 				sidebarShown: .constant(isSidebarVisible),
 				minimumContentWidth: minimumPageWidth,
-				followingSidebarWidth: showsAI ? BrowserChromeMetrics.aiSidebarWidthRange.lowerBound : 0
+				followingSidebarWidth: showsAI ? rightPaneWidth : 0,
+				onWidthChange: { leftPaneWidth = $0 }
 			) {
 				ShellSidebarColumn(
 					browser: browser,
@@ -188,7 +190,8 @@ struct DesktopBrowserShell: View {
 					sidebarWidth: min(360, geometry.size.width * 0.45) + BrowserChromeMetrics.shellEdgePadding,
 					sidebarWidthRange: BrowserChromeMetrics.aiSidebarWidthRange,
 					minimumContentWidth: minimumPageWidth,
-					edge: .trailing
+					edge: .trailing,
+					onWidthChange: { rightPaneWidth = $0 }
 				) {
 					BrowserAIChatSidebar(browser: browser, chat: browser.aiChat, isVisible: showsAI)
 						.padding(.vertical, BrowserChromeMetrics.shellEdgePadding)
@@ -499,7 +502,8 @@ private struct ShellSidebarColumn: View {
 
 			Group {
 				if showsDownloads || keepsDownloadsMounted {
-					DownloadsSidebarView(
+					LibrarySidebarView(
+						browser: browser,
 						manager: downloads,
 						theme: theme
 					)
@@ -698,11 +702,22 @@ private struct ShellContentColumn: View {
 				Spacer(minLength: 0)
 					.frame(height: topBarHeight)
 					.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsTopBar)
-				BrowserPageView(browser: browser, cornerRadius: contentCornerRadius)
-					.equatable()
-					.padding(.top, hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
-					.padding([.bottom, .horizontal], hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
-					.frame(maxWidth: .infinity, maxHeight: .infinity)
+				Group {
+					if browser.isShowingEaselSplit,
+					   let leftID = browser.splitLeftTabID,
+					   let easelID = browser.splitEaselTabID,
+					   let leftTab = browser.tab(withID: leftID),
+					   let easel = browser.tab(withID: easelID)
+					{
+						BrowserEaselSplitView(browser: browser, leftTab: leftTab, easel: easel, cornerRadius: contentCornerRadius)
+					} else {
+						BrowserPageView(browser: browser, cornerRadius: contentCornerRadius)
+							.equatable()
+					}
+				}
+				.padding(.top, hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
+				.padding([.bottom, .horizontal], hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
+				.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
 		}
 		.animation(nil, value: browser.selectedTabID)

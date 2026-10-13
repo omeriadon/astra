@@ -269,7 +269,7 @@ struct BrowserTabRow: View {
 	}
 
 	private func beginRenaming() {
-		guard tab.internalPage == nil else { return }
+		guard tab.internalPage == nil || tab.internalPage == .easel else { return }
 		browser.selectTab(tab.id)
 		renameText = tab.title
 		isRenaming = true
@@ -449,7 +449,7 @@ private struct TabTitleView: View {
 				)
 				.accessibilityLabel(Text(verbatim: tab.title))
 				.accessibilityActions {
-					if tab.internalPage == nil {
+					if tab.internalPage == nil || tab.internalPage == .easel {
 						Button("Rename", systemImage: "pencil") { onBeginRenaming() }
 					}
 				}
@@ -502,7 +502,7 @@ private struct TabCloseButton: View {
 				.frame(width: isCompact ? 44 : 13, height: isCompact ? 44 : 16)
 		}
 		.buttonStyle(.plain)
-		.accessibilityLabel(isPinned ? "Hibernate Tab" : "Close Tab")
+		.accessibilityLabel(tab.internalPage == .easel ? "Close Easel" : isPinned ? "Hibernate Tab" : "Close Tab")
 		.accessibilityIdentifier("close-tab-\(tab.id.uuidString)")
 	}
 }
@@ -520,6 +520,21 @@ private struct TabRowContextMenu: View {
 	var onSelectTab: ((UUID) -> Void)?
 
 	var body: some View {
+		if tab.internalPage == .easel {
+			Button("Rename Easel", systemImage: "pencil", action: onBeginRenaming)
+			Button("Revert Easel Name", systemImage: "arrow.uturn.backward", action: tab.revertTitle)
+				.disabled(!tab.hasCustomTitle)
+			Menu("Move to Space", systemImage: "rectangle.3.group") {
+				ForEach(browser.workspace.spaces) { space in
+					Button(space.name, systemImage: space.symbol) {
+						browser.moveTab(tab.id, to: .pinned, in: space.id)
+					}
+				}
+			}
+			Button("Add to Favourites", systemImage: "star") {
+				browser.moveTab(tab.id, to: .favourite)
+			}
+		}
 		Button("New Folder with Tab", systemImage: "folder.badge.plus") {
 			browser.createPinnedFolder(with: [tab.id], in: spaceID)
 		}
@@ -613,7 +628,7 @@ private struct TabRowContextMenu: View {
 		Button(role: isPinned ? nil : .destructive) {
 			browser.closeTab(tab.id)
 		} label: {
-			Label(isPinned ? "Hibernate Tab" : "Close Tab", systemImage: isPinned ? "moon.zzz" : "xmark")
+			Label(tab.internalPage == .easel ? "Close Easel" : isPinned ? "Hibernate Tab" : "Close Tab", systemImage: isPinned && tab.internalPage != .easel ? "moon.zzz" : "xmark")
 		}
 	}
 }

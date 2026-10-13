@@ -4,20 +4,31 @@ struct BrowserPageView: View {
 	let browser: Browser
 	let cornerRadius: CGFloat
 	var insets = BrowserViewportInsets()
+	var tabID: UUID?
+	var showsPeeks = true
 	@State private var presentedSpaceID: UUID
 	@State private var presentedTabID: UUID
 	@State private var contentOpacity = 1.0
 	@State private var transitionGeneration = 0
 
 	init(browser: Browser, cornerRadius: CGFloat, insets: BrowserViewportInsets = BrowserViewportInsets()) {
+		self.init(browser: browser, cornerRadius: cornerRadius, insets: insets, tabID: nil, showsPeeks: true)
+	}
+
+	init(browser: Browser, cornerRadius: CGFloat, insets: BrowserViewportInsets = BrowserViewportInsets(), tabID: UUID?, showsPeeks: Bool = true) {
 		self.browser = browser
 		self.cornerRadius = cornerRadius
 		self.insets = insets
+		self.tabID = tabID
+		self.showsPeeks = showsPeeks
 		_presentedSpaceID = State(initialValue: browser.selectedSpace.id)
 		_presentedTabID = State(initialValue: browser.selectedTabID)
 	}
 
 	private var displayedTab: BrowserTab? {
+		if let tabID {
+			return browser.tab(withID: tabID)
+		}
 		if presentedSpaceID != browser.selectedSpace.id {
 			return browser.tab(withID: presentedTabID) ?? browser.selectedTab
 		}
@@ -52,7 +63,7 @@ struct BrowserPageView: View {
 			#endif
 
 			if let tab = selectedTab,
-			   !hasActiveDuplicate,
+			   showsPeeks, !hasActiveDuplicate,
 			   !tab.peeks.isEmpty,
 			   tab.activeController !== tab.controller
 			{
@@ -160,6 +171,8 @@ extension BrowserPageView: Equatable {
 	static func == (lhs: Self, rhs: Self) -> Bool {
 		lhs.browser === rhs.browser
 			&& lhs.cornerRadius == rhs.cornerRadius
+			&& lhs.tabID == rhs.tabID
+			&& lhs.showsPeeks == rhs.showsPeeks
 			&& lhs.hasDockedWebInspector == rhs.hasDockedWebInspector
 			&& sameEdges(lhs.insets.obscured, rhs.insets.obscured)
 			&& sameEdges(lhs.insets.minimum, rhs.insets.minimum)

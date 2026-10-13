@@ -3,14 +3,14 @@ import Foundation
 enum BrowserChromeMetrics {
 	static let topBarRegionHeight: CGFloat = 24.5
 	static let expandedSidebarWidth: CGFloat = 224
-	static let sidebarWidthRange: ClosedRange<CGFloat> = 130 ... 330
+	static let sidebarWidthRange: ClosedRange<CGFloat> = 168 ... 330
 	static let aiSidebarWidthRange: ClosedRange<CGFloat> = 300 ... 600
 	static let minimumContentWidth: CGFloat = 270
 	static let settingsSidebarWidth: CGFloat = 230
 	static let settingsDetailPadding: CGFloat = 16
 
 	static func minimumPageWidth(isSettings: Bool) -> CGFloat {
-		minimumContentWidth + shellEdgePadding * 2
+		max(minimumContentWidth + shellEdgePadding * 2, 600)
 			+ (isSettings ? settingsSidebarWidth + settingsDetailPadding * 2 + 1 : 0)
 	}
 

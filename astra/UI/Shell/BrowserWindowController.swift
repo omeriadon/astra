@@ -76,12 +76,9 @@
 			window.delegate = self
 			window.contentView = contentHost
 			window.contentMinSize = NSSize(width: BrowserChromeMetrics.minimumContentWidth, height: min(480, visibleFrame.height))
-			window.setBrowserMinimumContentWidth(BrowserChromeMetrics.minimumWindowWidth(
-				sidebarShown: browser.sidebarShown,
-				aiSidebarShown: browser.showsAISidebar && browser.canShowAISidebar
-					&& Defaults[.aiFeaturesEnabled] && Defaults[.aiSidebar],
-				minimumContentWidth: BrowserChromeMetrics.minimumPageWidth(isSettings: browser.selectedTab?.internalPage == .settings)
-			))
+			window.setBrowserMinimumContentWidth(BrowserChromeMetrics.minimumPageWidth(isSettings: browser.selectedTab?.internalPage == .settings)
+				+ (browser.sidebarShown ? BrowserChromeMetrics.expandedSidebarWidth : 0)
+				+ (browser.showsAISidebar && browser.canShowAISidebar && Defaults[.aiFeaturesEnabled] && Defaults[.aiSidebar] ? 364 : 0))
 			window.title = browser.isPrivate ? "astra — Private Browsing" : "astra"
 			window.isOpaque = false
 			window.backgroundColor = NSColor.white.withAlphaComponent(0.001)

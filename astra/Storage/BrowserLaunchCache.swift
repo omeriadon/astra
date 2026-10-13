@@ -92,17 +92,20 @@ enum BrowserLaunchCache {
 		var url: URL?
 		var title: String
 		var order: Int
+		var internalPage: String?
 
 		init(
 			id: UUID,
 			url: URL?,
 			title: String,
-			order: Int
+			order: Int,
+			internalPage: String? = nil
 		) {
 			self.id = id
 			self.url = url
 			self.title = title
 			self.order = order
+			self.internalPage = internalPage
 		}
 	}
 
