@@ -8,7 +8,9 @@
 		let browser = Browser(isMini: true)
 		let window: NSPanel
 		var onClose: (() -> Void)?
-		var onPromote: ((BrowserTab) -> Void)?
+		var onPromote: ((BrowserTab, UUID?) -> Void)?
+		var resolveSpaceBrowser: (() -> Browser?)?
+		var revealSpaceBrowser: (() -> Void)?
 		private var isOpening = false
 		private var isPromoting = false
 		private let openingOrigin: NSPoint
@@ -50,7 +52,12 @@
 			zoomButton?.toolTip = "Move to Workspace"
 			zoomButton?.setAccessibilityLabel("Move to Workspace")
 			zoomButton?.setAccessibilityIdentifier("mini-astra-window-promote")
-			let root = MiniAstraView(browser: browser)
+			let root = MiniAstraView(
+				browser: browser,
+				resolveSpaceBrowser: { [weak self] in self?.resolveSpaceBrowser?() },
+				onOpenInSpace: { [weak self] spaceID in self?.promote(toSpace: spaceID) },
+				onRevealSpaceBrowser: { [weak self] in self?.revealSpaceBrowser?() }
+			)
 			window.contentView = BrowserContentHostView(hostingView: NSHostingView(rootView: root))
 			if let url {
 				browser.selectedTab?.controller?.load(url)
@@ -80,11 +87,15 @@
 		}
 
 		@objc func promote() {
-			guard let tab = browser.selectedTab, let onPromote else { return }
+			promote(toSpace: nil)
+		}
+
+		func promote(toSpace spaceID: UUID?) {
+			guard !isPromoting, let tab = browser.selectedTab, let onPromote else { return }
 			isPromoting = true
 			// Detach the hosted web view before the main window mounts the same controller.
 			window.contentView = nil
-			onPromote(tab)
+			onPromote(tab, spaceID)
 			window.close()
 		}
 
