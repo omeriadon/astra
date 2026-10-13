@@ -864,7 +864,7 @@ private struct TabSplitDropDelegate: DropDelegate {
 	func performDrop(info: DropInfo) -> Bool {
 		defer { side = nil }
 		guard validateDrop(info: info),
-		      let anchorID = browser.selectedTabID,
+		      let anchorID = browser.selectedTab?.id,
 		      let provider = info.itemProviders(for: ["com.omeriadon.astra.tab"]).first
 		else { return false }
 		let onLeft = desiredSide(at: info.location) == .left
