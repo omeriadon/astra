@@ -581,11 +581,12 @@ private struct ShellSpaceTabList: View {
 			space: space,
 			theme: space.theme,
 			isActiveSpace: space.id == browser.selectedSpace.id,
-			favouriteTabIDs: browser.workspace.favouriteTabIDs
+			favouriteTabIDs: browser.workspace.favouriteTabIDs,
+			topMargin: topMargin
 		)
 		.id(space.id)
 		.foregroundStyle(space.theme.foregroundColor)
-		.sidebarScrollContentMargins(top: topMargin)
+		.sidebarScrollContentMargins(top: BrowserChromeMetrics.topBarRegionHeight + 5)
 		.accessibilityIdentifier("sidebar-space-pages")
 		.opacity(listOpacity)
 		.allowsHitTesting(space.id == browser.selectedSpace.id)
