@@ -4,6 +4,18 @@
 
 `BrowserController` passed `WKWebView.themeColor` directly into the toolbar, otherwise used `WKWebView.underPageBackgroundColor` or white. The light/dark decision was an unweighted sum of RGB channels. `BrowserLoadingBar` used `BrowserTheme.progressColor` (maximum chroma from the *space* theme), which could disappear against the selected site's toolbar.
 
+## Comparable open-source browser implementations (verified)
+
+The closest analogue is **[Adaptive Tab Bar Colour](https://github.com/atbc-org/Adaptive-Tab-Bar-Colour)** (Firefox extension, MIT). As of October 2026 its main branch contains `src/entrypoints/atbc.content.ts` and `src/utils/colour.ts`. The content script obtains `elementsFromPoint(window.innerWidth / 2, 3)`, retains elements covering at least 90% of the viewport, then considers body/html backgrounds and separately reads light/dark `meta[name=theme-color]` tags. The background logic composites translucent layers and can apply WCAG contrast correction. It listens for scroll, resize, click, CSS transition and animation completions, stylesheet changes, and Dark Reader state. Astra's multi-column sampling is more resistant to a logo or floating control occupying the midpoint, but borrowed the *event-driven refresh after CSS transitions/animations* concept. Unlike ATBC, Astra runs directly inside its own WKWebView and does not need a browser extension or Firefox theme API.
+
+- **[Ambient Theme by Site Colour](https://github.com/manikandancode/ambient-theme-by-site-colour)** (Firefox extension, MIT) falls back from explicit metadata to logo, favicon, primary buttons, prominent image and finally page background. The idea of brand/image fallbacks is useful for pages without solid headers, but those surfaces are not guaranteed to match the live page-edge colour.
+- **[Color Tailor](https://github.com/idna001/ff-theme-color)** (Firefox extension, MIT) prefers `theme-color`, then `node-vibrant` on the favicon. This is small and cheap but may substitute brand accent for the actual toolbar background.
+- **[OpenBrand](https://github.com/tight-studio/OpenBrand)** (MIT) extracts branding assets and colours from metadata and logo imagery. Useful as an independent brand-signal benchmark, not for constantly updated WKWebView chrome.
+- **[Chromalift](https://github.com/Etipufhu/chromalift)** (MIT) combines DOM styles, screenshots and image analysis, using CIELAB clustering. Useful for a future lower-frequency palette/fallback mode; a whole-page scan or screenshot readback should not run every time the toolbar colour changes.
+- **[moz-safari-toolbar](https://github.com/ZEBAS204/moz-safari-toolbar)** is a proof-of-concept that captures and blurs top-of-page pixels as a Firefox theme; it demonstrates a route for gradient/image-based tinting, with acknowledged CPU and buffering challenges. Not an appropriate hot-path dependency without performance measurements.
+
+The available projects solve distinct problems: **page-edge visual matching** vs **brand identification** vs **full-page palette extraction**. Astra deliberately prioritizes page-edge visual matching, uses WebKit metadata as the next signal, and does not ship external logos/database lookups.
+
 ## Existing approaches researched
 
 | Source | Technique | Applicability to Astra |
@@ -40,9 +52,9 @@ The progress bar is solid black or solid white, chosen against the **actual top-
 
 ## Behavioural validation
 
-`node checks/website-chrome-tint-check.mjs` checks the injected script itself for: solid/translucent/fully transparent header handling, body fallback, gradient rejection, dynamic colour mutation, late CSS load, back-forward cache restoration, per-pass geometry caching, debounce, deduplication, hidden-tab suppression, duplicate-install protection, and the SwiftUI progress-colour wiring.
+`node checks/website-chrome-tint-check.mjs` checks the injected script itself for: solid/translucent/fully transparent header handling, body fallback, gradient rejection, dynamic colour mutation, late CSS load, back-forward cache restoration, per-pass geometry caching, CSS animation/transition completion updates, debounce, deduplication, hidden-tab suppression, duplicate-install protection, and the SwiftUI progress-colour wiring.
 
-All 24 JavaScript regression assertions passed in an isolated V8 harness using the exact checked-in Swift script; GitHub Actions has not produced a run for this PR yet. The macOS WebKit runtime still needs a genuine Xcode build and interactive checks on representative sites. Test fixed vs sticky headers, gradients, responsive navigation, dark-mode transitions, SPA route changes, website apps and Mini Astra. The script does not claim pixel-accurate colour extraction for image/gradient headers; that would require a separate screenshot or image pipeline and profiling before adoption.
+All 26 JavaScript regression assertions passed in an isolated V8 harness using the exact checked-in Swift script; GitHub Actions has not produced a run for this PR yet. The macOS WebKit runtime still needs a genuine Xcode build and interactive checks on representative sites. Test fixed vs sticky headers, gradients, responsive navigation, dark-mode transitions, SPA route changes, website apps and Mini Astra. The script does not claim pixel-accurate colour extraction for image/gradient headers; that would require a separate screenshot or image pipeline and profiling before adoption.
 
 ## Rejected shortcuts
 
