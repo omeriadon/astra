@@ -18,6 +18,7 @@ struct BrowserTabRow: View {
 	var pinned: Bool?
 	var rowSpaceID: UUID?
 	var rowTheme: BrowserTheme?
+	var splitSide: Browser.SplitSide?
 	var isOpenElsewhere: Bool?
 	var onSelectTab: ((UUID) -> Void)?
 	var navigationNamespace: Namespace.ID?
@@ -99,7 +100,7 @@ struct BrowserTabRow: View {
 					}
 			}
 
-			if let side = browser.splitSide(for: tab.id) {
+			if let side = splitSide {
 				Image(systemName: side == .left ? "rectangle.lefthalf.filled" : "rectangle.righthalf.filled")
 					.font(.system(size: 11))
 					.foregroundStyle(theme.foregroundColor.opacity(0.75))
@@ -137,7 +138,7 @@ struct BrowserTabRow: View {
 		.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? rowTransitions)
 		.foregroundStyle(theme.foregroundColor)
 		.background {
-			if isSelected || browser.splitSide(for: tab.id) != nil {
+			if isSelected || splitSide != nil {
 				Color.clear
 					.glassEffect(
 						.clear,
@@ -313,6 +314,7 @@ extension BrowserTabRow: Equatable {
 			&& lhs.rowSpaceID == rhs.rowSpaceID
 			&& lhs.rowTheme == rhs.rowTheme
 			&& lhs.isOpenElsewhere == rhs.isOpenElsewhere
+			&& lhs.splitSide == rhs.splitSide
 			&& (lhs.onSelectTab == nil) == (rhs.onSelectTab == nil)
 			&& lhs.navigationNamespace == rhs.navigationNamespace
 			&& lhs.sidebarSelection === rhs.sidebarSelection
