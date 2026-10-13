@@ -30,6 +30,9 @@ jobs:
           bash -n scripts/benchmark_startup.sh
           bash -n scripts/audit_sparkle_bundle.sh
 
+      - name: Validate Mini Astra shared chrome
+        run: node checks/mini-astra-shared-chrome-check.mjs
+
       - name: Select Xcode 27
         run: bash scripts/ci/select-xcode-27.sh
 
