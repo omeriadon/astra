@@ -50,7 +50,9 @@ final class Browser {
 					old.id == new.id && old.tabIDs == new.tabIDs
 						&& old.pinnedTabIDs == new.pinnedTabIDs
 				}
-			if membershipChanged { visibleTabMembershipRevision &+= 1 }
+			if membershipChanged {
+				visibleTabMembershipRevision &+= 1
+			}
 		}
 	}
 
@@ -1544,8 +1546,8 @@ final class Browser {
 		guard tab.internalPage == .easel, quote.isValid else { return }
 		selectTab(tab.id)
 		let peek = BrowserPeek(url: quote.url, depth: tab.peeks.count + 1,
-			source: .trailing, parentZoom: 1,
-			zoomsOut: Defaults[.zoomOutInPeeks], session: session, easelQuote: quote)
+		                       source: .trailing, parentZoom: 1,
+		                       zoomsOut: Defaults[.zoomOutInPeeks], session: session, easelQuote: quote)
 		configure(peek, in: tab)
 		tab.addPeek(peek)
 	}
@@ -2714,11 +2716,11 @@ final class Browser {
 		}
 		controller.easelQuoteDestinations = { [weak self, weak tab] in
 			guard let self, let tab else { return [] }
-			return self.easelQuoteDestinations(for: tab)
+			return easelQuoteDestinations(for: tab)
 		}
 		controller.addQuoteToEasel = { [weak self, weak tab] destinationID, quote in
 			guard let self, let tab else { return }
-			self.addEaselQuote(quote, to: destinationID, from: tab.id)
+			addEaselQuote(quote, to: destinationID, from: tab.id)
 		}
 		controller.newTabRequested = { [weak self, weak controller, weak tab] request, inBackground in
 			guard let self else { return }

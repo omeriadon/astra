@@ -320,10 +320,10 @@ struct DesktopBrowserShell: View {
 
 	var body: some View {
 		windowLayout
-			#if os(macOS)
+		#if os(macOS)
 			.blur(radius: spaceSwitcher.isPresented ? 3 : 0)
 			.animation(reduceMotion ? nil : .smooth(duration: 0.22), value: spaceSwitcher.isPresented)
-			#endif
+		#endif
 			.background {
 				#if os(macOS)
 					// Sheet presenters must outlive the optional toolbar and be window-scoped.
@@ -377,7 +377,9 @@ struct DesktopBrowserShell: View {
 					.allowsHitTesting(false)
 			}
 			.onChange(of: browser.workspace.spaces.map(\.id)) { _, _ in
-				if spaceSwitcher.isPresented { spaceSwitcher.spacesDidChange() }
+				if spaceSwitcher.isPresented {
+					spaceSwitcher.spacesDidChange()
+				}
 			}
 		#endif
 			.onChange(of: showsDownloads) { _, shown in

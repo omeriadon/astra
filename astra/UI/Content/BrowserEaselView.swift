@@ -786,7 +786,9 @@ struct BrowserEaselView: View {
 				let url = try result.get()
 				let access = url.startAccessingSecurityScopedResource()
 				defer {
-					if access { url.stopAccessingSecurityScopedResource() }
+					if access {
+						url.stopAccessingSecurityScopedResource()
+					}
 				}
 				// Security-scoped access is held until the detached read completes.
 				let data = try await Task.detached(priority: .userInitiated) {
@@ -817,7 +819,7 @@ struct BrowserEaselView: View {
 		      ] as CFDictionary)
 		else { return nil }
 
-		let hasAlpha: Bool = switch thumbnail.alphaInfo {
+		let hasAlpha = switch thumbnail.alphaInfo {
 			case .alphaOnly, .first, .last, .premultipliedFirst, .premultipliedLast: true
 			default: false
 		}

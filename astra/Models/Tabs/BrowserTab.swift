@@ -141,7 +141,9 @@ final class BrowserTab: Identifiable {
 	var pendingQuotePlacementID: UUID?
 
 	func consumeQuotePlacement(_ id: UUID) {
-		if pendingQuotePlacementID == id { pendingQuotePlacementID = nil }
+		if pendingQuotePlacementID == id {
+			pendingQuotePlacementID = nil
+		}
 	}
 
 	var easelDocument: BrowserEaselDocument {

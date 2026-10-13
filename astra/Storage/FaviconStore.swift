@@ -257,8 +257,12 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	func cachedAccentColor(for pageURL: URL?) async -> (Double, Double, Double)? {
 		guard let key = visibleOrigin(for: pageURL),
 		      let data = favicons[key] else { return nil }
-		if let cached = faviconAccents[key] { return cached }
-		if faviconAccentMisses.contains(key) { return nil }
+		if let cached = faviconAccents[key] {
+			return cached
+		}
+		if faviconAccentMisses.contains(key) {
+			return nil
+		}
 		let accent = await Task.detached(priority: .utility) {
 			Self.extractFaviconAccent(data)
 		}.value
@@ -275,10 +279,10 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	private nonisolated static func extractFaviconAccent(_ data: Data) -> (Double, Double, Double)? {
 		guard let source = CGImageSourceCreateWithData(data as CFData, nil),
 		      let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-			kCGImageSourceCreateThumbnailFromImageAlways: true,
-			kCGImageSourceCreateThumbnailWithTransform: true,
-			kCGImageSourceThumbnailMaxPixelSize: 32
-		] as CFDictionary) else { return nil }
+		      	kCGImageSourceCreateThumbnailFromImageAlways: true,
+		      	kCGImageSourceCreateThumbnailWithTransform: true,
+		      	kCGImageSourceThumbnailMaxPixelSize: 32,
+		      ] as CFDictionary) else { return nil }
 		let width = 32, height = 32, bytesPerRow = 32 * 4
 		var pixels = [UInt8](repeating: 0, count: height * bytesPerRow)
 		let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
@@ -310,15 +314,16 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 			let chroma = maxChannel - minChannel
 			guard chroma > 0.2, maxChannel > 0.15 else { continue }
 			let saturation = chroma / maxChannel
-			var hue: Double
-			if maxChannel == r {
-				hue = ((g - b) / chroma).truncatingRemainder(dividingBy: 6)
+			var hue: Double = if maxChannel == r {
+				((g - b) / chroma).truncatingRemainder(dividingBy: 6)
 			} else if maxChannel == g {
-				hue = (b - r) / chroma + 2
+				(b - r) / chroma + 2
 			} else {
-				hue = (r - g) / chroma + 4
+				(r - g) / chroma + 4
 			}
-			if hue < 0 { hue += 6 }
+			if hue < 0 {
+				hue += 6
+			}
 			let bucket = min(17, Int(hue / 6 * 18)) * 2 + (maxChannel > 0.6 ? 1 : 0)
 			let weight = a * saturation
 			buckets[bucket].weight += weight

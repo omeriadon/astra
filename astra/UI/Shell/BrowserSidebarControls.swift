@@ -445,6 +445,7 @@ private final class SidebarProjectionCache {
 		let isPrivate: Bool
 		let projection: Projection
 	}
+
 	private var cached: Entry?
 
 	func resolve(

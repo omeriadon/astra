@@ -317,7 +317,9 @@ final class BrowserAIChat {
 				if lastPreviewPublishedAt.map({ $0.duration(to: now) >= .milliseconds(85) }) ?? true {
 					latestPreview = BrowserAIOutput.streamedString("response", in: snapshot)
 						?? (snapshot.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") ? "" : snapshot)
-					if preview != latestPreview { preview = latestPreview }
+					if preview != latestPreview {
+						preview = latestPreview
+					}
 					lastPreviewPublishedAt = now
 				}
 				// The JSON actions array comes after response text. Avoid
@@ -326,7 +328,9 @@ final class BrowserAIChat {
 				// Completed-action JSON scanning is relatively expensive because each
 				// snapshot includes previously streamed text. Throttle scans, then
 				// perform a guaranteed final reconciliation after stream completion.
-				if lastActionScanAt.map({ $0.duration(to: now) < .milliseconds(100) }) == true { return }
+				if lastActionScanAt.map({ $0.duration(to: now) < .milliseconds(100) }) == true {
+					return
+				}
 				lastActionScanAt = now
 				for data in BrowserAIOutput.completedObjects(in: snapshot) {
 					guard seen.count < 5,

@@ -194,7 +194,6 @@ struct BrowserEaselDocument: Codable, Equatable, Sendable {
 	}
 }
 
-
 extension BrowserEaselQuote {
 	/// Runs only in the source peek. CSS Custom Highlights survive ordinary
 	/// selection changes and clicks because they do not use window selection.

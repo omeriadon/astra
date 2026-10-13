@@ -166,7 +166,9 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View, Animatable {
 			.onChange(of: width, initial: true) { _, width in
 				// Local resizing remains frame-accurate; parent minimum-size recomputation
 				// does not need a transaction for every pointer pixel.
-				if let lastReportedWidth, abs(width - lastReportedWidth) < 8 { return }
+				if let lastReportedWidth, abs(width - lastReportedWidth) < 8 {
+					return
+				}
 				lastReportedWidth = width
 				onWidthChange?(width)
 			}

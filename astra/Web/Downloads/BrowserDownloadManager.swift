@@ -72,6 +72,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 	private(set) var items: [BrowserDownload] = [] {
 		didSet { itemsRevision &+= 1 }
 	}
+
 	private(set) var selectedDownloadFolderName = ""
 	private(set) var latestStart: (id: UUID, source: UnitPoint)?
 	@ObservationIgnored private var downloadHydrationTask: Task<Void, Never>?
@@ -99,8 +100,13 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		return chromeSummary
 	}
 
-	var activeProgress: Double? { computedChromeSummary().progress }
-	var buttonSymbol: String { computedChromeSummary().symbol }
+	var activeProgress: Double? {
+		computedChromeSummary().progress
+	}
+
+	var buttonSymbol: String {
+		computedChromeSummary().symbol
+	}
 
 	override private convenience init() {
 		self.init(privateDataStore: nil, toastManager: .shared)

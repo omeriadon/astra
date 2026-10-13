@@ -52,7 +52,9 @@ struct ShellTopBarView: View {
 	}
 
 	private var controlsColorScheme: ColorScheme {
-		if usesThemeSurface { return theme.appearanceMode == .light ? .light : .dark }
+		if usesThemeSurface {
+			return theme.appearanceMode == .light ? .light : .dark
+		}
 		if let isLight = browser.selectedTab?.activeController?.themeColorIsLight {
 			return isLight ? .light : .dark
 		}

@@ -100,7 +100,7 @@
 						.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsTopBar)
 					BrowserPageView(
 						browser: browser,
-							cornerRadius: topBarHeight > 0
+						cornerRadius: topBarHeight > 0
 							? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar
 							: BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar
 					)
@@ -131,7 +131,9 @@
 				guard notification.object as? UUID == browser.windowID else { return }
 				withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
 					showsTopBar.toggle()
-					if showsTopBar { isTopBarRevealed = false }
+					if showsTopBar {
+						isTopBarRevealed = false
+					}
 				}
 			}
 			.background {
@@ -144,7 +146,11 @@
 			.onChange(of: topBarHeight) { _, _ in updateWindowButtons() }
 			.alert("Delete Space?", isPresented: Binding(
 				get: { spaceToDelete != nil },
-				set: { if !$0 { spaceToDelete = nil } }
+				set: {
+					if !$0 {
+						spaceToDelete = nil
+					}
+				}
 			), presenting: spaceToDelete) { space in
 				Button("Delete Space", role: .destructive) {
 					spaceBrowser?.deleteSpace(space.id)

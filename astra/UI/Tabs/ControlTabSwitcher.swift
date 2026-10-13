@@ -115,7 +115,7 @@
 
 		private func handle(
 			isKeyDown: Bool,
-			keyCode: UInt16,
+			keyCode _: UInt16,
 			isEscape: Bool,
 			isControlPressed: Bool,
 			hasMarkedText: Bool,

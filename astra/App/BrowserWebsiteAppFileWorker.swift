@@ -250,13 +250,15 @@
 			var requirement: SecRequirement?
 			var text: CFString?
 			guard SecStaticCodeCreateWithPath(hostBundleURL as CFURL, [], &hostCode) == errSecSuccess,
-			      let hostCode else {
+			      let hostCode
+			else {
 				throw BrowserWebsiteAppFileError.malformedTemplate("Astra's host app has no readable code signature.")
 			}
 			guard SecCodeCopyDesignatedRequirement(hostCode, [], &requirement) == errSecSuccess,
 			      let requirement,
 			      SecRequirementCopyString(requirement, [], &text) == errSecSuccess,
-			      let text else {
+			      let text
+			else {
 				throw BrowserWebsiteAppFileError.malformedTemplate("Astra's host signing requirement could not be obtained.")
 			}
 			return text as String
@@ -293,7 +295,8 @@
 		private func signingEntitlements(from url: URL) throws -> Data {
 			var code: SecStaticCode?
 			guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess,
-			      let code else {
+			      let code
+			else {
 				throw BrowserWebsiteAppFileError.malformedTemplate("The embedded helper has no readable code signature.")
 			}
 			var signingInfo: CFDictionary?
@@ -301,7 +304,8 @@
 			guard status == errSecSuccess,
 			      let info = signingInfo as? [String: Any],
 			      let entitlements = info[kSecCodeInfoEntitlementsDict as String] as? [String: Any],
-			      !entitlements.isEmpty else {
+			      !entitlements.isEmpty
+			else {
 				throw BrowserWebsiteAppFileError.malformedTemplate("The signed helper's entitlements are missing or unreadable (Security status: \(status)).")
 			}
 			return try PropertyListSerialization.data(fromPropertyList: entitlements, format: .xml, options: 0)

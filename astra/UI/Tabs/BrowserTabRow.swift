@@ -213,7 +213,7 @@ struct BrowserTabRow: View {
 		#if os(macOS)
 		.background {
 			// Do not install a geometry observer for every non-hovered tab.
-			if isHovered && onSelectTab == nil {
+			if isHovered, onSelectTab == nil {
 				GeometryReader { proxy in
 					Color.clear
 						.onAppear { updateHoveredFrame(proxy.frame(in: .global)) }
@@ -460,7 +460,7 @@ private struct TabTitleView: View {
 					}
 					.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 					.clipped()
-				.contentShape(Rectangle())
+					.contentShape(Rectangle())
 			}
 			.buttonStyle(.plain)
 			#if os(macOS)
@@ -496,7 +496,6 @@ private struct TabTitleView: View {
 	private var hoverClearWidth: CGFloat {
 		onSelectTab == nil ? 20 : 44
 	}
-
 }
 
 private struct TabCloseButton: View {

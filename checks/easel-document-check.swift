@@ -18,15 +18,15 @@ struct EaselDocumentCheck {
 		}
 		precondition(BrowserEaselDocument.isSafeLink(URL(string: "https://example.com/page")!))
 		let quoteSource = BrowserEaselQuote(url: URL(string: "https://example.com/page")!,
-			text: "Selected text", prefix: "Before ", suffix: " after")
+		                                    text: "Selected text", prefix: "Before ", suffix: " after")
 		precondition(quoteSource.isValid)
 		var quoteItem = BrowserEaselDocument.Item(kind: .quote)
 		precondition(!BrowserEaselDocument(items: [quoteItem]).isValid)
 		quoteItem.quote = quoteSource
 		let quoteDocument = BrowserEaselDocument(items: [quoteItem])
 		precondition(quoteDocument.isValid)
-		precondition(try JSONDecoder().decode(BrowserEaselDocument.self,
-			from: JSONEncoder().encode(quoteDocument)) == quoteDocument)
+		try precondition(JSONDecoder().decode(BrowserEaselDocument.self,
+		                                      from: JSONEncoder().encode(quoteDocument)) == quoteDocument)
 		quoteItem.quote?.url = URL(fileURLWithPath: "/tmp/unsafe")
 		precondition(!BrowserEaselDocument(items: [quoteItem]).isValid)
 		quoteItem.quote = quoteSource

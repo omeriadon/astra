@@ -497,7 +497,7 @@
 			startupWindowRestorationFinished = true
 			BrowserWebPushManager.shared.drainPendingMessages()
 			let openingQueuedMini = Defaults[.miniAstraEnabled] && !queuedStartupURLs.isEmpty
-			if shouldReopenAfterStartup && !openingQueuedMini {
+			if shouldReopenAfterStartup, !openingQueuedMini {
 				shouldReopenAfterStartup = false
 				if let controller = windows.first {
 					controller.showWindow()
@@ -618,7 +618,7 @@
 			controller.resolveSpaceBrowser = { [weak self] in self?.miniDestinationWindow.browser }
 			controller.revealSpaceBrowser = { [weak self] in
 				guard let self else { return }
-				self.miniDestinationWindow.showWindow()
+				miniDestinationWindow.showWindow()
 				NSApp.activate()
 			}
 			controller.onPromote = { [weak self] tab, spaceID in
