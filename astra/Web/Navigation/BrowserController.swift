@@ -554,6 +554,9 @@ final class BrowserController: NSObject, Identifiable {
 					rgba = Array.from(context.getImageData(0, 0, 1, 1).data);
 				} catch (_) {}
 			}
+			// Animated colours can produce arbitrarily many values; cap the
+			// per-document lookup cache instead of retaining them indefinitely.
+			if (cache.size >= 128) cache.clear();
 			cache.set(css, rgba);
 			return rgba;
 		};
@@ -646,6 +649,9 @@ final class BrowserController: NSObject, Identifiable {
 		};
 		addEventListener('scroll', schedule, { passive: true });
 		addEventListener('resize', schedule, { passive: true });
+		addEventListener('load', schedule, { once: true });
+		addEventListener('pageshow', schedule);
+		addEventListener('popstate', schedule);
 		document.addEventListener('visibilitychange', visible);
 		try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', schedule); } catch (_) {}
 		visible();
