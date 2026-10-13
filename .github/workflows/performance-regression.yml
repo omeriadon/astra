@@ -29,6 +29,8 @@ jobs:
           path: baseline
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 2
+      - name: Select Xcode 27 / Swift 6.4
+        run: bash candidate/scripts/ci/select-xcode-27.sh
       - name: Detach baseline at parent commit
         run: git -C baseline checkout --detach HEAD^
       - name: Validate benchmark parser
