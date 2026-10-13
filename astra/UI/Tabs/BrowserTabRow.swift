@@ -357,7 +357,13 @@ private struct TabIconView: View {
 		.buttonStyle(.plain)
 		#if os(macOS)
 			.onDrag {
-				NSItemProvider(object: ("astra-tab:" + tab.id.uuidString) as NSString)
+				let data = tab.id.uuidString.data(using: .utf8) ?? Data()
+				let provider = NSItemProvider()
+				provider.registerDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab", visibility: .ownProcess) { completion in
+					completion(data, nil)
+					return nil
+				}
+				return provider
 			}
 		#endif
 			.accessibilityIdentifier("select-tab-\(tab.id.uuidString)")
@@ -423,7 +429,13 @@ private struct TabTitleView: View {
 			.buttonStyle(.plain)
 			#if os(macOS)
 				.onDrag {
-					NSItemProvider(object: ("astra-tab:" + tab.id.uuidString) as NSString)
+					let data = tab.id.uuidString.data(using: .utf8) ?? Data()
+					let provider = NSItemProvider()
+					provider.registerDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab", visibility: .ownProcess) { completion in
+						completion(data, nil)
+						return nil
+					}
+					return provider
 				}
 			#endif
 				.simultaneousGesture(
