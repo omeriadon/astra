@@ -1407,8 +1407,12 @@ final class Browser {
 
 	func splitSide(for id: UUID) -> SplitSide? {
 		guard isShowingTabSplit else { return nil }
-		if splitLeftTabID == id { return .left }
-		if splitRightTabID == id { return .right }
+		if splitLeftTabID == id {
+			return .left
+		}
+		if splitRightTabID == id {
+			return .right
+		}
 		return nil
 	}
 

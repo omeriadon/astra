@@ -200,8 +200,9 @@ final class BrowserTabResourceManager {
 			result.append(controller)
 		}
 		if browser.isShowingTabSplit {
-			for splitID in [browser.splitLeftTabID, browser.splitRightTabID].compactMap({ $0 })
-			where ownedTabIDs.contains(splitID) {
+			for splitID in [browser.splitLeftTabID, browser.splitRightTabID].compactMap(\.self)
+				where ownedTabIDs.contains(splitID)
+			{
 				append(tabsByID[splitID]?.controller)
 			}
 		}

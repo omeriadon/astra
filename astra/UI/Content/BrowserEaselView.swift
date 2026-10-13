@@ -43,15 +43,15 @@ struct BrowserEaselView: View {
 		ZStack(alignment: .topLeading) {
 			GeometryReader { geometry in
 				#if os(macOS)
-				InfiniteCanvas(controller: canvasController) {
-					canvasContents(width: max(1200, geometry.size.width), viewportHeight: geometry.size.height)
-						.canvasPosition(position: .zero, controller: canvasController)
-				}
+					InfiniteCanvas(controller: canvasController) {
+						canvasContents(width: max(1200, geometry.size.width), viewportHeight: geometry.size.height)
+							.canvasPosition(position: .zero, controller: canvasController)
+					}
 				#else
-				ScrollView([.horizontal, .vertical]) {
-					canvasContents(width: max(1200, geometry.size.width), viewportHeight: geometry.size.height)
-				}
-				.scrollDisabled(activeTool != .cursor)
+					ScrollView([.horizontal, .vertical]) {
+						canvasContents(width: max(1200, geometry.size.width), viewportHeight: geometry.size.height)
+					}
+					.scrollDisabled(activeTool != .cursor)
 				#endif
 			}
 			HStack(alignment: .top, spacing: 10) {
@@ -166,7 +166,11 @@ struct BrowserEaselView: View {
 						erase(at: value.location)
 					}
 				}
-				.onEnded { _ in if activeTool == .pen { finishDrawing() } })
+				.onEnded {
+					_ in if activeTool == .pen {
+						finishDrawing()
+					}
+				})
 		}
 	}
 
@@ -229,7 +233,7 @@ struct BrowserEaselView: View {
 					.disabled(item.size == .huge)
 					.accessibilityIdentifier("easel-larger-text")
 			}
-			if item.kind != .image && item.kind != .link {
+			if item.kind != .image, item.kind != .link {
 				Button("Cycle Colour", systemImage: "paintpalette") {
 					edit(item.id) { $0.background = $0.background.next }
 				}
@@ -522,7 +526,9 @@ struct BrowserEaselView: View {
 
 	private func deleteItem(_ id: UUID) {
 		document.items.removeAll { $0.id == id }
-		if selectedID == id { selectedID = nil }
+		if selectedID == id {
+			selectedID = nil
+		}
 	}
 
 	private func deleteSelectedItem() {

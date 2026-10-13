@@ -22,7 +22,6 @@ assert(BrowserNavigationFailure(error: NSError(domain: NSURLErrorDomain, code: N
 assert(BrowserNavigationFailure(error: NSError(domain: NSURLErrorDomain, code: NSURLErrorHTTPTooManyRedirects), url: url).kind == .tooManyRedirects)
 assert(BrowserNavigationFailure(error: NSError(domain: NSURLErrorDomain, code: NSURLErrorUnsupportedURL), url: url).kind == .invalidAddress)
 
-
 func checkProxyFailure(_ error: CFNetworkErrors, expected: BrowserNavigationFailure.Kind) {
 	let networkError = NSError(
 		domain: kCFErrorDomainCFNetwork as String,
@@ -48,6 +47,7 @@ for code: CFNetworkErrors in [
 ] {
 	checkProxyFailure(code, expected: .proxyConnectionFailed)
 }
+
 for code: CFNetworkErrors in [
 	.cfErrorHTTPBadProxyCredentials,
 	.cfErrorPACFileAuth,
@@ -56,6 +56,7 @@ for code: CFNetworkErrors in [
 ] {
 	checkProxyFailure(code, expected: .proxyAuthenticationFailed)
 }
+
 checkProxyFailure(.cfErrorPACFileError, expected: .proxyConfigurationFailed)
 assert(BrowserNavigationFailure(error: NSError(
 	domain: NSURLErrorDomain,

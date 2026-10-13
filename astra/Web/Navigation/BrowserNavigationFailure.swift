@@ -69,7 +69,7 @@ struct BrowserNavigationFailure {
 		var current: NSError? = error
 		var visited = Set<ObjectIdentifier>()
 		// NSError chains are untrusted and can theoretically contain cycles.
-		for _ in 0..<8 {
+		for _ in 0 ..< 8 {
 			guard let next = current,
 			      visited.insert(ObjectIdentifier(next)).inserted else { break }
 			if next.domain == (kCFErrorDomainCFNetwork as String) || next.domain == NSURLErrorDomain,
