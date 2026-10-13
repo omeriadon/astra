@@ -63,7 +63,8 @@ struct SyncLargeAccountCheck {
 		assert(upload.payload.count <= BrowserSyncPayloadLimits.maximumOutgoingBytes)
 		let wireBody = try BrowserSyncPayloadLimits.makeEncodedUpload(deviceID: deviceID, document: account)
 		assert(wireBody.count <= BrowserSyncPayloadLimits.maximumCollectedRequestBytes)
-		assert(try JSONDecoder().decode(DeviceSnapshot.self, from: wireBody).payload == upload.payload)
+		let encodedUpload = try JSONDecoder().decode(DeviceSnapshot.self, from: wireBody)
+		assert(encodedUpload.payload == upload.payload)
 		let wire = try JSONSerialization.jsonObject(with: wireBody) as! [String: Any]
 		assert(wire["deviceID"] as? String == deviceID.uuidString)
 		assert(Data(base64Encoded: wire["payload"] as! String) == upload.payload)
@@ -81,7 +82,8 @@ struct SyncLargeAccountCheck {
 		let exactDocument = ["value": String(repeating: "a", count: BrowserSyncPayloadLimits.maximumOutgoingBytes - emptyJSONStringBytes)]
 		let exactUpload = try BrowserSyncPayloadLimits.makeUpload(deviceID: deviceID, document: exactDocument)
 		assert(exactUpload.payload.count == BrowserSyncPayloadLimits.maximumOutgoingBytes)
-		assert(try BrowserSyncPayloadLimits.makeEncodedUpload(deviceID: deviceID, document: exactDocument).count <= BrowserSyncPayloadLimits.maximumCollectedRequestBytes)
+		let exactBody = try BrowserSyncPayloadLimits.makeEncodedUpload(deviceID: deviceID, document: exactDocument)
+		assert(exactBody.count <= BrowserSyncPayloadLimits.maximumCollectedRequestBytes)
 		do {
 			let extraByteDocument = ["value": String(repeating: "a", count: BrowserSyncPayloadLimits.maximumOutgoingBytes - emptyJSONStringBytes + 1)]
 			_ = try BrowserSyncPayloadLimits.makeUpload(deviceID: deviceID, document: extraByteDocument)
