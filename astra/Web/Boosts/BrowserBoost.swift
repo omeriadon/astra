@@ -10,6 +10,7 @@ final class BrowserBoostStore {
     static let shared = BrowserBoostStore()
     private(set) var boosts: [BrowserBoost] = []
     private(set) var deletedAt: [UUID: Date] = [:]
+    private(set) var validationMessage: String?
     @ObservationIgnored private var webViews: [WeakWebView] = []
     @ObservationIgnored private let storageKey = "astra.boosts.v1"
 
@@ -39,7 +40,18 @@ final class BrowserBoostStore {
     }
 
     func update(_ boost: BrowserBoost) {
-        guard boost.isValidForSync else { return }
+        guard boost.isValidForSync else {
+            validationMessage = "Boost exceeds the size limit or has an invalid domain."
+            return
+        }
+        let prospectiveByteCount = boost.codeByteCount + boosts.reduce(0) {
+            $0 + ($1.id == boost.id ? 0 : $1.codeByteCount)
+        }
+        guard prospectiveByteCount <= BrowserBoost.maximumCollectionCodeBytes else {
+            validationMessage = "Boosts have a combined 1 MB sync limit."
+            return
+        }
+        validationMessage = nil
         var value = boost
         value.modifiedAt = .now
         deletedAt.removeValue(forKey: value.id)
@@ -87,6 +99,10 @@ final class BrowserBoostStore {
         let next = byID.values.filter { value in
             value.modifiedAt > (mergedDeleted[value.id] ?? .distantPast)
         }.sorted { $0.id.uuidString < $1.id.uuidString }
+        guard next.reduce(0, { $0 + $1.codeByteCount }) <= BrowserBoost.maximumCollectionCodeBytes else {
+            validationMessage = "Synced Boosts exceed the combined 1 MB limit."
+            return
+        }
         guard next != boosts || mergedDeleted != deletedAt else { return }
         boosts = next
         deletedAt = mergedDeleted
