@@ -34,9 +34,14 @@ final class BrowserBoostEditorWindowController: NSObject, NSWindowDelegate {
                           backing: .buffered, defer: false)
         super.init()
         window.delegate = self
-        window.contentViewController = NSHostingController(rootView: NavigationStack {
+        let hostingController = NSHostingController(rootView: NavigationStack {
             BrowserBoostEditorView(boostID: id)
         })
+        // An AppKit-created window requires explicit SwiftUI scene bridging to
+        // populate its native NSToolbar from .toolbar { } content.
+        hostingController.sceneBridgingOptions = [.title, .toolbars]
+        window.contentViewController = hostingController
+        window.toolbarStyle = .unifiedCompact
         window.minSize = NSSize(width: 520, height: 320)
         window.title = "Boost"
         window.center()
