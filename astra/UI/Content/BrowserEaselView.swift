@@ -24,6 +24,7 @@ struct BrowserEaselView: View {
 	@State private var linkText = "https://"
 	@State private var baseline: BrowserEaselDocument.Item?
 	@State private var drawingPoints: [BrowserEaselDocument.Item.Point] = []
+	@State private var canvasOffset = EaselCanvasViewportOffset()
 	private enum Tool { case cursor, pen, eraser }
 	@State private var activeTool: Tool = .cursor
 	#if os(macOS)
@@ -47,7 +48,14 @@ struct BrowserEaselView: View {
 				ScrollView([.horizontal, .vertical]) {
 					canvasContents(width: canvasWidth(geometry.size.width), viewportHeight: geometry.size.height)
 				}
+				.onScrollGeometryChange(for: CGPoint.self, of: { $0.contentOffset }) { _, offset in
+					canvasOffset.point = CGPoint(x: max(0, offset.x), y: max(0, offset.y))
+				}
 				.scrollDisabled(activeTool != .cursor)
+				.onAppear { centerPendingQuote(in: geometry.size) }
+				.onChange(of: tab.pendingQuotePlacementID) { _, _ in
+					centerPendingQuote(in: geometry.size)
+				}
 			}
 			if let item = document.items.first(where: { $0.id == selectedID }) {
 				selectionControls(item).padding(12)
@@ -258,7 +266,7 @@ struct BrowserEaselView: View {
 					.disabled(item.size == .huge)
 					.accessibilityIdentifier("easel-larger-text")
 			}
-			if item.kind != .image, item.kind != .link {
+			if ![.image, .link, .quote].contains(item.kind) {
 				Button("Cycle Colour", systemImage: "paintpalette") {
 					edit(item.id) { $0.background = $0.background.next }
 				}
@@ -271,6 +279,23 @@ struct BrowserEaselView: View {
 		.padding(12)
 		.glassEffect(.regular, in: Capsule())
 		.accessibilityIdentifier("easel-item-controls")
+	}
+
+	private func centerPendingQuote(in viewport: CGSize) {
+		guard let id = tab.pendingQuotePlacementID,
+		      let item = document.items.first(where: { $0.id == id }) else { return }
+		let point = canvasOffset.point
+		var next = document
+		guard let index = next.items.firstIndex(where: { $0.id == id }) else { return }
+		next.items[index].x = min(10000 - item.width, max(0, Double(point.x + viewport.width / 2) - item.width / 2))
+		next.items[index].y = min(1_000_000 - item.height, max(0, Double(point.y + viewport.height / 2) - item.height / 2))
+		if next.isValid {
+			document = next
+			selectedID = id
+			editingTextID = nil
+			activeTool = .cursor
+		}
+		tab.consumeQuotePlacement(id)
 	}
 
 	private func canvasWidth(_ viewport: CGFloat) -> CGFloat {
@@ -351,6 +376,9 @@ struct BrowserEaselView: View {
 					editingTextID = nil
 				}
 				browser.selectTab(tab.id)
+				if item.kind == .quote, let quote = item.quote {
+					browser.openEaselQuote(quote, in: tab)
+				}
 				#if os(macOS)
 					if editingTextID == nil {
 						canvasFocused = true
@@ -429,6 +457,29 @@ struct BrowserEaselView: View {
 						.clipped()
 						.accessibilityLabel("Easel link to \(url.host ?? url.absoluteString)")
 						.accessibilityIdentifier("easel-open-link-\(item.id)")
+				}
+			case .quote:
+				if let quote = item.quote {
+					VStack(alignment: .leading, spacing: 12) {
+						Image(systemName: "quote.opening")
+							.font(.title2)
+							.foregroundStyle(.secondary)
+						Text(quote.text)
+							.font(.system(size: 16, weight: .medium, design: .serif))
+							.lineLimit(7)
+							.frame(maxWidth: .infinity, alignment: .leading)
+						Spacer(minLength: 0)
+						Label(quote.url.host ?? "Source", systemImage: "arrow.up.right.square")
+							.font(.caption)
+							.foregroundStyle(.secondary)
+							.lineLimit(1)
+					}
+					.padding(16)
+					.frame(width: item.width, height: item.height)
+					.background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+					.accessibilityLabel("Website quote: \(quote.text)")
+					.accessibilityHint("Open source in a peek with the quote highlighted")
+					.accessibilityIdentifier("easel-open-quote-\(item.id)")
 				}
 		}
 	}
@@ -662,7 +713,7 @@ struct BrowserEaselView: View {
 			if item.kind == .image {
 				$0.height = min(10000, max(1, baseline.height * $0.width / baseline.width))
 			} else {
-				$0.height = min(max(item.kind == .text ? 40 : 1, baseline.height + translation.height), 10000)
+				$0.height = min(max([.text, .quote].contains(item.kind) ? 40 : 1, baseline.height + translation.height), 10000)
 				if [.freehand, .line, .arrow].contains(item.kind) {
 					let scaleX = $0.width / baseline.width
 					let scaleY = $0.height / baseline.height
@@ -845,4 +896,9 @@ private struct EaselLinkCard: View {
 			}
 		}
 	}
+}
+
+/// A reference-type snapshot avoids invalidating the Easel view on every scroll frame.
+private final class EaselCanvasViewportOffset {
+	var point: CGPoint = .zero
 }

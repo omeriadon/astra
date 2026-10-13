@@ -10,6 +10,7 @@ struct OpenPeek: Codable, Equatable, Identifiable, Sendable {
 	let historyIndex: Int
 	let pageZoom: Double
 	let scrollPosition: BrowserScrollPosition
+	let easelQuote: BrowserEaselQuote?
 
 	private enum CodingKeys: String, CodingKey {
 		case id
@@ -21,6 +22,7 @@ struct OpenPeek: Codable, Equatable, Identifiable, Sendable {
 		case historyIndex
 		case pageZoom
 		case scrollPosition
+		case easelQuote
 	}
 
 	init(
@@ -32,7 +34,8 @@ struct OpenPeek: Codable, Equatable, Identifiable, Sendable {
 		history: [URL],
 		historyIndex: Int,
 		pageZoom: Double,
-		scrollPosition: BrowserScrollPosition
+		scrollPosition: BrowserScrollPosition,
+		easelQuote: BrowserEaselQuote? = nil
 	) {
 		self.id = id
 		self.depth = depth
@@ -43,6 +46,7 @@ struct OpenPeek: Codable, Equatable, Identifiable, Sendable {
 		self.historyIndex = historyIndex
 		self.pageZoom = pageZoom
 		self.scrollPosition = scrollPosition
+		self.easelQuote = easelQuote
 	}
 
 	nonisolated init(from decoder: Decoder) throws {
@@ -56,5 +60,9 @@ struct OpenPeek: Codable, Equatable, Identifiable, Sendable {
 		historyIndex = try container.decode(Int.self, forKey: .historyIndex)
 		pageZoom = try container.decode(Double.self, forKey: .pageZoom)
 		scrollPosition = try container.decodeIfPresent(BrowserScrollPosition.self, forKey: .scrollPosition) ?? .zero
+		easelQuote = try container.decodeIfPresent(BrowserEaselQuote.self, forKey: .easelQuote)
+		if let easelQuote, !easelQuote.isValid {
+			throw DecodingError.dataCorruptedError(forKey: .easelQuote, in: container, debugDescription: "Invalid Easel quote")
+		}
 	}
 }

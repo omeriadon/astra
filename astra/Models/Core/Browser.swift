@@ -1507,6 +1507,49 @@ final class Browser {
 		openSplit(id, beside: anchor.id, onLeft: false)
 	}
 
+	/// Context-menu destinations are limited to Easels in the source tab's Space.
+	func easelQuoteDestinations(for source: BrowserTab) -> [BrowserEaselQuoteDestination] {
+		guard !isPrivate, !isMini, source.internalPage == nil,
+		      selectedSpace.tabIDs.contains(source.id) else { return [] }
+		return selectedSpace.tabIDs.compactMap { id in
+			guard let tab = tab(withID: id), tab.internalPage == .easel else { return nil }
+			return BrowserEaselQuoteDestination(id: id, title: tab.title)
+		}
+	}
+
+	func addEaselQuote(_ quote: BrowserEaselQuote, to easelID: UUID, from sourceID: UUID) {
+		guard quote.isValid, !isPrivate, !isMini,
+		      let source = tab(withID: sourceID), source.internalPage == nil,
+		      let sourceURL = source.currentURL.map(BrowserAddress.withoutCredentials),
+		      sourceURL == quote.url,
+		      selectedSpace.tabIDs.contains(sourceID),
+		      selectedSpace.tabIDs.contains(easelID),
+		      let easel = tab(withID: easelID), easel.internalPage == .easel
+		else { return }
+		var item = BrowserEaselDocument.Item(kind: .quote)
+		item.quote = quote
+		item.width = 360
+		item.height = 210
+		var document = easel.easelDocument
+		document.items.append(item)
+		guard easel.updateEasel(document) else { return }
+		// The editor positions the new quote at the currently visible viewport
+		// center, including when its tab was already mounted.
+		easel.pendingQuotePlacementID = item.id
+		closeEaselSplit()
+		selectTab(easelID)
+	}
+
+	func openEaselQuote(_ quote: BrowserEaselQuote, in tab: BrowserTab) {
+		guard tab.internalPage == .easel, quote.isValid else { return }
+		selectTab(tab.id)
+		let peek = BrowserPeek(url: quote.url, depth: tab.peeks.count + 1,
+			source: .trailing, parentZoom: 1,
+			zoomsOut: Defaults[.zoomOutInPeeks], session: session, easelQuote: quote)
+		configure(peek, in: tab)
+		tab.addPeek(peek)
+	}
+
 	func openEaselLink(_ url: URL, in tab: BrowserTab) {
 		guard tab.internalPage == .easel, BrowserEaselDocument.isSafeLink(url) else { return }
 		selectTab(tab.id)
@@ -2668,6 +2711,14 @@ final class Browser {
 		controller.popupRequested = { [weak self, weak tab, weak controller] configuration, source, inBackground in
 			guard let self, let tab, let controller else { return nil }
 			return createPopup(configuration: configuration, source: source, in: tab, depth: 1, parentZoom: controller.pageZoom, inBackground: inBackground)
+		}
+		controller.easelQuoteDestinations = { [weak self, weak tab] in
+			guard let self, let tab else { return [] }
+			return self.easelQuoteDestinations(for: tab)
+		}
+		controller.addQuoteToEasel = { [weak self, weak tab] destinationID, quote in
+			guard let self, let tab else { return }
+			self.addEaselQuote(quote, to: destinationID, from: tab.id)
 		}
 		controller.newTabRequested = { [weak self, weak controller, weak tab] request, inBackground in
 			guard let self else { return }
