@@ -226,7 +226,7 @@ final class BrowserWindowRegistry {
 	/// owned by other normal windows once instead of rescanning all windows and
 	/// their tab arrays from every row body.
 	func tabIDsOpenInAnotherWindow(than browser: Browser) -> Set<UUID> {
-		guard !browser.isPrivate, !browser.isMini else { return [] }
+		guard hasCompetingNormalWindow(for: browser) else { return [] }
 		let normalBrowsers = openBrowsers.filter { !$0.isPrivate && !$0.isMini }
 		guard normalBrowsers.count > 1 else { return [] }
 
