@@ -37,7 +37,9 @@ assert "task.resume()" in start
 pause = engine.split("func pause(_ itemID:", 1)[1].split("func cancel(", 1)[0]
 assert "stopMonitoring(itemID)" in pause
 assert "replayHeaders[itemID] = nil" not in engine.split("func stopMonitoring(", 1)[1].split("func forget(", 1)[0]
-assert "for itemID in itemIDs { forget(itemID) }" in engine
+cancel_and_wait = engine.split("func cancelAndWait(", 1)[1].split("nonisolated func urlSession(", 1)[0]
+assert "for itemID in itemIDs {" in cancel_and_wait
+assert "forget(itemID)" in cancel_and_wait
 assert "segmented.forget(itemID)" in manager
 
 # A stalled transfer cannot continue displaying a stale ETA.
