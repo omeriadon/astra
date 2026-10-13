@@ -69,56 +69,89 @@ extension View {
 		bottom: CGFloat = 45,
 		bottomOpacityHeight: CGFloat = 34
 	) -> some View {
-		scrollEdgeEffectHidden(true, for: .vertical)
+		modifier(SidebarScrollOpacityFadeModifier(
+			top: top,
+			topOpacityHeight: topOpacityHeight,
+			bottom: bottom,
+			bottomOpacityHeight: bottomOpacityHeight
+		))
+	}
+}
+
+private struct SidebarScrollOpacityFadeModifier: ViewModifier {
+	let top: CGFloat
+	let topOpacityHeight: CGFloat?
+	let bottom: CGFloat
+	let bottomOpacityHeight: CGFloat
+	@Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+	@State private var lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+
+	@ViewBuilder
+	func body(content: Content) -> some View {
+		let faded = content
+			.scrollEdgeEffectHidden(true, for: .vertical)
 			.sidebarScrollAlphaMask(
 				top: top,
 				topOpacityHeight: topOpacityHeight,
 				bottom: bottom,
 				bottomOpacityHeight: bottomOpacityHeight
 			)
-			.overlay(alignment: .bottom) {
-				#if os(macOS)
-					GeometryReader { geometry in
-						HazeEffect(
-							maskProvider: LinearGradientMaskProvider(
-								startPoint: .bottom,
-								endPoint: .top,
-								startOpacity: 1,
-								endOpacity: 0,
-								isSmooth: true
-							),
-							maxBlurRadius: 2,
-							isolatesBackdrop: true
-						)
-						.frame(width: geometry.size.width, height: bottom)
-						.frame(maxHeight: .infinity, alignment: .bottom)
+
+		Group {
+			#if os(macOS)
+			if lowPowerMode || reduceTransparency {
+				// Preserve the alpha fade, but avoid expensive backdrop sampling
+				// and the full-sidebar offscreen compositing group on battery.
+				faded.clipShape(Rectangle())
+			} else {
+				faded
+					.overlay(alignment: .bottom) {
+						GeometryReader { geometry in
+							HazeEffect(
+								maskProvider: LinearGradientMaskProvider(
+									startPoint: .bottom,
+									endPoint: .top,
+									startOpacity: 1,
+									endOpacity: 0,
+									isSmooth: true
+								),
+								maxBlurRadius: 2,
+								isolatesBackdrop: true
+							)
+							.frame(width: geometry.size.width, height: bottom)
+							.frame(maxHeight: .infinity, alignment: .bottom)
+						}
+						.allowsHitTesting(false)
+						.accessibilityHidden(true)
 					}
-					.allowsHitTesting(false)
-					.accessibilityHidden(true)
-				#endif
-			}
-			.overlay(alignment: .top) {
-				#if os(macOS)
-					GeometryReader { geometry in
-						HazeEffect(
-							maskProvider: LinearGradientMaskProvider(
-								startPoint: .top,
-								endPoint: .bottom,
-								startOpacity: 1,
-								endOpacity: 0,
-								isSmooth: true
-							),
-							maxBlurRadius: 1,
-							isolatesBackdrop: true
-						)
-						.frame(width: geometry.size.width, height: top)
-						.frame(maxHeight: .infinity, alignment: .top)
+					.overlay(alignment: .top) {
+						GeometryReader { geometry in
+							HazeEffect(
+								maskProvider: LinearGradientMaskProvider(
+									startPoint: .top,
+									endPoint: .bottom,
+									startOpacity: 1,
+									endOpacity: 0,
+									isSmooth: true
+								),
+								maxBlurRadius: 1,
+								isolatesBackdrop: true
+							)
+							.frame(width: geometry.size.width, height: top)
+							.frame(maxHeight: .infinity, alignment: .top)
+						}
+						.allowsHitTesting(false)
+						.accessibilityHidden(true)
 					}
-					.allowsHitTesting(false)
-					.accessibilityHidden(true)
-				#endif
+					.compositingGroup()
+					.clipShape(Rectangle())
 			}
-			.compositingGroup()
-			.clipShape(Rectangle())
+			#else
+			faded.clipShape(Rectangle())
+			#endif
+		}
+		.onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
+			lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+		}
 	}
 }
