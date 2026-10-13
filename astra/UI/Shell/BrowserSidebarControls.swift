@@ -17,6 +17,7 @@ struct ShellSidebarListView: View {
 	@State private var todayGroupsUndo: [BrowserTabGroupingFeature.Group]?
 	@Namespace private var sidebarTransitions
 	@State private var sidebarSelection = BrowserSidebarTabSelection()
+	@State private var projectionCache = SidebarProjectionCache()
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	@ViewBuilder
@@ -36,21 +37,21 @@ struct ShellSidebarListView: View {
 
 	var body: some View {
 		let tabsByID = browser.tabsByID
+		// Only reconstruct ordered/grouped projections when membership or grouping changes.
+		// A selection-only workspace mutation reuses the same tab arrays and selection orders.
+		let projection = projectionCache.resolve(
+			space: space, favouriteIDs: favouriteTabIDs, tabsByID: tabsByID,
+			tabCollectionRevision: browser.tabCollectionRevision, isPrivate: browser.isPrivate
+		)
 		let openElsewhereIDs = BrowserWindowRegistry.shared.tabIDsOpenInAnotherWindow(than: browser)
-		let favouriteTabs = browser.isPrivate ? [] : favouriteTabIDs.compactMap { tabsByID[$0] }
-		let pinnedTabs = space.pinnedTabIDs.compactMap { tabsByID[$0] }
-		let folderTabIDs = Set(space.pinnedFolders.flatMap(\.tabIDs))
-		let ungroupedPinnedTabs = pinnedTabs.filter { !folderTabIDs.contains($0.id) }
-		let pinnedSet = Set(space.pinnedTabIDs)
-		let normalTabs = space.tabIDs.filter { !pinnedSet.contains($0) }.compactMap { tabsByID[$0] }
-		let normalIDSet = Set(normalTabs.map(\.id))
-		let normalIndexes = Dictionary(uniqueKeysWithValues: normalTabs.enumerated().map { ($0.element.id, $0.offset) })
-		let groupedIDs = Set(space.todayTabGroups.flatMap(\.tabIDs))
-		let ungroupedNormalTabs = normalTabs.filter { !groupedIDs.contains($0.id) }
-		let normalSelectionOrder = space.todayTabGroups.flatMap(\.tabIDs).filter { normalIDSet.contains($0) }
-			+ ungroupedNormalTabs.map(\.id)
-		let pinnedSelectionOrder = space.pinnedFolders.flatMap(\.tabIDs).filter { tabsByID[$0] != nil }
-			+ ungroupedPinnedTabs.map(\.id)
+		let favouriteTabs = projection.favouriteTabs
+		let pinnedTabs = projection.pinnedTabs
+		let ungroupedPinnedTabs = projection.ungroupedPinnedTabs
+		let normalTabs = projection.normalTabs
+		let normalIndexes = projection.normalIndexes
+		let ungroupedNormalTabs = projection.ungroupedNormalTabs
+		let normalSelectionOrder = projection.normalSelectionOrder
+		let pinnedSelectionOrder = projection.pinnedSelectionOrder
 		let selectedID = space.selectedTabID
 		return GeometryReader { geometry in
 			ScrollViewReader { reader in
@@ -113,7 +114,7 @@ struct ShellSidebarListView: View {
 						BrowserAITabDivider(browser: browser, tabs: normalTabs, action: $cleanupAction, error: $cleanupError, canUndoGrouping: todayGroupsUndo != nil)
 						VStack(spacing: 2) {
 							ForEach(space.todayTabGroups) { group in
-								let groupTabs = group.tabIDs.compactMap { tabsByID[$0] }.filter { normalIDSet.contains($0.id) }
+								let groupTabs = projection.groupedTabs[group.id] ?? []
 								if !groupTabs.isEmpty {
 									HStack {
 										Text(group.name)
@@ -428,5 +429,84 @@ private struct ShellNewTabButton: View {
 			}
 		}
 		.accessibilityIdentifier("new-tab")
+	}
+}
+
+@MainActor
+private final class SidebarProjectionCache {
+	struct Projection {
+		let favouriteTabs: [BrowserTab]
+		let pinnedTabs: [BrowserTab]
+		let ungroupedPinnedTabs: [BrowserTab]
+		let normalTabs: [BrowserTab]
+		let ungroupedNormalTabs: [BrowserTab]
+		let normalIndexes: [UUID: Int]
+		let normalSelectionOrder: [UUID]
+		let pinnedSelectionOrder: [UUID]
+		let groupedTabs: [UUID: [BrowserTab]]
+	}
+
+	private struct Entry {
+		let spaceID: UUID
+		let tabIDs: [UUID]
+		let pinnedIDs: [UUID]
+		let folders: [PinnedTabFolder]
+		let groups: [BrowserTabGroupingFeature.Group]
+		let favouriteIDs: [UUID]
+		let tabCollectionRevision: Int
+		let isPrivate: Bool
+		let projection: Projection
+	}
+	private var cached: Entry?
+
+	func resolve(
+		space: BrowserSpace, favouriteIDs: [UUID], tabsByID: [UUID: BrowserTab],
+		tabCollectionRevision: Int, isPrivate: Bool
+	) -> Projection {
+		if let cached,
+		   cached.spaceID == space.id,
+		   cached.tabIDs == space.tabIDs,
+		   cached.pinnedIDs == space.pinnedTabIDs,
+		   cached.folders == space.pinnedFolders,
+		   cached.groups == space.todayTabGroups,
+		   cached.favouriteIDs == favouriteIDs,
+		   cached.tabCollectionRevision == tabCollectionRevision,
+		   cached.isPrivate == isPrivate
+		{
+			return cached.projection
+		}
+		let favouriteTabs = isPrivate ? [] : favouriteIDs.compactMap { tabsByID[$0] }
+		let pinnedTabs = space.pinnedTabIDs.compactMap { tabsByID[$0] }
+		let folderIDs = Set(space.pinnedFolders.flatMap(\.tabIDs))
+		let ungroupedPinnedTabs = pinnedTabs.filter { !folderIDs.contains($0.id) }
+		let pinnedIDs = Set(space.pinnedTabIDs)
+		let normalTabs = space.tabIDs.filter { !pinnedIDs.contains($0) }.compactMap { tabsByID[$0] }
+		let normalIDs = Set(normalTabs.map(\.id))
+		let normalIndexes = Dictionary(uniqueKeysWithValues: normalTabs.enumerated().map { ($0.element.id, $0.offset) })
+		let groupedIDs = Set(space.todayTabGroups.flatMap(\.tabIDs))
+		let ungroupedNormalTabs = normalTabs.filter { !groupedIDs.contains($0.id) }
+		let normalSelectionOrder = space.todayTabGroups.flatMap(\.tabIDs).filter { normalIDs.contains($0) }
+			+ ungroupedNormalTabs.map(\.id)
+		let pinnedSelectionOrder = space.pinnedFolders.flatMap(\.tabIDs).filter { tabsByID[$0] != nil }
+			+ ungroupedPinnedTabs.map(\.id)
+		var groupedTabs: [UUID: [BrowserTab]] = [:]
+		groupedTabs.reserveCapacity(space.todayTabGroups.count)
+		for group in space.todayTabGroups {
+			groupedTabs[group.id] = group.tabIDs.compactMap { tabsByID[$0] }.filter { normalIDs.contains($0.id) }
+		}
+		let projection = Projection(
+			favouriteTabs: favouriteTabs, pinnedTabs: pinnedTabs,
+			ungroupedPinnedTabs: ungroupedPinnedTabs, normalTabs: normalTabs,
+			ungroupedNormalTabs: ungroupedNormalTabs, normalIndexes: normalIndexes,
+			normalSelectionOrder: normalSelectionOrder, pinnedSelectionOrder: pinnedSelectionOrder,
+			groupedTabs: groupedTabs
+		)
+		cached = Entry(
+			spaceID: space.id, tabIDs: space.tabIDs, pinnedIDs: space.pinnedTabIDs,
+			folders: space.pinnedFolders, groups: space.todayTabGroups,
+			favouriteIDs: favouriteIDs, tabCollectionRevision: tabCollectionRevision,
+			isPrivate: isPrivate, projection: projection
+		)
+		return projection
 	}
 }

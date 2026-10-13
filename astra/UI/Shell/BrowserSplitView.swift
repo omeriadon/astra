@@ -27,6 +27,7 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View, Animatable {
 	@State private var resizedWidth: CGFloat?
 	@GestureState private var resizeStartWidth: CGFloat?
 	@State private var isResizeHovered = false
+	@State private var lastReportedWidth: CGFloat?
 	@ViewBuilder let sidebar: Sidebar
 	@ViewBuilder let content: Content
 
@@ -128,6 +129,13 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View, Animatable {
 										minimumContentWidth: minimumContentWidth + followingSidebarWidth
 									)
 								}
+								.onEnded { _ in
+									// Reconcile the exact width after coalesced parent updates.
+									if let resizedWidth {
+										lastReportedWidth = resizedWidth
+										onWidthChange?(resizedWidth)
+									}
+								}
 						)
 						.accessibilityElement()
 						.accessibilityLabel(edge == .leading ? "Left sidebar width" : "Right sidebar width")
@@ -156,6 +164,10 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View, Animatable {
 			.animation(nil, value: visibleWidth)
 			.animation(nil, value: reservedWidth)
 			.onChange(of: width, initial: true) { _, width in
+				// Local resizing remains frame-accurate; parent minimum-size recomputation
+				// does not need a transaction for every pointer pixel.
+				if let lastReportedWidth, abs(width - lastReportedWidth) < 8 { return }
+				lastReportedWidth = width
 				onWidthChange?(width)
 			}
 		}

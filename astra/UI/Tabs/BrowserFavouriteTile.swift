@@ -171,11 +171,11 @@ struct BrowserFavouriteTile: View {
 						hoverPreviewStarted = false
 					}
 				}
-				.onGeometryChange(for: CGRect.self) { proxy in
-					proxy.frame(in: .global)
-				} action: { frame in
+				.onGeometryChange(for: CGRect?.self) { proxy in
+					previewEnabled && isHovered ? proxy.frame(in: .global) : nil
+				} action: { value in
+					guard let frame = value else { return }
 					hoverFrame = frame
-					guard previewEnabled, isHovered else { return }
 					if hoverPreviewStarted {
 						BrowserTabHoverPreviewCoordinator.shared.updateFrame(for: tabID, windowID: windowID, frame: frame)
 					} else {

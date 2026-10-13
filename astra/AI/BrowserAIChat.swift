@@ -310,15 +310,13 @@ final class BrowserAIChat {
 				BrowserLog.trace(.ai, "ai.chat.stream-progress", metadata: [
 					"id": BrowserLog.id(turnID), "bytes": String(snapshot.utf8.count),
 				])
-				latestPreview = BrowserAIOutput.streamedString("response", in: snapshot) ?? (snapshot.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") ? "" : snapshot)
-				// The Markdown view and scroll reader are relatively expensive.
-				// Publish at most ~12 updates per second while retaining the
-				// unthrottled final response and immediately showing first text.
+				// Avoid decoding the growing response snapshot on every token.
+				// Tool detection below still runs immediately, independently of UI throttling.
 				let now = ContinuousClock.now
 				if lastPreviewPublishedAt.map({ $0.duration(to: now) >= .milliseconds(85) }) ?? true {
-					if preview != latestPreview {
-						preview = latestPreview
-					}
+					latestPreview = BrowserAIOutput.streamedString("response", in: snapshot)
+						?? (snapshot.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") ? "" : snapshot)
+					if preview != latestPreview { preview = latestPreview }
 					lastPreviewPublishedAt = now
 				}
 				// The JSON actions array comes after response text. Avoid
@@ -341,8 +339,10 @@ final class BrowserAIChat {
 					continuation.yield(call)
 				}
 			}
-			if preview != latestPreview {
-				preview = latestPreview
+			// The final decoded response is authoritative even if the last
+			// streaming callback occurred inside the UI throttle interval.
+			if preview != turn.response {
+				preview = turn.response
 			}
 			BrowserLog.debug(.ai, "ai.chat.stream-turn-finished", metadata: [
 				"id": BrowserLog.id(turnID), "actions": String(turn.actions.count),

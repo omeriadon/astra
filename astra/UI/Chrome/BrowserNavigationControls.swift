@@ -88,8 +88,6 @@ struct BrowserNavigationControls: View {
 			#endif
 		}
 		.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
-		.id(controller.history)
-		.id(controller.historyIndex)
 	}
 }
 
@@ -120,8 +118,6 @@ struct BrowserHistoryNavigationControls: View {
 		.buttonStyle(.bordered)
 		.foregroundStyle(.primary)
 		.buttonBorderShape(.roundedRectangle(radius: BrowserChromeMetrics.topBarButtonCornerRadius))
-		.id(controller.history)
-		.id(controller.historyIndex)
 	}
 }
 

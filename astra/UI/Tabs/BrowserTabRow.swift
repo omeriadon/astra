@@ -205,10 +205,10 @@ struct BrowserTabRow: View {
 			#endif
 		}
 		#if os(macOS)
-		.onGeometryChange(for: CGRect.self) { proxy in
-			proxy.frame(in: .global)
-		} action: { frame in
-			guard onSelectTab == nil else { return }
+		.onGeometryChange(for: CGRect?.self) { proxy in
+			isHovered && onSelectTab == nil ? proxy.frame(in: .global) : nil
+		} action: { value in
+			guard let frame = value else { return }
 			hoverFrame = frame
 			guard isHovered else { return }
 			if hoverPreviewStarted {
