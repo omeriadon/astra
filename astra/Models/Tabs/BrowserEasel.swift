@@ -1,6 +1,26 @@
 import Foundation
 import ImageIO
 
+struct BrowserEaselQuote: Codable, Equatable, Sendable {
+	var url: URL
+	var text: String
+	var prefix: String
+	var suffix: String
+
+	nonisolated var isValid: Bool {
+		BrowserEaselDocument.isSafeLink(url)
+			&& !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+			&& text.utf8.count <= 8192
+			&& prefix.utf8.count <= 256
+			&& suffix.utf8.count <= 256
+	}
+}
+
+struct BrowserEaselQuoteDestination: Sendable {
+	var id: UUID
+	var title: String
+}
+
 struct BrowserEaselDocument: Codable, Equatable, Sendable {
 	var items: [Item] = []
 
@@ -19,9 +39,10 @@ struct BrowserEaselDocument: Codable, Equatable, Sendable {
 		var points: [Point] = []
 		var url: URL?
 		var imageData: Data?
+		var quote: BrowserEaselQuote?
 
 		enum Kind: String, Codable, CaseIterable, Sendable {
-			case text, image, link, freehand, rectangle, ellipse, line, arrow
+			case text, image, link, quote, freehand, rectangle, ellipse, line, arrow
 		}
 
 		enum Font: String, Codable, CaseIterable, Sendable {
@@ -125,6 +146,12 @@ struct BrowserEaselDocument: Codable, Equatable, Sendable {
 				return false
 			}
 			if item.kind == .link, item.url == nil {
+				return false
+			}
+			if item.kind == .quote, item.quote?.isValid != true {
+				return false
+			}
+			if item.kind != .quote, item.quote != nil {
 				return false
 			}
 			if [.line, .arrow].contains(item.kind), item.points.count != 2 {
