@@ -14,6 +14,7 @@ assert ".id(controller.history)" not in navigation
 assert ".id(controller.historyIndex)" not in navigation
 assert "projectionCache.resolve(" in sidebar
 assert "cached.structureRevision == structureRevision" in sidebar
+assert 'BrowserLog.duration(.performance, "sidebar.projection.resolve"' in sidebar
 assert "cached.tabIDs == space.tabIDs" not in sidebar
 assert "LazyVStack(spacing: 2)" in sidebar
 assert "if isHovered && onSelectTab == nil" in row
@@ -30,7 +31,10 @@ assert "chromeSummaryRevision != itemsRevision" in Path("astra/Web/Downloads/Bro
 assert "if membershipChanged { visibleTabMembershipRevision &+= 1 }" in browser
 assert "BrowserReaderScript.prewarm()" in Path("astra/UI/Content/BrowserRootView.swift").read_text()
 assert "BrowserReaderScript.prewarm()" in Path("astra/App/browserApp.swift").read_text()
-assert "Task.detached(priority: .utility)" in Path("astra/Web/Reader/BrowserReaderScript.swift").read_text()
+reader = Path("astra/Web/Reader/BrowserReaderScript.swift").read_text()
+assert "Task.detached(priority: .utility)" in reader
+assert "cachedSource = readSource(resourceURLs())" in reader
+assert "guard urls.count == 3 else { return nil }" in reader
 assert "hasCompetingNormalWindow(for browser: Browser)" in Path("astra/Models/Core/BrowserWindowRegistry.swift").read_text()
 assert "registry.hasCompetingNormalWindow(for: browser)" in Path("astra/UI/Content/BrowserContentView.swift").read_text()
 fade = Path("astra/UI/Shell/topVariableBlur.swift").read_text()
