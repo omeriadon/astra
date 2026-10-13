@@ -884,6 +884,9 @@ final class BrowserController: NSObject, Identifiable {
 	@ObservationIgnored private var sampledChromeColor: PlatformColor?
 	@ObservationIgnored private var sampledSurfaceColor: PlatformColor?
 	@ObservationIgnored private var sampledBrandColor: PlatformColor?
+	@ObservationIgnored private var sampledFaviconColor: PlatformColor?
+	@ObservationIgnored private var faviconTintTask: Task<Void, Never>?
+	@ObservationIgnored private var faviconTintAttemptedGeneration: Int?
 	private var pendingDownloadSource: UnitPoint?
 	private var pendingDownloadSiteURL: URL?
 	@ObservationIgnored
@@ -1722,6 +1725,8 @@ final class BrowserController: NSObject, Identifiable {
 		pictureInPictureControlUnavailable = false
 		faviconTask?.cancel()
 		faviconTask = nil
+		faviconTintTask?.cancel()
+		faviconTintTask = nil
 		#if os(macOS)
 			previewSnapshotRefreshTask?.cancel()
 			previewSnapshotRefreshTask = nil
@@ -2108,6 +2113,7 @@ final class BrowserController: NSObject, Identifiable {
 		#endif
 		mediaObservationTask?.cancel()
 		faviconTask?.cancel()
+		faviconTintTask?.cancel()
 		observations.forEach { $0.invalidate() }
 		#if os(macOS)
 			previewSnapshotRefreshTask?.cancel()
@@ -2313,6 +2319,8 @@ final class BrowserController: NSObject, Identifiable {
 			guard let self, let webView, owns(webView) else { return }
 			await session.favicons.loadFavicon(for: url, from: webView, onlyIfMissing: true)
 			guard owns(webView) else { return }
+			faviconTintAttemptedGeneration = nil
+			refreshCachedFaviconTint(in: webView)
 		}
 	}
 
@@ -2539,9 +2547,44 @@ final class BrowserController: NSObject, Identifiable {
 			?? webView.themeColor
 			?? sampledSurfaceColor
 			?? sampledBrandColor
+			?? sampledFaviconColor
 			?? webView.underPageBackgroundColor
 			?? PlatformColor.white
 		updateThemeColor(color)
+	}
+
+	/// Only a pre-existing cached favicon is eligible. Its palette extraction
+	/// runs off the main actor and never blocks scrolling or adds network work.
+	private func refreshCachedFaviconTint(in webView: WKWebView) {
+		guard owns(webView), !isInvalidated,
+		      sampledChromeColor == nil, sampledSurfaceColor == nil,
+		      sampledBrandColor == nil, webView.themeColor == nil,
+		      sampledFaviconColor == nil,
+		      faviconTintTask == nil,
+		      faviconTintAttemptedGeneration != navigationGeneration,
+		      session.favicons.hasCachedFavicon(for: webView.url)
+		else { return }
+		let generation = navigationGeneration
+		let pageURL = webView.url
+		faviconTintAttemptedGeneration = generation
+		faviconTintTask = Task { @MainActor [weak self, weak webView] in
+			guard let self, let webView else { return }
+			let accent = await self.session.favicons.cachedAccentColor(for: pageURL)
+			guard owns(webView), generation == navigationGeneration,
+			      webView.url == pageURL
+			else { return }
+			faviconTintTask = nil
+			guard sampledChromeColor == nil, sampledSurfaceColor == nil,
+			      sampledBrandColor == nil, webView.themeColor == nil
+			else { return }
+			if let accent {
+				sampledFaviconColor = PlatformColor(
+					red: CGFloat(accent.0), green: CGFloat(accent.1),
+					blue: CGFloat(accent.2), alpha: 1
+				)
+				resolveThemeColor(in: webView)
+			}
+		}
 	}
 
 	private func updateThemeColor(_ color: PlatformColor) {
@@ -2976,6 +3019,10 @@ extension BrowserController: WKNavigationDelegate {
 		sampledChromeColor = nil
 		sampledSurfaceColor = nil
 		sampledBrandColor = nil
+		sampledFaviconColor = nil
+		faviconTintTask?.cancel()
+		faviconTintTask = nil
+		faviconTintAttemptedGeneration = nil
 		hasTopEdgeContent = false
 		webView.underPageBackgroundColor = nil
 	}
@@ -3206,6 +3253,7 @@ extension BrowserController: WKScriptMessageHandler {
 			sampledSurfaceColor = source == "surface" ? color : nil
 			sampledBrandColor = source == "brand" ? color : nil
 			resolveThemeColor(in: webView)
+			refreshCachedFaviconTint(in: webView)
 			return
 		}
 
