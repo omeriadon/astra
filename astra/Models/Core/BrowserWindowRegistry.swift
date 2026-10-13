@@ -134,7 +134,9 @@ final class BrowserWindowRegistry {
 		for entry in browsers {
 			guard let candidate = entry.browser, !candidate.isPrivate, !candidate.isMini else { continue }
 			normalWindowCount += 1
-			if normalWindowCount > 1 { return true }
+			if normalWindowCount > 1 {
+				return true
+			}
 		}
 		return false
 	}

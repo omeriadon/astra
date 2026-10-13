@@ -196,7 +196,9 @@ final class BrowserTabResourceManager {
 		// window. Skip materializing the otherwise redundant UUID ownership set.
 		let ownedTabIDs = registry.hasCompetingNormalWindow(for: browser)
 			? registry.ownedTabIDs(in: browser) : nil
-		func isOwned(_ id: UUID) -> Bool { ownedTabIDs?.contains(id) ?? true }
+		func isOwned(_ id: UUID) -> Bool {
+			ownedTabIDs?.contains(id) ?? true
+		}
 		let tabsByID = browser.tabsByID
 		var result: [BrowserController] = []
 		var seen = Set<UUID>()

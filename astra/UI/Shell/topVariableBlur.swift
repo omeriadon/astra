@@ -10,9 +10,9 @@ import SwiftUI
 	import Haze
 #endif
 
-// Fade geometry depends only on the viewport and the four edge dimensions.
-// Keep it equatable so unrelated tab-selection and download updates don't
-// re-evaluate the mask's six gradient stops.
+/// Fade geometry depends only on the viewport and the four edge dimensions.
+/// Keep it equatable so unrelated tab-selection and download updates don't
+/// re-evaluate the mask's six gradient stops.
 private struct SidebarScrollAlphaGradient: View, Equatable {
 	let top: CGFloat
 	let topOpacityHeight: CGFloat?
@@ -134,8 +134,8 @@ private struct SidebarScrollOpacityFadeModifier: ViewModifier {
 	}
 }
 
-// Mark variable blur only where it is visible. Each GeometryReader here used to
-// recompute layout on sidebar scroll; native overlay frames already fill width.
+/// Mark variable blur only where it is visible. Each GeometryReader here used to
+/// recompute layout on sidebar scroll; native overlay frames already fill width.
 private struct SidebarScrollVariableBlurModifier: ViewModifier {
 	let top: CGFloat
 	let bottom: CGFloat

@@ -3367,7 +3367,9 @@ final class Browser {
 		let mutationDate = nextWorkspaceMutationDate()
 		workspace.modifiedAt = mutationDate
 		#if os(macOS) && !ASTRA_WEBSITE_APP_RUNTIME && !ASTRA_WEBSITE_APP_HELPER
-			if !isPrivate && !isMini { AstraSpotlightIndexer.scheduleRefresh() }
+			if !isPrivate, !isMini {
+				AstraSpotlightIndexer.scheduleRefresh()
+			}
 		#endif
 		if let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
 			workspace.spaces[index].modifiedAt = mutationDate
@@ -3455,7 +3457,9 @@ final class Browser {
 	private func scheduleUserDataPersistence() {
 		schedulePersistence(fullState: true, syncExtensions: false)
 		#if os(macOS) && !ASTRA_WEBSITE_APP_RUNTIME && !ASTRA_WEBSITE_APP_HELPER
-			if !isPrivate && !isMini { AstraSpotlightIndexer.scheduleRefresh() }
+			if !isPrivate, !isMini {
+				AstraSpotlightIndexer.scheduleRefresh()
+			}
 		#endif
 	}
 

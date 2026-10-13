@@ -67,43 +67,43 @@ struct BrowserRootView: View {
 		#endif
 		#if os(macOS)
 			.background {
-				BrowserDropZone(
-					browser: browser,
-					area: .normal,
-					spaceID: browser.workspace.selectedSpaceID,
-					beforeTabID: nil,
-					isWindowFallback: true
-				)
-			}
-			.background {
-				WindowFocusReader { window in
-					hostWindow = window
-					controlTabSwitcher.setWindow(window)
-					if window?.isKeyWindow == true {
-						BrowserWindowRegistry.shared.activate(browser)
-					}
-				}
-				.allowsHitTesting(false)
-			}
-			.onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
-				if let window = notification.object as? NSWindow, window === hostWindow {
+			BrowserDropZone(
+				browser: browser,
+				area: .normal,
+				spaceID: browser.workspace.selectedSpaceID,
+				beforeTabID: nil,
+				isWindowFallback: true
+			)
+		}
+		.background {
+			WindowFocusReader { window in
+				hostWindow = window
+				controlTabSwitcher.setWindow(window)
+				if window?.isKeyWindow == true {
 					BrowserWindowRegistry.shared.activate(browser)
 				}
 			}
-			.overlay {
-				ControlTabSwitcherPreview(browser: browser, switcher: controlTabSwitcher)
-					.animation(.easeInOut(duration: 0.05), value: controlTabSwitcher.isPreviewVisible)
+			.allowsHitTesting(false)
+		}
+		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
+			if let window = notification.object as? NSWindow, window === hostWindow {
+				BrowserWindowRegistry.shared.activate(browser)
 			}
-			.onAppear {
-				controlTabSwitcher.start()
-			}
-			.onChange(of: browser.visibleTabMembershipRevision) { _, _ in
-				controlTabSwitcher.tabsDidChange()
-			}
-			.onDisappear {
-				controlTabSwitcher.stop()
-			}
-			.modifier(BrowserQuitFeedback(browser: browser))
+		}
+		.overlay {
+			ControlTabSwitcherPreview(browser: browser, switcher: controlTabSwitcher)
+				.animation(.easeInOut(duration: 0.05), value: controlTabSwitcher.isPreviewVisible)
+		}
+		.onAppear {
+			controlTabSwitcher.start()
+		}
+		.onChange(of: browser.visibleTabMembershipRevision) { _, _ in
+			controlTabSwitcher.tabsDidChange()
+		}
+		.onDisappear {
+			controlTabSwitcher.stop()
+		}
+		.modifier(BrowserQuitFeedback(browser: browser))
 		#endif
 	}
 

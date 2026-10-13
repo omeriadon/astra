@@ -6,11 +6,11 @@
 //
 
 #if os(macOS)
-	import AppKit
 	import AppIntents
-	import CoreSpotlight
+	import AppKit
 	import AuthenticationServices
 	import Carbon
+	import CoreSpotlight
 	import Defaults
 	import SwiftUI
 	import WebKit
@@ -261,7 +261,7 @@
 									try? await Task.sleep(for: .milliseconds(25))
 								}
 								guard !Task.isCancelled else { return }
-								let readiness: [String: String] = unsafe [
+								let readiness: [String: String] = unsafe[
 									"visible": String(foreground.window.isVisible),
 									"key": String(foreground.window.isKeyWindow),
 									"can_become_key": String(foreground.window.canBecomeKey),
@@ -574,7 +574,9 @@
 		/// They must not mutate the placeholder model before restoration completes.
 		func awaitSystemActionsReady() async -> Bool {
 			for _ in 0 ..< 200 {
-				if startupWindowRestorationFinished { return true }
+				if startupWindowRestorationFinished {
+					return true
+				}
 				try? await Task.sleep(for: .milliseconds(50))
 			}
 			return startupWindowRestorationFinished

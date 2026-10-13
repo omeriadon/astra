@@ -7,12 +7,12 @@ var boost = BrowserBoost(name: "Site customizer", domain: "example.com")
 boost.css = "html { color: red }"
 boost.javascript = "document.documentElement.dataset.astraBoost = '1';"
 let document = BrowserSyncDocument(
-    tabs: [tab],
-    workspace: workspace,
-    bookmarks: [],
-    browser: BrowserSnapshot(selectedTabID: tabID),
-    settings: [:],
-    boosts: [boost]
+	tabs: [tab],
+	workspace: workspace,
+	bookmarks: [],
+	browser: BrowserSnapshot(selectedTabID: tabID),
+	settings: [:],
+	boosts: [boost]
 )
 let portable = document.portableProjection()
 precondition(portable.hasValidStructure)
@@ -26,8 +26,8 @@ var legacyObject = try JSONSerialization.jsonObject(with: data) as! [String: Any
 legacyObject.removeValue(forKey: "boosts")
 legacyObject.removeValue(forKey: "deletedBoostsAt")
 let legacy = try JSONDecoder().decode(
-    BrowserSyncDocument.self,
-    from: JSONSerialization.data(withJSONObject: legacyObject)
+	BrowserSyncDocument.self,
+	from: JSONSerialization.data(withJSONObject: legacyObject)
 )
 precondition(legacy.boosts.isEmpty)
 precondition(legacy.deletedBoostsAt.isEmpty)
