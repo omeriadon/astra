@@ -236,6 +236,7 @@ final class BrowserBoostStore {
           const applicable = incoming.filter(b => !b.domain || host === b.domain || host.endsWith('.' + b.domain));
           const run = () => {
             if (!document.documentElement) return;
+            if (applicable.length === 0 && !window.__astraBoostState) return;
             const state = window.__astraBoostState || (window.__astraBoostState = Object.create(null));
             const current = new Set(applicable.map(b => b.id));
             for (const [id, entry] of Object.entries(state)) {
