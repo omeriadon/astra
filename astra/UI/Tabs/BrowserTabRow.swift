@@ -177,8 +177,8 @@ struct BrowserTabRow: View {
 			#if os(macOS)
 				guard onSelectTab == nil else { return }
 				if hovering {
-					// Frame arrives via the always-on geometry observer below;
-					// if we already have one, begin immediately so short hovers register.
+					// Hover-only geometry observation below supplies the initial frame;
+					// subsequent movements keep the preview anchored during scrolling.
 					if hoverPreviewStarted {
 						BrowserTabHoverPreviewCoordinator.shared.updateFrame(
 							for: tab.id,
@@ -201,29 +201,22 @@ struct BrowserTabRow: View {
 						)
 					}
 					hoverPreviewStarted = false
+					hoverFrame = .zero
 				}
 			#endif
 		}
 		#if os(macOS)
-		.onGeometryChange(for: CGRect.self) { proxy in
-			proxy.frame(in: .global)
-		} action: { frame in
-			guard onSelectTab == nil else { return }
-			hoverFrame = frame
-			guard isHovered else { return }
-			if hoverPreviewStarted {
-				BrowserTabHoverPreviewCoordinator.shared.updateFrame(
-					for: tab.id,
-					windowID: browser.windowID,
-					frame: frame
-				)
-			} else {
-				hoverPreviewStarted = true
-				BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
-					tabID: tab.id,
-					windowID: browser.windowID,
-					sourceFrame: frame
-				)
+		.background {
+			// Do not install a geometry observer for every non-hovered tab.
+			if isHovered && onSelectTab == nil {
+				GeometryReader { proxy in
+					Color.clear
+						.onAppear { updateHoveredFrame(proxy.frame(in: .global)) }
+						.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+							updateHoveredFrame(frame)
+						}
+				}
+				.allowsHitTesting(false)
 			}
 		}
 		.onChange(of: tab.id) { oldID, _ in
@@ -275,6 +268,24 @@ struct BrowserTabRow: View {
 			}
 		}
 	}
+
+	#if os(macOS)
+		private func updateHoveredFrame(_ frame: CGRect) {
+			guard isHovered && onSelectTab == nil else { return }
+			guard frame != hoverFrame || !hoverPreviewStarted else { return }
+			hoverFrame = frame
+			if hoverPreviewStarted {
+				BrowserTabHoverPreviewCoordinator.shared.updateFrame(
+					for: tab.id, windowID: browser.windowID, frame: frame
+				)
+			} else {
+				hoverPreviewStarted = true
+				BrowserTabHoverPreviewCoordinator.shared.hoverBegan(
+					tabID: tab.id, windowID: browser.windowID, sourceFrame: frame
+				)
+			}
+		}
+	#endif
 
 	private func beginRenaming() {
 		guard tab.internalPage == nil || tab.internalPage == .easel else { return }

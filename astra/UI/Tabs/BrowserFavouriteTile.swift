@@ -169,18 +169,19 @@ struct BrowserFavouriteTile: View {
 							BrowserTabHoverPreviewCoordinator.shared.hoverEnded(tabID: tabID, windowID: windowID)
 						}
 						hoverPreviewStarted = false
+						hoverFrame = .zero
 					}
 				}
-				.onGeometryChange(for: CGRect.self) { proxy in
-					proxy.frame(in: .global)
-				} action: { frame in
-					hoverFrame = frame
-					guard previewEnabled, isHovered else { return }
-					if hoverPreviewStarted {
-						BrowserTabHoverPreviewCoordinator.shared.updateFrame(for: tabID, windowID: windowID, frame: frame)
-					} else {
-						hoverPreviewStarted = true
-						BrowserTabHoverPreviewCoordinator.shared.hoverBegan(tabID: tabID, windowID: windowID, sourceFrame: frame)
+				.background {
+					if previewEnabled && isHovered {
+						GeometryReader { proxy in
+							Color.clear
+								.onAppear { recordHoverFrame(proxy.frame(in: .global)) }
+								.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+									recordHoverFrame(frame)
+								}
+						}
+						.allowsHitTesting(false)
 					}
 				}
 				.onChange(of: tabID) { oldID, _ in
@@ -195,6 +196,18 @@ struct BrowserFavouriteTile: View {
 					}
 					hoverPreviewStarted = false
 				}
+		}
+
+		private func recordHoverFrame(_ frame: CGRect) {
+			guard previewEnabled, isHovered else { return }
+			guard frame != hoverFrame || !hoverPreviewStarted else { return }
+			hoverFrame = frame
+			if hoverPreviewStarted {
+				BrowserTabHoverPreviewCoordinator.shared.updateFrame(for: tabID, windowID: windowID, frame: frame)
+			} else {
+				hoverPreviewStarted = true
+				BrowserTabHoverPreviewCoordinator.shared.hoverBegan(tabID: tabID, windowID: windowID, sourceFrame: frame)
+			}
 		}
 	}
 #endif
