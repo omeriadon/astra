@@ -279,12 +279,12 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 			kCGImageSourceCreateThumbnailWithTransform: true,
 			kCGImageSourceThumbnailMaxPixelSize: 32
 		] as CFDictionary) else { return nil }
-		let width = 32, height = 32, stride = 32 * 4
-		var pixels = [UInt8](repeating: 0, count: height * stride)
+		let width = 32, height = 32, bytesPerRow = 32 * 4
+		var pixels = [UInt8](repeating: 0, count: height * bytesPerRow)
 		let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
 			guard let context = CGContext(
 				data: buffer.baseAddress, width: width, height: height,
-				bitsPerComponent: 8, bytesPerRow: stride,
+				bitsPerComponent: 8, bytesPerRow: bytesPerRow,
 				space: CGColorSpaceCreateDeviceRGB(),
 				bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue |
 					CGImageAlphaInfo.premultipliedLast.rawValue
