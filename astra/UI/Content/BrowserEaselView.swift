@@ -65,8 +65,14 @@ struct BrowserEaselView: View {
 			editingTextID = nil
 			activeTool = .cursor
 			baseline = nil
+			drawingPoints = []
 		}
 		#endif
+		.onChange(of: activeTool) { _, _ in
+			editingTextID = nil
+			baseline = nil
+			drawingPoints = []
+		}
 		.onChange(of: document) { _, value in
 			if !tab.updateEasel(value) {
 				document = tab.easelDocument
@@ -264,7 +270,7 @@ struct BrowserEaselView: View {
 	}
 
 	private func canvasWidth(_ viewport: CGFloat) -> CGFloat {
-		min(10000, max(1600, viewport, document.items.map { $0.x + $0.width + 400 }.max() ?? 0))
+		min(20000, max(1600, viewport, document.items.map { $0.x + $0.width + 400 }.max() ?? 0))
 	}
 
 	private func canvasHeight(_ viewport: CGFloat) -> CGFloat {
@@ -553,7 +559,7 @@ struct BrowserEaselView: View {
 	}
 
 	private func deleteSelectedItem() {
-		guard activeTool == .cursor, let selectedID else { return }
+		guard activeTool == .cursor, editingTextID == nil, let selectedID else { return }
 		deleteItem(selectedID)
 	}
 
@@ -622,7 +628,7 @@ struct BrowserEaselView: View {
 		if baseline?.id != item.id { baseline = item }
 		guard let baseline else { return }
 		edit(item.id) {
-			$0.x = min(max(0, baseline.x + translation.width), max(0, canvasWidth - baseline.width))
+			$0.x = min(max(0, baseline.x + translation.width), min(10000, max(0, canvasWidth - baseline.width)))
 			$0.y = min(max(0, baseline.y + translation.height), 1_000_000)
 		}
 	}
