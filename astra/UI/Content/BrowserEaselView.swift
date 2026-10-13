@@ -24,7 +24,7 @@ struct BrowserEaselView: View {
 	@State private var linkText = "https://"
 	@State private var baseline: BrowserEaselDocument.Item?
 	@State private var drawingPoints: [BrowserEaselDocument.Item.Point] = []
-	@State private var canvasScrollPosition = ScrollPosition()
+	@State private var canvasOffset = EaselCanvasViewportOffset()
 	private enum Tool { case cursor, pen, eraser }
 	@State private var activeTool: Tool = .cursor
 	#if os(macOS)
@@ -48,7 +48,9 @@ struct BrowserEaselView: View {
 				ScrollView([.horizontal, .vertical]) {
 					canvasContents(width: canvasWidth(geometry.size.width), viewportHeight: geometry.size.height)
 				}
-				.scrollPosition($canvasScrollPosition)
+				.onScrollGeometryChange(for: CGPoint.self, of: { $0.contentOffset }) { _, offset in
+					canvasOffset.point = CGPoint(x: max(0, offset.x), y: max(0, offset.y))
+				}
 				.scrollDisabled(activeTool != .cursor)
 				.onAppear { centerPendingQuote(in: geometry.size) }
 				.onChange(of: tab.pendingQuotePlacementID) { _, _ in
@@ -282,7 +284,7 @@ struct BrowserEaselView: View {
 	private func centerPendingQuote(in viewport: CGSize) {
 		guard let id = tab.pendingQuotePlacementID,
 		      let item = document.items.first(where: { $0.id == id }) else { return }
-		let point = canvasScrollPosition.point ?? .zero
+		let point = canvasOffset.point
 		var next = document
 		guard let index = next.items.firstIndex(where: { $0.id == id }) else { return }
 		next.items[index].x = min(10000 - item.width, max(0, Double(point.x + viewport.width / 2) - item.width / 2))
@@ -872,4 +874,9 @@ private struct EaselLinkCard: View {
 			}
 		}
 	}
+}
+
+/// A reference-type snapshot avoids invalidating the Easel view on every scroll frame.
+private final class EaselCanvasViewportOffset {
+	var point: CGPoint = .zero
 }
