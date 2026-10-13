@@ -2579,7 +2579,6 @@ final class BrowserController: NSObject, Identifiable {
 		guard owns(webView), !isInvalidated,
 		      sampledChromeColor == nil, sampledSurfaceColor == nil,
 		      sampledBrandColor == nil, webView.themeColor == nil,
-		      sampledFaviconColor == nil,
 		      faviconTintTask == nil,
 		      faviconTintAttemptedGeneration != navigationGeneration,
 		      session.favicons.hasCachedFavicon(for: webView.url)
@@ -2597,13 +2596,13 @@ final class BrowserController: NSObject, Identifiable {
 			guard sampledChromeColor == nil, sampledSurfaceColor == nil,
 			      sampledBrandColor == nil, webView.themeColor == nil
 			else { return }
-			if let accent {
-				sampledFaviconColor = PlatformColor(
-					red: CGFloat(accent.0), green: CGFloat(accent.1),
-					blue: CGFloat(accent.2), alpha: 1
+			sampledFaviconColor = accent.map {
+				PlatformColor(
+					red: CGFloat($0.0), green: CGFloat($0.1),
+					blue: CGFloat($0.2), alpha: 1
 				)
-				resolveThemeColor(in: webView)
 			}
+			resolveThemeColor(in: webView)
 		}
 	}
 
