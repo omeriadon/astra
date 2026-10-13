@@ -1440,6 +1440,11 @@ final class Browser {
 
 	func deleteEasel(_ id: UUID, confirmed: Bool = false) {
 		guard !isPrivate, let tab = tab(withID: id), tab.internalPage == .easel else { return }
+		// Empty easels have no content to lose, so deleting them is immediate.
+		if !confirmed && tab.easelDocument.items.isEmpty {
+			deleteEasel(id, confirmed: true)
+			return
+		}
 		#if os(macOS)
 			if !confirmed {
 				Task { @MainActor [weak self] in
