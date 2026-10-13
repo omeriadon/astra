@@ -547,10 +547,11 @@
 			focusedMiniWindow
 		}
 
-		private var mainWindow: BrowserWindowController {
-			windows.first { $0.browser === BrowserWindowRegistry.shared.activeBrowser }
-				?? windows.first
-				?? openBrowserWindow()
+		/// Resolve a normal window lazily so opening a Mini panel never raises another window.
+		private var miniDestinationWindow: BrowserWindowController {
+			windows.first { $0.browser === BrowserWindowRegistry.shared.activeBrowser && !$0.browser.isPrivate }
+				?? windows.first { !$0.browser.isPrivate }
+				?? openBrowserWindow(showImmediately: false)
 		}
 
 		func openMiniAstra(url: URL? = nil) {
@@ -559,13 +560,22 @@
 				guard let self, let controller else { return }
 				miniWindows.removeAll { $0 === controller }
 			}
-			controller.onPromote = { [weak self] tab in
+			controller.resolveSpaceBrowser = { [weak self] in self?.miniDestinationWindow.browser }
+			controller.revealSpaceBrowser = { [weak self] in
 				guard let self else { return }
-				let destination = mainWindow
+				self.miniDestinationWindow.showWindow()
+				NSApp.activate()
+			}
+			controller.onPromote = { [weak self] tab, spaceID in
+				guard let self else { return }
+				let destination = miniDestinationWindow
 				#if DEBUG
 					let webView = tab.controller?.webViewIfLoaded
 				#endif
 				destination.browser.adoptMiniTab(tab)
+				if let spaceID, destination.browser.workspace.spaces.contains(where: { $0.id == spaceID }) {
+					destination.browser.moveTab(tab.id, to: .normal, in: spaceID)
+				}
 				destination.showWindow()
 				NSApp.activate()
 				#if DEBUG
@@ -664,7 +674,7 @@
 		}
 
 		@objc private func toggleTopBar(_: Any?) {
-			guard let browser = activeBrowser, !browser.isMini else { return }
+			guard let browser = activeBrowser else { return }
 			NotificationCenter.default.post(name: .toggleBrowserTopBar, object: browser.windowID)
 		}
 
@@ -1077,7 +1087,7 @@
 				return activeBrowser?.canShowAISidebar == true && Defaults[.aiFeaturesEnabled] && Defaults[.aiSidebar]
 			}
 			if menuItem.action == #selector(toggleTopBar(_:)) {
-				return activeBrowser?.isMini == false
+				return activeBrowser != nil
 			}
 			if menuItem.action == #selector(toggleSidebar(_:)) {
 				return activeBrowser?.isMini == false
