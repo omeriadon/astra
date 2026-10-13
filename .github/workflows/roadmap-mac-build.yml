@@ -58,6 +58,16 @@ jobs:
           swiftc -swift-version 6 astra/Models/Tabs/BrowserEasel.swift checks/easel-document-check.swift -o "$RUNNER_TEMP/astra-easel-document-check"
           "$RUNNER_TEMP/astra-easel-document-check"
 
+      - name: Validate native automation target boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/native-automation-check.py
+
+      - name: Test standalone automation core
+        shell: bash
+        run: swift test --package-path Packages/AstraAutomationCore
+
       - name: Install Metal Toolchain
         shell: bash
         run: xcodebuild -downloadComponent MetalToolchain

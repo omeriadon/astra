@@ -7,6 +7,8 @@
 
 #if os(macOS)
 	import AppKit
+	import AppIntents
+	import CoreSpotlight
 	import AuthenticationServices
 	import Carbon
 	import Defaults
@@ -79,6 +81,7 @@
 				object: nil
 			)
 			installMainMenu()
+			NSApp.servicesProvider = AstraServicesProvider.shared
 			NSAppleEventManager.shared().setEventHandler(
 				self,
 				andSelector: #selector(handleURLEvent(_:withReplyEvent:)),
@@ -365,6 +368,11 @@
 				try? await Task.sleep(for: .milliseconds(1500))
 				BrowserWebsiteMonitoring.shared.start()
 			}
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(2200))
+				AstraAppShortcuts.updateAppShortcutParameters()
+				AstraSpotlightIndexer.scheduleRefresh()
+			}
 		}
 
 		func applicationWillTerminate(_: Notification) {
@@ -468,6 +476,9 @@
 			for url in urls where ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
 				openAfterStartupRestoration(url)
 			}
+			for url in urls where url.scheme == "astra" {
+				Task { @MainActor in await AstraSystemActions.openSpotlightURL(url) }
+			}
 		}
 
 		func application(
@@ -544,6 +555,38 @@
 				queuedHandoffActivity = nil
 				openHandoff(activity)
 			}
+		}
+
+		/// App Intents can arrive during the launch of an AppKit-managed process.
+		/// They must not mutate the placeholder model before restoration completes.
+		func awaitSystemActionsReady() async -> Bool {
+			for _ in 0 ..< 200 {
+				if startupWindowRestorationFinished { return true }
+				try? await Task.sleep(for: .milliseconds(50))
+			}
+			return startupWindowRestorationFinished
+		}
+
+		func focusSystemBrowser(_ browser: Browser) {
+			guard let controller = windows.first(where: { $0.browser === browser }) else { return }
+			controller.showWindow()
+			NSApp.activate()
+		}
+
+		func application(
+			_ application: NSApplication,
+			continue userActivity: NSUserActivity,
+			restorationHandler: @escaping ([NSUserActivityRestoring]) -> Void
+		) -> Bool {
+			guard userActivity.activityType == CSSearchableItemActionType,
+			      let identifier = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String
+			else { return false }
+			let parts = identifier.split(separator: ":", maxSplits: 1)
+			guard parts.count == 2, ["bookmark", "reading", "space"].contains(String(parts[0])),
+			      UUID(uuidString: String(parts[1])) != nil,
+			      let url = URL(string: "astra://" + String(parts[0]) + "/" + String(parts[1])) else { return false }
+			Task { @MainActor in await AstraSystemActions.openSpotlightURL(url) }
+			return true
 		}
 
 		func requestQuit() {
