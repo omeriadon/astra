@@ -25,6 +25,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	@State private var showsDownloads = false
+	@State private var librarySelection = 0
 	@State private var spaceToDelete: BrowserSpace?
 	@State private var flight: DownloadFlight?
 	@State private var flightProgress = 0.0
@@ -180,6 +181,7 @@ struct DesktopBrowserShell: View {
 					topBarColorScheme: topBarColorScheme,
 					showsTopBar: showsTopBar,
 					showsDownloads: $showsDownloads,
+					librarySelection: $librarySelection,
 					downloads: downloads,
 					onRequestDeleteSpace: requestSpaceDeletion
 				)
@@ -260,6 +262,9 @@ struct DesktopBrowserShell: View {
 		.onReceive(NotificationCenter.default.publisher(for: .showBrowserDownloads)) { notification in
 			guard notification.object as? UUID == browser.windowID,
 			      hostWindow?.isKeyWindow == true else { return }
+			if let category = notification.userInfo?["librarySelection"] as? Int {
+				librarySelection = category
+			}
 			showsDownloads = true
 		}
 		.background {
@@ -427,6 +432,7 @@ private struct ShellSidebarColumn: View {
 	let topBarColorScheme: ColorScheme
 	let showsTopBar: Bool
 	@Binding var showsDownloads: Bool
+	@Binding var librarySelection: Int
 	let downloads: BrowserDownloadManager
 	let onRequestDeleteSpace: (BrowserSpace) -> Void
 	@State private var sidebarMediaHeight: CGFloat = 0
@@ -505,7 +511,8 @@ private struct ShellSidebarColumn: View {
 					LibrarySidebarView(
 						browser: browser,
 						manager: downloads,
-						theme: theme
+						theme: theme,
+						selection: $librarySelection
 					)
 					.sidebarScrollContentMargins(top: sidebarHeaderReservation)
 				} else {
