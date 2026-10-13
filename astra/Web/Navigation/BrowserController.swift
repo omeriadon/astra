@@ -655,6 +655,12 @@ final class BrowserController: NSObject, Identifiable {
 		};
 		addEventListener('scroll', schedule, { passive: true });
 		addEventListener('resize', schedule, { passive: true });
+		// CSS transitions, pseudo-class changes and animations can change
+		// computed backgrounds without mutating DOM attributes.
+		document.addEventListener('click', schedule, { passive: true });
+		for (const event of ['transitionend', 'transitioncancel', 'animationend', 'animationcancel']) {
+			document.addEventListener(event, schedule, { passive: true });
+		}
 		addEventListener('load', schedule, { once: true });
 		addEventListener('pageshow', schedule);
 		addEventListener('popstate', schedule);
