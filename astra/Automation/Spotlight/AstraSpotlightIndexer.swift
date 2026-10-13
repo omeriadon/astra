@@ -3,6 +3,7 @@ import AppKit
 import AstraAutomationCore
 import Foundation
 import CoreSpotlight
+import CryptoKit
 import UniformTypeIdentifiers
 /// Indexed metadata is deliberately small. Neither page bodies nor private windows
 /// are copied to Spotlight, and history is not indexed implicitly.
@@ -45,44 +46,58 @@ enum AstraSpotlightIndexer {
 
 private actor AstraSpotlightWriter {
     static let shared = AstraSpotlightWriter()
-    private var identifiers: Set<String>?
+    private var fingerprints: [String: String]?
     private let domain = "com.omeriadon.astra.library"
+    private let defaultsKey = "AstraSpotlightFingerprintsV1"
 
     func replace(_ records: [AstraSpotlightRecord]) async {
-        let current = Set(records.map(\.identifier))
-        if identifiers == nil {
-            identifiers = Set(UserDefaults.standard.stringArray(forKey: "AstraSpotlightIDs") ?? [])
+        // Fingerprints are stable across launches, unlike Swift's Hasher.
+        // Only changed or newly inserted items reach Core Spotlight.
+        let fresh = Dictionary(uniqueKeysWithValues: records.map { record in
+            let bytes = Data((record.title + "\u{0}" + record.detail + "\u{0}"
+                              + record.url + "\u{0}" + record.kind).utf8)
+            let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+            return (record.identifier, digest)
+        })
+        if fingerprints == nil {
+            fingerprints = UserDefaults.standard.dictionary(forKey: defaultsKey) as? [String: String] ?? [:]
         }
-        let obsolete = Array((identifiers ?? []).subtracting(current))
-        let items = records.map { record in
-            let attributes = CSSearchableItemAttributeSet(contentType: .text)
-            attributes.title = record.title
-            attributes.contentDescription = record.detail
-            attributes.relatedUniqueIdentifier = record.url
-            attributes.keywords = ["Astra", record.kind]
-            let item = CSSearchableItem(uniqueIdentifier: record.identifier,
-                                        domainIdentifier: domain, attributeSet: attributes)
-            item.expirationDate = .distantFuture
-            return item
-        }
-        // Serialise updates: deletion must not race a replacement on another refresh.
+        let old = fingerprints ?? [:]
+        let removed = Array(Set(old.keys).subtracting(fresh.keys))
+        let changed = records.filter { old[$0.identifier] != fresh[$0.identifier] }
+        if changed.isEmpty && removed.isEmpty { return }
+
         let index = CSSearchableIndex.default()
-        let indexed = await withCheckedContinuation { continuation in
-            index.indexSearchableItems(items) { error in
-                continuation.resume(returning: error == nil)
+        if !changed.isEmpty {
+            let items = changed.map { record in
+                let attributes = CSSearchableItemAttributeSet(contentType: .text)
+                attributes.title = record.title
+                attributes.contentDescription = record.detail
+                attributes.relatedUniqueIdentifier = record.url
+                attributes.keywords = ["Astra", record.kind]
+                let item = CSSearchableItem(uniqueIdentifier: record.identifier,
+                                            domainIdentifier: domain, attributeSet: attributes)
+                item.expirationDate = .distantFuture
+                return item
             }
-        }
-        guard indexed else { return }
-        if !obsolete.isEmpty {
-            let deleted = await withCheckedContinuation { continuation in
-                index.deleteSearchableItems(withIdentifiers: obsolete) { error in
+            let succeeded: Bool = await withCheckedContinuation { continuation in
+                index.indexSearchableItems(items) { error in
                     continuation.resume(returning: error == nil)
                 }
             }
-            guard deleted else { return }
+            guard succeeded else { return }
         }
-        identifiers = current
-        UserDefaults.standard.set(Array(current), forKey: "AstraSpotlightIDs")
+
+        if !removed.isEmpty {
+            let succeeded: Bool = await withCheckedContinuation { continuation in
+                index.deleteSearchableItems(withIdentifiers: removed) { error in
+                    continuation.resume(returning: error == nil)
+                }
+            }
+            guard succeeded else { return }
+        }
+        fingerprints = fresh
+        UserDefaults.standard.set(fresh, forKey: defaultsKey)
     }
 }
 #endif
