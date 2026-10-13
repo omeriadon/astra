@@ -9,6 +9,8 @@
 	import AppKit
 	import AuthenticationServices
 	import Carbon
+	import CoreSpotlight
+	import AstraAutomationCore
 	import Defaults
 	import SwiftUI
 	import WebKit
@@ -78,6 +80,7 @@
 				object: nil
 			)
 			installMainMenu()
+			NSApp.servicesProvider = AstraServicesProvider.shared
 			NSAppleEventManager.shared().setEventHandler(
 				self,
 				andSelector: #selector(handleURLEvent(_:withReplyEvent:)),
@@ -364,6 +367,11 @@
 				try? await Task.sleep(for: .milliseconds(1500))
 				BrowserWebsiteMonitoring.shared.start()
 			}
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(2200))
+				AstraAppShortcuts.updateAppShortcutParameters()
+				AstraSpotlightIndexer.scheduleRefresh()
+			}
 		}
 
 		func applicationWillTerminate(_: Notification) {
@@ -467,6 +475,9 @@
 			for url in urls where ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
 				openAfterStartupRestoration(url)
 			}
+			for url in urls where url.scheme?.lowercased() == "astra" {
+				Task { @MainActor in await AstraSystemActions.openSpotlightURL(url) }
+			}
 		}
 
 		private func openAfterStartupRestoration(_ url: URL, wasQueuedAtStartup: Bool = false) {
@@ -514,6 +525,33 @@
 			for url in urls {
 				openAfterStartupRestoration(url, wasQueuedAtStartup: true)
 			}
+		}
+
+		/// Keep external actions out of the launch placeholder and WebKit restore path.
+		func awaitSystemActionsReady() async -> Bool {
+			for _ in 0 ..< 200 {
+				if startupWindowRestorationFinished { return true }
+				try? await Task.sleep(for: .milliseconds(50))
+			}
+			return startupWindowRestorationFinished
+		}
+
+		func focusSystemBrowser(_ browser: Browser) {
+			guard let controller = windows.first(where: { $0.browser === browser }) else { return }
+			controller.showWindow()
+			NSApp.activate()
+		}
+
+		func application(
+			_ application: NSApplication,
+			continue userActivity: NSUserActivity,
+			restorationHandler: @escaping ([NSUserActivityRestoring]) -> Void
+		) -> Bool {
+			guard userActivity.activityType == CSSearchableItemActionType,
+			      let identifier = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+			      let link = AstraLibraryItem(spotlightIdentifier: identifier) else { return false }
+			Task { @MainActor in await AstraSystemActions.openSpotlightURL(link.url) }
+			return true
 		}
 
 		func requestQuit() {
