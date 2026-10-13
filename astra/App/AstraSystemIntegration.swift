@@ -1,6 +1,7 @@
 #if os(macOS) && !ASTRA_WEBSITE_APP_RUNTIME && !ASTRA_WEBSITE_APP_HELPER
 import AppIntents
 import AppKit
+import AstraAutomationCore
 import CoreSpotlight
 import UniformTypeIdentifiers
 import Foundation
@@ -51,11 +52,11 @@ enum AstraSystemActions {
     }
 
     static func validated(_ raw: URL) throws -> URL {
-        guard let url = BrowserHomepage.validURL(raw.absoluteString),
-              ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+        let checked = try AstraWebAddress(raw)
+        guard let url = BrowserHomepage.validURL(checked.url.absoluteString) else {
             throw Failure.invalidURL
         }
-        return BrowserAddress.withoutCredentials(url)
+        return url
     }
 
     @discardableResult
@@ -152,12 +153,11 @@ enum AstraSystemActions {
     }
 
     static func resolveTab(id: String) async throws -> (Browser, BrowserTab) {
-        let components = id.split(separator: ":", omittingEmptySubsequences: false)
-        guard components.count == 2,
-              let windowID = UUID(uuidString: String(components[0])),
-              let tabID = UUID(uuidString: String(components[1])) else {
+        guard let ref = AstraTabReference(rawValue: id) else {
             throw Failure.missingItem
         }
+        let windowID = ref.windowID
+        let tabID = ref.tabID
         guard let delegate, await delegate.awaitSystemActionsReady(),
               let browser = normalBrowsers().first(where: { $0.windowID == windowID }),
               BrowserWindowRegistry.shared.ownsTab(tabID, in: browser),
@@ -168,12 +168,11 @@ enum AstraSystemActions {
     }
 
     static func switchTab(id: String) async throws {
-        let components = id.split(separator: ":", omittingEmptySubsequences: false)
-        guard components.count == 2,
-              let windowID = UUID(uuidString: String(components[0])),
-              let tabID = UUID(uuidString: String(components[1])) else {
+        guard let ref = AstraTabReference(rawValue: id) else {
             throw Failure.missingItem
         }
+        let windowID = ref.windowID
+        let tabID = ref.tabID
         guard let delegate, await delegate.awaitSystemActionsReady(),
               let browser = normalBrowsers().first(where: { $0.windowID == windowID }),
               BrowserWindowRegistry.shared.ownsTab(tabID, in: browser),
@@ -202,14 +201,12 @@ enum AstraSystemActions {
     }
 
     static func openSpotlightURL(_ url: URL) async {
-        guard url.scheme == "astra", let kind = url.host,
-              let id = url.pathComponents.dropFirst().first else { return }
+        guard let item = AstraLibraryItem(url: url) else { return }
         do {
-            switch kind {
-            case "bookmark": try await openBookmark(id: id)
-            case "reading": try await openReadingList(id: id)
-            case "space": try await switchSpace(id: id)
-            default: break
+            switch item {
+            case .bookmark(let id): try await openBookmark(id: id.uuidString)
+            case .readingList(let id): try await openReadingList(id: id.uuidString)
+            case .space(let id): try await switchSpace(id: id.uuidString)
             }
         } catch {
             BrowserLog.error(.navigation, "system.spotlight-open-failed",
@@ -240,17 +237,17 @@ enum AstraSpotlightIndexer {
             let bookmarks = browser.bookmarks.map {
                 AstraSpotlightRecord(identifier: "bookmark:" + $0.id.uuidString,
                                     title: $0.name, detail: $0.folder.isEmpty ? $0.url.absoluteString : $0.folder,
-                                    url: "astra://bookmark/" + $0.id.uuidString, kind: "bookmark")
+                                    url: AstraLibraryItem.bookmark($0.id).url.absoluteString, kind: "bookmark")
             }
             let reading = browser.readingList.map {
                 AstraSpotlightRecord(identifier: "reading:" + $0.id.uuidString,
                                     title: $0.title, detail: $0.url.absoluteString,
-                                    url: "astra://reading/" + $0.id.uuidString, kind: "reading")
+                                    url: AstraLibraryItem.readingList($0.id).url.absoluteString, kind: "reading")
             }
             let spaces = browser.workspace.spaces.map {
                 AstraSpotlightRecord(identifier: "space:" + $0.id.uuidString,
                                     title: $0.name, detail: "Astra Space",
-                                    url: "astra://space/" + $0.id.uuidString, kind: "space")
+                                    url: AstraLibraryItem.space($0.id).url.absoluteString, kind: "space")
             }
             await AstraSpotlightWriter.shared.replace(bookmarks + reading + spaces)
         }
