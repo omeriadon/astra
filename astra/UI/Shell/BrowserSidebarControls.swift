@@ -112,6 +112,7 @@ struct ShellSidebarListView: View {
 								PinnedFolderRow(folder: folder, browser: browser, tabsByID: tabsByID,
 								                selectedID: selectedID, isActiveSpace: isActiveSpace, normalCount: normalTabs.count,
 								                spaceID: space.id, theme: theme, openElsewhereIDs: openElsewhereIDs,
+				                excludedTabIDs: splitIDs,
 								                onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions,
 								                sidebarSelection: sidebarSelection, selectionOrder: pinnedSelectionOrder)
 							}
@@ -373,6 +374,7 @@ private struct PinnedFolderRow: View {
 	let spaceID: UUID
 	let theme: BrowserTheme
 	let openElsewhereIDs: Set<UUID>
+	let excludedTabIDs: Set<UUID>
 	var onSelectTab: ((UUID) -> Void)?
 	let navigationNamespace: Namespace.ID
 	let sidebarSelection: BrowserSidebarTabSelection
@@ -408,7 +410,7 @@ private struct PinnedFolderRow: View {
 				Button(role: .cancel) {}
 			}
 			if isExpanded {
-				ForEach(folder.tabIDs.compactMap { tabsByID[$0] }) { tab in
+				ForEach(folder.tabIDs.compactMap { tabsByID[$0] }.filter { !excludedTabIDs.contains($0.id) }) { tab in
 					BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalCount, pinned: true, rowSpaceID: spaceID, rowTheme: theme, splitSide: browser.splitSide(for: tab.id), isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace, sidebarSelection: sidebarSelection, selectionOrder: selectionOrder)
 						.equatable()
 						.padding(.leading, 12)
