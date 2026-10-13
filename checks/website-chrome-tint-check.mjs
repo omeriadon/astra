@@ -15,7 +15,7 @@ const script = controller.slice(start, end);
 function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
                        headerOpacity = '1', bodyColor = 'rgb(248, 249, 250)',
                        bodyImage = 'none', hasHeader = true, tileColor = null,
-                       cssVars = {} } = {}) {
+                       cssVars = {}, headerVariants = null } = {}) {
     const timers = [];
     const posts = [];
     const listeners = new Map();
@@ -41,6 +41,10 @@ function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
     const header = element('header', headerColor, headerImage, body, true);
     header.style.opacity = headerOpacity;
     const child = element('span', 'rgba(0, 0, 0, 0)', 'none', header);
+    const variants = headerVariants?.map((color, i) => {
+        const bar = element('header-' + i, color, 'none', body, true);
+        return element('child-' + i, 'rgba(0, 0, 0, 0)', 'none', bar);
+    });
     const context = {
         fillStyle: 'rgb(0, 0, 0)',
         clearRect() {}, fillRect() {},
@@ -67,7 +71,10 @@ function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
             assert.equal(type, 'canvas');
             return { getContext() { return context; } };
         },
-        elementFromPoint(_, y) { return hasHeader && y <= 56 ? child : body; },
+        elementFromPoint(x, y) {
+            if (!hasHeader || y > 56) return body;
+            return variants ? variants[Math.min(variants.length - 1, Math.floor(x / (1000 / variants.length)))] : child;
+        },
         addEventListener(name, fn) { listeners.set(name, fn); }
     };
     class MutationObserver {
@@ -152,6 +159,16 @@ withHeader.listeners.get('visibilitychange')();
 withHeader.flush();
 withHeader.reinstall();
 assert.equal(withHeader.posts.length, 6, 'Duplicate installation must not duplicate events');
+
+// Four nearby colours fall into distinct 12-RGB buckets but remain
+// one perceptual painted header; the old quantisation missed consensus.
+const dithered = environment({ headerVariants: [
+    'rgb(18, 30, 52)', 'rgb(23, 34, 56)',
+    'rgb(28, 38, 60)', 'rgb(33, 42, 64)'
+] });
+dithered.flush();
+assert.equal(dithered.posts[0].source, 'chrome',
+    'CIELAB should merge near-identical flat headers across RGB bucket boundaries');
 
 const bodyOnly = environment({ hasHeader: false });
 bodyOnly.flush();
