@@ -15,14 +15,18 @@ const script = controller.slice(start, end);
 function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
                        headerOpacity = '1', bodyColor = 'rgb(248, 249, 250)',
                        bodyImage = 'none', hasHeader = true, tileColor = null,
-                       cssVars = {}, headerVariants = null } = {}) {
+                       cssVars = {}, headerVariants = null, supportsIdle = false } = {}) {
     const timers = [];
     const posts = [];
     const listeners = new Map();
     let mutation;
     let now = 0;
+    let nextTimerId = 0;
+    let nextIdleId = 0;
     let styleReads = 0;
     let geometryReads = 0;
+    let hitTests = 0;
+    const idleRequests = [];
     const element = (name, background, image, parent, isHeader = false) => ({
         name, parentElement: parent, isHeader,
         style: { backgroundColor: background, backgroundImage: image, opacity: '1',
@@ -72,6 +76,7 @@ function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
             return { getContext() { return context; } };
         },
         elementFromPoint(x, y) {
+            hitTests++;
             if (!hasHeader || y > 56) return body;
             return variants ? variants[Math.min(variants.length - 1, Math.floor(x / (1000 / variants.length)))] : child;
         },
@@ -85,7 +90,9 @@ function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
     const state = {
         hasHeader, header, body, html, document, posts,
         get styleReads() { return styleReads; },
-        get geometryReads() { return geometryReads; }
+        get geometryReads() { return geometryReads; },
+        get hitTests() { return hitTests; },
+        get pendingIdle() { return idleRequests.length; }
     };
     const sandbox = {
         document, MutationObserver,
@@ -95,17 +102,54 @@ function environment({ headerColor = 'rgb(18, 32, 54)', headerImage = 'none',
         getComputedStyle: node => { styleReads++; return node.style; },
         addEventListener(name, fn) { listeners.set(name, fn); },
         matchMedia: () => ({ addEventListener() {} }),
-        setTimeout(fn) { timers.push(fn); return timers.length; },
+        setTimeout(fn, delay = 0) {
+            const id = ++nextTimerId;
+            timers.push({ id, at: now + Math.max(0, delay), fn });
+            return id;
+        },
+        clearTimeout(id) {
+            const index = timers.findIndex(timer => timer.id === id);
+            if (index >= 0) timers.splice(index, 1);
+        },
         window: { webkit: { messageHandlers: {
             pageTintChanged: { postMessage(message) { posts.push(message); } }
         } } }
     };
+    if (supportsIdle) {
+        sandbox.requestIdleCallback = fn => {
+            const id = ++nextIdleId;
+            idleRequests.push({ id, fn });
+            return id;
+        };
+        sandbox.cancelIdleCallback = id => {
+            const index = idleRequests.findIndex(item => item.id === id);
+            if (index >= 0) idleRequests.splice(index, 1);
+        };
+    }
     runInNewContext(script, sandbox);
-    state.flush = () => {
+    state.advance = elapsed => {
+        const until = now + elapsed;
+        let iterations = 0;
         while (timers.length) {
-            now += 800;
-            timers.shift()();
+            timers.sort((a, b) => a.at - b.at || a.id - b.id);
+            if (timers[0].at > until) break;
+            assert.ok(++iterations < 100, 'Tint timers must not spin');
+            const timer = timers.shift();
+            now = Math.max(now, timer.at);
+            timer.fn();
         }
+        now = until;
+    };
+    state.flush = () => {
+        let iterations = 0;
+        while (timers.length) {
+            assert.ok(++iterations < 100, 'Tint scheduling must eventually settle');
+            const next = Math.min(...timers.map(timer => timer.at));
+            state.advance(Math.max(0, next - now));
+        }
+    };
+    state.flushIdle = () => {
+        while (idleRequests.length) idleRequests.shift().fn();
     };
     state.mutate = () => mutation();
     state.listeners = listeners;
@@ -119,8 +163,10 @@ withHeader.flush();
 assert.equal(withHeader.posts.length, 1);
 assert.equal(withHeader.posts[0].source, 'chrome');
 assert.equal(JSON.stringify(withHeader.posts[0].rgb), '[18,32,54]');
-assert.ok(withHeader.styleReads <= 3 && withHeader.geometryReads <= 3,
-    'Shared header and body must require O(unique elements), not 40 duplicate layouts');
+assert.ok(withHeader.styleReads <= 3 && withHeader.geometryReads <= 2,
+    'Only painted elements should trigger geometry reads');
+assert.equal(withHeader.hitTests, 16,
+    'Uniform header must use the 16-point fast path, not 40 hit tests');
 withHeader.mutate();
 withHeader.mutate();
 assert.equal(withHeader.timers.length, 1, 'Mutations must be coalesced');
@@ -169,6 +215,50 @@ const dithered = environment({ headerVariants: [
 dithered.flush();
 assert.equal(dithered.posts[0].source, 'chrome',
     'CIELAB should merge near-identical flat headers across RGB bucket boundaries');
+
+// Only uncertain page edges should pay for all 40 probes.
+const mixedHeaders = environment({ headerVariants: [
+    'rgb(240, 30, 30)', 'rgb(30, 240, 30)',
+    'rgb(30, 30, 240)', 'rgb(240, 240, 30)'
+] });
+mixedHeaders.flush();
+assert.equal(mixedHeaders.hitTests, 40,
+    'Heterogeneous headers should trigger the full grid without repeating probes');
+
+// Sampling is never performed in the active scroll window.
+const scrolling = environment();
+scrolling.listeners.get('scroll')();
+scrolling.advance(100);
+scrolling.listeners.get('scroll')();
+scrolling.advance(259);
+assert.equal(scrolling.hitTests, 0, 'Do not force layout during continuous scrolling');
+scrolling.advance(1);
+assert.equal(scrolling.hitTests, 16, 'Sample after 260 ms of scroll inactivity');
+
+// Prefer WebContent idle periods; scrolling invalidates pending idle probes.
+const idle = environment({ supportsIdle: true });
+idle.advance(0);
+assert.equal(idle.pendingIdle, 1);
+assert.equal(idle.hitTests, 0, 'Idle sampling must not run synchronously');
+idle.listeners.get('scroll')();
+assert.equal(idle.pendingIdle, 0, 'Scrolling must cancel a queued idle sample');
+idle.advance(260);
+assert.equal(idle.pendingIdle, 1);
+idle.flushIdle();
+assert.equal(idle.hitTests, 16);
+assert.equal(idle.posts.length, 1);
+
+// Hiding a tab must cancel both timers and pending idle work.
+const hiddenIdle = environment({ supportsIdle: true });
+hiddenIdle.advance(0);
+hiddenIdle.document.hidden = true;
+hiddenIdle.listeners.get('visibilitychange')();
+assert.equal(hiddenIdle.pendingIdle, 0, 'Hidden tabs must cancel idle work');
+hiddenIdle.document.hidden = false;
+hiddenIdle.listeners.get('visibilitychange')();
+hiddenIdle.advance(0);
+hiddenIdle.flushIdle();
+assert.equal(hiddenIdle.posts.length, 1, 'Resuming visibility must resample');
 
 const bodyOnly = environment({ hasHeader: false });
 bodyOnly.flush();
