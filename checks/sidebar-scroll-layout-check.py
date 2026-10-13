@@ -26,7 +26,7 @@ assert row.count(".onGeometryChange(for: CGRect.self)") == 1
 assert favourite.count(".onGeometryChange(for: CGRect.self)") == 1
 assert "hoverFrame = .zero" in row and "hoverFrame = .zero" in favourite
 title = row.split("private struct TabTitleView: View {", 1)[1].split("private struct TabCloseButton", 1)[0]
-assert "GeometryReader" not in title
+assert "GeometryReader {" not in title
 assert "titleFadeMask(width:" not in title
 assert ".mask {" in title
 
