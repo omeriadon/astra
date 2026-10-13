@@ -11,7 +11,7 @@ model = Path("astra/Models/Library/BrowserDownload.swift").read_text()
 
 assert "NWPathMonitor()" in engine
 assert "await checkForStalls(threshold: 0)" in engine
-assert "await self.checkForStalls(threshold: 90)" in engine
+assert "await checkForStalls(threshold: 90)" in engine
 assert "task.cancel()" in engine
 assert "scheduleRetry(itemID)" in engine
 assert "NSURLErrorNetworkConnectionLost" in engine
