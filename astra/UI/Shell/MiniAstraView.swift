@@ -100,12 +100,12 @@
 						.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsTopBar)
 					BrowserPageView(
 						browser: browser,
-						cornerRadius: isShowingChrome
+							cornerRadius: topBarHeight > 0
 							? BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar
 							: BrowserChromeMetrics.tabWindowCornerRadiusWithoutSidebar
 					)
-					.padding(.top, isShowingChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
-					.padding([.bottom, .horizontal], isShowingChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
+					.padding(.top, topBarHeight > 0 ? BrowserChromeMetrics.shellEdgePadding : 0)
+					.padding([.bottom, .horizontal], topBarHeight > 0 ? BrowserChromeMetrics.shellEdgePadding : 0)
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
 				}
 			}
@@ -141,7 +141,7 @@
 				.allowsHitTesting(false)
 			}
 			.onChange(of: hostWindow) { _, _ in updateWindowButtons() }
-			.onChange(of: isShowingChrome) { _, _ in updateWindowButtons() }
+			.onChange(of: topBarHeight) { _, _ in updateWindowButtons() }
 			.alert("Delete Space?", isPresented: Binding(
 				get: { spaceToDelete != nil },
 				set: { if !$0 { spaceToDelete = nil } }
