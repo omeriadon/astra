@@ -312,9 +312,9 @@ private struct BoostCodeTextView: NSViewRepresentable {
         }
 
         private static let cssTokens = try! NSRegularExpression(pattern:
-            #"(?s)/\\*.*?\\*/|//[^\\n]*|"(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|#[a-fA-F0-9]{3,8}\\b|\\b(?:@media|@supports|@keyframes|important|var|calc|inherit|initial|unset|none|auto|solid|flex|grid|display|position|color|background|transform)\\b|\\b\\d+(?:\\.\\d+)?\\b"#)
+            #"(?s)/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|#[a-fA-F0-9]{3,8}\b|\b(?:@media|@supports|@keyframes|important|var|calc|inherit|initial|unset|none|auto|solid|flex|grid|display|position|color|background|transform)\b|\b\d+(?:\.\d+)?\b"#)
         private static let jsTokens = try! NSRegularExpression(pattern:
-            #"(?s)/\\*.*?\\*/|//[^\\n]*|"(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|`(?:\\\\.|[^`\\\\])*`|\\b(?:const|let|var|function|return|if|else|for|while|async|await|class|new|this|true|false|null|undefined|try|catch|throw|import|export|default|typeof|instanceof|switch|case|break|continue)\\b|\\b\\d+(?:\\.\\d+)?\\b"#)
+            #"(?s)/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b(?:const|let|var|function|return|if|else|for|while|async|await|class|new|this|true|false|null|undefined|try|catch|throw|import|export|default|typeof|instanceof|switch|case|break|continue)\b|\b\d+(?:\.\d+)?\b"#)
     }
 }
 #endif
