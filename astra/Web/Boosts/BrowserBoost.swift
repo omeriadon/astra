@@ -2,6 +2,17 @@ import Foundation
 import Observation
 import WebKit
 
+/// Writes snapshots off the UI actor, rejecting stale writes even when
+/// concurrent jobs arrive out of order.
+private actor BoostPreferencesWriter {
+    private var latestRevision = 0
+    func write(_ data: Data, revision: Int) {
+        guard revision > latestRevision else { return }
+        latestRevision = revision
+        UserDefaults.standard.set(data, forKey: "astra.boosts.v1")
+    }
+}
+
 /// A single observable source of truth across windows. Changes are also part of
 /// BrowserSyncDocument; separate local storage keeps Boosts off session-save paths.
 @MainActor
@@ -13,6 +24,8 @@ final class BrowserBoostStore {
     private(set) var validationMessage: String?
     @ObservationIgnored private var webViews: [WeakWebView] = []
     @ObservationIgnored private let storageKey = "astra.boosts.v1"
+    @ObservationIgnored private let preferencesWriter = BoostPreferencesWriter()
+    @ObservationIgnored private var preferencesRevision = 0
 
     private struct Snapshot: Codable {
         var boosts: [BrowserBoost]
@@ -113,23 +126,31 @@ final class BrowserBoostStore {
         webViews.removeAll { $0.webView == nil }
         guard !webViews.contains(where: { $0.webView === webView }) else { return }
         webViews.append(WeakWebView(webView))
-        install(in: webView)
+        install(in: webView, styles: scriptSource,
+                scripts: boosts.filter { $0.isEnabled && !$0.javascript.isEmpty }.map(nativeJavaScriptSource))
     }
 
     private func changed(scheduleSync: Bool) {
         let snapshot = Snapshot(boosts: boosts, deletedAt: deletedAt)
         if let data = try? JSONEncoder().encode(snapshot) {
-            UserDefaults.standard.set(data, forKey: storageKey)
+            preferencesRevision &+= 1
+            let revision = preferencesRevision
+            let writer = preferencesWriter
+            Task.detached(priority: .utility) {
+                await writer.write(data, revision: revision)
+            }
         }
+        let styles = scriptSource
+        let scripts = boosts.filter { $0.isEnabled && !$0.javascript.isEmpty }.map(nativeJavaScriptSource)
         webViews.removeAll { $0.webView == nil }
         for wrapper in webViews {
             if let webView = wrapper.webView {
-                install(in: webView)
+                install(in: webView, styles: styles, scripts: scripts)
                 // Hot-swap existing pages, including disabled/deleted CSS.
                 // Arbitrary JavaScript side effects cannot be rolled back.
-                webView.evaluateJavaScript(scriptSource, in: nil, in: .page, completionHandler: nil)
-                for boost in boosts where boost.isEnabled && !boost.javascript.isEmpty {
-                    webView.evaluateJavaScript(nativeJavaScriptSource(for: boost), in: nil, in: .page, completionHandler: nil)
+                webView.evaluateJavaScript(styles, in: nil, in: .page, completionHandler: nil)
+                for script in scripts {
+                    webView.evaluateJavaScript(script, in: nil, in: .page, completionHandler: nil)
                 }
             }
         }
@@ -138,20 +159,20 @@ final class BrowserBoostStore {
         }
     }
 
-    private func install(in webView: WKWebView) {
+    private func install(in webView: WKWebView, styles: String, scripts: [String]) {
         let controller = webView.configuration.userContentController
         let existing = controller.userScripts.filter { !$0.source.hasPrefix(Self.scriptMarker) }
         controller.removeAllUserScripts()
         for script in existing { controller.addUserScript(script) }
         controller.addUserScript(WKUserScript(
-            source: scriptSource,
+            source: styles,
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true,
             in: .page
         ))
-        for boost in boosts where boost.isEnabled && !boost.javascript.isEmpty {
+        for script in scripts {
             controller.addUserScript(WKUserScript(
-                source: nativeJavaScriptSource(for: boost),
+                source: script,
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true,
                 in: .page
