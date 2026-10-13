@@ -361,6 +361,11 @@ private struct TabIconView: View {
 			.onDrag {
 				let data = tab.id.uuidString.data(using: .utf8) ?? Data()
 				let provider = NSItemProvider()
+				// Also advertise public.data for the modern UTType-based split drop destination.
+				provider.registerDataRepresentation(forTypeIdentifier: "public.data", visibility: .ownProcess) { completion in
+					completion(data, nil)
+					return nil
+				}
 				provider.registerDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab", visibility: .ownProcess) { completion in
 					completion(data, nil)
 					return nil
@@ -433,7 +438,12 @@ private struct TabTitleView: View {
 				.onDrag {
 					let data = tab.id.uuidString.data(using: .utf8) ?? Data()
 					let provider = NSItemProvider()
-					provider.registerDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab", visibility: .ownProcess) { completion in
+					// Also advertise public.data for the modern UTType-based split drop destination.
+				provider.registerDataRepresentation(forTypeIdentifier: "public.data", visibility: .ownProcess) { completion in
+					completion(data, nil)
+					return nil
+				}
+				provider.registerDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab", visibility: .ownProcess) { completion in
 						completion(data, nil)
 						return nil
 					}
