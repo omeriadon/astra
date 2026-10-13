@@ -24,6 +24,7 @@ jobs:
         run: |
           set -euo pipefail
           node checks/favicon-observer-check.mjs
+          node checks/website-chrome-tint-check.mjs
           node checks/reader-availability-check.mjs
           python3 checks/extension-hot-path-check.py
           python3 checks/webkit-resource-policy-check.py
