@@ -38,12 +38,21 @@ struct ShellSidebarListView: View {
 	var body: some View {
 		let tabsByID = browser.tabsByID
 		let openElsewhereIDs = BrowserWindowRegistry.shared.tabIDsOpenInAnotherWindow(than: browser)
-		let favouriteTabs = browser.isPrivate ? [] : favouriteTabIDs.compactMap { tabsByID[$0] }
-		let pinnedTabs = space.pinnedTabIDs.compactMap { tabsByID[$0] }
+		// A split is one visual tab, even when its easel belongs to a
+		// different tab collection. The two originals retain their locations.
+		let splitTabs: (BrowserTab, BrowserTab)? = {
+			guard isActiveSpace, browser.isShowingTabSplit,
+			      let left = browser.splitLeftTabID.flatMap({ tabsByID[$0] }),
+			      let right = browser.splitRightTabID.flatMap({ tabsByID[$0] }) else { return nil }
+			return (left, right)
+		}()
+		let splitIDs = Set([splitTabs?.0.id, splitTabs?.1.id].compactMap { $0 })
+		let favouriteTabs = browser.isPrivate ? [] : favouriteTabIDs.compactMap { tabsByID[$0] }.filter { !splitIDs.contains($0.id) }
+		let pinnedTabs = space.pinnedTabIDs.compactMap { tabsByID[$0] }.filter { !splitIDs.contains($0.id) }
 		let folderTabIDs = Set(space.pinnedFolders.flatMap(\.tabIDs))
 		let ungroupedPinnedTabs = pinnedTabs.filter { !folderTabIDs.contains($0.id) }
 		let pinnedSet = Set(space.pinnedTabIDs)
-		let normalTabs = space.tabIDs.filter { !pinnedSet.contains($0) }.compactMap { tabsByID[$0] }
+		let normalTabs = space.tabIDs.filter { !pinnedSet.contains($0) }.compactMap { tabsByID[$0] }.filter { !splitIDs.contains($0.id) }
 		let normalIDSet = Set(normalTabs.map(\.id))
 		let normalIndexes = Dictionary(uniqueKeysWithValues: normalTabs.enumerated().map { ($0.element.id, $0.offset) })
 		let groupedIDs = Set(space.todayTabGroups.flatMap(\.tabIDs))
@@ -62,6 +71,12 @@ struct ShellSidebarListView: View {
 						Color.clear
 							.frame(height: max(0, topMargin - (BrowserChromeMetrics.topBarRegionHeight + 5)))
 							.accessibilityHidden(true)
+						if let splitTabs {
+							BrowserUnifiedSplitRow(
+								browser: browser, left: splitTabs.0, right: splitTabs.1,
+								theme: theme, spaceID: space.id, selectedID: selectedID
+							)
+						}
 						if !favouriteTabs.isEmpty {
 							Grid(horizontalSpacing: 6, verticalSpacing: 6) {
 								ForEach(Array(stride(from: 0, to: favouriteTabs.count, by: 4)), id: \.self) { start in
@@ -435,5 +450,40 @@ private struct ShellNewTabButton: View {
 			}
 		}
 		.accessibilityIdentifier("new-tab")
+	}
+}
+
+private struct BrowserUnifiedSplitRow: View {
+	let browser: Browser
+	let left: BrowserTab
+	let right: BrowserTab
+	let theme: BrowserTheme
+	let spaceID: UUID
+	let selectedID: UUID?
+
+	var body: some View {
+		HStack(spacing: 0) {
+			BrowserTabRow(
+				tab: left, browser: browser, isSelected: selectedID == left.id,
+				rowSpaceID: spaceID, rowTheme: theme, splitSide: .left,
+				compactSplitStyle: true
+			)
+			.frame(maxWidth: .infinity)
+			Rectangle()
+				.fill(theme.foregroundColor.opacity(0.25))
+				.frame(width: 1, height: 19)
+			BrowserTabRow(
+				tab: right, browser: browser, isSelected: selectedID == right.id,
+				rowSpaceID: spaceID, rowTheme: theme, splitSide: .right,
+				compactSplitStyle: true
+			)
+			.frame(maxWidth: .infinity)
+		}
+		.frame(height: 28)
+		.background {
+			Color.clear.glassEffect(.clear, in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
+		}
+		.accessibilityElement(children: .contain)
+		.accessibilityIdentifier("sidebar-unified-split-tab")
 	}
 }
