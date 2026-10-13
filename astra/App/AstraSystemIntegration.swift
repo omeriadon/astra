@@ -151,6 +151,22 @@ enum AstraSystemActions {
         delegate?.focusSystemBrowser(browser)
     }
 
+    static func resolveTab(id: String) async throws -> (Browser, BrowserTab) {
+        let components = id.split(separator: ":", omittingEmptySubsequences: false)
+        guard components.count == 2,
+              let windowID = UUID(uuidString: String(components[0])),
+              let tabID = UUID(uuidString: String(components[1])) else {
+            throw Failure.missingItem
+        }
+        guard let delegate, await delegate.awaitSystemActionsReady(),
+              let browser = normalBrowsers().first(where: { $0.windowID == windowID }),
+              BrowserWindowRegistry.shared.ownsTab(tabID, in: browser),
+              let tab = browser.tab(withID: tabID) else {
+            throw Failure.missingItem
+        }
+        return (browser, tab)
+    }
+
     static func switchTab(id: String) async throws {
         let components = id.split(separator: ":", omittingEmptySubsequences: false)
         guard components.count == 2,
