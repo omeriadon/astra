@@ -665,50 +665,101 @@ struct BrowserEaselView: View {
 		append(item)
 	}
 
+	private func receiveDrop(_ providers: [NSItemProvider], at location: CGPoint) -> Bool {
+		for provider in providers {
+			if let type = provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .image) == true }) {
+				_ = provider.loadDataRepresentation(forTypeIdentifier: type) { data, _ in
+					guard let data else { return }
+					Task { @MainActor in addImageData(data, at: location) }
+				}
+				return true
+			}
+			let type = provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+				? UTType.fileURL.identifier : UTType.url.identifier
+			guard provider.hasItemConformingToTypeIdentifier(type) else { continue }
+			_ = provider.loadItem(forTypeIdentifier: type, options: nil) { value, _ in
+				let url: URL?
+				switch value {
+					case let item as URL: url = item
+					case let item as Data:
+						url = String(data: item, encoding: .utf8).flatMap { URL(string: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+					case let item as String: url = URL(string: item)
+					default: url = nil
+				}
+				guard let url else { return }
+				if url.isFileURL {
+					let data = try? Data(contentsOf: url)
+					Task { @MainActor in
+						if let data { addImageData(data, at: location) }
+					}
+				} else {
+					Task { @MainActor in addDroppedLink(url, at: location) }
+				}
+			}
+			return true
+		}
+		return false
+	}
+
+	private func addDroppedLink(_ url: URL, at point: CGPoint) {
+		guard BrowserEaselDocument.isSafeLink(url) else { return }
+		var item = BrowserEaselDocument.Item(kind: .link)
+		item.url = BrowserAddress.withoutCredentials(url)
+		item.x = max(0, min(10000 - item.width, Double(point.x)))
+		item.y = max(0, min(1_000_000 - item.height, Double(point.y)))
+		append(item)
+	}
+
 	private func importImage(_ result: Result<URL, Error>) {
 		do {
 			let url = try result.get()
 			let access = url.startAccessingSecurityScopedResource()
 			defer {
-				if access {
-					url.stopAccessingSecurityScopedResource()
-				}
+				if access { url.stopAccessingSecurityScopedResource() }
 			}
-			let attributes = try url.resourceValues(forKeys: [.fileSizeKey])
-			guard (attributes.fileSize ?? Int.max) <= 20_000_000 else {
-				editorError = "Choose an image smaller than 20 MB."
-				return
-			}
-			let data = try Data(contentsOf: url)
-			guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-			      let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-			      	kCGImageSourceCreateThumbnailFromImageAlways: true,
-			      	kCGImageSourceCreateThumbnailWithTransform: true,
-			      	kCGImageSourceThumbnailMaxPixelSize: 1600,
-			      ] as CFDictionary)
-			else { throw CocoaError(.fileReadCorruptFile) }
-			#if os(macOS)
-				let bitmap = NSBitmapImageRep(cgImage: thumbnail)
-				guard let encoded = bitmap.representation(using: bitmap.hasAlpha ? .png : .jpeg, properties: [.compressionFactor: 0.75]) else { throw CocoaError(.fileReadCorruptFile) }
-			#else
-				let image = UIImage(cgImage: thumbnail)
-				guard let encoded = image.pngData() else { throw CocoaError(.fileReadCorruptFile) }
-			#endif
-			let size = CGSize(width: thumbnail.width, height: thumbnail.height)
-			guard encoded.count <= 1_000_000 else {
-				editorError = "The compressed image must be smaller than 1 MB."
-				return
-			}
-			var item = BrowserEaselDocument.Item(kind: .image)
-			item.imageData = encoded
-			item.height = item.width * size.height / size.width
-			append(item)
+			addImageData(try Data(contentsOf: url))
 		} catch {
 			if (error as NSError).code != NSUserCancelledError {
 				editorError = error.localizedDescription
 			}
 		}
 	}
+
+	private func addImageData(_ data: Data, at point: CGPoint? = nil) {
+		guard data.count <= 20_000_000 else {
+			editorError = "Choose an image smaller than 20 MB."
+			return
+		}
+		guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+		      let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+		      	kCGImageSourceCreateThumbnailFromImageAlways: true,
+		      	kCGImageSourceCreateThumbnailWithTransform: true,
+		      	kCGImageSourceThumbnailMaxPixelSize: 1600,
+		      ] as CFDictionary)
+		else {
+			editorError = "This image could not be decoded."
+			return
+		}
+		#if os(macOS)
+			let bitmap = NSBitmapImageRep(cgImage: thumbnail)
+			let encoded = bitmap.representation(using: bitmap.hasAlpha ? .png : .jpeg, properties: [.compressionFactor: 0.75])
+		#else
+			let encoded = UIImage(cgImage: thumbnail).pngData()
+		#endif
+		guard let encoded, encoded.count <= 1_000_000 else {
+			editorError = "The compressed image must be smaller than 1 MB."
+			return
+		}
+		var item = BrowserEaselDocument.Item(kind: .image)
+		item.imageData = encoded
+		item.height = item.width * Double(thumbnail.height) / Double(thumbnail.width)
+		if let point {
+			item.x = max(0, min(10000 - item.width, Double(point.x)))
+			item.y = max(0, min(1_000_000 - item.height, Double(point.y)))
+		}
+		append(item)
+	}
+
 }
 
 private struct EaselLinkCard: View {
