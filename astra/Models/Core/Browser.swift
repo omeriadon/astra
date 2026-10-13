@@ -3012,7 +3012,9 @@ final class Browser {
 				deletedVisitsAt: deletedVisitsAt,
 				historyClearedAt: historyClearedAt
 			),
-			settings: settings
+			settings: settings,
+			boosts: BrowserBoostStore.shared.boosts,
+			deletedBoostsAt: BrowserBoostStore.shared.deletedAt
 		)
 	}
 
@@ -3025,6 +3027,7 @@ final class Browser {
 			uniquingKeysWith: { _, latest in latest }
 		)
 		let document = incoming.preservingLocalOnlyData(from: localState)
+		BrowserBoostStore.shared.merge(remote: document.boosts, deleted: document.deletedBoostsAt)
 		let incomingReadingItems = Dictionary(document.readingList.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
 		let removedReadingIDs = Set(readingList.filter { incomingReadingItems[$0.id]?.url != $0.url }.map(\.id))
 		let currentTabs = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
