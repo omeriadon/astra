@@ -233,7 +233,10 @@ struct BrowserSyncModelCheck {
 		assert(decoded.version == 2 && decoded.history.isEmpty)
 		var futureFormat = decoded
 		futureFormat.version = 99
-		assert(!futureFormat.hasSupportedVersion)
+		let futureData = try JSONEncoder().encode(futureFormat)
+		let futureDecoded = try JSONDecoder().decode(BrowserSyncDocument.self, from: futureData)
+		assert(futureDecoded.version == 99)
+		assert(futureDecoded.merging(decoded) == futureDecoded)
 
 		let legacyVisit = try JSONDecoder().decode(BrowserVisit.self, from: Data("{\"id\":\"\(visitID.uuidString)\",\"url\":\"https://history.example\",\"title\":\"Page\",\"visitedAt\":0}".utf8))
 		// Packet09 keeps missing update timestamps older than clear/tombstone clocks.

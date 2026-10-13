@@ -228,10 +228,6 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		return projected
 	}
 
-	nonisolated var hasSupportedVersion: Bool {
-		(1 ... 4).contains(version)
-	}
-
 	nonisolated var hasValidStructure: Bool {
 		Set(tabs.map(\.id)).count == tabs.count
 			&& Set(bookmarks.map(\.id)).count == bookmarks.count
