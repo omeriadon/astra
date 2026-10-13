@@ -255,6 +255,10 @@ final class BrowserSync {
 			guard self.sessionToken == sessionToken,
 			      authGeneration == syncGeneration,
 			      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
+			// Even a valid JSON response must not smuggle an oversized raw snapshot.
+			guard snapshots.allSatisfy({ $0.payload.count <= BrowserSyncPayloadLimits.maximumOutgoingBytes }) else {
+				throw BrowserSyncError.invalidResponse
+			}
 			let local = browser.syncDocument(settings: settingSnapshot())
 			// Decode + merge off-main; docs are Sendable values.
 			let merged = try await Task.detached(priority: .utility) {
@@ -297,30 +301,27 @@ final class BrowserSync {
 				partial.merging(peer.syncDocument(settings: settingSnapshot()))
 			}
 			let deviceID = deviceID
-			let pushPayload: Data? = try await Task.detached(priority: .utility) {
+			let pushBody: Data? = try await Task.detached(priority: .utility) {
 				let decoder = JSONDecoder()
 				let ownDocument = try snapshots
 					.first(where: { $0.deviceID == deviceID })
 					.map { try decoder.decode(BrowserSyncDocument.self, from: $0.payload) }
 				guard ownDocument != outgoing else { return nil }
-				let payload = try JSONEncoder().encode(outgoing)
-				guard payload.count <= 5_000_000 else {
-					throw BrowserSyncError.payloadTooLarge
-				}
-				return payload
+				return try BrowserSyncPayloadLimits.makeEncodedUpload(deviceID: deviceID, document: outgoing)
 			}.value
 			guard self.sessionToken == sessionToken,
 			      authGeneration == syncGeneration,
 			      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
-			if let payload = pushPayload {
+			if let body = pushBody {
 				guard self.sessionToken == sessionToken,
 				      authGeneration == syncGeneration,
 				      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
 				let _: ServerSnapshot = try await request(
 					path: "v1/sync",
 					method: "PUT",
-					body: SyncRequest(deviceID: deviceID, payload: payload),
-					bearer: sessionToken
+					body: String?.none,
+					bearer: sessionToken,
+					encodedBody: body
 				)
 				guard self.sessionToken == sessionToken,
 				      authGeneration == syncGeneration,
@@ -581,6 +582,7 @@ final class BrowserSync {
 		method: String,
 		body: (some Encodable)?,
 		bearer: String?,
+		encodedBody: Data? = nil,
 		timeout: TimeInterval = 30,
 		diagnosticID: UUID? = nil
 	) async throws -> Response {
@@ -593,7 +595,10 @@ final class BrowserSync {
 		request.httpMethod = method
 		request.timeoutInterval = timeout
 		request.setValue("application/json", forHTTPHeaderField: "Accept")
-		if let body {
+		if let encodedBody {
+			request.httpBody = encodedBody
+			request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+		} else if let body {
 			request.httpBody = try JSONEncoder().encode(body)
 			request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 		}
@@ -618,7 +623,10 @@ final class BrowserSync {
 				])
 				let (data, response) = try await URLSession.shared.data(for: request)
 				lastResponseBytes = data.count
-				guard let response = response as? HTTPURLResponse, data.count <= 16 * 1024 * 1024 else {
+				let maxResponseBytes = path == "v1/sync" && method == "GET"
+					? BrowserSyncPayloadLimits.maximumSyncResponseBytes
+					: 16 * 1024 * 1024
+				guard let response = response as? HTTPURLResponse, data.count <= maxResponseBytes else {
 					throw BrowserSyncError.invalidResponse
 				}
 				lastStatus = String(response.statusCode)
@@ -719,11 +727,6 @@ private struct AuthenticationResponse: Decodable {
 	let token: String
 }
 
-private struct SyncRequest: Encodable {
-	let deviceID: UUID
-	let payload: Data
-}
-
 private struct ServerSnapshot: Decodable, Sendable {
 	let deviceID: UUID
 	let payload: Data
@@ -737,10 +740,11 @@ private enum BrowserSyncError: LocalizedError, Sendable {
 	case missingAppleToken
 	case unsupportedVersion
 	case serverChanged
-	case payloadTooLarge
 
 	var errorDescription: String? {
 		switch self {
+			case .http(413):
+				"The sync server rejected an oversized request (HTTP 413). Your local data remains safe."
 			case let .http(status):
 				"Sync server returned HTTP \(status)."
 			case .invalidResponse:
@@ -755,8 +759,6 @@ private enum BrowserSyncError: LocalizedError, Sendable {
 				"The sync server contains data from a newer browser version."
 			case .serverChanged:
 				"The sync server changed during sign-in. Sign in again."
-			case .payloadTooLarge:
-				"Local sync data exceeds the server's 16 MB request limit. The local copy is safe."
 		}
 	}
 }
