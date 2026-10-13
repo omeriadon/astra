@@ -53,6 +53,17 @@ struct BrowserRootView: View {
 					browser.flushPersistence()
 				}
 			}
+		#if !ASTRA_WEBSITE_APP_RUNTIME
+			.userActivity(
+				BrowserHandoffTabReference.activityType,
+				isActive: BrowserHandoff.canAdvertise(from: browser, sceneIsActive: handoffSceneIsActive)
+			) { activity in
+				BrowserHandoff.configure(activity, from: browser)
+			}
+			.onContinueUserActivity(BrowserHandoffTabReference.activityType) { activity in
+				_ = BrowserHandoff.shared.continueActivity(activity, in: browser)
+			}
+		#endif
 		#if os(macOS)
 			.background {
 				BrowserDropZone(
@@ -94,6 +105,16 @@ struct BrowserRootView: View {
 			.modifier(BrowserQuitFeedback(browser: browser))
 		#endif
 	}
+
+	#if !ASTRA_WEBSITE_APP_RUNTIME
+		private var handoffSceneIsActive: Bool {
+			#if os(iOS)
+				scenePhase == .active
+			#else
+				true
+			#endif
+		}
+	#endif
 
 	@ViewBuilder
 	var shell: some View {
