@@ -30,7 +30,7 @@
 3. **Visible page surface:** if no convincing header and no WebKit theme colour exist, accept an opaque surface only when it covers at least half the samples.
 4. **Under-page background:** use WebKit's `underPageBackgroundColor`; otherwise white.
 
-Non-solid image/gradient surfaces are deliberately not invented as one dominant solid colour. Samples are taken inside WebKit without network access, screenshot reads, RGB image decoding or full-stylesheet enumeration. The script limits updates to 750 ms or longer; mutations, viewport changes, scroll events and colour-scheme changes coalesce. Hidden pages do not sample. It only emits a message when the observed colour/source/URL changes. Navigation clears stored samples; every message is verified against the current main-frame URL and owning controller.
+Non-solid image/gradient surfaces are deliberately not invented as one dominant solid colour. Samples are taken inside WebKit without network access, screenshot reads, image decoding or full-stylesheet enumeration. Repeated hit-tests reuse a per-pass cache of computed styles and bounding rectangles (a shared header is computed once rather than 40 times), and the CSS-colour lookup cache is capped at 128 values. The script limits updates to 750 ms or longer; mutations, viewport changes, scroll events and colour-scheme changes coalesce. Hidden pages do not sample. It only emits a message when the observed colour/source/URL changes. Navigation clears stored samples; every message is verified against the current main-frame URL and owning controller.
 
 A website's visible solid header is intentionally prioritised above potentially stale `theme-color` metadata; the metadata wins over a generic white body. Users who prefer explicitly declared brand colours over currently visible header colours would require a separate policy setting; this PR does not introduce one.
 
@@ -40,9 +40,9 @@ The progress bar is solid black or solid white, chosen against the **actual top-
 
 ## Behavioural validation
 
-`node checks/website-chrome-tint-check.mjs` checks the injected script itself for: solid/translucent/fully transparent header handling, body fallback, gradient rejection, dynamic colour mutation, debounce, deduplication, hidden-tab suppression, duplicate-install protection, and the SwiftUI progress-colour wiring.
+`node checks/website-chrome-tint-check.mjs` checks the injected script itself for: solid/translucent/fully transparent header handling, body fallback, gradient rejection, dynamic colour mutation, late CSS load, back-forward cache restoration, per-pass geometry caching, debounce, deduplication, hidden-tab suppression, duplicate-install protection, and the SwiftUI progress-colour wiring.
 
-The JavaScript regression checks passed in an isolated V8 harness using the exact checked-in Swift script; GitHub Actions has not produced a run for this PR yet. The macOS WebKit runtime still needs a genuine Xcode build and interactive checks on representative sites. Test fixed vs sticky headers, gradients, responsive navigation, dark-mode transitions, SPA route changes, website apps and Mini Astra. The script does not claim pixel-accurate colour extraction for image/gradient headers; that would require a separate screenshot or image pipeline and profiling before adoption.
+All 24 JavaScript regression assertions passed in an isolated V8 harness using the exact checked-in Swift script; GitHub Actions has not produced a run for this PR yet. The macOS WebKit runtime still needs a genuine Xcode build and interactive checks on representative sites. Test fixed vs sticky headers, gradients, responsive navigation, dark-mode transitions, SPA route changes, website apps and Mini Astra. The script does not claim pixel-accurate colour extraction for image/gradient headers; that would require a separate screenshot or image pipeline and profiling before adoption.
 
 ## Rejected shortcuts
 
