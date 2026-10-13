@@ -3,17 +3,55 @@ import Foundation
 
 @MainActor
 enum BrowserReaderScript {
-	static let source: String? = {
+	// WKUserScript must be installed synchronously during WebView construction.
+	// Start loading bundled scripts on a utility task during root view startup,
+	// but preserve the synchronous fallback if a WebView is created immediately.
+	private static var prepared = false
+	private static var prewarming = false
+	private static var cachedSource: String?
+
+	static var source: String? {
+		if !prepared {
+			cachedSource = readSource(resourceURLs())
+			prepared = true
+		}
+		return cachedSource
+	}
+
+	static func prewarm() {
+		guard !prepared, !prewarming else { return }
+		prewarming = true
+		let urls = resourceURLs()
+		Task.detached(priority: .utility) {
+			let source = readSource(urls)
+			await MainActor.run {
+				if !prepared {
+					cachedSource = source
+					prepared = true
+				}
+				prewarming = false
+			}
+		}
+	}
+
+	private static func resourceURLs() -> [URL] {
 		let bundle = BrowserResources.bundle
+		return ["Readability", "Readability-readerable", "Reader"].compactMap {
+			bundle.url(forResource: $0, withExtension: "js")
+		}
+	}
+
+	private nonisolated static func readSource(_ urls: [URL]) -> String? {
+		guard urls.count == 3 else { return nil }
 		var scripts: [String] = []
-		for name in ["Readability", "Readability-readerable", "Reader"] {
-			guard let url = bundle.url(forResource: name, withExtension: "js"),
-			      let script = try? String(contentsOf: url, encoding: .utf8)
-			else { return nil }
-			scripts.append(script)
+		scripts.reserveCapacity(urls.count)
+		for url in urls {
+			// Memory-map larger Readability scripts where the platform permits.
+			guard let bytes = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+			scripts.append(String(decoding: bytes, as: UTF8.self))
 		}
 		return scripts.joined(separator: "\n")
-	}()
+	}
 
 	static func document(article: [String: String]) -> String {
 		func escape(_ text: String) -> String {

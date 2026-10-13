@@ -76,49 +76,52 @@ extension View {
 				bottom: bottom,
 				bottomOpacityHeight: bottomOpacityHeight
 			)
+			.modifier(SidebarScrollVariableBlurModifier(top: top, bottom: bottom))
+			.compositingGroup()
+			.clipShape(Rectangle())
+	}
+}
+
+// Mark variable blur only where it is visible. Each GeometryReader here used to
+// recompute layout on sidebar scroll; native overlay frames already fill width.
+private struct SidebarScrollVariableBlurModifier: ViewModifier {
+	let top: CGFloat
+	let bottom: CGFloat
+	@Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+	func body(content: Content) -> some View {
+		content
 			.overlay(alignment: .bottom) {
 				#if os(macOS)
-					GeometryReader { geometry in
+					if !reduceTransparency {
 						HazeEffect(
 							maskProvider: LinearGradientMaskProvider(
-								startPoint: .bottom,
-								endPoint: .top,
-								startOpacity: 1,
-								endOpacity: 0,
-								isSmooth: true
+								startPoint: .bottom, endPoint: .top,
+								startOpacity: 1, endOpacity: 0, isSmooth: true
 							),
-							maxBlurRadius: 2,
-							isolatesBackdrop: true
+							maxBlurRadius: 2, isolatesBackdrop: true
 						)
-						.frame(width: geometry.size.width, height: bottom)
-						.frame(maxHeight: .infinity, alignment: .bottom)
+						.frame(height: bottom)
+						.allowsHitTesting(false)
+						.accessibilityHidden(true)
 					}
-					.allowsHitTesting(false)
-					.accessibilityHidden(true)
 				#endif
 			}
 			.overlay(alignment: .top) {
 				#if os(macOS)
-					GeometryReader { geometry in
+					if !reduceTransparency {
 						HazeEffect(
 							maskProvider: LinearGradientMaskProvider(
-								startPoint: .top,
-								endPoint: .bottom,
-								startOpacity: 1,
-								endOpacity: 0,
-								isSmooth: true
+								startPoint: .top, endPoint: .bottom,
+								startOpacity: 1, endOpacity: 0, isSmooth: true
 							),
-							maxBlurRadius: 1,
-							isolatesBackdrop: true
+							maxBlurRadius: 1, isolatesBackdrop: true
 						)
-						.frame(width: geometry.size.width, height: top)
-						.frame(maxHeight: .infinity, alignment: .top)
+						.frame(height: top)
+						.allowsHitTesting(false)
+						.accessibilityHidden(true)
 					}
-					.allowsHitTesting(false)
-					.accessibilityHidden(true)
 				#endif
 			}
-			.compositingGroup()
-			.clipShape(Rectangle())
 	}
 }

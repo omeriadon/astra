@@ -43,6 +43,7 @@ struct BrowserRootView: View {
 				}
 			}
 			.onAppear {
+				BrowserReaderScript.prewarm()
 				sync.attach(browser)
 			}
 			.onChange(of: historyRetentionDays) { _, _ in
