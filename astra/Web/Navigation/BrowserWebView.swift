@@ -532,6 +532,7 @@ struct BrowserWebView {
 					} else if movement.x < 0, permissions[1], controller.webView.canGoForward {
 						action = .forward
 					}
+				}
 
 				// Once the axis is clear, a page-owned gesture stays page-owned until release.
 				if action == nil {
