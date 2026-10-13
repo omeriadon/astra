@@ -3,7 +3,7 @@ import SwiftUI
 struct BrowserEaselSplitView: View {
 	let browser: Browser
 	let leftTab: BrowserTab
-	let easel: BrowserTab
+	let rightTab: BrowserTab
 	let cornerRadius: CGFloat
 	@State private var fraction: CGFloat = 0.5
 	@State private var startFraction: CGFloat?
@@ -29,46 +29,51 @@ struct BrowserEaselSplitView: View {
 						guard usableWidth > 0 else { return }
 						fraction = min(max((startFraction ?? 0.5) + value.translation.width / usableWidth, minimum / usableWidth), 1 - minimum / usableWidth)
 					}.onEnded { _ in startFraction = nil })
-					.accessibilityLabel("Easel split width")
+					.accessibilityLabel("Split width")
 					.accessibilityValue("\(Int(fraction * 100)) percent")
-					.accessibilityIdentifier("easel-split-resizer")
+					.accessibilityIdentifier("browser-tab-split-resizer")
 					.accessibilityAdjustableAction { direction in
 						fraction = min(max(fraction + (direction == .increment ? 0.05 : -0.05), 0.25), 0.75)
 					}
 				VStack(spacing: 0) {
 					HStack {
-						Text(easel.title).font(.headline).lineLimit(1)
+						Text(rightTab.title).font(.headline).lineLimit(1)
 						Spacer(minLength: 0)
-						Button("Open Easel Alone", systemImage: "arrow.up.left.and.arrow.down.right") {
+						Button("Open Tab Alone", systemImage: "arrow.up.left.and.arrow.down.right") {
 							browser.closeEaselSplit()
-							browser.selectTab(easel.id)
+							browser.selectTab(rightTab.id)
 						}
 						.labelStyle(.iconOnly)
-						.accessibilityIdentifier("easel-open-alone")
+						.accessibilityIdentifier("split-open-alone")
 						Button("Close Split", systemImage: "xmark") {
 							browser.closeEaselSplit()
 							browser.selectTab(leftTab.id)
 						}
 						.labelStyle(.iconOnly)
-						.accessibilityIdentifier("easel-close-split")
+						.accessibilityIdentifier("split-close")
 					}
 					.padding(8)
-					BrowserEaselView(browser: browser, tab: easel)
-						.id(easel.id)
+					if rightTab.internalPage == .easel {
+						BrowserEaselView(browser: browser, tab: rightTab)
+							.id(rightTab.id)
+					} else {
+						BrowserPageView(browser: browser, cornerRadius: cornerRadius, tabID: rightTab.id)
+					}
 				}
 				.frame(width: usableWidth - leftWidth)
+				.simultaneousGesture(TapGesture().onEnded { browser.selectTab(rightTab.id) })
 				.background(browser.theme.contentShade(for: colorScheme))
 				.clipShape(RoundedRectangle(cornerRadius: cornerRadius))
 			}
 			.overlay {
-				if !easel.peeks.isEmpty {
-					PeekStackView(tab: easel, browser: browser)
+				if rightTab.internalPage == .easel, !rightTab.peeks.isEmpty {
+					PeekStackView(tab: rightTab, browser: browser)
 				} else if leftTab.internalPage == .easel, !leftTab.peeks.isEmpty {
 					PeekStackView(tab: leftTab, browser: browser)
 				}
 			}
 		}
-		.accessibilityIdentifier("easel-split-view")
+		.accessibilityIdentifier("browser-tab-split-view")
 	}
 
 	@Environment(\.colorScheme) private var colorScheme

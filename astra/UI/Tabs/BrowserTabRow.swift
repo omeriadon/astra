@@ -18,6 +18,7 @@ struct BrowserTabRow: View {
 	var pinned: Bool?
 	var rowSpaceID: UUID?
 	var rowTheme: BrowserTheme?
+	var splitSide: Browser.SplitSide?
 	var isOpenElsewhere: Bool?
 	var onSelectTab: ((UUID) -> Void)?
 	var navigationNamespace: Namespace.ID?
@@ -99,6 +100,13 @@ struct BrowserTabRow: View {
 					}
 			}
 
+			if let side = splitSide {
+				Image(systemName: side == .left ? "rectangle.lefthalf.filled" : "rectangle.righthalf.filled")
+					.font(.system(size: 11))
+					.foregroundStyle(theme.foregroundColor.opacity(0.75))
+					.help(side == .left ? "Left split pane" : "Right split pane")
+					.accessibilityIdentifier("split-tab-\(tab.id.uuidString)")
+			}
 			TabTitleView(
 				tab: tab,
 				browser: browser,
@@ -130,7 +138,7 @@ struct BrowserTabRow: View {
 		.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? rowTransitions)
 		.foregroundStyle(theme.foregroundColor)
 		.background {
-			if isSelected {
+			if isSelected || splitSide != nil {
 				Color.clear
 					.glassEffect(
 						.clear,
@@ -306,6 +314,7 @@ extension BrowserTabRow: Equatable {
 			&& lhs.rowSpaceID == rhs.rowSpaceID
 			&& lhs.rowTheme == rhs.rowTheme
 			&& lhs.isOpenElsewhere == rhs.isOpenElsewhere
+			&& lhs.splitSide == rhs.splitSide
 			&& (lhs.onSelectTab == nil) == (rhs.onSelectTab == nil)
 			&& lhs.navigationNamespace == rhs.navigationNamespace
 			&& lhs.sidebarSelection === rhs.sidebarSelection
@@ -318,9 +327,6 @@ private struct TabIconView: View {
 	let browser: Browser
 	var onSelectTab: ((UUID) -> Void)?
 	var onActivate: (() -> Void)?
-	#if os(macOS)
-		@State private var isMouseDown = false
-	#endif
 
 	var body: some View {
 		Button {
@@ -352,18 +358,15 @@ private struct TabIconView: View {
 		}
 		.buttonStyle(.plain)
 		#if os(macOS)
-			.simultaneousGesture(
-				DragGesture(minimumDistance: 0)
-					.onChanged { _ in
-						guard onSelectTab == nil, !isMouseDown,
-						      NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
-						isMouseDown = true
-						browser.selectTab(tab.id)
-					}
-					.onEnded { _ in
-						isMouseDown = false
-					}
-			)
+			.onDrag {
+				let data = tab.id.uuidString.data(using: .utf8) ?? Data()
+				let provider = NSItemProvider()
+				provider.registerDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab", visibility: .ownProcess) { completion in
+					completion(data, nil)
+					return nil
+				}
+				return provider
+			}
 		#endif
 			.accessibilityIdentifier("select-tab-\(tab.id.uuidString)")
 	}
@@ -384,9 +387,6 @@ private struct TabTitleView: View {
 	let onCancelRenaming: () -> Void
 	var onSelectTab: ((UUID) -> Void)?
 	var onActivate: (() -> Void)?
-	#if os(macOS)
-		@State private var isMouseDown = false
-	#endif
 
 	var body: some View {
 		if isRenaming {
@@ -430,18 +430,15 @@ private struct TabTitleView: View {
 			}
 			.buttonStyle(.plain)
 			#if os(macOS)
-				.simultaneousGesture(
-					DragGesture(minimumDistance: 0)
-						.onChanged { _ in
-							guard onSelectTab == nil, !isMouseDown,
-							      NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty else { return }
-							isMouseDown = true
-							browser.selectTab(tab.id)
-						}
-						.onEnded { _ in
-							isMouseDown = false
-						}
-				)
+				.onDrag {
+					let data = tab.id.uuidString.data(using: .utf8) ?? Data()
+					let provider = NSItemProvider()
+					provider.registerDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab", visibility: .ownProcess) { completion in
+						completion(data, nil)
+						return nil
+					}
+					return provider
+				}
 			#endif
 				.simultaneousGesture(
 					TapGesture(count: 2)
@@ -520,6 +517,34 @@ private struct TabRowContextMenu: View {
 	var onSelectTab: ((UUID) -> Void)?
 
 	var body: some View {
+		if tab.canAppearInEaselSplit, !browser.isPrivate, !browser.isMini {
+			Menu("Split View", systemImage: "rectangle.split.2x1") {
+				if let selected = browser.selectedTab, selected.id != tab.id, selected.canAppearInEaselSplit {
+					Button("Open to Left of Current Tab", systemImage: "rectangle.lefthalf.filled") {
+						browser.openSplit(tab.id, beside: selected.id, onLeft: true)
+					}
+					Button("Open to Right of Current Tab", systemImage: "rectangle.righthalf.filled") {
+						browser.openSplit(tab.id, beside: selected.id, onLeft: false)
+					}
+					Divider()
+				}
+				ForEach(browser.visibleTabs.filter { $0.id != tab.id && $0.canAppearInEaselSplit }) { other in
+					Button("Place Left of \(other.title)", systemImage: "rectangle.lefthalf.filled") {
+						browser.openSplit(tab.id, beside: other.id, onLeft: true)
+					}
+					Button("Place Right of \(other.title)", systemImage: "rectangle.righthalf.filled") {
+						browser.openSplit(tab.id, beside: other.id, onLeft: false)
+					}
+				}
+			}
+			.disabled(browser.visibleTabs.filter { $0.id != tab.id && $0.canAppearInEaselSplit }.isEmpty)
+			if browser.splitSide(for: tab.id) != nil {
+				Button("Close Split View", systemImage: "rectangle.split.2x1.slash") {
+					browser.closeEaselSplit()
+				}
+			}
+			Divider()
+		}
 		if tab.internalPage == .easel {
 			Button("Rename Easel", systemImage: "pencil", action: onBeginRenaming)
 			Button("Revert Easel Name", systemImage: "arrow.uturn.backward", action: tab.revertTitle)

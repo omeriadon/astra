@@ -31,7 +31,7 @@ final class Browser {
 	private var tabLookup: [UUID: BrowserTab] = [:]
 	private(set) var selectedTabID: UUID
 	private(set) var splitLeftTabID: UUID?
-	private(set) var splitEaselTabID: UUID?
+	private(set) var splitRightTabID: UUID?
 	/// A compact dependency for consumers that only need to know whether
 	/// visible tab membership *might* have changed. Comparing the entire
 	/// array of BrowserTab references in each SwiftUI update is unnecessary.
@@ -1384,16 +1384,46 @@ final class Browser {
 		moveTab(tab.id, to: .pinned, in: workspace.selectedSpaceID)
 		if let leftID {
 			splitLeftTabID = leftID
-			splitEaselTabID = tab.id
+			splitRightTabID = tab.id
 			selectTab(leftID)
 		}
 		return tab
 	}
 
-	var isShowingEaselSplit: Bool {
-		guard let leftID = splitLeftTabID, let easelID = splitEaselTabID else { return false }
+	/// Split panes are window-local, and must both belong to the visible space.
+	var isShowingTabSplit: Bool {
+		guard let leftID = splitLeftTabID, let rightID = splitRightTabID, leftID != rightID else { return false }
 		return visibleTabs.contains(where: { $0.id == leftID && $0.canAppearInEaselSplit })
-			&& visibleTabs.contains(where: { $0.id == easelID && $0.internalPage == .easel })
+			&& visibleTabs.contains(where: { $0.id == rightID && $0.canAppearInEaselSplit })
+	}
+
+	var isShowingEaselSplit: Bool {
+		isShowingTabSplit && splitRightTabID.flatMap { tab(withID: $0)?.internalPage } == .easel
+	}
+
+	enum SplitSide: Sendable, Equatable {
+		case left, right
+	}
+
+	func splitSide(for id: UUID) -> SplitSide? {
+		guard isShowingTabSplit else { return nil }
+		if splitLeftTabID == id { return .left }
+		if splitRightTabID == id { return .right }
+		return nil
+	}
+
+	/// Open any two eligible website/easel tabs side by side.
+	func openSplit(_ id: UUID, beside anchorID: UUID, onLeft: Bool) {
+		guard !isPrivate, !isMini, id != anchorID,
+		      let tab = tab(withID: id), let anchor = tab(withID: anchorID),
+		      tab.canAppearInEaselSplit, anchor.canAppearInEaselSplit,
+		      visibleTabs.contains(where: { $0.id == id }),
+		      visibleTabs.contains(where: { $0.id == anchorID })
+		else { return }
+		closeEaselSplit()
+		selectTab(anchorID)
+		splitLeftTabID = onLeft ? id : anchorID
+		splitRightTabID = onLeft ? anchorID : id
 	}
 
 	func deleteEasel(_ id: UUID, confirmed: Bool = false) {
@@ -1425,7 +1455,7 @@ final class Browser {
 			}
 			workspace.spaces[index].modifiedAt = date
 		}
-		if splitEaselTabID == id {
+		if splitRightTabID == id {
 			closeEaselSplit()
 		}
 		releaseAfterTabUpdate([tab])
@@ -1446,15 +1476,9 @@ final class Browser {
 
 	func openEaselInSplit(_ id: UUID) {
 		guard let easel = tab(withID: id), easel.internalPage == .easel,
-		      let leftTab = splitLeftTabID.flatMap({ tab(withID: $0) }) ?? selectedTab,
-		      leftTab.canAppearInEaselSplit, leftTab.id != easel.id,
-		      visibleTabs.contains(where: { $0.id == leftTab.id }),
-		      visibleTabs.contains(where: { $0.id == easel.id })
-		else { return }
-		selectTab(easel.id)
-		splitLeftTabID = leftTab.id
-		splitEaselTabID = easel.id
-		selectTab(leftTab.id)
+		      let anchor = splitLeftTabID.flatMap({ tab(withID: $0) }) ?? selectedTab,
+		      anchor.id != easel.id else { return }
+		openSplit(id, beside: anchor.id, onLeft: false)
 	}
 
 	func openEaselLink(_ url: URL, in tab: BrowserTab) {
@@ -1467,7 +1491,7 @@ final class Browser {
 
 	func closeEaselSplit() {
 		splitLeftTabID = nil
-		splitEaselTabID = nil
+		splitRightTabID = nil
 	}
 
 	var openHistoryTabs: [OpenTab] {
@@ -1572,7 +1596,7 @@ final class Browser {
 		let selectionStartedAt = BrowserLog.clock()
 		BrowserLog.debug(.tabs, "tab.select", metadata: ["window": BrowserLog.id(windowID), "from": BrowserLog.id(selectedTabID), "to": BrowserLog.id(id)])
 		guard let tab = tab(withID: id) else { return }
-		if isShowingEaselSplit, id != splitLeftTabID, id != splitEaselTabID {
+		if isShowingTabSplit, id != splitLeftTabID, id != splitRightTabID {
 			closeEaselSplit()
 		}
 		defer {
@@ -2053,7 +2077,7 @@ final class Browser {
 				return
 			}
 		#endif
-		if id == splitLeftTabID || id == splitEaselTabID {
+		if id == splitLeftTabID || id == splitRightTabID {
 			closeEaselSplit()
 		}
 		if workspace.favouriteTabIDs.contains(id) || workspace.spaces.contains(where: { $0.pinnedTabIDs.contains(id) }) {

@@ -1,10 +1,14 @@
 import Defaults
 import SwiftUI
+#if os(macOS)
+	import AppKit
+#endif
 
 struct BrowserFavouriteTile: View {
 	let tab: BrowserTab
 	let browser: Browser
 	var isSelected = false
+	var splitSide: Browser.SplitSide?
 	var onSelectTab: ((UUID) -> Void)?
 	var navigationNamespace: Namespace.ID?
 	@Default(.developerModeEnabled) private var developerModeEnabled
@@ -13,7 +17,6 @@ struct BrowserFavouriteTile: View {
 		@State private var hoverFrame = CGRect.zero
 		@State private var hoverPreviewStarted = false
 		@State private var isHovered = false
-		@State private var isMouseDown = false
 	#endif
 
 	var body: some View {
@@ -25,17 +28,15 @@ struct BrowserFavouriteTile: View {
 		}
 		.buttonStyle(.plain)
 		#if os(macOS)
-			.simultaneousGesture(
-				DragGesture(minimumDistance: 0)
-					.onChanged { _ in
-						guard onSelectTab == nil, !isMouseDown else { return }
-						isMouseDown = true
-						browser.selectTab(tab.id)
-					}
-					.onEnded { _ in
-						isMouseDown = false
-					}
-			)
+			.onDrag {
+				let data = tab.id.uuidString.data(using: .utf8) ?? Data()
+				let provider = NSItemProvider()
+				provider.registerDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab", visibility: .ownProcess) { completion in
+					completion(data, nil)
+					return nil
+				}
+				return provider
+			}
 		#endif
 			.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? tileTransitions)
 			.background {
@@ -45,6 +46,15 @@ struct BrowserFavouriteTile: View {
 				} else {
 					RoundedRectangle(cornerRadius: 10)
 						.fill(.white.opacity(0.12))
+				}
+			}
+			.overlay(alignment: .bottomTrailing) {
+				if let side = splitSide {
+					Image(systemName: side == .left ? "rectangle.lefthalf.filled" : "rectangle.righthalf.filled")
+						.font(.system(size: 10))
+						.padding(3)
+						.background(.regularMaterial, in: Capsule())
+						.allowsHitTesting(false)
 				}
 			}
 			.overlay {
@@ -75,6 +85,32 @@ struct BrowserFavouriteTile: View {
 			.accessibilityAddTraits(isSelected ? .isSelected : [])
 			.accessibilityIdentifier("favourite-tab-\(tab.id.uuidString)")
 			.contextMenu {
+				if tab.canAppearInEaselSplit, !browser.isPrivate, !browser.isMini {
+					Menu("Split View", systemImage: "rectangle.split.2x1") {
+						if let selected = browser.selectedTab, selected.id != tab.id, selected.canAppearInEaselSplit {
+							Button("Open to Left of Current Tab", systemImage: "rectangle.lefthalf.filled") {
+								browser.openSplit(tab.id, beside: selected.id, onLeft: true)
+							}
+							Button("Open to Right of Current Tab", systemImage: "rectangle.righthalf.filled") {
+								browser.openSplit(tab.id, beside: selected.id, onLeft: false)
+							}
+							Divider()
+						}
+						ForEach(browser.visibleTabs.filter { $0.id != tab.id && $0.canAppearInEaselSplit }) { other in
+							Button("Place Left of \(other.title)", systemImage: "rectangle.lefthalf.filled") {
+								browser.openSplit(tab.id, beside: other.id, onLeft: true)
+							}
+							Button("Place Right of \(other.title)", systemImage: "rectangle.righthalf.filled") {
+								browser.openSplit(tab.id, beside: other.id, onLeft: false)
+							}
+						}
+					}
+					if splitSide != nil {
+						Button("Close Split View", systemImage: "rectangle.split.2x1.slash") {
+							browser.closeEaselSplit()
+						}
+					}
+				}
 				Button("Move to Pinned Tabs", systemImage: "pin") {
 					browser.moveTab(tab.id, to: .pinned)
 				}
@@ -188,6 +224,7 @@ extension BrowserFavouriteTile: Equatable {
 		lhs.tab === rhs.tab
 			&& lhs.browser === rhs.browser
 			&& lhs.isSelected == rhs.isSelected
+			&& lhs.splitSide == rhs.splitSide
 			&& lhs.tab.title == rhs.tab.title
 			&& (lhs.onSelectTab == nil) == (rhs.onSelectTab == nil)
 			&& lhs.navigationNamespace == rhs.navigationNamespace

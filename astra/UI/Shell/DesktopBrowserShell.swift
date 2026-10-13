@@ -61,7 +61,7 @@ struct DesktopBrowserShell: View {
 
 	private var minimumPageWidth: CGFloat {
 		let page = BrowserChromeMetrics.minimumPageWidth(isSettings: browser.selectedTab?.internalPage == .settings)
-		return browser.isShowingEaselSplit ? max(page, 728) : page
+		return browser.isShowingTabSplit ? max(page, 728) : page
 	}
 
 	private var isSidebarPinned: Bool {
@@ -654,6 +654,8 @@ private struct ShellContentColumn: View {
 	@State private var topBarTransitionGeneration = 0
 	#if os(macOS)
 		@State private var isAddressDropTargeted = false
+		@State private var tabSplitDropSide: Browser.SplitSide?
+		@State private var tabSplitDropWidth: CGFloat = 1
 	#endif
 
 	private var topBar: some View {
@@ -703,13 +705,13 @@ private struct ShellContentColumn: View {
 					.frame(height: topBarHeight)
 					.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsTopBar)
 				Group {
-					if browser.isShowingEaselSplit,
+					if browser.isShowingTabSplit,
 					   let leftID = browser.splitLeftTabID,
-					   let easelID = browser.splitEaselTabID,
+					   let rightID = browser.splitRightTabID,
 					   let leftTab = browser.tab(withID: leftID),
-					   let easel = browser.tab(withID: easelID)
+					   let rightTab = browser.tab(withID: rightID)
 					{
-						BrowserEaselSplitView(browser: browser, leftTab: leftTab, easel: easel, cornerRadius: contentCornerRadius)
+						BrowserEaselSplitView(browser: browser, leftTab: leftTab, rightTab: rightTab, cornerRadius: contentCornerRadius)
 					} else {
 						BrowserPageView(browser: browser, cornerRadius: contentCornerRadius)
 							.equatable()
@@ -718,6 +720,29 @@ private struct ShellContentColumn: View {
 				.padding(.top, hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
 				.padding([.bottom, .horizontal], hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
+				#if os(macOS)
+				.onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tabSplitDropWidth = $0 }
+				.onDrop(of: [UTType(exportedAs: "com.omeriadon.astra.tab")],
+				        delegate: TabSplitDropDelegate(browser: browser, width: tabSplitDropWidth, side: $tabSplitDropSide))
+				.overlay {
+					if let side = tabSplitDropSide {
+						HStack(spacing: 0) {
+							Rectangle().fill(side == .left ? Color.accentColor.opacity(0.13) : Color.clear)
+							Rectangle().fill(side == .right ? Color.accentColor.opacity(0.13) : Color.clear)
+						}
+						.overlay {
+							HStack(spacing: 0) {
+								if side == .right { Spacer(minLength: 0) }
+								RoundedRectangle(cornerRadius: contentCornerRadius)
+									.strokeBorder(Color.accentColor, lineWidth: 2)
+									.frame(maxWidth: .infinity)
+								if side == .left { Spacer(minLength: 0) }
+							}
+						}
+						.allowsHitTesting(false)
+					}
+				}
+				#endif
 			}
 		}
 		.animation(nil, value: browser.selectedTabID)
@@ -805,6 +830,55 @@ private struct ShellContentColumn: View {
 		}
 	#endif
 }
+
+#if os(macOS)
+/// Tab-only drop receiver: ordinary website text/URL drops are not intercepted.
+private struct TabSplitDropDelegate: DropDelegate {
+	let browser: Browser
+	let width: CGFloat
+	@Binding var side: Browser.SplitSide?
+
+	private func desiredSide(at point: CGPoint) -> Browser.SplitSide {
+		point.x < width / 2 ? .left : .right
+	}
+
+	func validateDrop(info: DropInfo) -> Bool {
+		!browser.isPrivate && !browser.isMini
+			&& browser.selectedTab?.canAppearInEaselSplit == true
+			&& info.hasItemsConforming(to: ["com.omeriadon.astra.tab"])
+	}
+
+	func dropEntered(info: DropInfo) {
+		side = desiredSide(at: info.location)
+	}
+
+	func dropUpdated(info: DropInfo) -> DropProposal? {
+		side = desiredSide(at: info.location)
+		return DropProposal(operation: .copy)
+	}
+
+	func dropExited(info _: DropInfo) {
+		side = nil
+	}
+
+	func performDrop(info: DropInfo) -> Bool {
+		defer { side = nil }
+		guard validateDrop(info: info),
+		      let anchorID = browser.selectedTabID,
+		      let provider = info.itemProviders(for: ["com.omeriadon.astra.tab"]).first
+		else { return false }
+		let onLeft = desiredSide(at: info.location) == .left
+		_ = provider.loadDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab") { data, _ in
+			guard let data, let raw = String(data: data, encoding: .utf8),
+			      let id = UUID(uuidString: raw) else { return }
+			Task { @MainActor in
+				browser.openSplit(id, beside: anchorID, onLeft: onLeft)
+			}
+		}
+		return true
+	}
+}
+#endif
 
 private struct DownloadFlightOverlay: View {
 	let flight: DownloadFlight?
