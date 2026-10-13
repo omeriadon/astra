@@ -288,104 +288,104 @@ struct BrowserEaselView: View {
 		return Color(red: Double((value >> 16) & 255) / 255, green: Double((value >> 8) & 255) / 255, blue: Double(value & 255) / 255)
 	}
 
-	private func itemView(_ savedItem: BrowserEaselDocument.Item, canvasWidth: CGFloat) -> some View {
-		// Keep items reachable in a narrow split without rewriting their saved placement.
-		var item = savedItem
-		let width = min(item.width, max(32, canvasWidth))
-		let scale = width / item.width
-		item.width = width
-		item.x = min(item.x, max(0, canvasWidth - width))
-		if [.image, .freehand, .line, .arrow, .rectangle, .ellipse].contains(item.kind) {
-			item.height *= scale
-			item.points = item.points.map { .init(x: $0.x * scale, y: $0.y * scale) }
-		}
-		let displayedItem = item
-		return itemContent(displayedItem, canvasWidth: canvasWidth)
-			.frame(width: displayedItem.width, alignment: .topLeading)
-			.fixedSize(horizontal: false, vertical: true)
+	private func itemView(_ item: BrowserEaselDocument.Item, canvasWidth: CGFloat) -> some View {
+		itemContent(item, canvasWidth: canvasWidth)
+			.frame(width: item.width, height: item.height, alignment: .topLeading)
+			.contentShape(Rectangle())
 			.overlay {
-				if selectedID == displayedItem.id {
-					RoundedRectangle(cornerRadius: 6).stroke(.tint, lineWidth: 1)
+				if selectedID == item.id {
+					RoundedRectangle(cornerRadius: 6).strokeBorder(.tint, lineWidth: 1)
 						.allowsHitTesting(false)
 				}
 			}
-			.overlay(alignment: .topLeading) {
-				if selectedID == displayedItem.id, displayedItem.kind == .text {
-					Image(systemName: "arrow.up.left.and.arrow.down.right")
-						.font(.system(size: 9))
-						.padding(4)
-						.background(.regularMaterial, in: Circle())
-						.contentShape(Rectangle())
-						.highPriorityGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global).onChanged { value in
-							move(displayedItem, translation: value.translation, canvasWidth: canvasWidth)
-						}.onEnded { _ in baseline = nil })
-						.accessibilityLabel("Move text box")
-						.accessibilityIdentifier("easel-move-text-\(displayedItem.id)")
-				}
-			}
-
 			.overlay(alignment: .bottomTrailing) {
-				if selectedID == displayedItem.id, ![.line, .arrow].contains(displayedItem.kind) {
-					Circle().fill(.tint).frame(width: 10, height: 10)
-						.padding(4)
+				if selectedID == item.id {
+					Circle().fill(.tint).frame(width: 12, height: 12)
+						.padding(5)
 						.contentShape(Rectangle())
-						.highPriorityGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global).onChanged { value in
-							resize(displayedItem, translation: value.translation, canvasWidth: canvasWidth)
-						}.onEnded { _ in baseline = nil })
-						.accessibilityElement()
+						.highPriorityGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
+							.onChanged { resize(item, translation: $0.translation, canvasWidth: canvasWidth) }
+							.onEnded { _ in baseline = nil })
 						.accessibilityLabel("Resize item")
-						.accessibilityIdentifier("easel-resize-\(displayedItem.id)")
-						.accessibilityAdjustableAction { direction in
-							resize(displayedItem, translation: CGSize(width: direction == .increment ? 20 : -20, height: 0), canvasWidth: canvasWidth)
-							baseline = nil
-						}
+						.accessibilityIdentifier("easel-resize-\(item.id)")
 				}
 			}
-			.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-				measuredHeights[displayedItem.id] = height
+			.overlay(alignment: .top) {
+				if selectedID == item.id, [.image, .rectangle, .ellipse].contains(item.kind) {
+					VStack(spacing: 0) {
+						Circle().fill(.tint).frame(width: 14, height: 14)
+							.contentShape(Rectangle())
+							.highPriorityGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
+								.onChanged { rotate(item, translation: $0.translation) }
+								.onEnded { _ in baseline = nil })
+							.accessibilityLabel("Rotate item")
+							.accessibilityIdentifier("easel-rotate-\(item.id)")
+						Rectangle().fill(.tint).frame(width: 1, height: 14)
+							.allowsHitTesting(false)
+					}
+					.offset(y: -28)
+				}
 			}
-			.rotationEffect(.degrees(displayedItem.rotation), anchor: .center)
-			.offset(x: displayedItem.x, y: displayedItem.y)
-			.gesture(DragGesture(minimumDistance: 5, coordinateSpace: .global).onChanged { value in
+			.rotationEffect(.degrees(item.rotation))
+			.offset(x: item.x, y: item.y)
+			.gesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
+				.onChanged { value in
+					guard activeTool == .cursor, editingTextID != item.id else { return }
+					drag(item, translation: value.translation, canvasWidth: canvasWidth)
+				}
+				.onEnded { _ in baseline = nil; draggedCopy = nil })
+			.onTapGesture(count: 2) {
 				guard activeTool == .cursor else { return }
-				selectedID = displayedItem.id
-				move(displayedItem, translation: value.translation, canvasWidth: canvasWidth)
-			}.onEnded { _ in baseline = nil })
+				selectedID = item.id
+				if item.kind == .text {
+					editingTextID = item.id
+				} else if item.kind == .link, let url = item.url {
+					browser.openEaselLink(url, in: tab)
+				}
+			}
 			.onTapGesture {
-				selectedID = displayedItem.id
+				guard activeTool == .cursor else { return }
+				selectedID = item.id
 				browser.selectTab(tab.id)
 				#if os(macOS)
-					if displayedItem.kind != .text {
-						canvasFocused = true
-					}
+					canvasFocused = true
 				#endif
 			}
 			.contextMenu {
 				Button("Bring to Front", systemImage: "square.2.layers.3d.top.filled") {
-					reorder(displayedItem.id, front: true)
+					reorder(item.id, front: true)
 				}
 				Button("Send to Back", systemImage: "square.2.layers.3d.bottom.filled") {
-					reorder(displayedItem.id, front: false)
+					reorder(item.id, front: false)
 				}
 				Divider()
 				Button("Delete Item", systemImage: "trash", role: .destructive) {
-					deleteItem(displayedItem.id)
+					deleteItem(item.id)
 				}
 			}
 			.allowsHitTesting(activeTool == .cursor)
 			.accessibilityElement(children: .contain)
-			.accessibilityIdentifier("easel-item-\(displayedItem.id)")
+			.accessibilityIdentifier("easel-item-\(item.id)")
 	}
 
 	@ViewBuilder
 	private func itemContent(_ item: BrowserEaselDocument.Item, canvasWidth: CGFloat) -> some View {
 		switch item.kind {
 			case .text:
-				textEditor(item)
-					.foregroundStyle(ink(item))
-					.padding(8)
-					.background(item.background == .none ? Color.clear : palette(item), in: RoundedRectangle(cornerRadius: 6))
-					.accessibilityLabel("Easel text")
+				Group {
+					if editingTextID == item.id {
+						textEditor(item)
+					} else {
+						Text(item.text.isEmpty ? "Double-click to edit" : item.text)
+							.font(.custom(item.font.rawValue, size: CGFloat(item.size.rawValue)))
+							.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+					}
+				}
+				.foregroundStyle(ink(item))
+				.padding(8)
+				.frame(width: item.width, height: item.height, alignment: .topLeading)
+				.background(item.background == .none ? Color.clear : palette(item), in: RoundedRectangle(cornerRadius: 6))
+				.accessibilityLabel("Easel text")
 			case .rectangle:
 				Rectangle().stroke(palette(item), lineWidth: 1.5).frame(height: item.height)
 			case .ellipse:
@@ -409,15 +409,11 @@ struct BrowserEaselView: View {
 				}
 			case .link:
 				if let url = item.url {
-					Button {
-						selectedID = item.id
-						browser.openEaselLink(url, in: tab)
-					} label: {
-						EaselLinkCard(url: url)
-					}
-					.buttonStyle(.plain)
-					.accessibilityLabel("Peek at \(url.host ?? url.absoluteString)")
-					.accessibilityIdentifier("easel-open-link-\(item.id)")
+					EaselLinkCard(url: url)
+						.frame(width: item.width, height: item.height, alignment: .topLeading)
+						.clipped()
+						.accessibilityLabel("Easel link to \(url.host ?? url.absoluteString)")
+						.accessibilityIdentifier("easel-open-link-\(item.id)")
 				}
 		}
 	}
@@ -429,10 +425,17 @@ struct BrowserEaselView: View {
 			set: { text in edit(item.id) { $0.text = text } }
 		)
 		#if os(macOS)
-			EaselTextEditor(text: binding, fontName: item.font.rawValue, fontSize: CGFloat(item.size.rawValue), color: NSColor(ink(item))) {
-				selectedID = item.id
-				browser.selectTab(tab.id)
-			}
+			EaselTextEditor(
+				text: binding,
+				fontName: item.font.rawValue,
+				fontSize: CGFloat(item.size.rawValue),
+				color: NSColor(ink(item)),
+				onSelect: {
+					selectedID = item.id
+					browser.selectTab(tab.id)
+				},
+				onFinish: { editingTextID = nil }
+			)
 		#else
 			TextField("Text", text: binding, axis: .vertical)
 				.textFieldStyle(.plain)
@@ -545,6 +548,7 @@ struct BrowserEaselView: View {
 	private func deleteItem(_ id: UUID) {
 		document.items.removeAll { $0.id == id }
 		if selectedID == id { selectedID = nil }
+		if editingTextID == id { editingTextID = nil }
 	}
 
 	private func deleteSelectedItem() {
@@ -580,13 +584,44 @@ struct BrowserEaselView: View {
 		edit(item.id) { $0.size = sizes[min(max(index + offset, 0), sizes.count - 1)] }
 	}
 
-	private func move(_ item: BrowserEaselDocument.Item, translation: CGSize, canvasWidth: CGFloat) {
-		if baseline?.id != item.id {
-			baseline = item
+	private func drag(_ item: BrowserEaselDocument.Item, translation: CGSize, canvasWidth: CGFloat) {
+		if baseline?.id != item.id && draggedCopy?.source != item.id {
+			#if os(macOS)
+				let duplicate = optionIsPressed || NSEvent.modifierFlags.contains(.option)
+			#else
+				let duplicate = optionIsPressed
+			#endif
+			if duplicate {
+				var copy = item
+				copy.id = UUID()
+				append(copy)
+				draggedCopy = (source: item.id, copy: copy.id)
+				baseline = copy
+			} else {
+				baseline = item
+			}
 		}
+		if let copy = draggedCopy, copy.source == item.id,
+		   let duplicated = document.items.first(where: { $0.id == copy.copy }) {
+			move(duplicated, translation: translation, canvasWidth: canvasWidth)
+		} else {
+			move(item, translation: translation, canvasWidth: canvasWidth)
+		}
+	}
+
+	private func rotate(_ item: BrowserEaselDocument.Item, translation: CGSize) {
+		if baseline?.id != item.id { baseline = item }
 		guard let baseline else { return }
 		edit(item.id) {
-			$0.x = min(max(0, baseline.x + translation.width), max(0, canvasWidth - item.width))
+			$0.rotation = min(360, max(-360, baseline.rotation + Double(translation.width) * 0.7))
+		}
+	}
+
+	private func move(_ item: BrowserEaselDocument.Item, translation: CGSize, canvasWidth: CGFloat) {
+		if baseline?.id != item.id { baseline = item }
+		guard let baseline else { return }
+		edit(item.id) {
+			$0.x = min(max(0, baseline.x + translation.width), max(0, canvasWidth - baseline.width))
 			$0.y = min(max(0, baseline.y + translation.height), 1_000_000)
 		}
 	}
@@ -600,10 +635,10 @@ struct BrowserEaselView: View {
 			$0.x = baseline.x
 			$0.width = min(max(32, baseline.width + translation.width), min(10000, max(32, canvasWidth - item.x)))
 			if item.kind == .image {
-				$0.height = baseline.height * $0.width / baseline.width
-			} else if item.kind != .text {
-				$0.height = min(max(1, baseline.height + translation.height), 10000)
-				if item.kind == .freehand {
+				$0.height = min(10000, max(1, baseline.height * $0.width / baseline.width))
+			} else {
+				$0.height = min(max(item.kind == .text ? 40 : 1, baseline.height + translation.height), 10000)
+				if [.freehand, .line, .arrow].contains(item.kind) {
 					let scaleX = $0.width / baseline.width
 					let scaleY = $0.height / baseline.height
 					$0.points = baseline.points.map { point in
