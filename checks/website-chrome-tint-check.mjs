@@ -119,6 +119,16 @@ withHeader.listeners.get('pageshow')();
 withHeader.flush();
 assert.equal(JSON.stringify(withHeader.posts.at(-1).rgb), '[40,100,180]',
     'Back-forward cache restoration must trigger a fresh tint');
+withHeader.header.style.backgroundColor = 'rgb(90, 110, 150)';
+withHeader.listeners.get('transitionend')();
+withHeader.flush();
+assert.equal(JSON.stringify(withHeader.posts.at(-1).rgb), '[90,110,150]',
+    'A finished CSS transition must trigger a resample');
+withHeader.header.style.backgroundColor = 'rgb(35, 80, 125)';
+withHeader.listeners.get('animationend')();
+withHeader.flush();
+assert.equal(JSON.stringify(withHeader.posts.at(-1).rgb), '[35,80,125]',
+    'A finished CSS animation must trigger a resample');
 withHeader.document.hidden = true;
 withHeader.mutate();
 assert.equal(withHeader.timers.length, 0, 'Hidden tab must do no sampling');
@@ -126,7 +136,7 @@ withHeader.document.hidden = false;
 withHeader.listeners.get('visibilitychange')();
 withHeader.flush();
 withHeader.reinstall();
-assert.equal(withHeader.posts.length, 4, 'Duplicate installation must not duplicate events');
+assert.equal(withHeader.posts.length, 6, 'Duplicate installation must not duplicate events');
 
 const bodyOnly = environment({ hasHeader: false });
 bodyOnly.flush();
