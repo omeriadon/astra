@@ -250,7 +250,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 			&& Set(boosts.map(\.id)).count == boosts.count
 			&& boosts.count <= 512
 			&& boosts.allSatisfy(\.isValidForSync)
-			&& boosts.reduce(0, { $0 + $1.codeByteCount }) <= BrowserBoost.maximumCollectionCodeBytes
+			&& boosts.reduce(0) { $0 + $1.codeByteCount } <= BrowserBoost.maximumCollectionCodeBytes
 			&& deletedBoostsAt.values.allSatisfy { $0.timeIntervalSince1970.isFinite && $0.timeIntervalSince1970 >= 0 && $0.timeIntervalSince1970 < 4_102_444_800 }
 			&& tabs.allSatisfy { tab in
 				(tab.internalPage == nil || tab.internalPage == "easel")

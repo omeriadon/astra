@@ -6,11 +6,11 @@
 //
 
 #if os(macOS)
-	import AppKit
 	import AppIntents
-	import CoreSpotlight
+	import AppKit
 	import AuthenticationServices
 	import Carbon
+	import CoreSpotlight
 	import Defaults
 	import SwiftUI
 	import WebKit
@@ -261,6 +261,7 @@
 									try? await Task.sleep(for: .milliseconds(25))
 								}
 								guard !Task.isCancelled else { return }
+								// swiftformat:disable:next spaceAroundBrackets
 								let readiness: [String: String] = unsafe [
 									"visible": String(foreground.window.isVisible),
 									"key": String(foreground.window.isKeyWindow),
@@ -344,15 +345,16 @@
 					await BrowserPerformanceBenchmark.seedTabsIfRequested(in: foreground.browser)
 				}
 				#if !ASTRA_WEBSITE_APP_RUNTIME && !ASTRA_WEBSITE_APP_HELPER
-				// Focus switches once after restoration; user navigation stays free.
-				if let raw = UserDefaults.standard.string(forKey: AstraFocusSpaceIntent.pendingSpaceKey),
-				   let id = UUID(uuidString: raw),
-				   let browser = windows.first(where: {
-				   	!$0.browser.isPrivate && $0.browser.workspace.spaces.contains(where: { $0.id == id })
-				   })?.browser {
-					browser.selectSpace(id)
-					UserDefaults.standard.removeObject(forKey: AstraFocusSpaceIntent.pendingSpaceKey)
-				}
+					// Focus switches once after restoration; user navigation stays free.
+					if let raw = UserDefaults.standard.string(forKey: AstraFocusSpaceIntent.pendingSpaceKey),
+					   let id = UUID(uuidString: raw),
+					   let browser = windows.first(where: {
+					   	!$0.browser.isPrivate && $0.browser.workspace.spaces.contains(where: { $0.id == id })
+					   })?.browser
+					{
+						browser.selectSpace(id)
+						UserDefaults.standard.removeObject(forKey: AstraFocusSpaceIntent.pendingSpaceKey)
+					}
 				#endif
 			}
 		}
@@ -585,7 +587,9 @@
 		/// They must not mutate the placeholder model before restoration completes.
 		func awaitSystemActionsReady() async -> Bool {
 			for _ in 0 ..< 200 {
-				if startupWindowRestorationFinished { return true }
+				if startupWindowRestorationFinished {
+					return true
+				}
 				try? await Task.sleep(for: .milliseconds(50))
 			}
 			return startupWindowRestorationFinished
@@ -748,80 +752,81 @@
 		}
 
 		#if !ASTRA_WEBSITE_APP_RUNTIME && !ASTRA_WEBSITE_APP_HELPER
-		// MARK: - Dock actions
 
-		func applicationDockMenu(_: NSApplication) -> NSMenu? {
-			let menu = NSMenu(title: "Astra")
-			func add(_ title: String, _ action: Selector) {
-				let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
-				entry.target = self
-				menu.addItem(entry)
-			}
-			add("New Tab", #selector(dockNewTab(_:)))
-			add("New Window", #selector(newWindow(_:)))
-			add("New Private Window", #selector(newPrivateWindow(_:)))
-			add("New Mini Astra", #selector(newMiniAstra(_:)))
-			if let normal = windows.first(where: { !$0.browser.isPrivate && !$0.browser.isMini })?.browser {
-				let spaces = NSMenu(title: "Switch Space")
-				for space in normal.workspace.spaces {
-					let entry = NSMenuItem(title: space.name, action: #selector(dockSwitchSpace(_:)), keyEquivalent: "")
+			// MARK: - Dock actions
+
+			func applicationDockMenu(_: NSApplication) -> NSMenu? {
+				let menu = NSMenu(title: "Astra")
+				func add(_ title: String, _ action: Selector) {
+					let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
 					entry.target = self
-					entry.representedObject = space.id.uuidString
-					entry.state = space.id == normal.workspace.selectedSpaceID ? .on : .off
-					spaces.addItem(entry)
+					menu.addItem(entry)
 				}
-				if !spaces.items.isEmpty {
-					let parent = NSMenuItem(title: "Switch Space", action: nil, keyEquivalent: "")
-					parent.submenu = spaces
-					menu.addItem(parent)
+				add("New Tab", #selector(dockNewTab(_:)))
+				add("New Window", #selector(newWindow(_:)))
+				add("New Private Window", #selector(newPrivateWindow(_:)))
+				add("New Mini Astra", #selector(newMiniAstra(_:)))
+				if let normal = windows.first(where: { !$0.browser.isPrivate && !$0.browser.isMini })?.browser {
+					let spaces = NSMenu(title: "Switch Space")
+					for space in normal.workspace.spaces {
+						let entry = NSMenuItem(title: space.name, action: #selector(dockSwitchSpace(_:)), keyEquivalent: "")
+						entry.target = self
+						entry.representedObject = space.id.uuidString
+						entry.state = space.id == normal.workspace.selectedSpaceID ? .on : .off
+						spaces.addItem(entry)
+					}
+					if !spaces.items.isEmpty {
+						let parent = NSMenuItem(title: "Switch Space", action: nil, keyEquivalent: "")
+						parent.submenu = spaces
+						menu.addItem(parent)
+					}
 				}
+				menu.addItem(.separator())
+				add("Downloads", #selector(dockShowDownloads(_:)))
+				add("History", #selector(dockShowHistory(_:)))
+				add("Settings…", #selector(dockOpenSettings(_:)))
+				return menu
 			}
-			menu.addItem(.separator())
-			add("Downloads", #selector(dockShowDownloads(_:)))
-			add("History", #selector(dockShowHistory(_:)))
-			add("Settings…", #selector(dockOpenSettings(_:)))
-			return menu
-		}
 
-		@objc private func dockNewTab(_: Any?) {
-			let controller = windows.first(where: { $0.window.isKeyWindow && !$0.browser.isPrivate })
-				?? windows.first(where: { !$0.browser.isPrivate })
-				?? openBrowserWindow()
-			controller.browser.requestNewTab()
-			controller.showWindow()
-			NSApp.activate()
-		}
+			@objc private func dockNewTab(_: Any?) {
+				let controller = windows.first(where: { $0.window.isKeyWindow && !$0.browser.isPrivate })
+					?? windows.first(where: { !$0.browser.isPrivate })
+					?? openBrowserWindow()
+				controller.browser.requestNewTab()
+				controller.showWindow()
+				NSApp.activate()
+			}
 
-		@objc private func dockSwitchSpace(_ sender: NSMenuItem) {
-			guard let raw = sender.representedObject as? String, let id = UUID(uuidString: raw),
-			      let controller = windows.first(where: { !$0.browser.isPrivate && $0.browser.workspace.spaces.contains(where: { $0.id == id }) })
-			else { return }
-			controller.browser.selectSpace(id)
-			controller.showWindow()
-			NSApp.activate()
-		}
+			@objc private func dockSwitchSpace(_ sender: NSMenuItem) {
+				guard let raw = sender.representedObject as? String, let id = UUID(uuidString: raw),
+				      let controller = windows.first(where: { !$0.browser.isPrivate && $0.browser.workspace.spaces.contains(where: { $0.id == id }) })
+				else { return }
+				controller.browser.selectSpace(id)
+				controller.showWindow()
+				NSApp.activate()
+			}
 
-		@objc private func dockShowDownloads(_: Any?) {
-			let controller = windows.first(where: { !$0.browser.isPrivate }) ?? openBrowserWindow()
-			controller.showWindow()
-			NSApp.activate()
-			NotificationCenter.default.post(name: .showBrowserDownloads, object: controller.browser.windowID,
-			                                userInfo: ["librarySelection": 0])
-		}
+			@objc private func dockShowDownloads(_: Any?) {
+				let controller = windows.first(where: { !$0.browser.isPrivate }) ?? openBrowserWindow()
+				controller.showWindow()
+				NSApp.activate()
+				NotificationCenter.default.post(name: .showBrowserDownloads, object: controller.browser.windowID,
+				                                userInfo: ["librarySelection": 0])
+			}
 
-		@objc private func dockShowHistory(_: Any?) {
-			let controller = windows.first(where: { !$0.browser.isPrivate }) ?? openBrowserWindow()
-			controller.browser.openInternalPage(.history)
-			controller.showWindow()
-			NSApp.activate()
-		}
+			@objc private func dockShowHistory(_: Any?) {
+				let controller = windows.first(where: { !$0.browser.isPrivate }) ?? openBrowserWindow()
+				controller.browser.openInternalPage(.history)
+				controller.showWindow()
+				NSApp.activate()
+			}
 
-		@objc private func dockOpenSettings(_: Any?) {
-			let controller = windows.first(where: { !$0.browser.isPrivate }) ?? openBrowserWindow()
-			controller.browser.openInternalPage(.settings)
-			controller.showWindow()
-			NSApp.activate()
-		}
+			@objc private func dockOpenSettings(_: Any?) {
+				let controller = windows.first(where: { !$0.browser.isPrivate }) ?? openBrowserWindow()
+				controller.browser.openInternalPage(.settings)
+				controller.showWindow()
+				NSApp.activate()
+			}
 
 		#endif
 

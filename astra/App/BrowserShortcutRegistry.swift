@@ -117,11 +117,12 @@
 			let key = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 			if key.hasPrefix("quit ") || key.hasPrefix("hide ") || key.hasPrefix("minimize")
 				|| key.hasPrefix("minimise") || key.hasPrefix("settings")
-				|| key.hasPrefix("preferences") || key.hasPrefix("new window") {
+				|| key.hasPrefix("preferences") || key.hasPrefix("new window")
+			{
 				return false
 			}
 			return !["hide others", "enter full screen", "exit full screen",
-			          "zoom in", "zoom out", "actual size"].contains(key)
+			         "zoom in", "zoom out", "actual size"].contains(key)
 		}
 
 		func refreshMenus() {

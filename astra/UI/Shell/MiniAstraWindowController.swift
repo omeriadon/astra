@@ -141,8 +141,8 @@
 	private final class MiniAstraWindow: NSPanel {
 		var onPromote: (() -> Void)?
 
-		// Mini panels do not become main windows, so the regular File > Close
-		// menu may target a background browser window instead of this panel.
+		/// Mini panels do not become main windows, so the regular File > Close
+		/// menu may target a background browser window instead of this panel.
 		override func performKeyEquivalent(with event: NSEvent) -> Bool {
 			if event.type == .keyDown,
 			   event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,

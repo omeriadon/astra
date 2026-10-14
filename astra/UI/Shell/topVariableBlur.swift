@@ -10,9 +10,9 @@ import SwiftUI
 	import Haze
 #endif
 
-// Fade geometry depends only on the viewport and the four edge dimensions.
-// Keep it equatable so unrelated tab-selection and download updates don't
-// re-evaluate the mask's six gradient stops.
+/// Fade geometry depends only on the viewport and the four edge dimensions.
+/// Keep it equatable so unrelated tab-selection and download updates don't
+/// re-evaluate the mask's six gradient stops.
 private struct SidebarScrollAlphaGradient: View, Equatable {
 	let top: CGFloat
 	let topOpacityHeight: CGFloat?
@@ -122,11 +122,11 @@ private struct SidebarScrollOpacityFadeModifier: ViewModifier {
 					// Preserve edge Haze in Low Power Mode at half strength
 					// without compositing the entire scrolling sidebar.
 					faded
-						.modifier(SidebarScrollVariableBlurModifier(top: top, bottom: bottom, blurScale: 0.5))
+						.modifier(SidebarScrollVariableBlurModifier(top: top, bottom: bottom))
 						.clipShape(Rectangle())
 				} else {
 					faded
-						.modifier(SidebarScrollVariableBlurModifier(top: top, bottom: bottom, blurScale: 1))
+						.modifier(SidebarScrollVariableBlurModifier(top: top, bottom: bottom))
 						.compositingGroup()
 						.clipShape(Rectangle())
 				}
@@ -140,12 +140,11 @@ private struct SidebarScrollOpacityFadeModifier: ViewModifier {
 	}
 }
 
-// Mark variable blur only where it is visible. Each GeometryReader here used to
-// recompute layout on sidebar scroll; native overlay frames already fill width.
+/// Mark variable blur only where it is visible. Each GeometryReader here used to
+/// recompute layout on sidebar scroll; native overlay frames already fill width.
 private struct SidebarScrollVariableBlurModifier: ViewModifier {
 	let top: CGFloat
 	let bottom: CGFloat
-	let blurScale: CGFloat
 
 	func body(content: Content) -> some View {
 		content
@@ -156,7 +155,7 @@ private struct SidebarScrollVariableBlurModifier: ViewModifier {
 							startPoint: .bottom, endPoint: .top,
 							startOpacity: 1, endOpacity: 0, isSmooth: true
 						),
-						maxBlurRadius: 2 * blurScale, isolatesBackdrop: true
+						maxBlurRadius: 6, isolatesBackdrop: true
 					)
 					.frame(height: bottom)
 					.allowsHitTesting(false)
@@ -170,7 +169,7 @@ private struct SidebarScrollVariableBlurModifier: ViewModifier {
 							startPoint: .top, endPoint: .bottom,
 							startOpacity: 1, endOpacity: 0, isSmooth: true
 						),
-						maxBlurRadius: blurScale, isolatesBackdrop: true
+						maxBlurRadius: 2, isolatesBackdrop: true
 					)
 					.frame(height: top)
 					.allowsHitTesting(false)

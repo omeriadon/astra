@@ -62,10 +62,10 @@ import Foundation
 			receivingTabID = reference.tabID
 			continuationTask = Task { @MainActor [weak self, weak browser] in
 				guard let self, let browser else { return }
-				await self.restore(reference, in: browser)
-				if self.receivingTabID == reference.tabID {
-					self.receivingTabID = nil
-					self.continuationTask = nil
+				await restore(reference, in: browser)
+				if receivingTabID == reference.tabID {
+					receivingTabID = nil
+					continuationTask = nil
 				}
 			}
 			return true
@@ -75,8 +75,10 @@ import Foundation
 			let sync = BrowserSync.shared
 			// A continuation may arrive during cold-start disk hydration or
 			// before the asynchronously loaded Keychain session is available.
-			for _ in 0..<100 where !Task.isCancelled {
-				if browser.isReadyForSync && sync.isSignedIn { break }
+			for _ in 0 ..< 100 where !Task.isCancelled {
+				if browser.isReadyForSync, sync.isSignedIn {
+					break
+				}
 				try? await Task.sleep(for: .milliseconds(100))
 			}
 			guard !Task.isCancelled else { return }
@@ -98,9 +100,9 @@ import Foundation
 			sync.attach(browser)
 			// The source device may still be pushing its latest tab snapshot.
 			// Refresh on receipt, then retry briefly if that UUID is absent.
-			for attempt in 0..<4 {
+			for attempt in 0 ..< 4 {
 				guard !Task.isCancelled else { return }
-				for _ in 0..<100 where sync.isSyncing && !Task.isCancelled {
+				for _ in 0 ..< 100 where sync.isSyncing && !Task.isCancelled {
 					try? await Task.sleep(for: .milliseconds(100))
 				}
 				guard !Task.isCancelled else { return }

@@ -47,7 +47,7 @@ def make_bundle(root: Path, name: str, executable: str = "fixture") -> Path:
     with (app / "Contents/Info.plist").open("wb") as stream:
         plistlib.dump(
             {
-                "CFBundleIdentifier": "dev.omeriadon.astra.website.check",
+                "CFBundleIdentifier": f"dev.omeriadon.astra.website.check.{name.lower()}",
                 "CFBundleDisplayName": name,
                 "CFBundleExecutable": executable,
             },
@@ -91,6 +91,14 @@ def main() -> None:
         source = source.replace(old_root, f'\tprivate static var installationRoot: URL {{ URL(fileURLWithPath: "{root_literal}") }}', 1)
         source += """
 
+import CoreServices
+
+func registeredURL(for identifier: String) -> URL? {
+    guard let values = LSCopyApplicationURLsForBundleIdentifier(identifier as CFString)?.takeRetainedValue() as? [NSURL]
+    else { return nil }
+    return values.first as URL?
+}
+
 extension AstraWebsiteAppInstallerApp {
     static func testPrepareWebsiteApp(at url: URL) throws {
         _ = try prepareWebsiteApp(at: url)
@@ -107,6 +115,7 @@ struct WebsiteAppPreparationCheck {
         let traversal = root.appendingPathComponent("Traversal.app")
         let tampered = root.appendingPathComponent("Tampered.app")
         try AstraWebsiteAppInstallerApp.testPrepareWebsiteApp(at: valid)
+        precondition(registeredURL(for: "dev.omeriadon.astra.website.check.valid")?.standardizedFileURL == valid.standardizedFileURL)
         var value = [UInt8](repeating: 0, count: 256)
         precondition(getxattr(valid.path, "com.apple.quarantine", &value, value.count, 0, 0) == -1)
         precondition(getxattr(valid.appendingPathComponent("Contents/MacOS/fixture").path, "com.apple.quarantine", &value, value.count, 0, 0) == -1)
@@ -114,6 +123,9 @@ struct WebsiteAppPreparationCheck {
         precondition((try? AstraWebsiteAppInstallerApp.testPrepareWebsiteApp(at: outside)) == nil)
         precondition((try? AstraWebsiteAppInstallerApp.testPrepareWebsiteApp(at: traversal)) == nil)
         precondition((try? AstraWebsiteAppInstallerApp.testPrepareWebsiteApp(at: tampered)) == nil)
+        precondition(registeredURL(for: "dev.omeriadon.astra.website.check.outside") == nil)
+        precondition(registeredURL(for: "dev.omeriadon.astra.website.check.traversal") == nil)
+        precondition(registeredURL(for: "dev.omeriadon.astra.website.check.tampered") == nil)
         print("website-app preparation validation passed")
     }
 }

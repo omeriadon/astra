@@ -48,6 +48,8 @@ jobs:
           python3 checks/website-app-bundle-check.py --self-test
           python3 checks/workflow-diagnostics-check.py
           python3 checks/ci-toolchain-workflows-check.py
+      - name: Self-test Release bundle size calculations
+        run: python3 scripts/ci/release_size_report.py --self-test
       - name: Verify lazy startup architecture
         run: python3 checks/launch-framework-architecture-check.py
       - name: Startup and Sparkle audit script syntax

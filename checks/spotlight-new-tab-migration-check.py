@@ -56,6 +56,6 @@ assert "projected.settings.removeValue(forKey: \"newTabStyle\")" in sync
 # automatically opens Spotlight. An old 'blank' startup preference does likewise.
 assert "if newTabs.isEmpty {" in browser
 assert "startupBehavior == .blank || newTabs.allSatisfy" in browser
-assert "Text(\"Open Spotlight\")" in settings
+assert "@Default(.newTabStyle)" not in settings, "Legacy page choice must remain unavailable"
 
 print("Spotlight-only new-tab checks passed")

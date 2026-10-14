@@ -5,11 +5,11 @@ import Foundation
 nonisolated enum BrowserSyncPayloadLimits {
 	static let maximumOutgoingBytes = 5_000_000
 	static let maximumCollectedRequestBytes = 7_000_000
-	// GET returns the Base64-encoded snapshots of *all* the account's devices.
-	// Keep a finite bound, but do not apply the smaller AI/general response cap.
+	/// GET returns the Base64-encoded snapshots of *all* the account's devices.
+	/// Keep a finite bound, but do not apply the smaller AI/general response cap.
 	static let maximumSyncResponseBytes = 64 * 1024 * 1024
 
-	static func makeUpload<Document: Encodable>(deviceID: UUID, document: Document) throws -> SyncRequest {
+	static func makeUpload(deviceID: UUID, document: some Encodable) throws -> SyncRequest {
 		let payload = try JSONEncoder().encode(document)
 		guard payload.count <= maximumOutgoingBytes else {
 			throw BrowserSyncPayloadError.tooLarge(actualBytes: payload.count)
@@ -18,7 +18,7 @@ nonisolated enum BrowserSyncPayloadLimits {
 	}
 
 	/// Complete wire framing happens off the main actor, not inside request().
-	static func makeEncodedUpload<Document: Encodable>(deviceID: UUID, document: Document) throws -> Data {
+	static func makeEncodedUpload(deviceID: UUID, document: some Encodable) throws -> Data {
 		let upload = try makeUpload(deviceID: deviceID, document: document)
 		let body = try JSONEncoder().encode(upload)
 		guard body.count <= maximumCollectedRequestBytes else {

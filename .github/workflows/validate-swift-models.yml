@@ -67,7 +67,7 @@ jobs:
           kill "$sync_log_pid" 2>/dev/null || true
           trap - EXIT
       - name: Compile sync integration in Debug and Release
-        if: github.head_ref == 'fix/sync-cpu-scheduling'
+        if: (github.head_ref || github.ref_name) == 'fix/sync-cpu-scheduling'
         shell: bash
         run: |
           set -euo pipefail

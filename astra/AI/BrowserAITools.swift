@@ -171,10 +171,10 @@ enum BrowserAITools {
 				case .deleteBookmark: "bookmarkID"
 				case .openTab: "url, optional name"
 				case .closeTab: "tabID for one tab; for bulk close use phase=preview with tabIDs (comma-separated) OR domain (exact host), optional keepOwner (GitHub repository owner), then phase=apply with planID"
-			case .selectTab, .readPage: "tabID"
-			case .listTabs: "optional spaceID (UUID, current or all), offset, limit (1–100)"
-			case .githubAccount: "no arguments"
-			case .moveTabsToSpace: "phase=preview with tabIDs (comma-separated) and destinationSpaceID; then phase=apply with planID"
+				case .selectTab, .readPage: "tabID"
+				case .listTabs: "optional spaceID (UUID, current or all), offset, limit (1–100)"
+				case .githubAccount: "no arguments"
+				case .moveTabsToSpace: "phase=preview with tabIDs (comma-separated) and destinationSpaceID; then phase=apply with planID"
 				case .pinTab, .favouriteTab: "tabID, enabled (true or false)"
 				case .moveTabToFolder: "tabID, folderID"
 				case .renameTab: "tabID, name"
@@ -284,9 +284,9 @@ enum BrowserAITools {
 		return "Completed \(action.title)."
 	}
 
-	// Plans capture the browser's exact tab identity, URL, membership and pin state.
-	// Preview creates no side effects. Apply is single-use and rejects stale state
-	// before the first mutation; the model cannot submit unreviewed tab IDs to apply.
+	/// Plans capture the browser's exact tab identity, URL, membership and pin state.
+	/// Preview creates no side effects. Apply is single-use and rejects stale state
+	/// before the first mutation; the model cannot submit unreviewed tab IDs to apply.
 	private enum BulkKind {
 		case close
 		case move
@@ -312,7 +312,6 @@ enum BrowserAITools {
 
 	private static var bulkPlans: [UUID: BulkPlan] = [:]
 
-
 	/// Read the signed-in account from an already-loaded GitHub main document.
 	/// No new network request, cookie access, local file access, or guessed owner.
 	/// GitHub may change its metadata: a missing or contradictory result is unknown.
@@ -326,8 +325,8 @@ enum BrowserAITools {
 			let script = "return document.querySelector('meta[name=\"user-login\"]')?.getAttribute('content') || '';"
 			guard let result = try? await webView.callAsyncJavaScript(
 				script, arguments: [:], in: nil, contentWorld: .defaultClient
-			), let owner = result as? String, (1...39).contains(owner.count),
-				owner.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }) else { continue }
+			), let owner = result as? String, (1 ... 39).contains(owner.count),
+			owner.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }) else { continue }
 			guard !browser.isPrivate, browser.selectedSpace.id == originSpaceID else { throw BrowserAIError.toolDenied }
 			found.insert(owner.lowercased())
 		}
@@ -364,9 +363,9 @@ enum BrowserAITools {
 		}
 		let offset = arguments["offset"].flatMap(Int.init) ?? 0
 		let limit = arguments["limit"].flatMap(Int.init) ?? 50
-		guard (arguments["offset"] == nil || arguments["offset"].flatMap(Int.init) != nil),
-		      (arguments["limit"] == nil || arguments["limit"].flatMap(Int.init) != nil),
-		      offset >= 0, (1...100).contains(limit) else { throw BrowserAIError.invalidRequest }
+		guard arguments["offset"] == nil || arguments["offset"].flatMap(Int.init) != nil,
+		      arguments["limit"] == nil || arguments["limit"].flatMap(Int.init) != nil,
+		      offset >= 0, (1 ... 100).contains(limit) else { throw BrowserAIError.invalidRequest }
 		var rows: [String] = []
 		let spaces = browser.workspace.spaces.filter { spaceID == nil || $0.id == spaceID }
 		for space in spaces {
@@ -393,7 +392,8 @@ enum BrowserAITools {
 
 	private static func snapshot(_ id: UUID, in browser: Browser) throws -> PlannedTab {
 		guard let tab = browser.tab(withID: id), tab.internalPage == nil,
-		      let url = tab.currentURL, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+		      let url = tab.currentURL, ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+		else {
 			throw BrowserAIError.pageUnavailable
 		}
 		let space = browser.workspace.spaces.first(where: { $0.tabIDs.contains(id) })
@@ -418,7 +418,8 @@ enum BrowserAITools {
 				var destination: UUID?
 				if kind == .move {
 					guard let target = arguments["destinationSpaceID"].flatMap(UUID.init(uuidString:)),
-					      browser.workspace.spaces.contains(where: { $0.id == target }) else {
+					      browser.workspace.spaces.contains(where: { $0.id == target })
+					else {
 						throw BrowserAIError.invalidRequest
 					}
 					destination = target
@@ -430,8 +431,9 @@ enum BrowserAITools {
 					      !domain.hasPrefix("."), !domain.hasSuffix(".") else { throw BrowserAIError.invalidRequest }
 					let owner = arguments["keepOwner"]
 					if let owner {
-						guard domain == "github.com", (1...39).contains(owner.count),
-						      owner.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }) else {
+						guard domain == "github.com", (1 ... 39).contains(owner.count),
+						      owner.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") })
+						else {
 							throw BrowserAIError.invalidRequest
 						}
 					}
@@ -440,7 +442,7 @@ enum BrowserAITools {
 						      url.host?.lowercased() == domain else { return false }
 						if let owner {
 							let components = url.pathComponents.filter { $0 != "/" }
-							if components.count >= 2 && components[0].caseInsensitiveCompare(owner) == .orderedSame {
+							if components.count >= 2, components[0].caseInsensitiveCompare(owner) == .orderedSame {
 								return false
 							}
 						}
@@ -457,22 +459,26 @@ enum BrowserAITools {
 				// tabs already there need no work, not an entire-plan failure.
 				if kind == .move, let destination {
 					tabs.removeAll { $0.sourceSpaceID == destination && !$0.favourite }
-					if tabs.isEmpty { return "All selected tabs are already in the destination space; nothing to move." }
+					if tabs.isEmpty {
+						return "All selected tabs are already in the destination space; nothing to move."
+					}
 				}
 				if kind == .close {
 					let visible = Set(browser.visibleTabs.map(\.id))
 					guard tabs.allSatisfy({ visible.contains($0.id) }) else { throw BrowserAIError.toolDenied }
 					try checkClosable(tabs, in: browser)
 				} else if destination != nil {
-					guard !tabs.contains(where: { $0.favourite }) || BrowserAIAction.favouriteTab.enabled else {
+					guard !tabs.contains(where: \.favourite) || BrowserAIAction.favouriteTab.enabled else {
 						throw BrowserAIError.toolDenied
 					}
 				}
 				let token = UUID()
-				if bulkPlans.count >= 20 { bulkPlans.removeAll() }
+				if bulkPlans.count >= 20 {
+					bulkPlans.removeAll()
+				}
 				bulkPlans[token] = .init(kind: kind, windowID: browser.windowID,
-				                       originatingSpaceID: browser.selectedSpace.id,
-				                       destinationSpaceID: destination, tabs: tabs, createdAt: now)
+				                         originatingSpaceID: browser.selectedSpace.id,
+				                         destinationSpaceID: destination, tabs: tabs, createdAt: now)
 				let items = tabs.map { "\($0.id) [\(clean($0.title))] \($0.url)" }.joined(separator: "\n")
 				return "Preview only; no tabs changed. planID=\(token) count=\(tabs.count) destinationSpaceID=\(destination?.uuidString ?? "none"). Apply using phase=apply, planID. Targets:\n\(items)"
 			case "apply":
@@ -480,7 +486,8 @@ enum BrowserAITools {
 				      let plan = bulkPlans.removeValue(forKey: token),
 				      plan.kind == kind, plan.windowID == browser.windowID,
 				      plan.originatingSpaceID == browser.selectedSpace.id,
-				      now.timeIntervalSince(plan.createdAt) < 180 else {
+				      now.timeIntervalSince(plan.createdAt) < 180
+				else {
 					throw BrowserAIError.invalidResponse("This tab action plan expired or is not valid in the current space. List and preview again.")
 				}
 				guard plan.tabs.allSatisfy({ sameTab($0, in: browser) }) else {
@@ -492,8 +499,12 @@ enum BrowserAITools {
 					try checkClosable(plan.tabs, in: browser)
 					var closed: [UUID] = []
 					for item in plan.tabs {
-						if item.favourite { browser.moveTab(item.id, to: .normal, in: browser.selectedSpace.id) }
-						if item.pinned { browser.moveTab(item.id, to: .normal, in: item.sourceSpaceID) }
+						if item.favourite {
+							browser.moveTab(item.id, to: .normal, in: browser.selectedSpace.id)
+						}
+						if item.pinned {
+							browser.moveTab(item.id, to: .normal, in: item.sourceSpaceID)
+						}
 						browser.closeTab(item.id)
 						guard browser.tab(withID: item.id) == nil else {
 							return "Partial result: closed \(closed.count)/\(plan.tabs.count). Failed tabID=\(item.id); remaining tabs were not touched."
@@ -513,8 +524,12 @@ enum BrowserAITools {
 				let remaining = plan.tabs.filter { $0.id != selected?.id }
 				let pinned = remaining.filter(\.pinned).map(\.id)
 				let normal = remaining.filter { !$0.pinned }.map(\.id)
-				if !pinned.isEmpty { browser.moveTabs(pinned, to: .pinned, in: destination) }
-				if !normal.isEmpty { browser.moveTabs(normal, to: .normal, in: destination) }
+				if !pinned.isEmpty {
+					browser.moveTabs(pinned, to: .pinned, in: destination)
+				}
+				if !normal.isEmpty {
+					browser.moveTabs(normal, to: .normal, in: destination)
+				}
 				let moved = plan.tabs.filter {
 					browser.workspace.spaces.first(where: { $0.id == destination })?.tabIDs.contains($0.id) == true
 				}
@@ -525,8 +540,9 @@ enum BrowserAITools {
 	}
 
 	private static func checkClosable(_ items: [PlannedTab], in browser: Browser) throws {
-		guard !items.contains(where: { $0.pinned }) || BrowserAIAction.pinTab.enabled,
-		      !items.contains(where: { $0.favourite }) || BrowserAIAction.favouriteTab.enabled else {
+		guard !items.contains(where: \.pinned) || BrowserAIAction.pinTab.enabled,
+		      !items.contains(where: \.favourite) || BrowserAIAction.favouriteTab.enabled
+		else {
 			throw BrowserAIError.toolDenied
 		}
 		for item in items {
@@ -537,5 +553,4 @@ enum BrowserAITools {
 			}
 		}
 	}
-
 }

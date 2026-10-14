@@ -16,6 +16,7 @@ enum AstraWebsiteAppInstallerApp {
 		      ["--pin", "--prepare"].contains(CommandLine.arguments[1]),
 		      let response = validatedResponse(CommandLine.arguments[3])
 		else { return }
+		logger.info("installer.start operation=\(CommandLine.arguments[1], privacy: .public) app=\(CommandLine.arguments[2], privacy: .private)")
 
 		let message: String
 		do {
@@ -26,12 +27,15 @@ enum AstraWebsiteAppInstallerApp {
 				let websiteApp = try prepareWebsiteApp(at: appURL)
 				try registerWebsiteApp(at: websiteApp.url)
 			}
+			logger.info("installer.success operation=\(CommandLine.arguments[1], privacy: .public) app=\(appURL.path, privacy: .private)")
 			message = ""
 		} catch {
+			logger.error("installer.error operation=\(CommandLine.arguments[1], privacy: .public) message=\(error.localizedDescription, privacy: .private)")
 			message = error.localizedDescription
 		}
 		do {
 			try JSONEncoder().encode(message).write(to: response, options: .atomic)
+			logger.info("installer.response status=\(message.isEmpty ? 0 : 1, privacy: .public) path=\(response.path, privacy: .private)")
 		} catch {
 			let nsError = error as NSError
 			logger.error("installer.response-write-failed domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) message=\(nsError.localizedDescription, privacy: .private)")
@@ -132,16 +136,23 @@ enum AstraWebsiteAppInstallerApp {
 		      let executable = info["CFBundleExecutable"] as? String,
 		      !executable.isEmpty, !executable.contains("/"), executable != ".", executable != ".."
 		else { throw failure("Astra refused to prepare an app outside its website-app directory.") }
+		logger.info("installer.validation-success app=\(appURL.path, privacy: .private)")
 		let executableURL = appURL.appendingPathComponent("Contents/MacOS").appendingPathComponent(executable)
 		guard executableURL.resolvingSymlinksInPath().path.hasPrefix(appURL.path + "/") else {
 			throw failure("Astra refused to prepare an app with an executable outside its bundle.")
 		}
 		var code: SecStaticCode?
 		let createStatus = unsafe SecStaticCodeCreateWithPath(appURL as CFURL, [], &code)
+		logger.info("installer.signature-create-status status=\(createStatus, privacy: .public)")
 		guard createStatus == errSecSuccess, let code,
 		      SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), nil) == errSecSuccess
 		else { throw failure("The website app's signature is invalid.") }
 		try removeQuarantineMetadata(from: appURL, executableURL: executableURL)
+		let registrationStatus = LSRegisterURL(appURL as CFURL, true)
+		logger.info("installer.registration-status status=\(registrationStatus, privacy: .public) app=\(appURL.path, privacy: .private)")
+		guard registrationStatus == noErr else {
+			throw failure("macOS could not register the website app (\(registrationStatus)).")
+		}
 		return (appURL, identifier, name)
 	}
 

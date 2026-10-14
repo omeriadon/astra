@@ -181,7 +181,6 @@ struct BrowserAISettingsView: View {
 					.accessibilityIdentifier("ai-show-usage-log")
 					.id("Show Usage Log")
 				#endif
-
 			}
 			.id("Usage Log")
 			Text("AI processes extracted page text for previews, Find, and explicitly linked chat pages. Chat sends the full linked text. Tab organization sends titles and URLs. Responses can be inaccurate.")
@@ -219,7 +218,7 @@ struct BrowserAISettingsView: View {
 					}
 					if websiteMonitors.monitors.isEmpty {
 						ContentUnavailableView("No Monitored Websites", systemImage: "bell.slash",
-							description: Text("Use a website's Monitor button to create a monitor."))
+						                       description: Text("Use a website's Monitor button to create a monitor."))
 					}
 				}
 				.navigationTitle("Monitored Websites")
@@ -240,14 +239,20 @@ struct BrowserAISettingsView: View {
 		.onAppear {
 			// Migrate old fractional/out-of-range delays to whole seconds.
 			let bounded = BrowserAISettings.linkPreviewDelay
-			if previewDelay != bounded { previewDelay = bounded }
+			if previewDelay != bounded {
+				previewDelay = bounded
+			}
 		}
 		.task { await websiteMonitors.refresh() }
 		.onChange(of: websiteMonitors.error) { _, error in
-			if let error { browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error) }
+			if let error {
+				browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error)
+			}
 		}
 		.onChange(of: usageLog.errorDescription) { _, error in
-			if let error { browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error) }
+			if let error {
+				browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error)
+			}
 		}
 		.onChange(of: allFeatures) { _, enabled in Task { await websiteMonitors.setEnabled(enabled && monitoring) } }
 		.onChange(of: monitoring) { _, enabled in Task { await websiteMonitors.setEnabled(enabled && allFeatures) } }

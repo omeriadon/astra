@@ -987,7 +987,7 @@ final class Browser {
 			BrowserExtensionManager.shared.sync(self)
 		} else if persistenceStore != nil {
 			hydrateFromDisk(placeholderID: placeholderID, placeholderModifiedAt: placeholderModifiedAt)
-		} else if !isMini, initialTabs.allSatisfy({ $0.openTab.isDiscardableNewTab }) {
+		} else if !isMini, initialTabs.allSatisfy(\.openTab.isDiscardableNewTab) {
 			requestNewTab()
 		}
 	}
@@ -1172,7 +1172,9 @@ final class Browser {
 				selectTab(selection)
 			}
 			closedHistoryTabs = loaded.closedTabs
-			if tabs.allSatisfy({ $0.openTab.isDiscardableNewTab }) { requestNewTab() }
+			if tabs.allSatisfy(\.openTab.isDiscardableNewTab) {
+				requestNewTab()
+			}
 			return
 		}
 		let startupBehavior: BrowserStartupBehavior
@@ -1278,7 +1280,7 @@ final class Browser {
 			configure(selectedTab)
 		}
 		BrowserExtensionManager.shared.sync(self)
-		if startupBehavior == .blank || newTabs.allSatisfy({ $0.openTab.isDiscardableNewTab }) {
+		if startupBehavior == .blank || newTabs.allSatisfy(\.openTab.isDiscardableNewTab) {
 			requestNewTab()
 		}
 	}
@@ -3399,7 +3401,9 @@ final class Browser {
 		let mutationDate = nextWorkspaceMutationDate()
 		workspace.modifiedAt = mutationDate
 		#if os(macOS) && !ASTRA_WEBSITE_APP_RUNTIME && !ASTRA_WEBSITE_APP_HELPER
-			if !isPrivate && !isMini { AstraSpotlightIndexer.scheduleRefresh() }
+			if !isPrivate, !isMini {
+				AstraSpotlightIndexer.scheduleRefresh()
+			}
 		#endif
 		if let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) {
 			workspace.spaces[index].modifiedAt = mutationDate
@@ -3492,7 +3496,9 @@ final class Browser {
 	private func scheduleUserDataPersistence() {
 		schedulePersistence(fullState: true, syncExtensions: false)
 		#if os(macOS) && !ASTRA_WEBSITE_APP_RUNTIME && !ASTRA_WEBSITE_APP_HELPER
-			if !isPrivate && !isMini { AstraSpotlightIndexer.scheduleRefresh() }
+			if !isPrivate, !isMini {
+				AstraSpotlightIndexer.scheduleRefresh()
+			}
 		#endif
 	}
 

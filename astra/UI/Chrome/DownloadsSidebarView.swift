@@ -8,7 +8,7 @@ struct DownloadsSidebarView: View {
 	@State private var scopedPreviewURL: URL?
 	@State private var selectedDownloadIDs: Set<UUID> = []
 	#if os(macOS)
-	@FocusState private var downloadsFocused: Bool
+		@FocusState private var downloadsFocused: Bool
 	#endif
 
 	var body: some View {
@@ -26,28 +26,30 @@ struct DownloadsSidebarView: View {
 				#if os(macOS)
 					.onTapGesture(count: 2) {
 						selectedDownloadIDs = [item.id]
-						if item.status == .completed { manager.open(item.id) }
+						if item.status == .completed {
+							manager.open(item.id)
+						}
 					}
 					.simultaneousGesture(TapGesture().onEnded {
 						downloadsFocused = true
 					})
 				#endif
-				.listRowInsets(EdgeInsets(top: 3, leading: BrowserChromeMetrics.shellEdgePadding, bottom: 3, trailing: BrowserChromeMetrics.shellEdgePadding))
-				.listRowBackground(selectedDownloadIDs.contains(item.id) ? Color.accentColor.opacity(0.15) : Color.clear)
-				.listRowSeparator(.hidden)
-				.swipeActions(edge: .trailing, allowsFullSwipe: true) {
-					if item.status == .downloading || item.status == .paused || item.status == .finalizing {
-						Button("Cancel", systemImage: "xmark.circle", role: .destructive) { manager.cancel(item.id) }
-					} else if item.status == .completed {
-						#if os(macOS)
-							Button("Move to Bin", systemImage: "trash", role: .destructive) { manager.moveToTrash(item.id) }
-						#else
+					.listRowInsets(EdgeInsets(top: 3, leading: BrowserChromeMetrics.shellEdgePadding, bottom: 3, trailing: BrowserChromeMetrics.shellEdgePadding))
+					.listRowBackground(selectedDownloadIDs.contains(item.id) ? Color.accentColor.opacity(0.15) : Color.clear)
+					.listRowSeparator(.hidden)
+					.swipeActions(edge: .trailing, allowsFullSwipe: true) {
+						if item.status == .downloading || item.status == .paused || item.status == .finalizing {
+							Button("Cancel", systemImage: "xmark.circle", role: .destructive) { manager.cancel(item.id) }
+						} else if item.status == .completed {
+							#if os(macOS)
+								Button("Move to Bin", systemImage: "trash", role: .destructive) { manager.moveToTrash(item.id) }
+							#else
+								Button("Remove Download", systemImage: "trash", role: .destructive) { manager.delete(item.id) }
+							#endif
+						} else {
 							Button("Remove Download", systemImage: "trash", role: .destructive) { manager.delete(item.id) }
-						#endif
-					} else {
-						Button("Remove Download", systemImage: "trash", role: .destructive) { manager.delete(item.id) }
+						}
 					}
-				}
 			}
 		}
 		.listStyle(.plain)
@@ -64,47 +66,51 @@ struct DownloadsSidebarView: View {
 			}
 			.onKeyPress(.delete) {
 				guard downloadsFocused, !selectedDownloadIDs.isEmpty else { return .ignored }
-				for id in selectedDownloadIDs { manager.moveToTrash(id) }
+				for id in selectedDownloadIDs {
+					manager.moveToTrash(id)
+				}
 				selectedDownloadIDs.removeAll()
 				return .handled
 			}
 		#endif
-		.overlay {
-			if manager.items.isEmpty {
-				DownloadsEmptyView()
+			.overlay {
+				if manager.items.isEmpty {
+					DownloadsEmptyView()
+				}
 			}
-		}
-		.quickLookPreview($previewURL)
-		.onChange(of: previewURL) { previousURL, currentURL in
-			#if os(macOS)
-				if let previousURL, previousURL != currentURL {
-					if scopedPreviewURL == previousURL {
-						manager.endPreview(at: previousURL)
-						scopedPreviewURL = nil
+			.quickLookPreview($previewURL)
+			.onChange(of: previewURL) { previousURL, currentURL in
+				#if os(macOS)
+					if let previousURL, previousURL != currentURL {
+						if scopedPreviewURL == previousURL {
+							manager.endPreview(at: previousURL)
+							scopedPreviewURL = nil
+						}
 					}
-				}
-			#endif
-		}
-		.onDisappear {
-			#if os(macOS)
-				if let scopedPreviewURL {
-					manager.endPreview(at: scopedPreviewURL)
-					self.scopedPreviewURL = nil
-				}
-			#endif
-		}
-		.accessibilityIdentifier("downloads-list")
+				#endif
+			}
+			.onDisappear {
+				#if os(macOS)
+					if let scopedPreviewURL {
+						manager.endPreview(at: scopedPreviewURL)
+						self.scopedPreviewURL = nil
+					}
+				#endif
+			}
+			.accessibilityIdentifier("downloads-list")
 	}
 
 	#if os(macOS)
-	private func quickLookSelectedDownload() {
-		guard let item = manager.items.first(where: { selectedDownloadIDs.contains($0.id) && $0.status == .completed }),
-		      previewURL != item.fileURL,
-		      manager.beginPreview(item.id) else { return }
-		if let scopedPreviewURL { manager.endPreview(at: scopedPreviewURL) }
-		scopedPreviewURL = item.fileURL
-		previewURL = item.fileURL
-	}
+		private func quickLookSelectedDownload() {
+			guard let item = manager.items.first(where: { selectedDownloadIDs.contains($0.id) && $0.status == .completed }),
+			      previewURL != item.fileURL,
+			      manager.beginPreview(item.id) else { return }
+			if let scopedPreviewURL {
+				manager.endPreview(at: scopedPreviewURL)
+			}
+			scopedPreviewURL = item.fileURL
+			previewURL = item.fileURL
+		}
 	#endif
 }
 

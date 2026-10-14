@@ -282,15 +282,14 @@ import WebKit
 				}
 				panel.beginSheetModal(for: window) { [weak self, weak window] response in
 					monitor?.cancel()
-					let current: Bool
-					if let self, let window {
-						current = self.ownsFileUpload(in: webView, documentID: documentID, window: window)
+					let current: Bool = if let self, let window {
+						ownsFileUpload(in: webView, documentID: documentID, window: window)
 					} else {
-						current = false
+						false
 					}
 					let selectedURLs = response == .OK ? panel.urls : []
 					let urls = response == .OK && current ? selectedURLs : nil
-					if response == .OK && current {
+					if response == .OK, current {
 						self?.retainPanelUploadAccess(for: selectedURLs)
 					}
 					finish(urls)

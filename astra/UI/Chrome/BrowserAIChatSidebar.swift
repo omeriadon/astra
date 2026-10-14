@@ -274,10 +274,14 @@ struct BrowserAIChatSidebar: View {
 			}
 		}
 		.onChange(of: chat.error) { _, error in
-			if let error { browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error) }
+			if let error {
+				browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error)
+			}
 		}
 		.onChange(of: history.error) { _, error in
-			if let error { browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error) }
+			if let error {
+				browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error)
+			}
 		}
 		.task { await history.load() }
 		.fileImporter(isPresented: $showsFileImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in

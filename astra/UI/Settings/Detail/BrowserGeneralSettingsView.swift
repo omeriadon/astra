@@ -14,8 +14,6 @@ struct BrowserGeneralSettingsView: View {
 	@Default(.peekLevel) private var peekLevel
 	@Default(.zoomOutInPeeks) private var zoomOutInPeeks
 	@Default(.downloadsAskWhereToSave) private var downloadsAskWhereToSave
-	@Default(.startupBehavior) private var startupBehavior
-	@Default(.homepageURL) private var homepageURL
 	@Default(.browserSearchConfiguration) private var browserSearchConfigurationValue
 	@Default(.automaticHibernationEnabled) private var automaticHibernationEnabled
 
@@ -72,7 +70,6 @@ struct BrowserGeneralSettingsView: View {
 				.accessibilityIdentifier("address-display-style-picker")
 				.id("Address Bar")
 			}
-
 
 			Section("Search") {
 				Picker("Normal browsing", selection: engineBinding(isPrivate: false)) {
@@ -143,22 +140,6 @@ struct BrowserGeneralSettingsView: View {
 			}
 			.id("Page Zoom")
 
-			Section("Startup") {
-				Picker("When Astra opens", selection: $startupBehavior) {
-					Text("Restore previous session").tag(BrowserStartupBehavior.restore)
-					Text("Open Spotlight").tag(BrowserStartupBehavior.blank)
-					Text("Open homepage").tag(BrowserStartupBehavior.homepage)
-				}
-				.accessibilityIdentifier("startup-behavior-picker")
-
-				if startupBehavior == .homepage {
-					TextField("Homepage URL", text: $homepageURL)
-						.accessibilityLabel("Homepage URL")
-						.accessibilityIdentifier("homepage-url")
-				}
-			}
-			.id("Startup")
-
 			Section("Performance") {
 				Toggle("Automatically hibernate inactive tabs", isOn: $automaticHibernationEnabled)
 					.accessibilityLabel("Automatically hibernate inactive tabs")
@@ -183,8 +164,6 @@ struct BrowserGeneralSettingsView: View {
 							.font(.caption)
 							.foregroundStyle(.secondary)
 					}
-
-
 				}
 
 			#endif

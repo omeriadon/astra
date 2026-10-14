@@ -37,7 +37,7 @@
 			// Ignore duplicate SwiftUI notifications, but reinitialize any
 			// controls AppKit recreates during a window style/fullscreen change.
 			// Reduced Motion can also finish an in-flight transition immediately.
-			if !buttonsChanged, targetHidden == hidden, (shouldAnimate || !isAnimating) {
+			if !buttonsChanged, targetHidden == hidden, shouldAnimate || !isAnimating {
 				return
 			}
 
@@ -77,17 +77,19 @@
 				for button in buttons {
 					button.animator().alphaValue = hidden ? 0 : 1
 				}
-			} completionHandler: {
+			} completionHandler: { [weak self, weak window] in
 				Task { @MainActor [weak self, weak window] in
 					guard let self,
-					      self.generation == currentGeneration,
-					      self.trackedWindow === window else { return }
-					self.isAnimating = false
+					      generation == currentGeneration,
+					      trackedWindow === window else { return }
+
+					isAnimating = false
+
 					for button in buttons {
 						button.alphaValue = hidden ? 0 : 1
 						button.isHidden = hidden
 						button.isEnabled = !hidden
-						self.removeBlur(from: button)
+						removeBlur(from: button)
 					}
 				}
 			}

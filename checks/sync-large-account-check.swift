@@ -8,11 +8,13 @@ private struct Entry: Encodable {
 	let title: String
 	let modifiedAt: Date
 }
+
 private struct AccountSnapshot: Encodable {
 	let selectedTabID: UUID
 	let deletedVisitsAt: [UUID: Date]
 	let deletedBookmarksAt: [UUID: Date]
 }
+
 private struct AccountDocument: Encodable {
 	let version: Int
 	var tabs: [Entry]
@@ -22,6 +24,7 @@ private struct AccountDocument: Encodable {
 	let browser: AccountSnapshot
 	let settings: [String: String]
 }
+
 private struct DeviceSnapshot: Codable {
 	let deviceID: UUID
 	let payload: Data
@@ -44,10 +47,10 @@ struct SyncLargeAccountCheck {
 
 		// Around tens of thousands of records, rather than a padded tiny fixture.
 		let tabs = entries(400, kind: "tab")
-		let bookmarks = entries(1_800, kind: "bookmark")
+		let bookmarks = entries(1800, kind: "bookmark")
 		let readingList = entries(350, kind: "reading")
-		let history = entries(15_000, kind: "history")
-		let tombstones = Dictionary(uniqueKeysWithValues: entries(2_000, kind: "deleted").map { ($0.id, timestamp) })
+		let history = entries(15000, kind: "history")
+		let tombstones = Dictionary(uniqueKeysWithValues: entries(2000, kind: "deleted").map { ($0.id, timestamp) })
 		let account = AccountDocument(
 			version: 4,
 			tabs: tabs,
@@ -99,7 +102,7 @@ struct SyncLargeAccountCheck {
 		// An over-budget account is rejected before any network call; no records
 		// are altered in the source document, and the error reports the real limit.
 		var tooLarge = account
-		tooLarge.history += entries(30_000, kind: "older-history")
+		tooLarge.history += entries(30000, kind: "older-history")
 		let originalVisitCount = tooLarge.history.count
 		let oversizeBytes = try JSONEncoder().encode(tooLarge).count
 		assert(oversizeBytes > BrowserSyncPayloadLimits.maximumOutgoingBytes)
@@ -110,7 +113,7 @@ struct SyncLargeAccountCheck {
 			assert(error.localizedDescription.contains("5,000,000"))
 		}
 		assert(tooLarge.history.count == originalVisitCount)
-		assert(account.history.count == 15_000)
+		assert(account.history.count == 15000)
 
 		// The server returns *all* snapshots at once. Several valid devices can
 		// exceed the old 16 MiB general-response limit solely due to Base64.

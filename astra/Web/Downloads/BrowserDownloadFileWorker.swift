@@ -168,24 +168,24 @@ actor BrowserDownloadFileWorker {
 	}
 
 	#if os(macOS)
-	/// Recycle a completed download; keep filesystem I/O off MainActor.
-	func moveCompletedFileToTrash(at url: URL, bookmark: Data?, hasExistingAccess: Bool) throws {
-		var scope: URL?
-		if !hasExistingAccess, let bookmark {
-			var stale = false
-			guard let resolved = try? URL(
-				resolvingBookmarkData: bookmark,
-				options: [.withSecurityScope, .withoutUI],
-				relativeTo: nil,
-				bookmarkDataIsStale: &stale
-			), resolved.startAccessingSecurityScopedResource()
-			else { throw FinalizationError.destinationUnavailable }
-			scope = resolved
+		/// Recycle a completed download; keep filesystem I/O off MainActor.
+		func moveCompletedFileToTrash(at url: URL, bookmark: Data?, hasExistingAccess: Bool) throws {
+			var scope: URL?
+			if !hasExistingAccess, let bookmark {
+				var stale = false
+				guard let resolved = try? URL(
+					resolvingBookmarkData: bookmark,
+					options: [.withSecurityScope, .withoutUI],
+					relativeTo: nil,
+					bookmarkDataIsStale: &stale
+				), resolved.startAccessingSecurityScopedResource()
+				else { throw FinalizationError.destinationUnavailable }
+				scope = resolved
+			}
+			defer { scope?.stopAccessingSecurityScopedResource() }
+			guard FileManager.default.fileExists(atPath: url.path) else { throw CocoaError(.fileNoSuchFile) }
+			try unsafe FileManager.default.trashItem(at: url, resultingItemURL: nil)
 		}
-		defer { scope?.stopAccessingSecurityScopedResource() }
-		guard FileManager.default.fileExists(atPath: url.path) else { throw CocoaError(.fileNoSuchFile) }
-		try FileManager.default.trashItem(at: url, resultingItemURL: nil)
-	}
 	#endif
 
 	/// Deletes staging files on the worker, including after cancellation.
