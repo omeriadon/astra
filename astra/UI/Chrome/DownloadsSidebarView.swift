@@ -6,9 +6,13 @@ struct DownloadsSidebarView: View {
 	let theme: BrowserTheme
 	@State private var previewURL: URL?
 	@State private var scopedPreviewURL: URL?
+	@State private var selectedDownloadIDs: Set<UUID> = []
+	#if os(macOS)
+	@FocusState private var downloadsFocused: Bool
+	#endif
 
 	var body: some View {
-		List {
+		List(selection: $selectedDownloadIDs) {
 			ForEach(manager.items) { item in
 				DownloadRowView(
 					item: item,
@@ -18,14 +22,30 @@ struct DownloadsSidebarView: View {
 					scopedPreviewURL: $scopedPreviewURL
 				)
 				.equatable()
+				.tag(item.id)
+				#if os(macOS)
+					.onTapGesture(count: 2) {
+						selectedDownloadIDs = [item.id]
+						if item.status == .completed { manager.open(item.id) }
+					}
+					.simultaneousGesture(TapGesture().onEnded {
+						downloadsFocused = true
+					})
+				#endif
 				.listRowInsets(EdgeInsets(top: 3, leading: BrowserChromeMetrics.shellEdgePadding, bottom: 3, trailing: BrowserChromeMetrics.shellEdgePadding))
-				.listRowBackground(Color.clear)
+				.listRowBackground(selectedDownloadIDs.contains(item.id) ? Color.accentColor.opacity(0.15) : Color.clear)
 				.listRowSeparator(.hidden)
 				.swipeActions(edge: .trailing, allowsFullSwipe: true) {
 					if item.status == .downloading || item.status == .paused || item.status == .finalizing {
 						Button("Cancel", systemImage: "xmark.circle", role: .destructive) { manager.cancel(item.id) }
+					} else if item.status == .completed {
+						#if os(macOS)
+							Button("Move to Bin", systemImage: "trash", role: .destructive) { manager.moveToTrash(item.id) }
+						#else
+							Button("Remove Download", systemImage: "trash", role: .destructive) { manager.delete(item.id) }
+						#endif
 					} else {
-						Button("Delete", systemImage: "trash", role: .destructive) { manager.delete(item.id) }
+						Button("Remove Download", systemImage: "trash", role: .destructive) { manager.delete(item.id) }
 					}
 				}
 			}
@@ -35,6 +55,19 @@ struct DownloadsSidebarView: View {
 		#if os(macOS)
 			.contentMargins(.top, 35)
 			.contentMargins(.bottom, 48)
+			.focusable()
+			.focused($downloadsFocused)
+			.onKeyPress(.space) {
+				guard downloadsFocused, !selectedDownloadIDs.isEmpty else { return .ignored }
+				quickLookSelectedDownload()
+				return .handled
+			}
+			.onKeyPress(.delete) {
+				guard downloadsFocused, !selectedDownloadIDs.isEmpty else { return .ignored }
+				for id in selectedDownloadIDs { manager.moveToTrash(id) }
+				selectedDownloadIDs.removeAll()
+				return .handled
+			}
 		#endif
 		.overlay {
 			if manager.items.isEmpty {
@@ -62,6 +95,17 @@ struct DownloadsSidebarView: View {
 		}
 		.accessibilityIdentifier("downloads-list")
 	}
+
+	#if os(macOS)
+	private func quickLookSelectedDownload() {
+		guard let item = manager.items.first(where: { selectedDownloadIDs.contains($0.id) && $0.status == .completed }),
+		      previewURL != item.fileURL,
+		      manager.beginPreview(item.id) else { return }
+		if let scopedPreviewURL { manager.endPreview(at: scopedPreviewURL) }
+		scopedPreviewURL = item.fileURL
+		previewURL = item.fileURL
+	}
+	#endif
 }
 
 private struct DownloadsEmptyView: View {
@@ -220,6 +264,13 @@ private struct DownloadRowView: View {
 				.accessibilityLabel("Cancel download")
 				.accessibilityIdentifier("download-cancel-\(item.id.uuidString)")
 			} else {
+				#if os(macOS)
+					if item.status == .completed {
+						Button("Move to Bin", systemImage: "trash", role: .destructive) {
+							manager.moveToTrash(item.id)
+						}
+					}
+				#endif
 				Button(
 					item.status == .completed ? "Remove from Downloads" : "Delete",
 					systemImage: "trash",
