@@ -7,7 +7,7 @@ struct BrowserUseDOMChecks {
 	static func main() async throws {
 		let view = WKWebView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
 		view.loadHTMLString("""
-		<!doctype html><html><body>
+		<!doctype html><html><body id="main-body">
 		<label for="name">Name</label><input id="name" value="must-not-be-exposed">
 		<input type="password" aria-label="Hidden password" value="secret">
 		<button id="go" onclick="document.getElementById('result').textContent='Clicked'">Go</button>
@@ -32,7 +32,7 @@ struct BrowserUseDOMChecks {
 		let choice = controls.first { $0["name"] as? String == "Choice" }!["ref"] as! String
 		precondition(controls.contains { $0["name"] as? String == "Shadow" })
 		precondition(controls.contains { $0["name"] as? String == "Nested" })
-		let fragment = try await view.callAsyncJavaScript(BrowserAgentPageScripts.action, arguments: ["operation": "get_dom_fragment", "snapshotID": "first", "ref": controls.first { $0["type"] as? String == "body" }?["ref"] ?? "", "value": "", "dy": 0, "options": ["selector": "body"]], in: nil, contentWorld: .defaultClient) as? [String: Any]
+		let fragment = try await view.callAsyncJavaScript(BrowserAgentPageScripts.action, arguments: ["operation": "get_dom_fragment", "snapshotID": "first", "ref": controls.first { $0["type"] as? String == "body" }?["ref"] ?? "", "value": "", "dy": 0, "options": ["selector": "#main-body"]], in: nil, contentWorld: .defaultClient) as? [String: Any]
 		let fragmentHTML = fragment?["html"] as? String ?? ""
 		precondition(!fragmentHTML.contains("secret") && !fragmentHTML.contains("Hidden password") && !fragmentHTML.contains("must-not-be-exposed"))
 		func act(_ operation: String, _ ref: String, _ value: String = "") async throws {
