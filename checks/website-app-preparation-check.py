@@ -67,6 +67,21 @@ def main() -> None:
         source = source.replace(old_root, f'\tprivate static var installationRoot: URL {{ URL(fileURLWithPath: "{root_literal}") }}', 1)
         source += """
 
+import CoreServices
+
+enum RegistrationProbe {
+    nonisolated(unsafe) static var calls = 0
+    nonisolated(unsafe) static var failureStatus: OSStatus?
+}
+
+func LSRegisterURL(_ url: CFURL, _ update: Bool) -> OSStatus {
+    RegistrationProbe.calls += 1
+    if let status = RegistrationProbe.failureStatus {
+        return status
+    }
+    return CoreServices.LSRegisterURL(url, update)
+}
+
 extension AstraWebsiteAppInstallerApp {
     static func testPrepareWebsiteApp(at url: URL) throws {
         _ = try prepareWebsiteApp(at: url)
@@ -83,6 +98,7 @@ struct WebsiteAppPreparationCheck {
         let traversal = root.appendingPathComponent("Traversal.app")
         let tampered = root.appendingPathComponent("Tampered.app")
         try AstraWebsiteAppInstallerApp.testPrepareWebsiteApp(at: valid)
+        precondition(RegistrationProbe.calls == 1, "Preparation must register the website app")
         var value = [UInt8](repeating: 0, count: 256)
         precondition(getxattr(valid.path, "com.apple.quarantine", &value, value.count, 0, 0) == -1)
         precondition(getxattr(valid.appendingPathComponent("Contents/MacOS/fixture").path, "com.apple.quarantine", &value, value.count, 0, 0) == -1)
@@ -90,6 +106,15 @@ struct WebsiteAppPreparationCheck {
         precondition((try? AstraWebsiteAppInstallerApp.testPrepareWebsiteApp(at: outside)) == nil)
         precondition((try? AstraWebsiteAppInstallerApp.testPrepareWebsiteApp(at: traversal)) == nil)
         precondition((try? AstraWebsiteAppInstallerApp.testPrepareWebsiteApp(at: tampered)) == nil)
+        precondition(RegistrationProbe.calls == 2, "Invalid apps must be rejected before registration")
+        RegistrationProbe.failureStatus = -10819
+        do {
+            try AstraWebsiteAppInstallerApp.testPrepareWebsiteApp(at: valid)
+            preconditionFailure("Registration errors must be propagated")
+        } catch {
+            precondition(error.localizedDescription.contains("-10819"))
+        }
+        precondition(RegistrationProbe.calls == 3)
         print("website-app preparation validation passed")
     }
 }

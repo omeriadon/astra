@@ -1,5 +1,5 @@
 #if os(macOS)
-	import CoreServices
+	import AppKit
 	import Darwin
 	import Foundation
 	import ImageIO
@@ -64,7 +64,7 @@
 				try Task.checkCancellation()
 				try FileManager.default.moveItem(at: staging, to: appURL)
 				published = true
-				try registerGeneratedApp(at: appURL)
+				try await registerGeneratedApp(at: appURL)
 				try saveRegistry(nextRegistry)
 			} catch {
 				BrowserLog.error(.websiteApps, "website-app.install.failed", metadata: [
@@ -100,7 +100,7 @@
 				try Task.checkCancellation()
 				_ = try FileManager.default.replaceItemAt(original, withItemAt: staging, backupItemName: backupName)
 				replaced = true
-				try registerGeneratedApp(at: original)
+				try await registerGeneratedApp(at: original)
 				if let nextRegistry {
 					try saveRegistry(nextRegistry)
 				}
@@ -128,7 +128,7 @@
 						])
 					}
 					do {
-						try registerGeneratedApp(at: original)
+						try await registerGeneratedApp(at: original)
 					} catch {
 						BrowserLog.fault(.websiteApps, "website-app.replace.rollback-registration-failed", metadata: [
 							"app": BrowserLog.id(installation.id),
@@ -181,7 +181,77 @@
 			if plist?["AstraWebsiteAppRuntimeVersion"] as? Int != 1 {
 				try await replace(installation, iconData: nil, nextRegistry: nil)
 			}
-			try registerGeneratedApp(at: url)
+			try await registerGeneratedApp(at: url)
+		}
+
+		private func registerGeneratedApp(at url: URL) async throws {
+			try await runInstaller(operation: "--prepare", appURL: url) { message in
+				BrowserWebsiteAppRegistry.RegistryError.launchPreparationFailed(message)
+			}
+		}
+
+		@MainActor
+		func runInstaller(
+			operation: String,
+			appURL: URL,
+			failure: @Sendable (String) -> BrowserWebsiteAppRegistry.RegistryError
+		) async throws {
+			let helperName = "AstraWebsiteAppInstaller.app"
+			let helperURL = hostBundleURL.appendingPathComponent("Contents/Resources")
+				.appendingPathComponent(helperName)
+			guard FileManager.default.fileExists(atPath: helperURL.path) else {
+				BrowserLog.error(.websiteApps, "website-app.installer.unavailable", metadata: [
+					"operation": operation,
+					"helper": BrowserLog.path(helperURL),
+				])
+				throw failure("The website-app installer is unavailable.")
+			}
+			let responseURL = rootURL.appendingPathComponent("dock-result-\(UUID().uuidString).json")
+			defer { try? FileManager.default.removeItem(at: responseURL) }
+			BrowserLog.info(.websiteApps, "website-app.installer.start", metadata: [
+				"operation": operation,
+				"app": BrowserLog.path(appURL),
+				"helper": BrowserLog.path(helperURL),
+			])
+			let configuration = NSWorkspace.OpenConfiguration()
+			configuration.activates = false
+			configuration.addsToRecentItems = false
+			configuration.createsNewApplicationInstance = true
+			configuration.arguments = [operation, appURL.path, responseURL.path]
+			do {
+				let helper = try await NSWorkspace.shared.openApplication(at: helperURL, configuration: configuration)
+				let deadline = ContinuousClock.now.advanced(by: .seconds(15))
+				while ContinuousClock.now < deadline {
+					if let data = try? Data(contentsOf: responseURL) {
+						let message = try JSONDecoder().decode(String.self, from: data)
+						guard message.isEmpty else {
+							BrowserLog.error(.websiteApps, "website-app.installer.failure", metadata: [
+								"operation": operation,
+								"app": BrowserLog.path(appURL),
+								"error": BrowserLog.value(message),
+							])
+							throw failure(message)
+						}
+						BrowserLog.info(.websiteApps, "website-app.installer.success", metadata: [
+							"operation": operation,
+							"app": BrowserLog.path(appURL),
+						])
+						return
+					}
+					if helper.isTerminated {
+						throw failure("The website-app installer exited without a result.")
+					}
+					try await Task.sleep(for: .milliseconds(100))
+				}
+				throw failure("The website-app installer did not respond.")
+			} catch {
+				BrowserLog.error(.websiteApps, "website-app.installer.transport-failed", metadata: [
+					"operation": operation,
+					"app": BrowserLog.path(appURL),
+					"error": BrowserLog.errorDescription(error),
+				])
+				throw error
+			}
 		}
 
 		private func saveRegistry(_ records: [BrowserWebsiteAppInstallation]) throws {
@@ -277,16 +347,6 @@
 			guard CGImageDestinationFinalize(destination) else {
 				throw BrowserWebsiteAppFileError.malformedTemplate("The website icon ICNS could not be written.")
 			}
-		}
-
-		private func registerGeneratedApp(at url: URL) throws {
-			let plistURL = url.appendingPathComponent("Contents/Info.plist")
-			guard let plist = NSDictionary(contentsOf: plistURL) as? [String: Any],
-			      let executable = plist["CFBundleExecutable"] as? String,
-			      !executable.isEmpty, !executable.contains("/"), executable != ".", executable != ".."
-			else { throw BrowserWebsiteAppFileError.malformedTemplate("The generated app has no valid executable name.") }
-			let status = LSRegisterURL(url as CFURL, true)
-			guard status == noErr else { throw BrowserWebsiteAppFileError.registrationFailed(status) }
 		}
 
 		/// Read the signed entitlement dictionary directly from Security.framework.
