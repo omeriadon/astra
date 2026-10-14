@@ -9,7 +9,7 @@
 
 		private var sections: [String] {
 			var seen = Set<String>()
-			return registry.definitions.map(\.section).filter { seen.insert($0).inserted }
+			return registry.definitions.filter(\.isCustomizable).map(\.section).filter { seen.insert($0).inserted }
 		}
 
 		var body: some View {
@@ -26,7 +26,7 @@
 
 				ForEach(sections, id: \.self) { section in
 					Section(section) {
-						ForEach(registry.definitions.filter { $0.section == section }) { definition in
+						ForEach(registry.definitions.filter { $0.isCustomizable && $0.section == section }) { definition in
 							HStack(spacing: 12) {
 								KeyboardShortcuts.Recorder(definition.title, name: definition.name) { _ in
 									MainActor.assumeIsolated { changed() }

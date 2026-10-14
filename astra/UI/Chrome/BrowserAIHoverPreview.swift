@@ -105,7 +105,7 @@ import WebKit
 					}
 				} else if error != nil {
 					Label("Preview Unavailable", systemImage: "exclamationmark.bubble")
-									} else {
+				} else {
 					ProgressView("Summarizing Page")
 				}
 			}
