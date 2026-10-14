@@ -12,7 +12,7 @@ from pathlib import Path
 
 READER_SCRIPTS = ("Readability.js", "Readability-readerable.js", "Reader.js")
 READER_LICENSE = "Readability-LICENSE.txt"
-EXTENSION_ARCHIVES = ("darkreader-chrome-mv3.zip", "ublock-origin-lite-safari.zip")
+UNBUNDLED_EXTENSION_ARCHIVES = ("darkreader-chrome-mv3.zip", "ublock-origin-lite-safari.zip")
 PACKAGE_BUNDLES = (
     "Defaults_Defaults.bundle", "Litext_Litext.bundle", "MarkdownView_MarkdownView.bundle",
     "Noise_Noise.bundle", "SwiftMath_SwiftMath.bundle",
@@ -54,17 +54,21 @@ def validate(app: Path) -> None:
         if "AstraWebsiteAppRuntime.framework" in dependencies:
             raise ValueError("Browser must not eagerly link website-app runtime")
 
-    runtime_files = files_named(runtime, (*READER_SCRIPTS, READER_LICENSE, *EXTENSION_ARCHIVES))
+    runtime_files = files_named(runtime, (*READER_SCRIPTS, READER_LICENSE, *UNBUNDLED_EXTENSION_ARCHIVES))
     if runtime_files:
         raise ValueError(f"Runtime duplicates host resources: {sorted(runtime_files)}")
     if any(path.name == "Assets.car" for path in runtime.rglob("*")):
         raise ValueError("Runtime contains compiled asset resources")
 
     host_resources = app / "Contents/Resources"
-    required_resources = set(READER_SCRIPTS) | {READER_LICENSE} | set(EXTENSION_ARCHIVES)
-    missing = required_resources - files_named(host_resources, (*READER_SCRIPTS, READER_LICENSE, *EXTENSION_ARCHIVES))
+    required_resources = set(READER_SCRIPTS) | {READER_LICENSE}
+    host_files = files_named(host_resources, (*READER_SCRIPTS, READER_LICENSE, *UNBUNDLED_EXTENSION_ARCHIVES))
+    missing = required_resources - host_files
     if missing:
         raise ValueError(f"Host bundle is missing resources: {sorted(missing)}")
+    bundled_extensions = set(UNBUNDLED_EXTENSION_ARCHIVES) & host_files
+    if bundled_extensions:
+        raise ValueError(f"Host bundle unexpectedly includes extension archives: {sorted(bundled_extensions)}")
     if not any(path.name == "Assets.car" for path in host_resources.rglob("*")):
         raise ValueError("Host bundle is missing compiled asset resources")
     for name in PACKAGE_BUNDLES:
@@ -94,7 +98,7 @@ def self_test() -> None:
             "CFBundlePackageType": "FMWK",
             "CFBundleExecutable": "AstraWebsiteAppRuntime",
         }))
-        for name in (*READER_SCRIPTS, READER_LICENSE, *EXTENSION_ARCHIVES):
+        for name in (*READER_SCRIPTS, READER_LICENSE):
             (host / name).write_bytes(b"fixture")
         (host / "Assets.car").write_bytes(b"fixture")
         for name in PACKAGE_BUNDLES:
@@ -107,7 +111,6 @@ enum browserApp {
     static func main() {
         precondition(["dev.astra.resource-test", "com.omeriadon.astra"].contains(BrowserResources.bundle.bundleIdentifier ?? ""))
         precondition(BrowserResources.bundle.url(forResource: "Reader", withExtension: "js") != nil)
-        precondition(BrowserResources.bundle.url(forResource: "ublock-origin-lite-safari", withExtension: "zip") != nil)
         precondition(BrowserResources.bundle.url(forResource: "Assets", withExtension: "car") != nil)
     }
 }
@@ -182,7 +185,7 @@ struct ResourceCheck {
         executable = root / "resource-check"
         subprocess.run(["xcrun", "swiftc", str(source), str(main), "-o", str(executable)], check=True)
         subprocess.run([str(executable)], check=True)
-        for name in (*READER_SCRIPTS, *EXTENSION_ARCHIVES, "Assets.car"):
+        for name in (*READER_SCRIPTS, *UNBUNDLED_EXTENSION_ARCHIVES, "Assets.car"):
             duplicate = version / "Resources" / name
             duplicate.write_bytes(b"duplicate")
             try:
@@ -192,6 +195,16 @@ struct ResourceCheck {
             else:
                 raise AssertionError(f"Duplicated resource passed: {name}")
             duplicate.unlink()
+        for name in UNBUNDLED_EXTENSION_ARCHIVES:
+            unexpected = host / name
+            unexpected.write_bytes(b"extension archive should not be bundled")
+            try:
+                validate(app)
+            except ValueError as error:
+                assert "unexpectedly includes extension archives" in str(error)
+            else:
+                raise AssertionError(f"Bundled extension archive passed: {name}")
+            unexpected.unlink()
         (host / "Reader.js").unlink()
         try:
             validate(app)
