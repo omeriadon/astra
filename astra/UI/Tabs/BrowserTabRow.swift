@@ -257,10 +257,6 @@ struct BrowserTabRow: View {
 			BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
 			let data = tab.id.uuidString.data(using: .utf8) ?? Data()
 			let provider = NSItemProvider()
-			provider.registerDataRepresentation(forTypeIdentifier: "public.data", visibility: .ownProcess) { completion in
-				completion(data, nil)
-				return nil
-			}
 			provider.registerDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab", visibility: .ownProcess) { completion in
 				completion(data, nil)
 				return nil
@@ -276,7 +272,7 @@ struct BrowserTabRow: View {
 			.frame(width: max(splitDropWidth, 140), height: 28)
 			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
 		}
-		.onDrop(of: [UTType.data],
+		.onDrop(of: [UTType(exportedAs: "com.omeriadon.astra.tab", conformingTo: .data)],
 		        delegate: BrowserTabRowSplitDropDelegate(
 				browser: browser, anchorID: tab.id, width: splitDropWidth, side: $splitDropSide
 			))
