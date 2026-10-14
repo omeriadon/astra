@@ -104,7 +104,7 @@ struct BrowserSettingsView: View {
 						symbol: "hand.raised.fill",
 						section: .advanced,
 						identifier: "settings-privacy-and-security",
-						terms: ["Website Data", "Clear All Website Data", "Clear Cache", "Clear All Favicons", "Website Permissions", "Reset All Website Permissions", "Try HTTPS First", "Global Privacy Control", "Browsing History", "Keep History"]
+						terms: ["Website Data", "Clear Website Data", "Manage Website Data", "Clear All Website Data", "Clear Cache", "Clear All Favicons", "Website Permissions", "Reset All Website Permissions", "Try HTTPS First", "Global Privacy Control", "Browsing History", "Keep History"]
 					)
 				case .extensions:
 					Definition(
