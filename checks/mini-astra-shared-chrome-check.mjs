@@ -18,11 +18,13 @@ check(shell.includes("ShellWebsiteNavigationControls("), "shared navigation cont
 check(shell.includes("ShellExtensionControls(browser: browser"), "shared extension controls");
 check(shell.includes("trailingAccessory.fixedSize"), "mini action is part of toolbar layout");
 
-// The two windows use identical chrome geometry, without taking the current website theme.
+// The two windows use identical chrome geometry and retain the website-colored toolbar.
 check(mini.includes("sidebarShown: true") && mini.includes("reservesWindowControls: true"), "inset toolbar with traffic light clearance");
 check(mini.includes("BrowserChromeMetrics.shellEdgePadding"), "shared chrome inset");
 check(mini.includes("BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar"), "shared rounded corners");
-check(mini.includes("usesThemeSurface: true") && shell.includes("ThemeSurface(theme: theme)"), "fixed mini theme surface");
+check(shell.includes("browser.selectedTab?.activeController?.themeColor ?? theme.tabColor"), "website-colored toolbar surface");
+check(shell.includes("themeColorIsLight") && !shell.includes("usesThemeSurface"), "website theme contrast");
+check(mini.includes("roundsLeadingButton: true"), "rounded Mini leading navigation button");
 check(mini.includes("theme.shaderNoiseEnabled = false") && mini.includes("theme.shaderNoiseAmount = 0"), "zero-noise theme");
 check(mini.includes("theme.meshColorPoints = ["), "gradient uses multiple color points");
 

@@ -75,9 +75,9 @@
 				sidebarShown: true,
 				topBarColorScheme: .dark,
 				reservesWindowControls: true,
+				roundsLeadingButton: true,
 				acceptsFocusRequests: topBarHeight > 0,
-				trailingAccessory: AnyView(openInSpaceButton),
-				usesThemeSurface: true
+				trailingAccessory: AnyView(openInSpaceButton)
 			)
 			.background {
 				WindowDragBackground()

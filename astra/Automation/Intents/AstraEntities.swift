@@ -160,10 +160,6 @@
 
 	@AppEntity(schema: .browser.readingListItem)
 	struct AstraReadingEntity {
-		static var typeDisplayRepresentation: TypeDisplayRepresentation {
-			"Astra Reading List Page"
-		}
-
 		static let defaultQuery = Query()
 		let id: String
 		@Property(title: "Title") var title: String

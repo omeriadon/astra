@@ -13,7 +13,6 @@ struct ShellTopBarView: View {
 	var acceptsFocusRequests = true
 	/// Optional window-specific action; all navigation and address controls remain shared.
 	var trailingAccessory: AnyView?
-	var usesThemeSurface = false
 	@Default(.developerModeEnabled) private var developerModeEnabled
 
 	private var showsDeveloperMode: Bool {
@@ -27,11 +26,7 @@ struct ShellTopBarView: View {
 				.frame(height: isCompact ? BrowserChromeMetrics.topBarRegionHeight * 2 : BrowserChromeMetrics.topBarRegionHeight)
 				.background {
 					ZStack {
-						if usesThemeSurface {
-							ThemeSurface(theme: theme)
-						} else {
-							browser.selectedTab?.activeController?.themeColor ?? theme.tabColor
-						}
+						browser.selectedTab?.activeController?.themeColor ?? theme.tabColor
 						if showsDeveloperMode {
 							Canvas { context, size in
 								for x in stride(from: -size.height, through: size.width, by: 24) {
@@ -52,9 +47,6 @@ struct ShellTopBarView: View {
 	}
 
 	private var controlsColorScheme: ColorScheme {
-		if usesThemeSurface {
-			return theme.appearanceMode == .light ? .light : .dark
-		}
 		if let isLight = browser.selectedTab?.activeController?.themeColorIsLight {
 			return isLight ? .light : .dark
 		}

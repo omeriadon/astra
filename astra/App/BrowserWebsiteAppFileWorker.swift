@@ -271,9 +271,23 @@
 			      	kCGImageSourceCreateThumbnailFromImageAlways: true,
 			      	kCGImageSourceThumbnailMaxPixelSize: 256,
 			      ] as CFDictionary),
+			      let context = unsafe CGContext(
+			      	data: nil, width: 256, height: 256, bitsPerComponent: 8, bytesPerRow: 0,
+			      	space: CGColorSpaceCreateDeviceRGB(),
+			      	bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+			      ),
 			      let destination = CGImageDestinationCreateWithURL(url as CFURL, "com.apple.icns" as CFString, 1, nil)
 			else { throw BrowserWebsiteAppFileError.malformedTemplate("The website icon could not be converted to ICNS.") }
-			CGImageDestinationAddImage(destination, image, nil)
+			// ICNS rejects some favicon dimensions; fit every image into a supported square.
+			let scale = 256 / CGFloat(max(image.width, image.height))
+			let width = CGFloat(image.width) * scale
+			let height = CGFloat(image.height) * scale
+			context.interpolationQuality = .high
+			context.draw(image, in: CGRect(x: (256 - width) / 2, y: (256 - height) / 2, width: width, height: height))
+			guard let icon = context.makeImage() else {
+				throw BrowserWebsiteAppFileError.malformedTemplate("The website icon could not be converted to ICNS.")
+			}
+			CGImageDestinationAddImage(destination, icon, nil)
 			guard CGImageDestinationFinalize(destination) else {
 				throw BrowserWebsiteAppFileError.malformedTemplate("The website icon ICNS could not be written.")
 			}
