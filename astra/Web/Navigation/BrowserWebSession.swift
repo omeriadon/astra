@@ -33,7 +33,7 @@ final class BrowserWebSession {
 		let toastManager = isPrivate ? ToastManager() : .shared
 		self.toastManager = toastManager
 		#if os(macOS)
-			#if DEBUG
+			#if DEBUG && !ASTRA_WEBSITE_APP_HELPER
 				dataStore = isPrivate ? .nonPersistent() : BrowserAgentTestBootstrap.isActive ? BrowserAgentTestBootstrap.normalDataStore : AstraCreateWebPushDataStore() ?? .default()
 			#else
 				dataStore = isPrivate ? .nonPersistent() : AstraCreateWebPushDataStore() ?? .default()
@@ -95,7 +95,7 @@ final class BrowserWebSession {
 			}
 		#endif
 		#if DEBUG
-			#if os(macOS)
+			#if os(macOS) && !ASTRA_WEBSITE_APP_HELPER
 				assert(BrowserAgentTestBootstrap.isActive || dataStore.isPersistent != isPrivate)
 			#else
 				assert(dataStore.isPersistent != isPrivate)

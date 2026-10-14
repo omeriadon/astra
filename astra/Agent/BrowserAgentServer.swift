@@ -486,6 +486,8 @@
                     case .array(let values): return values.map(javascriptArgument)
                     case .object(let values): return values.mapValues(javascriptArgument)
                     case .null: return NSNull()
+                    // Binary MCP values are not valid JavaScript automation arguments.
+                    case .data: return NSNull()
                 }
             }
 

@@ -26,6 +26,8 @@ jobs:
           python3 checks/compiler-safety-settings-check.py
       - name: Validate deterministic fixture and coverage manifest
         run: python3 tests/browser-use/test_fixture.py
+      - name: Install Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
       - name: Build Debug app with strict concurrency
         shell: bash
         run: |
