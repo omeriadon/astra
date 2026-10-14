@@ -21,6 +21,7 @@ nonisolated enum BrowserAIAction: String, CaseIterable, Identifiable, Sendable {
 	case renameTab = "rename_tab"
 	case selectTab = "select_tab"
 	case listTabs = "list_tabs"
+	case githubAccount = "github_account"
 	case moveTabsToSpace = "move_tabs_to_space"
 	case readPage = "read_page"
 	case webSearch = "web_search"
@@ -43,6 +44,7 @@ nonisolated enum BrowserAIAction: String, CaseIterable, Identifiable, Sendable {
 			case .renameTab: "Rename Tabs"
 			case .selectTab: "Select Tabs"
 			case .listTabs: "List Tabs and Spaces"
+			case .githubAccount: "Identify Signed-in GitHub Account"
 			case .moveTabsToSpace: "Move Tabs Between Spaces"
 			case .readPage: "Read Open Pages"
 			case .webSearch: "Search the Web"
@@ -170,6 +172,7 @@ enum BrowserAITools {
 				case .closeTab: "tabID for one tab; for bulk close use phase=preview with tabIDs (comma-separated) OR domain (exact host), optional keepOwner (GitHub repository owner), then phase=apply with planID"
 			case .selectTab, .readPage: "tabID"
 			case .listTabs: "optional spaceID (UUID, current or all), offset, limit (1–100)"
+			case .githubAccount: "no arguments"
 			case .moveTabsToSpace: "phase=preview with tabIDs (comma-separated) and destinationSpaceID; then phase=apply with planID"
 				case .pinTab, .favouriteTab: "tabID, enabled (true or false)"
 				case .moveTabToFolder: "tabID, folderID"
@@ -266,6 +269,8 @@ enum BrowserAITools {
 			case .selectTab: try browser.selectTab(tab().id)
 			case .listTabs:
 				return try listTabs(arguments, in: browser)
+			case .githubAccount:
+				return try await githubAccount(in: browser, originSpaceID: spaceID)
 			case .moveTabsToSpace:
 				return try bulkAction(arguments, kind: .move, browser: browser)
 			case .readPage:
@@ -305,6 +310,30 @@ enum BrowserAITools {
 	}
 
 	private static var bulkPlans: [UUID: BulkPlan] = [:]
+
+
+	/// Read the signed-in account from an already-loaded GitHub main document.
+	/// No new network request, cookie access, local file access, or guessed owner.
+	/// GitHub may change its metadata: a missing or contradictory result is unknown.
+	private static func githubAccount(in browser: Browser, originSpaceID: UUID) async throws -> String {
+		var found = Set<String>()
+		for tab in browser.tabs {
+			guard tab.internalPage == nil, tab.currentURL?.host?.lowercased() == "github.com",
+			      let webView = tab.activeController?.webViewIfLoaded,
+			      webView.url?.host?.lowercased() == "github.com", !webView.isLoading else { continue }
+			let script = "return document.querySelector('meta[name=\"user-login\"]')?.getAttribute('content') || '';"
+			guard let result = try? await webView.callAsyncJavaScript(
+				script, arguments: [:], in: nil, contentWorld: .defaultClient
+			), let owner = result as? String, (1...39).contains(owner.count),
+				owner.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }) else { continue }
+			guard !browser.isPrivate, browser.selectedSpace.id == originSpaceID else { throw BrowserAIError.toolDenied }
+			found.insert(owner.lowercased())
+		}
+		guard found.count == 1, let owner = found.first else {
+			return "GitHub account unknown: no unambiguous signed-in account metadata found in loaded github.com tabs. Ask the user for the repository owner; do not guess."
+		}
+		return "Verified from an open GitHub document: signed-in GitHub account owner=\(owner). Use this exact owner for keepOwner."
+	}
 
 	private static func requestedIDs(_ value: String?) throws -> [UUID] {
 		guard let value, value.utf8.count <= 8192 else { throw BrowserAIError.invalidRequest }
