@@ -261,7 +261,8 @@
 									try? await Task.sleep(for: .milliseconds(25))
 								}
 								guard !Task.isCancelled else { return }
-								let readiness: [String: String] = unsafe[
+								// swiftformat:disable:next spaceAroundBrackets
+								let readiness: [String: String] = unsafe [
 									"visible": String(foreground.window.isVisible),
 									"key": String(foreground.window.isKeyWindow),
 									"can_become_key": String(foreground.window.canBecomeKey),
