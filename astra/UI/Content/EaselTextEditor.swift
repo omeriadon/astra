@@ -4,7 +4,7 @@
 
 	struct EaselTextEditor: NSViewRepresentable {
 		@Binding var text: String
-		let fontName: String
+		let font: BrowserEaselDocument.Item.Font
 		let fontSize: CGFloat
 		let color: NSColor
 		let onSelect: () -> Void
@@ -33,8 +33,7 @@
 			if view.string != text {
 				view.string = text
 			}
-			let desiredFont = NSFont(name: fontName, size: fontSize)
-				?? .monospacedSystemFont(ofSize: fontSize, weight: .regular)
+			let desiredFont = BrowserEaselSystemFonts.appKitFont(for: font, size: fontSize)
 			if view.font != desiredFont {
 				view.font = desiredFont
 			}
