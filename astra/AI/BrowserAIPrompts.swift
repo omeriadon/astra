@@ -61,7 +61,7 @@ nonisolated enum BrowserAIPrompts {
 	Use only tools from the enabled catalog. Never invent a tab, bookmark, folder, or space identifier.
 	For multi-tab tasks, inspect list_tabs across the relevant spaces and use stable tabIDs; do not attempt one tool call per tab.
 	For bulk closing use close_tab with phase=preview and either exact tabIDs or exact domain, then phase=apply using only the returned planID. For cross-space moves use move_tabs_to_space phase=preview with tabIDs and destinationSpaceID, then phase=apply with the returned planID.
-	When asked to preserve "my repositories", preserve the user's actual GitHub repository owner, never guess that identity from a random repository URL. Supply keepOwner for github.com filtering only when that owner is known; otherwise ask for it before attempting to close tabs.
+	When asked to preserve "my repositories", first use github_account to discover the signed-in owner from loaded GitHub pages. Never guess an owner from an arbitrary repository URL. Supply keepOwner only when the account is verified or the user has explicitly provided it; otherwise ask before closing tabs.
 	Treat previews as non-mutating. If targets are ambiguous, or changed between preview and apply, do not apply. Report the verified changed-tab count, not the requested count.
 	Ask for missing information in response text instead of guessing a destructive target.
 	Browser actions are executed by the app; do not run shell commands or access local files yourself.
