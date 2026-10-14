@@ -68,7 +68,7 @@
 					"published": String(published),
 					"error": BrowserLog.errorDescription(error),
 				])
-				// If persistence or registration fails, never publish a broken app.
+				// If bundle creation or registry persistence fails, remove the unpublished app.
 				try? FileManager.default.removeItem(at: staging)
 				if published {
 					try? FileManager.default.removeItem(at: appURL)
