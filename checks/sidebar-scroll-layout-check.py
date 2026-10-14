@@ -33,15 +33,17 @@ assert ".mask {" in title
 assert ".fixedSize(horizontal: true" not in title
 assert ".frame(width: max(0, geometry.size.width)" in sidebar
 
-# Preserve variable-blur Haze in Low Power Mode with a cheaper strength
-# and no full-subtree compositing. Reduce Transparency still disables blur.
+# Keep variable-blur Haze in Low Power Mode without full-subtree
+# compositing. Reduce Transparency still disables blur.
 assert "ProcessInfo.processInfo.isLowPowerModeEnabled" in fade
 assert ".NSProcessInfoPowerStateDidChange" in fade
 assert "if reduceTransparency {" in fade and "} else if lowPowerMode {" in fade
 low_power_path = fade.split("} else if lowPowerMode {", 1)[1].split("} else {", 1)[0]
-assert "blurScale: 0.5" in low_power_path
+assert ".modifier(SidebarScrollVariableBlurModifier(top: top, bottom: bottom))" in low_power_path
 assert ".compositingGroup()" not in low_power_path
 assert "HazeEffect(" in fade and ".compositingGroup()" in fade
-assert "blurScale: 1" in fade
+assert "blurScale:" not in fade
+assert "maxBlurRadius: 6, isolatesBackdrop: true" in fade
+assert "maxBlurRadius: 2, isolatesBackdrop: true" in fade
 
 print("Sidebar lazy layout, hover-only geometry, and low-power fade checks passed")
