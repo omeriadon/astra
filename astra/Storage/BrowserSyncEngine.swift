@@ -93,14 +93,20 @@ actor BrowserSyncEngine {
 		let combined = projected.dropFirst().reduce(projected[0]) { $0.merging($1) }
 		let merged = remote.documents.reduce(combined) { $0.merging($1) }
 		let changed = merged != combined
-		let prepared = !changed ? [] : zip(local, projected).map { raw, portable in
-			let preserved = merged.preservingLocalOnlyData(from: raw)
-			return Prepared(document: preserved,
-				localPortableTabs: Dictionary(portable.tabs.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest }),
-				bookmarksChanged: preserved.bookmarks != raw.bookmarks,
-				readingListChanged: preserved.readingList != raw.readingList,
-				historyChanged: preserved.history != raw.history,
-				workspaceChanged: preserved.workspace != raw.workspace)
+		var prepared: [Prepared] = []
+		if changed {
+			prepared.reserveCapacity(local.count)
+			for (raw, portable) in zip(local, projected) {
+				let preserved = merged.preservingLocalOnlyData(from: raw)
+				let tabIndex: [UUID: OpenTab] = Dictionary(
+					portable.tabs.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+				prepared.append(Prepared(document: preserved,
+					localPortableTabs: tabIndex,
+					bookmarksChanged: preserved.bookmarks != raw.bookmarks,
+					readingListChanged: preserved.readingList != raw.readingList,
+					historyChanged: preserved.history != raw.history,
+					workspaceChanged: preserved.workspace != raw.workspace))
+			}
 		}
 		return (combined, merged, changed, prepared)
 	}
