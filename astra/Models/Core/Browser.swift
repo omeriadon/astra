@@ -2342,6 +2342,7 @@ final class Browser {
 	func flushAndWaitForPersistence() async {
 		flushPersistence()
 		await session.persistenceWriteTask?.value
+		if !isPrivate && !isMini { await BrowserBoostStore.shared.flushPersistence() }
 	}
 
 	func markCleanShutdown() async {

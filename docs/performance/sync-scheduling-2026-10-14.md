@@ -9,6 +9,8 @@ schedule independent local checkpoints and journals. Completing a disk write no
 longer launches networking. Checkpoints retain serial off-main encoding and file
 work, atomic replacement, backup/privacy checks and recovery. A process-wide
 capture sequence rejects older full snapshots even across separate window queues.
+Boost snapshot encoding also runs off-main; the existing actor writer rejects
+stale completion and lifecycle flushes now wait for the current Boost revision.
 
 The main-actor coordinator owns UI status and browser application. One scheduled
 task and one active task enforce periodic pulls, including unchanged devices:

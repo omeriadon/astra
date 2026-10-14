@@ -26,8 +26,9 @@ final class BrowserBoostStore {
     @ObservationIgnored private let storageKey = "astra.boosts.v1"
     @ObservationIgnored private let preferencesWriter = BoostPreferencesWriter()
     @ObservationIgnored private var preferencesRevision = 0
+    @ObservationIgnored private var preferencesTask: Task<Void, Never>?
 
-    private struct Snapshot: Codable {
+    private nonisolated struct Snapshot: Codable, Sendable {
         var boosts: [BrowserBoost]
         var deletedAt: [UUID: Date]
     }
@@ -145,12 +146,15 @@ final class BrowserBoostStore {
 
     private func changed(scheduleSync: Bool) {
         let snapshot = Snapshot(boosts: boosts, deletedAt: deletedAt)
-        if let data = try? JSONEncoder().encode(snapshot) {
-            preferencesRevision &+= 1
-            let revision = preferencesRevision
-            let writer = preferencesWriter
-            Task.detached(priority: .utility) {
+        preferencesRevision &+= 1
+        let revision = preferencesRevision
+        let writer = preferencesWriter
+        preferencesTask = Task.detached(priority: .utility) {
+            do {
+                let data = try JSONEncoder().encode(snapshot)
                 await writer.write(data, revision: revision)
+            } catch {
+                BrowserLog.error(.persistence, "boosts.save.failed")
             }
         }
         let styles = scriptSource
@@ -169,6 +173,14 @@ final class BrowserBoostStore {
         }
         if scheduleSync {
             BrowserSync.shared.scheduleSync()
+        }
+    }
+
+    func flushPersistence() async {
+        while true {
+            let revision = preferencesRevision
+            await preferencesTask?.value
+            if revision == preferencesRevision { return }
         }
     }
 
