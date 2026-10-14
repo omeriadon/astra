@@ -1,6 +1,6 @@
 import Foundation
 
-struct BrowserWorkspace: Codable, Equatable, Sendable {
+nonisolated struct BrowserWorkspace: Codable, Equatable, Sendable {
 	var spaces: [BrowserSpace]
 	var favouriteTabIDs: [UUID]
 	var favouritesModifiedAt: Date

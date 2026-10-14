@@ -39,8 +39,9 @@ assert "NewTabView(browser: browser)" not in content
 # URL-less legacy tabs are filtered at all restoration and persistence boundaries.
 assert "var isDiscardableNewTab: Bool" in tabs
 for guard in ("url == nil", "history.isEmpty", "peeks.isEmpty", "restorationState == nil",
-              "fileAccessBookmark == nil", "easel == nil", "internalPage == nil"):
+              "fileAccessBookmark == nil", "internalPage == nil"):
     assert guard in tabs
+assert "guard case .none = easel else { return false }" in tabs
 assert "let savedTabs = loaded.tabs.filter { !$0.isDiscardableNewTab }" in browser
 assert "let savedTabs = tabs.map(\\.openTab).filter { !$0.isDiscardableNewTab }" in browser
 assert "openTabs: savedTabs" in browser
@@ -55,6 +56,6 @@ assert "projected.settings.removeValue(forKey: \"newTabStyle\")" in sync
 # automatically opens Spotlight. An old 'blank' startup preference does likewise.
 assert "if newTabs.isEmpty {" in browser
 assert "startupBehavior == .blank || newTabs.allSatisfy" in browser
-assert "Text(\"Open Spotlight\")" in settings
+assert "@Default(.newTabStyle)" not in settings, "Legacy page choice must remain unavailable"
 
 print("Spotlight-only new-tab checks passed")

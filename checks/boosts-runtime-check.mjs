@@ -4,7 +4,7 @@ import vm from "node:vm";
 
 // Extract the actual WKUserScript templates rather than duplicating the runtime.
 const source = fs.readFileSync("astra/Web/Boosts/BrowserBoostStore.swift", "utf8");
-const templates = [...source.matchAll(/return Self\.scriptMarker \+ """\n([\s\S]*?)\n        """/g)]
+const templates = [...source.matchAll(/return Self\.scriptMarker \+ """\n([\s\S]*?)\n[ \t]*"""/g)]
   .map((match) => match[1]);
 assert.equal(templates.length, 2, "Boost JavaScript and CSS templates must exist");
 const [javascriptTemplate, cssTemplate] = templates;

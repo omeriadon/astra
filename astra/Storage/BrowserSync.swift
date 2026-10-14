@@ -1,3 +1,6 @@
+#if os(macOS)
+import AppKit
+#endif
 import AuthenticationServices
 import Defaults
 import Foundation
@@ -13,6 +16,8 @@ final class BrowserSync {
 	private(set) var isSyncing = false
 	private(set) var lastSync: Date?
 	private(set) var errorDescription: String?
+	private(set) var hasPendingChanges = false
+	var canSync: Bool { isSignedIn && browser?.isReadyForSync == true }
 
 	@ObservationIgnored private weak var browser: Browser?
 	@ObservationIgnored private let networkMonitor = NWPathMonitor()
@@ -20,7 +25,15 @@ final class BrowserSync {
 	@ObservationIgnored private var sessionToken: String?
 	@ObservationIgnored private var tokenEndpoint: String?
 	@ObservationIgnored private var scheduledSync: Task<Void, Never>?
-	@ObservationIgnored private var syncRequestedWhileBusy = false
+	@ObservationIgnored private var activeSync: Task<Void, Never>?
+	@ObservationIgnored private var requestGate = BrowserSyncRequestGate()
+	@ObservationIgnored private var schedule = BrowserSyncSchedule()
+	@ObservationIgnored private let engine = BrowserSyncEngine()
+	@ObservationIgnored private var dirtyRevision: UInt64 = 0
+	@ObservationIgnored private var settingsRevision: UInt64 = 0
+	@ObservationIgnored private var lifecycleObservers: [NSObjectProtocol] = []
+	@ObservationIgnored private var applyingRemote = false
+	@ObservationIgnored private var snapshotCache: [UUID: (revision: UInt64, settingsRevision: UInt64, contentRevision: UInt64, document: BrowserSyncDocument)] = [:]
 	@ObservationIgnored private var knownSettings: [String: Data]
 	@ObservationIgnored private var settingVersions: [String: Date]
 	@ObservationIgnored private let deviceID: UUID
@@ -68,26 +81,49 @@ final class BrowserSync {
 			let available = path.status == .satisfied
 			Task { @MainActor in
 				let sync = BrowserSync.shared
-				if sync.networkWasAvailable == false, available {
-					sync.scheduleSync()
-				}
+				let reconnect = sync.networkWasAvailable == false && available
 				sync.networkWasAvailable = available
+				sync.schedule.online = available
+				BrowserLog.syncEvent("sync.network.changed", metadata: ["online": String(available), "reconnect": String(reconnect)])
+				if reconnect { sync.schedule.catchUp = true }
+				sync.reschedule(reason: reconnect ? "reconnect" : "network")
 			}
 		}
 		networkMonitor.start(queue: DispatchQueue(label: "astra.sync.network"))
 
+		schedule.lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+		var notifications: [(NotificationCenter, Notification.Name)] = [
+			(NotificationCenter.default, Notification.Name.NSProcessInfoPowerStateDidChange),
+		]
+		#if os(macOS)
+			notifications.append((NotificationCenter.default, NSApplication.didBecomeActiveNotification))
+			notifications.append((NSWorkspace.shared.notificationCenter, NSWorkspace.didWakeNotification))
+		#endif
+		for (center, name) in notifications {
+			lifecycleObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+				Task { @MainActor in
+					guard let self else { return }
+					self.schedule.lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+					if let last = self.lastSync, Date.now.timeIntervalSince(last) >= self.schedule.interval { self.schedule.catchUp = true }
+					self.reschedule(reason: "wake-or-power")
+					BrowserLog.syncEvent("sync.lifecycle.changed", metadata: ["low_power": String(self.schedule.lowPower), "catch_up": String(self.schedule.catchUp)])
+				}
+			})
+		}
+
 		// Keychain can block on crypto/disk; never on the launch path.
+		let loadGeneration = authGeneration
 		Task.detached(priority: .utility) {
 			do {
 				let token = try BrowserSessionStore.load()
 				await MainActor.run { [weak self] in
-					guard let self, sessionToken == nil,
+					guard let self, let token, authGeneration == loadGeneration, sessionToken == nil,
 					      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
 					else { return }
 					sessionToken = token
 					isSignedIn = true
 					if browser != nil {
-						Task { await self.syncNow() }
+						self.reschedule(reason: "startup")
 					}
 				}
 			} catch {
@@ -100,10 +136,9 @@ final class BrowserSync {
 		BrowserLog.info(.sync, "sync.attach", metadata: ["window": BrowserLog.id(browser.windowID), "signed_in": String(isSignedIn)])
 		guard !browser.isPrivate, !browser.isMini else { return }
 		guard self.browser !== browser else { return }
-		let hadBrowser = self.browser != nil
 		self.browser = browser
-		if isSignedIn, !hadBrowser, browser.isReadyForSync {
-			Task { await syncNow() }
+		if isSignedIn, browser.isReadyForSync {
+			reschedule(reason: "startup")
 		}
 	}
 
@@ -128,6 +163,7 @@ final class BrowserSync {
 			}
 			guard current != knownSettings else { return }
 			knownSettings = current
+			settingsRevision &+= 1
 			UserDefaults.standard.set(
 				settingVersions.mapValues(\.timeIntervalSince1970),
 				forKey: "syncSettingVersions"
@@ -147,23 +183,71 @@ final class BrowserSync {
 		guard isSignedIn else { return }
 		sessionToken = nil
 		isSignedIn = false
+		lastSync = nil
 		scheduledSync?.cancel()
+		activeSync?.cancel()
+		schedule.ready = false
+		schedule.lastSuccess = nil
+		schedule.retryAt = nil
+		schedule.failures = 0
+		schedule.catchUp = false
 		errorDescription = "The sync server changed. Sign in again for this server."
 	}
 
+	/// Called by local mutations, never by completion of a persistence write.
 	func scheduleSync() {
-		BrowserLog.debug(.sync, "sync.schedule", metadata: ["signed_in": String(isSignedIn), "busy": String(isSyncing)])
-		guard isSignedIn, browser != nil else { return }
-		guard !isSyncing else {
-			syncRequestedWhileBusy = true
+		guard !applyingRemote else { return }
+		dirtyRevision &+= 1
+		if !hasPendingChanges { hasPendingChanges = true }
+		// Edits do not postpone an existing periodic deadline.
+		if scheduledSync == nil, activeSync == nil { reschedule(reason: "dirty") }
+	}
+
+	private func reschedule(reason: String) {
+		scheduledSync?.cancel()
+		scheduledSync = nil
+		schedule.ready = canSync
+		guard activeSync == nil, let deadline = schedule.deadline(now: ProcessInfo.processInfo.systemUptime) else { return }
+		let delay = max(0, deadline - ProcessInfo.processInfo.systemUptime)
+		let triggerReason = schedule.retryAt == nil ? reason : "retry"
+		BrowserLog.syncEvent("sync.schedule", metadata: ["reason": reason, "delay_seconds": String(Int(delay)), "low_power": String(schedule.lowPower)])
+		scheduledSync = Task(priority: .utility) { @MainActor [weak self] in
+			do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+			guard let self, !Task.isCancelled else { return }
+			self.scheduledSync = nil
+			await self.startSync(reason: triggerReason)
+		}
+	}
+
+	func syncNow() async { await startSync(reason: "manual") }
+	func syncForHandoff() async { await startSync(reason: "handoff") }
+
+	private func startSync(reason: String) async {
+		guard canSync else { BrowserLog.syncEvent("sync.request.skipped", metadata: ["reason": reason, "cause": "unavailable"]); return }
+		BrowserLog.syncEvent("sync.request", metadata: ["reason": reason, "active": String(activeSync != nil)])
+		if let activeSync {
+			BrowserLog.syncEvent("sync.request.coalesced", metadata: ["reason": reason])
+			_ = requestGate.request(manual: reason == "manual" || reason == "handoff")
+			await activeSync.value
 			return
 		}
 		scheduledSync?.cancel()
-		scheduledSync = Task { @MainActor [weak self] in
-			try? await Task.sleep(for: .seconds(2))
-			guard !Task.isCancelled else { return }
-			await self?.syncNow()
+		scheduledSync = nil
+		guard requestGate.request(manual: reason == "manual" || reason == "handoff") else { return }
+		let task = Task(priority: reason == "manual" || reason == "handoff" ? .userInitiated : .utility) { @MainActor [weak self] in
+			guard let self else { return }
+			self.isSyncing = true
+			var nextReason = reason
+			repeat {
+				await self.performSync(reason: nextReason)
+				nextReason = "manual"
+			} while self.requestGate.nextCycle(canContinue: self.canSync && !Task.isCancelled)
+			self.isSyncing = false
+			self.activeSync = nil
+			self.reschedule(reason: "periodic")
 		}
+		activeSync = task
+		await task.value
 	}
 
 	func signIn(result: Result<ASAuthorization, any Error>) async {
@@ -200,7 +284,11 @@ final class BrowserSync {
 			isSignedIn = true
 			errorDescription = nil
 			BrowserLog.duration(.sync, "sync.sign-in.success", since: logStarted, warnAboveMilliseconds: 1000, metadata: ["server": BrowserLog.url(currentServerAddress)])
-			await syncNow()
+			schedule.lastSuccess = nil
+			schedule.retryAt = nil
+			schedule.failures = 0
+			schedule.catchUp = false
+			await startSync(reason: "startup")
 		} catch {
 			BrowserLog.error(.sync, "sync.sign-in.failed", metadata: ["error": BrowserLog.errorDescription(error), "server": BrowserLog.url(currentServerAddress)])
 			errorDescription = error.localizedDescription
@@ -208,132 +296,144 @@ final class BrowserSync {
 	}
 
 	func signOut() {
-		BrowserLog.notice(.sync, "sync.sign-out")
+		BrowserLog.syncEvent("sync.sign-out")
+		// Cancel immediately even if deleting the credential subsequently fails.
+		authGeneration &+= 1
+		sessionToken = nil
+		tokenEndpoint = nil
+		UserDefaults.standard.removeObject(forKey: "syncTokenEndpoint")
+		isSignedIn = false
+		lastSync = nil
+		scheduledSync?.cancel()
+		scheduledSync = nil
+		activeSync?.cancel()
+		schedule.ready = false
+		schedule.lastSuccess = nil
+		schedule.retryAt = nil
+		schedule.failures = 0
+		schedule.catchUp = false
+		snapshotCache.removeAll()
+		errorDescription = nil
 		do {
 			try BrowserSessionStore.delete()
-			authGeneration &+= 1
-			sessionToken = nil
-			tokenEndpoint = nil
-			UserDefaults.standard.removeObject(forKey: "syncTokenEndpoint")
-			isSignedIn = false
-			scheduledSync?.cancel()
-			errorDescription = nil
 		} catch {
 			BrowserLog.error(.sync, "sync.sign-out.failed", metadata: ["error": BrowserLog.errorDescription(error)])
 			errorDescription = error.localizedDescription
 		}
 	}
 
-	func syncNow() async {
-		let logStarted = BrowserLog.clock()
-		BrowserLog.info(.sync, "sync.begin", metadata: ["server": BrowserLog.url(currentServerAddress), "signed_in": String(isSignedIn)])
-		guard let browser, browser.isReadyForSync,
-		      let sessionToken,
-		      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
-		else { return }
-		guard !isSyncing else {
-			syncRequestedWhileBusy = true
-			return
+	private func performSync(reason: String) async {
+		let started = BrowserLog.clock()
+		guard let browser, browser.isReadyForSync, let token = sessionToken,
+		      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
+		let generation = authGeneration
+		func valid() -> Bool {
+			!Task.isCancelled && authGeneration == generation && sessionToken == token
+				&& SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress)
 		}
-		let syncGeneration = authGeneration
-		isSyncing = true
-		defer {
-			isSyncing = false
-			if syncRequestedWhileBusy {
-				syncRequestedWhileBusy = false
-				scheduleSync()
-			}
-		}
-
+		BrowserLog.syncEvent("sync.begin", metadata: ["reason": reason, "low_power": String(schedule.lowPower)])
 		do {
-			let snapshots: [ServerSnapshot] = try await request(
-				path: "v1/sync",
-				method: "GET",
-				body: AuthenticationRequest?.none,
-				bearer: sessionToken
-			)
-			guard self.sessionToken == sessionToken,
-			      authGeneration == syncGeneration,
-			      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
-			// Even a valid JSON response must not smuggle an oversized raw snapshot.
-			guard snapshots.allSatisfy({ $0.payload.count <= BrowserSyncPayloadLimits.maximumOutgoingBytes }) else {
-				throw BrowserSyncError.invalidResponse
-			}
-			let local = browser.syncDocument(settings: settingSnapshot())
-			// Decode + merge off-main; docs are Sendable values.
-			let merged = try await Task.detached(priority: .utility) {
-				let decoder = JSONDecoder()
-				let documents = try snapshots.map { try decoder.decode(BrowserSyncDocument.self, from: $0.payload) }
-				guard documents.allSatisfy(\.hasValidStructure) else {
-					throw BrowserSyncError.invalidResponse
+			guard let endpoint = currentServerAddress else { throw BrowserSyncError.invalidServerURL }
+			let snapshots = try await engine.fetch(url: endpoint, token: token)
+			guard valid() else { throw CancellationError() }
+			let remote = try await engine.decode(snapshots, deviceID: deviceID)
+			guard valid() else { throw CancellationError() }
+			var outgoing: BrowserSyncDocument?
+			var capturedDirty: UInt64 = 0
+			var rebases = 0
+			// Background work may suspend while any window is edited. Rebase until
+			// a stable generation can be applied, without an intervening await.
+			while outgoing == nil {
+				rebases += 1
+				BrowserLog.syncEvent("sync.snapshot.begin", metadata: ["attempt": String(rebases), "dirty_revision": String(dirtyRevision)])
+				guard rebases <= 4 else { throw BrowserSyncError.localChangesInFlight }
+				try Task.checkCancellation()
+				settingsDidChange()
+				let windows = BrowserWindowRegistry.shared.openBrowsers.filter {
+					!$0.isPrivate && !$0.isMini && $0.session === browser.session && $0.isReadyForSync
 				}
-				return documents.reduce(local) { $0.merging($1) }
-			}.value
-			guard self.sessionToken == sessionToken,
-			      authGeneration == syncGeneration,
-			      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
-			settingsDidChange()
-			let currentBrowsers = BrowserWindowRegistry.shared.openBrowsers.filter {
-				!$0.isPrivate && !$0.isMini && $0.session === browser.session
-					&& $0.isReadyForSync
-			}
-			let latest = currentBrowsers.reduce(browser.syncDocument(settings: settingSnapshot())) { partial, peer in
-				partial.merging(peer.syncDocument(settings: settingSnapshot()))
-			}
-			let protectedMerge = merged.merging(latest)
-			if protectedMerge != local {
-				for target in currentBrowsers {
-					target.applySyncDocument(protectedMerge)
+				let targets = windows.contains(where: { $0 === browser }) ? windows : windows + [browser]
+				let revisions = targets.map(\.syncRevision)
+				capturedDirty = dirtyRevision
+				let settings = settingSnapshot()
+				snapshotCache = snapshotCache.filter { entry in targets.contains(where: { $0.windowID == entry.key }) }
+				let snapshotPhase = BrowserLog.beginSyncPhase("sync.snapshot")
+				let raw = targets.map { target -> BrowserSyncDocument in
+					if let cached = snapshotCache[target.windowID], cached.revision == target.syncRevision, cached.settingsRevision == settingsRevision, cached.contentRevision == capturedDirty { return cached.document }
+					let document = target.captureSyncDocument(settings: settings)
+					snapshotCache[target.windowID] = (target.syncRevision, settingsRevision, capturedDirty, document)
+					return document
 				}
-				try applySettings(protectedMerge.settings)
-				for target in currentBrowsers {
-					await target.flushAndWaitForPersistence()
+				BrowserLog.endSyncPhase("sync.snapshot", snapshotPhase)
+				BrowserLog.syncEvent("sync.snapshot.complete", metadata: ["windows": String(raw.count), "settings_revision": String(settingsRevision)])
+				let keys = targets.map { BrowserSyncEngine.SnapshotKey(window: $0.windowID, revision: $0.syncRevision, settingsRevision: settingsRevision, contentRevision: capturedDirty) }
+				let result = try await engine.merge(raw, keys: keys, remote: remote)
+				settingsDidChange()
+				guard valid() else { throw CancellationError() }
+				let currentWindows = BrowserWindowRegistry.shared.openBrowsers.filter {
+					!$0.isPrivate && !$0.isMini && $0.session === browser.session && $0.isReadyForSync
 				}
-				guard self.sessionToken == sessionToken,
-				      authGeneration == syncGeneration,
-				      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
+				guard Set(currentWindows.map(\.windowID)) == Set(windows.map(\.windowID)),
+				      targets.map(\.syncRevision) == revisions, dirtyRevision == capturedDirty else {
+					BrowserLog.syncEvent("sync.merge.rebase", metadata: ["attempt": String(rebases), "captured_revision": String(capturedDirty), "current_revision": String(dirtyRevision)])
+					continue
+				}
+				// No suspension from revision check through all UI mutations.
+				applyingRemote = true
+				defer { applyingRemote = false }
+				if result.changed {
+					BrowserLog.syncEvent("sync.apply.begin", metadata: ["windows": String(targets.count)])
+					if !hasPendingChanges { hasPendingChanges = true }
+					for (target, prepared) in zip(targets, result.prepared) {
+						target.applyPreparedSyncDocument(prepared.document, localPortableTabs: prepared.localPortableTabs,
+							bookmarksChanged: prepared.bookmarksChanged, readingListChanged: prepared.readingListChanged,
+							historyChanged: prepared.historyChanged, workspaceChanged: prepared.workspaceChanged)
+					}
+					try applySettings(result.merged.settings)
+					BrowserLog.syncEvent("sync.apply.complete")
+				}
+				outgoing = result.merged
+				applyingRemote = false
+				if result.changed {
+					for target in targets { await target.flushAndWaitForPersistence() }
+					BrowserLog.syncEvent("sync.persistence.flush.complete", metadata: ["windows": String(targets.count)])
+					guard valid() else { throw CancellationError() }
+				}
 			}
-
-			let outgoing = currentBrowsers.reduce(browser.syncDocument(settings: settingSnapshot())) { partial, peer in
-				partial.merging(peer.syncDocument(settings: settingSnapshot()))
+			guard let outgoing else { return }
+			let body = try await engine.upload(outgoing, own: remote.own, deviceID: deviceID)
+			guard valid() else { throw CancellationError() }
+			if let body {
+				if !hasPendingChanges { hasPendingChanges = true }
+				try await engine.publish(url: endpoint, token: token, body: body)
 			}
-			let deviceID = deviceID
-			let pushBody: Data? = try await Task.detached(priority: .utility) {
-				let decoder = JSONDecoder()
-				let ownDocument = try snapshots
-					.first(where: { $0.deviceID == deviceID })
-					.map { try decoder.decode(BrowserSyncDocument.self, from: $0.payload) }
-				guard ownDocument != outgoing else { return nil }
-				return try BrowserSyncPayloadLimits.makeEncodedUpload(deviceID: deviceID, document: outgoing)
-			}.value
-			guard self.sessionToken == sessionToken,
-			      authGeneration == syncGeneration,
-			      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
-			if let body = pushBody {
-				guard self.sessionToken == sessionToken,
-				      authGeneration == syncGeneration,
-				      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
-				let _: ServerSnapshot = try await request(
-					path: "v1/sync",
-					method: "PUT",
-					body: String?.none,
-					bearer: sessionToken,
-					encodedBody: body
-				)
-				guard self.sessionToken == sessionToken,
-				      authGeneration == syncGeneration,
-				      SyncServerAddress.isBound(tokenEndpoint, to: currentServerAddress) else { return }
-			}
+			guard valid() else { throw CancellationError() }
+			// Changes during encoding/upload remain pending for the next cycle.
+			if dirtyRevision == capturedDirty, hasPendingChanges { hasPendingChanges = false }
 			lastSync = .now
-			errorDescription = nil
-			BrowserLog.duration(.sync, "sync.success", since: logStarted, warnAboveMilliseconds: 1500, metadata: ["server": BrowserLog.url(currentServerAddress)])
+			if errorDescription != nil { errorDescription = nil }
+			schedule.succeeded(now: ProcessInfo.processInfo.systemUptime)
+			BrowserLog.syncEvent("sync.success", metadata: ["reason": reason, "low_power": String(schedule.lowPower), "elapsed_ms": String(Int((BrowserLog.clock() - started) * 1000)), "documents": String(snapshots.count), "upload_bytes": String(body?.count ?? 0), "upload_skipped": String(body == nil)])
 		} catch {
-			guard !Task.isCancelled, !(error is CancellationError), (error as? URLError)?.code != .cancelled else {
-				BrowserLog.debug(.sync, "sync.cancelled")
+			guard valid(), !(error is CancellationError), (error as? URLError)?.code != .cancelled else {
+				BrowserLog.syncEvent("sync.cancelled", metadata: ["reason": reason])
 				return
 			}
-			BrowserLog.error(.sync, "sync.failed", metadata: ["error": BrowserLog.errorDescription(error), "server": BrowserLog.url(currentServerAddress)])
-			errorDescription = error.localizedDescription
+			if case BrowserSyncError.http(401) = error {
+				BrowserLog.syncEvent("sync.failed", metadata: ["reason": reason, "kind": "authentication", "http_status": "401"])
+				signOut()
+				errorDescription = "Your sync session expired. Sign in again."
+				return
+			}
+			if errorDescription != error.localizedDescription { errorDescription = error.localizedDescription }
+			schedule.failed(now: ProcessInfo.processInfo.systemUptime, jitter: Double.random(in: 0...1))
+			BrowserLog.syncEvent("sync.retry", metadata: ["retry_seconds": String(Int((schedule.retryAt ?? 0) - ProcessInfo.processInfo.systemUptime)), "low_power": String(schedule.lowPower)])
+			let failureKind: String
+			if case let BrowserSyncError.http(status) = error { failureKind = "http-\(status)" }
+			else if error is URLError { failureKind = "network" }
+			else if error is BrowserSyncPayloadError { failureKind = "payload-limit" }
+			else { failureKind = "validation-or-local-processing" }
+			BrowserLog.syncEvent("sync.failed", metadata: ["reason": reason, "kind": failureKind, "retry_seconds": String(Int((schedule.retryAt ?? 0) - ProcessInfo.processInfo.systemUptime))])
 		}
 	}
 
@@ -376,6 +476,7 @@ final class BrowserSync {
 			settingVersions[key] = modifiedAt
 		}
 		knownSettings = try Self.readSettings()
+		settingsRevision &+= 1
 		UserDefaults.standard.set(
 			settingVersions.mapValues(\.timeIntervalSince1970),
 			forKey: "syncSettingVersions"
@@ -638,7 +739,7 @@ final class BrowserSync {
 					"server_request_id": response.value(forHTTPHeaderField: "X-Request-ID") ?? "missing",
 					"retry_after": response.value(forHTTPHeaderField: "Retry-After") ?? "missing",
 				])
-				if !(200 ..< 300 ~= response.statusCode) {
+				if isAI, !(200 ..< 300 ~= response.statusCode) {
 					BrowserLog.debug(isAI ? .ai : .sync, "http.error-body.debug", metadata: [
 						"id": BrowserLog.id(diagnosticID), "path": path, "attempt": String(attempt + 1),
 						"body": String(decoding: data.prefix(8192), as: UTF8.self),
@@ -667,7 +768,7 @@ final class BrowserSync {
 				} else {
 					false
 				}
-				guard attempt < 2, transient, ["GET", "PUT"].contains(method) || (isAI && method == "POST") else {
+				guard path != "v1/sync", attempt < 2, transient, ["GET", "PUT"].contains(method) || (isAI && method == "POST") else {
 					BrowserLog.error(isAI ? .ai : .sync, "http.terminal-failure", metadata: [
 						"id": BrowserLog.id(diagnosticID), "path": path,
 						"method": method, "attempt": String(attempt + 1),
@@ -706,7 +807,7 @@ final class BrowserSync {
 
 	func hydrationDidFinish(_ browser: Browser) {
 		guard self.browser === browser, isSignedIn else { return }
-		Task { await syncNow() }
+		reschedule(reason: "startup")
 	}
 }
 
@@ -724,18 +825,15 @@ private struct AuthenticationResponse: Decodable {
 	let token: String
 }
 
-private struct ServerSnapshot: Decodable, Sendable {
-	let deviceID: UUID
-	let payload: Data
-}
-
-private enum BrowserSyncError: LocalizedError, Sendable {
+nonisolated enum BrowserSyncError: LocalizedError, Sendable {
 	case http(Int)
 	case invalidResponse
 	case invalidServerURL
 	case invalidSetting
 	case missingAppleToken
+	case unsupportedVersion
 	case serverChanged
+	case localChangesInFlight
 
 	var errorDescription: String? {
 		switch self {
@@ -751,6 +849,10 @@ private enum BrowserSyncError: LocalizedError, Sendable {
 				"The sync server returned an invalid setting."
 			case .missingAppleToken:
 				"Apple did not return an identity token."
+			case .unsupportedVersion:
+				"The sync server contains data from a newer browser version."
+			case .localChangesInFlight:
+				"Your changes are saved locally. Sync will retry after the current editing activity."
 			case .serverChanged:
 				"The sync server changed during sign-in. Sign in again."
 		}

@@ -163,13 +163,14 @@ nonisolated struct BrowserScrollUpdate: Codable, Sendable {
 }
 
 nonisolated enum BrowserHomepage {
+	private static let disallowedHostScalars = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
 	static func validURL(_ value: String) -> URL? {
 		guard let components = URLComponents(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
 		      let scheme = components.scheme?.lowercased(),
 		      ["http", "https"].contains(scheme),
 		      let host = components.host, !host.isEmpty,
 		      !host.unicodeScalars.contains(where: {
-		      	CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0)
+			disallowedHostScalars.contains($0)
 		      }),
 		      components.user == nil,
 		      components.password == nil,
@@ -207,6 +208,9 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 	private nonisolated static let readingArchiveLock = NSLock()
 	/// Serializes full-state commits and selection checkpoints across all windows.
 	private nonisolated static let selectionJournalLock = NSLock()
+	// Process-local capture sequence; serialized by selectionJournalLock.
+	// Not part of the persisted schema, so installed versions remain compatible.
+	private nonisolated(unsafe) static var committedRevisions: [String: UInt64] = [:]
 
 	/// A volatile, memory-bounded process cache of the last committed primary
 	/// checkpoint. The inode/size/mtime tuple is checked before every reuse:
@@ -789,9 +793,14 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		)
 	}
 
-	nonisolated func savePersistedState(_ state: BrowserPersistedState) throws {
+	nonisolated func savePersistedState(_ state: BrowserPersistedState, revision: UInt64? = nil) throws {
 		Self.selectionJournalLock.lock()
 		defer { Self.selectionJournalLock.unlock() }
+		let revisionKey = directory.standardizedFileURL.path
+		if let revision, let committed = unsafe Self.committedRevisions[revisionKey], revision <= committed {
+			BrowserLog.debug(.persistence, "state.save.stale", metadata: ["revision": String(revision), "committed_revision": String(committed)])
+			return
+		}
 		// Never silently overwrite a checkpoint written by a newer release.
 		// A corrupt checkpoint can be ignored: the full snapshot is authoritative.
 		let selectionJournal: SelectionJournal?
@@ -907,6 +916,7 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		}
 		let commitStarted = BrowserLog.clock()
 		try data.write(to: currentURL, options: .atomic)
+		if let revision { unsafe Self.committedRevisions[revisionKey] = revision }
 		// The full snapshot includes all window selections captured at commit time.
 		// A crash before this cleanup is safe: loader ignores older journals.
 		try? FileManager.default.removeItem(at: directory.appendingPathComponent("browser-selection.json"))

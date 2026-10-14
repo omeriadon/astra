@@ -1,6 +1,6 @@
 import Foundation
 
-struct BrowserSyncDocument: Codable, Equatable, Sendable {
+nonisolated struct BrowserSyncDocument: Codable, Equatable, Sendable {
 	var version: Int = 4
 	var tabs: [OpenTab]
 	var workspace: BrowserWorkspace?
@@ -68,9 +68,14 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 
 	nonisolated func portableProjection() -> Self {
 		var projected = self
-		let localOnlyTabIDs = Set(tabs.filter { !isPortableSyncTab($0) }.map(\.id))
-		let localOnlyBookmarkIDs = Set(bookmarks.filter { !isPortableSyncURL($0.url) }.map(\.id))
-		let portableTabs = tabs.filter { isPortableSyncTab($0) }
+		var localOnlyTabIDs = Set<UUID>()
+		var portableTabs: [OpenTab] = []
+		portableTabs.reserveCapacity(tabs.count)
+		for tab in tabs {
+			if isPortableSyncTab(tab) { portableTabs.append(tab) }
+			else { localOnlyTabIDs.insert(tab.id) }
+		}
+		var localOnlyBookmarkIDs = Set<UUID>()
 		let portableTabIDs = Set(portableTabs.map(\.id))
 		projected.tabs = portableTabs.map { tab in
 			var tab = tab
@@ -82,7 +87,11 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 			tab.peeks = []
 			return tab
 		}
-		projected.bookmarks = bookmarks.filter { isPortableSyncURL($0.url) }.map { bookmark in
+		projected.bookmarks = bookmarks.compactMap { bookmark in
+			guard isPortableSyncURL(bookmark.url) else {
+				localOnlyBookmarkIDs.insert(bookmark.id)
+				return nil
+			}
 			var bookmark = bookmark
 			bookmark.url = credentialFreeSyncURL(bookmark.url)
 			return bookmark
@@ -230,6 +239,10 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		return projected
 	}
 
+	nonisolated var hasSupportedVersion: Bool {
+		(1 ... 4).contains(version)
+	}
+
 	nonisolated var hasValidStructure: Bool {
 		Set(tabs.map(\.id)).count == tabs.count
 			&& Set(bookmarks.map(\.id)).count == bookmarks.count
@@ -240,11 +253,13 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 			&& boosts.reduce(0) { $0 + $1.codeByteCount } <= BrowserBoost.maximumCollectionCodeBytes
 			&& deletedBoostsAt.values.allSatisfy { $0.timeIntervalSince1970.isFinite && $0.timeIntervalSince1970 >= 0 && $0.timeIntervalSince1970 < 4_102_444_800 }
 			&& tabs.allSatisfy { tab in
-				isPortableSyncTab(tab)
+				(tab.internalPage == nil || tab.internalPage == "easel")
+					&& (tab.url.map(isSafeSyncURL) ?? true)
 					&& tab.pageZoom.isFinite && (0.25 ... 5).contains(tab.pageZoom)
 					&& tab.restorationState == nil && tab.fileAccessBookmark == nil
 					&& (tab.easel.map(isValidSyncEasel) ?? true)
-					&& (tab.history + [tab.url].compactMap(\.self) + tab.peeks.compactMap(\.url)).allSatisfy(isSafeSyncURL)
+					&& tab.history.allSatisfy(isSafeSyncURL)
+					&& tab.peeks.allSatisfy { $0.url.map(isSafeSyncURL) ?? true }
 					&& tab.modifiedAt.isSaneSyncTimestamp
 			}
 			&& bookmarks.allSatisfy { bookmark in
@@ -444,14 +459,24 @@ private nonisolated func isValidSyncEasel(_ easel: BrowserEaselDocument) -> Bool
 	easel.isValid
 }
 
+private enum SyncURLValidation {
+	// Initialized once; immutable across validation calls and concurrency domains.
+	nonisolated static let disallowedHostScalars = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
+}
+
 private nonisolated func isPortableSyncURL(_ url: URL) -> Bool {
 	guard url.absoluteString.utf8.count <= 16384,
 	      let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-	      ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+	      isSyncScheme(components.scheme),
 	      let host = components.host, !host.isEmpty,
 	      components.port.map({ (1 ... 65535).contains($0) }) ?? true,
-	      !host.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) }) else { return false }
+	      !host.unicodeScalars.contains(where: { SyncURLValidation.disallowedHostScalars.contains($0) }) else { return false }
 	return true
+}
+
+private nonisolated func isSyncScheme(_ scheme: String?) -> Bool {
+	guard let scheme else { return false }
+	return scheme.caseInsensitiveCompare("https") == .orderedSame || scheme.caseInsensitiveCompare("http") == .orderedSame
 }
 
 private nonisolated func credentialFreeSyncURL(_ url: URL) -> URL {
@@ -473,11 +498,11 @@ private extension Date {
 private nonisolated func isSafeSyncURL(_ url: URL) -> Bool {
 	guard url.absoluteString.utf8.count <= 16384,
 	      let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-	      ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+	      isSyncScheme(components.scheme),
 	      let host = components.host, !host.isEmpty,
 	      components.user == nil, components.password == nil,
 	      components.port.map({ (1 ... 65535).contains($0) }) ?? true,
-	      !host.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) })
+	      !host.unicodeScalars.contains(where: { SyncURLValidation.disallowedHostScalars.contains($0) })
 	else { return false }
 	return true
 }

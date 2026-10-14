@@ -178,6 +178,9 @@ final class Browser {
 		}
 	}
 
+	@ObservationIgnored private(set) var syncRevision: UInt64 = 0
+	private static var persistenceRevision: UInt64 = 0
+
 	@ObservationIgnored
 	private let persistence: BrowserPersistence?
 
@@ -2345,6 +2348,7 @@ final class Browser {
 	func flushAndWaitForPersistence() async {
 		flushPersistence()
 		await session.persistenceWriteTask?.value
+		if !isPrivate && !isMini { await BrowserBoostStore.shared.flushPersistence() }
 	}
 
 	func markCleanShutdown() async {
@@ -3082,6 +3086,12 @@ final class Browser {
 		return completeLocalSyncDocument(settings: settings).portableProjection()
 	}
 
+	/// Captures only immutable values; projection, validation and encoding run off-main.
+	func captureSyncDocument(settings: [String: SyncedSetting]) -> BrowserSyncDocument {
+		reconcileWorkspace()
+		return completeLocalSyncDocument(settings: settings)
+	}
+
 	private func completeLocalSyncDocument(settings: [String: SyncedSetting]) -> BrowserSyncDocument {
 		BrowserSyncDocument(
 			tabs: tabs.map(\.openTab).filter { !$0.isDiscardableNewTab },
@@ -3108,7 +3118,6 @@ final class Browser {
 	}
 
 	func applySyncDocument(_ incoming: BrowserSyncDocument) {
-		BrowserLog.info(.sync, "browser.sync.apply-document", metadata: ["window": BrowserLog.id(windowID)])
 		guard !isPrivate else { return }
 		let localState = completeLocalSyncDocument(settings: [:])
 		let localPortableTabs = Dictionary(
@@ -3116,6 +3125,14 @@ final class Browser {
 			uniquingKeysWith: { _, latest in latest }
 		)
 		let document = incoming.preservingLocalOnlyData(from: localState)
+		applyPreparedSyncDocument(document, localPortableTabs: localPortableTabs)
+	}
+
+	/// The sync engine prepares local-only preservation and portable comparisons
+	/// off-main, then verifies the captured revision before calling this method.
+	func applyPreparedSyncDocument(_ document: BrowserSyncDocument, localPortableTabs: [UUID: OpenTab], bookmarksChanged: Bool = true, readingListChanged: Bool = true, historyChanged: Bool = true, workspaceChanged: Bool = true) {
+		BrowserLog.syncEvent("browser.sync.apply-document", metadata: ["window": BrowserLog.id(windowID)])
+		guard !isPrivate else { return }
 		BrowserBoostStore.shared.merge(remote: document.boosts, deleted: document.deletedBoostsAt)
 		let incomingReadingItems = Dictionary(document.readingList.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
 		let removedReadingIDs = Set(readingList.filter { incomingReadingItems[$0.id]?.url != $0.url }.map(\.id))
@@ -3170,7 +3187,10 @@ final class Browser {
 			configure(tab)
 			tabs = [tab]
 		} else {
-			tabs = changedTabs + retainedInternalTabs
+			let nextTabs = changedTabs + retainedInternalTabs
+			if tabs.count != nextTabs.count || zip(tabs, nextTabs).contains(where: { $0 !== $1 }) {
+				tabs = nextTabs
+			}
 		}
 		assert(Set(tabs.map(\.id)).count == tabs.count)
 		closedTabIDs = document.browser.closedTabIDs
@@ -3182,7 +3202,7 @@ final class Browser {
 		closedTabsAt = document.browser.closedTabsAt
 		deletedBookmarksAt = document.browser.deletedBookmarksAt
 		deletedReadingListAt = document.browser.deletedReadingListAt
-		readingList = document.readingList
+		if readingListChanged && readingList != document.readingList { readingList = document.readingList }
 		if let persistence, !removedReadingIDs.isEmpty {
 			let previousWrite = session.persistenceWriteTask
 			session.persistenceWriteTask = Task.detached(priority: .utility) {
@@ -3195,16 +3215,24 @@ final class Browser {
 		deletedSpacesAt = document.browser.deletedSpacesAt
 		deletedVisitsAt = document.browser.deletedVisitsAt
 		historyClearedAt = document.browser.historyClearedAt
-		bookmarks = document.bookmarks
-		historyVisits = visibleHistoryVisits(document.history)
-		latestHistoryMutationDate = nil
-		workspace = document.workspace ?? BrowserWorkspace.migrated(
-			tabs: document.tabs,
-			selectedTabID: document.browser.selectedTabID,
-			theme: Defaults[.browserTheme]
-		)
-		workspace.deletedSpaceIDs.formUnion(document.browser.deletedSpacesAt.keys)
-		workspace.deletedSpacesAt.merge(document.browser.deletedSpacesAt) { max($0, $1) }
+		if bookmarksChanged { bookmarks = document.bookmarks }
+		if historyChanged {
+			let nextHistory = visibleHistoryVisits(document.history)
+			if historyVisits != nextHistory { historyVisits = nextHistory }
+			latestHistoryMutationDate = nil
+		}
+		if workspaceChanged {
+			workspace = document.workspace ?? BrowserWorkspace.migrated(
+				tabs: document.tabs,
+				selectedTabID: document.browser.selectedTabID,
+				theme: Defaults[.browserTheme]
+			)
+		}
+		let missingDeletedSpaces = Set(document.browser.deletedSpacesAt.keys).subtracting(workspace.deletedSpaceIDs)
+		if !missingDeletedSpaces.isEmpty { workspace.deletedSpaceIDs.formUnion(missingDeletedSpaces) }
+		for (id, date) in document.browser.deletedSpacesAt where date > (workspace.deletedSpacesAt[id] ?? .distantPast) {
+			workspace.deletedSpacesAt[id] = date
+		}
 		if !tabs.contains(where: { $0.id == selectedTabID }) {
 			selectedTabID = tabs[0].id
 		}
@@ -3393,39 +3421,44 @@ final class Browser {
 	}
 
 	private func reconcileWorkspace() {
-		if workspace.spaces.isEmpty {
-			workspace = BrowserWorkspace.migrated(
+		var reconciled = workspace
+		if reconciled.spaces.isEmpty {
+			reconciled = BrowserWorkspace.migrated(
 				tabs: tabs.map(\.openTab),
 				selectedTabID: selectedTabID,
 				theme: Defaults[.browserTheme]
 			)
 		}
-		if !workspace.spaces.contains(where: { $0.id == workspace.selectedSpaceID }) {
-			workspace.selectedSpaceID = workspace.spaces[0].id
+		if !reconciled.spaces.contains(where: { $0.id == reconciled.selectedSpaceID }) {
+			reconciled.selectedSpaceID = reconciled.spaces[0].id
 		}
 		let existingIDs = Set(tabs.map(\.id))
-		let assignedIDs = Set(workspace.favouriteTabIDs + workspace.spaces.flatMap(\.tabIDs))
+		let assignedIDs = Set(reconciled.favouriteTabIDs + reconciled.spaces.flatMap(\.tabIDs))
 		let unassignedIDs = tabs.map(\.id).filter { !assignedIDs.contains($0) }
-		workspace.reconcileMembership(existingTabIDs: existingIDs, unassignedTabIDs: unassignedIDs)
+		reconciled.reconcileMembership(existingTabIDs: existingIDs, unassignedTabIDs: unassignedIDs)
 		let easelIDs = Set(tabs.filter { $0.internalPage == .easel }.map(\.id))
 		if !easelIDs.isEmpty {
-			for index in workspace.spaces.indices {
-				for id in workspace.spaces[index].tabIDs where easelIDs.contains(id) && !workspace.spaces[index].pinnedTabIDs.contains(id) {
-					workspace.spaces[index].pinnedTabIDs.append(id)
+			for index in reconciled.spaces.indices {
+				for id in reconciled.spaces[index].tabIDs where easelIDs.contains(id) && !reconciled.spaces[index].pinnedTabIDs.contains(id) {
+					reconciled.spaces[index].pinnedTabIDs.append(id)
 				}
 			}
 		}
-		if let index = workspace.spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }),
-		   workspace.spaces[index].tabIDs.contains(selectedTabID)
-		   || workspace.favouriteTabIDs.contains(selectedTabID)
+		if let index = reconciled.spaces.firstIndex(where: { $0.id == reconciled.selectedSpaceID }),
+		   reconciled.spaces[index].tabIDs.contains(selectedTabID)
+		   || reconciled.favouriteTabIDs.contains(selectedTabID)
 		{
-			workspace.spaces[index].selectedTabID = selectedTabID
+			reconciled.spaces[index].selectedTabID = selectedTabID
 		}
+		if workspace != reconciled { workspace = reconciled }
 	}
 
 	private func schedulePersistence(fullState: Bool = true, syncExtensions: Bool = true) {
 		BrowserLog.trace(.persistence, "browser.persistence.schedule", metadata: ["window": BrowserLog.id(windowID), "full": String(fullState), "hydrated": String(didFinishHydration)])
 		guard !isPrivate else { return }
+		// Invalidate before any suspension: a sync merge must detect concurrent edits.
+		syncRevision &+= 1
+		BrowserSync.shared.scheduleSync()
 		if launchCacheSeeded, !didFinishHydration {
 			launchCacheWasModified = true
 		}
@@ -3475,6 +3508,8 @@ final class Browser {
 
 	private func scheduleScrollPersistence(for tabID: UUID) {
 		guard !isPrivate, persistence != nil else { return }
+		syncRevision &+= 1
+		BrowserSync.shared.scheduleSync()
 		pendingScrollTabIDs.insert(tabID)
 		pendingScrollPersistence = true
 		guard didFinishHydration else { return }
@@ -3614,19 +3649,20 @@ final class Browser {
 		                    	"history_entries": String(historyVisits.count),
 		                    	"windows": String(state.windowRecords?.count ?? 0),
 		                    ])
+		Self.persistenceRevision &+= 1
+		let revision = Self.persistenceRevision
 		// Encode + file IO off-main so Cmd+T / history-open stay instant.
 		// Scroll-only saves skip cross-window fan-out and sync: no structural change.
 		let previousWrite = session.persistenceWriteTask
 		session.persistenceWriteTask = Task.detached(priority: .utility) { [persistence, state, windowID] in
 			await previousWrite?.value
 			do {
-				try persistence.savePersistedState(state)
+				try persistence.savePersistedState(state, revision: revision)
 				await MainActor.run { [weak self] in
 					guard let self else { return }
 					persistenceErrorDescription = nil
 					guard isStructural else { return }
 					BrowserWindowRegistry.shared.publishSoon(from: self)
-					BrowserSync.shared.scheduleSync()
 				}
 			} catch {
 				let message = error.localizedDescription

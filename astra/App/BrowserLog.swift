@@ -194,6 +194,24 @@ enum BrowserLog {
 		emit(.fault, category, event, message(), metadata: metadata(), file: file, function: function, line: line)
 	}
 
+	/// Essential sync diagnostics bypass verbose gating. Callers supply only counts,
+	/// durations, booleans and fixed scheduler/error reasons, never user content.
+	nonisolated static func syncEvent(_ event: String, metadata: [String: String] = [:]) {
+		emit(.notice, .sync, event, "", metadata: metadata, file: #fileID, function: #function, line: #line)
+	}
+
+	private nonisolated static let syncSignpostLog = OSLog(subsystem: subsystem, category: "sync-phases")
+
+	nonisolated static func beginSyncPhase(_ name: StaticString) -> OSSignpostID {
+		let id = OSSignpostID(log: syncSignpostLog)
+		os_signpost(.begin, log: syncSignpostLog, name: name, signpostID: id)
+		return id
+	}
+
+	nonisolated static func endSyncPhase(_ name: StaticString, _ id: OSSignpostID) {
+		os_signpost(.end, log: syncSignpostLog, name: name, signpostID: id)
+	}
+
 	nonisolated static func isEnabled(_ level: Level) -> Bool {
 		switch level {
 			case .warning, .error, .fault: true

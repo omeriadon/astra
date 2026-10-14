@@ -24,6 +24,10 @@ struct BrowserLogCheck {
 		}()))
 		precondition(evaluations == (BrowserLog.verboseEnabled ? 3 : 1))
 
+		BrowserLog.syncEvent("sync.check", metadata: ["documents": "0", "low_power": "false"])
+		let phase = BrowserLog.beginSyncPhase("validation")
+		BrowserLog.endSyncPhase("validation", phase)
+
 		let timingEvaluations = evaluations
 		BrowserLog.duration(.performance, "test.timing", since: 0, metadata: ({
 			evaluations += 1
