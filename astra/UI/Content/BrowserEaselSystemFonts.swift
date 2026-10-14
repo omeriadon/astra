@@ -19,7 +19,7 @@ enum BrowserEaselSystemFonts {
 		static func appKitFont(for font: BrowserEaselDocument.Item.Font, size: CGFloat) -> NSFont {
 			switch font {
 				case .sfMono:
-					.monospacedSystemFont(ofSize: size, weight: .regular)
+					return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
 				case .newYork:
 					let system = NSFont.systemFont(ofSize: size)
 					guard let descriptor = system.fontDescriptor.withDesign(.serif) else { return system }
