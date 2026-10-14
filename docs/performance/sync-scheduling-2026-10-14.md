@@ -64,7 +64,8 @@ log stream --style compact --level info \
 
 Subsystem/category and emission are checked against source and the logging test.
 Actual Terminal output must be verified on macOS; this Linux workspace cannot run
-Apple unified logging.
+Apple unified logging. CI now also runs this exact predicate around the logging
+fixture and requires its essential `sync.check` event to appear.
 
 ## Reproducible validation and measurements
 
@@ -90,6 +91,26 @@ version with the previous per-scalar union, in both Debug and Release. The model
 benchmark uses 400 tabs, 1800 bookmarks and 15000 history visits and prints phase
 timings. Keep CI stdout as the measurement record; hardware and compiler matter.
 
+Observed on the macOS ARM64 Xcode 27.2 / Swift 6.4 runner in
+[run 38500954252](https://github.com/omeriadon/astra/actions/runs/38500954252):
+
+| 100,000 URL validations | Previous union expression | Cached set |
+| --- | ---: | ---: |
+| Release | 12,145.03 ms | 155.43 ms |
+| Debug | 11,476.28 ms | 289.50 ms |
+
+These are single matched microbenchmark runs, with otherwise identical validators,
+and do not establish whole-app CPU or energy changes. That run was superseded by
+a later commit after all scheduler/coordinator/model/persistence/engine fixtures
+passed; its final logging-test compilation exposed a missing Keychain error-model
+dependency, which was then added.
+
+The same runner's large-account Release benchmark measured projection 73.66 ms,
+validation 26.81 ms, encoding 73.22 ms and decoding 124.39 ms, with a 3,226,468-byte
+document. These are post-change-only measurements, without a matched full-document
+baseline. Explicitly calling projection again took 57.24 ms; scheduled engine
+cache reuse avoids that call when its source generations are unchanged.
+
 For matched native app profiling, build this branch and the base with the same
 configuration, account fixture and server. Use a separate fresh output directory
 for each run:
@@ -110,7 +131,7 @@ frequency. Do not infer idle CPU from the synthetic validator benchmark.
 
 ## Remaining measurement limits
 
-This workspace has no Swift compiler, macOS, Instruments or running Astra account.
+This local workspace has no Swift compiler, macOS, Instruments or running Astra account.
 No foreground/background CPU, energy, peak-memory or cross-device runtime speedup
 is claimed here. CI execution and native profiling are separate evidence.
 Capturing live browser values and applying UI changes necessarily remain on main;
