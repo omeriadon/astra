@@ -1,0 +1,175 @@
+# MarkdownView
+
+A pure UIKit/AppKit framework for rendering Markdown with real-time parsing and rendering. Battle tested in [FlowDown](https://github.com/Lakr233/FlowDown).
+
+> [!IMPORTANT]
+> MarkdownView is **not a full-spec CommonMark renderer**. It deliberately trades spec completeness for the best possible typography and layout on phone-sized screens: complex elements (tables, code blocks) are lifted out of lists and rendered as first-class blocks, line spacing and fonts follow platform text styles, and rendering stays smooth while streaming tokens from an LLM. If you need byte-exact CommonMark output, use a spec-focused renderer instead.
+
+## Preview
+
+![Preview](./Resources/Simulator%20Screenshot%20-%20iPad%20mini%20(A17%20Pro)%20-%202025-05-27%20at%2003.03.27.png)
+
+## Features
+
+- 🚀 **Real-time Rendering**: designed for streaming — updates are throttled and views are reused, so calling it on every token is fine
+- 📱 **Mobile-first Layout**: complex elements are extracted from lists and laid out for readability on small screens
+- 🎨 **Syntax Highlighting**: code blocks coloured in Xcode's palette by a built-in, dependency-free lexer covering about 25 language families. It is approximate by design — keywords, strings, comments, numbers and types, not a parser — chosen to read well and stay fast (tens of microseconds for a typical block)
+- 📊 **Math Rendering**: LaTeX formulas rendered with SwiftMath, with tap-to-preview
+- 🖥️ **Cross-Platform**: native iOS, macOS, Mac Catalyst, visionOS, and watchOS (via `WatchMarkdownView`)
+
+## Supported Markdown
+
+GitHub-flavored basics: headings, paragraphs, emphasis, lists (ordered/unordered/task), blockquotes, fenced code blocks, tables, links, images-as-links, inline and block math (`$...$`, `$$...$$`). HTML blocks and other long-tail CommonMark constructs are rendered as plain text or simplified — by design.
+
+## Installation
+
+Add the following to your `Package.swift` file:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/Lakr233/MarkdownView", from: "4.1.0"),
+]
+```
+
+Platform compatibility:
+- iOS 16.0+
+- macOS 13.0+
+- Mac Catalyst 16.0+
+- visionOS 1.0+
+- watchOS 8.0+ (`WatchMarkdownView` product)
+
+## Usage
+
+### SwiftUI
+
+```swift
+import MarkdownView
+
+struct ContentView: View {
+    var body: some View {
+        MarkdownView("# Hello World")
+    }
+}
+```
+
+With custom theme:
+
+```swift
+MarkdownView("# Hello World", theme: .default)
+```
+
+### UIKit / AppKit
+
+One-shot rendering:
+
+```swift
+import MarkdownView
+
+let markdownTextView = MarkdownTextView()
+markdownTextView.setMarkdown("# Hello World")
+```
+
+Streaming (parse off the main path you control, display throttled):
+
+```swift
+import MarkdownView
+import MarkdownParser
+
+let markdownTextView = MarkdownTextView()
+
+// on every incoming chunk:
+let result = MarkdownParser().parse(accumulatedText)
+let content = MarkdownContent(parserResult: result, theme: .default)
+markdownTextView.setContent(content) // coalesced by throttleInterval (default 20 fps)
+```
+
+Immediate, unthrottled replacement:
+
+```swift
+markdownTextView.setContentImmediately(content)
+```
+
+### Streaming with animation
+
+`MarkdownStreamView` is a `MarkdownTextView` for an answer that is still being written. While `isStreaming` is on, `setContent(_:)` rebuilds at a pace set by what a rebuild costs, the new text fades in (inside code blocks too), and new code blocks and tables fade in whole. Everything else appears at once, and with `isStreaming` off the view behaves exactly like `MarkdownTextView`.
+
+```swift
+let view = MarkdownStreamView()
+view.streamIdentity = message.id      // a reused row never replays another item's text
+view.isStreaming = message.isGenerating
+view.setContentImmediately(content)   // the first fill appears at once
+view.setContent(nextContent)          // more of the stream fades in
+```
+
+In a list, turn streaming on only for the row that is being written. A view that is not in a window, such as one measuring a row's height, never animates. In SwiftUI, use `MarkdownView(text).streaming(isGenerating)`.
+
+### The unfinished end of a stream
+
+Parsed as it arrives, a half-written answer flickers: `**bo` shows its asterisks until they close, a lone `-` flashes as an empty list item, and ```` ```sw ```` names a language from half its name. Parse with `isStreaming` and the end is closed the way it is heading instead, so `**bo` already shows as bold `bo` and grows into `bold`:
+
+```swift
+let result = MarkdownParser().parse(accumulatedText, isStreaming: true)
+// or
+let content = MarkdownContent(markdown: accumulatedText, isStreaming: true)
+```
+
+It holds back a last line of bare markers and a partial fence line, closes emphasis, strikethrough and code spans opened on the last line, closes an unfinished link destination, drops an unfinished image, and gives a table header its delimiter row early. It only cuts and appends at the very end, so every earlier block parses to the same bytes and is reused by the next rebuild. It leaves fenced code and unclosed `$$` math alone. `MarkdownView(text).streaming(true)` does this for you, and parses the text again without it when the stream ends. Build the final update of a stream without it, so the document lands on exactly what the text says.
+
+### Subclassing
+
+`MarkdownTextView` is open the way Litext's `TextLabelView` is: its handlers, `theme`, `throttleInterval`, the content setters and its `TextLabelViewDelegate` methods can be overridden (call `super`). To change how the body is drawn, pass your own label:
+
+```swift
+let view = MarkdownTextView(textLabelView: MyLabel()) // any TextLabelView subclass, LTXAnimatableLabel included
+```
+
+Inline code is drawn on its pill by an `InlineCodeLineRenderer`, a Litext line renderer. A label that arrives without a `lineRenderer` is given one, so the pill survives a label that returns a layout of its own; subclass `InlineCodeLineRenderer` to draw more behind the lines.
+
+### watchOS
+
+```swift
+import WatchMarkdownView
+
+WatchMarkdownView(markdown: "# Hello World")
+```
+
+## Migrating to 4.0
+
+MarkdownView 4.0 adopts Litext 2.0 and renames the core API. Deprecated shims are provided for one release:
+
+| 3.x | 4.0 |
+| --- | --- |
+| `MarkdownTextView.PreprocessedContent` | `MarkdownContent` |
+| `setMarkdown(_: PreprocessedContent)` | `setContent(_:)` |
+| `setMarkdownManually(_:)` | `setContentImmediately(_:)` |
+| `bindContentOffset(from:)` | `trackedScrollView = ...` |
+| `markdownTextView.textView` | `markdownTextView.textLabelView` |
+| `ParseResult.render(theme:)` (two overloads) | `renderedContent(theme:)` / `highlightMaps(theme:)` |
+
+New: `setMarkdown(_ text: String)` parses and displays a markdown string in one call; `MarkdownContent(markdown:theme:locale:)` does the same for content objects.
+
+## Example
+
+Check out the included example project to see MarkdownView in action:
+
+```bash
+open Example.xcworkspace
+```
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+### Acknowledgments
+
+This project includes code adapted from [swift-markdown-ui](https://github.com/gonzalezreal/swift-markdown-ui) by Guillermo Gonzalez, used under the MIT License.
+
+## Sponsor
+
+[LookInside](https://lookinside-app.com/) helps you inspect a running iOS or macOS app UI from your Mac.
+
+---
+
+Copyright 2025 © Lakr Aream. All rights reserved.
+
+<img src="./Artworks/fable5.jpg" alt="Fable 5 Verified" width="240">
