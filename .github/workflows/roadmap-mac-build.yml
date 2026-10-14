@@ -41,6 +41,9 @@ jobs:
           python3 checks/swiftui-observation-performance-check.py
           python3 checks/control-tab-observation-check.py
 
+      - name: Verify no bundled extensions or restricted system fonts
+        run: python3 checks/optional-assets-check.py --self-test
+
       - name: Verify AI browser tool action safety
         run: python3 checks/ai-browser-tools-check.py
 
