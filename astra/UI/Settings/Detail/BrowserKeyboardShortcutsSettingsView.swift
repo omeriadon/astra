@@ -9,14 +9,14 @@
 
 		private var sections: [String] {
 			var seen = Set<String>()
-			return registry.definitions.map(\.section).filter { seen.insert($0).inserted }
+			return registry.definitions.filter(\.isCustomizable).map(\.section).filter { seen.insert($0).inserted }
 		}
 
 		var body: some View {
 			let _ = revision
 			List {
 				Section {
-					Text("Record a shortcut to replace its default. Clear removes a binding; Reset restores the original. Changes take effect immediately.")
+					Text("Record a shortcut to replace its default. Reset restores the original. Changes take effect immediately.")
 						.foregroundStyle(.secondary)
 						.font(.caption)
 					Text("Control–Option combinations overlap with macOS VoiceOver commands. VoiceOver users should assign different keys.")
@@ -26,7 +26,7 @@
 
 				ForEach(sections, id: \.self) { section in
 					Section(section) {
-						ForEach(registry.definitions.filter { $0.section == section }) { definition in
+						ForEach(registry.definitions.filter { $0.isCustomizable && $0.section == section }) { definition in
 							HStack(spacing: 12) {
 								KeyboardShortcuts.Recorder(definition.title, name: definition.name) { _ in
 									MainActor.assumeIsolated { changed() }
@@ -43,15 +43,6 @@
 									}
 								}
 								Spacer(minLength: 8)
-								Button {
-									KeyboardShortcuts.setShortcut(nil, for: definition.name)
-									changed()
-								} label: {
-									Image(systemName: "xmark.circle")
-								}
-								.help("Remove shortcut")
-								.disabled(KeyboardShortcuts.getShortcut(for: definition.name) == nil)
-								.accessibilityLabel("Remove \(definition.title) shortcut")
 								Button {
 									KeyboardShortcuts.reset(definition.name)
 									changed()

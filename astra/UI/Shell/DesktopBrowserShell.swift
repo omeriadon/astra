@@ -46,7 +46,7 @@ struct DesktopBrowserShell: View {
 	@State private var paneTransitionGeneration = 0
 	#if os(macOS)
 		@State private var hostWindow: NSWindow?
-		@State private var windowButtonAnimationGeneration = 0
+		@State private var trafficLightAnimator = BrowserWindowTrafficLightAnimator()
 	#endif
 
 	init(browser: Browser) {
@@ -129,40 +129,10 @@ struct DesktopBrowserShell: View {
 		}
 
 		private func updateWindowButtons(in window: NSWindow?, animated: Bool = true) {
-			guard let window else { return }
 			let hidden = !isSidebarVisible && !(showsTopBarOnPage && (showsTopBar || isTopBarRevealed))
-			let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
-				.compactMap { window.standardWindowButton($0) }
-			windowButtonAnimationGeneration += 1
-			let generation = windowButtonAnimationGeneration
-
-			guard animated, !reduceMotion else {
-				for button in buttons {
-					button.alphaValue = hidden ? 0 : 1
-					button.isHidden = hidden
-					button.isEnabled = !hidden
-				}
-				return
-			}
-
-			for button in buttons {
-				button.isHidden = false
-				button.isEnabled = !hidden
-			}
-			NSAnimationContext.runAnimationGroup { context in
-				context.duration = 0.2
-				for button in buttons {
-					button.animator().alphaValue = hidden ? 0 : 1
-				}
-			} completionHandler: {
-				Task { @MainActor in
-					guard generation == windowButtonAnimationGeneration, hidden else { return }
-					for button in buttons {
-						button.isHidden = true
-					}
-				}
-			}
+			trafficLightAnimator.setHidden(hidden, in: window, animated: animated, reduceMotion: reduceMotion)
 		}
+
 	#endif
 
 	private func requestSpaceDeletion(_ space: BrowserSpace) {
@@ -321,6 +291,9 @@ struct DesktopBrowserShell: View {
 		}
 		.onChange(of: showsTopBarOnPage) { _, _ in
 			isTopBarRevealed = false
+			updateWindowButtons(in: hostWindow)
+		}
+		.onChange(of: reduceMotion) { _, _ in
 			updateWindowButtons(in: hostWindow)
 		}
 		#endif
@@ -773,7 +746,7 @@ private struct ShellContentColumn: View {
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
 				#if os(macOS)
 					.onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tabSplitDropWidth = $0 }
-					.onDrop(of: [UTType.data],
+					.onDrop(of: [UTType(exportedAs: "com.omeriadon.astra.tab", conformingTo: .data)],
 					        delegate: TabSplitDropDelegate(browser: browser, width: tabSplitDropWidth, side: $tabSplitDropSide))
 					.overlay {
 						if let side = tabSplitDropSide {

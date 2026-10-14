@@ -940,6 +940,43 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		resumeWebView = nil
 	}
 
+	#if os(macOS)
+	/// Completed files move to the Bin; errors preserve their history entry.
+	func moveToTrash(_ itemID: UUID) {
+		guard let item = items.first(where: { $0.id == itemID }) else { return }
+		guard item.status == .completed else {
+			delete(itemID)
+			return
+		}
+		guard deletingItems.insert(itemID).inserted else { return }
+		let renameTasks = [aiRenameTasks.removeValue(forKey: itemID),
+		                   revertRenameTasks.removeValue(forKey: itemID)].compactMap(\.self)
+		for task in renameTasks { task.cancel() }
+		Task { @MainActor [weak self] in
+			for task in renameTasks { await task.value }
+			guard let self, let current = self.items.first(where: { $0.id == itemID && $0.status == .completed }) else {
+				self?.deletingItems.remove(itemID)
+				return
+			}
+			do {
+				try await BrowserDownloadFileWorker.shared.moveCompletedFileToTrash(
+					at: current.fileURL,
+					bookmark: current.fileAccessBookmark ?? current.folderBookmark,
+					hasExistingAccess: scopedDirectories[itemID] != nil
+				)
+				BrowserLog.info(.downloads, "download.moved-to-bin", metadata: ["item": BrowserLog.id(itemID)])
+				removeStoredItem(itemID)
+			} catch {
+				deletingItems.remove(itemID)
+				BrowserLog.error(.downloads, "download.trash.failed", metadata: [
+					"item": BrowserLog.id(itemID), "error": BrowserLog.errorDescription(error),
+				])
+				showToast(symbol: "exclamationmark.triangle", message: "Could not move download to Bin: \(error.localizedDescription)")
+			}
+		}
+	}
+	#endif
+
 	func delete(_ itemID: UUID) {
 		BrowserLog.info(.downloads, "download.delete", metadata: ["item": BrowserLog.id(itemID)])
 		// A file move may already have begun when the user deletes an entry.

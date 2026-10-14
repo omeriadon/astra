@@ -94,8 +94,25 @@
 				let infoPointer = unsafe UnsafeMutableRawPointer(usagePointer).assumingMemoryBound(to: rusage_info_t?.self)
 				return unsafe proc_pid_rusage(processIdentifier, Int32(RUSAGE_INFO_V4), infoPointer)
 			}
-			guard result == 0, usage.ri_proc_start_abstime > 0 else { return nil }
-			return (usage.ri_phys_footprint, usage.ri_proc_start_abstime)
+			if result == 0, usage.ri_proc_start_abstime > 0, usage.ri_phys_footprint > 0 {
+				return (usage.ri_phys_footprint, usage.ri_proc_start_abstime)
+			}
+			// WebKit XPC processes may deny RUSAGE_INFO_V4. Fall back to
+			// same-user task resident memory from libproc.
+			var task = proc_taskinfo()
+			let read = withUnsafeMutablePointer(to: &task) { pointer in
+				unsafe proc_pidinfo(processIdentifier, PROC_PIDTASKINFO, 0,
+				                    UnsafeMutableRawPointer(pointer), Int32(MemoryLayout<proc_taskinfo>.size))
+			}
+			guard read == Int32(MemoryLayout<proc_taskinfo>.size), task.pti_resident_size > 0 else { return nil }
+			var info = proc_bsdinfo()
+			let bsdRead = withUnsafeMutablePointer(to: &info) { pointer in
+				unsafe proc_pidinfo(processIdentifier, PROC_PIDTBSDINFO, 0,
+				                    UnsafeMutableRawPointer(pointer), Int32(MemoryLayout<proc_bsdinfo>.size))
+			}
+			guard bsdRead == Int32(MemoryLayout<proc_bsdinfo>.size) else { return nil }
+			let birth = UInt64(info.pbi_start_tvsec) * 1_000_000 + UInt64(info.pbi_start_tvusec)
+			return (UInt64(task.pti_resident_size), birth)
 		}
 	}
 

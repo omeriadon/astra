@@ -30,15 +30,18 @@ title = row.split("private struct TabTitleView: View {", 1)[1].split("private st
 assert "GeometryReader {" not in title
 assert "titleFadeMask(width:" not in title
 assert ".mask {" in title
+assert ".fixedSize(horizontal: true" not in title
+assert ".frame(width: max(0, geometry.size.width)" in sidebar
 
-# Low Power Mode retains opacity fading but drops expensive backdrop filters
-# and full-subtree offscreen compositing.
+# Preserve variable-blur Haze in Low Power Mode with a cheaper strength
+# and no full-subtree compositing. Reduce Transparency still disables blur.
 assert "ProcessInfo.processInfo.isLowPowerModeEnabled" in fade
 assert ".NSProcessInfoPowerStateDidChange" in fade
-assert "if lowPowerMode || reduceTransparency" in fade
-fast_path = fade.split("if lowPowerMode || reduceTransparency {", 1)[1].split("} else {", 1)[0]
-assert "faded.clipShape(Rectangle())" in fast_path
-assert "HazeEffect" not in fast_path and ".compositingGroup()" not in fast_path
+assert "if reduceTransparency {" in fade and "} else if lowPowerMode {" in fade
+low_power_path = fade.split("} else if lowPowerMode {", 1)[1].split("} else {", 1)[0]
+assert "blurScale: 0.5" in low_power_path
+assert ".compositingGroup()" not in low_power_path
 assert "HazeEffect(" in fade and ".compositingGroup()" in fade
+assert "blurScale: 1" in fade
 
 print("Sidebar lazy layout, hover-only geometry, and low-power fade checks passed")

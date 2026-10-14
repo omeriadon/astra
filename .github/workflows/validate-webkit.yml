@@ -27,6 +27,7 @@ jobs:
           node checks/favicon-observer-check.mjs
           node checks/website-chrome-tint-check.mjs
           node checks/reader-availability-check.mjs
+          node checks/webkit-file-upload-check.mjs
           python3 checks/extension-hot-path-check.py
           python3 checks/webkit-resource-policy-check.py
           python3 checks/extension-file-worker-check.py

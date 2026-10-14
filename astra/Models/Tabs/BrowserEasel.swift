@@ -1,7 +1,7 @@
 import Foundation
 import ImageIO
 
-struct BrowserEaselQuote: Codable, Equatable, Sendable {
+nonisolated struct BrowserEaselQuote: Codable, Equatable, Sendable {
 	var url: URL
 	var text: String
 	var prefix: String
@@ -16,16 +16,16 @@ struct BrowserEaselQuote: Codable, Equatable, Sendable {
 	}
 }
 
-struct BrowserEaselQuoteDestination: Sendable {
+nonisolated struct BrowserEaselQuoteDestination: Sendable {
 	var id: UUID
 	var title: String
 }
 
-struct BrowserEaselDocument: Codable, Equatable, Sendable {
+nonisolated struct BrowserEaselDocument: Codable, Equatable, Sendable {
 	private nonisolated static let disallowedHostScalars = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
 	var items: [Item] = []
 
-	struct Item: Codable, Equatable, Identifiable, Sendable {
+	nonisolated struct Item: Codable, Equatable, Identifiable, Sendable {
 		var id: UUID = .init()
 		var kind: Kind
 		var x: Double = 24
@@ -42,11 +42,11 @@ struct BrowserEaselDocument: Codable, Equatable, Sendable {
 		var imageData: Data?
 		var quote: BrowserEaselQuote?
 
-		enum Kind: String, Codable, CaseIterable, Sendable {
+		nonisolated enum Kind: String, Codable, CaseIterable, Sendable {
 			case text, image, link, quote, freehand, rectangle, ellipse, line, arrow
 		}
 
-		enum Font: String, Codable, CaseIterable, Sendable {
+		nonisolated enum Font: String, Codable, CaseIterable, Sendable {
 			case sfMono = "SFMono-Regular"
 			case newYork = "NewYorkSmall-Regular"
 			case geistPixel = "GeistPixel-Square"
@@ -64,7 +64,7 @@ struct BrowserEaselDocument: Codable, Equatable, Sendable {
 			}
 		}
 
-		enum Size: Int, Codable, CaseIterable, Sendable {
+		nonisolated enum Size: Int, Codable, CaseIterable, Sendable {
 			case small = 8
 			case compact = 12
 			case medium = 15
@@ -72,7 +72,7 @@ struct BrowserEaselDocument: Codable, Equatable, Sendable {
 			case huge = 25
 		}
 
-		enum Background: String, Codable, CaseIterable, Sendable {
+		nonisolated enum Background: String, Codable, CaseIterable, Sendable {
 			case none
 			case mint = "a3ffd1"
 			case orange = "e75e08"
@@ -94,7 +94,7 @@ struct BrowserEaselDocument: Codable, Equatable, Sendable {
 			}
 		}
 
-		struct Point: Codable, Equatable, Sendable {
+		nonisolated struct Point: Codable, Equatable, Sendable {
 			var x: Double
 			var y: Double
 		}

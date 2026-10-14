@@ -41,6 +41,9 @@ jobs:
           python3 checks/swiftui-observation-performance-check.py
           python3 checks/control-tab-observation-check.py
 
+      - name: Verify AI browser tool action safety
+        run: python3 checks/ai-browser-tools-check.py
+
       - name: Verify Swift 6.4 compiler and strict safety settings
         run: python3 checks/compiler-safety-settings-check.py
 

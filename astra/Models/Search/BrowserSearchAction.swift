@@ -43,7 +43,7 @@ struct BrowserSearchAction: Identifiable {
 			Self(
 				id: "new-tab", title: "New Tab", symbol: "plus",
 				terms: ["create tab", "open tab"], detail: "Browser Action",
-				perform: { browser.addTab() }
+				perform: { browser.requestNewTab() }
 			),
 			Self(
 				id: "reopen-tab", title: "Reopen Closed Tab", symbol: "arrow.uturn.backward",

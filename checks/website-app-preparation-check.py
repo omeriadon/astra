@@ -11,6 +11,29 @@ from pathlib import Path
 SOURCE = Path(__file__).parents[1] / "AstraWebsiteAppInstaller/AstraWebsiteAppInstallerApp.swift"
 
 
+def check_registration_boundary() -> None:
+    """Prevent moving Launch Services registration back into Astra's sandbox."""
+    root = Path(__file__).parents[1]
+    worker = (root / "astra/App/BrowserWebsiteAppFileWorker.swift").read_text()
+    registry = (root / "astra/App/BrowserWebsiteAppRegistry.swift").read_text()
+    helper = SOURCE.read_text()
+    project = (root / "astra.xcodeproj/project.xcproj").read_text()
+    installer_target = project.split('"name": "AstraWebsiteAppInstaller"', 1)[1].split(
+        '"name": "AstraWebsiteAppRuntime"', 1
+    )[0]
+
+    assert "LSRegisterURL(" not in worker
+    assert "LSRegisterURL(" not in registry
+    assert helper.count("LSRegisterURL(") == 1
+    assert '"ENABLE_APP_SANDBOX": "NO"' in installer_target
+    assert helper.count("try registerWebsiteApp(at: websiteApp.url)") == 2
+    assert helper.index("let websiteApp = try prepareWebsiteApp(at: appURL)") < helper.index(
+        "try registerWebsiteApp(at: websiteApp.url)"
+    )
+    assert 'operation: "--prepare", installation: installation' in registry
+    assert "try await fileWorker.uninstall(installation, nextRegistry: installations)" in registry
+
+
 def run(*args: str) -> None:
     subprocess.run(args, check=True)
 
@@ -35,6 +58,7 @@ def make_bundle(root: Path, name: str, executable: str = "fixture") -> Path:
 
 
 def main() -> None:
+    check_registration_boundary()
     with tempfile.TemporaryDirectory(prefix="astra-website-preparation-") as temporary:
         root = Path(temporary) / "Website Apps"
         root.mkdir()
