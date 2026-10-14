@@ -1,0 +1,85 @@
+# Clean up merged feature branches without removing release branches or stacked PR bases.
+name: Delete merged PR branches
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  delete-merged-branch:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete unused merged branch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const repoFullName = `${owner}/${repo}`;
+            const branch = pr.head.ref;
+
+            // Never operate on forks, default/protected workstreams, or release branches.
+            if (pr.head.repo?.full_name !== repoFullName || !branch) {
+              core.info('Skipping a fork or missing head branch.');
+              return;
+            }
+
+            const preserved = ['main', 'master', 'develop', 'development', 'staging'];
+            if (
+              branch === context.payload.repository.default_branch ||
+              preserved.includes(branch) ||
+              branch.startsWith('release/')
+            ) {
+              core.info(`Preserving branch: ${branch}`);
+              return;
+            }
+
+            // A branch may be a base for a stacked PR or reused by another open PR.
+            const openPRs = await github.paginate(github.rest.pulls.list, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const inUse = openPRs.some(other =>
+              other.base.ref === branch ||
+              (other.head.repo?.full_name === repoFullName && other.head.ref === branch)
+            );
+            if (inUse) {
+              core.info(`Branch ${branch} is still used by an open PR; leaving it intact.`);
+              return;
+            }
+
+            // Refuse to delete if new commits were pushed after the PR was merged.
+            let currentRef;
+            try {
+              const response = await github.rest.git.getRef({
+                owner,
+                repo,
+                ref: `heads/${branch}`,
+              });
+              currentRef = response.data;
+            } catch (error) {
+              if (error.status === 404) {
+                core.info(`Branch ${branch} has already been deleted.`);
+                return;
+              }
+              throw error;
+            }
+
+            if (currentRef.object.sha !== pr.head.sha) {
+              core.info(`Branch ${branch} has changed since the merge; not deleting.`);
+              return;
+            }
+
+            await github.rest.git.deleteRef({
+              owner,
+              repo,
+              ref: `heads/${branch}`,
+            });
+            core.info(`Deleted merged branch: ${branch}`);
