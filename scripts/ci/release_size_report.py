@@ -4,6 +4,8 @@
 Uses logical file lengths (not allocated disk blocks). Symlink targets are never
 followed or counted twice, including versioned macOS frameworks.
 """
+from __future__ import annotations
+
 import argparse
 import json
 import os
