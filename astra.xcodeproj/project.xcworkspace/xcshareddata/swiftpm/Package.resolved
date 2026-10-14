@@ -180,14 +180,6 @@
         "revision" : "fa8244ed032f4a1ade4cb0571bf87d2f1a9fd2d7",
         "version" : "1.7.3"
       }
-    },
-    {
-      "identity" : "swiftui-infinite-canvas",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/chrisrecalis/swiftui-infinite-canvas",
-      "state" : {
-        "revision" : "7f20ade269e6d7a79534d56ac8bcdd2be0cb197e"
-      }
     }
   ],
   "version" : 3

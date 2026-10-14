@@ -60,12 +60,6 @@
         "up-to-next-major-version": "0.12.1",
       },
     }, {
-      "kind": "remote",
-      "repository": "https://github.com/chrisrecalis/swiftui-infinite-canvas",
-      "version": {
-        "revision": "7f20ade269e6d7a79534d56ac8bcdd2be0cb197e",
-      },
-    }, {
       "kind": "local",
       "path": "Packages/Haze",
     }, {
@@ -199,9 +193,6 @@
           "build-phase": { "build-phase": "frameworks", "platforms": [ "ios" ] },
         }, {
           "product-name": "Haze",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "ios" ] },
-        }, {
-          "product-name": "Haze",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
         }, {
           "product-name": "MCP",
@@ -248,10 +239,6 @@
         }, {
           "package": "Sparkle",
           "product-name": "Sparkle",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
-        }, {
-          "package": "swiftui-infinite-canvas",
-          "product-name": "InfiniteCanvas",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
         },
       ],
@@ -462,9 +449,6 @@
           "product-name": "Haze",
           "build-phase": { "build-phase": "frameworks" },
         }, {
-          "product-name": "Haze",
-          "build-phase": { "build-phase": "frameworks" },
-        }, {
           "package": "Defaults",
           "product-name": "Defaults",
           "build-phase": { "build-phase": "frameworks" },
@@ -484,10 +468,6 @@
           "package": "Noise",
           "product-name": "Noise",
           "build-phase": { "build-phase": "frameworks" },
-        }, {
-          "package": "swiftui-infinite-canvas",
-          "product-name": "InfiniteCanvas",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
         },
       ],
       "build-settings": {
