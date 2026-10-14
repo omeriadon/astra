@@ -9,6 +9,7 @@ trap 'rm -rf "$TASK_OUTPUT"' EXIT
 cd "$TASK_ROOT"
 
 swiftc -swift-version 6 -parse-as-library \
+  astra/App/BrowserLog.swift \
   astra/Agent/BrowserAgentHTTP.swift scripts/check_agent_http.swift \
   -o "$TASK_OUTPUT/framing"
 "$TASK_OUTPUT/framing"
@@ -22,6 +23,7 @@ for TASK_CHECK in http listener; do
   swiftc -swift-version 6 -D ASTRA_BROWSER_USE_FIXTURE -parse-as-library \
     -I "$SDK_PRODUCTS" \
     -I "$SDK_PRODUCTS/../../Intermediates.noindex/GeneratedModuleMaps" \
+    astra/App/BrowserLog.swift \
     astra/Agent/BrowserAgentHTTP.swift \
     astra/Agent/BrowserAgentResultEncoder.swift \
     astra/Agent/BrowserAgentPageScripts.swift \
