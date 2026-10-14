@@ -7,7 +7,7 @@ enum BrowserAgentPageScripts {
 
 const clean = value => String(value || '').replace(/\s+/g, ' ').trim().slice(0, 500);
 const error = (code, message) => { throw new Error(code + ': ' + message); };
-const privateElement = n => n?.nodeType===1 && n.matches('input[type=hidden]');
+const privateElement = n => n?.nodeType===1 && n.matches('input[type=hidden],input[type=password]');
 const safeURL = value => {try{const u=new URL(value,location.href);u.username='';u.password='';return u.href;}catch{return '';}};
 const safeText = n => {
  const pending=[n];let result='',visited=0;
