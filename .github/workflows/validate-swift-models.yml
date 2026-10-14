@@ -16,7 +16,7 @@ jobs:
   check:
     name: Swift Model Tests
     runs-on: xcode-27
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode 27 / Swift 6.4
@@ -46,3 +46,15 @@ jobs:
           bash checks/run-sync-models.sh
           swiftc -swift-version 6 astra/App/BrowserLog.swift checks/browser-log-check.swift -o "$P/astra-sync-log"
           "$P/astra-sync-log"
+      - name: Compile sync integration in Debug and Release
+        if: github.head_ref == 'fix/sync-cpu-scheduling'
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -downloadComponent MetalToolchain
+          for configuration in Debug Release; do
+            xcodebuild build -project astra.xcodeproj -scheme astra \
+              -configuration "$configuration" -destination 'platform=macOS' \
+              -derivedDataPath "$RUNNER_TEMP/AstraSyncDerivedData" \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+          done
