@@ -172,6 +172,8 @@ struct ShellSidebarListView: View {
 					.padding(.horizontal, onSelectTab == nil ? BrowserChromeMetrics.shellEdgePadding : 16)
 					.padding(.top, 4)
 					.padding(.bottom, 48)
+					// Constrain the scroll content to the actual resized sidebar viewport.
+					.frame(width: max(0, geometry.size.width), alignment: .topLeading)
 					.frame(minHeight: geometry.size.height, alignment: .top)
 				}
 				#if os(macOS)

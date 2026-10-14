@@ -145,6 +145,7 @@ struct BrowserTabRow: View {
 		.opacity(isOpenElsewhere ? 0.35 : 1)
 		.allowsHitTesting(!isOpenElsewhere)
 		.padding(.horizontal, 12)
+		.frame(maxWidth: .infinity, alignment: .leading)
 		.frame(height: onSelectTab == nil ? 36 : 48)
 		.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? rowTransitions)
 		.foregroundStyle(theme.foregroundColor)
@@ -468,7 +469,7 @@ private struct TabTitleView: View {
 					.contentTransition(.opacity)
 					.animation(reduceMotion ? nil : .smooth(duration: 0.2), value: tab.title)
 					.lineLimit(1)
-					.fixedSize(horizontal: true, vertical: false)
+					// Keep long titles inside the width proposed by the sidebar.
 					.frame(maxWidth: .infinity, alignment: .leading)
 					.mask {
 						// A flexible opaque region plus a fixed-width trailing fade

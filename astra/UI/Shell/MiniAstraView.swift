@@ -2,6 +2,11 @@
 	import AppKit
 	import SwiftUI
 
+	private struct MiniSpacePickerPresentation: Identifiable {
+		let id = UUID()
+		let browser: Browser
+	}
+
 	struct MiniAstraView: View {
 		let browser: Browser
 		let resolveSpaceBrowser: () -> Browser?
@@ -11,7 +16,7 @@
 		@Environment(\.accessibilityReduceMotion) private var reduceMotion
 		@State private var showsTopBar = true
 		@State private var isTopBarRevealed = false
-		@State private var showsSpacePicker = false
+		@State private var spacePicker: MiniSpacePickerPresentation?
 		@State private var spaceBrowser: Browser?
 		@State private var spaceToDelete: BrowserSpace?
 		@State private var hostWindow: NSWindow?
@@ -46,26 +51,25 @@
 			Button {
 				guard let destination = resolveSpaceBrowser() else { return }
 				spaceBrowser = destination
-				showsSpacePicker = true
+				spacePicker = MiniSpacePickerPresentation(browser: destination)
 			} label: {
 				Label("Open in Space", systemImage: "arrow.up.right.square")
 					.lineLimit(1)
 			}
 			.buttonStyle(.glassProminent)
-			.buttonBorderShape(.capsule)
+			.buttonBorderShape(.roundedRectangle(radius: 4))
 			.controlSize(.small)
 			.help("Move this page into a browser Space")
 			.accessibilityIdentifier("mini-astra-open-in-space")
-			.popover(isPresented: $showsSpacePicker, arrowEdge: .bottom) {
-				if let spaceBrowser {
-					BrowserSpacePickerPopover(
-						browser: spaceBrowser,
-						onDismiss: { showsSpacePicker = false },
-						onRequestDeleteSpace: requestSpaceDeletion,
-						onSelectSpace: { space in onOpenInSpace(space.id) },
-						onRevealSpace: onRevealSpaceBrowser
-					)
-				}
+			// Item-driven presentation guarantees populated content on the first frame.
+			.popover(item: $spacePicker, arrowEdge: .bottom) { destination in
+				BrowserSpacePickerPopover(
+					browser: destination.browser,
+					onDismiss: { spacePicker = nil },
+					onRequestDeleteSpace: requestSpaceDeletion,
+					onSelectSpace: { space in onOpenInSpace(space.id) },
+					onRevealSpace: onRevealSpaceBrowser
+				)
 			}
 		}
 
