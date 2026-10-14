@@ -12,6 +12,7 @@ struct BrowserDeveloperSettingsView: View {
 	#if os(macOS)
 		@Default(.webInspectorEnabled) private var webInspectorEnabled
 		@State private var browserAgentServer = BrowserAgentServer.shared
+        @State private var uploadScopeToken = ""
 	#endif
 
 	private var githubShorthandEnabled: Binding<Bool> {
@@ -75,10 +76,33 @@ struct BrowserDeveloperSettingsView: View {
 					Toggle("Enable Browser Use", isOn: browserUseEnabled)
 						.accessibilityLabel("Enable Browser Use")
 						.accessibilityIdentifier("browser-use-enabled")
-					LabeledContent("Status", value: browserAgentServer.status)
+					Toggle("Allow JavaScript Evaluation", isOn: $browserAgentServer.allowJavaScriptEvaluation)
+                        .accessibilityIdentifier("browser-use-javascript-permission")
+                    Toggle("Allow Native Library Changes", isOn: $browserAgentServer.allowNativeMutations)
+                        .accessibilityIdentifier("browser-use-native-mutation-permission")
+                    Toggle("Allow Boost Changes", isOn: $browserAgentServer.allowBoostMutations)
+                        .accessibilityIdentifier("browser-use-boost-mutation-permission")
+                    Text("Additional permissions reset when Browser Use stops. Ordinary website navigation and sign-in use the shared browser session.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    LabeledContent("Status", value: browserAgentServer.status)
 						.accessibilityIdentifier("browser-use-status")
 					if browserAgentServer.isEnabled {
-						LabeledContent("Endpoint", value: browserAgentServer.endpoint)
+						Button("Approve Files for the Current Shared Tab") {
+                            Task { @MainActor in
+                                uploadScopeToken = await browserAgentServer.approveUploadFiles() ?? ""
+                            }
+                        }
+                        .accessibilityIdentifier("browser-use-approve-upload-files")
+                        if !uploadScopeToken.isEmpty {
+                            LabeledContent("Upload Scope", value: uploadScopeToken)
+                                .textSelection(.enabled)
+                            Button("Copy Upload Scope") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(uploadScopeToken, forType: .string)
+                            }
+                        }
+                        LabeledContent("Endpoint", value: browserAgentServer.endpoint)
 							.accessibilityIdentifier("browser-use-endpoint")
 						Button("Copy Codex Configuration", systemImage: "doc.on.doc") {
 							NSPasteboard.general.clearContents()

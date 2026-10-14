@@ -1,0 +1,51 @@
+name: Astra - Browser Use MCP
+
+on:
+  pull_request:
+    branches: [main, 'release/0.1+3']
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-use:
+    runs-on: xcode-27
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select supported Xcode and verify Swift
+        run: |
+          bash scripts/ci/select-xcode-27.sh
+          python3 checks/compiler-safety-settings-check.py
+      - name: Validate deterministic fixture and coverage manifest
+        run: python3 tests/browser-use/test_fixture.py
+      - name: Build Debug app with strict concurrency
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild build -project astra.xcodeproj -scheme astra -configuration Debug -destination 'platform=macOS' -derivedDataPath "$RUNNER_TEMP/AstraMCP" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$RUNNER_TEMP/astra-mcp-build.log"
+      - name: HTTP, protocol, DOM, permission and listener regression checks
+        run: zsh scripts/check_browser_use.sh "$RUNNER_TEMP/AstraMCP/Build/Products/Debug"
+      - name: Run every discovered tool against actual Astra and WebKit
+        env:
+          ASTRA_BROWSER_USE_REPORT_DIR: ${{ runner.temp }}/astra-mcp-reports
+        run: bash scripts/test-browser-use-e2e.sh "$RUNNER_TEMP/AstraMCP/Build/Products/Debug/astra.app"
+      - name: Test standalone automation core
+        run: swift test --package-path Packages/AstraAutomationCore
+      - name: Upload non-sensitive diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astra-browser-use-${{ github.run_number }}
+          path: |
+            ${{ runner.temp }}/astra-mcp-build.log
+            ${{ runner.temp }}/astra-mcp-reports
+          if-no-files-found: warn
+          retention-days: 7

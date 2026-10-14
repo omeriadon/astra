@@ -238,19 +238,26 @@ import WebKit
 			initiatedByFrame frame: WKFrameInfo,
 			completionHandler: @escaping ([URL]?) -> Void
 		) {
-			let documentID = navigationIdentifier
 			guard let window = unsafe webView.window,
-			      ownsFileUpload(in: webView, documentID: documentID, window: window)
+			      ownsPrompt(in: webView, documentID: navigationIdentifier)
 			else {
 				completionHandler(nil)
 				return
 			}
+#if !ASTRA_WEBSITE_APP_HELPER
+            if let urls = BrowserAgentUploadScopes.shared.consume(controller: self, parameters: parameters) {
+                retainPanelUploadAccess(for: urls)
+                completionHandler(urls.isEmpty ? nil : urls)
+                return
+            }
+#endif
+			let documentID = navigationIdentifier
 			beginLifecycleOperation()
 			let panel = NSOpenPanel()
 			panel.message = "Choose files for \(frame.securityOrigin.host)"
 			panel.allowsMultipleSelection = parameters.allowsMultipleSelection
 			panel.canChooseDirectories = parameters.allowsDirectories
-			panel.canChooseFiles = !parameters.allowsDirectories
+			panel.canChooseFiles = true
 			var completed = false
 			var monitor: Task<Void, Never>?
 			let finish: ([URL]?) -> Void = { urls in
@@ -261,7 +268,7 @@ import WebKit
 			}
 			monitor = Task { @MainActor [weak self, weak window] in
 				while let window, window.attachedSheet != nil {
-					guard let self, ownsFileUpload(in: webView, documentID: documentID, window: window) else {
+					guard let self, ownsPrompt(in: webView, documentID: documentID), window.isVisible else {
 						finish(nil)
 						return
 					}
@@ -276,26 +283,26 @@ import WebKit
 					finish(nil)
 					return
 				}
-				guard let self, ownsFileUpload(in: webView, documentID: documentID, window: window) else {
+				guard let self, ownsPrompt(in: webView, documentID: documentID), window.isVisible else {
 					finish(nil)
 					return
 				}
 				panel.beginSheetModal(for: window) { [weak self, weak window] response in
 					monitor?.cancel()
-					let current: Bool = if let self, let window {
-						ownsFileUpload(in: webView, documentID: documentID, window: window)
-					} else {
-						false
-					}
+					let current = self?.ownsPrompt(in: webView, documentID: documentID) == true && window?.isVisible == true
 					let selectedURLs = response == .OK ? panel.urls : []
 					let urls = response == .OK && current ? selectedURLs : nil
-					if response == .OK, current {
+					if current {
 						self?.retainPanelUploadAccess(for: selectedURLs)
+					} else {
+						for url in selectedURLs {
+							url.stopAccessingSecurityScopedResource()
+						}
 					}
 					finish(urls)
 				}
 				while !Task.isCancelled {
-					guard ownsFileUpload(in: webView, documentID: documentID, window: window),
+					guard ownsPrompt(in: webView, documentID: documentID),
 					      window.isVisible
 					else {
 						panel.cancel(nil)
