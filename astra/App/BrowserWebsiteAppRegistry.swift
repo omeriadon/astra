@@ -158,29 +158,9 @@
 				)
 				let next = installations + [installation]
 				let iconData = icon?.tiffRepresentation
+				// The file worker registers the generated app before committing the registry.
+				// If registration fails, it rolls back the published bundle.
 				try await fileWorker.install(installation, iconData: iconData, nextRegistry: next)
-				// The sandboxed file worker must not call LSRegisterURL. Register the
-				// published, verified bundle via Astra's non-sandboxed installer.
-				do {
-					try await runInstaller(
-						operation: "--prepare", installation: installation,
-						failure: RegistryError.launchPreparationFailed
-					)
-				} catch {
-					let preparationError = error
-					// Keep the on-disk registry and observable state consistent if
-					// even rolling back the failed installation is unsuccessful.
-					do {
-						try await fileWorker.uninstall(installation, nextRegistry: installations)
-					} catch {
-						installations = next
-						BrowserLog.fault(.websiteApps, "website-app.install.rollback-failed", metadata: [
-							"app": BrowserLog.id(id),
-							"error": BrowserLog.errorDescription(error),
-						])
-					}
-					throw preparationError
-				}
 				installations = next
 				return installation
 			}
@@ -210,10 +190,6 @@
 				// Preserve the original path so existing Dock entries remain valid.
 				try await fileWorker.replace(next[index], iconData: nil, nextRegistry: next)
 				installations = next
-				try await runInstaller(
-					operation: "--prepare", installation: next[index],
-					failure: RegistryError.launchPreparationFailed
-				)
 			}
 		}
 
@@ -226,10 +202,6 @@
 				guard let iconData = icon.tiffRepresentation else { throw RegistryError.templateInvalid }
 				try await fileWorker.replace(next[index], iconData: iconData, nextRegistry: next)
 				installations = next
-				try await runInstaller(
-					operation: "--prepare", installation: next[index],
-					failure: RegistryError.launchPreparationFailed
-				)
 			}
 		}
 
@@ -245,7 +217,6 @@
 
 		private func openInstalledApp(_ installation: BrowserWebsiteAppInstallation) async throws {
 			try await fileWorker.prepareLaunch(installation)
-			try await runInstaller(operation: "--prepare", installation: installation, failure: RegistryError.launchPreparationFailed)
 			_ = try await NSWorkspace.shared.openApplication(at: installation.bundleURL, configuration: .init())
 		}
 
@@ -269,38 +240,9 @@
 		}
 
 		private func pinToDock(_ installation: BrowserWebsiteAppInstallation) async throws {
-			try await runInstaller(operation: "--pin", installation: installation, failure: RegistryError.dockPinningFailed)
-		}
-
-		private func runInstaller(
-			operation: String,
-			installation: BrowserWebsiteAppInstallation,
-			failure: (String) -> RegistryError
-		) async throws {
-			let helperName = "AstraWebsiteAppInstaller.app"
-			let helperURL = resourceBundle.bundleURL.appendingPathComponent("Contents/Resources").appendingPathComponent(helperName)
-			guard fileManager.fileExists(atPath: helperURL.path) else { throw RegistryError.dockPinningUnavailable }
-			let responseURL = rootURL.appendingPathComponent("dock-result-\(UUID().uuidString).json")
-			defer { try? fileManager.removeItem(at: responseURL) }
-			let configuration = NSWorkspace.OpenConfiguration()
-			configuration.activates = false
-			configuration.addsToRecentItems = false
-			configuration.createsNewApplicationInstance = true
-			configuration.arguments = [operation, installation.bundlePath, responseURL.path]
-			let helper = try await NSWorkspace.shared.openApplication(at: helperURL, configuration: configuration)
-			let deadline = ContinuousClock.now.advanced(by: .seconds(15))
-			while ContinuousClock.now < deadline {
-				if let data = try? Data(contentsOf: responseURL) {
-					let message = try JSONDecoder().decode(String.self, from: data)
-					guard message.isEmpty else { throw failure(message) }
-					return
-				}
-				if helper.isTerminated {
-					throw failure("The Dock installer exited without a result.")
-				}
-				try await Task.sleep(for: .milliseconds(100))
+			try await fileWorker.runInstaller(operation: "--pin", appURL: installation.bundleURL) { message in
+				RegistryError.dockPinningFailed(message)
 			}
-			throw failure("The Dock installer did not respond.")
 		}
 
 		private func load() {

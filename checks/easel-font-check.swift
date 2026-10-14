@@ -1,3 +1,4 @@
+import AppKit
 import CoreText
 import Foundation
 
@@ -5,7 +6,13 @@ import Foundation
 struct EaselFontCheck {
 	static func main() {
 		let directory = URL(fileURLWithPath: "astra/Resources/EaselFonts", isDirectory: true)
-		let names = ["SF-Mono-Regular.otf", "NewYorkSmall-Regular.otf", "GeistPixel-Square.ttf", "ThestralNeue-Bold.otf", "Solare_Regular.ttf"]
+		let names = ["GeistPixel-Square.ttf", "ThestralNeue-Bold.otf", "Solare_Regular.ttf"]
+		// SF Mono and New York must come from the system, not bundled files.
+		let mono = NSFont.monospacedSystemFont(ofSize: 15, weight: .regular)
+		let system = NSFont.systemFont(ofSize: 15)
+		let serif = system.fontDescriptor.withDesign(.serif).flatMap { NSFont(descriptor: $0, size: 15) }
+		precondition(mono.pointSize == 15)
+		precondition(serif != nil)
 		let sample = (32 ... 126).compactMap(UnicodeScalar.init).map(String.init).joined()
 		for name in names {
 			let url = directory.appendingPathComponent(name)

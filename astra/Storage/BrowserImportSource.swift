@@ -11,6 +11,7 @@ nonisolated enum BrowserImportSource: String, CaseIterable, Identifiable, Sendab
 	case opera = "Opera"
 	case vivaldi = "Vivaldi"
 	case chromium = "Chromium"
+	case helium = "Helium"
 
 	var id: String {
 		rawValue
@@ -28,6 +29,7 @@ nonisolated enum BrowserImportSource: String, CaseIterable, Identifiable, Sendab
 			case .opera: "Application Support/com.operasoftware.Opera"
 			case .vivaldi: "Application Support/Vivaldi"
 			case .chromium: "Application Support/Chromium"
+			case .helium: "Application Support/net.imput.helium"
 		}
 	}
 

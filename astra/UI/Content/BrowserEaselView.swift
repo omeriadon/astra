@@ -420,7 +420,7 @@ struct BrowserEaselView: View {
 						textEditor(item)
 					} else {
 						Text(item.text.isEmpty ? "Double-click to edit" : item.text)
-							.font(.custom(item.font.rawValue, size: CGFloat(item.size.rawValue)))
+							.font(BrowserEaselSystemFonts.swiftUIFont(for: item.font, size: CGFloat(item.size.rawValue)))
 							.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 					}
 				}
@@ -493,7 +493,7 @@ struct BrowserEaselView: View {
 		#if os(macOS)
 			EaselTextEditor(
 				text: binding,
-				fontName: item.font.rawValue,
+				font: item.font,
 				fontSize: CGFloat(item.size.rawValue),
 				color: NSColor(ink(item)),
 				onSelect: {
@@ -505,7 +505,7 @@ struct BrowserEaselView: View {
 		#else
 			TextField("Text", text: binding, axis: .vertical)
 				.textFieldStyle(.plain)
-				.font(.custom(item.font.rawValue, size: CGFloat(item.size.rawValue)))
+				.font(BrowserEaselSystemFonts.swiftUIFont(for: item.font, size: CGFloat(item.size.rawValue)))
 				.lineSpacing(CGFloat(item.size.rawValue) * 0.5)
 		#endif
 	}

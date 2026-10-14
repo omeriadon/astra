@@ -60,17 +60,14 @@
         "up-to-next-major-version": "0.12.1",
       },
     }, {
-      "kind": "remote",
-      "repository": "https://github.com/chrisrecalis/swiftui-infinite-canvas",
-      "version": {
-        "revision": "7f20ade269e6d7a79534d56ac8bcdd2be0cb197e",
-      },
-    }, {
       "kind": "local",
       "path": "Packages/Haze",
     }, {
       "kind": "local",
       "path": "Packages/AstraAutomationCore",
+    }, {
+      "kind": "local",
+      "path": "Packages/SwiftMath",
     },
   ],
   "files": [
@@ -110,11 +107,6 @@
             "Automation/Intents/AstraUIIntents.swift",
             "Automation/Services/AstraServicesProvider.swift",
             "Automation/Spotlight/AstraSpotlightIndexer.swift",
-            "Extensions/DarkReader-LICENSE.txt",
-            "Extensions/SOURCES.txt",
-            "Extensions/darkreader-chrome-mv3.zip",
-            "Extensions/uBlock-Origin-Lite-LICENSE.txt",
-            "Extensions/ublock-origin-lite-safari.zip",
             "Special/Assets.xcassets",
             "Special/Info.plist",
             "Special/astra.icon",
@@ -199,9 +191,6 @@
           "build-phase": { "build-phase": "frameworks", "platforms": [ "ios" ] },
         }, {
           "product-name": "Haze",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "ios" ] },
-        }, {
-          "product-name": "Haze",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
         }, {
           "product-name": "MCP",
@@ -248,10 +237,6 @@
         }, {
           "package": "Sparkle",
           "product-name": "Sparkle",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
-        }, {
-          "package": "swiftui-infinite-canvas",
-          "product-name": "InfiniteCanvas",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
         },
       ],
@@ -462,9 +447,6 @@
           "product-name": "Haze",
           "build-phase": { "build-phase": "frameworks" },
         }, {
-          "product-name": "Haze",
-          "build-phase": { "build-phase": "frameworks" },
-        }, {
           "package": "Defaults",
           "product-name": "Defaults",
           "build-phase": { "build-phase": "frameworks" },
@@ -484,10 +466,6 @@
           "package": "Noise",
           "product-name": "Noise",
           "build-phase": { "build-phase": "frameworks" },
-        }, {
-          "package": "swiftui-infinite-canvas",
-          "product-name": "InfiniteCanvas",
-          "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
         },
       ],
       "build-settings": {
@@ -498,7 +476,8 @@
         "CURRENT_PROJECT_VERSION": "1",
         "DEAD_CODE_STRIPPING": "YES",
         "DEBUG_INFORMATION_FORMAT[config=Debug]": "dwarf-with-dsym",
-        "DEPLOYMENT_POSTPROCESSING": "YES",
+        "DEPLOYMENT_POSTPROCESSING[config=Debug]": "NO",
+        "DEPLOYMENT_POSTPROCESSING[config=Release]": "YES",
         "DEVELOPMENT_TEAM": "P6PV2R9443",
         "DYLIB_COMPATIBILITY_VERSION": "1",
         "DYLIB_CURRENT_VERSION": "1",
@@ -532,6 +511,8 @@
         "SDKROOT": "macosx",
         "SKIP_INSTALL": "YES",
         "STRING_CATALOG_GENERATE_SYMBOLS": "YES",
+        "STRIP_INSTALLED_PRODUCT[config=Debug]": "NO",
+        "STRIP_STYLE[config=Release]": "non-global",
         "SUPPORTED_PLATFORMS": "macosx",
         "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "$(inherited) ASTRA_WEBSITE_APP_HELPER ASTRA_WEBSITE_APP_RUNTIME",
         "SWIFT_APPROACHABLE_CONCURRENCY": "YES",
@@ -611,6 +592,7 @@
         "SDKROOT": "macosx",
         "SKIP_INSTALL": "YES",
         "STRING_CATALOG_GENERATE_SYMBOLS": "YES",
+        "STRIP_STYLE[config=Release]": "non-global",
         "SUPPORTED_PLATFORMS": "macosx",
         "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "$(inherited)",
         "SWIFT_APPROACHABLE_CONCURRENCY": "YES",
@@ -665,8 +647,8 @@
     "CLANG_WARN__DUPLICATE_METHOD_MATCH": "YES",
     "COPY_PHASE_STRIP": "NO",
     "DEAD_CODE_STRIPPING": "YES",
-    "DEBUG_INFORMATION_FORMAT[config=Debug]": "dwarf",
-    "DEBUG_INFORMATION_FORMAT[config=Release]": "dwarf-with-dsym",
+    "DEBUG_INFORMATION_FORMAT": "dwarf-with-dsym",
+    "DEPLOYMENT_POSTPROCESSING[config=Release]": "YES",
     "DEVELOPMENT_TEAM": "P6PV2R9443",
     "ENABLE_NS_ASSERTIONS[config=Release]": "NO",
     "ENABLE_SECURITY_COMPILER_WARNINGS": "YES",
@@ -695,6 +677,8 @@
     "MTL_FAST_MATH": "YES",
     "ONLY_ACTIVE_ARCH[config=Debug]": "YES",
     "STRING_CATALOG_GENERATE_SYMBOLS": "YES",
+    "STRIP_INSTALLED_PRODUCT[config=Debug]": "NO",
+    "STRIP_STYLE[config=Release]": "all",
     "SWIFT_ACTIVE_COMPILATION_CONDITIONS[config=Debug]": "DEBUG $(inherited)",
     "SWIFT_COMPILATION_MODE[config=Release]": "wholemodule",
     "SWIFT_DISABLE_SAFETY_CHECKS": "NO",

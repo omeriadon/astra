@@ -81,7 +81,6 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		return controller
 	}()
 
-	private let bundledNames = ["darkreader-chrome-mv3"]
 	private(set) var loadErrors: [String: String] = [:] {
 		didSet {
 			if loadErrors.contains(where: { oldValue[$0.key] != $0.value }) {
@@ -121,10 +120,6 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	override private init() {
-		if UserDefaults.standard.bool(forKey: "extension.ublock-origin.enabled") {
-			UserDefaults.standard.set(true, forKey: "extension.ublock-origin-lite-safari.enabled")
-			UserDefaults.standard.removeObject(forKey: "extension.ublock-origin.enabled")
-		}
 		let savedNames = (UserDefaults.standard.stringArray(forKey: "installedExtensions") ?? []).filter {
 			UUID(uuidString: $0) != nil
 		}
@@ -133,7 +128,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		unpinnedNames = Set(UserDefaults.standard.stringArray(forKey: "unpinnedExtensions") ?? [])
 		safariNames = Set(UserDefaults.standard.stringArray(forKey: "safariExtensions") ?? [])
 		cachedDisplayNames = UserDefaults.standard.dictionary(forKey: "extensionDisplayNames") as? [String: String] ?? [:]
-		enabledNames = Set((["darkreader-chrome-mv3"] + savedNames).filter {
+		enabledNames = Set(savedNames.filter {
 			UserDefaults.standard.bool(forKey: "extension.\($0).enabled")
 		})
 		super.init()
@@ -364,7 +359,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	var availableNames: [String] {
-		bundledNames + installedNames
+		installedNames
 	}
 
 	func isPinned(_ name: String) -> Bool {
@@ -480,18 +475,14 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func source(for name: String) -> Source {
-		name == "ublock-origin-lite-safari" || safariNames.contains(name) ? .safari : .chrome
+		safariNames.contains(name) ? .safari : .chrome
 	}
 
 	func title(for name: String) -> String {
 		if let title = contexts[name]?.webExtension.displayName ?? cachedDisplayNames[name] {
 			return title
 		}
-		switch name {
-			case "darkreader-chrome-mv3": return "Dark Reader"
-			case "ublock-origin-lite-safari": return "uBlock Origin Lite"
-			default: return name
-		}
+		return name
 	}
 
 	func permissionSummary(for name: String) -> String {
@@ -655,7 +646,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		}
 		try Task.checkCancellation()
 		// It may have been uninstalled while WebKit parsed the archive.
-		guard bundledNames.contains(name) || installedNames.contains(name) || safariBundlePaths[name] != nil
+		guard installedNames.contains(name) || safariBundlePaths[name] != nil
 		else { throw CancellationError() }
 		let context = WKWebExtensionContext(for: webExtension)
 		context.uniqueIdentifier = name
@@ -789,9 +780,6 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		if safariBundlePaths[name] != nil {
 			return nil
 		}
-		if bundledNames.contains(name) {
-			return BrowserResources.bundle.url(forResource: name, withExtension: "zip")
-		}
 		guard UUID(uuidString: name) != nil,
 		      installedNames.contains(name) || creatingDirectory,
 		      let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
@@ -824,7 +812,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 					_ = try await prepareContext(for: name)
 					// Do not re-enable after a later explicit disable or removal.
 					guard enableIntentRevisions[name] == revision,
-					      bundledNames.contains(name) || installedNames.contains(name) else { return }
+					      installedNames.contains(name) else { return }
 					setEnabled(true, for: name)
 				} catch {
 					guard enableIntentRevisions[name] == revision else { return }
@@ -836,7 +824,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			}
 			return
 		}
-		if enabled, !bundledNames.contains(name),
+		if enabled,
 		   UserDefaults.standard.string(forKey: "extension.\(name).approvedPermissions") != permissionSummary(for: name),
 		   let context = contexts[name]
 		{
@@ -872,8 +860,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	private func enable(_ name: String) throws {
 		BrowserLog.debug(.extensions, "extension.enable", metadata: ["name": BrowserLog.value(name)])
 		guard let context = contexts[name], !context.isLoaded else { return }
-		guard bundledNames.contains(name)
-			|| UserDefaults.standard.string(forKey: "extension.\(name).approvedPermissions") == permissionSummary(for: name)
+		guard UserDefaults.standard.string(forKey: "extension.\(name).approvedPermissions") == permissionSummary(for: name)
 		else {
 			throw NSError(domain: "astra.extensions", code: 10, userInfo: [NSLocalizedDescriptionKey: "Review this extension's permissions before enabling it."])
 		}
