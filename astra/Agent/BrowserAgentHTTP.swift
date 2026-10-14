@@ -2,15 +2,15 @@
 	import Foundation
 	import Network
 
-	struct BrowserAgentHTTPRequest {
+	nonisolated struct BrowserAgentHTTPRequest: Sendable {
 		let method: String
 		let path: String
 		let headers: [String: String]
 		let body: Data
 	}
 
-	enum BrowserAgentHTTPParser {
-		enum Result {
+	nonisolated enum BrowserAgentHTTPParser {
+		nonisolated enum Result: Sendable {
 			case incomplete
 			case invalid
 			case request(BrowserAgentHTTPRequest)
@@ -30,7 +30,8 @@
 			guard let first = lines.first else { return .invalid }
 			let request = first.components(separatedBy: " ")
 			guard request.count == 3, request[2] == "HTTP/1.1",
-			      ["POST", "GET", "DELETE"].contains(request[0]), request[1].hasPrefix("/")
+			      !request[0].isEmpty, request[0].allSatisfy({ $0.isASCII && $0.isLetter }), request[1].hasPrefix("/"),
+			      !request[1].unicodeScalars.contains(where: { $0.value < 33 || $0.value == 127 })
 			else { return .invalid }
 			var headers: [String: String] = [:]
 			let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!#$%&'*+-.^_`|~")
@@ -57,21 +58,23 @@
 		}
 	}
 
-	@MainActor
-	final class BrowserAgentHTTP {
-		struct Response {
+	actor BrowserAgentHTTP {
+		nonisolated struct Response: Sendable {
 			let status: Int
 			var headers: [String: String] = [:]
 			var body = Data()
 		}
 
+		private let queue = DispatchQueue(label: "astra.agent.http", qos: .userInitiated)
 		private let listener: NWListener
 		private var connections: [UUID: NWConnection] = [:]
 		private var deadlines: [UUID: Task<Void, Never>] = [:]
 		private var requests: [UUID: Task<Void, Never>] = [:]
-		private let handler: (BrowserAgentHTTPRequest) async -> Response
+		private var buffers: [UUID: Data] = [:]
+		private var stopped = false
+		private let handler: @Sendable (BrowserAgentHTTPRequest) async -> Response
 
-		init(port: UInt16, state: @escaping @MainActor @Sendable (NWListener.State) -> Void, handler: @escaping (BrowserAgentHTTPRequest) async -> Response) throws {
+		init(port: UInt16, state: @escaping @MainActor @Sendable (NWListener.State) -> Void, handler: @escaping @Sendable (BrowserAgentHTTPRequest) async -> Response) throws {
 			self.handler = handler
 			let parameters = NWParameters.tcp
 			parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)
@@ -80,15 +83,17 @@
 				Task { @MainActor in state(value) }
 			}
 			listener.newConnectionHandler = { [weak self] connection in
-				Task { @MainActor [weak self] in self?.accept(connection) }
+				Task { [weak self] in await self?.accept(connection) }
 			}
 		}
 
 		func start() {
-			listener.start(queue: .main)
+			guard !stopped else { return }
+			listener.start(queue: queue)
 		}
 
 		func stop() {
+			stopped = true
 			listener.cancel()
 			for id in Array(connections.keys) {
 				finish(id)
@@ -96,53 +101,66 @@
 		}
 
 		private func accept(_ connection: NWConnection) {
-			guard connections.count < 32 else { connection.cancel(); return }
+			guard !stopped, connections.count < 32 else { connection.cancel(); return }
 			let id = UUID()
 			connections[id] = connection
 			connection.stateUpdateHandler = { [weak self] state in
 				if case .failed = state {
-					Task { @MainActor [weak self] in self?.finish(id) }
+					Task { [weak self] in await self?.finish(id) }
 				}
 			}
 			deadlines[id] = Task { [weak self] in
 				do { try await Task.sleep(for: .seconds(30)) } catch { return }
-				self?.finish(id)
+				await self?.finish(id)
 			}
-			connection.start(queue: .main)
-			receive(id, buffer: Data())
+			connection.start(queue: queue)
+			buffers[id] = Data()
+			receive(id)
 		}
 
-		private func receive(_ id: UUID, buffer: Data) {
+		private func receive(_ id: UUID) {
 			guard let connection = connections[id] else { return }
 			connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, complete, error in
-				Task { @MainActor [weak self] in
-					guard let self, connections[id] != nil else { return }
-					var accumulated = buffer
-					if let data {
-						accumulated.append(data)
-					}
-					switch BrowserAgentHTTPParser.parse(accumulated) {
-						case .invalid:
-							BrowserLog.warning(.agent, "agent.http.invalid-request", metadata: ["bytes": String(accumulated.count)])
-							write(Response(status: 400), id: id)
-						case .incomplete:
-							if complete || error != nil {
-								if let error {
-									BrowserLog.warning(.agent, "agent.http.receive-failed", metadata: ["error": BrowserLog.errorDescription(error)])
-								}
-								finish(id)
-							} else {
-								receive(id, buffer: accumulated)
-							}
-						case let .request(request):
-							requests[id] = Task { [weak self] in
-								guard let self else { return }
-								let response = await handler(request)
-								guard !Task.isCancelled else { return }
-								write(response, id: id)
-							}
-					}
+				Task { [weak self] in
+					guard let self else { return }
+					await self.received(id, data: data, complete: complete, error: error)
 				}
+			}
+		}
+
+		private func received(_ id: UUID, data: Data?, complete: Bool, error: NWError?) {
+			guard connections[id] != nil else { return }
+			var accumulated = buffers.removeValue(forKey: id) ?? Data()
+			if let data {
+				accumulated.append(data)
+			}
+			switch BrowserAgentHTTPParser.parse(accumulated) {
+				case .invalid:
+					BrowserLog.warning(.agent, "agent.http.invalid-request", metadata: ["bytes": String(accumulated.count)])
+					write(Response(status: 400), id: id)
+				case .incomplete:
+					if complete || error != nil {
+						if let error {
+							BrowserLog.warning(.agent, "agent.http.receive-failed", metadata: ["error": BrowserLog.errorDescription(error)])
+						}
+						finish(id)
+					} else {
+						buffers[id] = accumulated
+						receive(id)
+					}
+				case let .request(request):
+					deadlines.removeValue(forKey: id)?.cancel()
+					deadlines[id] = Task { [weak self] in
+						do { try await Task.sleep(for: .seconds(310)) } catch { return }
+						await self?.finish(id)
+					}
+					monitorDisconnect(id)
+					requests[id] = Task { [weak self] in
+						guard let self else { return }
+						let response = await handler(request)
+						guard !Task.isCancelled else { return }
+						write(response, id: id)
+					}
 			}
 		}
 
@@ -153,11 +171,21 @@
 			headers["Connection"] = "close"
 			let head = "HTTP/1.1 \(response.status) Response\r\n" + headers.map { "\($0.key): \($0.value)\r\n" }.joined() + "\r\n"
 			connection.send(content: Data(head.utf8) + response.body, completion: .contentProcessed { [weak self] _ in
-				Task { @MainActor [weak self] in self?.finish(id) }
+				Task { [weak self] in await self?.finish(id) }
 			})
 		}
 
+		private func monitorDisconnect(_ id: UUID) {
+			guard let connection = connections[id] else { return }
+			connection.receive(minimumIncompleteLength: 1, maximumLength: 1) { [weak self] data, _, complete, error in
+				if complete || error != nil || data?.isEmpty == false {
+					Task { [weak self] in await self?.finish(id) }
+				}
+			}
+		}
+
 		private func finish(_ id: UUID) {
+			buffers.removeValue(forKey: id)
 			connections.removeValue(forKey: id)?.cancel()
 			deadlines.removeValue(forKey: id)?.cancel()
 			requests.removeValue(forKey: id)?.cancel()

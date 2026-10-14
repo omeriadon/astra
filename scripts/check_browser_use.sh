@@ -19,11 +19,15 @@ swiftc -swift-version 6 -parse-as-library \
 "$TASK_OUTPUT/dom"
 
 for TASK_CHECK in http listener; do
-  swiftc -swift-version 6 -parse-as-library \
+  swiftc -swift-version 6 -D ASTRA_BROWSER_USE_FIXTURE -parse-as-library \
     -I "$SDK_PRODUCTS" \
     -I "$SDK_PRODUCTS/../../Intermediates.noindex/GeneratedModuleMaps" \
     astra/Agent/BrowserAgentHTTP.swift \
+    astra/Agent/BrowserAgentResultEncoder.swift \
     astra/Agent/BrowserAgentPageScripts.swift \
+    astra/Agent/BrowserAgentProtocol.swift \
+    astra/Agent/BrowserAgentToolCatalog.swift \
+    astra/Agent/BrowserAgentStateSignal.swift \
     astra/Agent/BrowserAgentServer.swift \
     checks/browser-use-model-fixtures.swift "checks/browser-use-$TASK_CHECK.swift" \
     "$SDK_PRODUCTS/MCP.o" "$SDK_PRODUCTS/SystemPackage.o" \

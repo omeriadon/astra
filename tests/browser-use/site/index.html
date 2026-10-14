@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Astra deterministic MCP fixture</title>
+<style>
+body {font:16px system-ui; margin:24px; background:#f5f6ff; color:#111} button,input,textarea,select {margin:6px;padding:8px} section {margin:18px 0} #fixture-scroll {width:250px;height:100px;overflow:auto;border:2px solid #333} #fixture-scroll>div {width:800px;height:500px} #fixture-drop {height:70px;border:2px dashed blue} #fixture-fixed {position:fixed;right:0;top:0;background:white} #fixture-obscured {position:relative} #cover {position:absolute;inset:0;background:rgba(0,0,0,.2);z-index:3} #long {height:1400px} #fixture-offscreen {margin-top:20px}
+</style>
+<h1>Astra fixture</h1><div id="fixture-fixed">Fixed screenshot target</div>
+<section aria-label="Interactions">
+<button id="fixture-click">Increment counter</button><output id="fixture-counter">0</output>
+<button id="fixture-double">Double click counter</button><button id="fixture-right">Context counter</button><button id="fixture-hover">Hover counter</button>
+<button id="fixture-delay">Insert delayed text</button><button id="fixture-replace">Replace target node</button><button id="fixture-remove">Remove target node</button><button id="fixture-target">Replaceable target</button>
+<a id="fixture-link" href="/redirect">Redirect link</a><a id="fixture-spa" href="#route-two">SPA route</a>
+</section>
+<form id="fixture-form">
+<label for="fixture-text">Text field</label><input id="fixture-text" name="text" placeholder="Text fallback" aria-describedby="field-description"><span id="field-description">Enter fixture text</span>
+<label for="fixture-controlled">Controlled field</label><input id="fixture-controlled">
+<label>Text area<textarea id="fixture-textarea"></textarea></label><div id="fixture-contenteditable" role="textbox" aria-label="Editable content" contenteditable="true"></div>
+<label><input id="fixture-checkbox" type="checkbox">Fixture checkbox</label><label><input id="fixture-radio" name="radio" type="radio" value="one">Fixture radio</label><label><input name="radio" type="radio" value="two">Second radio</label>
+<label>Single select<select id="fixture-select"><option value="one">One</option><option value="two">Two</option></select></label>
+<label>Multi select<select id="fixture-multiselect" multiple><option value="one">One</option><option value="two">Two</option><option value="three">Three</option></select></label>
+<input id="fixture-disabled" aria-label="Disabled field" disabled><input id="fixture-readonly" aria-label="Read only field" readonly value="fixed"><input id="fixture-required" aria-label="Required field" required>
+<button id="fixture-submit" type="submit">Submit fixture</button></form>
+<form id="fixture-login" method="post" action="/login"><label>User name<input id="fixture-username" name="username" autocomplete="username"></label><label>Password<input id="fixture-password" type="password" name="password" autocomplete="current-password" value="secret-sentinel-must-not-leak"></label><button id="fixture-login-submit">Sign in fixture</button></form>
+<section><span id="aria-name">Named via relationship</span><button id="fixture-aria" aria-labelledby="aria-name" aria-expanded="false">Fallback</button><button aria-label="Collision">A</button><button aria-label="Collision">B</button><div role="group" aria-label="Nested roles"><button>Nested button</button></div><button hidden>Hidden button</button></section>
+<div id="fixture-shadow"></div><div id="fixture-scroll"><div>Nested horizontal and vertical scrolling</div></div>
+<div id="fixture-drag" draggable="true">Drag fixture</div><div id="fixture-drop">Drop target</div><div id="fixture-obscured"><button>Obscured button</button><div id="cover"></div></div>
+<label>File upload<input id="fixture-file" type="file"></label><label>Multiple files<input id="fixture-files" type="file" multiple></label><a id="fixture-download" href="/download" download>Download known bytes</a><a href="/slow-download" download>Delayed download</a>
+<div id="fixture-frames"></div><section id="fixture-large" aria-label="Large DOM"></section><div id="long"></div><button id="fixture-offscreen">Offscreen target</button>
+<script>
+const run = new URL(location.href).searchParams.get('run') || 'default';
+const state = {clicks:0,doubles:0,contexts:0,hovers:0,keys:[],formSubmits:0,dragDrops:0};
+let saves = Promise.resolve();
+function record(update) {Object.assign(state,update);saves = saves.catch(()=>{}).then(()=>fetch('/state/'+run,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(update)}));}
+window.fixtureState = state;
+document.querySelector('#fixture-click').onclick=()=>{state.clicks++;document.querySelector('#fixture-counter').textContent=state.clicks;record({clicks:state.clicks})};
+document.querySelector('#fixture-double').ondblclick=()=>record({doubles:++state.doubles});
+document.querySelector('#fixture-right').oncontextmenu=e=>{e.preventDefault();record({contexts:++state.contexts})};
+document.querySelector('#fixture-hover').onmouseenter=()=>record({hovers:++state.hovers});
+document.querySelector('#fixture-delay').onclick=()=>setTimeout(()=>{const el=document.createElement('p');el.id='fixture-delayed';el.textContent='Delayed fixture ready';document.body.prepend(el);record({delayed:true})},150);
+document.querySelector('#fixture-replace').onclick=()=>{document.querySelector('#fixture-target').outerHTML='<button id="fixture-target">Replacement target</button>';record({replaced:true})};
+document.querySelector('#fixture-remove').onclick=()=>{document.querySelector('#fixture-target')?.remove();record({removed:true})};
+document.querySelector('#fixture-form').onsubmit=e=>{e.preventDefault();record({formSubmits:++state.formSubmits})};
+for(const id of ['text','textarea','contenteditable','checkbox','radio','select','multiselect']){const el=document.querySelector('#fixture-'+id);for(const event of ['input','change'])el.addEventListener(event,()=>record({[id]:el.isContentEditable?el.textContent:el.type==='checkbox'||el.type==='radio'?el.checked:el.multiple?[...el.selectedOptions].map(o=>o.value):el.value}));}
+let controlled=''; document.querySelector('#fixture-controlled').addEventListener('input',e=>{controlled=e.target.value;record({controlled});queueMicrotask(()=>e.target.value=controlled)});
+document.addEventListener('keyup',e=>record({lastKeyUp:e.key}));
+document.addEventListener('focusin',e=>record({focused:e.target.id}));
+document.addEventListener('focusout',e=>record({blurred:e.target.id}));
+document.addEventListener('mousemove',e=>record({pointerTarget:e.target.id}));
+document.addEventListener('keydown',e=>record({keys:[...state.keys,e.key],lastKey:e.key,trustedKey:e.isTrusted}));
+for (const id of ['file','files']) document.querySelector('#fixture-'+id).onchange=async e=>{const files=[...e.target.files];const payload=[];for(const file of files){const bytes=await file.arrayBuffer();const digest=await crypto.subtle.digest('SHA-256',bytes);payload.push({name:file.name,length:bytes.byteLength,sha256:[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('')});await fetch('/upload/'+run,{method:'POST',body:bytes})}record({files:payload})};
+document.querySelector('#fixture-drag').ondragstart=e=>e.dataTransfer.setData('text/plain','fixture-drag');
+document.querySelector('#fixture-drop').ondragover=e=>e.preventDefault();document.querySelector('#fixture-drop').ondrop=e=>{e.preventDefault();if(e.dataTransfer.getData('text/plain')==='fixture-drag'){e.currentTarget.textContent='Drop verified';record({dragDrops:++state.dragDrops})}};
+const shadow=document.querySelector('#fixture-shadow').attachShadow({mode:'open'});shadow.innerHTML='<label>Shadow field<input id="shadow-input"></label><div id="nested-shadow"></div>';shadow.querySelector('#nested-shadow').attachShadow({mode:'open'}).innerHTML='<button id="deep-button">Deep shadow button</button>';
+if(!__FRAME__){for(const path of ['/frame','/nested-frame']){const f=document.createElement('iframe');f.title=path;f.src=path+'?run='+run;document.querySelector('#fixture-frames').append(f)}const cross=document.createElement('iframe');cross.title='Cross origin frame';cross.src='http://127.0.0.1:__PEER_PORT__/frame?run='+run;document.querySelector('#fixture-frames').append(cross)}
+const fragment=document.createDocumentFragment();for(let i=0;i<3000;i++){const b=document.createElement('button');b.textContent='Large DOM button '+i;fragment.append(b)}document.querySelector('#fixture-large').append(fragment);
+window.addEventListener('hashchange',()=>record({route:location.hash}));console.log('Astra fixture console marker');fetch('/health').then(()=>record({ready:true}));
+window.fixtureTriggerError=()=>{throw new Error('Astra fixture error marker')}; window.fixtureFailedRequest=()=>fetch('/failed-request');
+</script></html>

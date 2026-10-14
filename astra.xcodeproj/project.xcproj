@@ -54,7 +54,7 @@
       "kind": "remote",
       "repository": "https://github.com/modelcontextprotocol/swift-sdk",
       "version": {
-        "up-to-next-major-version": "0.12.1",
+        "up-to-next-minor-version": "0.12.1",
       },
     }, {
       "kind": "local",

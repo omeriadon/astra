@@ -4,12 +4,13 @@ Checked 2026-10-11. Direct Playwright attachment to Astra's macOS WKWebViews rem
 blocked. Astra's separate native MCP integration is documented in
 [Browser Use](browser-use.md); it does not depend on a Playwright inspector transport.
 
-## Intended integration
+## Original attachment investigation (2026-10-11)
 
 Reuse an existing browser automation backend and MCP package to operate Astra's
 live tabs. Preserve the WebKit engine, session ownership, private browsing,
-navigation policy, and site permissions. Do not implement a custom CDP emulator,
-Web Inspector transport, or DOM automation stack.
+navigation policy, and site permissions. The original investigation evaluated direct reuse of an inspector backend. The
+Browser Use implementation instead uses public WKWebView execution and capture
+APIs behind Astra's own MCP adapter; it does not emulate CDP.
 
 The acceptance gate is an existing backend inspecting, clicking, filling,
 navigating, and taking a screenshot of an actual Astra tab. A separate Chrome or
@@ -93,3 +94,43 @@ Not completed: live Playwright attachment, browser interaction, MCP handshake,
 or signed-app runtime verification. No compatible macOS endpoint was identified
 to exercise. No Swift source, project configuration, dependencies, or Codex
 configuration were changed; no build was required for this document.
+
+## Native MCP comparison (2026-10-14)
+
+| Property | Astra Browser Use | Playwright MCP | Chrome DevTools MCP |
+| --- | --- | --- | --- |
+| Browser connection | Astra-owned WKWebViews and website sessions | Playwright browser backend | Chrome debugging endpoint through Puppeteer |
+| Native browser organization | Astra tabs, Spaces, library and related models | Backend page/context management | Chrome targets and developer tooling |
+| Semantic inspection | Bounded DOM-derived role/name/state data; not the platform accessibility tree | Accessibility snapshots with element references | Chrome inspection backend |
+| Input | DOM-generated pointer input is synthetic; targeted AppKit keyboard and opt-in pointer paths report dispatch without guaranteeing DOM trust | Backend input mechanisms | Backend input mechanisms |
+| Cross-origin frames | Only frames actually reached are inspected; inaccessible frames are explicit | Backend frame targeting | Backend frame targeting |
+| Network observation | Page instrumentation is partial and must be identified as such | Backend network observation | Chrome developer network observation |
+| Protocol | Focused adapter around official Swift MCP tool DTOs | Its published MCP server | Its published MCP server |
+
+This comparison describes backend capabilities, not an interoperability test.
+Astra does not gain Playwright's auto-waiting or CDP coverage by exposing similarly
+named tools. Synthetic keyboard and pointer events cannot establish native
+user activation. Closed shadow roots are not accessible through normal DOM
+traversal. A frame-specific WKWebView execution API is public, but a reference to
+an actual frame is still needed; its existence does not prove arbitrary frame
+enumeration or cross-origin inspection in Astra.
+
+Primary sources reviewed for the overhaul:
+
+- [Current MCP versioning](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/basic/versioning.mdx)
+- [July 2026 discovery](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/server/discover.mdx)
+- [July 2026 HTTP metadata binding](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/basic/transports/streamable-http.mdx)
+- [Official Swift SDK](https://github.com/modelcontextprotocol/swift-sdk), whose README identifies 2025-11-25 support; package updates alone do not implement July 2026 behavior
+- [Playwright aria snapshots](https://playwright.dev/docs/aria-snapshots)
+- [Playwright MCP source](https://github.com/microsoft/playwright-mcp)
+- [Chrome DevTools MCP source](https://github.com/ChromeDevTools/chrome-devtools-mcp)
+- [Apple frame-specific evaluation](https://developer.apple.com/documentation/webkit/wkwebview/evaluatejavascript(_:in:in:completionhandler:))
+- [Apple snapshot capture](https://developer.apple.com/documentation/webkit/wkwebview/takesnapshot(with:completionhandler:))
+- [Apple upload-panel delegate](https://developer.apple.com/documentation/webkit/wkuidelegate/webview(_:runopenpanelwith:initiatedbyframe:completionhandler:))
+- [W3C accessible name computation](https://www.w3.org/TR/accname/)
+
+No upstream source is copied into the compatibility document or adapter. The
+implementation and test commands are documented in [Browser Use](browser-use.md)
+and [Browser Use architecture](browser-use-architecture.md). Runtime limitations
+must be established against the actual Astra build; the historical attachment
+investigation above is not a passing Browser Use integration test.

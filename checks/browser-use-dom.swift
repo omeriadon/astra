@@ -13,6 +13,8 @@ struct BrowserUseDOMChecks {
 		<button id="go" onclick="document.getElementById('result').textContent='Clicked'">Go</button>
 		<select aria-label="Choice"><option value="one">One</option><option value="two">Two</option></select>
 		<p id="result"></p>
+		<div id="host"></div><iframe id="frame" srcdoc="<button id='nested'>Nested</button>"></iframe>
+		<script>document.getElementById('host').attachShadow({mode:'open'}).innerHTML='<button id="shadow">Shadow</button>'</script>
 		</body></html>
 		""", baseURL: URL(string: "https://example.com"))
 		for _ in 0 ..< 100 {
@@ -28,6 +30,11 @@ struct BrowserUseDOMChecks {
 		let button = controls.first { $0["name"] as? String == "Go" }!["ref"] as! String
 		let name = controls.first { $0["name"] as? String == "Name" }!["ref"] as! String
 		let choice = controls.first { $0["name"] as? String == "Choice" }!["ref"] as! String
+		precondition(controls.contains { $0["name"] as? String == "Shadow" })
+		precondition(controls.contains { $0["name"] as? String == "Nested" })
+		let fragment = try await view.callAsyncJavaScript(BrowserAgentPageScripts.action, arguments: ["operation": "get_dom_fragment", "snapshotID": "first", "ref": controls.first { $0["type"] as? String == "body" }?["ref"] ?? "", "value": "", "dy": 0, "options": ["selector": "body"]], in: nil, contentWorld: .defaultClient) as? [String: Any]
+		let fragmentHTML = fragment?["html"] as? String ?? ""
+		precondition(!fragmentHTML.contains("secret") && !fragmentHTML.contains("Hidden password") && !fragmentHTML.contains("must-not-be-exposed"))
 		func act(_ operation: String, _ ref: String, _ value: String = "") async throws {
 			_ = try await view.callAsyncJavaScript(BrowserAgentPageScripts.action, arguments: ["operation": operation, "snapshotID": "first", "ref": ref, "value": value, "dy": 0], in: nil, contentWorld: .defaultClient)
 		}
@@ -44,6 +51,8 @@ struct BrowserUseDOMChecks {
 		var rejectedReplacement = false
 		do { try await act("click", button) } catch { rejectedReplacement = true }
 		precondition(rejectedReplacement)
+		let wait = try await view.callAsyncJavaScript(BrowserAgentPageScripts.wait, arguments: ["snapshotID": "first", "options": ["condition": "element", "selector": "#result", "state": "visible", "timeoutMs": 1000]], in: nil, contentWorld: .defaultClient) as! [String: Any]
+		precondition(wait["ok"] as? Bool == true)
 		print("WebKit snapshot privacy, fill, select, click, and detached-reference checks passed")
 	}
 }
