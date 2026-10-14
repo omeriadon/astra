@@ -33,7 +33,11 @@ final class BrowserWebSession {
 		let toastManager = isPrivate ? ToastManager() : .shared
 		self.toastManager = toastManager
 		#if os(macOS)
-			dataStore = isPrivate ? .nonPersistent() : AstraCreateWebPushDataStore() ?? .default()
+			#if DEBUG
+				dataStore = isPrivate ? .nonPersistent() : BrowserAgentTestBootstrap.isActive ? BrowserAgentTestBootstrap.normalDataStore : AstraCreateWebPushDataStore() ?? .default()
+			#else
+				dataStore = isPrivate ? .nonPersistent() : AstraCreateWebPushDataStore() ?? .default()
+			#endif
 		#else
 			dataStore = isPrivate ? .nonPersistent() : .default()
 		#endif
@@ -91,7 +95,11 @@ final class BrowserWebSession {
 			}
 		#endif
 		#if DEBUG
-			assert(dataStore.isPersistent != isPrivate)
+			#if os(macOS)
+				assert(BrowserAgentTestBootstrap.isActive || dataStore.isPersistent != isPrivate)
+			#else
+				assert(dataStore.isPersistent != isPrivate)
+			#endif
 			assert(isPrivate ? toastManager !== ToastManager.shared : toastManager === ToastManager.shared)
 		#endif
 		Task { await contentBlocking.prepare() }

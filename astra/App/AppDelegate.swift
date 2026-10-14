@@ -183,6 +183,9 @@
 			#endif
 			let authentication = ASWebAuthenticationSessionWebBrowserSessionManager.shared
 			authentication.sessionHandler = BrowserAuthenticationSessionHandler.shared
+			#if DEBUG
+				if BrowserAgentTestBootstrap.startIfRequested(delegate: self) { return }
+			#endif
 			// Defer noncritical services until the first visible window has updated,
 			// with a bounded fallback for headless Web Push/authentication launches.
 			Task { @MainActor [weak self] in

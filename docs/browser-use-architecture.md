@@ -1,0 +1,25 @@
+# Browser Use architecture
+
+Browser Use is a macOS-only MCP endpoint in the main Astra application. It operates the application's own `BrowserTab`, `BrowserController`, and `WKWebView` objects. The standalone website-app helper excludes the server.
+
+## Concurrency and ownership
+
+`BrowserAgentHTTP` is an actor that owns the Network.framework listener, connections, request buffers, deadlines, and connection tasks. Framing, size limits, request parsing, and writes happen off the main actor. It passes a complete request to the `BrowserAgentProtocol` actor. That actor checks the bearer credential, Host, Origin, HTTP method and MCP metadata, dispatches protocol methods, and serializes replies. The immutable `BrowserAgentToolCatalog` is constructed once per process rather than per request. A request spanning page automation awaits an explicit call to the main-actor `BrowserAgentServer`.
+
+`BrowserAgentServer` remains main-actor isolated because it reads window and tab ownership models, maintains user-visible state and grants, and calls AppKit/WebKit. Its per-tab operation registry rejects a second operation on the same tab as busy; operations on separate tabs can suspend independently. Revocation cancels the registered task, removes the grant and snapshot, and prevents subsequent result acceptance. Cancellation cannot roll back a page action that has already occurred or interrupt synchronous JavaScript that WebKit has begun evaluating.
+
+`BrowserAgentPageService` performs the WebKit capture and page evaluation on the main actor. `BrowserAgentImageEncoder` encodes and bounds screenshot pixels on its own actor. Full-page capture asks WebKit for PDF data on the main actor, then sends that data to the image actor for Core Graphics rasterization, resizing, image compression and base64 encoding. Only WebKit capture and minimal AppKit pixel extraction remain on the main actor. The browser-state waits use Observation change notifications and a deadline. DOM waits use page-side observation, with cancellation cleanup.
+
+`BrowserAgentResultEncoder` serializes bounded browser DTOs into MCP text and structured output on its actor, keeping bulk result encoding outside the browser adapter. Screenshot encoding has a separate 16 MiB image-output budget.
+
+The protocol actor uses the official Swift MCP SDK's tool and result models at the application boundary, with a focused JSON-RPC/HTTP adapter for protocol revisions beyond the SDK's own announced support. It does not run an SDK server per request. The July 2026 path validates matching `MCP-Protocol-Version`, `MCP-Method`, optional encoded `MCP-Name`, and per-request `_meta`; the older path accepts initialization and initialized notification. The endpoint responds in JSON; SSE streaming and resumability are not implemented. Capability advertisement is limited to tools.
+
+## Access model
+
+Astra starts with Browser Use disabled. Enabling creates a rotating bearer credential and binds a loopback endpoint. Existing ordinary tabs require a user grant; agent-created tabs are granted automatically. The server rechecks the exact tab, owning window, controller, document, and grant before and after suspended work. Private tabs, Mini Astra windows, internal pages, and website-app helpers are excluded. A shared tab uses Astra's ordinary WebKit website session, including authentication cookies. Grants are not restricted by website origin. Native library mutation and arbitrary page JavaScript have separate Developer controls. A website cannot receive the MCP bearer token through the page scripts.
+
+DOM references include a snapshot identifier and are valid only for the document and controller that produced them. Node replacement is checked by retaining the original node identity in the page script. A new snapshot, navigation, ownership transfer, or revocation invalidates references. Open shadow roots are traversed. Same-origin frames can be inspected through page JavaScript; inaccessible frames are reported. The server does not bypass WebKit's origin boundaries or inspect closed shadow roots. `BrowserAgentInputService` targets AppKit responder methods within the selected visible Astra tab; DOM trust and user activation are not guaranteed. Synthetic DOM pointer mode remains available. Upload authorization is tab-bound and backed by a native user file picker, with no agent-supplied arbitrary filesystem paths.
+
+## Verification boundaries
+
+The HTTP parser and page scripts have focused fixtures under `checks/`, and the deterministic local HTTP website is under `tests/browser-use/site/`. A website fixture alone is not an end-to-end MCP test: a full test must launch an isolated Astra build, connect an external client to the production listener, and check resulting browser and website state. On non-macOS hosts, Swift/AppKit/WebKit compilation and actual WebKit interaction cannot be exercised. Record each executed check separately; do not infer a passing Xcode build or live MCP interoperation from source inspection or fixture execution.

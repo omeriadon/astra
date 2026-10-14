@@ -244,6 +244,13 @@ import WebKit
 				completionHandler(nil)
 				return
 			}
+#if !ASTRA_WEBSITE_APP_HELPER
+            if let urls = BrowserAgentUploadScopes.shared.consume(controller: self, parameters: parameters) {
+                retainPanelUploadAccess(for: urls)
+                completionHandler(urls.isEmpty ? nil : urls)
+                return
+            }
+#endif
 			let documentID = navigationIdentifier
 			beginLifecycleOperation()
 			let panel = NSOpenPanel()
