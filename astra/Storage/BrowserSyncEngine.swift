@@ -22,6 +22,10 @@ actor BrowserSyncEngine {
 	nonisolated struct Prepared: Sendable {
 		let document: BrowserSyncDocument
 		let localPortableTabs: [UUID: OpenTab]
+		let bookmarksChanged: Bool
+		let readingListChanged: Bool
+		let historyChanged: Bool
+		let workspaceChanged: Bool
 	}
 	private var projectionCache: [UUID: (key: SnapshotKey, document: BrowserSyncDocument)] = [:]
 	func fetch(url: URL, token: String) async throws -> [BrowserSyncRemoteSnapshot] {
@@ -90,7 +94,13 @@ actor BrowserSyncEngine {
 		let merged = remote.documents.reduce(combined) { $0.merging($1) }
 		let changed = merged != combined
 		let prepared = !changed ? [] : zip(local, projected).map { raw, portable in
-			Prepared(document: merged.preservingLocalOnlyData(from: raw), localPortableTabs: Dictionary(portable.tabs.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest }))
+			let preserved = merged.preservingLocalOnlyData(from: raw)
+			return Prepared(document: preserved,
+				localPortableTabs: Dictionary(portable.tabs.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest }),
+				bookmarksChanged: preserved.bookmarks != raw.bookmarks,
+				readingListChanged: preserved.readingList != raw.readingList,
+				historyChanged: preserved.history != raw.history,
+				workspaceChanged: preserved.workspace != raw.workspace)
 		}
 		return (combined, merged, changed, prepared)
 	}

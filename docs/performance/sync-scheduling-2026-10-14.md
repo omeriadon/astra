@@ -43,6 +43,10 @@ Account settings exposes production Sync Now, progress, static pending status,
 last successful completion and errors. Concurrent manual API callers wait for the
 active task and a coalesced follow-up. Internal scheduler/revision fields are
 excluded from Observation.
+Prepared application flags compare library collections off-main. Settings-only
+updates leave unchanged tabs, bookmarks, reading lists and history untouched;
+workspace reconciliation commits only an actual change instead of publishing
+intermediate/no-op mutations.
 
 ## Confirmed hotspots
 

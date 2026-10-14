@@ -35,6 +35,17 @@ struct SyncEngineCheck {
         let unchanged = try await engine.merge([original], keys: [key(1)], remote: decoded)
         precondition(unchanged.merged == portable && unchanged.prepared.isEmpty)
         precondition(!unchanged.changed)
+        // A settings-only remote update must not republish unchanged libraries.
+        var settingsOnly = portable
+        settingsOnly.settings["test-setting"] = SyncedSetting(
+            value: try PropertyListSerialization.data(fromPropertyList: ["value": true], format: .binary, options: 0),
+            modifiedAt: now.addingTimeInterval(1))
+        let settingsRemote = try await engine.decode([wire(settingsOnly)], deviceID: deviceID)
+        let settingsResult = try await engine.merge([original], keys: [key(1)], remote: settingsRemote)
+        precondition(settingsResult.changed && settingsResult.prepared.count == 1)
+        precondition(!settingsResult.prepared[0].bookmarksChanged)
+        precondition(!settingsResult.prepared[0].readingListChanged)
+        precondition(!settingsResult.prepared[0].historyChanged)
         let noUpload = try await engine.upload(unchanged.merged, own: decoded.own, deviceID: deviceID)
         precondition(noUpload == nil)
         let upload = try await engine.upload(portable, own: nil, deviceID: deviceID)

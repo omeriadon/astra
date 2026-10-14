@@ -374,7 +374,11 @@ final class BrowserSync {
 				defer { applyingRemote = false }
 				if result.changed {
 					if !hasPendingChanges { hasPendingChanges = true }
-					for (target, prepared) in zip(targets, result.prepared) { target.applyPreparedSyncDocument(prepared.document, localPortableTabs: prepared.localPortableTabs) }
+					for (target, prepared) in zip(targets, result.prepared) {
+						target.applyPreparedSyncDocument(prepared.document, localPortableTabs: prepared.localPortableTabs,
+							bookmarksChanged: prepared.bookmarksChanged, readingListChanged: prepared.readingListChanged,
+							historyChanged: prepared.historyChanged, workspaceChanged: prepared.workspaceChanged)
+					}
 					try applySettings(result.merged.settings)
 				}
 				outgoing = result.merged
