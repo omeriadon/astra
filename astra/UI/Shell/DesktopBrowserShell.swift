@@ -773,7 +773,7 @@ private struct ShellContentColumn: View {
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
 				#if os(macOS)
 					.onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tabSplitDropWidth = $0 }
-					.onDrop(of: [UTType.data],
+					.onDrop(of: [UTType(exportedAs: "com.omeriadon.astra.tab", conformingTo: .data)],
 					        delegate: TabSplitDropDelegate(browser: browser, width: tabSplitDropWidth, side: $tabSplitDropSide))
 					.overlay {
 						if let side = tabSplitDropSide {
