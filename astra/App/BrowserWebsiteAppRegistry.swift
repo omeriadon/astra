@@ -261,8 +261,10 @@
 					throw RegistryError.installationOutsideOwnedDirectory
 				}
 				try await fileWorker.prepareLaunch(installation)
+				// --pin already validates and registers the bundle; avoid a second
+				// installer launch before opening the website app.
 				try await pinToDock(installation)
-				try await openInstalledApp(installation)
+				_ = try await NSWorkspace.shared.openApplication(at: installation.bundleURL, configuration: .init())
 			}
 		}
 
