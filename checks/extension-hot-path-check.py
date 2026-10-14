@@ -30,7 +30,7 @@ assert "setEnabled(true, for: name)" in enabling
 print("WebExtension hot-path and preparation lifecycle checks passed")
 
 # No extension controller is required simply to activate a cached startup window.
-controller = between("lazy var controller: WKWebExtensionController", "private let bundledNames")
+controller = between("lazy var controller: WKWebExtensionController", "private(set) var loadErrors:")
 assert "for window in windows.values" in controller
 assert "for browser in BrowserWindowRegistry.shared.openBrowsers" in controller
 assert "self.sync(browser)" in controller

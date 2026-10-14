@@ -73,6 +73,7 @@ jobs:
           fi
           python3 checks/website-app-bundle-check.py "$APP"
           python3 checks/website-app-runtime-size-check.py "$APP"
+          python3 checks/optional-assets-check.py "$APP"
           bash scripts/audit_sparkle_bundle.sh "$APP" --unsigned
           echo "Validated unsigned Astra $ACTUAL_VERSION (build $ACTUAL_BUILD)"
       - name: Build base Release archive (size comparison only)

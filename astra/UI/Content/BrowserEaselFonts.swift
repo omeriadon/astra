@@ -8,7 +8,7 @@ enum BrowserEaselFonts {
 	static func register() {
 		guard !registered else { return }
 		registered = true
-		let names = ["SF-Mono-Regular.otf", "NewYorkSmall-Regular.otf", "GeistPixel-Square.ttf", "ThestralNeue-Bold.otf", "Solare_Regular.ttf"]
+		let names = ["GeistPixel-Square.ttf", "ThestralNeue-Bold.otf", "Solare_Regular.ttf"]
 		for name in names {
 			let file = name as NSString
 			let url = BrowserResources.bundle.url(forResource: file.deletingPathExtension, withExtension: file.pathExtension)
