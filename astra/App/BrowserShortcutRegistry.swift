@@ -16,6 +16,7 @@
 			let title: String
 			let section: String
 			let name: KeyboardShortcuts.Name
+			let isCustomizable: Bool
 		}
 
 		private final class MenuBinding {
@@ -54,7 +55,7 @@
 				identifier(title, section: section),
 				initial: .init(key, modifiers: modifiers)
 			)
-			definitions.append(Definition(id: name.rawValue, title: title, section: section, name: name))
+			definitions.append(Definition(id: name.rawValue, title: title, section: section, name: name, isCustomizable: true))
 		}
 
 		func definition(_ title: String, section: String) -> Definition? {
@@ -98,11 +99,29 @@
 					identifier(item.title, section: section),
 					initial: .init(key, modifiers: item.keyEquivalentModifierMask)
 				)
+				let customizable = section != "File" && section != "Edit" && Self.canCustomizeMenuItem(item.title)
+				if !customizable {
+					// Remove any formerly saved override. Keep the original menu
+					// equivalent available to the native menu and SwiftUI actions.
+					KeyboardShortcuts.reset(name)
+				}
 				if !definitions.contains(where: { $0.id == name.rawValue }) {
-					definitions.append(Definition(id: name.rawValue, title: item.title, section: section, name: name))
+					definitions.append(Definition(id: name.rawValue, title: item.title, section: section,
+					                              name: name, isCustomizable: customizable))
 				}
 				menuBindings.append(MenuBinding(item, name: name))
 			}
+		}
+
+		private static func canCustomizeMenuItem(_ title: String) -> Bool {
+			let key = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+			if key.hasPrefix("quit ") || key.hasPrefix("hide ") || key.hasPrefix("minimize")
+				|| key.hasPrefix("minimise") || key.hasPrefix("settings")
+				|| key.hasPrefix("preferences") || key.hasPrefix("new window") {
+				return false
+			}
+			return !["hide others", "enter full screen", "exit full screen",
+			          "zoom in", "zoom out", "actual size"].contains(key)
 		}
 
 		func refreshMenus() {

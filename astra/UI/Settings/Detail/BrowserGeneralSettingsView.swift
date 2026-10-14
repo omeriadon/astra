@@ -25,7 +25,6 @@ struct BrowserGeneralSettingsView: View {
 		@State private var defaultBrowserError: String?
 		@Default(.miniAstraEnabled) private var miniAstraEnabled
 		@Default(.miniAstraWindowAnimation) private var miniAstraWindowAnimation
-		@Default(.miniAstraShortcutEnabled) private var miniAstraShortcutEnabled
 	#endif
 
 	var body: some View {
@@ -185,19 +184,7 @@ struct BrowserGeneralSettingsView: View {
 							.foregroundStyle(.secondary)
 					}
 
-					Toggle("Enable global Mini Astra shortcut", isOn: $miniAstraShortcutEnabled)
-						.accessibilityLabel("Enable the shortcut configured under Keyboard Shortcuts settings")
-						.accessibilityIdentifier("mini-astra-shortcut-enabled")
-						.onChange(of: miniAstraShortcutEnabled) { _, _ in
-							MiniAstraShortcut.shared.update()
-						}
-					Text("Opens a blank Mini Astra window from any app while Astra is running.")
-						.font(.caption)
-						.foregroundStyle(.secondary)
-					if MiniAstraShortcut.shared.registrationFailed {
-						Text("The shortcut could not be registered. Disable any conflicting shortcut, then enable it again.")
-							.foregroundStyle(.red)
-					}
+
 				}
 
 			#endif

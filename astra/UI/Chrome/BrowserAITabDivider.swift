@@ -9,7 +9,6 @@ struct BrowserAITabDivider: View {
 	@Default(.aiFeaturesEnabled) private var allFeatures
 	@State private var hovered = false
 	@Binding var action: String?
-	@Binding var error: String?
 	let canUndoGrouping: Bool
 	@Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
@@ -45,12 +44,6 @@ struct BrowserAITabDivider: View {
 			.labelStyle(.iconOnly)
 			.buttonStyle(.plain)
 			.disabled(action != nil)
-			if let error {
-				Text(error)
-					.font(.caption)
-					.foregroundStyle(.secondary)
-					.accessibilityIdentifier("ai-tab-cleanup-error")
-			}
 		}
 
 		.accessibilityLabel("Today tabs actions")

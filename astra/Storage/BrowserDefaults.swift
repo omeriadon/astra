@@ -31,7 +31,6 @@ extension Defaults.Keys {
 	static let siteZoomPreferences = Key<Data>(BrowserSiteZoomDocument.defaultsKey, default: Data())
 	static let miniAstraEnabled = Key<Bool>("miniAstraEnabled", default: true)
 	static let miniAstraWindowAnimation = Key<Bool>("miniAstraWindowAnimation", default: true)
-	static let miniAstraShortcutEnabled = Key<Bool>("miniAstraShortcutEnabled", default: false)
 	static let webInspectorEnabled = Key<Bool>("webInspectorEnabled", default: false)
 	static let developerModeEnabled = Key<Bool>("developerModeEnabled", default: false)
 	static let usageLimitsProvider = Key<BrowserUsageLimitsProvider>("usageLimitsProvider", default: .none)
