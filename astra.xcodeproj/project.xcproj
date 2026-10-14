@@ -18,11 +18,8 @@
         "up-to-next-major-version": "3.1.0",
       },
     }, {
-      "kind": "remote",
-      "repository": "https://github.com/Lakr233/MarkdownView",
-      "version": {
-        "up-to-next-major-version": "4.1.7",
-      },
+      "kind": "local",
+      "path": "Packages/MarkdownView",
     }, {
       "kind": "remote",
       "repository": "https://github.com/sindresorhus/Defaults",
