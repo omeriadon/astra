@@ -452,15 +452,18 @@ enum BrowserAITools {
 				}
 				guard !ids.isEmpty else { return "No matching tabs; nothing to change." }
 				guard ids.count <= 100 else { throw BrowserAIError.toolLimit }
-				let tabs = try ids.map { try snapshot($0, in: browser) }
+				var tabs = try ids.map { try snapshot($0, in: browser) }
+				// An instruction to move a topic into a space is idempotent:
+				// tabs already there need no work, not an entire-plan failure.
+				if kind == .move, let destination {
+					tabs.removeAll { $0.sourceSpaceID == destination && !$0.favourite }
+					if tabs.isEmpty { return "All selected tabs are already in the destination space; nothing to move." }
+				}
 				if kind == .close {
 					let visible = Set(browser.visibleTabs.map(\.id))
 					guard tabs.allSatisfy({ visible.contains($0.id) }) else { throw BrowserAIError.toolDenied }
 					try checkClosable(tabs, in: browser)
-				} else if let destination {
-					guard tabs.allSatisfy({ $0.sourceSpaceID != destination || $0.favourite }) else {
-						throw BrowserAIError.invalidResponse("One or more tabs already belong to the destination space.")
-					}
+				} else if destination != nil {
 					guard !tabs.contains(where: { $0.favourite }) || BrowserAIAction.favouriteTab.enabled else {
 						throw BrowserAIError.toolDenied
 					}
