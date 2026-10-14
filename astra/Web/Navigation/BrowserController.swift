@@ -1662,6 +1662,19 @@ final class BrowserController: NSObject, Identifiable {
 		}
 	}
 
+	#if os(macOS)
+		/// The browser stays responsible for a file upload while its open panel
+		/// is active. Unlike JavaScript dialogs, file pickers legitimately move
+		/// key-window focus to AppKit's sheet and its auxiliary panels.
+		func ownsFileUpload(in webView: WKWebView, documentID: Int, window: NSWindow) -> Bool {
+			guard owns(webView), navigationIdentifier == documentID,
+			      promptOwnership?(webView) == true,
+			      unsafe webView.window === window,
+			      window.isVisible else { return false }
+			return true
+		}
+	#endif
+
 	func ownsPrompt(in webView: WKWebView, documentID: Int) -> Bool {
 		guard owns(webView), navigationIdentifier == documentID,
 		      promptOwnership?(webView) == true else { return false }
@@ -1826,7 +1839,12 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func retainPanelUploadAccess(for urls: [URL]) {
-		uploadSecurityScopedFiles.append(contentsOf: urls)
+		// Only balance security scopes that were successfully opened. Keep the
+		// selected files accessible while WebKit reads the upload, then release
+		// them on the next navigation or when the controller is invalidated.
+		for url in urls where url.startAccessingSecurityScopedResource() {
+			uploadSecurityScopedFiles.append(url)
+		}
 	}
 
 	private func releaseUploadAccess() {

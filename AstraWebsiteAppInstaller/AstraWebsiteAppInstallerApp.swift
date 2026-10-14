@@ -24,7 +24,8 @@ enum AstraWebsiteAppInstallerApp {
 			if CommandLine.arguments[1] == "--pin" {
 				try pin(appURL)
 			} else {
-				_ = try prepareWebsiteApp(at: appURL)
+				let websiteApp = try prepareWebsiteApp(at: appURL)
+				try registerWebsiteApp(at: websiteApp.url)
 			}
 			logger.info("installer.success operation=\(CommandLine.arguments[1], privacy: .public) app=\(appURL.path, privacy: .private)")
 			message = ""
@@ -61,6 +62,7 @@ enum AstraWebsiteAppInstallerApp {
 	@MainActor
 	private static func pin(_ appURL: URL) throws {
 		let websiteApp = try prepareWebsiteApp(at: appURL)
+		try registerWebsiteApp(at: websiteApp.url)
 
 		let defaults = UserDefaults.standard
 		defaults.synchronize()
@@ -152,6 +154,17 @@ enum AstraWebsiteAppInstallerApp {
 			throw failure("macOS could not register the website app (\(registrationStatus)).")
 		}
 		return (appURL, identifier, name)
+	}
+
+	/// Astra is sandboxed. Launch Services registration must run in this separate,
+	/// non-sandboxed, signed helper, after bundle/path/signature validation.
+	/// Chromium likewise registers the final published app rather than its staging copy.
+	private static func registerWebsiteApp(at url: URL) throws {
+		let status = LSRegisterURL(url as CFURL, true)
+		guard status == noErr else {
+			logger.error("installer.registration-failed status=\(status, privacy: .public) app=\(url.path, privacy: .private)")
+			throw failure("macOS could not register the website app (\(status)).")
+		}
 	}
 
 	private static func removeQuarantineMetadata(from appURL: URL, executableURL: URL) throws {

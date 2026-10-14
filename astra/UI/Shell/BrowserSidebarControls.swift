@@ -14,7 +14,6 @@ struct ShellSidebarListView: View {
 	var navigationNamespace: Namespace.ID?
 	@Default(.aiFeaturesEnabled) private var allFeatures
 	@State private var cleanupAction: String?
-	@State private var cleanupError: String?
 	@State private var todayGroupsUndo: [BrowserTabGroupingFeature.Group]?
 	@Namespace private var sidebarTransitions
 	@State private var sidebarSelection = BrowserSidebarTabSelection()
@@ -123,7 +122,7 @@ struct ShellSidebarListView: View {
 							ForEach([BrowserTab]()) { _ in EmptyView() }
 								.reorderable(collectionID: SidebarTabCollection.pinned)
 						}
-						BrowserAITabDivider(browser: browser, tabs: normalTabs, action: $cleanupAction, error: $cleanupError, canUndoGrouping: todayGroupsUndo != nil)
+						BrowserAITabDivider(browser: browser, tabs: normalTabs, action: $cleanupAction, canUndoGrouping: todayGroupsUndo != nil)
 						ForEach(space.todayTabGroups, id: \.id) { (group: BrowserTabGroupingFeature.Group) in
 							let groupTabs = (projection.groupedTabs[group.id] ?? []).filter { !splitIDs.contains($0.id) }
 							if !groupTabs.isEmpty {
@@ -173,6 +172,8 @@ struct ShellSidebarListView: View {
 					.padding(.horizontal, onSelectTab == nil ? BrowserChromeMetrics.shellEdgePadding : 16)
 					.padding(.top, 4)
 					.padding(.bottom, 48)
+					// Constrain the scroll content to the actual resized sidebar viewport.
+					.frame(width: max(0, geometry.size.width), alignment: .topLeading)
 					.frame(minHeight: geometry.size.height, alignment: .top)
 				}
 				#if os(macOS)
@@ -239,7 +240,6 @@ struct ShellSidebarListView: View {
 			cleanupAction = nil
 			return
 		}
-		cleanupError = nil
 		defer { self.cleanupAction = nil }
 		do {
 			let snapshot = tabs.filter { $0.internalPage == nil && $0.currentURL != nil }
@@ -346,7 +346,7 @@ struct ShellSidebarListView: View {
 			}
 		} catch {
 			if !Task.isCancelled {
-				cleanupError = error.localizedDescription
+				browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error.localizedDescription)
 			}
 		}
 	}

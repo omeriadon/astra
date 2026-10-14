@@ -380,7 +380,17 @@ extension Browser {
 	}
 
 	private func openSearchDestination(_ url: URL, fromAddressBar: Bool = false) {
-		let controller = showsQuickSearch ? addTab().controller : selectedTab?.activeController
+		let controller: BrowserController? = if showsQuickSearch {
+			// In an otherwise empty window the anchor *is* the destination.
+			// Reuse it instead of leaving an empty sidebar tab behind.
+			if let selectedTab, selectedTab.openTab.isDiscardableNewTab {
+				selectedTab.controller
+			} else {
+				addTab().controller
+			}
+		} else {
+			selectedTab?.activeController
+		}
 		if fromAddressBar {
 			controller?.loadFromAddressBar(url)
 		} else {

@@ -116,9 +116,6 @@ struct BrowserAIChatSidebar: View {
 										.accessibilityIdentifier("ai-recent-chat-\(conversation.id.uuidString)")
 									}
 								}
-								if let error = history.error {
-									Text(error).font(.caption).foregroundStyle(.secondary)
-								}
 							}
 							.listStyle(.sidebar)
 							.scrollContentBackground(.hidden)
@@ -276,6 +273,16 @@ struct BrowserAIChatSidebar: View {
 				chat.includeCurrentTab(in: browser)
 			}
 		}
+		.onChange(of: chat.error) { _, error in
+			if let error {
+				browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error)
+			}
+		}
+		.onChange(of: history.error) { _, error in
+			if let error {
+				browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error)
+			}
+		}
 		.task { await history.load() }
 		.fileImporter(isPresented: $showsFileImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
 			switch result {
@@ -412,18 +419,11 @@ private struct BrowserAIChatStreamingResponse: View {
 					#endif
 				}
 			}
-			if let error = chat.error {
-				VStack(alignment: .leading, spacing: 8) {
-					Text(error)
-						.foregroundStyle(.secondary)
-						.accessibilityIdentifier("ai-chat-error")
-					if chat.canRetry {
-						Button("Retry Message", systemImage: "arrow.clockwise", action: onRetry)
-							.buttonStyle(.glass)
-							.disabled(chat.isResponding)
-							.accessibilityIdentifier("ai-chat-retry")
-					}
-				}
+			if chat.canRetry {
+				Button("Retry Message", systemImage: "arrow.clockwise", action: onRetry)
+					.buttonStyle(.glass)
+					.disabled(chat.isResponding)
+					.accessibilityIdentifier("ai-chat-retry")
 			}
 		}
 		// MarkdownContent reparses the entire accumulated response on each
@@ -668,8 +668,8 @@ private struct BrowserAIChatStreamingResponse: View {
 							}
 						} else if !streamedText.isEmpty {
 							Text(streamedText)
-						} else if let error {
-							Text(error).font(.caption).foregroundStyle(.secondary)
+						} else if error != nil {
+							Label("Preview Unavailable", systemImage: "exclamationmark.triangle")
 						} else {
 							ProgressView("Summarizing Page")
 						}
@@ -688,6 +688,7 @@ private struct BrowserAIChatStreamingResponse: View {
 						} catch {
 							if !Task.isCancelled {
 								self.error = error.localizedDescription
+								browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error.localizedDescription)
 							}
 						}
 					}

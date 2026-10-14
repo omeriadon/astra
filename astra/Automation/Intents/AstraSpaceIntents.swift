@@ -4,6 +4,41 @@
 	import AstraAutomationCore
 	import Foundation
 
+	/// System Settings > Focus > Focus Filters > Astra. A one-time navigation, not a lock.
+	struct AstraFocusSpaceIntent: SetFocusFilterIntent {
+		static let title: LocalizedStringResource = "Astra Space"
+		static let description = IntentDescription("Switch Astra to this space when the Focus activates. You can still switch spaces manually.")
+		static let pendingSpaceKey = "astra.focus.pendingSpaceID"
+		static var supportedModes: IntentModes {
+			.background
+		}
+
+		@Parameter(title: "Space") var space: AstraSpaceEntity?
+
+		var displayRepresentation: DisplayRepresentation {
+			if let space {
+				return DisplayRepresentation(title: "Astra Space", subtitle: "\(space.name)")
+			}
+			return DisplayRepresentation(title: "Astra Space", subtitle: "No space selected")
+		}
+
+		@MainActor
+		func perform() async throws -> some IntentResult {
+			guard let rawID = space?.id, let uuid = UUID(uuidString: rawID) else {
+				UserDefaults.standard.removeObject(forKey: Self.pendingSpaceKey)
+				return .result()
+			}
+			UserDefaults.standard.set(rawID, forKey: Self.pendingSpaceKey)
+			if let browser = try? await AstraSystemActions.existingBrowser(),
+			   browser.workspace.spaces.contains(where: { $0.id == uuid })
+			{
+				browser.selectSpace(uuid)
+				UserDefaults.standard.removeObject(forKey: Self.pendingSpaceKey)
+			}
+			return .result()
+		}
+	}
+
 	struct AstraSwitchSpaceIntent: AppIntent {
 		static let title: LocalizedStringResource = "Switch Astra Space"
 		static var supportedModes: IntentModes {
@@ -11,6 +46,7 @@
 		}
 
 		@Parameter(title: "Space") var space: AstraSpaceEntity
+
 		@MainActor
 		func perform() async throws -> some IntentResult {
 			try await AstraSystemActions.switchSpace(id: space.id)

@@ -130,6 +130,7 @@
             "UI/Shell/BrowserSpacePager.swift",
             "UI/Shell/BrowserSplitView.swift",
             "UI/Shell/BrowserWindowController.swift",
+            "UI/Shell/BrowserWindowTrafficLightAnimator.swift",
             "UI/Shell/CompactBrowserShell.swift",
             "UI/Shell/DesktopBrowserShell.swift",
             "UI/Shell/MiniAstraOpeningAnimation.swift",

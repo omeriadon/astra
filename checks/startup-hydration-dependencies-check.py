@@ -17,9 +17,12 @@ assert "startup.persisted-state-read" in block
 print("Startup concurrent hydration dependency checks passed")
 
 # Only foreground WebKit should be constructed when restoring a session.
-restoration = source.split("let restoredTabs = loaded.tabs.compactMap", 1)[1].split(
-    "var newTabs: [BrowserTab]", 1
-)[0]
+restoration_start = source.index("let restoredTabs = savedTabs.compactMap")
+restoration_end = source.index("var newTabs = restoredTabs", restoration_start)
+restoration = source[restoration_start:restoration_end]
+assert "let savedTabs = loaded.tabs.filter { !$0.isDiscardableNewTab }" in source, (
+    "Legacy empty new-tab records must be discarded before restoration"
+)
 assert "foregroundSavedID" in source
 assert "savedWindow?.restoredSelection(availableTabIDs:" in source
 assert "isHibernated: saved.isHibernated || startupBehavior != .restore || saved.id != foregroundSavedID" in restoration

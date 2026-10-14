@@ -126,6 +126,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 			}
 			projected.workspace = workspace
 		}
+		projected.settings.removeValue(forKey: "newTabStyle")
 		if !portableTabIDs.contains(projected.browser.selectedTabID) {
 			projected.browser.selectedTabID = projected.tabs.first?.id ?? BrowserSpace.firstID
 		}
@@ -137,7 +138,8 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		let assignedIDs = Set((workspace?.favouriteTabIDs ?? []) + (workspace?.spaces.flatMap(\.tabIDs) ?? []))
 		let unassignedEaselIDs = Set(tabs.filter { $0.internalPage == "easel" && !assignedIDs.contains($0.id) }.map(\.id))
 		let localTabs = local.tabs.filter {
-			(!isPortableSyncTab($0) && $0.internalPage == nil) || unassignedEaselIDs.contains($0.id)
+			!$0.isDiscardableNewTab
+				&& ((!isPortableSyncTab($0) && $0.internalPage == nil) || unassignedEaselIDs.contains($0.id))
 		}
 		let localTabIDs = Set(localTabs.map(\.id))
 		var tabsByID = Dictionary(projected.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -326,7 +328,8 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 			return preferred(first, first.modifiedAt, next, next.modifiedAt)
 		})
 		result.tabs = tabsByID.values.filter { tab in
-			!isDeleted(tab.id, modifiedAt: tab.modifiedAt, dates: result.browser.closedTabsAt, legacyIDs: result.browser.closedTabIDs)
+			!tab.isDiscardableNewTab
+				&& !isDeleted(tab.id, modifiedAt: tab.modifiedAt, dates: result.browser.closedTabsAt, legacyIDs: result.browser.closedTabIDs)
 		}.sorted { $0.id.uuidString < $1.id.uuidString }
 
 		let bookmarksByID = Dictionary((bookmarks + other.bookmarks).map { ($0.id, $0) }, uniquingKeysWith: { first, next in
@@ -424,6 +427,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 			}
 			result.settings[key] = preferred(incoming, incoming.modifiedAt, current, current.modifiedAt)
 		}
+		result.settings.removeValue(forKey: "newTabStyle")
 		return result
 	}
 }
@@ -434,7 +438,8 @@ private nonisolated func appendUnique(_ existing: [UUID], _ incoming: [UUID]) ->
 }
 
 private nonisolated func isPortableSyncTab(_ tab: OpenTab) -> Bool {
-	(tab.internalPage == nil || tab.internalPage == "easel")
+	!tab.isDiscardableNewTab
+		&& (tab.internalPage == nil || tab.internalPage == "easel")
 		&& tab.fileAccessBookmark == nil
 		&& (tab.url.map(isPortableSyncURL) ?? true)
 }

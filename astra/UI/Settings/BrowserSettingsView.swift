@@ -54,7 +54,7 @@ struct BrowserSettingsView: View {
 						identifier: "settings-ui",
 						terms: [
 							"Default Browser", "Make Default Browser",
-							"New Tab", "Sidebar Tab", "Spotlight Overlay", "Address Bar", "Page Zoom", "Default Page Zoom", "Reset Default Zoom", "Peek", "Levels",
+							"Address Bar", "Page Zoom", "Default Page Zoom", "Reset Default Zoom", "Peek", "Levels",
 							"Mini Astra", "links", "cursor", "animation", "shortcut",
 							"Zoom out in Peeks", "Downloads",
 							"Ask where to save each download", "Download folder", "Choose Folder",
@@ -167,7 +167,7 @@ struct BrowserSettingsView: View {
 			let metadata = definition
 			let text = ([metadata.title, metadata.section?.rawValue ?? ""] + metadata.terms)
 				.joined(separator: " ")
-			return BrowserSearchMatching.score(query, in: text) > 0
+			return text.localizedStandardContains(query.trimmingCharacters(in: .whitespacesAndNewlines))
 		}
 	}
 
@@ -176,28 +176,12 @@ struct BrowserSettingsView: View {
 	}
 
 	var body: some View {
-		GeometryReader { geometry in
+		// Keep the sidebar's tap targets independent from the detail view's
+		// scrolling and avoid a List nested in a horizontal ScrollView.
+		let pages = matchingPages
+		return GeometryReader { geometry in
 			HStack(spacing: 0) {
-				List {
-					if matchingPages.isEmpty {
-						Text("No settings found")
-							.foregroundStyle(.secondary)
-					}
-
-					ForEach(Page.Section.allCases, id: \.self) { section in
-						let pages = matchingPages.filter { $0.definition.section == section }
-						if !pages.isEmpty {
-							Section(section.rawValue) {
-								ForEach(pages, id: \.self) { page in
-									row(for: page)
-								}
-							}
-						}
-					}
-				}
-				.listStyle(.sidebar)
-				.scrollContentBackground(.hidden)
-				.safeAreaBar(edge: .top) {
+				VStack(spacing: 0) {
 					HStack(spacing: 8) {
 						Image(systemName: "magnifyingglass")
 							.accessibilityHidden(true)
@@ -211,14 +195,39 @@ struct BrowserSettingsView: View {
 					.padding(.horizontal, 12)
 					.padding(.top, 12)
 					.padding(.bottom, 12)
-				}
-				.safeAreaBar(edge: .bottom) {
+
+					ScrollView {
+						LazyVStack(alignment: .leading, spacing: 4) {
+							if pages.isEmpty {
+								Text("No settings found")
+									.foregroundStyle(.secondary)
+									.padding(.horizontal, 12)
+							}
+							ForEach(Page.Section.allCases, id: \.self) { section in
+								let sectionPages = pages.filter { $0.definition.section == section }
+								if !sectionPages.isEmpty {
+									Text(section.rawValue)
+										.font(.caption)
+										.foregroundStyle(.secondary)
+										.padding(.leading, 12)
+										.padding(.top, 12)
+									ForEach(sectionPages, id: \.self) { page in
+										row(for: page)
+									}
+								}
+							}
+						}
+						.padding(.bottom, 12)
+					}
+					.scrollIndicators(.automatic)
+
+					Divider()
 					VStack(spacing: 8) {
-						ForEach(matchingPages.filter { $0.definition.section == nil }, id: \.self) { page in
+						ForEach(pages.filter { $0.definition.section == nil }, id: \.self) { page in
 							row(for: page)
 						}
 					}
-					.padding(.bottom, 6)
+					.padding(.vertical, 8)
 				}
 				.frame(width: BrowserChromeMetrics.settingsSidebarWidth)
 				.foregroundStyle(theme.foregroundColor)
@@ -229,7 +238,7 @@ struct BrowserSettingsView: View {
 					Group {
 						switch selectedPage {
 							case .ai:
-								BrowserAISettingsView()
+								BrowserAISettingsView(browser: browser)
 							case .ui:
 								BrowserGeneralSettingsView()
 							#if os(macOS)
@@ -277,10 +286,11 @@ struct BrowserSettingsView: View {
 			}
 			.monospaced()
 			.frame(
-				width: geometry.size.width,
+				width: max(geometry.size.width, BrowserChromeMetrics.minimumPageWidth(isSettings: true) - BrowserChromeMetrics.shellEdgePadding * 2),
 				height: geometry.size.height,
 				alignment: .topLeading
 			)
+			.accessibilityIdentifier("settings-horizontal-overflow")
 		}
 	}
 
@@ -296,7 +306,5 @@ struct BrowserSettingsView: View {
 			browser.settingsScrollTarget = nil
 			selectedPage = page
 		}
-		.listRowInsets(EdgeInsets())
-		.listRowBackground(Color.clear)
 	}
 }

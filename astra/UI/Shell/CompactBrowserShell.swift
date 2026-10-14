@@ -242,8 +242,7 @@
 
 		private var newTabButton: some View {
 			Button("New Tab", systemImage: "plus") {
-				browser.addTab()
-				showPage(from: "toolbar-new-tab")
+				browser.requestNewTab()
 			}
 			.accessibilityIdentifier("compact-new-tab")
 		}

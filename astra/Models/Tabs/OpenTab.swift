@@ -21,6 +21,16 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 	var recordsNavigationHistory: Bool
 	var easel: BrowserEaselDocument?
 
+	/// Legacy New Tab pages have no URL or recoverable content. Never restore,
+	/// sync, or persist these as normal tabs; leave Easels and navigable tabs intact.
+	nonisolated var isDiscardableNewTab: Bool {
+		// Pattern matching does not invoke BrowserEaselDocument's actor-isolated
+		// synthesized Equatable conformance when checking an optional for nil.
+		guard case .none = easel else { return false }
+		return internalPage == nil && url == nil && history.isEmpty && peeks.isEmpty
+			&& restorationState == nil && fileAccessBookmark == nil
+	}
+
 	nonisolated func hasSameNavigationState(as other: Self) -> Bool {
 		url == other.url
 			&& history == other.history

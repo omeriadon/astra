@@ -189,12 +189,52 @@ and attachment reader in an isolated folder, including corrupt-file preservation
 ## Browser assistant tools and monitoring
 
 All feature instructions are centralized in `astra/AI/BrowserAIPrompts.swift` as
-separate multiline constants. The assistant uses a bounded JSON tool loop: the
-model proposes named actions, and Swift validates permissions, identifiers, URLs,
-private-session exclusions, and the originating space before applying them through
-existing browser APIs. Closing tabs and deleting bookmarks default to disabled.
-The AI settings page exposes every action permission. Native CLI shell/file tools
-remain disabled; only explicit web-search turns enable provider web search.
+separate multiline constants. The assistant uses a bounded JSON tool loop:
+the model proposes named actions, and Swift validates permissions, identifiers,
+URLs, private-session exclusions, and the originating space before applying them
+through existing browser APIs.
+
+### Cross-space and bulk tab actions
+
+The AI sidebar includes a paginated list_tabs inventory. It exposes space IDs, names,
+tab IDs, URLs, and pinned/favourite state, including tabs in other local spaces.
+The existing sidebar context still includes the selected space's tabs and a compact
+inventory of space names and IDs. Use the read-only list before selecting IDs
+for requests such as "Move my Swift documentation into Development".
+
+move_tabs_to_space and bulk close_tab operations have a two-phase protocol:
+phase=preview validates and snapshots the exact tab IDs, committed URLs, source
+spaces and pin/favourite state and returns a single-use planID. phase=apply
+accepts only that planID. It rechecks every tab and rejects the entire plan
+before any mutation if a URL or space membership changed, the originating
+space/window changed, or the 180-second plan expired. Up to 100 tabs may be
+targeted per plan. Bulk apply commands are not dispatched from partially
+streamed model output. Cross-space moves preserve pinning, move the selected
+tab through the existing selection-aware API, and verify destination membership.
+
+For simple exact-domain bulk close requests, phase=preview with domain
+matches the current space's visible tabs against URL.host, not a substring
+of the page title or URL. For GitHub, keepOwner optionally preserves repository
+URLs owned by that exact account. The `github_account` read-only tool tries to
+identify the signed-in owner using metadata from an already-loaded GitHub page,
+without accessing cookies or launching another network request. When no
+unambiguous owner is available, a request mentioning "my repositories" needs
+the owner to be supplied rather than guessed.
+Closing a pinned or favourite tab first requires its corresponding toggle
+permission, since normal close otherwise hibernates it rather than removing it.
+Bulk closing is still disabled until the existing Close Tabs permission is enabled.
+Any tab with unsaved changes or protected media aborts the bulk before the first
+close; actual removals are checked by tab ID and partial results are reported.
+No other spaces are bulk-closed implicitly. Webpage content cannot authorize
+browser mutations.
+
+Static checks: python3 checks/ai-browser-tools-check.py. Native WebKit/AppKit
+runtime verification is still required for multi-window focus, protection dialogs,
+session sync, hibernation, and high-tab-count persistence.
+
+Closing tabs and deleting bookmarks default to disabled. The AI settings
+page exposes every action permission. Native CLI shell/file tools remain disabled;
+only explicit web-search turns enable provider web search.
 
 The chat opens only for a website tab and initially links that page. Summarise is
 the single preset. Codex/Claude selectors fetch current model and reasoning metadata
@@ -219,9 +259,9 @@ the badge. Results and notifications are delivered while Astra runs or reconnect
 Delivery while Astra is quit requires APNs credentials, which are not configured on
 the current server. Website checks still run while the Mac is closed.
 
-`python3 checks/ai-browser-tools-check.py` checks the actual permission boundary,
-destructive defaults, space/private isolation, Boolean arguments, and unknown-tool
-rejection without performing live browser mutations.
+`python3 checks/ai-browser-tools-check.py` verifies source-level permission gating,
+destructive defaults, space/private isolation, plan invalidation, protected close
+checks, and streaming dispatch behavior without performing browser mutations.
 
 ## Local AI usage log
 

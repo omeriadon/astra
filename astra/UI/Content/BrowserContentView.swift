@@ -73,8 +73,9 @@ struct BrowserContentView: View, Animatable {
 		} else if let tab, tab.isHibernated {
 			HibernatedPlaceholder(browser: browser, tab: tab)
 		} else if tab != nil {
-			NewTabView(browser: browser)
-				.padding(.top, insets.obscured.top)
+			// Empty window anchors have no dedicated New Tab page; Cmd-T uses Spotlight.
+			Color.clear
+				.allowsHitTesting(false)
 		} else {
 			ContentUnavailableView("Tab Unavailable", systemImage: "exclamationmark.triangle")
 		}

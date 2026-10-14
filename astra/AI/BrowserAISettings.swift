@@ -70,7 +70,7 @@ extension BrowserAIModel {
 enum BrowserAISettings {
 	static var linkPreviewDelay: Double {
 		let delay = Defaults[.aiLinkPreviewDelay]
-		return delay.isFinite ? min(10, max(0, delay)) : 2
+		return delay.isFinite ? min(5, max(1, delay.rounded())) : 1
 	}
 
 	static func effectiveReasoning(_ requested: String?, model: BrowserAIModel) -> String? {
@@ -101,10 +101,9 @@ extension Defaults.Keys {
 	static let aiLinkPreviews = Key<Bool>("aiLinkPreviews", default: true)
 	static let aiLinkPreviewMode = Key<String>("aiLinkPreviewMode", default: "always")
 	static let aiLinkPreviewShiftOverride = Key<Bool>("aiLinkPreviewShiftOverride", default: false)
-	static let aiLinkPreviewDelay = Key<Double>("aiLinkPreviewDelay", default: 2)
+	static let aiLinkPreviewDelay = Key<Double>("aiLinkPreviewDelay", default: 1)
 	static let aiTabGroups = Key<Bool>("aiTabGroups", default: true)
 	static let aiFind = Key<Bool>("aiFind", default: true)
-	static let aiFindContextLimit = Key<Bool>("aiFindContextLimit", default: true)
 	static let aiSidebar = Key<Bool>("aiSidebar", default: true)
 	static let aiTabTitles = Key<Bool>("aiTabTitles", default: true)
 	static let aiProvider = Key<String>("aiProvider", default: "presets")

@@ -116,8 +116,14 @@ private struct SidebarScrollOpacityFadeModifier: ViewModifier {
 
 		Group {
 			#if os(macOS)
-				if lowPowerMode || reduceTransparency {
+				if reduceTransparency {
 					faded.clipShape(Rectangle())
+				} else if lowPowerMode {
+					// Preserve edge Haze in Low Power Mode at half strength
+					// without compositing the entire scrolling sidebar.
+					faded
+						.modifier(SidebarScrollVariableBlurModifier(top: top, bottom: bottom))
+						.clipShape(Rectangle())
 				} else {
 					faded
 						.modifier(SidebarScrollVariableBlurModifier(top: top, bottom: bottom))
@@ -149,7 +155,7 @@ private struct SidebarScrollVariableBlurModifier: ViewModifier {
 							startPoint: .bottom, endPoint: .top,
 							startOpacity: 1, endOpacity: 0, isSmooth: true
 						),
-						maxBlurRadius: 2, isolatesBackdrop: true
+						maxBlurRadius: 6, isolatesBackdrop: true
 					)
 					.frame(height: bottom)
 					.allowsHitTesting(false)
@@ -163,7 +169,7 @@ private struct SidebarScrollVariableBlurModifier: ViewModifier {
 							startPoint: .top, endPoint: .bottom,
 							startOpacity: 1, endOpacity: 0, isSmooth: true
 						),
-						maxBlurRadius: 1, isolatesBackdrop: true
+						maxBlurRadius: 2, isolatesBackdrop: true
 					)
 					.frame(height: top)
 					.allowsHitTesting(false)

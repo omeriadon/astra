@@ -6,13 +6,11 @@ struct BrowserFindBar: View {
 	@FocusState private var isFocused: Bool
 	@Default(.aiFind) private var aiEnabled
 	@Default(.aiFeaturesEnabled) private var allFeatures
-	@Default(.aiFindContextLimit) private var contextLimit
 	@State private var answer = ""
-	@State private var aiError: String?
 	@State private var isAnswering = false
 
 	private var answerKey: String {
-		"\(controller.findText)|\(String(describing: controller.findHasMatch))|\(controller.navigationIdentifier)|\(aiEnabled)|\(contextLimit)|\(allFeatures)"
+		"\(controller.findText)|\(String(describing: controller.findHasMatch))|\(controller.navigationIdentifier)|\(aiEnabled)|\(allFeatures)"
 	}
 
 	var body: some View {
@@ -64,7 +62,7 @@ struct BrowserFindBar: View {
 					.labelStyle(.iconOnly)
 					.accessibilityIdentifier("find-close")
 			}
-			if isAnswering || !answer.isEmpty || aiError != nil {
+			if isAnswering || !answer.isEmpty {
 				Divider()
 				if isAnswering, answer.isEmpty {
 					ProgressView("Reading Page")
@@ -77,9 +75,6 @@ struct BrowserFindBar: View {
 							.accessibilityIdentifier("find-ai-answer")
 					}
 					.frame(maxHeight: 300)
-				}
-				if let aiError {
-					Text(aiError).font(.caption).foregroundStyle(.secondary)
 				}
 			}
 		}
@@ -99,7 +94,6 @@ struct BrowserFindBar: View {
 		.task(id: answerKey) {
 			let key = answerKey
 			answer = ""
-			aiError = nil
 			isAnswering = false
 			guard allFeatures, aiEnabled, !controller.session.isPrivate, controller.findHasMatch == false,
 			      !controller.findText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
@@ -112,11 +106,9 @@ struct BrowserFindBar: View {
 					}
 				}
 				let page = try await BrowserAIPageText.extract(from: controller)
-				let context = contextLimit ? try await page.limited(to: 30000, onlyAbove: 40000) : page
-				let notice = context.text == page.text ? "" : "\nOnly the first 30,000 tokens of this large page are supplied. State this limitation when relevant."
 				let result = try await BrowserAI.shared.performStreaming(
 					BrowserPageAnswerFeature(feature: .find),
-					input: .init(question: controller.findText, context: context.prompt + notice)
+					input: .init(question: controller.findText, context: page.prompt)
 				) { snapshot in
 					if !Task.isCancelled, answerKey == key {
 						answer = snapshot
@@ -128,7 +120,7 @@ struct BrowserFindBar: View {
 			} catch {
 				if !Task.isCancelled, answerKey == key {
 					answer = ""
-					aiError = error.localizedDescription
+					controller.session.toastManager.show(symbol: "exclamationmark.triangle", message: error.localizedDescription)
 				}
 			}
 		}

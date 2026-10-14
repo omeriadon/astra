@@ -9,7 +9,6 @@ let addressDisplayStyleSpacing: CGFloat = 8
 
 struct BrowserGeneralSettingsView: View {
 	@Bindable private var updates = UpdateManager.shared
-	@Default(.newTabStyle) private var newTabStyle
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
 	@Default(.defaultPageZoom) private var defaultPageZoom
 	@Default(.peekLevel) private var peekLevel
@@ -24,7 +23,6 @@ struct BrowserGeneralSettingsView: View {
 		@State private var defaultBrowserError: String?
 		@Default(.miniAstraEnabled) private var miniAstraEnabled
 		@Default(.miniAstraWindowAnimation) private var miniAstraWindowAnimation
-		@Default(.miniAstraShortcutEnabled) private var miniAstraShortcutEnabled
 	#endif
 
 	var body: some View {
@@ -72,39 +70,6 @@ struct BrowserGeneralSettingsView: View {
 				.accessibilityIdentifier("address-display-style-picker")
 				.id("Address Bar")
 			}
-
-			Section("New Tab") {
-				VStack(spacing: addressDisplayStyleSpacing) {
-					ForEach(BrowserNewTabStyle.allCases) { style in
-						Button {
-							newTabStyle = style
-						} label: {
-							HStack(spacing: 12) {
-								Label(style.title, systemImage: style.symbol)
-									.frame(width: 140, alignment: .leading)
-								Text(style.description)
-									.font(.caption)
-									.frame(maxWidth: .infinity, alignment: .leading)
-							}
-							.padding(12)
-							.contentShape(RoundedRectangle(cornerRadius: 15))
-							.background(Color.primary.opacity(newTabStyle == style ? 0.2 : 0), in: RoundedRectangle(cornerRadius: 15))
-							.overlay {
-								RoundedRectangle(cornerRadius: 15)
-									.strokeBorder(.white.opacity(newTabStyle == style ? 0.6 : 0.3), lineWidth: 1)
-							}
-						}
-						.buttonStyle(.plain)
-						.accessibilityLabel(style.title)
-						.accessibilityValue(newTabStyle == style ? "Selected" : "Not selected")
-						.accessibilityIdentifier("new-tab-style-\(style.rawValue)")
-					}
-				}
-				.padding(5)
-				.background(Color.primary.opacity(0.1), in: RoundedRectangle(cornerRadius: 20))
-				.accessibilityIdentifier("new-tab-style-picker")
-			}
-			.id("New Tab")
 
 			Section("Search") {
 				Picker("Normal browsing", selection: engineBinding(isPrivate: false)) {
@@ -198,20 +163,6 @@ struct BrowserGeneralSettingsView: View {
 						Text("Expands the window from the pointer position. Respects Reduce Motion.")
 							.font(.caption)
 							.foregroundStyle(.secondary)
-					}
-
-					Toggle("Enable global Mini Astra shortcut", isOn: $miniAstraShortcutEnabled)
-						.accessibilityLabel("Enable the shortcut configured under Keyboard Shortcuts settings")
-						.accessibilityIdentifier("mini-astra-shortcut-enabled")
-						.onChange(of: miniAstraShortcutEnabled) { _, _ in
-							MiniAstraShortcut.shared.update()
-						}
-					Text("Opens a blank Mini Astra window from any app while Astra is running.")
-						.font(.caption)
-						.foregroundStyle(.secondary)
-					if MiniAstraShortcut.shared.registrationFailed {
-						Text("The shortcut could not be registered. Disable any conflicting shortcut, then enable it again.")
-							.foregroundStyle(.red)
 					}
 				}
 
