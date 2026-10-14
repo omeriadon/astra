@@ -96,7 +96,6 @@
             "App/BrowserDiagnostics.swift",
             "App/BrowserWebsiteAppMenuIntegration.swift",
             "App/browserApp.swift",
-<<<<<<< HEAD
             "Automation/AstraSystemActions.swift",
             "Automation/Intents/AstraAppShortcuts.swift",
             "Automation/Intents/AstraDownloadIntents.swift",
@@ -108,13 +107,6 @@
             "Automation/Intents/AstraUIIntents.swift",
             "Automation/Services/AstraServicesProvider.swift",
             "Automation/Spotlight/AstraSpotlightIndexer.swift",
-=======
-            "Extensions/DarkReader-LICENSE.txt",
-            "Extensions/SOURCES.txt",
-            "Extensions/darkreader-chrome-mv3.zip",
-            "Extensions/uBlock-Origin-Lite-LICENSE.txt",
-            "Extensions/ublock-origin-lite-safari.zip",
->>>>>>> checkpoint/foreground-benchmark-20261011
             "Special/Assets.xcassets",
             "Special/Info.plist",
             "Special/astra.icon",
@@ -130,10 +122,7 @@
             "UI/Shell/BrowserSpacePager.swift",
             "UI/Shell/BrowserSplitView.swift",
             "UI/Shell/BrowserWindowController.swift",
-<<<<<<< HEAD
             "UI/Shell/BrowserWindowTrafficLightAnimator.swift",
-=======
->>>>>>> checkpoint/foreground-benchmark-20261011
             "UI/Shell/CompactBrowserShell.swift",
             "UI/Shell/DesktopBrowserShell.swift",
             "UI/Shell/MiniAstraOpeningAnimation.swift",
@@ -523,13 +512,8 @@
         "SDKROOT": "macosx",
         "SKIP_INSTALL": "YES",
         "STRING_CATALOG_GENERATE_SYMBOLS": "YES",
-<<<<<<< HEAD
         "STRIP_INSTALLED_PRODUCT[config=Debug]": "NO",
         "STRIP_STYLE[config=Release]": "non-global",
-=======
-        "STRIP_INSTALLED_PRODUCT": "YES",
-        "STRIP_STYLE": "non-global",
->>>>>>> checkpoint/foreground-benchmark-20261011
         "SUPPORTED_PLATFORMS": "macosx",
         "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "$(inherited) ASTRA_WEBSITE_APP_HELPER ASTRA_WEBSITE_APP_RUNTIME",
         "SWIFT_APPROACHABLE_CONCURRENCY": "YES",
@@ -540,12 +524,9 @@
         "SWIFT_INSTALL_MODULE": "NO",
         "SWIFT_INSTALL_OBJC_HEADER": "NO",
         "SWIFT_OPTIMIZATION_LEVEL[config=Release]": "-Osize",
-<<<<<<< HEAD
         "SWIFT_STRICT_CONCURRENCY": "complete",
         "SWIFT_STRICT_MEMORY_SAFETY": "YES",
         "SWIFT_TREAT_WARNINGS_AS_ERRORS": "NO",
-=======
->>>>>>> checkpoint/foreground-benchmark-20261011
         "SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY": "YES",
         "SWIFT_VERSION": "6.0",
         "TARGETED_DEVICE_FAMILY": "1,2,7",

@@ -99,15 +99,9 @@
 			let dispatchStart = BrowserLog.clock()
 			BrowserLog.info(.performance, "benchmark.input-key-down", metadata: [
 				"sequence": String(sequence),
-<<<<<<< HEAD
 				"native_event_uptime_ms": unsafe String(format: "%.3f", event.timestamp * 1000),
 				"native_to_monitor_ms": unsafe String(format: "%.1f", (dispatchStart - event.timestamp) * 1000),
 				"dispatch_start_ms": unsafe String(format: "%.1f", (dispatchStart - (BrowserLog.mainEntryUptime ?? dispatchStart)) * 1000),
-=======
-				"native_event_uptime_ms": String(format: "%.3f", event.timestamp * 1000),
-				"native_to_monitor_ms": String(format: "%.1f", (dispatchStart - event.timestamp) * 1000),
-				"dispatch_start_ms": String(format: "%.1f", (dispatchStart - (BrowserLog.mainEntryUptime ?? dispatchStart)) * 1000),
->>>>>>> checkpoint/foreground-benchmark-20261011
 				"window_key": String(event.window?.isKeyWindow == true),
 			])
 			DispatchQueue.main.async {
@@ -120,25 +114,15 @@
 
 		static func recordAddressTextChange() {
 			guard enabled,
-<<<<<<< HEAD
 			      let sequence = lastKeyDownSequence,
 			      let eventTimestamp = lastKeyDownEventTimestamp,
 			      acknowledgedAddressSequence != sequence
-=======
-				  let sequence = lastKeyDownSequence,
-				  let eventTimestamp = lastKeyDownEventTimestamp,
-				  acknowledgedAddressSequence != sequence
->>>>>>> checkpoint/foreground-benchmark-20261011
 			else { return }
 			acknowledgedAddressSequence = sequence
 			BrowserLog.info(.performance, "benchmark.address-text-acknowledged", metadata: [
 				"sequence": String(sequence),
 				"elapsed_ms": elapsedMilliseconds(),
-<<<<<<< HEAD
 				"native_to_change_ms": unsafe String(format: "%.1f", (BrowserLog.clock() - eventTimestamp) * 1000),
-=======
-				"native_to_change_ms": String(format: "%.1f", (BrowserLog.clock() - eventTimestamp) * 1000),
->>>>>>> checkpoint/foreground-benchmark-20261011
 			])
 		}
 
@@ -174,15 +158,9 @@
 
 		static func seedTabsIfRequested(in browser: Browser) async {
 			guard enabled,
-<<<<<<< HEAD
 			      Bundle.main.bundleIdentifier?.hasSuffix("foreground20261011") == true,
 			      let rawCount = ProcessInfo.processInfo.environment["ASTRA_BENCHMARK_SEED_TABS"],
 			      let count = Int(rawCount), [1, 10, 50, 100].contains(count)
-=======
-				  Bundle.main.bundleIdentifier?.hasSuffix("foreground20261011") == true,
-				  let rawCount = ProcessInfo.processInfo.environment["ASTRA_BENCHMARK_SEED_TABS"],
-				  let count = Int(rawCount), [1, 10, 50, 100].contains(count)
->>>>>>> checkpoint/foreground-benchmark-20261011
 			else { return }
 			let existingTabs = browser.tabs
 			guard existingTabs.allSatisfy({ $0.internalPage == nil && ($0.currentURL == nil || isFixtureURL($0.currentURL)) }) else {
@@ -209,11 +187,7 @@
 					tab.wake()
 				}
 				guard let controller = tab.controller,
-<<<<<<< HEAD
 				      let url = URL(string: "http://localhost:18766/fixture.html?tab=\(index + 1)")
-=======
-					  let url = URL(string: "http://localhost:18766/fixture.html?tab=\(index + 1)")
->>>>>>> checkpoint/foreground-benchmark-20261011
 				else {
 					BrowserLog.error(.performance, "benchmark.seed-failed", metadata: ["reason": "controller-missing", "tab": String(index + 1)])
 					return
@@ -280,7 +254,6 @@
 
 		private static func evaluateUsableWindow() {
 			guard !didReportUsable,
-<<<<<<< HEAD
 			      let window = foregroundWindow,
 			      let browser = foregroundBrowser,
 			      isUsable(
@@ -294,21 +267,6 @@
 			      	hydrated: browser.isHydrationFinished,
 			      	observedUpdate: observedAppKitUpdate
 			      )
-=======
-				  let window = foregroundWindow,
-				  let browser = foregroundBrowser,
-				  isUsable(
-					  appActive: NSApp.isActive,
-					  key: window.isKeyWindow,
-					  visible: window.isVisible,
-					  occluded: window.occlusionState.contains(.visible),
-					  miniaturized: window.isMiniaturized,
-					  canBecomeKey: window.canBecomeKey,
-					  firstResponder: window.firstResponder != nil,
-					  hydrated: browser.isHydrationFinished,
-					  observedUpdate: observedAppKitUpdate
-				  )
->>>>>>> checkpoint/foreground-benchmark-20261011
 			else { return }
 			didReportUsable = true
 			BrowserLog.notice(.performance, "benchmark.foreground-usable-window", metadata: readinessMetadata(window: window, browser: browser))
@@ -345,11 +303,7 @@
 
 		private static func elapsedMilliseconds() -> String {
 			let start = BrowserLog.mainEntryUptime ?? BrowserLog.clock()
-<<<<<<< HEAD
 			return unsafe String(format: "%.1f", (BrowserLog.clock() - start) * 1000)
-=======
-			return String(format: "%.1f", (BrowserLog.clock() - start) * 1000)
->>>>>>> checkpoint/foreground-benchmark-20261011
 		}
 	}
 #endif
