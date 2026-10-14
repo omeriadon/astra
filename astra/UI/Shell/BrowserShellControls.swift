@@ -325,7 +325,8 @@ struct ShellExtensionControls: View {
 			}
 			.menuIndicator(.hidden)
 			.astraTopBarButton()
-			.astraTopBarOuterCorners(.trailing)
+			.astraTopBarOuterCorners(browser.isMini ? nil : .trailing)
+			.buttonBorderShape(.roundedRectangle(radius: browser.isMini ? 4 : BrowserChromeMetrics.topBarButtonCornerRadius))
 			.accessibilityLabel("Extensions")
 			.accessibilityIdentifier("browser-extensions")
 		}
