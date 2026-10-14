@@ -93,10 +93,24 @@ def main() -> None:
 
 import CoreServices
 
+<<<<<<< HEAD
 func registeredURL(for identifier: String) -> URL? {
     guard let values = LSCopyApplicationURLsForBundleIdentifier(identifier as CFString)?.takeRetainedValue() as? [NSURL]
     else { return nil }
     return values.first as URL?
+=======
+enum RegistrationProbe {
+    nonisolated(unsafe) static var calls = 0
+    nonisolated(unsafe) static var failureStatus: OSStatus?
+}
+
+func LSRegisterURL(_ url: CFURL, _ update: Bool) -> OSStatus {
+    RegistrationProbe.calls += 1
+    if let status = RegistrationProbe.failureStatus {
+        return status
+    }
+    return CoreServices.LSRegisterURL(url, update)
+>>>>>>> 28abf9f1036f562a2845b73c0eef01675ef2f39a
 }
 
 extension AstraWebsiteAppInstallerApp {
@@ -115,7 +129,11 @@ struct WebsiteAppPreparationCheck {
         let traversal = root.appendingPathComponent("Traversal.app")
         let tampered = root.appendingPathComponent("Tampered.app")
         try AstraWebsiteAppInstallerApp.testPrepareWebsiteApp(at: valid)
+<<<<<<< HEAD
         precondition(registeredURL(for: "dev.omeriadon.astra.website.check.valid")?.standardizedFileURL == valid.standardizedFileURL)
+=======
+        precondition(RegistrationProbe.calls == 1, "Preparation must register the website app")
+>>>>>>> 28abf9f1036f562a2845b73c0eef01675ef2f39a
         var value = [UInt8](repeating: 0, count: 256)
         precondition(getxattr(valid.path, "com.apple.quarantine", &value, value.count, 0, 0) == -1)
         precondition(getxattr(valid.appendingPathComponent("Contents/MacOS/fixture").path, "com.apple.quarantine", &value, value.count, 0, 0) == -1)
@@ -123,9 +141,21 @@ struct WebsiteAppPreparationCheck {
         precondition((try? AstraWebsiteAppInstallerApp.testPrepareWebsiteApp(at: outside)) == nil)
         precondition((try? AstraWebsiteAppInstallerApp.testPrepareWebsiteApp(at: traversal)) == nil)
         precondition((try? AstraWebsiteAppInstallerApp.testPrepareWebsiteApp(at: tampered)) == nil)
+<<<<<<< HEAD
         precondition(registeredURL(for: "dev.omeriadon.astra.website.check.outside") == nil)
         precondition(registeredURL(for: "dev.omeriadon.astra.website.check.traversal") == nil)
         precondition(registeredURL(for: "dev.omeriadon.astra.website.check.tampered") == nil)
+=======
+        precondition(RegistrationProbe.calls == 2, "Invalid apps must be rejected before registration")
+        RegistrationProbe.failureStatus = -10819
+        do {
+            try AstraWebsiteAppInstallerApp.testPrepareWebsiteApp(at: valid)
+            preconditionFailure("Registration errors must be propagated")
+        } catch {
+            precondition(error.localizedDescription.contains("-10819"))
+        }
+        precondition(RegistrationProbe.calls == 3)
+>>>>>>> 28abf9f1036f562a2845b73c0eef01675ef2f39a
         print("website-app preparation validation passed")
     }
 }

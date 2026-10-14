@@ -15,7 +15,10 @@ enum AstraWebsiteAppInstallerApp {
 		guard CommandLine.arguments.count == 4,
 		      ["--pin", "--prepare"].contains(CommandLine.arguments[1]),
 		      let response = validatedResponse(CommandLine.arguments[3])
-		else { return }
+		else {
+			logger.error("installer.invalid-invocation arguments-or-response-path-rejected")
+			return
+		}
 		logger.info("installer.start operation=\(CommandLine.arguments[1], privacy: .public) app=\(CommandLine.arguments[2], privacy: .private)")
 
 		let message: String
@@ -144,15 +147,30 @@ enum AstraWebsiteAppInstallerApp {
 		var code: SecStaticCode?
 		let createStatus = unsafe SecStaticCodeCreateWithPath(appURL as CFURL, [], &code)
 		logger.info("installer.signature-create-status status=\(createStatus, privacy: .public)")
-		guard createStatus == errSecSuccess, let code,
-		      SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), nil) == errSecSuccess
-		else { throw failure("The website app's signature is invalid.") }
-		try removeQuarantineMetadata(from: appURL, executableURL: executableURL)
-		let registrationStatus = LSRegisterURL(appURL as CFURL, true)
-		logger.info("installer.registration-status status=\(registrationStatus, privacy: .public) app=\(appURL.path, privacy: .private)")
-		guard registrationStatus == noErr else {
-			throw failure("macOS could not register the website app (\(registrationStatus)).")
+
+		guard createStatus == errSecSuccess, let code else {
+			logger.error("installer.signature-create-failed status=\(createStatus, privacy: .public)")
+			throw failure("The website app's signature is invalid.")
 		}
+
+		let validityStatus = SecStaticCodeCheckValidity(
+			code,
+			SecCSFlags(rawValue: kSecCSStrictValidate),
+			nil
+		)
+
+		logger.info("installer.signature-validity-status status=\(validityStatus, privacy: .public)")
+
+		guard validityStatus == errSecSuccess else {
+			logger.error("installer.signature-invalid status=\(validityStatus, privacy: .public)")
+			throw failure("The website app's signature is invalid.")
+		}
+
+		try removeQuarantineMetadata(
+			from: appURL,
+			executableURL: executableURL
+		)
+
 		return (appURL, identifier, name)
 	}
 
