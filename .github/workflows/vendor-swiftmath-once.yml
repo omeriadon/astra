@@ -57,11 +57,11 @@ jobs:
           import json
           project = Path('astra.xcodeproj/project.xcproj')
           original = project.read_text()
-          marker = '    {\n      "kind": "remote",\n      "repository": "https://github.com/Lakr233/MarkdownView",'
-          assert original.count(marker) == 1, 'Cannot find the MarkdownView package declaration'
-          local = '    { "kind": "local", "path": "Packages/SwiftMath" },\n'
+          marker = '      "path": "Packages/AstraAutomationCore",\n    },'
+          assert original.count(marker) == 1, 'Cannot find last local-package declaration'
+          local = '      "path": "Packages/AstraAutomationCore",\n    }, {\n      "kind": "local",\n      "path": "Packages/SwiftMath",\n    },'
           assert '"path": "Packages/SwiftMath"' not in original
-          project.write_text(original.replace(marker, local + marker, 1))
+          project.write_text(original.replace(marker, local, 1))
           resolved = Path('astra.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved')
           data = json.loads(resolved.read_text())
           matches = [p for p in data['pins'] if p['identity'] == 'swiftmath']
