@@ -1,6 +1,5 @@
 #if os(macOS)
 	import AppKit
-	import CoreServices
 	import Darwin
 	import Foundation
 	import ImageIO
@@ -74,7 +73,6 @@
 			case templateInvalid
 			case installationOutsideOwnedDirectory
 			case signingFailed(String)
-			case registrationFailed(OSStatus)
 			case dockPinningFailed(String)
 			case launchPreparationFailed(String)
 			case dockPinningUnavailable
@@ -87,7 +85,6 @@
 					case .templateInvalid: "The website-app helper template is invalid."
 					case .installationOutsideOwnedDirectory: "Astra refused to modify a website app outside its owned installation directory."
 					case let .signingFailed(message): "The generated website app could not be locally signed: \(message)"
-					case let .registrationFailed(status): "macOS could not register the website app (\(status))."
 					case let .dockPinningFailed(message): "The website app could not be pinned: \(message)"
 					case let .launchPreparationFailed(message): "The website app could not be prepared for launch: \(message)"
 					case .dockPinningUnavailable: "Dock pinning is unavailable on this version of macOS."
@@ -162,6 +159,28 @@
 				let next = installations + [installation]
 				let iconData = icon?.tiffRepresentation
 				try await fileWorker.install(installation, iconData: iconData, nextRegistry: next)
+				// The sandboxed file worker must not call LSRegisterURL. Register the
+				// published, verified bundle via Astra's non-sandboxed installer.
+				do {
+					try await runInstaller(
+						operation: "--prepare", installation: installation,
+						failure: RegistryError.launchPreparationFailed
+					)
+				} catch {
+					let preparationError = error
+					// Keep the on-disk registry and observable state consistent if
+					// even rolling back the failed installation is unsuccessful.
+					do {
+						try await fileWorker.uninstall(installation, nextRegistry: installations)
+					} catch {
+						installations = next
+						BrowserLog.fault(.websiteApps, "website-app.install.rollback-failed", metadata: [
+							"app": BrowserLog.id(id),
+							"error": BrowserLog.errorDescription(error),
+						])
+					}
+					throw preparationError
+				}
 				installations = next
 				return installation
 			}
@@ -191,6 +210,10 @@
 				// Preserve the original path so existing Dock entries remain valid.
 				try await fileWorker.replace(next[index], iconData: nil, nextRegistry: next)
 				installations = next
+				try await runInstaller(
+					operation: "--prepare", installation: next[index],
+					failure: RegistryError.launchPreparationFailed
+				)
 			}
 		}
 
@@ -203,6 +226,10 @@
 				guard let iconData = icon.tiffRepresentation else { throw RegistryError.templateInvalid }
 				try await fileWorker.replace(next[index], iconData: iconData, nextRegistry: next)
 				installations = next
+				try await runInstaller(
+					operation: "--prepare", installation: next[index],
+					failure: RegistryError.launchPreparationFailed
+				)
 			}
 		}
 
@@ -234,8 +261,10 @@
 					throw RegistryError.installationOutsideOwnedDirectory
 				}
 				try await fileWorker.prepareLaunch(installation)
+				// --pin already validates and registers the bundle; avoid a second
+				// installer launch before opening the website app.
 				try await pinToDock(installation)
-				try await openInstalledApp(installation)
+				_ = try await NSWorkspace.shared.openApplication(at: installation.bundleURL, configuration: .init())
 			}
 		}
 

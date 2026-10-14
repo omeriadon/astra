@@ -1,5 +1,4 @@
 #if os(macOS)
-	import CoreServices
 	import Darwin
 	import Foundation
 	import ImageIO
@@ -11,7 +10,6 @@
 		case malformedTemplate(String)
 		case outsideOwnedDirectory
 		case signingFailed(String)
-		case registrationFailed(OSStatus)
 		case operationInProgress
 
 		var errorDescription: String? {
@@ -21,7 +19,6 @@
 				case let .malformedTemplate(reason): "The website-app helper template is invalid: \(reason)"
 				case .outsideOwnedDirectory: "Astra refused to modify a website app outside its owned installation directory."
 				case let .signingFailed(message): "Website app signing failed: \(message)"
-				case let .registrationFailed(status): "macOS could not register the website app (\(status))."
 				case .operationInProgress: "Another website-app operation is still running."
 			}
 		}
@@ -64,7 +61,6 @@
 				try Task.checkCancellation()
 				try FileManager.default.moveItem(at: staging, to: appURL)
 				published = true
-				try registerGeneratedApp(at: appURL)
 				try saveRegistry(nextRegistry)
 			} catch {
 				BrowserLog.error(.websiteApps, "website-app.install.failed", metadata: [
@@ -72,7 +68,7 @@
 					"published": String(published),
 					"error": BrowserLog.errorDescription(error),
 				])
-				// If persistence or registration fails, never publish a broken app.
+				// If bundle creation or registry persistence fails, remove the unpublished app.
 				try? FileManager.default.removeItem(at: staging)
 				if published {
 					try? FileManager.default.removeItem(at: appURL)
@@ -100,7 +96,6 @@
 				try Task.checkCancellation()
 				_ = try FileManager.default.replaceItemAt(original, withItemAt: staging, backupItemName: backupName)
 				replaced = true
-				try registerGeneratedApp(at: original)
 				if let nextRegistry {
 					try saveRegistry(nextRegistry)
 				}
@@ -124,15 +119,6 @@
 							"app": BrowserLog.id(installation.id),
 							"original": BrowserLog.path(original),
 							"backup": BrowserLog.path(backupURL),
-							"error": BrowserLog.errorDescription(error),
-						])
-					}
-					do {
-						try registerGeneratedApp(at: original)
-					} catch {
-						BrowserLog.fault(.websiteApps, "website-app.replace.rollback-registration-failed", metadata: [
-							"app": BrowserLog.id(installation.id),
-							"original": BrowserLog.path(original),
 							"error": BrowserLog.errorDescription(error),
 						])
 					}
@@ -181,7 +167,6 @@
 			if plist?["AstraWebsiteAppRuntimeVersion"] as? Int != 1 {
 				try await replace(installation, iconData: nil, nextRegistry: nil)
 			}
-			try registerGeneratedApp(at: url)
 		}
 
 		private func saveRegistry(_ records: [BrowserWebsiteAppInstallation]) throws {
@@ -277,16 +262,6 @@
 			guard CGImageDestinationFinalize(destination) else {
 				throw BrowserWebsiteAppFileError.malformedTemplate("The website icon ICNS could not be written.")
 			}
-		}
-
-		private func registerGeneratedApp(at url: URL) throws {
-			let plistURL = url.appendingPathComponent("Contents/Info.plist")
-			guard let plist = NSDictionary(contentsOf: plistURL) as? [String: Any],
-			      let executable = plist["CFBundleExecutable"] as? String,
-			      !executable.isEmpty, !executable.contains("/"), executable != ".", executable != ".."
-			else { throw BrowserWebsiteAppFileError.malformedTemplate("The generated app has no valid executable name.") }
-			let status = LSRegisterURL(url as CFURL, true)
-			guard status == noErr else { throw BrowserWebsiteAppFileError.registrationFailed(status) }
 		}
 
 		/// Read the signed entitlement dictionary directly from Security.framework.
