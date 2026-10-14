@@ -4,7 +4,7 @@ import Foundation
 /// intentionally not part of this payload: falling back to a URL would create
 /// a second, unrelated tab on the receiving device.
 struct BrowserHandoffTabReference: Equatable {
-	static let activityType = "com.omeriadon.astra.browse"
+	nonisolated static let activityType = "com.omeriadon.astra.browse"
 	static let tabIDKey = "tabID"
 	static let versionKey = "version"
 	static let version = 1
