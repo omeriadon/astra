@@ -339,6 +339,11 @@ final class BrowserAIChat {
 					      let envelope = try? JSONSerialization.data(withJSONObject: ["response": "", "actions": [object]]),
 					      let turn = try? feature.output(from: String(decoding: envelope, as: UTF8.self)),
 					      let call = turn.actions.first else { continue }
+					// A bulk apply is destructive or moves multiple tabs. Execute it only
+					// after the entire model response has been parsed and validated.
+					guard !(call.arguments["phase"] == "apply"
+						&& (call.name == BrowserAIAction.closeTab.rawValue
+							|| call.name == BrowserAIAction.moveTabsToSpace.rawValue)) else { continue }
 					let encoder = JSONEncoder()
 					encoder.outputFormatting = .sortedKeys
 					guard let identifier = try? encoder.encode(call), seen.insert(identifier).inserted else { continue }
