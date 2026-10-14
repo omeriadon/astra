@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 nonisolated enum BrowserSessionStore {
-	private static let service = "com.omeriadon.browser.sync"
+	private static let service = "com.omeriadon.astra.performance.foreground20261011.sync"
 	private static let account = "session"
 
 	/// Stateless Keychain access; nonisolated so launch never blocks on it.

@@ -344,6 +344,7 @@
 				if let foreground = windows.first {
 					await BrowserPerformanceBenchmark.seedTabsIfRequested(in: foreground.browser)
 				}
+<<<<<<< HEAD
 				#if !ASTRA_WEBSITE_APP_RUNTIME && !ASTRA_WEBSITE_APP_HELPER
 					// Focus switches once after restoration; user navigation stays free.
 					if let raw = UserDefaults.standard.string(forKey: AstraFocusSpaceIntent.pendingSpaceKey),
@@ -356,6 +357,8 @@
 						UserDefaults.standard.removeObject(forKey: AstraFocusSpaceIntent.pendingSpaceKey)
 					}
 				#endif
+=======
+>>>>>>> checkpoint/foreground-benchmark-20261011
 			}
 		}
 

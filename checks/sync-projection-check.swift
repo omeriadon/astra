@@ -7,9 +7,9 @@ let portableBookmark = Bookmark(name: "Portable", url: portableURL)
 let localBookmark = Bookmark(name: "Local", url: URL(fileURLWithPath: "/tmp/local"))
 let workspace = BrowserWorkspace.migrated(tabs: [portableTab, localTab], selectedTabID: portableTab.id, theme: BrowserTheme())
 let source = BrowserSyncDocument(
-    tabs: [portableTab, localTab], workspace: workspace,
-    bookmarks: [portableBookmark, localBookmark],
-    browser: BrowserSnapshot(selectedTabID: portableTab.id), settings: [:]
+	tabs: [portableTab, localTab], workspace: workspace,
+	bookmarks: [portableBookmark, localBookmark],
+	browser: BrowserSnapshot(selectedTabID: portableTab.id), settings: [:]
 )
 let projected = source.portableProjection()
 precondition(projected.tabs.map(\.id) == [portableTab.id])

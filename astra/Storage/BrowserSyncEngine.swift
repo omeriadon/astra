@@ -13,12 +13,14 @@ actor BrowserSyncEngine {
 	init(network: @escaping Transport = { request in try await URLSession.shared.data(for: request) }) {
 		self.network = network
 	}
+
 	nonisolated struct SnapshotKey: Hashable, Sendable {
 		let window: UUID
 		let revision: UInt64
 		let settingsRevision: UInt64
 		let contentRevision: UInt64
 	}
+
 	nonisolated struct Prepared: Sendable {
 		let document: BrowserSyncDocument
 		let localPortableTabs: [UUID: OpenTab]
@@ -27,15 +29,18 @@ actor BrowserSyncEngine {
 		let historyChanged: Bool
 		let workspaceChanged: Bool
 	}
+
 	private var projectionCache: [UUID: (key: SnapshotKey, document: BrowserSyncDocument)] = [:]
 	func fetch(url: URL, token: String) async throws -> [BrowserSyncRemoteSnapshot] {
 		let data = try await transport(url: url, token: token, body: nil)
 		return try JSONDecoder().decode([BrowserSyncRemoteSnapshot].self, from: data)
 	}
+
 	func publish(url: URL, token: String, body: Data) async throws {
 		let data = try await transport(url: url, token: token, body: body)
 		_ = try JSONDecoder().decode(BrowserSyncRemoteSnapshot.self, from: data)
 	}
+
 	private func transport(url: URL, token: String, body: Data?) async throws -> Data {
 		let started = BrowserLog.clock()
 		BrowserLog.syncEvent("sync.transport.begin", metadata: ["method": body == nil ? "GET" : "PUT", "request_bytes": String(body?.count ?? 0)])
@@ -58,17 +63,19 @@ actor BrowserSyncEngine {
 		try Task.checkCancellation()
 		guard let response = response as? HTTPURLResponse,
 		      data.count <= (body == nil ? BrowserSyncPayloadLimits.maximumSyncResponseBytes : 16 * 1024 * 1024) else { throw BrowserSyncError.invalidResponse }
-		guard 200..<300 ~= response.statusCode else {
+		guard 200 ..< 300 ~= response.statusCode else {
 			BrowserLog.syncEvent("sync.transport.rejected", metadata: ["http_status": String(response.statusCode), "response_bytes": String(data.count)])
 			throw BrowserSyncError.http(response.statusCode)
 		}
 		BrowserLog.syncEvent("sync.transport.complete", metadata: ["method": body == nil ? "GET" : "PUT", "response_bytes": String(data.count), "request_bytes": String(body?.count ?? 0)])
 		return data
 	}
+
 	nonisolated struct Decoded: Sendable {
 		let documents: [BrowserSyncDocument]
 		let own: BrowserSyncDocument?
 	}
+
 	func decode(_ snapshots: [BrowserSyncRemoteSnapshot], deviceID: UUID) throws -> Decoded {
 		let started = BrowserLog.clock()
 		BrowserLog.syncEvent("sync.decode.begin", metadata: ["documents": String(snapshots.count)])
@@ -94,11 +101,14 @@ actor BrowserSyncEngine {
 				throw BrowserSyncError.invalidResponse
 			}
 			documents.append(document)
-			if snapshot.deviceID == deviceID { own = document }
+			if snapshot.deviceID == deviceID {
+				own = document
+			}
 		}
 		BrowserLog.syncEvent("sync.decode.complete", metadata: ["documents": String(documents.count), "own_present": String(own != nil), "elapsed_ms": String(Int((BrowserLog.clock() - started) * 1000))])
 		return Decoded(documents: documents, own: own)
 	}
+
 	func merge(_ local: [BrowserSyncDocument], keys: [SnapshotKey], remote: Decoded) throws -> (local: BrowserSyncDocument, merged: BrowserSyncDocument, changed: Bool, prepared: [Prepared]) {
 		let started = BrowserLog.clock()
 		var cacheHits = 0
@@ -109,7 +119,9 @@ actor BrowserSyncEngine {
 		let liveWindows = Set(keys.map(\.window))
 		projectionCache = projectionCache.filter { liveWindows.contains($0.key) }
 		let projected = zip(local, keys).map { document, key in
-			if let cached = projectionCache[key.window], cached.key == key { cacheHits += 1; return cached.document }
+			if let cached = projectionCache[key.window], cached.key == key {
+				cacheHits += 1; return cached.document
+			}
 			let portable = document.portableProjection()
 			projectionCache[key.window] = (key, portable)
 			return portable
@@ -123,18 +135,20 @@ actor BrowserSyncEngine {
 			for (raw, portable) in zip(local, projected) {
 				let preserved = merged.preservingLocalOnlyData(from: raw)
 				let tabIndex: [UUID: OpenTab] = Dictionary(
-					portable.tabs.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+					portable.tabs.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest }
+				)
 				prepared.append(Prepared(document: preserved,
-					localPortableTabs: tabIndex,
-					bookmarksChanged: preserved.bookmarks != raw.bookmarks,
-					readingListChanged: preserved.readingList != raw.readingList,
-					historyChanged: preserved.history != raw.history,
-					workspaceChanged: preserved.workspace != raw.workspace))
+				                         localPortableTabs: tabIndex,
+				                         bookmarksChanged: preserved.bookmarks != raw.bookmarks,
+				                         readingListChanged: preserved.readingList != raw.readingList,
+				                         historyChanged: preserved.history != raw.history,
+				                         workspaceChanged: preserved.workspace != raw.workspace))
 			}
 		}
 		BrowserLog.syncEvent("sync.merge.complete", metadata: ["cache_hits": String(cacheHits), "cache_misses": String(local.count - cacheHits), "changed": String(changed), "prepared_windows": String(prepared.count), "elapsed_ms": String(Int((BrowserLog.clock() - started) * 1000))])
 		return (combined, merged, changed, prepared)
 	}
+
 	func upload(_ document: BrowserSyncDocument, own: BrowserSyncDocument?, deviceID: UUID) throws -> Data? {
 		let phase = BrowserLog.beginSyncPhase("sync.compare-encode")
 		defer { BrowserLog.endSyncPhase("sync.compare-encode", phase) }

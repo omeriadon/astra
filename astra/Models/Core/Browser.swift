@@ -2348,7 +2348,9 @@ final class Browser {
 	func flushAndWaitForPersistence() async {
 		flushPersistence()
 		await session.persistenceWriteTask?.value
-		if !isPrivate && !isMini { await BrowserBoostStore.shared.flushPersistence() }
+		if !isPrivate, !isMini {
+			await BrowserBoostStore.shared.flushPersistence()
+		}
 	}
 
 	func markCleanShutdown() async {
@@ -3202,7 +3204,9 @@ final class Browser {
 		closedTabsAt = document.browser.closedTabsAt
 		deletedBookmarksAt = document.browser.deletedBookmarksAt
 		deletedReadingListAt = document.browser.deletedReadingListAt
-		if readingListChanged && readingList != document.readingList { readingList = document.readingList }
+		if readingListChanged, readingList != document.readingList {
+			readingList = document.readingList
+		}
 		if let persistence, !removedReadingIDs.isEmpty {
 			let previousWrite = session.persistenceWriteTask
 			session.persistenceWriteTask = Task.detached(priority: .utility) {
@@ -3215,10 +3219,14 @@ final class Browser {
 		deletedSpacesAt = document.browser.deletedSpacesAt
 		deletedVisitsAt = document.browser.deletedVisitsAt
 		historyClearedAt = document.browser.historyClearedAt
-		if bookmarksChanged { bookmarks = document.bookmarks }
+		if bookmarksChanged {
+			bookmarks = document.bookmarks
+		}
 		if historyChanged {
 			let nextHistory = visibleHistoryVisits(document.history)
-			if historyVisits != nextHistory { historyVisits = nextHistory }
+			if historyVisits != nextHistory {
+				historyVisits = nextHistory
+			}
 			latestHistoryMutationDate = nil
 		}
 		if workspaceChanged {
@@ -3229,7 +3237,9 @@ final class Browser {
 			)
 		}
 		let missingDeletedSpaces = Set(document.browser.deletedSpacesAt.keys).subtracting(workspace.deletedSpaceIDs)
-		if !missingDeletedSpaces.isEmpty { workspace.deletedSpaceIDs.formUnion(missingDeletedSpaces) }
+		if !missingDeletedSpaces.isEmpty {
+			workspace.deletedSpaceIDs.formUnion(missingDeletedSpaces)
+		}
 		for (id, date) in document.browser.deletedSpacesAt where date > (workspace.deletedSpacesAt[id] ?? .distantPast) {
 			workspace.deletedSpacesAt[id] = date
 		}
@@ -3450,7 +3460,9 @@ final class Browser {
 		{
 			reconciled.spaces[index].selectedTabID = selectedTabID
 		}
-		if workspace != reconciled { workspace = reconciled }
+		if workspace != reconciled {
+			workspace = reconciled
+		}
 	}
 
 	private func schedulePersistence(fullState: Bool = true, syncExtensions: Bool = true) {

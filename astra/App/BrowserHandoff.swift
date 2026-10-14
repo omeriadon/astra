@@ -10,10 +10,12 @@ import Foundation
 		private var receivingTabID: UUID?
 		private var continuationTask: Task<Void, Never>?
 
-		private override init() { super.init() }
+		override private init() {
+			super.init()
+		}
 
-		// A newly advertised tab may still be pending the periodic upload.
-		// Publish when Handoff is actually used, without syncing on selection.
+		/// A newly advertised tab may still be pending the periodic upload.
+		/// Publish when Handoff is actually used, without syncing on selection.
 		nonisolated func userActivityWasContinued(_ userActivity: NSUserActivity) {
 			guard userActivity.activityType == BrowserHandoffTabReference.activityType else { return }
 			Task { @MainActor in await BrowserSync.shared.syncForHandoff() }

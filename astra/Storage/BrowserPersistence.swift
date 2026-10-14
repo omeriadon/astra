@@ -170,7 +170,7 @@ nonisolated enum BrowserHomepage {
 		      ["http", "https"].contains(scheme),
 		      let host = components.host, !host.isEmpty,
 		      !host.unicodeScalars.contains(where: {
-			disallowedHostScalars.contains($0)
+		      	disallowedHostScalars.contains($0)
 		      }),
 		      components.user == nil,
 		      components.password == nil,
@@ -208,8 +208,8 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 	private nonisolated static let readingArchiveLock = NSLock()
 	/// Serializes full-state commits and selection checkpoints across all windows.
 	private nonisolated static let selectionJournalLock = NSLock()
-	// Process-local capture sequence; serialized by selectionJournalLock.
-	// Not part of the persisted schema, so installed versions remain compatible.
+	/// Process-local capture sequence; serialized by selectionJournalLock.
+	/// Not part of the persisted schema, so installed versions remain compatible.
 	private nonisolated(unsafe) static var committedRevisions: [String: UInt64] = [:]
 
 	/// A volatile, memory-bounded process cache of the last committed primary
@@ -916,7 +916,9 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		}
 		let commitStarted = BrowserLog.clock()
 		try data.write(to: currentURL, options: .atomic)
-		if let revision { unsafe Self.committedRevisions[revisionKey] = revision }
+		if let revision {
+			unsafe Self.committedRevisions[revisionKey] = revision
+		}
 		// The full snapshot includes all window selections captured at commit time.
 		// A crash before this cleanup is safe: loader ignores older journals.
 		try? FileManager.default.removeItem(at: directory.appendingPathComponent("browser-selection.json"))

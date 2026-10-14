@@ -2,6 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+<<<<<<< HEAD
 	<key>ASWebAuthenticationSessionWebBrowserSupportCapabilities</key>
 	<dict>
 		<key>AdditionalHeaderFieldsAreSupported</key>
@@ -107,6 +108,8 @@
 			<array><string>public.utf8-plain-text</string><string>public.url</string></array>
 		</dict>
 	</array>
+=======
+>>>>>>> checkpoint/foreground-benchmark-20261011
 	<key>LSFileQuarantineEnabled</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>

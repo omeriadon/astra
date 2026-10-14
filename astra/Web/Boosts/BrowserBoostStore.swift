@@ -185,7 +185,9 @@ final class BrowserBoostStore {
 		while true {
 			let revision = preferencesRevision
 			await preferencesTask?.value
-			if revision == preferencesRevision { return }
+			if revision == preferencesRevision {
+				return
+			}
 		}
 	}
 
@@ -193,7 +195,9 @@ final class BrowserBoostStore {
 		let controller = webView.configuration.userContentController
 		let existing = controller.userScripts.filter { !$0.source.hasPrefix(Self.scriptMarker) }
 		controller.removeAllUserScripts()
-		for script in existing { controller.addUserScript(script) }
+		for script in existing {
+			controller.addUserScript(script)
+		}
 		controller.addUserScript(WKUserScript(
 			source: styles,
 			injectionTime: .atDocumentStart,

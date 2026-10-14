@@ -72,8 +72,11 @@ nonisolated struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		var portableTabs: [OpenTab] = []
 		portableTabs.reserveCapacity(tabs.count)
 		for tab in tabs {
-			if isPortableSyncTab(tab) { portableTabs.append(tab) }
-			else { localOnlyTabIDs.insert(tab.id) }
+			if isPortableSyncTab(tab) {
+				portableTabs.append(tab)
+			} else {
+				localOnlyTabIDs.insert(tab.id)
+			}
 		}
 		var localOnlyBookmarkIDs = Set<UUID>()
 		let portableTabIDs = Set(portableTabs.map(\.id))
@@ -460,7 +463,7 @@ private nonisolated func isValidSyncEasel(_ easel: BrowserEaselDocument) -> Bool
 }
 
 private enum SyncURLValidation {
-	// Initialized once; immutable across validation calls and concurrency domains.
+	/// Initialized once; immutable across validation calls and concurrency domains.
 	nonisolated static let disallowedHostScalars = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
 }
 

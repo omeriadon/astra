@@ -15,17 +15,26 @@ nonisolated struct BrowserSyncSchedule: Sendable {
 
 	func deadline(now: TimeInterval) -> TimeInterval? {
 		guard ready, online else { return nil }
-		if let retryAt { return max(now, retryAt) }
-		if catchUp { return now }
+		if let retryAt {
+			return max(now, retryAt)
+		}
+		if catchUp {
+			return now
+		}
 		return max(now, (lastSuccess ?? (now - interval)) + interval)
 	}
-	var interval: TimeInterval { lowPower ? Self.lowPowerInterval : Self.normalInterval }
+
+	var interval: TimeInterval {
+		lowPower ? Self.lowPowerInterval : Self.normalInterval
+	}
+
 	mutating func succeeded(now: TimeInterval) {
 		lastSuccess = now
 		catchUp = false
 		retryAt = nil
 		failures = 0
 	}
+
 	mutating func failed(now: TimeInterval, jitter: Double) {
 		failures = min(failures + 1, 12)
 		let delay = min(Self.maximumBackoff, 15 * pow(2, Double(failures - 1)))
@@ -45,6 +54,7 @@ nonisolated struct BrowserSyncRequestGate: Sendable {
 		running = true
 		return true
 	}
+
 	mutating func nextCycle(canContinue: Bool) -> Bool {
 		if canContinue, manualQueued {
 			manualQueued = false

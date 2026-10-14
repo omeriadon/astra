@@ -1,5 +1,5 @@
 #if os(macOS)
-import AppKit
+	import AppKit
 #endif
 import AuthenticationServices
 import Defaults
@@ -17,7 +17,9 @@ final class BrowserSync {
 	private(set) var lastSync: Date?
 	private(set) var errorDescription: String?
 	private(set) var hasPendingChanges = false
-	var canSync: Bool { isSignedIn && browser?.isReadyForSync == true }
+	var canSync: Bool {
+		isSignedIn && browser?.isReadyForSync == true
+	}
 
 	@ObservationIgnored private weak var browser: Browser?
 	@ObservationIgnored private let networkMonitor = NWPathMonitor()
@@ -85,7 +87,9 @@ final class BrowserSync {
 				sync.networkWasAvailable = available
 				sync.schedule.online = available
 				BrowserLog.syncEvent("sync.network.changed", metadata: ["online": String(available), "reconnect": String(reconnect)])
-				if reconnect { sync.schedule.catchUp = true }
+				if reconnect {
+					sync.schedule.catchUp = true
+				}
 				sync.reschedule(reason: reconnect ? "reconnect" : "network")
 			}
 		}
@@ -104,7 +108,9 @@ final class BrowserSync {
 				Task { @MainActor in
 					guard let self else { return }
 					self.schedule.lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
-					if let last = self.lastSync, Date.now.timeIntervalSince(last) >= self.schedule.interval { self.schedule.catchUp = true }
+					if let last = self.lastSync, Date.now.timeIntervalSince(last) >= self.schedule.interval {
+						self.schedule.catchUp = true
+					}
 					self.reschedule(reason: "wake-or-power")
 					BrowserLog.syncEvent("sync.lifecycle.changed", metadata: ["low_power": String(self.schedule.lowPower), "catch_up": String(self.schedule.catchUp)])
 				}
@@ -123,7 +129,7 @@ final class BrowserSync {
 					sessionToken = token
 					isSignedIn = true
 					if browser != nil {
-						self.reschedule(reason: "startup")
+						reschedule(reason: "startup")
 					}
 				}
 			} catch {
@@ -198,9 +204,13 @@ final class BrowserSync {
 	func scheduleSync() {
 		guard !applyingRemote else { return }
 		dirtyRevision &+= 1
-		if !hasPendingChanges { hasPendingChanges = true }
+		if !hasPendingChanges {
+			hasPendingChanges = true
+		}
 		// Edits do not postpone an existing periodic deadline.
-		if scheduledSync == nil, activeSync == nil { reschedule(reason: "dirty") }
+		if scheduledSync == nil, activeSync == nil {
+			reschedule(reason: "dirty")
+		}
 	}
 
 	private func reschedule(reason: String) {
@@ -214,13 +224,18 @@ final class BrowserSync {
 		scheduledSync = Task(priority: .utility) { @MainActor [weak self] in
 			do { try await Task.sleep(for: .seconds(delay)) } catch { return }
 			guard let self, !Task.isCancelled else { return }
-			self.scheduledSync = nil
-			await self.startSync(reason: triggerReason)
+			scheduledSync = nil
+			await startSync(reason: triggerReason)
 		}
 	}
 
-	func syncNow() async { await startSync(reason: "manual") }
-	func syncForHandoff() async { await startSync(reason: "handoff") }
+	func syncNow() async {
+		await startSync(reason: "manual")
+	}
+
+	func syncForHandoff() async {
+		await startSync(reason: "handoff")
+	}
 
 	private func startSync(reason: String) async {
 		guard canSync else { BrowserLog.syncEvent("sync.request.skipped", metadata: ["reason": reason, "cause": "unavailable"]); return }
@@ -236,15 +251,15 @@ final class BrowserSync {
 		guard requestGate.request(manual: reason == "manual" || reason == "handoff") else { return }
 		let task = Task(priority: reason == "manual" || reason == "handoff" ? .userInitiated : .utility) { @MainActor [weak self] in
 			guard let self else { return }
-			self.isSyncing = true
+			isSyncing = true
 			var nextReason = reason
 			repeat {
-				await self.performSync(reason: nextReason)
+				await performSync(reason: nextReason)
 				nextReason = "manual"
-			} while self.requestGate.nextCycle(canContinue: self.canSync && !Task.isCancelled)
-			self.isSyncing = false
-			self.activeSync = nil
-			self.reschedule(reason: "periodic")
+			} while requestGate.nextCycle(canContinue: canSync && !Task.isCancelled)
+			isSyncing = false
+			activeSync = nil
+			reschedule(reason: "periodic")
 		}
 		activeSync = task
 		await task.value
@@ -359,7 +374,9 @@ final class BrowserSync {
 				snapshotCache = snapshotCache.filter { entry in targets.contains(where: { $0.windowID == entry.key }) }
 				let snapshotPhase = BrowserLog.beginSyncPhase("sync.snapshot")
 				let raw = targets.map { target -> BrowserSyncDocument in
-					if let cached = snapshotCache[target.windowID], cached.revision == target.syncRevision, cached.settingsRevision == settingsRevision, cached.contentRevision == capturedDirty { return cached.document }
+					if let cached = snapshotCache[target.windowID], cached.revision == target.syncRevision, cached.settingsRevision == settingsRevision, cached.contentRevision == capturedDirty {
+						return cached.document
+					}
 					let document = target.captureSyncDocument(settings: settings)
 					snapshotCache[target.windowID] = (target.syncRevision, settingsRevision, capturedDirty, document)
 					return document
@@ -374,7 +391,8 @@ final class BrowserSync {
 					!$0.isPrivate && !$0.isMini && $0.session === browser.session && $0.isReadyForSync
 				}
 				guard Set(currentWindows.map(\.windowID)) == Set(windows.map(\.windowID)),
-				      targets.map(\.syncRevision) == revisions, dirtyRevision == capturedDirty else {
+				      targets.map(\.syncRevision) == revisions, dirtyRevision == capturedDirty
+				else {
 					BrowserLog.syncEvent("sync.merge.rebase", metadata: ["attempt": String(rebases), "captured_revision": String(capturedDirty), "current_revision": String(dirtyRevision)])
 					continue
 				}
@@ -383,11 +401,13 @@ final class BrowserSync {
 				defer { applyingRemote = false }
 				if result.changed {
 					BrowserLog.syncEvent("sync.apply.begin", metadata: ["windows": String(targets.count)])
-					if !hasPendingChanges { hasPendingChanges = true }
+					if !hasPendingChanges {
+						hasPendingChanges = true
+					}
 					for (target, prepared) in zip(targets, result.prepared) {
 						target.applyPreparedSyncDocument(prepared.document, localPortableTabs: prepared.localPortableTabs,
-							bookmarksChanged: prepared.bookmarksChanged, readingListChanged: prepared.readingListChanged,
-							historyChanged: prepared.historyChanged, workspaceChanged: prepared.workspaceChanged)
+						                                 bookmarksChanged: prepared.bookmarksChanged, readingListChanged: prepared.readingListChanged,
+						                                 historyChanged: prepared.historyChanged, workspaceChanged: prepared.workspaceChanged)
 					}
 					try applySettings(result.merged.settings)
 					BrowserLog.syncEvent("sync.apply.complete")
@@ -395,7 +415,9 @@ final class BrowserSync {
 				outgoing = result.merged
 				applyingRemote = false
 				if result.changed {
-					for target in targets { await target.flushAndWaitForPersistence() }
+					for target in targets {
+						await target.flushAndWaitForPersistence()
+					}
 					BrowserLog.syncEvent("sync.persistence.flush.complete", metadata: ["windows": String(targets.count)])
 					guard valid() else { throw CancellationError() }
 				}
@@ -404,14 +426,20 @@ final class BrowserSync {
 			let body = try await engine.upload(outgoing, own: remote.own, deviceID: deviceID)
 			guard valid() else { throw CancellationError() }
 			if let body {
-				if !hasPendingChanges { hasPendingChanges = true }
+				if !hasPendingChanges {
+					hasPendingChanges = true
+				}
 				try await engine.publish(url: endpoint, token: token, body: body)
 			}
 			guard valid() else { throw CancellationError() }
 			// Changes during encoding/upload remain pending for the next cycle.
-			if dirtyRevision == capturedDirty, hasPendingChanges { hasPendingChanges = false }
+			if dirtyRevision == capturedDirty, hasPendingChanges {
+				hasPendingChanges = false
+			}
 			lastSync = .now
-			if errorDescription != nil { errorDescription = nil }
+			if errorDescription != nil {
+				errorDescription = nil
+			}
 			schedule.succeeded(now: ProcessInfo.processInfo.systemUptime)
 			BrowserLog.syncEvent("sync.success", metadata: ["reason": reason, "low_power": String(schedule.lowPower), "elapsed_ms": String(Int((BrowserLog.clock() - started) * 1000)), "documents": String(snapshots.count), "upload_bytes": String(body?.count ?? 0), "upload_skipped": String(body == nil)])
 		} catch {
@@ -425,14 +453,20 @@ final class BrowserSync {
 				errorDescription = "Your sync session expired. Sign in again."
 				return
 			}
-			if errorDescription != error.localizedDescription { errorDescription = error.localizedDescription }
-			schedule.failed(now: ProcessInfo.processInfo.systemUptime, jitter: Double.random(in: 0...1))
+			if errorDescription != error.localizedDescription {
+				errorDescription = error.localizedDescription
+			}
+			schedule.failed(now: ProcessInfo.processInfo.systemUptime, jitter: Double.random(in: 0 ... 1))
 			BrowserLog.syncEvent("sync.retry", metadata: ["retry_seconds": String(Int((schedule.retryAt ?? 0) - ProcessInfo.processInfo.systemUptime)), "low_power": String(schedule.lowPower)])
-			let failureKind: String
-			if case let BrowserSyncError.http(status) = error { failureKind = "http-\(status)" }
-			else if error is URLError { failureKind = "network" }
-			else if error is BrowserSyncPayloadError { failureKind = "payload-limit" }
-			else { failureKind = "validation-or-local-processing" }
+			let failureKind = if case let BrowserSyncError.http(status) = error {
+				"http-\(status)"
+			} else if error is URLError {
+				"network"
+			} else if error is BrowserSyncPayloadError {
+				"payload-limit"
+			} else {
+				"validation-or-local-processing"
+			}
 			BrowserLog.syncEvent("sync.failed", metadata: ["reason": reason, "kind": failureKind, "retry_seconds": String(Int((schedule.retryAt ?? 0) - ProcessInfo.processInfo.systemUptime))])
 		}
 	}

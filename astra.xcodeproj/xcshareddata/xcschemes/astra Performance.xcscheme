@@ -27,8 +27,11 @@
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
+<<<<<<< HEAD
       <Testables>
       </Testables>
+=======
+>>>>>>> checkpoint/foreground-benchmark-20261011
    </TestAction>
    <LaunchAction
       buildConfiguration = "Release"
