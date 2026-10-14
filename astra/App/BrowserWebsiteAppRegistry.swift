@@ -158,29 +158,9 @@
 				)
 				let next = installations + [installation]
 				let iconData = icon?.tiffRepresentation
+				// The file worker registers the generated app before committing the registry.
+				// If registration fails, it rolls back the published bundle.
 				try await fileWorker.install(installation, iconData: iconData, nextRegistry: next)
-				// The sandboxed file worker must not call LSRegisterURL. Register the
-				// published, verified bundle via Astra's non-sandboxed installer.
-				do {
-					try await runInstaller(
-						operation: "--prepare", installation: installation,
-						failure: RegistryError.launchPreparationFailed
-					)
-				} catch {
-					let preparationError = error
-					// Keep the on-disk registry and observable state consistent if
-					// even rolling back the failed installation is unsuccessful.
-					do {
-						try await fileWorker.uninstall(installation, nextRegistry: installations)
-					} catch {
-						installations = next
-						BrowserLog.fault(.websiteApps, "website-app.install.rollback-failed", metadata: [
-							"app": BrowserLog.id(id),
-							"error": BrowserLog.errorDescription(error),
-						])
-					}
-					throw preparationError
-				}
 				installations = next
 				return installation
 			}
@@ -210,10 +190,6 @@
 				// Preserve the original path so existing Dock entries remain valid.
 				try await fileWorker.replace(next[index], iconData: nil, nextRegistry: next)
 				installations = next
-				try await runInstaller(
-					operation: "--prepare", installation: next[index],
-					failure: RegistryError.launchPreparationFailed
-				)
 			}
 		}
 
@@ -226,10 +202,6 @@
 				guard let iconData = icon.tiffRepresentation else { throw RegistryError.templateInvalid }
 				try await fileWorker.replace(next[index], iconData: iconData, nextRegistry: next)
 				installations = next
-				try await runInstaller(
-					operation: "--prepare", installation: next[index],
-					failure: RegistryError.launchPreparationFailed
-				)
 			}
 		}
 
