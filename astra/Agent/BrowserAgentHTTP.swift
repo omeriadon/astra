@@ -159,7 +159,7 @@
 						guard let self else { return }
 						let response = await handler(request)
 						guard !Task.isCancelled else { return }
-						write(response, id: id)
+						await self.write(response, id: id)
 					}
 			}
 		}
