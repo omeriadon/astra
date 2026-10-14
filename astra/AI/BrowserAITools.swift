@@ -316,6 +316,7 @@ enum BrowserAITools {
 	/// No new network request, cookie access, local file access, or guessed owner.
 	/// GitHub may change its metadata: a missing or contradictory result is unknown.
 	private static func githubAccount(in browser: Browser, originSpaceID: UUID) async throws -> String {
+		guard BrowserAIAction.readPage.enabled else { throw BrowserAIError.toolDenied }
 		var found = Set<String>()
 		for tab in browser.tabs {
 			guard tab.internalPage == nil, tab.currentURL?.host?.lowercased() == "github.com",
@@ -362,7 +363,9 @@ enum BrowserAITools {
 		}
 		let offset = arguments["offset"].flatMap(Int.init) ?? 0
 		let limit = arguments["limit"].flatMap(Int.init) ?? 50
-		guard offset >= 0, (1...100).contains(limit) else { throw BrowserAIError.invalidRequest }
+		guard (arguments["offset"] == nil || arguments["offset"].flatMap(Int.init) != nil),
+		      (arguments["limit"] == nil || arguments["limit"].flatMap(Int.init) != nil),
+		      offset >= 0, (1...100).contains(limit) else { throw BrowserAIError.invalidRequest }
 		var rows: [String] = []
 		let spaces = browser.workspace.spaces.filter { spaceID == nil || $0.id == spaceID }
 		for space in spaces {
