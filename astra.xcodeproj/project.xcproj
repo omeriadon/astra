@@ -65,6 +65,9 @@
     }, {
       "kind": "local",
       "path": "Packages/AstraAutomationCore",
+    }, {
+      "kind": "local",
+      "path": "Packages/SwiftMath",
     },
   ],
   "files": [
