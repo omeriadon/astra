@@ -15,6 +15,7 @@
 		@State private var spaceBrowser: Browser?
 		@State private var spaceToDelete: BrowserSpace?
 		@State private var hostWindow: NSWindow?
+		@State private var trafficLightAnimator = BrowserWindowTrafficLightAnimator()
 
 		/// A permanent black-to-charcoal gradient, with no GPU noise.
 		private static let miniTheme: BrowserTheme = {
@@ -142,8 +143,9 @@
 				}
 				.allowsHitTesting(false)
 			}
-			.onChange(of: hostWindow) { _, _ in updateWindowButtons() }
+			.onChange(of: hostWindow) { _, _ in updateWindowButtons(animated: false) }
 			.onChange(of: topBarHeight) { _, _ in updateWindowButtons() }
+			.onChange(of: reduceMotion) { _, _ in updateWindowButtons() }
 			.alert("Delete Space?", isPresented: Binding(
 				get: { spaceToDelete != nil },
 				set: {
@@ -176,14 +178,8 @@
 			}
 		}
 
-		private func updateWindowButtons() {
-			guard let hostWindow else { return }
-			let visible = topBarHeight > 0
-			for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-				guard let button = hostWindow.standardWindowButton(type) else { continue }
-				button.isHidden = !visible
-				button.isEnabled = visible
-			}
+		private func updateWindowButtons(animated: Bool = true) {
+			trafficLightAnimator.setHidden(topBarHeight == 0, in: hostWindow, animated: animated, reduceMotion: reduceMotion)
 		}
 	}
 #endif
