@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Observation
 import WebKit
@@ -38,6 +39,17 @@ private nonisolated enum BrowserExtensionFileWorker {
 		      size <= 50_000_000 else { throw ChromeExtensionPackage.PackageError.invalid }
 		let archive = try ChromeExtensionPackage.archive(from: Data(contentsOf: download))
 		try archive.write(to: destination, options: .atomic)
+	}
+
+	static func verifySHA256(at url: URL, expected: String) throws {
+		try validateArchive(at: url)
+		let data = try Data(contentsOf: url, options: .mappedIfSafe)
+		let actual = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+		guard actual == expected else {
+			throw NSError(domain: "astra.extensions", code: 13, userInfo: [
+				NSLocalizedDescriptionKey: "Downloaded extension failed the publisher's SHA-256 integrity check.",
+			])
+		}
 	}
 
 	static func remove(_ url: URL) {
@@ -81,7 +93,48 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		return controller
 	}()
 
-	private let bundledNames = ["darkreader-chrome-mv3"]
+	/// Publisher ZIPs are downloaded only after an explicit action in Settings.
+	enum RecommendedExtension: String, CaseIterable, Sendable {
+		case ublockOriginLite
+		case darkReader
+
+		var displayName: String {
+			switch self {
+				case .ublockOriginLite: "uBlock Origin Lite"
+				case .darkReader: "Dark Reader"
+			}
+		}
+
+		var detail: String {
+			switch self {
+				case .ublockOriginLite: "Block ads and trackers"
+				case .darkReader: "Darken supported websites"
+			}
+		}
+
+		var archiveURL: URL {
+			switch self {
+				case .ublockOriginLite: URL(string: "https://github.com/uBlockOrigin/uBOL-home/releases/download/2026.926.2202/uBOLite_2026.926.2202.safari.zip")!
+				case .darkReader: URL(string: "https://github.com/darkreader/darkreader/releases/download/v4.9.133/darkreader-chrome-mv3.zip")!
+			}
+		}
+
+		var sha256: String {
+			switch self {
+				case .ublockOriginLite: "d37553c11ce52260b67312a2ac72fe12d1ed1eb8365d4f4a27f123682303c78d"
+				case .darkReader: "a5a1a9c78d377fafd8c9190ce9d57b96f89bc95d21f077888601e4c445b20ebf"
+			}
+		}
+
+		var source: Source {
+			switch self {
+				case .ublockOriginLite: .safari
+				case .darkReader: .chrome
+			}
+		}
+	}
+	private(set) var installingRecommendedExtensions: Set<RecommendedExtension> = []
+	private var recommendedInstallations: [String: String] = [:]
 	private(set) var loadErrors: [String: String] = [:] {
 		didSet {
 			if loadErrors.contains(where: { oldValue[$0.key] != $0.value }) {
@@ -129,11 +182,12 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			UUID(uuidString: $0) != nil
 		}
 		installedNames = savedNames
+		recommendedInstallations = UserDefaults.standard.dictionary(forKey: "recommendedExtensionInstallations") as? [String: String] ?? [:]
 		safariBundlePaths = UserDefaults.standard.dictionary(forKey: "safariExtensionBundles") as? [String: String] ?? [:]
 		unpinnedNames = Set(UserDefaults.standard.stringArray(forKey: "unpinnedExtensions") ?? [])
 		safariNames = Set(UserDefaults.standard.stringArray(forKey: "safariExtensions") ?? [])
 		cachedDisplayNames = UserDefaults.standard.dictionary(forKey: "extensionDisplayNames") as? [String: String] ?? [:]
-		enabledNames = Set((["darkreader-chrome-mv3"] + savedNames).filter {
+		enabledNames = Set(savedNames.filter {
 			UserDefaults.standard.bool(forKey: "extension.\($0).enabled")
 		})
 		super.init()
@@ -364,7 +418,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	var availableNames: [String] {
-		bundledNames + installedNames
+		installedNames
 	}
 
 	func isPinned(_ name: String) -> Bool {
@@ -480,18 +534,14 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func source(for name: String) -> Source {
-		name == "ublock-origin-lite-safari" || safariNames.contains(name) ? .safari : .chrome
+		safariNames.contains(name) ? .safari : .chrome
 	}
 
 	func title(for name: String) -> String {
 		if let title = contexts[name]?.webExtension.displayName ?? cachedDisplayNames[name] {
 			return title
 		}
-		switch name {
-			case "darkreader-chrome-mv3": return "Dark Reader"
-			case "ublock-origin-lite-safari": return "uBlock Origin Lite"
-			default: return name
-		}
+		return name
 	}
 
 	func permissionSummary(for name: String) -> String {
@@ -655,7 +705,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		}
 		try Task.checkCancellation()
 		// It may have been uninstalled while WebKit parsed the archive.
-		guard bundledNames.contains(name) || installedNames.contains(name) || safariBundlePaths[name] != nil
+		guard installedNames.contains(name) || safariBundlePaths[name] != nil
 		else { throw CancellationError() }
 		let context = WKWebExtensionContext(for: webExtension)
 		context.uniqueIdentifier = name
@@ -720,6 +770,49 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		}
 	}
 
+
+	func installedName(for recommendation: RecommendedExtension) -> String? {
+		guard let name = recommendedInstallations[recommendation.rawValue],
+		      installedNames.contains(name) else { return nil }
+		return name
+	}
+
+	/// Opt-in download from the publisher's pinned release; verify SHA-256
+	/// before importing. Existing bundled extension preferences never auto-download.
+	func installRecommended(_ recommendation: RecommendedExtension) async throws {
+		guard installedName(for: recommendation) == nil,
+		      !installingRecommendedExtensions.contains(recommendation) else { return }
+		installingRecommendedExtensions.insert(recommendation)
+		defer { installingRecommendedExtensions.remove(recommendation) }
+
+		let (download, response) = try await URLSession.shared.download(from: recommendation.archiveURL)
+		defer { Task.detached(priority: .utility) { BrowserExtensionFileWorker.remove(download) } }
+		guard let response = response as? HTTPURLResponse,
+		      response.statusCode == 200,
+		      response.url?.scheme == "https" else {
+			throw NSError(domain: "astra.extensions", code: 14, userInfo: [
+				NSLocalizedDescriptionKey: "The extension publisher's download failed.",
+			])
+		}
+		try Task.checkCancellation()
+		let temporaryZIP = FileManager.default.temporaryDirectory
+			.appendingPathComponent(UUID().uuidString).appendingPathExtension("zip")
+		defer { Task.detached(priority: .utility) { BrowserExtensionFileWorker.remove(temporaryZIP) } }
+		try await Task.detached(priority: .utility) {
+			try BrowserExtensionFileWorker.copyArchive(from: download, to: temporaryZIP)
+			try BrowserExtensionFileWorker.verifySHA256(at: temporaryZIP, expected: recommendation.sha256)
+		}.value
+		try Task.checkCancellation()
+		let name = try await installArchive(from: temporaryZIP, source: recommendation.source)
+		recommendedInstallations[recommendation.rawValue] = name
+		UserDefaults.standard.set(recommendedInstallations, forKey: "recommendedExtensionInstallations")
+		if let context = contexts[name] {
+			promptForAccess(to: permissionSummary(for: name), from: context) { [weak self] allowed in
+				if allowed { self?.setEnabled(true, for: name) }
+			}
+		}
+	}
+
 	func installFromChromeStore(_ listing: URL) async {
 		BrowserLog.info(.extensions, "extension.install-store", metadata: ["listing": BrowserLog.url(listing)])
 		guard !isInstallingFromStore, let id = ChromeExtensionPackage.extensionID(from: listing) else { return }
@@ -774,6 +867,8 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		cachedDisplayNames.removeValue(forKey: name)
 		UserDefaults.standard.set(cachedDisplayNames, forKey: "extensionDisplayNames")
 		installedNames.removeAll { $0 == name }
+		recommendedInstallations = recommendedInstallations.filter { $0.value != name }
+		UserDefaults.standard.set(recommendedInstallations, forKey: "recommendedExtensionInstallations")
 		safariBundlePaths.removeValue(forKey: name)
 		UserDefaults.standard.set(safariBundlePaths, forKey: "safariExtensionBundles")
 		UserDefaults.standard.set(installedNames, forKey: "installedExtensions")
@@ -788,9 +883,6 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	private func archiveURL(for name: String, creatingDirectory: Bool = false) -> URL? {
 		if safariBundlePaths[name] != nil {
 			return nil
-		}
-		if bundledNames.contains(name) {
-			return BrowserResources.bundle.url(forResource: name, withExtension: "zip")
 		}
 		guard UUID(uuidString: name) != nil,
 		      installedNames.contains(name) || creatingDirectory,
@@ -824,7 +916,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 					_ = try await prepareContext(for: name)
 					// Do not re-enable after a later explicit disable or removal.
 					guard enableIntentRevisions[name] == revision,
-					      bundledNames.contains(name) || installedNames.contains(name) else { return }
+					      installedNames.contains(name) else { return }
 					setEnabled(true, for: name)
 				} catch {
 					guard enableIntentRevisions[name] == revision else { return }
@@ -836,7 +928,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			}
 			return
 		}
-		if enabled, !bundledNames.contains(name),
+		if enabled, installedNames.contains(name),
 		   UserDefaults.standard.string(forKey: "extension.\(name).approvedPermissions") != permissionSummary(for: name),
 		   let context = contexts[name]
 		{
@@ -872,8 +964,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	private func enable(_ name: String) throws {
 		BrowserLog.debug(.extensions, "extension.enable", metadata: ["name": BrowserLog.value(name)])
 		guard let context = contexts[name], !context.isLoaded else { return }
-		guard bundledNames.contains(name)
-			|| UserDefaults.standard.string(forKey: "extension.\(name).approvedPermissions") == permissionSummary(for: name)
+		guard UserDefaults.standard.string(forKey: "extension.\(name).approvedPermissions") == permissionSummary(for: name)
 		else {
 			throw NSError(domain: "astra.extensions", code: 10, userInfo: [NSLocalizedDescriptionKey: "Review this extension's permissions before enabling it."])
 		}
