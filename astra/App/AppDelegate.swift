@@ -1017,7 +1017,7 @@
 		@objc private func openLocation(_: Any?) {
 			guard let browser = activeBrowser else { return }
 			if browser.selectedTab?.internalPage != nil {
-				browser.addTab()
+				browser.requestNewTab()
 			} else {
 				browser.addressFocusRequest += 1
 			}

@@ -54,7 +54,7 @@ struct BrowserSettingsView: View {
 						identifier: "settings-ui",
 						terms: [
 							"Default Browser", "Make Default Browser",
-							"New Tab", "Sidebar Tab", "Spotlight Overlay", "Address Bar", "Page Zoom", "Default Page Zoom", "Reset Default Zoom", "Peek", "Levels",
+							"Address Bar", "Page Zoom", "Default Page Zoom", "Reset Default Zoom", "Peek", "Levels",
 							"Mini Astra", "links", "cursor", "animation", "shortcut",
 							"Zoom out in Peeks", "Downloads",
 							"Ask where to save each download", "Download folder", "Choose Folder",
