@@ -20,7 +20,6 @@
 				unsafe self.hotKey = nil
 			}
 			registrationFailed = false
-			guard Defaults[.miniAstraShortcutEnabled] else { return }
 			if unsafe handler == nil {
 				var event = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
 				let status = unsafe InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in

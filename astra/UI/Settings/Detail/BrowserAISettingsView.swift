@@ -5,6 +5,7 @@ import SwiftUI
 #endif
 
 struct BrowserAISettingsView: View {
+	let browser: Browser
 	@Default(.aiFeaturesEnabled) private var allFeatures
 	@Default(.renameDownloadsWithAppleIntelligence) private var downloads
 	@Default(.aiLinkPreviews) private var previews
@@ -13,7 +14,6 @@ struct BrowserAISettingsView: View {
 	@Default(.aiLinkPreviewDelay) private var previewDelay
 	@Default(.aiTabGroups) private var groups
 	@Default(.aiFind) private var find
-	@Default(.aiFindContextLimit) private var contextLimit
 	@Default(.aiSidebar) private var sidebar
 	@Default(.aiTabTitles) private var titles
 	@Default(.aiProvider) private var provider
@@ -24,6 +24,7 @@ struct BrowserAISettingsView: View {
 	@Default(.aiBrowserActionPermissions) private var permissions
 	@Default(.aiBookmarkTitles) private var bookmarkTitles
 	@Default(.aiWebsiteMonitoring) private var monitoring
+	@State private var showsMonitoredWebsites = false
 	@State private var websiteMonitors = BrowserWebsiteMonitoring.shared
 	@State private var usageLog = BrowserAIUsageLog.shared
 
@@ -68,13 +69,13 @@ struct BrowserAISettingsView: View {
 					.foregroundStyle(.secondary)
 					.lineLimit(10)
 				HStack {
-					Slider(value: $previewDelay, in: 0 ... 10, step: 0.25) {
+					Slider(value: $previewDelay, in: 1 ... 5, step: 1) {
 						Text("Preview Delay")
 							.lineLimit(10)
 					}
 					.accessibilityLabel("Link preview delay in seconds")
 					.accessibilityIdentifier("ai-link-preview-delay")
-					Text("\(previewDelay, format: .number.precision(.fractionLength(0 ... 2))) s")
+					Text("\(Int(previewDelay)) s")
 						.lineLimit(10)
 						.monospacedDigit()
 						.frame(minWidth: 48, alignment: .trailing)
@@ -114,14 +115,6 @@ struct BrowserAISettingsView: View {
 					.font(.caption)
 					.foregroundStyle(.secondary)
 					.lineLimit(10)
-				Toggle("Limit Large Pages to 30,000 Tokens", isOn: $contextLimit)
-					.disabled(!find)
-					.padding(.leading, 16)
-					.accessibilityIdentifier("ai-find-context-limit")
-				Text("When extracted page text exceeds 40,000 tokens, Find uses its first 30,000. Turning this off sends the full text; the provider’s context limit still applies.")
-					.lineLimit(10)
-					.font(.caption)
-					.foregroundStyle(.secondary)
 				Toggle("AI Sidebar", isOn: $sidebar)
 					.accessibilityIdentifier("ai-sidebar-enabled")
 				Text("Enables the AI chat sidebar for questions, linked pages, and attachments. The assistant can also perform the browser actions you allow below.")
@@ -142,30 +135,12 @@ struct BrowserAISettingsView: View {
 			}
 			.disabled(!allFeatures)
 			Section("Monitored Websites") {
-				ForEach(websiteMonitors.monitors) { monitor in
-					HStack {
-						VStack(alignment: .leading, spacing: 4) {
-							Text(monitor.title).lineLimit(10)
-							Text(monitor.criterion).font(.caption).foregroundStyle(.secondary)
-								.lineLimit(10)
-							Text(monitor.matchedAt != nil ? "Condition fulfilled" : monitor.enabled ? "Monitoring" : "Paused").font(.caption)
-								.lineLimit(10)
-							if let error = monitor.lastError {
-								Text(error).font(.caption).foregroundStyle(.secondary)
-									.lineLimit(10)
-							}
-						}
-						Spacer()
-						Button("Delete Website Monitor", systemImage: "trash", role: .destructive) { Task { await websiteMonitors.remove(monitor.id) } }
-							.labelStyle(.iconOnly)
-							.accessibilityIdentifier("delete-monitor-\(monitor.id.uuidString)")
-					}
+				Button("Manage Monitored Websites", systemImage: "bell.badge") {
+					showsMonitoredWebsites = true
 				}
-				if let error = websiteMonitors.error {
-					Text(error).font(.caption).foregroundStyle(.secondary)
-						.lineLimit(10)
-				}
+				.accessibilityIdentifier("ai-manage-monitored-websites")
 			}
+
 			#if os(macOS)
 				Section("Requests") {
 					Picker("Use AI With", selection: $provider) {
@@ -206,13 +181,7 @@ struct BrowserAISettingsView: View {
 					.accessibilityIdentifier("ai-show-usage-log")
 					.id("Show Usage Log")
 				#endif
-				if let error = usageLog.errorDescription {
-					Text(error)
-						.lineLimit(10)
-						.font(.caption)
-						.foregroundStyle(.secondary)
-						.accessibilityIdentifier("ai-usage-log-error")
-				}
+
 			}
 			.id("Usage Log")
 			Text("AI processes extracted page text for previews, Find, and explicitly linked chat pages. Chat sends the full linked text. Tab organization sends titles and URLs. Responses can be inaccurate.")
@@ -223,7 +192,49 @@ struct BrowserAISettingsView: View {
 		.lineLimit(10)
 		.listStyle(.sidebar)
 		.scrollContentBackground(.hidden)
+		.sheet(isPresented: $showsMonitoredWebsites) {
+			NavigationStack {
+				List {
+					ForEach(websiteMonitors.monitors) { monitor in
+						HStack(spacing: 12) {
+							VStack(alignment: .leading, spacing: 4) {
+								Text(monitor.title).font(.headline)
+								Text(monitor.criterion).font(.caption).foregroundStyle(.secondary)
+								Text(monitor.matchedAt != nil ? "Condition fulfilled" : monitor.enabled ? "Monitoring" : "Paused")
+									.font(.caption)
+								if let error = monitor.lastError {
+									Text(error).font(.caption).foregroundStyle(.secondary)
+								}
+							}
+							Spacer()
+							Button("Delete Website Monitor", systemImage: "trash", role: .destructive) {
+								Task { await websiteMonitors.remove(monitor.id) }
+							}
+							.labelStyle(.iconOnly)
+							.accessibilityIdentifier("delete-monitor-\(monitor.id.uuidString)")
+						}
+					}
+					if websiteMonitors.monitors.isEmpty {
+						ContentUnavailableView("No Monitored Websites", systemImage: "bell.slash",
+							description: Text("Use a website's Monitor button to create a monitor."))
+					}
+				}
+				.navigationTitle("Monitored Websites")
+				.toolbar {
+					ToolbarItem(placement: .confirmationAction) {
+						Button("Done") { showsMonitoredWebsites = false }
+					}
+				}
+			}
+			.frame(minWidth: 480, minHeight: 320)
+		}
 		.task { await websiteMonitors.refresh() }
+		.onChange(of: websiteMonitors.error) { _, error in
+			if let error { browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error) }
+		}
+		.onChange(of: usageLog.errorDescription) { _, error in
+			if let error { browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error) }
+		}
 		.onChange(of: allFeatures) { _, enabled in Task { await websiteMonitors.setEnabled(enabled && monitoring) } }
 		.onChange(of: monitoring) { _, enabled in Task { await websiteMonitors.setEnabled(enabled && allFeatures) } }
 	}

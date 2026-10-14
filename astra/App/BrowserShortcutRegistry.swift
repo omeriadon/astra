@@ -87,12 +87,14 @@
 		}
 
 		private func registerMenu(_ menu: NSMenu, section: String) {
+			// System and editing commands retain their native menu shortcuts.
+			guard section != "File", section != "Edit" else { return }
 			for item in menu.items {
 				if let submenu = item.submenu {
 					registerMenu(submenu, section: section)
 					continue
 				}
-				guard !item.keyEquivalent.isEmpty,
+				guard Self.canCustomizeMenuItem(item.title), !item.keyEquivalent.isEmpty,
 				      let key = Self.key(for: item.keyEquivalent) else { continue }
 				let name = KeyboardShortcuts.Name(
 					identifier(item.title, section: section),
@@ -103,6 +105,17 @@
 				}
 				menuBindings.append(MenuBinding(item, name: name))
 			}
+		}
+
+		private static func canCustomizeMenuItem(_ title: String) -> Bool {
+			let key = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+			if key.hasPrefix("quit ") || key.hasPrefix("hide ") || key.hasPrefix("minimize")
+				|| key.hasPrefix("minimise") || key.hasPrefix("settings")
+				|| key.hasPrefix("preferences") || key.hasPrefix("new window") {
+				return false
+			}
+			return !["hide others", "enter full screen", "exit full screen",
+			          "zoom in", "zoom out", "actual size"].contains(key)
 		}
 
 		func refreshMenus() {

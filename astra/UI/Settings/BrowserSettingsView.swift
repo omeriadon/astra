@@ -167,7 +167,7 @@ struct BrowserSettingsView: View {
 			let metadata = definition
 			let text = ([metadata.title, metadata.section?.rawValue ?? ""] + metadata.terms)
 				.joined(separator: " ")
-			return BrowserSearchMatching.score(query, in: text) > 0
+			return text.localizedStandardContains(query.trimmingCharacters(in: .whitespacesAndNewlines))
 		}
 	}
 
@@ -176,113 +176,120 @@ struct BrowserSettingsView: View {
 	}
 
 	var body: some View {
-		GeometryReader { geometry in
-			ScrollView(.horizontal) {
-				HStack(spacing: 0) {
-					List {
-						if matchingPages.isEmpty {
-							Text("No settings found")
-								.foregroundStyle(.secondary)
-						}
+		// Keep the sidebar's tap targets independent from the detail view's
+		// scrolling and avoid a List nested in a horizontal ScrollView.
+		let pages = matchingPages
+		return GeometryReader { geometry in
+			HStack(spacing: 0) {
+				VStack(spacing: 0) {
+					HStack(spacing: 8) {
+						Image(systemName: "magnifyingglass")
+							.accessibilityHidden(true)
+						TextField("Search Settings", text: $searchText)
+							.textFieldStyle(.plain)
+							.accessibilityIdentifier("settings-search")
+					}
+					.padding(.horizontal, 8)
+					.padding(.vertical, 6)
+					.glassEffect(.regular, in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
+					.padding(.horizontal, 12)
+					.padding(.top, 12)
+					.padding(.bottom, 12)
 
-						ForEach(Page.Section.allCases, id: \.self) { section in
-							let pages = matchingPages.filter { $0.definition.section == section }
-							if !pages.isEmpty {
-								Section(section.rawValue) {
-									ForEach(pages, id: \.self) { page in
+					ScrollView {
+						LazyVStack(alignment: .leading, spacing: 4) {
+							if pages.isEmpty {
+								Text("No settings found")
+									.foregroundStyle(.secondary)
+									.padding(.horizontal, 12)
+							}
+							ForEach(Page.Section.allCases, id: \.self) { section in
+								let sectionPages = pages.filter { $0.definition.section == section }
+								if !sectionPages.isEmpty {
+									Text(section.rawValue)
+										.font(.caption)
+										.foregroundStyle(.secondary)
+										.padding(.leading, 12)
+										.padding(.top, 12)
+									ForEach(sectionPages, id: \.self) { page in
 										row(for: page)
 									}
 								}
 							}
 						}
-					}
-					.listStyle(.sidebar)
-					.scrollContentBackground(.hidden)
-					.safeAreaBar(edge: .top) {
-						HStack(spacing: 8) {
-							Image(systemName: "magnifyingglass")
-								.accessibilityHidden(true)
-							TextField("Search Settings", text: $searchText)
-								.textFieldStyle(.plain)
-								.accessibilityIdentifier("settings-search")
-						}
-						.padding(.horizontal, 8)
-						.padding(.vertical, 6)
-						.glassEffect(.regular, in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
-						.padding(.horizontal, 12)
-						.padding(.top, 12)
 						.padding(.bottom, 12)
 					}
-					.safeAreaBar(edge: .bottom) {
-						VStack(spacing: 8) {
-							ForEach(matchingPages.filter { $0.definition.section == nil }, id: \.self) { page in
-								row(for: page)
-							}
-						}
-						.padding(.bottom, 6)
-					}
-					.frame(width: BrowserChromeMetrics.settingsSidebarWidth)
-					.foregroundStyle(theme.foregroundColor)
+					.scrollIndicators(.automatic)
 
 					Divider()
-
-					ScrollViewReader { proxy in
-						Group {
-							switch selectedPage {
-								case .ai:
-									BrowserAISettingsView()
-								case .ui:
-									BrowserGeneralSettingsView()
-								#if os(macOS)
-									case .keyboardShortcuts:
-										BrowserKeyboardShortcutsSettingsView()
-								#endif
-								case .importData:
-									BrowserImportView(browser: browser)
-								case .account:
-									BrowserAccountSettingsView()
-								case .privacyAndSecurity:
-									BrowserPrivacyAndSecuritySettingsView(session: browser.session)
-								case .developer:
-									BrowserDeveloperSettingsView()
-								case .advanced:
-									BrowserAdvancedSettingsView()
-								case .extensions:
-									BrowserExtensionsSettingsView(browser: browser)
-								#if os(macOS)
-									case .websiteApps:
-										BrowserWebsiteAppsSettingsView()
-								#endif
-								case .about:
-									AboutView()
-								#if DEBUG
-									case .failedWebsiteStates:
-										BrowserFailedWebsiteStatesSettingsView(browser: browser)
-								#endif
-							}
-						}
-						.id(selectedPage)
-						.task(id: browser.settingsScrollTarget) {
-							guard let target = browser.settingsScrollTarget else { return }
-							await Task.yield()
-							proxy.scrollTo(target, anchor: .top)
+					VStack(spacing: 8) {
+						ForEach(pages.filter { $0.definition.section == nil }, id: \.self) { page in
+							row(for: page)
 						}
 					}
-					.padding(.horizontal, selectedPage != .about ? BrowserChromeMetrics.settingsDetailPadding : 0)
-					.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-					.safeAreaBar(edge: .top) {
-						if selectedPage != .about {
-							BrowserSettingsTitleView(page: selectedPage)
+					.padding(.vertical, 8)
+				}
+				.frame(width: BrowserChromeMetrics.settingsSidebarWidth)
+				.foregroundStyle(theme.foregroundColor)
+
+				Divider()
+
+				ScrollViewReader { proxy in
+					Group {
+						switch selectedPage {
+							case .ai:
+								BrowserAISettingsView(browser: browser)
+							case .ui:
+								BrowserGeneralSettingsView()
+							#if os(macOS)
+								case .keyboardShortcuts:
+									BrowserKeyboardShortcutsSettingsView()
+							#endif
+							case .importData:
+								BrowserImportView(browser: browser)
+							case .account:
+								BrowserAccountSettingsView()
+							case .privacyAndSecurity:
+								BrowserPrivacyAndSecuritySettingsView(session: browser.session)
+							case .developer:
+								BrowserDeveloperSettingsView()
+							case .advanced:
+								BrowserAdvancedSettingsView()
+							case .extensions:
+								BrowserExtensionsSettingsView(browser: browser)
+							#if os(macOS)
+								case .websiteApps:
+									BrowserWebsiteAppsSettingsView()
+							#endif
+							case .about:
+								AboutView()
+							#if DEBUG
+								case .failedWebsiteStates:
+									BrowserFailedWebsiteStatesSettingsView(browser: browser)
+							#endif
 						}
+					}
+					.id(selectedPage)
+					.task(id: browser.settingsScrollTarget) {
+						guard let target = browser.settingsScrollTarget else { return }
+						await Task.yield()
+						proxy.scrollTo(target, anchor: .top)
 					}
 				}
-				.monospaced()
-				.frame(
-					width: max(geometry.size.width, BrowserChromeMetrics.minimumPageWidth(isSettings: true) - BrowserChromeMetrics.shellEdgePadding * 2),
-					height: geometry.size.height,
-					alignment: .topLeading
-				)
+				.padding(.horizontal, selectedPage != .about ? BrowserChromeMetrics.settingsDetailPadding : 0)
+				.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+				.safeAreaBar(edge: .top) {
+					if selectedPage != .about {
+						BrowserSettingsTitleView(page: selectedPage)
+					}
+				}
 			}
+			.monospaced()
+			.frame(
+				width: max(geometry.size.width, BrowserChromeMetrics.minimumPageWidth(isSettings: true) - BrowserChromeMetrics.shellEdgePadding * 2),
+				height: geometry.size.height,
+				alignment: .topLeading
+			)
 			.accessibilityIdentifier("settings-horizontal-overflow")
 		}
 	}
@@ -299,7 +306,5 @@ struct BrowserSettingsView: View {
 			browser.settingsScrollTarget = nil
 			selectedPage = page
 		}
-		.listRowInsets(EdgeInsets())
-		.listRowBackground(Color.clear)
 	}
 }
