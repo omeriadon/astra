@@ -34,7 +34,7 @@ enum BrowserLaunchCache {
 			   !leadingTabs.contains(where: { $0.id == selected }),
 			   let selectedTab = restorableTabs.first(where: { $0.id == selected })
 			{
-				self.tabs = Array(tabs.prefix(BrowserLaunchCache.maximumTabs - 1)) + [selectedTab]
+				self.tabs = Array(restorableTabs.prefix(BrowserLaunchCache.maximumTabs - 1)) + [selectedTab]
 			} else {
 				self.tabs = leadingTabs
 			}

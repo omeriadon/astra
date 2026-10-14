@@ -33,6 +33,7 @@ assert "addTab()" not in request
 assert "browser.requestNewTab()" in compact
 assert "browser.requestNewTab()" in urls
 assert "browser.requestNewTab()" in actions
+assert "selectedTab.openTab.isDiscardableNewTab" in source("astra/Models/Search/BrowserSearch.swift")
 assert "NewTabView(browser: browser)" not in content
 
 # URL-less legacy tabs are filtered at all restoration and persistence boundaries.
@@ -46,6 +47,7 @@ assert "openTabs: savedTabs" in browser
 assert "savedWorkspace.reconcileMembership(existingTabIDs: savedIDs, unassignedTabIDs: [])" in browser
 assert "savedTabs.first?.id" in browser
 assert "restorableTabs = tabs.filter" in cache
+assert "Array(restorableTabs.prefix(BrowserLaunchCache.maximumTabs - 1))" in cache
 assert "!tab.isDiscardableNewTab" in sync
 assert "projected.settings.removeValue(forKey: \"newTabStyle\")" in sync
 
