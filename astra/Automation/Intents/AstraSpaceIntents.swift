@@ -14,7 +14,10 @@ struct AstraFocusSpaceIntent: SetFocusFilterIntent {
     @Parameter(title: "Space") var space: AstraSpaceEntity?
 
     var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(title: "Astra Space", subtitle: space.map { "\($0.name)" } ?? "No space selected")
+        if let space {
+            return DisplayRepresentation(title: "Astra Space", subtitle: "\(space.name)")
+        }
+        return DisplayRepresentation(title: "Astra Space", subtitle: "No space selected")
     }
 
     @MainActor

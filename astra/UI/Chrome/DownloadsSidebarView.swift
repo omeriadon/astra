@@ -34,16 +34,19 @@ struct DownloadsSidebarView: View {
 					})
 				#endif
 				.listRowInsets(EdgeInsets(top: 3, leading: BrowserChromeMetrics.shellEdgePadding, bottom: 3, trailing: BrowserChromeMetrics.shellEdgePadding))
-				.listRowBackground(Color.clear)
+				.listRowBackground(selectedDownloadID == item.id ? Color.accentColor.opacity(0.15) : Color.clear)
 				.listRowSeparator(.hidden)
 				.swipeActions(edge: .trailing, allowsFullSwipe: true) {
 					if item.status == .downloading || item.status == .paused || item.status == .finalizing {
 						Button("Cancel", systemImage: "xmark.circle", role: .destructive) { manager.cancel(item.id) }
+					} else if item.status == .completed {
+						#if os(macOS)
+							Button("Move to Bin", systemImage: "trash", role: .destructive) { manager.moveToTrash(item.id) }
+						#else
+							Button("Remove Download", systemImage: "trash", role: .destructive) { manager.delete(item.id) }
+						#endif
 					} else {
-						Button("Move to Bin", systemImage: "trash", role: .destructive) {
-							if item.status == .completed { manager.moveToTrash(item.id) }
-							else { manager.delete(item.id) }
-						}
+						Button("Remove Download", systemImage: "trash", role: .destructive) { manager.delete(item.id) }
 					}
 				}
 			}

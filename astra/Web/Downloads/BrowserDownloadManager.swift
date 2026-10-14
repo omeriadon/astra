@@ -954,7 +954,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		for task in renameTasks { task.cancel() }
 		Task { @MainActor [weak self] in
 			for task in renameTasks { await task.value }
-			guard let self, let current = items.first(where: { $0.id == itemID && $0.status == .completed }) else {
+			guard let self, let current = self.items.first(where: { $0.id == itemID && $0.status == .completed }) else {
 				self?.deletingItems.remove(itemID)
 				return
 			}
