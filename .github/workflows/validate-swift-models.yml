@@ -39,3 +39,10 @@ jobs:
           swiftc -swift-version 6 astra/Storage/BrowserSyncPayloadLimits.swift checks/sync-large-account-check.swift -o "$P/astra-sync-large-account"
           "$P/astra-sync-large-account"
           python3 checks/automatic-hibernation-runtime-check.py
+          swiftc -swift-version 6 astra/Storage/BrowserSyncSchedule.swift checks/sync-scheduler-check.swift -o "$P/astra-sync-scheduler"
+          "$P/astra-sync-scheduler"
+          python3 checks/sync-url-validation-check.py
+          python3 checks/sync-coordinator-check.py
+          bash checks/run-sync-models.sh
+          swiftc -swift-version 6 astra/App/BrowserLog.swift checks/browser-log-check.swift -o "$P/astra-sync-log"
+          "$P/astra-sync-log"

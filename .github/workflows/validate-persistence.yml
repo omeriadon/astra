@@ -31,3 +31,4 @@ jobs:
           python3 checks/window-record-sidecar-check.py
           python3 checks/scroll-journal-check.py
           python3 checks/startup-hydration-dependencies-check.py
+          python3 checks/persistence-sync-separation-check.py

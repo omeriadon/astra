@@ -178,6 +178,9 @@ final class Browser {
 		}
 	}
 
+	@ObservationIgnored private(set) var syncRevision: UInt64 = 0
+	private static var persistenceRevision: UInt64 = 0
+
 	@ObservationIgnored
 	private let persistence: BrowserPersistence?
 
@@ -3076,6 +3079,12 @@ final class Browser {
 		return completeLocalSyncDocument(settings: settings).portableProjection()
 	}
 
+	/// Captures only immutable values; projection, validation and encoding run off-main.
+	func captureSyncDocument(settings: [String: SyncedSetting]) -> BrowserSyncDocument {
+		reconcileWorkspace()
+		return completeLocalSyncDocument(settings: settings)
+	}
+
 	private func completeLocalSyncDocument(settings: [String: SyncedSetting]) -> BrowserSyncDocument {
 		BrowserSyncDocument(
 			tabs: tabs.map(\.openTab),
@@ -3102,7 +3111,6 @@ final class Browser {
 	}
 
 	func applySyncDocument(_ incoming: BrowserSyncDocument) {
-		BrowserLog.info(.sync, "browser.sync.apply-document", metadata: ["window": BrowserLog.id(windowID)])
 		guard !isPrivate else { return }
 		let localState = completeLocalSyncDocument(settings: [:])
 		let localPortableTabs = Dictionary(
@@ -3110,6 +3118,14 @@ final class Browser {
 			uniquingKeysWith: { _, latest in latest }
 		)
 		let document = incoming.preservingLocalOnlyData(from: localState)
+		applyPreparedSyncDocument(document, localPortableTabs: localPortableTabs)
+	}
+
+	/// The sync engine prepares local-only preservation and portable comparisons
+	/// off-main, then verifies the captured revision before calling this method.
+	func applyPreparedSyncDocument(_ document: BrowserSyncDocument, localPortableTabs: [UUID: OpenTab]) {
+		BrowserLog.syncEvent("browser.sync.apply-document", metadata: ["window": BrowserLog.id(windowID)])
+		guard !isPrivate else { return }
 		BrowserBoostStore.shared.merge(remote: document.boosts, deleted: document.deletedBoostsAt)
 		let incomingReadingItems = Dictionary(document.readingList.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
 		let removedReadingIDs = Set(readingList.filter { incomingReadingItems[$0.id]?.url != $0.url }.map(\.id))
@@ -3418,6 +3434,9 @@ final class Browser {
 	private func schedulePersistence(fullState: Bool = true, syncExtensions: Bool = true) {
 		BrowserLog.trace(.persistence, "browser.persistence.schedule", metadata: ["window": BrowserLog.id(windowID), "full": String(fullState), "hydrated": String(didFinishHydration)])
 		guard !isPrivate else { return }
+		// Invalidate before any suspension: a sync merge must detect concurrent edits.
+		syncRevision &+= 1
+		BrowserSync.shared.scheduleSync()
 		if launchCacheSeeded, !didFinishHydration {
 			launchCacheWasModified = true
 		}
@@ -3465,6 +3484,8 @@ final class Browser {
 
 	private func scheduleScrollPersistence(for tabID: UUID) {
 		guard !isPrivate, persistence != nil else { return }
+		syncRevision &+= 1
+		BrowserSync.shared.scheduleSync()
 		pendingScrollTabIDs.insert(tabID)
 		pendingScrollPersistence = true
 		guard didFinishHydration else { return }
@@ -3597,19 +3618,20 @@ final class Browser {
 		                    	"history_entries": String(historyVisits.count),
 		                    	"windows": String(state.windowRecords?.count ?? 0),
 		                    ])
+		Self.persistenceRevision &+= 1
+		let revision = Self.persistenceRevision
 		// Encode + file IO off-main so Cmd+T / history-open stay instant.
 		// Scroll-only saves skip cross-window fan-out and sync: no structural change.
 		let previousWrite = session.persistenceWriteTask
 		session.persistenceWriteTask = Task.detached(priority: .utility) { [persistence, state, windowID] in
 			await previousWrite?.value
 			do {
-				try persistence.savePersistedState(state)
+				try persistence.savePersistedState(state, revision: revision)
 				await MainActor.run { [weak self] in
 					guard let self else { return }
 					persistenceErrorDescription = nil
 					guard isStructural else { return }
 					BrowserWindowRegistry.shared.publishSoon(from: self)
-					BrowserSync.shared.scheduleSync()
 				}
 			} catch {
 				let message = error.localizedDescription

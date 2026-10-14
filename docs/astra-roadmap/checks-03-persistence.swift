@@ -20,6 +20,28 @@ struct BrowserPersistenceCheck {
 			windowRecords: [BrowserWindowRecord(windowID: UUID(), tabIDs: [tab.id], selectedTabID: tab.id)]
 		)
 		try persistence.savePersistedState(state)
+		// Explicit capture revisions protect against out-of-order task completion.
+		// Local persistence has no networking/power dependency.
+		let orderedDirectory = directory.appendingPathComponent("revision-order", isDirectory: true)
+		try FileManager.default.createDirectory(at: orderedDirectory, withIntermediateDirectories: true)
+		let orderedPersistence = BrowserPersistence(directory: orderedDirectory)
+		var latest = state
+		latest.bookmarks = [Bookmark(name: "Newest", url: URL(string: "https://newest.example")!)]
+		try orderedPersistence.savePersistedState(latest, revision: 30)
+		try orderedPersistence.savePersistedState(state, revision: 10)
+		let orderedRestored = try orderedPersistence.loadPersistedState()
+		precondition(orderedRestored?.bookmarks.first?.name == "Newest")
+		// Equal revisions are idempotent and cannot replace the committed state.
+		try orderedPersistence.savePersistedState(state, revision: 30)
+		let equalRestored = try orderedPersistence.loadPersistedState()
+		precondition(equalRestored?.bookmarks.first?.name == "Newest")
+		var burst = latest
+		for revision in 31 ... 60 {
+			burst.bookmarks[0].name = "Revision \(revision)"
+			try orderedPersistence.savePersistedState(burst, revision: UInt64(revision))
+		}
+		let burstRestored = try orderedPersistence.loadPersistedState()
+		precondition(burstRestored?.bookmarks.first?.name == "Revision 60")
 		let windowSidecar = directory.appendingPathComponent("browser-windows.json")
 		precondition(FileManager.default.fileExists(atPath: windowSidecar.path))
 		let indexedRecords = try persistence.loadWindowRecords()

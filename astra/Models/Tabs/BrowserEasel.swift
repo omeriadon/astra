@@ -22,6 +22,7 @@ struct BrowserEaselQuoteDestination: Sendable {
 }
 
 struct BrowserEaselDocument: Codable, Equatable, Sendable {
+	private nonisolated static let disallowedHostScalars = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
 	var items: [Item] = []
 
 	struct Item: Codable, Equatable, Identifiable, Sendable {
@@ -190,7 +191,7 @@ struct BrowserEaselDocument: Codable, Equatable, Sendable {
 		      components.user == nil, components.password == nil,
 		      components.port.map({ (1 ... 65535).contains($0) }) ?? true
 		else { return false }
-		return !host.unicodeScalars.contains { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) }
+		return !host.unicodeScalars.contains { disallowedHostScalars.contains($0) }
 	}
 }
 
