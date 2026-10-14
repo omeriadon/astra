@@ -1,6 +1,5 @@
 #if os(macOS)
 	import Carbon
-	import Defaults
 	import KeyboardShortcuts
 	import Observation
 

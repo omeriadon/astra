@@ -189,7 +189,7 @@ struct BrowserTabGroupingFeature: BrowserAIFeature {
 		try BrowserAIRequest(
 			instructions: BrowserAIPrompts.tabGroups,
 			prompt: String(decoding: JSONEncoder().encode(input), as: UTF8.self),
-			maximumResponseTokens: nil
+			maximumResponseTokens: min(8192, max(2048, input.count * 160))
 		)
 	}
 

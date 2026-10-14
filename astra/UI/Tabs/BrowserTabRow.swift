@@ -144,8 +144,8 @@ struct BrowserTabRow: View {
 		}
 		.opacity(isOpenElsewhere ? 0.35 : 1)
 		.allowsHitTesting(!isOpenElsewhere)
-		.padding(.horizontal, 8)
-		.frame(height: onSelectTab == nil ? 28 : 44)
+		.padding(.horizontal, 12)
+		.frame(height: onSelectTab == nil ? 36 : 48)
 		.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? rowTransitions)
 		.foregroundStyle(theme.foregroundColor)
 		.background {

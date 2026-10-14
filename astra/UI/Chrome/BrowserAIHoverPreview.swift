@@ -103,10 +103,9 @@ import WebKit
 						}
 						.buttonStyle(.glass)
 					}
-				} else if let error {
+				} else if error != nil {
 					Label("Preview Unavailable", systemImage: "exclamationmark.bubble")
-					Text(error).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-				} else {
+									} else {
 					ProgressView("Summarizing Page")
 				}
 			}
@@ -208,6 +207,7 @@ import WebKit
 						previewRect = rect
 						visible = true
 						self.error = error.localizedDescription
+						browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error.localizedDescription)
 					}
 				}
 			}

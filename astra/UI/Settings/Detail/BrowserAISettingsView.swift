@@ -203,7 +203,10 @@ struct BrowserAISettingsView: View {
 								Text(monitor.matchedAt != nil ? "Condition fulfilled" : monitor.enabled ? "Monitoring" : "Paused")
 									.font(.caption)
 								if let error = monitor.lastError {
-									Text(error).font(.caption).foregroundStyle(.secondary)
+									Button("Show Check Error", systemImage: "exclamationmark.triangle") {
+										browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error)
+									}
+									.font(.caption)
 								}
 							}
 							Spacer()
