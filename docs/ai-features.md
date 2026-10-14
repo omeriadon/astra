@@ -189,7 +189,11 @@ and attachment reader in an isolated folder, including corrupt-file preservation
 ## Browser assistant tools and monitoring
 
 All feature instructions are centralized in `astra/AI/BrowserAIPrompts.swift` as
-separate multiline constants. 
+separate multiline constants. The assistant uses a bounded JSON tool loop:
+the model proposes named actions, and Swift validates permissions, identifiers,
+URLs, private-session exclusions, and the originating space before applying them
+through existing browser APIs.
+
 ### Cross-space and bulk tab actions
 
 The AI sidebar includes a paginated list_tabs inventory. It exposes space IDs, names,
@@ -225,12 +229,9 @@ Static checks: python3 checks/ai-browser-tools-check.py. Native WebKit/AppKit
 runtime verification is still required for multi-window focus, protection dialogs,
 session sync, hibernation, and high-tab-count persistence.
 
-The assistant uses a bounded JSON tool loop: the
-model proposes named actions, and Swift validates permissions, identifiers, URLs,
-private-session exclusions, and the originating space before applying them through
-existing browser APIs. Closing tabs and deleting bookmarks default to disabled.
-The AI settings page exposes every action permission. Native CLI shell/file tools
-remain disabled; only explicit web-search turns enable provider web search.
+Closing tabs and deleting bookmarks default to disabled. The AI settings
+page exposes every action permission. Native CLI shell/file tools remain disabled;
+only explicit web-search turns enable provider web search.
 
 The chat opens only for a website tab and initially links that page. Summarise is
 the single preset. Codex/Claude selectors fetch current model and reasoning metadata
@@ -255,9 +256,9 @@ the badge. Results and notifications are delivered while Astra runs or reconnect
 Delivery while Astra is quit requires APNs credentials, which are not configured on
 the current server. Website checks still run while the Mac is closed.
 
-`python3 checks/ai-browser-tools-check.py` checks the actual permission boundary,
-destructive defaults, space/private isolation, Boolean arguments, and unknown-tool
-rejection without performing live browser mutations.
+`python3 checks/ai-browser-tools-check.py` verifies source-level permission gating,
+destructive defaults, space/private isolation, plan invalidation, protected close
+checks, and streaming dispatch behavior without performing browser mutations.
 
 ## Local AI usage log
 
