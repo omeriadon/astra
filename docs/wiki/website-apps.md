@@ -19,6 +19,22 @@ invalid templates and local-signing failures are explicit errors. Uninstall,
 rename, reveal, and updates check that the target remains inside the owned
 installation directory, including resolved filesystem paths.
 
+Launch Services registration must **not** happen inside Astra's sandboxed file
+worker. macOS can return `-10819` (`kLSNotRegisteredErr`) for
+`LSRegisterURL` from a sandboxed process. The worker only stages, signs,
+publishes, and persists generated bundles. Astra then invokes the separately
+signed, non-sandboxed `AstraWebsiteAppInstaller.app` with `--prepare`;
+that helper validates the canonical installation path and bundle signature,
+removes quarantine from the bundle and executable, and registers the final
+published path via `LSRegisterURL`. `--pin` also verifies and registers
+before editing Dock preferences. Renames and icon updates re-register via the
+helper, while launches repair and register older generated apps.
+
+New installs are rolled back if preparation/registration fails. If rollback
+itself fails, the registry keeps the installation visible for recovery rather
+than silently hiding its on-disk record. Runtime registration and Dock behavior
+require an interactive macOS test; source-level checks cannot prove them.
+
 The helper's menu maps Command-S to top-bar visibility. Launching a helper,
 placing it in the Dock, and keeping it permanently in the Dock are distinct
 operations. The existing flow directs the user to the normal Keep in Dock
