@@ -614,6 +614,7 @@
         "SDKROOT": "macosx",
         "SKIP_INSTALL": "YES",
         "STRING_CATALOG_GENERATE_SYMBOLS": "YES",
+        "STRIP_STYLE[config=Release]": "non-global",
         "SUPPORTED_PLATFORMS": "macosx",
         "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "$(inherited)",
         "SWIFT_APPROACHABLE_CONCURRENCY": "YES",
