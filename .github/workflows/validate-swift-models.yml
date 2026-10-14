@@ -44,8 +44,27 @@ jobs:
           python3 checks/sync-url-validation-check.py
           python3 checks/sync-coordinator-check.py
           bash checks/run-sync-models.sh
-          swiftc -swift-version 6 astra/App/BrowserLog.swift checks/browser-log-check.swift -o "$P/astra-sync-log"
+          swiftc -swift-version 6 astra/App/BrowserLog.swift astra/Storage/BrowserSessionStore.swift checks/browser-log-check.swift -o "$P/astra-sync-log"
+          log stream --style compact --level info \
+            --predicate 'subsystem == "com.omeriadon.astra" AND category == "sync"' \
+            > "$P/astra-sync-events.log" 2>&1 &
+          sync_log_pid=$!
+          trap 'kill "$sync_log_pid" 2>/dev/null || true' EXIT
+          sleep 1
           "$P/astra-sync-log"
+          python3 - "$P/astra-sync-events.log" <<'PY'
+          import pathlib, sys, time
+          path = pathlib.Path(sys.argv[1])
+          for _ in range(20):
+              if 'sync.check' in path.read_text():
+                  print('Essential sync event observed through documented log stream predicate')
+                  break
+              time.sleep(0.25)
+          else:
+              raise SystemExit('Essential sync event missing from unified log stream')
+          PY
+          kill "$sync_log_pid" 2>/dev/null || true
+          trap - EXIT
       - name: Compile sync integration in Debug and Release
         if: github.head_ref == 'fix/sync-cpu-scheduling'
         shell: bash
