@@ -1,6 +1,5 @@
 #if os(macOS)
 	import AppKit
-	import CoreServices
 	import Darwin
 	import Foundation
 	import ImageIO
@@ -74,7 +73,6 @@
 			case templateInvalid
 			case installationOutsideOwnedDirectory
 			case signingFailed(String)
-			case registrationFailed(OSStatus)
 			case dockPinningFailed(String)
 			case launchPreparationFailed(String)
 			case dockPinningUnavailable
@@ -87,7 +85,6 @@
 					case .templateInvalid: "The website-app helper template is invalid."
 					case .installationOutsideOwnedDirectory: "Astra refused to modify a website app outside its owned installation directory."
 					case let .signingFailed(message): "The generated website app could not be locally signed: \(message)"
-					case let .registrationFailed(status): "macOS could not register the website app (\(status))."
 					case let .dockPinningFailed(message): "The website app could not be pinned: \(message)"
 					case let .launchPreparationFailed(message): "The website app could not be prepared for launch: \(message)"
 					case .dockPinningUnavailable: "Dock pinning is unavailable on this version of macOS."
