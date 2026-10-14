@@ -6,13 +6,13 @@ struct DownloadsSidebarView: View {
 	let theme: BrowserTheme
 	@State private var previewURL: URL?
 	@State private var scopedPreviewURL: URL?
-	@State private var selectedDownloadID: UUID?
+	@State private var selectedDownloadIDs: Set<UUID> = []
 	#if os(macOS)
 	@FocusState private var downloadsFocused: Bool
 	#endif
 
 	var body: some View {
-		List(selection: $selectedDownloadID) {
+		List(selection: $selectedDownloadIDs) {
 			ForEach(manager.items) { item in
 				DownloadRowView(
 					item: item,
@@ -25,16 +25,15 @@ struct DownloadsSidebarView: View {
 				.tag(item.id)
 				#if os(macOS)
 					.onTapGesture(count: 2) {
-						selectedDownloadID = item.id
+						selectedDownloadIDs = [item.id]
 						if item.status == .completed { manager.open(item.id) }
 					}
 					.simultaneousGesture(TapGesture().onEnded {
-						selectedDownloadID = item.id
 						downloadsFocused = true
 					})
 				#endif
 				.listRowInsets(EdgeInsets(top: 3, leading: BrowserChromeMetrics.shellEdgePadding, bottom: 3, trailing: BrowserChromeMetrics.shellEdgePadding))
-				.listRowBackground(selectedDownloadID == item.id ? Color.accentColor.opacity(0.15) : Color.clear)
+				.listRowBackground(selectedDownloadIDs.contains(item.id) ? Color.accentColor.opacity(0.15) : Color.clear)
 				.listRowSeparator(.hidden)
 				.swipeActions(edge: .trailing, allowsFullSwipe: true) {
 					if item.status == .downloading || item.status == .paused || item.status == .finalizing {
@@ -59,13 +58,14 @@ struct DownloadsSidebarView: View {
 			.focusable()
 			.focused($downloadsFocused)
 			.onKeyPress(.space) {
-				guard downloadsFocused, selectedDownloadID != nil else { return .ignored }
+				guard downloadsFocused, !selectedDownloadIDs.isEmpty else { return .ignored }
 				quickLookSelectedDownload()
 				return .handled
 			}
 			.onKeyPress(.delete) {
-				guard downloadsFocused, let id = selectedDownloadID else { return .ignored }
-				manager.moveToTrash(id)
+				guard downloadsFocused, !selectedDownloadIDs.isEmpty else { return .ignored }
+				for id in selectedDownloadIDs { manager.moveToTrash(id) }
+				selectedDownloadIDs.removeAll()
 				return .handled
 			}
 		#endif
@@ -98,10 +98,9 @@ struct DownloadsSidebarView: View {
 
 	#if os(macOS)
 	private func quickLookSelectedDownload() {
-		guard let id = selectedDownloadID,
-		      let item = manager.items.first(where: { $0.id == id && $0.status == .completed }),
+		guard let item = manager.items.first(where: { selectedDownloadIDs.contains($0.id) && $0.status == .completed }),
 		      previewURL != item.fileURL,
-		      manager.beginPreview(id) else { return }
+		      manager.beginPreview(item.id) else { return }
 		if let scopedPreviewURL { manager.endPreview(at: scopedPreviewURL) }
 		scopedPreviewURL = item.fileURL
 		previewURL = item.fileURL
