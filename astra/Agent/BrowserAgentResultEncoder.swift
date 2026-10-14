@@ -13,7 +13,7 @@ actor BrowserAgentResultEncoder {
         }
         let value = try JSONDecoder().decode(Value.self, from: Data(json.utf8))
         try Task.checkCancellation()
-        return .init(content: [.text(text: json, annotations: nil, _meta: nil)], structuredContent: value)
+        return try .init(content: [.text(text: json, annotations: nil, _meta: nil)], structuredContent: value)
     }
 
     func encode(_ value: Value) throws -> CallTool.Result {
@@ -23,7 +23,7 @@ actor BrowserAgentResultEncoder {
             return .init(content: [.text(text: "OUTPUT_LIMIT: Request a smaller page or collection.", annotations: nil, _meta: nil)],
                          structuredContent: .object(["code": .string("OUTPUT_LIMIT")]), isError: true)
         }
-        return .init(content: [.text(text: String(decoding: data, as: UTF8.self), annotations: nil, _meta: nil)], structuredContent: value)
+        return try .init(content: [.text(text: String(decoding: data, as: UTF8.self), annotations: nil, _meta: nil)], structuredContent: value)
     }
 }
 #endif
