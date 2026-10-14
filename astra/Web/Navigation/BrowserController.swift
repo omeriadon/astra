@@ -139,7 +139,7 @@ final class BrowserController: NSObject, Identifiable {
 	@ObservationIgnored
 	var browserConfigurationWindowID: UUID?
 	@ObservationIgnored
-	private var isInvalidated = false
+	private(set) var isInvalidated = false
 	@ObservationIgnored
 	private var navigationLogStartedAt: TimeInterval?
 	private(set) var isPlayingMedia = false
