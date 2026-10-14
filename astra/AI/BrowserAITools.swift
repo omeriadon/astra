@@ -2,6 +2,7 @@ import CoreFoundation
 import Defaults
 import Foundation
 import SwiftUI
+import WebKit
 #if os(macOS)
 	import AppKit
 #else
