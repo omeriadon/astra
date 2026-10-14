@@ -198,6 +198,29 @@ jobs:
           echo "ZIP_PATH=$ZIP_PATH" >> "$GITHUB_ENV"
           echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_ENV"
 
+      - name: Report packaged application and compressed DMG sizes
+        if: steps.meta.outputs.bootstrap != 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          REPORT_DIR="$RUNNER_TEMP/astra-published-size"
+          python3 scripts/ci/release_size_report.py \
+            --candidate-app "$APP_PATH" --dmg "$DMG_PATH" \
+            --candidate-ref "$RELEASE_SHA" --output-dir "$REPORT_DIR"
+          cat "$REPORT_DIR/size-summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload packaged size measurements
+        if: always() && steps.meta.outputs.bootstrap != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: astra-published-size-${{ github.run_id }}
+          path: ${{ runner.temp }}/astra-published-size/
+          if-no-files-found: ignore
+          retention-days: 30
+
       - name: Generate signed Sparkle appcast
         if: steps.meta.outputs.bootstrap != 'true'
         shell: bash
