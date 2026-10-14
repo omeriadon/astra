@@ -343,6 +343,7 @@
 				if let foreground = windows.first {
 					await BrowserPerformanceBenchmark.seedTabsIfRequested(in: foreground.browser)
 				}
+				#if !ASTRA_WEBSITE_APP_RUNTIME && !ASTRA_WEBSITE_APP_HELPER
 				// Focus switches once after restoration; user navigation stays free.
 				if let raw = UserDefaults.standard.string(forKey: AstraFocusSpaceIntent.pendingSpaceKey),
 				   let id = UUID(uuidString: raw),
@@ -352,6 +353,7 @@
 					browser.selectSpace(id)
 					UserDefaults.standard.removeObject(forKey: AstraFocusSpaceIntent.pendingSpaceKey)
 				}
+				#endif
 			}
 		}
 
@@ -745,6 +747,7 @@
 			return tab.controller?.webView
 		}
 
+		#if !ASTRA_WEBSITE_APP_RUNTIME && !ASTRA_WEBSITE_APP_HELPER
 		// MARK: - Dock actions
 
 		func applicationDockMenu(_: NSApplication) -> NSMenu? {
@@ -819,6 +822,8 @@
 			controller.showWindow()
 			NSApp.activate()
 		}
+
+		#endif
 
 		// MARK: - Browser actions
 
