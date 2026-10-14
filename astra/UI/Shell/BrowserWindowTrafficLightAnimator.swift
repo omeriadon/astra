@@ -17,25 +17,29 @@
 		private var targetHidden: Bool?
 		private var generation = 0
 		private var isAnimating = false
+		private var trackedButtonIDs: [ObjectIdentifier] = []
 
 		func setHidden(_ hidden: Bool, in window: NSWindow?, animated: Bool = true, reduceMotion: Bool = false) {
 			guard let window else { return }
 			let isNewWindow = trackedWindow !== window
-			if isNewWindow {
+			let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
+				.compactMap { window.standardWindowButton($0) }
+			guard !buttons.isEmpty else { return }
+			let currentButtonIDs = buttons.map(ObjectIdentifier.init)
+			let buttonsChanged = isNewWindow || currentButtonIDs != trackedButtonIDs
+			if buttonsChanged {
 				trackedWindow = window
+				trackedButtonIDs = currentButtonIDs
 				targetHidden = nil
 				isAnimating = false
 			}
 			let shouldAnimate = animated && !reduceMotion && window.isVisible
-			// Ignore duplicate SwiftUI notifications; allow reduced motion to
-			// finish an already running transition immediately.
-			if !isNewWindow, targetHidden == hidden, (shouldAnimate || !isAnimating) {
+			// Ignore duplicate SwiftUI notifications, but reinitialize any
+			// controls AppKit recreates during a window style/fullscreen change.
+			// Reduced Motion can also finish an in-flight transition immediately.
+			if !buttonsChanged, targetHidden == hidden, (shouldAnimate || !isAnimating) {
 				return
 			}
-
-			let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
-				.compactMap { window.standardWindowButton($0) }
-			guard !buttons.isEmpty else { return }
 
 			targetHidden = hidden
 			generation &+= 1
@@ -62,7 +66,9 @@
 					defaultStart: hidden ? 0 : Self.maximumBlur
 				)
 				button.isHidden = false
-				button.isEnabled = !hidden
+				// Keep native traffic-light colours while fading. Disabling
+				// before the fade finishes makes AppKit redraw them as grey.
+				button.isEnabled = true
 			}
 
 			NSAnimationContext.runAnimationGroup { context in
