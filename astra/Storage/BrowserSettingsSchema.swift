@@ -3,7 +3,15 @@ import Foundation
 
 @MainActor
 enum BrowserSettingsSchema {
-	static let currentVersion = 1
+	static let currentVersion = 2
+	private static var didMigrateNewTabs = false
+
+	/// The legacy page/overlay preference is no longer configurable or synchronized.
+	static func migrateLegacyNewTabPreference() {
+		guard !didMigrateNewTabs else { return }
+		didMigrateNewTabs = true
+		UserDefaults.standard.removeObject(forKey: "newTabStyle")
+	}
 
 	/// Settings that may leave the device through Astra's timestamped sync document.
 	static var portableNames: Set<String> {
@@ -57,7 +65,6 @@ enum BrowserSettingsSchema {
 	/// Restore browser preferences without clearing browsing data, bookmarks,
 	/// downloads, extension packages, credentials, account identity, or cookies.
 	static func resetBrowserSettings() {
-		Defaults[.newTabStyle] = .page
 		Defaults[.startupBehavior] = .restore
 		Defaults[.homepageURL] = "https://www.google.com"
 		Defaults[.tryHTTPSFirst] = true
