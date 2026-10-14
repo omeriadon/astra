@@ -1,6 +1,6 @@
 import Foundation
 
-struct BrowserSyncDocument: Codable, Equatable, Sendable {
+nonisolated struct BrowserSyncDocument: Codable, Equatable, Sendable {
 	var version: Int = 4
 	var tabs: [OpenTab]
 	var workspace: BrowserWorkspace?

@@ -50,8 +50,8 @@ sources=(
 )
 # Keep assertions enabled: existing integration fixtures deliberately use assert.
 for fixture in docs/astra-roadmap/checks-29-sync-models.swift docs/astra-roadmap/checks-03-persistence.swift "$work_dir/ProjectionCheck.swift" checks/sync-engine-check.swift; do
-  swiftc -swift-version 6 -Onone "${sources[@]}" "$fixture" -o "$work_dir/check"
+  swiftc -swift-version 6 -default-isolation MainActor -Onone "${sources[@]}" "$fixture" -o "$work_dir/check"
   "$work_dir/check"
 done
-swiftc -swift-version 6 -O "${sources[@]}" checks/sync-document-benchmark.swift -o "$work_dir/benchmark"
+swiftc -swift-version 6 -default-isolation MainActor -O "${sources[@]}" checks/sync-document-benchmark.swift -o "$work_dir/benchmark"
 "$work_dir/benchmark"

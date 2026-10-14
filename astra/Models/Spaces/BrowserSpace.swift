@@ -1,6 +1,6 @@
 import Foundation
 
-struct PinnedTabFolder: Codable, Equatable, Identifiable, Sendable {
+nonisolated struct PinnedTabFolder: Codable, Equatable, Identifiable, Sendable {
 	var id = UUID()
 	var name: String
 	var tabIDs: [UUID] = []
@@ -26,7 +26,7 @@ struct PinnedTabFolder: Codable, Equatable, Identifiable, Sendable {
 	}
 }
 
-struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
+nonisolated struct BrowserSpace: Codable, Equatable, Identifiable, Sendable {
 	nonisolated static let firstID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3))
 	static let symbols = [
 		"circle.grid.2x2.fill", "star.fill", "moon.stars.fill", "sun.max.fill", "cloud.sun.fill",
