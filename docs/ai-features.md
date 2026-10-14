@@ -215,8 +215,11 @@ tab through the existing selection-aware API, and verify destination membership.
 For simple exact-domain bulk close requests, phase=preview with domain
 matches the current space's visible tabs against URL.host, not a substring
 of the page title or URL. For GitHub, keepOwner optionally preserves repository
-URLs owned by that exact account. A request mentioning "my repositories"
-requires a known account owner; the model is instructed not to guess one.
+URLs owned by that exact account. The `github_account` read-only tool tries to
+identify the signed-in owner using metadata from an already-loaded GitHub page,
+without accessing cookies or launching another network request. When no
+unambiguous owner is available, a request mentioning "my repositories" needs
+the owner to be supplied rather than guessed.
 Closing a pinned or favourite tab first requires its corresponding toggle
 permission, since normal close otherwise hibernates it rather than removing it.
 Bulk closing is still disabled until the existing Close Tabs permission is enabled.
