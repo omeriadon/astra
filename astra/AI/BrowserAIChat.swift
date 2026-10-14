@@ -204,7 +204,8 @@ final class BrowserAIChat {
 				"conversation_bytes": String(conversation.utf8.count),
 				"image_count": String(images.count),
 			])
-			for round in 0 ..< 5 {
+			// Allow multi-page discovery, identity lookup, preview, apply, and a final answer.
+			for round in 0 ..< 8 {
 				activity = round == 0 ? "Generating Answer" : "Continuing Answer"
 				try Task.checkCancellation()
 				BrowserLog.debug(.ai, "ai.chat.turn-start", metadata: [
