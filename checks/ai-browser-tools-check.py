@@ -14,7 +14,7 @@ def check(condition: bool, reason: str) -> None:
     if not condition:
         raise AssertionError(reason)
 
-for action in ("list_tabs", "move_tabs_to_space", "close_tab"):
+for action in ("list_tabs", "github_account", "move_tabs_to_space", "close_tab"):
     check(f'"{action}"' in tools, f"Missing action {action}")
 
 check("browser.workspace.spaces" in tools and "spaceID=" in tools,
@@ -23,6 +23,8 @@ check("offset + page.count < rows.count" in tools and "prefix(limit)" in tools,
       "Large account inventory must paginate")
 check('url.host?.lowercased() == domain' in tools,
       "Domain filtering must compare exact hostnames")
+check("found.count == 1" in tools and "githubAccount(in: browser" in tools,
+      "GitHub owner discovery must detect conflicting account metadata")
 check("components.count >= 2" in tools and "caseInsensitiveCompare(owner)" in tools,
       "GitHub owner exclusions must compare repository owner path components")
 check("sameTab($0, in: browser)" in tools and "current.url == expected.url" in tools,
@@ -48,7 +50,7 @@ check("browser.moveTabs(pinned, to: .pinned, in: destination)" in tools
       "Cross-space bulk moves must preserve pinned state")
 check('call.arguments["phase"] == "apply"' in chat and "after the entire model response" in chat,
       "Bulk apply must not run from incomplete streaming output")
-check("never guess that identity" in prompts and "planID" in prompts,
+check("Never guess an owner" in prompts and "planID" in prompts,
       "The model must not guess GitHub owners or bypass action previews")
 check("self == .deleteBookmark || self == .closeTab" in tools,
       "The pre-existing destructive action default must remain disabled")
