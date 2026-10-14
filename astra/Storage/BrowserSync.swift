@@ -84,6 +84,7 @@ final class BrowserSync {
 				let reconnect = sync.networkWasAvailable == false && available
 				sync.networkWasAvailable = available
 				sync.schedule.online = available
+				BrowserLog.syncEvent("sync.network.changed", metadata: ["online": String(available), "reconnect": String(reconnect)])
 				if reconnect { sync.schedule.catchUp = true }
 				sync.reschedule(reason: reconnect ? "reconnect" : "network")
 			}
@@ -105,6 +106,7 @@ final class BrowserSync {
 					self.schedule.lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
 					if let last = self.lastSync, Date.now.timeIntervalSince(last) >= self.schedule.interval { self.schedule.catchUp = true }
 					self.reschedule(reason: "wake-or-power")
+					BrowserLog.syncEvent("sync.lifecycle.changed", metadata: ["low_power": String(self.schedule.lowPower), "catch_up": String(self.schedule.catchUp)])
 				}
 			})
 		}
@@ -221,8 +223,10 @@ final class BrowserSync {
 	func syncForHandoff() async { await startSync(reason: "handoff") }
 
 	private func startSync(reason: String) async {
-		guard canSync else { return }
+		guard canSync else { BrowserLog.syncEvent("sync.request.skipped", metadata: ["reason": reason, "cause": "unavailable"]); return }
+		BrowserLog.syncEvent("sync.request", metadata: ["reason": reason, "active": String(activeSync != nil)])
 		if let activeSync {
+			BrowserLog.syncEvent("sync.request.coalesced", metadata: ["reason": reason])
 			_ = requestGate.request(manual: reason == "manual" || reason == "handoff")
 			await activeSync.value
 			return
@@ -341,6 +345,7 @@ final class BrowserSync {
 			// a stable generation can be applied, without an intervening await.
 			while outgoing == nil {
 				rebases += 1
+				BrowserLog.syncEvent("sync.snapshot.begin", metadata: ["attempt": String(rebases), "dirty_revision": String(dirtyRevision)])
 				guard rebases <= 4 else { throw BrowserSyncError.localChangesInFlight }
 				try Task.checkCancellation()
 				settingsDidChange()
@@ -360,6 +365,7 @@ final class BrowserSync {
 					return document
 				}
 				BrowserLog.endSyncPhase("sync.snapshot", snapshotPhase)
+				BrowserLog.syncEvent("sync.snapshot.complete", metadata: ["windows": String(raw.count), "settings_revision": String(settingsRevision)])
 				let keys = targets.map { BrowserSyncEngine.SnapshotKey(window: $0.windowID, revision: $0.syncRevision, settingsRevision: settingsRevision, contentRevision: capturedDirty) }
 				let result = try await engine.merge(raw, keys: keys, remote: remote)
 				settingsDidChange()
@@ -368,11 +374,15 @@ final class BrowserSync {
 					!$0.isPrivate && !$0.isMini && $0.session === browser.session && $0.isReadyForSync
 				}
 				guard Set(currentWindows.map(\.windowID)) == Set(windows.map(\.windowID)),
-				      targets.map(\.syncRevision) == revisions, dirtyRevision == capturedDirty else { continue }
+				      targets.map(\.syncRevision) == revisions, dirtyRevision == capturedDirty else {
+					BrowserLog.syncEvent("sync.merge.rebase", metadata: ["attempt": String(rebases), "captured_revision": String(capturedDirty), "current_revision": String(dirtyRevision)])
+					continue
+				}
 				// No suspension from revision check through all UI mutations.
 				applyingRemote = true
 				defer { applyingRemote = false }
 				if result.changed {
+					BrowserLog.syncEvent("sync.apply.begin", metadata: ["windows": String(targets.count)])
 					if !hasPendingChanges { hasPendingChanges = true }
 					for (target, prepared) in zip(targets, result.prepared) {
 						target.applyPreparedSyncDocument(prepared.document, localPortableTabs: prepared.localPortableTabs,
@@ -380,11 +390,13 @@ final class BrowserSync {
 							historyChanged: prepared.historyChanged, workspaceChanged: prepared.workspaceChanged)
 					}
 					try applySettings(result.merged.settings)
+					BrowserLog.syncEvent("sync.apply.complete")
 				}
 				outgoing = result.merged
 				applyingRemote = false
 				if result.changed {
 					for target in targets { await target.flushAndWaitForPersistence() }
+					BrowserLog.syncEvent("sync.persistence.flush.complete", metadata: ["windows": String(targets.count)])
 					guard valid() else { throw CancellationError() }
 				}
 			}

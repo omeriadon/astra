@@ -798,6 +798,7 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		defer { Self.selectionJournalLock.unlock() }
 		let revisionKey = directory.standardizedFileURL.path
 		if let revision, let committed = unsafe Self.committedRevisions[revisionKey], revision <= committed {
+			BrowserLog.debug(.persistence, "state.save.stale", metadata: ["revision": String(revision), "committed_revision": String(committed)])
 			return
 		}
 		// Never silently overwrite a checkpoint written by a newer release.

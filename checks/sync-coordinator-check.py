@@ -23,6 +23,9 @@ def method(signature):
 
 swift = r'''
 import Foundation
+nonisolated enum BrowserLog {
+    static func syncEvent(_ event: String, metadata: [String: String] = [:]) {}
+}
 @MainActor final class BrowserSync {
     var canSync = true
     var isSyncing = false
