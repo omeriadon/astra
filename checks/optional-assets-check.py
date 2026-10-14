@@ -1,36 +1,32 @@
-"""Prevent future releases from bundling third-party extensions or Apple system fonts."""
+"""Verify third-party extension archives and Apple system fonts stay out of Astra."""
 
 import argparse
 import tempfile
 from pathlib import Path
 
-FORBIDDEN = {
-    "darkreader-chrome-mv3.zip",
-    "ublock-origin-lite-safari.zip",
-    "SF-Mono-Regular.otf",
-    "NewYorkSmall-Regular.otf",
-}
-
 SOURCE = Path("astra")
+SYSTEM_FONT_FILES = {"SF-Mono-Regular.otf", "NewYorkSmall-Regular.otf"}
 
 
 def source_check() -> None:
-    for root in (SOURCE / "Extensions", SOURCE / "Resources/EaselFonts"):
-        for name in FORBIDDEN:
-            assert not (root / name).exists(), f"Forbidden bundled source: {root / name}"
-    fonts = (SOURCE / "UI/Content/BrowserEaselFonts.swift").read_text()
-    assert all(name not in fonts for name in ("SF-Mono-Regular.otf", "NewYorkSmall-Regular.otf"))
+    extensions = SOURCE / "Extensions"
+    assert not list(extensions.rglob("*.zip")), "Extension archives must not ship in Astra's sources"
+    fonts = SOURCE / "Resources/EaselFonts"
+    for name in SYSTEM_FONT_FILES:
+        assert not (fonts / name).exists(), f"Apple system font should not be bundled: {name}"
+    registration = (SOURCE / "UI/Content/BrowserEaselFonts.swift").read_text()
+    assert all(name not in registration for name in SYSTEM_FONT_FILES)
     manager = (SOURCE / "Web/Extensions/BrowserExtensionManager.swift").read_text()
-    assert "private let bundledNames" not in manager
-    assert "func installRecommended(" in manager
-    assert "verifySHA256(" in manager
+    assert "bundledNames" not in manager, "Extensions must all use the ordinary installed-package path"
+    assert "RecommendedExtension" not in manager, "No special-case recommendations"
 
 
 def bundle_check(app: Path) -> None:
-    assert (app / "Contents").is_dir(), f"Invalid app bundle: {app}"
-    for item in (app / "Contents").rglob("*"):
-        if item.is_file() and item.name in FORBIDDEN:
-            raise AssertionError(f"Disallowed extension/font resource in Astra: {item}")
+    resources = app / "Contents/Resources"
+    assert resources.is_dir(), f"Invalid app bundle: {app}"
+    for item in resources.rglob("*"):
+        if item.is_file() and (item.suffix.lower() == ".zip" or item.name in SYSTEM_FONT_FILES):
+            raise AssertionError(f"Disallowed bundled ZIP or Apple font: {item}")
 
 
 def self_test() -> None:
@@ -39,17 +35,17 @@ def self_test() -> None:
         resources = app / "Contents/Resources"
         resources.mkdir(parents=True)
         bundle_check(app)
-        for name in sorted(FORBIDDEN):
-            asset = resources / name
-            asset.touch()
+        for name in ("example-extension.zip", *sorted(SYSTEM_FONT_FILES)):
+            item = resources / name
+            item.touch()
             try:
                 bundle_check(app)
             except AssertionError:
                 pass
             else:
-                raise AssertionError(f"Failed to detect forbidden asset {name}")
+                raise AssertionError(f"Failed to detect forbidden resource: {name}")
             finally:
-                asset.unlink()
+                item.unlink()
 
 
 if __name__ == "__main__":
@@ -62,4 +58,4 @@ if __name__ == "__main__":
         self_test()
     if args.app:
         bundle_check(args.app)
-    print("Astra optional-extension and system-font packaging checks passed")
+    print("Astra extension-free bundle and system-font check passed")

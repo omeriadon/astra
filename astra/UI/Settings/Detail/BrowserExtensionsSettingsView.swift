@@ -9,45 +9,12 @@ struct BrowserExtensionsSettingsView: View {
 	@State private var importedName: String?
 	@State private var showsEnablePrompt = false
 	@State private var importError: String?
-	@State private var pendingRecommendation: BrowserExtensionManager.RecommendedExtension?
 	@Environment(\.openURL) private var openURL
 	@Environment(\.scenePhase) private var scenePhase
 
 	var body: some View {
 		NavigationStack {
 			List {
-				Section("Optional Extensions") {
-				Text("Astra does not ship with third-party extensions. Install only the ones you want.")
-					.foregroundStyle(.secondary)
-				ForEach(BrowserExtensionManager.RecommendedExtension.allCases, id: \.self) { recommendation in
-					if let name = extensions.installedName(for: recommendation) {
-						NavigationLink {
-							BrowserExtensionDetailView(name: name, browser: browser)
-						} label: {
-							LabeledContent(recommendation.displayName, value: extensions.isEnabled(name) ? "On" : "Off")
-						}
-					} else {
-						HStack {
-							VStack(alignment: .leading, spacing: 3) {
-								Text(recommendation.displayName)
-								Text(recommendation.detail)
-									.font(.caption)
-									.foregroundStyle(.secondary)
-							}
-							Spacer()
-							if extensions.installingRecommendedExtensions.contains(recommendation) {
-							ProgressView().controlSize(.small)
-						} else {
-							Button("Install") { pendingRecommendation = recommendation }
-								.accessibilityIdentifier("install-recommended-\(recommendation.rawValue)")
-						}
-						}
-					}
-				}
-				Text("Downloads are checked against the publisher's SHA-256 checksum. Permission review is required to enable an extension.")
-					.font(.caption)
-					.foregroundStyle(.secondary)
-				}
 				Section("Chrome Extensions") {
 					Button("Browse Chrome Web Store", systemImage: "globe") {
 						if let url = URL(string: "https://chromewebstore.google.com/") {
@@ -108,28 +75,6 @@ struct BrowserExtensionsSettingsView: View {
 					importError = error.localizedDescription
 				}
 			}
-		}
-		.confirmationDialog(
-			"Download \(pendingRecommendation?.displayName ?? "Extension")?",
-			isPresented: Binding(
-				get: { pendingRecommendation != nil },
-				set: { if !$0 { pendingRecommendation = nil } }
-			)
-		) {
-			Button("Download and Install") {
-				guard let recommendation = pendingRecommendation else { return }
-				pendingRecommendation = nil
-				Task {
-					do {
-						try await extensions.installRecommended(recommendation)
-					} catch {
-						importError = error.localizedDescription
-					}
-				}
-			}
-			Button("Cancel", role: .cancel) { pendingRecommendation = nil }
-		} message: {
-			Text("Astra will download this extension from its publisher and verify its integrity. You will review permissions before enabling it.")
 		}
 		.confirmationDialog("Enable \(importedName.map(extensions.title(for:)) ?? "Extension")?", isPresented: $showsEnablePrompt) {
 			Button("Enable", systemImage: "checkmark", role: .confirm) {
