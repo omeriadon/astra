@@ -230,6 +230,17 @@ struct BrowserAISettingsView: View {
 				}
 			}
 			.frame(minWidth: 480, minHeight: 320)
+			.overlay(alignment: .topTrailing) {
+				if let toast = browser.session.toastManager.toast {
+					BrowserToastView(toast: toast)
+						.padding(12)
+				}
+			}
+		}
+		.onAppear {
+			// Migrate old fractional/out-of-range delays to whole seconds.
+			let bounded = BrowserAISettings.linkPreviewDelay
+			if previewDelay != bounded { previewDelay = bounded }
 		}
 		.task { await websiteMonitors.refresh() }
 		.onChange(of: websiteMonitors.error) { _, error in
