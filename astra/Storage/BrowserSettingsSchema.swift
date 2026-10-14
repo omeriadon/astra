@@ -25,7 +25,6 @@ enum BrowserSettingsSchema {
 		"syncServerURL",
 		"miniAstraEnabled",
 		"miniAstraWindowAnimation",
-		"miniAstraShortcutEnabled",
 		"webInspectorEnabled",
 		"developerModeEnabled",
 		"usageLimitsProvider",
@@ -41,7 +40,6 @@ enum BrowserSettingsSchema {
 		"aiLinkPreviewShiftOverride",
 		"aiTabGroups",
 		"aiFind",
-		"aiFindContextLimit",
 		"aiSidebar",
 		"aiTabTitles",
 		"aiProvider",
@@ -85,7 +83,6 @@ enum BrowserSettingsSchema {
 		Defaults[.aiLinkPreviewShiftOverride] = false
 		Defaults[.aiTabGroups] = true
 		Defaults[.aiFind] = true
-		Defaults[.aiFindContextLimit] = true
 		Defaults[.aiSidebar] = true
 		Defaults[.aiTabTitles] = true
 		Defaults[.aiProvider] = "presets"
@@ -104,7 +101,6 @@ enum BrowserSettingsSchema {
 		Defaults[.sidebarShown] = true
 		Defaults[.miniAstraEnabled] = true
 		Defaults[.miniAstraWindowAnimation] = true
-		Defaults[.miniAstraShortcutEnabled] = false
 		Defaults[.webInspectorEnabled] = false
 		Defaults[.developerModeEnabled] = false
 		Defaults[.usageLimitsProvider] = .none
