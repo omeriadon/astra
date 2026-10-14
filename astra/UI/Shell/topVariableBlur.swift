@@ -119,14 +119,14 @@ private struct SidebarScrollOpacityFadeModifier: ViewModifier {
 				if reduceTransparency {
 					faded.clipShape(Rectangle())
 				} else if lowPowerMode {
-					// Preserve edge Haze in Low Power Mode at half strength
-					// without compositing the entire scrolling sidebar.
+					// Keep edge Haze at the same radius without compositing
+					// the entire scrolling sidebar.
 					faded
-						.modifier(SidebarScrollVariableBlurModifier(top: top, bottom: bottom, blurScale: 0.5))
+						.modifier(SidebarScrollVariableBlurModifier(top: top, bottom: bottom))
 						.clipShape(Rectangle())
 				} else {
 					faded
-						.modifier(SidebarScrollVariableBlurModifier(top: top, bottom: bottom, blurScale: 1))
+						.modifier(SidebarScrollVariableBlurModifier(top: top, bottom: bottom))
 						.compositingGroup()
 						.clipShape(Rectangle())
 				}
@@ -145,7 +145,6 @@ private struct SidebarScrollOpacityFadeModifier: ViewModifier {
 private struct SidebarScrollVariableBlurModifier: ViewModifier {
 	let top: CGFloat
 	let bottom: CGFloat
-	let blurScale: CGFloat
 
 	func body(content: Content) -> some View {
 		content
@@ -156,7 +155,7 @@ private struct SidebarScrollVariableBlurModifier: ViewModifier {
 							startPoint: .bottom, endPoint: .top,
 							startOpacity: 1, endOpacity: 0, isSmooth: true
 						),
-						maxBlurRadius: 6 * blurScale, isolatesBackdrop: true
+						maxBlurRadius: 6, isolatesBackdrop: true
 					)
 					.frame(height: bottom)
 					.allowsHitTesting(false)
@@ -170,7 +169,7 @@ private struct SidebarScrollVariableBlurModifier: ViewModifier {
 							startPoint: .top, endPoint: .bottom,
 							startOpacity: 1, endOpacity: 0, isSmooth: true
 						),
-						maxBlurRadius: 2 * blurScale, isolatesBackdrop: true
+						maxBlurRadius: 2, isolatesBackdrop: true
 					)
 					.frame(height: top)
 					.allowsHitTesting(false)
