@@ -218,18 +218,19 @@ final class BrowserSync {
 	}
 
 	func syncNow() async { await startSync(reason: "manual") }
+	func syncForHandoff() async { await startSync(reason: "handoff") }
 
 	private func startSync(reason: String) async {
 		guard canSync else { return }
 		if let activeSync {
-			_ = requestGate.request(manual: reason == "manual")
+			_ = requestGate.request(manual: reason == "manual" || reason == "handoff")
 			await activeSync.value
 			return
 		}
 		scheduledSync?.cancel()
 		scheduledSync = nil
-		guard requestGate.request(manual: reason == "manual") else { return }
-		let task = Task(priority: reason == "manual" ? .userInitiated : .utility) { @MainActor [weak self] in
+		guard requestGate.request(manual: reason == "manual" || reason == "handoff") else { return }
+		let task = Task(priority: reason == "manual" || reason == "handoff" ? .userInitiated : .utility) { @MainActor [weak self] in
 			guard let self else { return }
 			self.isSyncing = true
 			var nextReason = reason

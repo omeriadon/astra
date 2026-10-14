@@ -4,13 +4,20 @@ import Foundation
 	/// Connects Apple's NSUserActivity transport to Astra's existing tab sync.
 	/// Receiving Handoff never constructs a new BrowserTab or navigates by URL.
 	@MainActor
-	final class BrowserHandoff {
+	final class BrowserHandoff: NSObject, NSUserActivityDelegate {
 		static let shared = BrowserHandoff()
 
 		private var receivingTabID: UUID?
 		private var continuationTask: Task<Void, Never>?
 
-		private init() {}
+		private override init() { super.init() }
+
+		// A newly advertised tab may still be pending the periodic upload.
+		// Publish when Handoff is actually used, without syncing on selection.
+		nonisolated func userActivityWasContinued(_ userActivity: NSUserActivity) {
+			guard userActivity.activityType == BrowserHandoffTabReference.activityType else { return }
+			Task { @MainActor in await BrowserSync.shared.syncForHandoff() }
+		}
 
 		static func canAdvertise(from browser: Browser, sceneIsActive: Bool) -> Bool {
 			guard sceneIsActive,
@@ -34,6 +41,7 @@ import Foundation
 			activity.isEligibleForHandoff = true
 			activity.isEligibleForSearch = false
 			activity.isEligibleForPublicIndexing = false
+			activity.delegate = shared
 		}
 
 		static func reference(from activity: NSUserActivity) -> BrowserHandoffTabReference? {

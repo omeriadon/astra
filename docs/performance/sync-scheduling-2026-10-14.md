@@ -32,6 +32,11 @@ number of rebases per attempt rather than creating an unbounded CPU loop. Wire
 versions, tab UUIDs, conflict semantics, tombstones, private/local exclusions and
 payload limits remain compatible.
 
+The source Handoff activity has a delegate that requests immediate publication
+when the activity is actually continued on another device. This preserves new-tab
+UUID availability with delayed periodic uploads; merely advertising/selecting a
+tab does not initiate a sync. Busy Handoff requests queue an awaited follow-up.
+
 Account settings exposes production Sync Now, progress, static pending status,
 last successful completion and errors. Concurrent manual API callers wait for the
 active task and a coalesced follow-up. Internal scheduler/revision fields are
