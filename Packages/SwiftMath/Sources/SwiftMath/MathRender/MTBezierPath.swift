@@ -11,25 +11,22 @@ import Foundation
 
 #if os(macOS)
 
-extension MTBezierPath {
-    func addLine(to point: CGPoint) {
-        self.line(to: point)
-    }
-}
+	extension MTBezierPath {
+		func addLine(to point: CGPoint) {
+			line(to: point)
+		}
+	}
 
-extension MTView {
-    
-    var backgroundColor:MTColor? {
-        get {
-            MTColor(cgColor: self.layer?.backgroundColor ?? MTColor.clear.cgColor)
-        }
-        set {
-            self.layer?.backgroundColor = MTColor.clear.cgColor
-            self.wantsLayer = true
-        }
-    }
-    
-}
+	extension MTView {
+		var backgroundColor: MTColor? {
+			get {
+				MTColor(cgColor: layer?.backgroundColor ?? MTColor.clear.cgColor)
+			}
+			set {
+				layer?.backgroundColor = MTColor.clear.cgColor
+				wantsLayer = true
+			}
+		}
+	}
 
 #endif
-
