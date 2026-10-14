@@ -737,7 +737,7 @@ private struct SidebarSelectedTabsContextMenu: View {
 		@State private var coordinator = BrowserTabHoverPreviewCoordinator.shared
 
 		private let cardWidth: CGFloat = 320
-		private let cardHeight: CGFloat = 284
+		private let cardHeight: CGFloat = 306
 		private let margin: CGFloat = 12
 
 		var body: some View {
@@ -777,7 +777,7 @@ private struct SidebarSelectedTabsContextMenu: View {
 	private struct BrowserTabHoverPreviewCard: View {
 		let tab: BrowserTab
 		let browser: Browser
-		@State private var memoryBytes: UInt64?
+		@State private var memorySnapshot: BrowserTabProcessMemorySnapshot?
 		@State private var hasSampledMemory = false
 
 		private var host: String {
@@ -791,7 +791,7 @@ private struct SidebarSelectedTabsContextMenu: View {
 			if tab.isHibernated {
 				return "Hibernated"
 			}
-			return hasSampledMemory ? "Unavailable" : "Measuring…"
+			return hasSampledMemory ? "Not measurable" : "Measuring…"
 		}
 
 		var body: some View {
@@ -845,19 +845,32 @@ private struct SidebarSelectedTabsContextMenu: View {
 				.clipShape(RoundedRectangle(cornerRadius: 10))
 
 				HStack {
-					Text("Tab memory")
+					Text("Process memory")
 						.font(.subheadline.weight(.semibold))
 					Spacer()
-					Text(memoryBytes.map(Self.formatBytes) ?? unavailableMemoryLabel)
+					Text(memorySnapshot?.knownProcessBytes.map(Self.formatBytes) ?? unavailableMemoryLabel)
 						.font(.subheadline.monospacedDigit())
 						.foregroundStyle(.secondary)
+				}
+				if let snapshot = memorySnapshot {
+					HStack(spacing: 12) {
+						if let bytes = snapshot.webContentBytes {
+							Text("Web: \(Self.formatBytes(bytes))")
+						}
+						if let bytes = snapshot.graphicsBytes {
+							Text("GPU*: \(Self.formatBytes(bytes))")
+						}
+					}
+					.font(.caption.monospacedDigit())
+					.foregroundStyle(.tertiary)
+					.help("WebKit may share processes between tabs; GPU memory is not exclusive to this tab.")
 				}
 			}
 			.padding(12)
 			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
 			.task(id: tab.id) {
-				memoryBytes = nil
+				memorySnapshot = nil
 				hasSampledMemory = false
 				guard let controller = tab.controller else {
 					hasSampledMemory = true
@@ -867,7 +880,7 @@ private struct SidebarSelectedTabsContextMenu: View {
 				if !controller.hasCurrentPreviewSnapshot {
 					await controller.refreshPreviewSnapshot()
 				}
-				memoryBytes = await sampleTabMemory(for: controller)
+				memorySnapshot = await sampleTabMemory(for: controller)
 				hasSampledMemory = true
 				while !Task.isCancelled {
 					do {
@@ -875,7 +888,7 @@ private struct SidebarSelectedTabsContextMenu: View {
 					} catch {
 						return
 					}
-					memoryBytes = await sampleTabMemory(for: controller)
+					memorySnapshot = await sampleTabMemory(for: controller)
 					hasSampledMemory = true
 					if !controller.hasCurrentPreviewSnapshot {
 						await controller.refreshPreviewSnapshot()
@@ -884,9 +897,9 @@ private struct SidebarSelectedTabsContextMenu: View {
 			}
 		}
 
-		private func sampleTabMemory(for controller: BrowserController) async -> UInt64? {
+		private func sampleTabMemory(for controller: BrowserController) async -> BrowserTabProcessMemorySnapshot? {
 			let snapshots = await BrowserController.tabProcessMemorySnapshots(for: [controller])
-			return snapshots[controller.id]?.knownProcessBytes
+			return snapshots[controller.id]
 		}
 
 		private nonisolated static func formatBytes(_ bytes: UInt64) -> String {
