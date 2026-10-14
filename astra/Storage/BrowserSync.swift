@@ -264,9 +264,6 @@ final class BrowserSync {
 			let merged = try await Task.detached(priority: .utility) {
 				let decoder = JSONDecoder()
 				let documents = try snapshots.map { try decoder.decode(BrowserSyncDocument.self, from: $0.payload) }
-				guard documents.allSatisfy(\.hasSupportedVersion) else {
-					throw BrowserSyncError.unsupportedVersion
-				}
 				guard documents.allSatisfy(\.hasValidStructure) else {
 					throw BrowserSyncError.invalidResponse
 				}
@@ -738,7 +735,6 @@ private enum BrowserSyncError: LocalizedError, Sendable {
 	case invalidServerURL
 	case invalidSetting
 	case missingAppleToken
-	case unsupportedVersion
 	case serverChanged
 
 	var errorDescription: String? {
@@ -755,8 +751,6 @@ private enum BrowserSyncError: LocalizedError, Sendable {
 				"The sync server returned an invalid setting."
 			case .missingAppleToken:
 				"Apple did not return an identity token."
-			case .unsupportedVersion:
-				"The sync server contains data from a newer browser version."
 			case .serverChanged:
 				"The sync server changed during sign-in. Sign in again."
 		}
