@@ -204,12 +204,12 @@ enum BrowserLog {
 
 	nonisolated static func beginSyncPhase(_ name: StaticString) -> OSSignpostID {
 		let id = OSSignpostID(log: syncSignpostLog)
-		os_signpost(.begin, log: syncSignpostLog, name: name, signpostID: id)
+		unsafe os_signpost(.begin, log: syncSignpostLog, name: name, signpostID: id)
 		return id
 	}
 
 	nonisolated static func endSyncPhase(_ name: StaticString, _ id: OSSignpostID) {
-		os_signpost(.end, log: syncSignpostLog, name: name, signpostID: id)
+		unsafe os_signpost(.end, log: syncSignpostLog, name: name, signpostID: id)
 	}
 
 	nonisolated static func isEnabled(_ level: Level) -> Bool {
