@@ -50,7 +50,11 @@ assert.ok(upload.includes("panel.cancel(nil)"),
 assert.ok(!upload.includes("url.stopAccessingSecurityScopedResource()"),
   "Do not stop a URL's security scope unless it was started");
 
-for (const id of ["single", "multiple", "directory", "file-drop-zone"]) {
+for (const id of ["single", "multiple", "directory", "file-drop-zone", "drag-text", "drag-link", "drag-image"]) {
   assert.ok(fixture.includes(`id="${id}"`), `Missing manual WebKit upload smoke case: ${id}`);
 }
-console.log("WebKit file upload and drag-and-drop guards passed");
+assert.ok(fixture.includes('transfer.getData("text/plain")'), "Text drops must be observable");
+assert.ok(fixture.includes('transfer.getData("text/uri-list")'), "URL drops must be observable");
+assert.ok(fixture.includes("transfer.files"), "File drops must be observable");
+assert.ok(fixture.includes("transfer.types"), "Source representations must be observable");
+console.log("WebKit file upload and cross-app drag-and-drop guards passed");
