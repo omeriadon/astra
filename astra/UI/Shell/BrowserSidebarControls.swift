@@ -183,16 +183,6 @@ struct ShellSidebarListView: View {
 					}
 				}
 				#endif
-				.onChange(of: selectedID, initial: true) { oldID, newID in
-					// Selecting a space leaves its saved vertical position unchanged.
-					guard let newID else { return }
-					// Initial layout and disk restoration should settle without a scroll animation.
-					let hadPreviousSelection = oldID.flatMap { tabsByID[$0] } != nil
-					let animate = isActiveSpace && !reduceMotion && oldID != newID && hadPreviousSelection
-					withAnimation(animate ? .smooth(duration: 0.25) : nil) {
-						reader.scrollTo(newID, anchor: .center)
-					}
-				}
 			}
 		}
 		// Keep cleanup attached to the interactive sidebar, not the divider's lazy row.
