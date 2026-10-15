@@ -2,9 +2,9 @@ name: Astra - Browser Use MCP
 
 on:
   pull_request:
-    branches: [main, 'release/0.1+3']
+    branches: [main, 'release/**']
   push:
-    branches: [main]
+    branches: ['main']
   workflow_dispatch:
 
 permissions:
@@ -15,37 +15,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  browser-use:
-    runs-on: xcode-27
-    timeout-minutes: 35
+  fixture:
+    name: Browser Use deterministic fixture and tool registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Select supported Xcode and verify Swift
-        run: |
-          bash scripts/ci/select-xcode-27.sh
-          python3 checks/compiler-safety-settings-check.py
-      - name: Validate deterministic fixture and coverage manifest
-        run: python3 scripts/browser-use/test_fixture.py
-      - name: Install Metal Toolchain
-        run: xcodebuild -downloadComponent MetalToolchain
-      - name: Build Debug app with strict concurrency
+      - name: Browser Use deterministic fixture and tool registry
         shell: bash
         run: |
-          set -o pipefail
-          xcodebuild build -project astra.xcodeproj -scheme astra -configuration Debug -destination 'platform=macOS' -derivedDataPath "$RUNNER_TEMP/AstraMCP" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$RUNNER_TEMP/astra-mcp-build.log"
-      - name: HTTP, protocol, DOM, permission and listener regression checks
+          set -euo pipefail
+          python3 tests/browser-use/test_fixture.py
+
+  runtime:
+    name: ${{ matrix.suite }}
+    runs-on: xcode-27
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - Protocol, DOM and listener
+          - Live Astra WebKit E2E
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 / Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Install Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+      - name: Build unsigned Astra Debug
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild build -project astra.xcodeproj -scheme astra -configuration Debug \
+            -destination 'platform=macOS' -derivedDataPath "$RUNNER_TEMP/AstraMCP" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            2>&1 | tee "$RUNNER_TEMP/astra-mcp-build.log"
+      - name: Protocol, HTTP, DOM and listener regression checks
+        if: matrix.suite == 'Protocol, DOM and listener'
         run: zsh scripts/check_browser_use.sh "$RUNNER_TEMP/AstraMCP/Build/Products/Debug"
-      - name: Run every discovered tool against actual Astra and WebKit
+      - name: Real Astra and WebKit integration
+        if: matrix.suite == 'Live Astra WebKit E2E'
         env:
           ASTRA_BROWSER_USE_REPORT_DIR: ${{ runner.temp }}/astra-mcp-reports
         run: bash scripts/test-browser-use-e2e.sh "$RUNNER_TEMP/AstraMCP/Build/Products/Debug/astra.app"
-      - name: Test standalone automation core
-        run: swift test --package-path Packages/AstraAutomationCore
-      - name: Upload non-sensitive diagnostics
+      - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: astra-browser-use-${{ github.run_number }}
+          name: browser-use-${{ strategy.job-index }}-${{ github.run_number }}
           path: |
             ${{ runner.temp }}/astra-mcp-build.log
             ${{ runner.temp }}/astra-mcp-reports

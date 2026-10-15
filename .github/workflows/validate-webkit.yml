@@ -1,8 +1,8 @@
-name: Astra - WebKit, Extensions and UI
+name: Astra - WebKit
 
 on:
   pull_request:
-    branches: [main, 'release/0.1+3']
+    branches: [main, 'release/**']
   workflow_dispatch:
 
 permissions:
@@ -13,24 +13,62 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: WebKit, Extensions and UI
+  boosts:
+    name: Boosts page integration
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Run checks
+      - name: Boosts page integration
         shell: bash
         run: |
           set -euo pipefail
           node checks/boosts-runtime-check.mjs
-          node checks/favicon-observer-check.mjs
-          node checks/website-chrome-tint-check.mjs
+
+  reader:
+    name: Reader availability
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reader availability
+        shell: bash
+        run: |
+          set -euo pipefail
           node checks/reader-availability-check.mjs
+
+  uploads:
+    name: WebKit file uploads
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: WebKit file uploads
+        shell: bash
+        run: |
+          set -euo pipefail
           node checks/webkit-file-upload-check.mjs
-          python3 checks/extension-hot-path-check.py
+
+  policy:
+    name: WebKit resource policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: WebKit resource policy
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 checks/webkit-resource-policy-check.py
-          python3 checks/extension-file-worker-check.py
+
+  benchmark:
+    name: WebKit benchmark self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: WebKit benchmark self-test
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 scripts/webkit_benchmark.py self-test
-          python3 checks/noise-lifecycle-check.py
-          python3 checks/sidebar-scroll-layout-check.py

@@ -1,0 +1,106 @@
+name: Astra - CI and Instrumentation
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workflow-policy:
+    name: Workflow runner and Swift language policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Workflow runner and Swift language policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/ci-toolchain-workflows-check.py
+
+  compiler-policy:
+    name: Strict Swift 6 compiler and safety settings
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Strict Swift 6 compiler and safety settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/compiler-safety-settings-check.py
+
+  assets:
+    name: Optional assets and font policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Optional assets and font policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/optional-assets-check.py --self-test
+
+  diagnostics:
+    name: Workflow timing instrumentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Workflow timing instrumentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/workflow-diagnostics-check.py
+
+  startup-architecture:
+    name: Startup architecture
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Startup architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/launch-framework-architecture-check.py
+
+  startup-scripts:
+    name: Startup scripts and audit tooling
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Startup scripts and audit tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/benchmark_startup.sh
+          python3 scripts/parse_startup_log.py --self-test
+          bash -n scripts/audit_sparkle_bundle.sh
+          bash -n scripts/ci/select-xcode-27.sh
+
+  process-birth:
+    name: Process birth timestamp
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Process birth timestamp
+        shell: bash
+        run: |
+          set -euo pipefail
+          clang -Wall -Wextra -Werror scripts/process_birth.c -o "$RUNNER_TEMP/astra-process-birth"
+          "$RUNNER_TEMP/astra-process-birth"

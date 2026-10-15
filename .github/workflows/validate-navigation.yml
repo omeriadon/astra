@@ -1,0 +1,29 @@
+name: Astra - Navigation
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  proxy:
+    name: Proxy navigation failure classification
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Proxy navigation failure classification
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc  -swift-version 6 astra/Web/Navigation/BrowserNavigationFailure.swift checks/proxy-navigation-failure-check.swift -o "$RUNNER_TEMP/proxy"
+          "$RUNNER_TEMP/proxy"
