@@ -13,6 +13,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  runtime:,    name: Website app runtime size self-test,    runs-on: ubuntu-latest,    timeout-minutes: 15,    steps:,      - uses: actions/checkout@v4,      - name: Website app runtime size self-test,        shell: bash,        run: |,          set -euo pipefail,          python3 checks/website-app-runtime-size-check.py --self-test,
-  bundle:,    name: Website app bundle policy self-test,    runs-on: ubuntu-latest,    timeout-minutes: 15,    steps:,      - uses: actions/checkout@v4,      - name: Website app bundle policy self-test,        shell: bash,        run: |,          set -euo pipefail,          python3 checks/website-app-bundle-check.py --self-test,
-  preparation:,    name: Website app preparation and registration,    runs-on: xcode-27,    timeout-minutes: 25,    steps:,      - uses: actions/checkout@v4,      - name: Verify Xcode 27 and Swift 6.4,        run: bash scripts/ci/select-xcode-27.sh,      - name: Website app preparation and registration,        shell: bash,        run: |,          set -euo pipefail,          python3 checks/website-app-preparation-check.py,
+  runtime:
+    name: Website app runtime size self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Website app runtime size self-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/website-app-runtime-size-check.py --self-test
+
+  bundle:
+    name: Website app bundle self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Website app bundle self-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/website-app-bundle-check.py --self-test
+
+  preparation:
+    name: Website app preparation and registration
+    runs-on: xcode-27
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Website app preparation and registration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/website-app-preparation-check.py

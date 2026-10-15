@@ -14,14 +14,14 @@ concurrency:
 
 jobs:
   boosts:
-    name: Boost model
+    name: Boosts model
     runs-on: xcode-27
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Verify Xcode 27 and Swift 6.4
         run: bash scripts/ci/select-xcode-27.sh
-      - name: Boost model
+      - name: Boosts model
         shell: bash
         run: |
           set -euo pipefail
@@ -44,14 +44,14 @@ jobs:
           "$RUNNER_TEMP/bookmark"
 
   scaling:
-    name: Library scaling
+    name: Library scaling benchmark
     runs-on: xcode-27
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Verify Xcode 27 and Swift 6.4
         run: bash scripts/ci/select-xcode-27.sh
-      - name: Library scaling
+      - name: Library scaling benchmark
         shell: bash
         run: |
           set -euo pipefail
@@ -59,14 +59,14 @@ jobs:
           "$RUNNER_TEMP/scaling"
 
   windows:
-    name: Window ownership
+    name: Window ownership model
     runs-on: xcode-27
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Verify Xcode 27 and Swift 6.4
         run: bash scripts/ci/select-xcode-27.sh
-      - name: Window ownership
+      - name: Window ownership model
         shell: bash
         run: |
           set -euo pipefail
@@ -88,4 +88,14 @@ jobs:
           swiftc  -swift-version 6 astra/Models/Tabs/BrowserVisit.swift checks/history-search-cancellation-check.swift -o "$RUNNER_TEMP/history"
           "$RUNNER_TEMP/history"
 
-  hibernation:,    name: Tab hibernation runtime contracts,    runs-on: ubuntu-latest,    timeout-minutes: 15,    steps:,      - uses: actions/checkout@v4,      - name: Tab hibernation runtime contracts,        shell: bash,        run: |,          set -euo pipefail,          python3 checks/automatic-hibernation-runtime-check.py,
+  hibernation:
+    name: Automatic hibernation policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Automatic hibernation policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/automatic-hibernation-runtime-check.py
