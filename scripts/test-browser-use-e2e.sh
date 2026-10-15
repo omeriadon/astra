@@ -31,10 +31,27 @@ PROFILE="com.omeriadon.astra.mcp-test.$RUN_ID"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $PROFILE" "$TMP/app/astra.app/Contents/Info.plist"
 # Debug-only ad-hoc signature applies to the copy, never the developer's app.
 codesign --force --deep --sign - "$TMP/app/astra.app"
+echo 'Starting deterministic Browser Use HTTP fixture...'
 python3 "$ROOT/tests/browser-use/site/server.py" --ready-file "$TMP/site.json" >"$TMP/site.log" 2>&1 &
 SITE_PID=$!
-for ((i=0;i<100;i++)); do [[ -s "$TMP/site.json" ]] && break; sleep .05; done
-[[ -s "$TMP/site.json" ]] || { cat "$TMP/site.log" >&2; exit 1; }
+# A heavily loaded macOS CI runner can take longer than 5 seconds to start
+# Python and bind both fixture listeners. Never start Astra before readiness.
+for ((i=0;i<300;i++)); do
+  [[ -s "$TMP/site.json" ]] && break
+  if ! kill -0 "$SITE_PID" 2>/dev/null; then
+    echo 'Browser Use HTTP fixture exited before publishing its readiness file.' >&2
+    cat "$TMP/site.log" >&2
+    exit 1
+  fi
+  sleep .1
+done
+if [[ ! -s "$TMP/site.json" ]]; then
+  echo 'Browser Use HTTP fixture did not become ready within 30 seconds.' >&2
+  ps -p "$SITE_PID" -o pid=,stat=,command= >&2 || :
+  tail -80 "$TMP/site.log" >&2 || :
+  exit 1
+fi
+echo 'Browser Use HTTP fixture ready.'
 UPLOAD_SCOPE=$(uuidgen)
 python3 - "$TMP/astra-upload-fixture.bin" <<'PYUPLOAD'
 import sys

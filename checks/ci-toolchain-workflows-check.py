@@ -34,6 +34,33 @@ def workflow_concurrency(source: str) -> dict[str, str]:
     return result
 
 
+def workflow_job_blocks(source: str) -> list[tuple[str, str]]:
+    """Separate jobs so Ubuntu checks do not inherit unrelated macOS steps."""
+    if "\njobs:\n" in source:
+        jobs_source = source.split("\njobs:\n", 1)[1]
+    elif source.startswith("jobs:\n"):
+        jobs_source = source[len("jobs:\n"):]
+    else:
+        return []
+    markers = list(re.finditer(r"(?m)^  ([\w-]+):\s*$", jobs_source))
+    return [
+        (marker.group(1), jobs_source[marker.end():markers[i + 1].start() if i + 1 < len(markers) else None])
+        for i, marker in enumerate(markers)
+    ]
+
+
+def python_check_requires_xcrun(path: str) -> bool:
+    """Detect scripts that actually invoke xcrun, not just mention it in a comment."""
+    candidate = (root / path).resolve()
+    if not candidate.is_relative_to(root) or not candidate.is_file():
+        return False
+    source = candidate.read_text(encoding="utf-8")
+    return bool(re.search(
+        r"""subprocess\.(?:run|call|check_call|check_output|Popen)\s*\(\s*\[\s*['"]xcrun['"]""",
+        source,
+    ))
+
+
 macos_jobs = 0
 cancellable_workflows = 0
 seen_groups = {}
@@ -55,6 +82,21 @@ for workflow in workflows:
                 errors.append(f"{workflow.name}: concurrency group also used by {previous}")
         if concurrency.get("cancel-in-progress") == "true" and group:
             cancellable_workflows += 1
+
+    # Python checks that compile fixtures using Apple's xcrun must not run
+    # on Ubuntu, even when the rest of the workflow is platform-neutral.
+    for job_name, body in workflow_job_blocks(text):
+        runner_match = re.search(r"(?m)^    runs-on:\s*([^#\n]+)", body)
+        if not runner_match or runner_match.group(1).strip().strip("'\"") != "ubuntu-latest":
+            continue
+        if re.search(r"(?m)^\s+(?:xcrun|xcodebuild|codesign)\b", body):
+            errors.append(f"{workflow.name}/{job_name}: Apple tooling cannot run on Ubuntu")
+        for script_match in re.finditer(r"(?m)^\s+python3\s+([\w./-]+\.py)\b", body):
+            script_path = script_match.group(1)
+            if python_check_requires_xcrun(script_path):
+                errors.append(
+                    f"{workflow.name}/{job_name}: {script_path} invokes xcrun; use xcode-27"
+                )
 
     runners = re.findall(r"(?m)^\s+runs-on:\s*([^#\n]+)", text)
     for value in runners:
