@@ -32,7 +32,7 @@ PROFILE="com.omeriadon.astra.mcp-test.$RUN_ID"
 # Debug-only ad-hoc signature applies to the copy, never the developer's app.
 codesign --force --deep --sign - "$TMP/app/astra.app"
 echo 'Starting deterministic Browser Use HTTP fixture...'
-python3 "$ROOT/tests/browser-use/site/server.py" --ready-file "$TMP/site.json" >"$TMP/site.log" 2>&1 &
+python3 "$ROOT/scripts/browser-use/site/server.py" --ready-file "$TMP/site.json" >"$TMP/site.log" 2>&1 &
 SITE_PID=$!
 # A heavily loaded macOS CI runner can take longer than 5 seconds to start
 # Python and bind both fixture listeners. Never start Astra before readiness.

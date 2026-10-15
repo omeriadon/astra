@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 tests/browser-use/test_fixture.py
+          python3 scripts/browser-use/test_fixture.py
 
   runtime:
     name: ${{ matrix.suite }}
