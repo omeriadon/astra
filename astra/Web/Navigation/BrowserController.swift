@@ -2279,7 +2279,7 @@ final class BrowserController: NSObject, Identifiable {
 		invalidateFindResults()
 		historyVisitPolicy.userInitiatedNavigation()
 		currentRequest = nil
-		awaitsNavigationCommit = true
+		awaitsNavigationCommit = !isCurrentDocumentFragmentURL(webView.backForwardList.backItem?.url)
 		currentNavigation = webView.goBack()
 	}
 
@@ -2291,7 +2291,7 @@ final class BrowserController: NSObject, Identifiable {
 		invalidateFindResults()
 		historyVisitPolicy.userInitiatedNavigation()
 		currentRequest = nil
-		awaitsNavigationCommit = true
+		awaitsNavigationCommit = !isCurrentDocumentFragmentURL(webView.backForwardList.forwardItem?.url)
 		currentNavigation = webView.goForward()
 	}
 
@@ -2304,7 +2304,7 @@ final class BrowserController: NSObject, Identifiable {
 		   let item = webView.backForwardList.item(at: index - historyIndex)
 		{
 			currentRequest = nil
-			awaitsNavigationCommit = true
+			awaitsNavigationCommit = !isCurrentDocumentFragmentURL(item.url)
 			currentNavigation = webView.go(to: item)
 		} else {
 			// URL records from an earlier launch can be revisited; live navigation
@@ -2481,6 +2481,17 @@ final class BrowserController: NSObject, Identifiable {
 		}
 
 	#endif
+
+	private func isCurrentDocumentFragmentURL(_ destination: URL?) -> Bool {
+		guard hasCurrentPageDocument, committedSecurityNavigationID == navigationIdentifier,
+		      let committedURL, let destination, committedURL != destination,
+		      var previous = URLComponents(url: committedURL, resolvingAgainstBaseURL: false),
+		      var next = URLComponents(url: destination, resolvingAgainstBaseURL: false),
+		      previous.fragment != next.fragment else { return false }
+		previous.fragment = nil
+		next.fragment = nil
+		return previous == next
+	}
 
 	private func finishFragmentNavigationIfNeeded(to destination: URL) {
 		// Same-document fragment loads report their URL through KVO without

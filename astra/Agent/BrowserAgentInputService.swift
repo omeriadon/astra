@@ -71,8 +71,10 @@
 
 		static func pointer(_ operation: String, arguments: [String: Any], view: WKWebView, point: CGPoint) throws -> [String: Any] {
 			guard let window = unsafe view.window, window.isVisible, !view.isHidden, view.bounds.contains(point) else { throw InputError("INPUT_TARGET_UNAVAILABLE: Native pointer input requires a visible viewport.") }
+			window.makeKeyAndOrderFront(nil)
+			window.makeFirstResponder(view)
 			let location = view.convert(point, to: nil)
-			guard let target = view.hitTest(point) else { throw InputError("INPUT_TARGET_UNAVAILABLE: No WebKit target at coordinates.") }
+			guard let target = view.hitTest(view.convert(point, to: view.superview)) else { throw InputError("INPUT_TARGET_UNAVAILABLE: No WebKit target at coordinates.") }
 			let right = operation == "right_click"
 			let modifiers = arguments["modifiers"] as? [String] ?? []
 			var flags: NSEvent.ModifierFlags = []

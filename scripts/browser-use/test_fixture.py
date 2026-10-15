@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -35,6 +36,11 @@ def main():
         assert b'frame-button' in body and b'fixture-click' not in body,'frame selectors must not collide with main page'
         _,_,body=request(base+'/download')
         assert body==fixture.BINARY
+        started=time.monotonic()
+        with urllib.request.urlopen(base+'/slow-download',timeout=5) as response:
+            assert int(response.headers['Content-Length'])==len(fixture.BINARY)
+            assert response.read(1024)==fixture.BINARY[:1024]
+            assert time.monotonic()-started<4,'slow download must send headers and initial bytes before completion'
         _,_,body=request(base+'/health');assert json.loads(body)['sha256']==hashlib.sha256(fixture.BINARY).hexdigest()
         request(base+'/state/self-test',json.dumps({'clicks':3,'password':'never-store'}).encode(),{'Content-Type':'application/json'})
         _,_,body=request(base+'/state/self-test');assert json.loads(body)=={'clicks':3}

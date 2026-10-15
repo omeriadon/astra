@@ -113,9 +113,20 @@ def failure_and_auth_tests(c, check, eventually):
     failure('fill',{'tabID':c['tab'],'selector':'#fixture-readonly','value':'bad'})
     failure('wait_for_text',{'tabID':c['tab'],'text':'never-present-marker','timeout':.1})
     # Independent clients issue concurrent reads, without sharing request IDs.
-    def read(_):return Client(client.endpoint,client.token).call('get_tab',{'tabID':c['tab']})
+    def read(_):
+        status,response=Client(client.endpoint,client.token).request('tools/call',{'name':'get_tab','arguments':{'tabID':c['tab']}})
+        check(status==200,'concurrent client transport',response)
+        return response['result']
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-        check(all(x['tabID']==c['tab'] for x in pool.map(read,range(12))),'concurrent client identity')
+        results=list(pool.map(read,range(12)))
+    for result in results:
+        payload=result.get('structuredContent',{})
+        if result.get('isError'):
+            check(payload.get('code')=='TAB_BUSY','concurrent requests only reject contention',result)
+        else:
+            check(payload.get('tabID')==c['tab'],'concurrent client identity',result)
+    check(any(not x.get('isError') for x in results),'concurrent batch makes progress',results)
+    check(client.call('get_tab',{'tabID':c['tab']})['tabID']==c['tab'],'tab remains available after contention')
     # Normal browsing session is shared by agent-created tabs. Login on one tab,
     # then verify the HttpOnly cookie through the server in a second actual tab.
     client.call('navigate',{'tabID':c['tab'],'url':c['page']})

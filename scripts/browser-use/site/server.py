@@ -51,8 +51,20 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(302, b"", headers={"Location": "/?run=" + run})
         elif target.path in ("/download", "/slow-download"):
             if target.path == "/slow-download":
-                time.sleep(2)
-            self.respond(200, BINARY, "application/octet-stream", {"Content-Disposition": 'attachment; filename="astra-fixture.bin"'})
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(len(BINARY)))
+                self.send_header("Content-Disposition", 'attachment; filename="astra-slow-fixture.bin"')
+                self.end_headers()
+                try:
+                    for offset in range(0, len(BINARY), 1024):
+                        self.wfile.write(BINARY[offset:offset + 1024])
+                        self.wfile.flush()
+                        time.sleep(.5)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+            else:
+                self.respond(200, BINARY, "application/octet-stream", {"Content-Disposition": 'attachment; filename="astra-fixture.bin"'})
         elif target.path == "/authenticated":
             authenticated = "astra_fixture_session=fixture-user" in self.headers.get("Cookie", "")
             self.respond(200 if authenticated else 401, {"authenticated": authenticated, "user": "fixture-user" if authenticated else None})

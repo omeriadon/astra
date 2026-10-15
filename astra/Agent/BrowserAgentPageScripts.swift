@@ -155,7 +155,20 @@
 		 if(!hit||!(hit===node||node.contains(hit)||hit.contains(node)&&hit.shadowRoot)) error('element_obscured','Target is obscured; refresh the snapshot.');
 		 return {clientX:x,clientY:y,button:config.button==='right'?2:config.button==='middle'?1:0,ctrlKey:!!config.ctrlKey||(config.modifiers||[]).some(v=>['control','ctrl'].includes(String(v).toLowerCase())),shiftKey:!!config.shiftKey||(config.modifiers||[]).some(v=>String(v).toLowerCase()==='shift'),altKey:!!config.altKey||(config.modifiers||[]).some(v=>['alt','option'].includes(String(v).toLowerCase())),metaKey:!!config.metaKey||(config.modifiers||[]).some(v=>['meta','command','cmd'].includes(String(v).toLowerCase()))};
 		};
-		if(operation==='prepare_native_input'){if(config.requireFileInput&&!node.matches('input[type=file]'))error('wrong_element_type','Upload target must be a file input.');const point=hit();return {geometry:geometry(node),point:{x:point.clientX,y:point.clientY},frame:state?.nodes.get(ref)?.frame||'main'};}
+		if(operation==='prepare_native_input'){
+		 if(config.requireFileInput&&!node.matches('input[type=file]'))error('wrong_element_type','Upload target must be a file input.');
+		 hit();
+		 // Let WebKit present scrollIntoView before AppKit receives coordinates.
+		 await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+		 const point=hit();
+		 if(node.matches('input[type=file]')){
+		  const r=node.getBoundingClientRect();
+		  // The native chooser button occupies the inline-start end. The
+		  // control's centre can land on the noninteractive filename label.
+		  point.clientX=getComputedStyle(node).direction==='rtl'?r.right-Math.min(20,r.width/2):r.left+Math.min(20,r.width/2);
+		 }
+		 return {geometry:geometry(node),point:{x:point.clientX,y:point.clientY},frame:state?.nodes.get(ref)?.frame||'main'};
+		}
 		const change = () => {node.dispatchEvent(new win.Event('input',{bubbles:true,composed:true}));node.dispatchEvent(new win.Event('change',{bubbles:true,composed:true}));};
 		const fill = text => {if(node.readOnly)error('element_readonly','Target is read-only.');node.focus();if(node.isContentEditable)node.textContent=text;else if(node.matches('input:not([type=file]):not([type=hidden]):not([type=checkbox]):not([type=radio]),textarea')) {const proto=node.tagName==='TEXTAREA'?win.HTMLTextAreaElement.prototype:win.HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(node,text);}else error('not_editable','Target is not a text field.');change();if((node.isContentEditable?node.textContent:node.value)!==text)error('postcondition_failed','Text did not persist.');};
 		switch(operation) {
