@@ -1,0 +1,2456 @@
+{
+  "covered_window": {
+    "duration_seconds": 25.548406875,
+    "end_seconds": 26.528406875,
+    "start_seconds": 0.98
+  },
+  "input": "/Users/omeriadon/Downloads/exported-tables.zip",
+  "limitations": [
+    "CPU usage is integrated from exported interval percentages; time-profile weights are statistical sample weights, not CPU duration.",
+    "SwiftUI durations are inclusive update/group durations and must not be added to CPU totals.",
+    "Only selected rows exported by Instruments are represented; table windows may differ."
+  ],
+  "tables": {
+    "ProcessCPUUsage": {
+      "average_percent_bins": {
+        "0": 43.99999999999999,
+        "1": 96.57999999999997,
+        "10": 5.709999999999999,
+        "11": 11.499999999999995,
+        "12": 10.189999999999998,
+        "13": 20.20999999999999,
+        "14": 6.019999999999996,
+        "15": 9.459999999999994,
+        "16": 15.279999999999994,
+        "17": 17.19999999999998,
+        "18": 6.809999999999998,
+        "19": 6.5399999999999965,
+        "2": 93.17999999999994,
+        "20": 13.454445232716592,
+        "3": 0.39999999999999974,
+        "4": 0.3499999999999998,
+        "5": 0.29999999999999977,
+        "6": 2.779999999999998,
+        "7": 44.01999999999997,
+        "8": 24.869999999999994,
+        "9": 9.03
+      },
+      "covered_window": {
+        "duration_seconds": 19.728316087,
+        "end_seconds": 20.708316087,
+        "start_seconds": 0.98
+      },
+      "cpu_samples": 1973,
+      "cpu_seconds": 3.908399999999979,
+      "cpu_seconds_bins": {
+        "0": 0.008799999999999999,
+        "1": 0.9658000000000004,
+        "10": 0.057100000000000026,
+        "11": 0.11500000000000002,
+        "12": 0.10190000000000005,
+        "13": 0.20210000000000003,
+        "14": 0.060200000000000004,
+        "15": 0.09460000000000002,
+        "16": 0.15280000000000005,
+        "17": 0.17199999999999993,
+        "18": 0.06810000000000002,
+        "19": 0.06540000000000001,
+        "2": 0.9318,
+        "20": 0.09529999999993626,
+        "3": 0.004,
+        "4": 0.0035,
+        "5": 0.003,
+        "6": 0.0278,
+        "7": 0.4401999999999999,
+        "8": 0.24870000000000012,
+        "9": 0.09030000000000005
+      },
+      "cpu_seconds_by_thread": {},
+      "rows": 1973,
+      "threads": []
+    },
+    "ThreadCPUUsage": {
+      "covered_window": {
+        "duration_seconds": 19.728316087,
+        "end_seconds": 20.708316087,
+        "start_seconds": 0.98
+      },
+      "cpu_samples": 31411,
+      "cpu_seconds": 3.908400000000251,
+      "cpu_seconds_bins": {
+        "0": 0.008799999999999999,
+        "1": 0.9658000000000007,
+        "10": 0.05710000000000015,
+        "11": 0.11500000000000003,
+        "12": 0.10190000000000014,
+        "13": 0.2020999999999997,
+        "14": 0.06020000000000011,
+        "15": 0.09460000000000021,
+        "16": 0.15279999999999974,
+        "17": 0.17199999999999982,
+        "18": 0.06810000000000012,
+        "19": 0.06540000000000015,
+        "2": 0.9318000000000004,
+        "20": 0.09529999999993649,
+        "3": 0.004,
+        "4": 0.0034999999999999996,
+        "5": 0.003,
+        "6": 0.027800000000000002,
+        "7": 0.4401999999999993,
+        "8": 0.2487,
+        "9": 0.09030000000000027
+      },
+      "cpu_seconds_by_thread": {
+        "CVDisplayLink (0xa517b) (astra, pid: 28760)": 0.0006000000000000001,
+        "CVDisplayLink (0xa5185) (astra, pid: 28760)": 0.0005,
+        "CVDisplayLink (0xa51ac) (astra, pid: 28760)": 0.02219999999999992,
+        "CVDisplayLink (0xa51b0) (astra, pid: 28760)": 0.0002,
+        "CVDisplayLink (0xa51de) (astra, pid: 28760)": 0.0006000000000000001,
+        "JavaScriptCore libpas scavenger (0xa3f88) (astra, pid: 28760)": 0.015299999999999994,
+        "Log work queue (0x837ad) (astra, pid: 28760)": 0.007800000000000002,
+        "Main Thread (0x834db) (astra, pid: 28760)": 1.5968999999999367,
+        "astra (0xa4126) (astra, pid: 28760)": 0.0007999999999999999,
+        "astra (0xa4d75) (astra, pid: 28760)": 1.8067999999999684,
+        "astra (0xa50a1) (astra, pid: 28760)": 0.11940000000000055,
+        "astra (0xa50a2) (astra, pid: 28760)": 0.07620000000000021,
+        "astra (0xa50a3) (astra, pid: 28760)": 0.01859999999999998,
+        "astra (0xa50a4) (astra, pid: 28760)": 0.059700000000000156,
+        "astra (0xa50a5) (astra, pid: 28760)": 0.042700000000000016,
+        "astra (0xa50a6) (astra, pid: 28760)": 0.02709999999999997,
+        "astra (0xa5165) (astra, pid: 28760)": 0.005400000000000001,
+        "astra (0xa5174) (astra, pid: 28760)": 0.04370000000000007,
+        "astra (0xa525d) (astra, pid: 28760)": 0.007100000000000001,
+        "astra (0xa52af) (astra, pid: 28760)": 0.0104,
+        "astra (0xa52b0) (astra, pid: 28760)": 0.0001,
+        "com.apple.NSEventThread (0x83702) (astra, pid: 28760)": 0.04629999999999997
+      },
+      "rows": 31411,
+      "threads": [
+        {
+          "count": 1973,
+          "key": "astra (0xa4d75) (astra, pid: 28760)"
+        },
+        {
+          "count": 1973,
+          "key": "astra (0xa4126) (astra, pid: 28760)"
+        },
+        {
+          "count": 1973,
+          "key": "astra (0xa50a3) (astra, pid: 28760)"
+        },
+        {
+          "count": 1973,
+          "key": "astra (0xa50a2) (astra, pid: 28760)"
+        },
+        {
+          "count": 1973,
+          "key": "astra (0xa50a1) (astra, pid: 28760)"
+        },
+        {
+          "count": 1973,
+          "key": "JavaScriptCore libpas scavenger (0xa3f88) (astra, pid: 28760)"
+        },
+        {
+          "count": 1973,
+          "key": "Main Thread (0x834db) (astra, pid: 28760)"
+        },
+        {
+          "count": 1969,
+          "key": "astra (0xa50a5) (astra, pid: 28760)"
+        },
+        {
+          "count": 1883,
+          "key": "astra (0xa50a4) (astra, pid: 28760)"
+        },
+        {
+          "count": 1382,
+          "key": "Log work queue (0x837ad) (astra, pid: 28760)"
+        },
+        {
+          "count": 1374,
+          "key": "com.apple.NSEventThread (0x83702) (astra, pid: 28760)"
+        },
+        {
+          "count": 1326,
+          "key": "astra (0xa50a6) (astra, pid: 28760)"
+        },
+        {
+          "count": 1319,
+          "key": "astra (0xa5165) (astra, pid: 28760)"
+        },
+        {
+          "count": 1316,
+          "key": "astra (0xa5174) (astra, pid: 28760)"
+        },
+        {
+          "count": 1301,
+          "key": "CVDisplayLink (0xa5185) (astra, pid: 28760)"
+        },
+        {
+          "count": 1291,
+          "key": "CVDisplayLink (0xa517b) (astra, pid: 28760)"
+        },
+        {
+          "count": 1208,
+          "key": "CVDisplayLink (0xa51b0) (astra, pid: 28760)"
+        },
+        {
+          "count": 1156,
+          "key": "CVDisplayLink (0xa51de) (astra, pid: 28760)"
+        },
+        {
+          "count": 1156,
+          "key": "CVDisplayLink (0xa51ac) (astra, pid: 28760)"
+        },
+        {
+          "count": 309,
+          "key": "astra (0xa52af) (astra, pid: 28760)"
+        }
+      ]
+    },
+    "swiftui-causes": {
+      "cause_edge_labels": [
+        {
+          "count": 210989,
+          "key": "Update"
+        },
+        {
+          "count": 44800,
+          "key": "Update: self"
+        },
+        {
+          "count": 34064,
+          "key": "Update: _plist (PropertyList)"
+        },
+        {
+          "count": 15775,
+          "key": "Creation"
+        },
+        {
+          "count": 1513,
+          "key": "Update: content.base.transform (ViewTransform)"
+        },
+        {
+          "count": 831,
+          "key": "Skipped Update"
+        },
+        {
+          "count": 775,
+          "key": "Update: content.background.content.transform (ViewTransform)"
+        },
+        {
+          "count": 672,
+          "key": "Update: content.content._tree.content.content.1.modifier (_OpacityEffect)"
+        },
+        {
+          "count": 656,
+          "key": "Update: seed (UInt32)"
+        },
+        {
+          "count": 516,
+          "key": "Update: properties (AccessibilityProperties)"
+        },
+        {
+          "count": 468,
+          "key": "Update: scale.width (CGFloat)"
+        },
+        {
+          "count": 458,
+          "key": "Update: content.modifier.overlay (ModifiedContent<FlexCoreInteractionModifier.GlowContainer, _ClipEffect>?)"
+        },
+        {
+          "count": 413,
+          "key": "Skipped Update: _plist (PropertyList)"
+        },
+        {
+          "count": 367,
+          "key": "Update: content.content.content.content.trueBody.content.entry (GlassContainer.Entry)"
+        },
+        {
+          "count": 283,
+          "key": "Update: content.modifier.effect (GlassContainer.Effect)"
+        },
+        {
+          "count": 276,
+          "key": "Update: content.modifier.anchor (Anchor<CGRect?>.Source)"
+        },
+        {
+          "count": 260,
+          "key": "Update: state (AnyEquatable?)"
+        },
+        {
+          "count": 255,
+          "key": "Update: glowClipShape (AnyShape?)"
+        },
+        {
+          "count": 254,
+          "key": "Update: content.modifier.config.shape (AnyShape)"
+        },
+        {
+          "count": 254,
+          "key": "Update: radius (CGFloat)"
+        }
+      ],
+      "cause_value_types": [
+        {
+          "count": 227595,
+          "key": ""
+        },
+        {
+          "count": 34477,
+          "key": "EnvironmentValues"
+        },
+        {
+          "count": 12641,
+          "key": "AccessibilityNodeList"
+        },
+        {
+          "count": 11145,
+          "key": "DisplayList"
+        },
+        {
+          "count": 5510,
+          "key": "ViewTransform"
+        },
+        {
+          "count": 2784,
+          "key": "LayoutComputer"
+        },
+        {
+          "count": 2379,
+          "key": "ViewList"
+        },
+        {
+          "count": 2252,
+          "key": "PreferenceValues"
+        },
+        {
+          "count": 2001,
+          "key": "Transaction"
+        },
+        {
+          "count": 1545,
+          "key": "ViewLeafView<PlatformViewRepresentableAdaptor<DraggingDestinationView>>"
+        },
+        {
+          "count": 795,
+          "key": "ModifiedContent<_BackgroundModifier<ModifiedContent>, Drop.Drop.Feature.KeyWritingModifier>"
+        },
+        {
+          "count": 691,
+          "key": "DynamicContainer.Info"
+        },
+        {
+          "count": 678,
+          "key": "ModifiedContent<ModifiedContent<ZStack, _AllowsHitTestingModifier>, FlexCoreInteractionModifier.FlexCoreInteractionModifier.GlowContainer.RemoveViewResponders>"
+        },
+        {
+          "count": 673,
+          "key": "_GraphInputs.Phase"
+        },
+        {
+          "count": 558,
+          "key": "ViewFrame"
+        },
+        {
+          "count": 512,
+          "key": "FlexCoreInteractionModifier.FlexEffectModifier"
+        },
+        {
+          "count": 495,
+          "key": "Array<ViewGeometry>"
+        },
+        {
+          "count": 492,
+          "key": "Array<_LazyLayout_PlacedSubview>"
+        },
+        {
+          "count": 458,
+          "key": "ModifiedContent<ModifiedContent<_ViewModifier_Content, _OverlayModifier>, FlexStateModifier>"
+        },
+        {
+          "count": 456,
+          "key": "Material?"
+        }
+      ],
+      "change_event_descriptions": [
+        {
+          "count": 210989,
+          "key": "Update"
+        },
+        {
+          "count": 44800,
+          "key": "Update: self"
+        },
+        {
+          "count": 34064,
+          "key": "Update: _plist (PropertyList)"
+        },
+        {
+          "count": 15775,
+          "key": "Creation"
+        },
+        {
+          "count": 1513,
+          "key": "Update: content.base.transform (ViewTransform)"
+        },
+        {
+          "count": 831,
+          "key": "Skipped Update"
+        },
+        {
+          "count": 775,
+          "key": "Update: content.background.content.transform (ViewTransform)"
+        },
+        {
+          "count": 672,
+          "key": "Update: content.content._tree.content.content.1.modifier (_OpacityEffect)"
+        },
+        {
+          "count": 656,
+          "key": "Update: seed (UInt32)"
+        },
+        {
+          "count": 516,
+          "key": "Update: properties (AccessibilityProperties)"
+        },
+        {
+          "count": 468,
+          "key": "Update: scale.width (CGFloat)"
+        },
+        {
+          "count": 458,
+          "key": "Update: content.modifier.overlay (ModifiedContent<FlexCoreInteractionModifier.GlowContainer, _ClipEffect>?)"
+        },
+        {
+          "count": 413,
+          "key": "Skipped Update: _plist (PropertyList)"
+        },
+        {
+          "count": 367,
+          "key": "Update: content.content.content.content.trueBody.content.entry (GlassContainer.Entry)"
+        },
+        {
+          "count": 283,
+          "key": "Update: content.modifier.effect (GlassContainer.Effect)"
+        },
+        {
+          "count": 276,
+          "key": "Update: content.modifier.anchor (Anchor<CGRect?>.Source)"
+        },
+        {
+          "count": 260,
+          "key": "Update: state (AnyEquatable?)"
+        },
+        {
+          "count": 255,
+          "key": "Update: glowClipShape (AnyShape?)"
+        },
+        {
+          "count": 254,
+          "key": "Update: content.modifier.config.shape (AnyShape)"
+        },
+        {
+          "count": 254,
+          "key": "Update: radius (CGFloat)"
+        }
+      ],
+      "covered_window": {
+        "duration_seconds": 19.542638333,
+        "end_seconds": 26.528404416,
+        "start_seconds": 6.985766083
+      },
+      "rows": 320028,
+      "timestamps_beyond_process_cpu_window": {
+        "process_cpu_end_seconds": 20.708316087,
+        "seconds_after_process_cpu_end": 5.820088329000001,
+        "table_end_seconds": 26.528404416
+      }
+    },
+    "swiftui-changes": {
+      "change_event_descriptions": [
+        {
+          "count": 5257,
+          "key": "Preference List"
+        },
+        {
+          "count": 3343,
+          "key": "Action Callback"
+        },
+        {
+          "count": 2751,
+          "key": "External: PlatformGlassInteractionState"
+        },
+        {
+          "count": 1641,
+          "key": "Layout: AnimatableFrameAttribute"
+        },
+        {
+          "count": 1507,
+          "key": "EnvironmentWriter: EnvironmentValues"
+        },
+        {
+          "count": 1303,
+          "key": "View Responders"
+        },
+        {
+          "count": 1054,
+          "key": "Transaction Seed"
+        },
+        {
+          "count": 1053,
+          "key": "External: UInt32"
+        },
+        {
+          "count": 893,
+          "key": "Transaction"
+        },
+        {
+          "count": 829,
+          "key": "<unknown>"
+        },
+        {
+          "count": 793,
+          "key": "View List BaseViewList.Init"
+        },
+        {
+          "count": 774,
+          "key": "External: Time"
+        },
+        {
+          "count": 591,
+          "key": "View Creation / Reuse"
+        },
+        {
+          "count": 512,
+          "key": "DisplayList Item: PairPreferenceCombiner<DisplayList.Key>"
+        },
+        {
+          "count": 490,
+          "key": "PropertiesTransform in AccessibilityAttachmentModifier"
+        },
+        {
+          "count": 463,
+          "key": "DisplayList Item: DynamicPreferenceCombiner<DisplayList.Key>"
+        },
+        {
+          "count": 415,
+          "key": "Button.body"
+        },
+        {
+          "count": 386,
+          "key": "DynamicViewPhase"
+        },
+        {
+          "count": 384,
+          "key": "<transaction>"
+        },
+        {
+          "count": 374,
+          "key": "Layout: SecondaryLayerGeometryQuery"
+        }
+      ],
+      "covered_window": {
+        "duration_seconds": 25.441737417000002,
+        "end_seconds": 26.528406875,
+        "start_seconds": 1.086669458
+      },
+      "rows": 50510,
+      "timestamps_beyond_process_cpu_window": {
+        "process_cpu_end_seconds": 20.708316087,
+        "seconds_after_process_cpu_end": 5.820090788000002,
+        "table_end_seconds": 26.528406875
+      }
+    },
+    "swiftui-update-groups": {
+      "covered_window": {
+        "duration_seconds": 19.501265584,
+        "end_seconds": 26.528405,
+        "start_seconds": 7.027139416
+      },
+      "duration_bins_seconds": {
+        "11": 0.036010158999999,
+        "12": 0.0198019330000004,
+        "13": 0.07326703200000045,
+        "14": 6.7709e-05,
+        "15": 0.006843591999999987,
+        "16": 0.04597346499999817,
+        "17": 0.018908164999999918,
+        "19": 0.000101125,
+        "20": 0.03512071399999993,
+        "21": 0.02750979199999996,
+        "22": 0.18953115700000073,
+        "23": 0.0007817900000000001,
+        "24": 0.04072628599999867,
+        "25": 0.026424136000000046,
+        "26": 0.047628954,
+        "7": 0.18372011100001695,
+        "8": 0.054534215000000004,
+        "9": 0.009422796000000006
+      },
+      "inclusive_duration_is_not_cpu": true,
+      "inclusive_duration_seconds_by_label": {
+        "(AccessibilityViewResponderUpdater.Responders AccessibilityGeometryStorage.Responders)": 0.0009038780000000066,
+        "(AlignmentModifiedLayoutComputer LayoutComputer)": 0.0001105,
+        "(AnimatableAttribute<BrowserContentView> BrowserContentView)": 4.249e-06,
+        "(AnimatableAttribute<BrowserSplitView<ModifiedContent, ShellContentColumn>> BrowserSplitView<ModifiedContent<ModifiedContent, AccessibilityAttachmentModifier>, ShellContentColumn>)": 1.6334e-05,
+        "(AnimatableAttribute<ColorView> ColorView)": 0.00024496500000000063,
+        "(AnimatableAttribute<GlassAppearanceScaleEffect> GlassAppearanceScaleEffect)": 1.6882000000000005e-05,
+        "(AnimatableAttribute<GlassContainer.BridgeLayerState> GlassContainer.BridgeLayerState)": 9.650000000000013e-06,
+        "(AnimatableAttribute<KickEffect> KickEffect)": 3.9700999999999985e-05,
+        "(AnimatableAttribute<OpacityRendererEffect> OpacityRendererEffect)": 0.005479357000000001,
+        "(AnimatableAttribute<ScaledAnchor> ScaledAnchor)": 4.829500000000001e-05,
+        "(AnimatableAttribute<ScaledProgress> ScaledProgress)": 2.7164999999999998e-05,
+        "(AnimatableAttribute<Shader.ResolvedShader> Shader.ResolvedShader)": 0.000352205,
+        "(AnimatableAttribute<ThemeWidgetLiftedPresentationModifier> ThemeWidgetLiftedPresentationModifier)": 4.791e-06,
+        "(AnimatableAttribute<TransformedShape<AnyShape>> TransformedShape<AnyShape>)": 4.0014e-05,
+        "(AnimatableAttribute<ViewGeometry> ViewGeometry)": 0.000182709,
+        "(AnimatableAttribute<_BlurEffect> _BlurEffect)": 0.003680332000000005,
+        "(AnimatableAttribute<_ClipEffect<AnyShape>> _ClipEffect<AnyShape>)": 6.358399999999994e-05,
+        "(AnimatableAttribute<_ClipEffect<RoundedRectangle>> _ClipEffect<RoundedRectangle>)": 2.9606000000000004e-05,
+        "(AnimatableAttribute<_ClipEffect<UnevenRoundedRectangle>> _ClipEffect<UnevenRoundedRectangle>)": 5.169e-06,
+        "(AnimatableAttribute<_Glass.Smoothness> _Glass.Smoothness)": 0.000216413,
+        "(AnimatableAttribute<_OffsetEffect> _OffsetEffect)": 2.5e-07,
+        "(AnimatableAttribute<_OpacityEffect> _OpacityEffect)": 0.0009291120000000029,
+        "(AnimatableAttribute<_SaturationEffect> _SaturationEffect)": 0.00023629200000000006,
+        "(AnimatableAttribute<_ScaleEffect> _ScaleEffect)": 0.002310413,
+        "(AnimatableAttribute<_ShadowEffect._Resolved> _ShadowEffect._Resolved)": 9.099999999999994e-05,
+        "(AnimatableAttribute<_StrokedShape<RoundedRectangle._Inset>> _StrokedShape<RoundedRectangle._Inset>)": 2.8954999999999986e-05,
+        "(AnimatableFrameAttribute ViewFrame)": 0.04093581599999285,
+        "(AnimatedRootSize RootSizeInfo?)": 2.8254000000000004e-05,
+        "(AnyGestureInfo<Void> AnyGestureInfo<Void>.Value)": 0.001174041,
+        "(AppearanceEffect Void)": 0.00043217200000000486,
+        "(ApplyModifiers ViewList)": 4.1e-08,
+        "(BaseViewList.Init ViewList)": 0.0017450460000000007,
+        "(BindingActionDispatcher<Bool> Void)": 1.4707999999999999e-05,
+        "(CallbacksPhase<FailedCallbacks<Void>> GesturePhase<Void>)": 0.0015555830000000001,
+        "(ChildEnvironment<NavigationState.SelectionSeed> EnvironmentValues)": 3.9569999999999996e-06,
+        "(ChildEnvironment<TextAlignment> EnvironmentValues)": 9.16e-07,
+        "(DefaultRule<GesturePhase<Void>> GesturePhase<Void>)": 2.8083000000000002e-05,
+        "(DynamicBody<ModifierBodyAccessor<FlexCoreInteractionModifier.FlexGestureModifier>, MainThreadFlags> ModifiedContent<_ViewModifier_Content<FlexCoreInteractionModifier.FlexGestureModifier>, GestureComponentAttachmentModifier<MapComponent>>)": 5.5166999999999995e-05,
+        "(DynamicBody<ModifierBodyAccessor<OnCommandModifier>, MainThreadFlags> ModifiedContent<ModifiedContent<_ViewModifier_Content, FocusStateBindingModifier>, _PreferenceTransformModifier<ResponderCommandsKey>>)": 1e-09,
+        "(DynamicBody<ModifierBodyAccessor<SwipeActionsPresentationModifier>, MainThreadFlags> ModifiedContent<ModifiedContent<ModifiedContent, _ValueActionModifier2>, _AppearanceActionModifier>)": 4.1e-08,
+        "(DynamicContainerInfo<DynamicLayoutViewAdaptor> DynamicContainer.Info)": 0.05128205899999994,
+        "(DynamicLayoutComputer<FlexiblePaddingLayout> LayoutComputer)": 0.000232499,
+        "(DynamicLayoutComputer<_HStackLayout> LayoutComputer)": 0.03678324999999999,
+        "(DynamicLayoutComputer<_VStackLayout> LayoutComputer)": 0.047420044,
+        "(DynamicLayoutComputer<_ZStackLayout> LayoutComputer)": 0.002153792,
+        "(DynamicPreferenceCombiner<HostPreferencesKey> PreferenceValues)": 4.1211e-05,
+        "(DynamicTransaction Transaction)": 6.724799999999996e-05,
+        "(DynamicViewContainer<AnyView> DynamicViewContainer<AnyView>.Value)": 0.005621292,
+        "(DynamicViewList<ModifiedContent?> ViewList)": 1e-09,
+        "(GeometryActionBinder<_GeometryActionModifier<CGFloat>> Void)": 0.0005740470000000011,
+        "(GeometryActionBinder<_GeometryActionModifier<CGSize>> Void)": 0.00010362599999999992,
+        "(GestureRecognizerRepresentableChild<DragLiftGesture> ConcreteRecognizer<DragLiftGesture>)": 0.00014825,
+        "(GlassAnimatableMaterialValue Material?)": 0.0005103860000000016,
+        "(GlassContainer.GlassContainer.ResolvedStorage.ForegroundMaterialCollector Void)": 0.005333296999999996,
+        "(GlassContainer.MakeAnimatableInteractionState PlatformGlassInteractionState)": 6.916e-06,
+        "(GlassEntryResponderFilter Void)": 7.789799999999995e-05,
+        "(HitTestBindingFilter Array<ViewResponder>)": 0.05099962599999999,
+        "(HostPreferencesTransform<ResponderCommandsKey> PreferenceValues)": 8.3e-08,
+        "(HostPreferencesTransform<SheetPreference.Key> PreferenceValues)": 0.013829422,
+        "(HoverResponderChild.UpdateBindingManagerChild Void)": 0.003331878000000003,
+        "(Image.ImageViewChild<SwiftUIImageAccessibilityProvider> ModifiedContent<Resolved, AccessibilityImageModifier>)": 0.0025999969999999984,
+        "(InlineReorderableStyle.ResolvedViews<Array<BrowserSpace>, UUID, ReorderableSingleCollectionIdentifier, ModifiedContent<ModifiedContent, SwipeActionsPresentationModifier>> InlineReorderableViews<Array<BrowserSpace>, UUID, ReorderableSingleCollectionIdentifier, ModifiedContent<ModifiedContent, SwipeActionsPresentationModifier>>)": 3.749e-06,
+        "(InterpolatedDisplayList<Resolved> DisplayList)": 0.011561177999999997,
+        "(InterpolatedDisplayList<ResolvedStyledText> DisplayList)": 0.0026357849999999986,
+        "(IsAnimated<SheetPreference.Key> (SheetPreference.Value) -> Void)": 9.720699999999999e-05,
+        "(LayoutChildGeometries Array<ViewGeometry>)": 4.2e-08,
+        "(LayoutPositionQuery CGPoint)": 0.000294958,
+        "(LazyCollectedPlacements Array<_LazyLayout_PlacedSubview>)": 6.229999999999999e-07,
+        "(LazySubviewPrefetcher<LazyVGridLayout> Void)": 1.27e-07,
+        "(LazySubviewPrefetcher<LazyVStackLayout> Void)": 5.86e-07,
+        "(MainThreadRequiringScrollPhase Void)": 3.0582999999999995e-05,
+        "(Map<AddGestureModifier<_EndedGesture, SimultaneousGestureCombiner>, String?> String?)": 1.0042000000000001e-05,
+        "(Map<ButtonActionModifier<ModifierGesture>, String?> String?)": 0.000285628,
+        "(Map<EnvironmentValues, Bool> Bool)": 4.6375e-05,
+        "(Map<EnvironmentValues, ContentTransition.State> ContentTransition.State)": 8.3e-08,
+        "(Map<EnvironmentValues, IntelligentAssistantBehavior_v1> IntelligentAssistantBehavior_v1)": 4.2e-08,
+        "(Map<EnvironmentValues, LayoutDirection> LayoutDirection)": 1e-09,
+        "(Map<OnGlassInteractionStateChangeWriteModifier, ( PlatformGlassInteractionState) -> Void> (PlatformGlassInteractionState) -> Void)": 8.458e-06,
+        "(MergedTransaction Transaction)": 1.1332000000000001e-05,
+        "(PairPreferenceCombiner<HostPreferencesKey> PreferenceValues)": 0.007585415999999998,
+        "(PairPreferenceCombiner<ReorderablePlaceholderGeometry.Preference> Array<ReorderablePlaceholderGeometry>)": 5.5166999999999995e-05,
+        "(PlaceholderInfo PlaceholderInfo.Value)": 0.00020925,
+        "(PlatformViewChild<PlatformViewRepresentableAdaptor<BrowserThemeBackground.WindowMaterial>> ViewLeafView<PlatformViewRepresentableAdaptor<BrowserThemeBackground.WindowMaterial>>)": 0.0007582079999999999,
+        "(PlatformViewChild<PlatformViewRepresentableAdaptor<SwipeTrackpadScrollAdapter>> ViewLeafView<PlatformViewRepresentableAdaptor<SwipeTrackpadScrollAdapter>>)": 0.00017404400000000015,
+        "(PlatformViewChild<PlatformViewRepresentableAdaptor<WindowFocusReader>> ViewLeafView<PlatformViewRepresentableAdaptor<WindowFocusReader>>)": 0.00034512299999999997,
+        "(PreferenceBinder<SwipeActionsValuesPreferenceKey> Void)": 0.000583502,
+        "(PreferenceRewriter.CycleDetectingPreferenceUpdater<ContentScrollViewPreferenceKey> Void)": 1.249e-06,
+        "(PropertiesTransform AccessibilityNodeList)": 0.097773165,
+        "(RendererEffectDisplayList<_AllowsHitTestingModifier> DisplayList)": 1.67e-07,
+        "(RendererEffectDisplayList<_GeometryGroupEffect> DisplayList)": 1.5830000000000001e-06,
+        "(ResolvedImageLayoutComputer LayoutComputer)": 0.011609335,
+        "(RootDisplayList (DisplayList, DisplayList.Version))": 0.06839141100000001,
+        "(ScrollActionDispatcher<OnScrollPhaseChangeModifier.PhaseActionProvider> Void)": 0.000355544,
+        "(ScrollViewAdjustedBehavior ResolvedScrollBehavior?)": 2.5e-06,
+        "(ScrollViewChildTransform ViewTransform)": 4.9875e-05,
+        "(ShapeStyleResolver<AnyShapeStyle> _ShapeStyle_Pack)": 0.0006019999999999993,
+        "(ShapeStyleResolver<Color> _ShapeStyle_Pack)": 9.5959e-05,
+        "(ShapeStyleResolver<ControlBorderShapeStyle> _ShapeStyle_Pack)": 9.904599999999999e-05,
+        "(ShapeStyleResolver<GlassInteractionFill> _ShapeStyle_Pack)": 6.792e-06,
+        "(ShapeStyleResolver<LinearGradient> _ShapeStyle_Pack)": 0.00018017400000000026,
+        "(ShapeStyleResolver<MacButtonGlassInteractionFill> _ShapeStyle_Pack)": 9.629400000000004e-05,
+        "(ShapeStyleResolver<Material> _ShapeStyle_Pack)": 0.000258454,
+        "(ShapeStyleResolver<MeshGradient> _ShapeStyle_Pack)": 0.00019203900000000008,
+        "(ShapeStyleResolver<_AnchoredShapeStyle<Color>> _ShapeStyle_Pack)": 4.550099999999999e-05,
+        "(ShapeStyleResolver<_OpacityShapeStyle<ControlBorderShapeStyle>> _ShapeStyle_Pack)": 0.00015391700000000005,
+        "(ShapeStyleResolver<_OpacityShapeStyle<HierarchicalShapeStyle>> _ShapeStyle_Pack)": 7.6259999999999995e-06,
+        "(ShapeStyleResolver<_OpacityShapeStyle<_BlendModeShapeStyle>> _ShapeStyle_Pack)": 5.350200000000001e-05,
+        "(SpacerLayoutComputer<Spacer> LayoutComputer)": 1.916e-06,
+        "(StaticLayoutComputer<BaselineLayout> LayoutComputer)": 1.0417e-05,
+        "(StaticLayoutComputer<FlexibleButtonFrameLayout> LayoutComputer)": 0.000297792,
+        "(StaticLayoutComputer<FlexiblePaddingLayout> LayoutComputer)": 0.00040008299999999997,
+        "(StaticLayoutComputer<_VStackLayout> LayoutComputer)": 1.1375e-05,
+        "(SubscriptionView<PassthroughSubject, ModifiedContent>.Subscriber Void)": 0.000259918,
+        "(SubscriptionView<Publisher, Group>.Subscriber Void)": 1.67e-07,
+        "(SubscriptionView<Publisher, ModifiedContent>.Subscriber Void)": 0.00023716800000000006,
+        "(SubscriptionView<Publisher, SubscriptionView>.Subscriber Void)": 0.000111998,
+        "(TooltipModifier.ResolveText String)": 0.000362542,
+        "(TransactionalAnchorTransform<CGRect?, PopoverPresentation.Key> (Array) -> Void)": 0.000269087,
+        "(UnaryLayoutComputer<SpacingLayout> LayoutComputer)": 1.375e-06,
+        "(UnaryLayoutComputer<_AspectRatioLayout> LayoutComputer)": 1.8750000000000003e-06,
+        "(UnaryLayoutComputer<_FixedSizeLayout> LayoutComputer)": 0.006968920999999999,
+        "(UnaryLayoutComputer<_FlexFrameLayout> LayoutComputer)": 2.7584000000000006e-05,
+        "(UnaryLayoutComputer<_FrameLayout> LayoutComputer)": 0.0005875389999999999,
+        "(UnaryLayoutComputer<_PaddingLayout> LayoutComputer)": 0.00019350199999999996,
+        "(UnaryPositionAwareLayoutComputer<_SafeAreaRegionsIgnoringLayout> LayoutComputer)": 0.007382876,
+        "(UnwrapConditional<ViewDescriptor, _ConditionalContent<_ConditionalContent, _ConditionalContent>, ModifiedContent<Color, _FlexFrameLayout>> ModifiedContent<Color, _FlexFrameLayout>)": 8.918e-06,
+        "(UpdateViewFocusItem FocusItem.ViewItem)": 0.0009695420000000004,
+        "(UpdateViewResponderGeometry ContentResponderHelper<TrivialContentResponder>)": 0.000197792,
+        "(ValueActionDispatcher<_ValueActionModifier2<AdaptiveContentView.ColorSchemes>> Void)": 4.1e-08,
+        "(ValueActionDispatcher<_ValueActionModifier2<AddressDisplayStyle>> Void)": 2.257000000000001e-06,
+        "(ValueActionDispatcher<_ValueActionModifier2<Array>> Void)": 3.54e-06,
+        "(ValueActionDispatcher<_ValueActionModifier2<Bool>> Void)": 0.0001614210000000002,
+        "(ValueActionDispatcher<_ValueActionModifier2<Bool?>> Void)": 2.421000000000001e-06,
+        "(ValueActionDispatcher<_ValueActionModifier2<CGFloat>> Void)": 3.929100000000001e-05,
+        "(ValueActionDispatcher<_ValueActionModifier2<CGSize>> Void)": 7.709999999999999e-06,
+        "(ValueActionDispatcher<_ValueActionModifier2<Date>> Void)": 8.769999999999999e-07,
+        "(ValueActionDispatcher<_ValueActionModifier2<Double>> Void)": 1.7089999999999999e-06,
+        "(ValueActionDispatcher<_ValueActionModifier2<Int>> Void)": 1.0171000000000001e-05,
+        "(ValueActionDispatcher<_ValueActionModifier2<NSWindow?>> Void)": 5.668000000000001e-06,
+        "(ValueActionDispatcher<_ValueActionModifier2<ScenePhase>> Void)": 3e-06,
+        "(ValueActionDispatcher<_ValueActionModifier2<String>> Void)": 1.239100000000001e-05,
+        "(ValueActionDispatcher<_ValueActionModifier2<String?>> Void)": 2.9337999999999996e-05,
+        "(ValueActionDispatcher<_ValueActionModifier2<SwipeActionsConfig.Visibility>> Void)": 1.6835999999999996e-05,
+        "(ValueActionDispatcher<_ValueActionModifier2<UInt32>> Void)": 5.032799999999987e-05,
+        "(ValueActionDispatcher<_ValueActionModifier2<URL?>> Void)": 2.5840000000000006e-06,
+        "(ValueActionDispatcher<_ValueActionModifier2<UUID>> Void)": 1.4220000000000054e-05,
+        "(ValueActionDispatcher<_ValueActionModifier2<UUID?>> Void)": 8.1764e-05,
+        "(ValueTransactionSeed<Array<GlassContainer.GlassContainer.Item.Seed>> UInt32)": 1.880000000000002e-05,
+        "(ValueTransactionSeed<Bool> UInt32)": 2.4263000000000015e-05,
+        "(ValueTransactionSeed<BrowserTheme> UInt32)": 1.128e-06,
+        "(ValueTransactionSeed<ButtonInteractionPhase> UInt32)": 0.001046088999999999,
+        "(ValueTransactionSeed<CGFloat> UInt32)": 1.67e-07,
+        "(ValueTransactionSeed<CGSize> UInt32)": 1.25e-07,
+        "(ValueTransactionSeed<Double> UInt32)": 2.916e-06,
+        "(ValueTransactionSeed<String> UInt32)": 4.281000000000003e-06,
+        "(ValueTransactionSeed<UUID> UInt32)": 2.1377000000000006e-05,
+        "Transaction": 0.17927441799999994,
+        "Transaction for AnimationRemoved": 0.000130291,
+        "Transaction for Gesture": 0.09560425,
+        "Transaction for PreferenceChange": 0.009121166,
+        "Transaction for onChange": 0.0069266250000000005,
+        "Transaction for unknown action": 0.018613169999999995
+      },
+      "rows": 36112,
+      "timestamps_beyond_process_cpu_window": {
+        "process_cpu_end_seconds": 20.708316087,
+        "seconds_after_process_cpu_end": 5.820088912999999,
+        "table_end_seconds": 26.528405
+      }
+    },
+    "swiftui-updates": {
+      "app_updates": [
+        {
+          "count": 356,
+          "key": "Other Updates: BrowserDropZone"
+        },
+        {
+          "count": 175,
+          "key": "Other Updates: TabTitleView"
+        },
+        {
+          "count": 127,
+          "key": "View Body Updates: BrowserTabRow"
+        },
+        {
+          "count": 90,
+          "key": "Other Updates: NonDraggableTitlebarRegion"
+        },
+        {
+          "count": 79,
+          "key": "Other Updates: WindowFocusReader"
+        },
+        {
+          "count": 73,
+          "key": "Representable Updates: BrowserDropZone"
+        },
+        {
+          "count": 59,
+          "key": "Other Updates: BrowserThemeBackground.WindowMaterial"
+        },
+        {
+          "count": 52,
+          "key": "View Body Updates: TabIconView"
+        },
+        {
+          "count": 51,
+          "key": "Other Updates: ThemeSurface"
+        },
+        {
+          "count": 47,
+          "key": "Other Updates: BrowserWebView"
+        },
+        {
+          "count": 31,
+          "key": "View Body Updates: BrowserAIHoverPreview"
+        },
+        {
+          "count": 29,
+          "key": "View Body Updates: BrowserAddressField"
+        },
+        {
+          "count": 27,
+          "key": "View Body Updates: BrowserLoadingBar"
+        },
+        {
+          "count": 22,
+          "key": "View Body Updates: AddressTextField"
+        },
+        {
+          "count": 20,
+          "key": "Other Updates: HazeEffect"
+        },
+        {
+          "count": 19,
+          "key": "Representable Updates: WindowFocusReader"
+        },
+        {
+          "count": 18,
+          "key": "Representable Updates: NonDraggableTitlebarRegion"
+        },
+        {
+          "count": 17,
+          "key": "View Body Updates: TabTitleView"
+        },
+        {
+          "count": 16,
+          "key": "View Body Updates: ThemeSurface"
+        },
+        {
+          "count": 16,
+          "key": "Other Updates: BrowserSplitView"
+        },
+        {
+          "count": 16,
+          "key": "View Body Updates: BrowserSplitView"
+        },
+        {
+          "count": 16,
+          "key": "Other Updates: Noise"
+        },
+        {
+          "count": 15,
+          "key": "Other Updates: WindowDragBackground"
+        },
+        {
+          "count": 13,
+          "key": "View Body Updates: AstraTopBarButtonModifier"
+        },
+        {
+          "count": 13,
+          "key": "View Body Updates: MeshGradientSurface"
+        },
+        {
+          "count": 12,
+          "key": "Representable Updates: BrowserWebView"
+        },
+        {
+          "count": 12,
+          "key": "View Body Updates: AstraTopBarIcon"
+        },
+        {
+          "count": 12,
+          "key": "View Body Updates: DimmedAddressOverlay"
+        },
+        {
+          "count": 11,
+          "key": "Representable Updates: BrowserThemeBackground.WindowMaterial"
+        },
+        {
+          "count": 11,
+          "key": "View Body Updates: ShellTopBarLoadingBar"
+        },
+        {
+          "count": 10,
+          "key": "View Body Updates: BrowserRootView"
+        },
+        {
+          "count": 10,
+          "key": "View Body Updates: DesktopBrowserShell"
+        },
+        {
+          "count": 10,
+          "key": "View Body Updates: BrowserTranslationButton"
+        },
+        {
+          "count": 10,
+          "key": "Representable Updates: HazeEffect"
+        },
+        {
+          "count": 10,
+          "key": "View Body Updates: ShellContentColumn"
+        },
+        {
+          "count": 10,
+          "key": "View Body Updates: BrowserAIChatSidebar"
+        },
+        {
+          "count": 10,
+          "key": "View Body Updates: BrowserPageView"
+        },
+        {
+          "count": 10,
+          "key": "Other Updates: BrowserScreenshotButton"
+        },
+        {
+          "count": 9,
+          "key": "View Body Updates: ShellTopBarView"
+        },
+        {
+          "count": 9,
+          "key": "View Body Updates: SizeReader"
+        },
+        {
+          "count": 8,
+          "key": "View Body Updates: ShellSidebarColumn"
+        },
+        {
+          "count": 8,
+          "key": "View Body Updates: ShellSpaceTabList"
+        },
+        {
+          "count": 8,
+          "key": "View Body Updates: ShellSidebarListView"
+        },
+        {
+          "count": 8,
+          "key": "View Body Updates: BrowserAITabDivider"
+        },
+        {
+          "count": 8,
+          "key": "View Body Updates: MiniAstraView"
+        },
+        {
+          "count": 8,
+          "key": "View Body Updates: NavigationBackButton"
+        },
+        {
+          "count": 8,
+          "key": "View Body Updates: NavigationForwardButton"
+        },
+        {
+          "count": 8,
+          "key": "View Body Updates: KeepAliveWebStack"
+        },
+        {
+          "count": 7,
+          "key": "View Body Updates: Noise"
+        },
+        {
+          "count": 7,
+          "key": "View Body Updates: ShellExtensionControls"
+        },
+        {
+          "count": 7,
+          "key": "View Body Updates: NavigationReloadButton"
+        },
+        {
+          "count": 7,
+          "key": "Other Updates: BrowserContentView"
+        },
+        {
+          "count": 6,
+          "key": "View Body Updates: BrowserThemeBackground"
+        },
+        {
+          "count": 6,
+          "key": "View Body Updates: BrowserContentView"
+        },
+        {
+          "count": 6,
+          "key": "View Body Updates: BrowserSiteInformationButton"
+        },
+        {
+          "count": 6,
+          "key": "Representable Updates: WindowDragBackground"
+        },
+        {
+          "count": 6,
+          "key": "View Body Updates: BrowserSpacePickerPopover"
+        },
+        {
+          "count": 6,
+          "key": "View Body Updates: StableRandomNoise"
+        },
+        {
+          "count": 6,
+          "key": "View Body Updates: ShellDownloadsBarView"
+        },
+        {
+          "count": 5,
+          "key": "View Body Updates: BrowserSpaceSwitcherOverlay"
+        },
+        {
+          "count": 5,
+          "key": "View Body Updates: DownloadFlightOverlay"
+        },
+        {
+          "count": 5,
+          "key": "View Body Updates: SidebarScrollOpacityFadeModifier"
+        },
+        {
+          "count": 5,
+          "key": "Other Updates: BrowserMediaActivityCard"
+        },
+        {
+          "count": 5,
+          "key": "View Body Updates: ShellWebsiteNavigationControls"
+        },
+        {
+          "count": 5,
+          "key": "Other Updates: BrowserPageView"
+        },
+        {
+          "count": 5,
+          "key": "Other Updates: BrowserThemeBackground"
+        },
+        {
+          "count": 5,
+          "key": "Other Updates: BrowserAIHoverPreview"
+        },
+        {
+          "count": 5,
+          "key": "Other Updates: BrowserLoadingBar"
+        },
+        {
+          "count": 4,
+          "key": "Other Updates: ShellDownloadsBarView"
+        },
+        {
+          "count": 4,
+          "key": "Other Updates: BrowserSpacesBar"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: BrowserScreenshotButton"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: NavigationIconLabel"
+        },
+        {
+          "count": 4,
+          "key": "Other Updates: MiniAstraView"
+        },
+        {
+          "count": 4,
+          "key": "Other Updates: NoiseShader"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: BrowserSpacesBar"
+        },
+        {
+          "count": 3,
+          "key": "View Body Updates: BrowserZoomControls"
+        },
+        {
+          "count": 3,
+          "key": "View Body Updates: BrowserHistoryNavigationControls"
+        },
+        {
+          "count": 3,
+          "key": "View Body Updates: BrowserWebsiteMonitorButton"
+        },
+        {
+          "count": 3,
+          "key": "View Body Updates: BrowserMediaActivityCard"
+        },
+        {
+          "count": 2,
+          "key": "View Body Updates: BrowserQuitFeedback"
+        },
+        {
+          "count": 2,
+          "key": "View Body Updates: BrowserAgentControls"
+        },
+        {
+          "count": 2,
+          "key": "View Body Updates: BrowserNavigationControls"
+        },
+        {
+          "count": 2,
+          "key": "View Body Updates: NoiseShader"
+        },
+        {
+          "count": 2,
+          "key": "View Body Updates: BrowserAIChatStreamingResponse"
+        },
+        {
+          "count": 1,
+          "key": "View Body Updates: BrowserSiteUserAgentPresenter"
+        },
+        {
+          "count": 1,
+          "key": "View Body Updates: BrowserSidebarHeader"
+        },
+        {
+          "count": 1,
+          "key": "View Body Updates: BrowserMediaActivityView"
+        },
+        {
+          "count": 1,
+          "key": "View Body Updates: TabCloseButton"
+        }
+      ],
+      "app_updates_in_process_cpu_window": [
+        {
+          "count": 230,
+          "key": "Other Updates: BrowserDropZone"
+        },
+        {
+          "count": 140,
+          "key": "Other Updates: TabTitleView"
+        },
+        {
+          "count": 81,
+          "key": "Other Updates: NonDraggableTitlebarRegion"
+        },
+        {
+          "count": 59,
+          "key": "Other Updates: WindowFocusReader"
+        },
+        {
+          "count": 54,
+          "key": "Other Updates: BrowserThemeBackground.WindowMaterial"
+        },
+        {
+          "count": 48,
+          "key": "Representable Updates: BrowserDropZone"
+        },
+        {
+          "count": 31,
+          "key": "Other Updates: ThemeSurface"
+        },
+        {
+          "count": 29,
+          "key": "Other Updates: BrowserWebView"
+        },
+        {
+          "count": 17,
+          "key": "View Body Updates: BrowserLoadingBar"
+        },
+        {
+          "count": 16,
+          "key": "Representable Updates: NonDraggableTitlebarRegion"
+        },
+        {
+          "count": 16,
+          "key": "Other Updates: HazeEffect"
+        },
+        {
+          "count": 15,
+          "key": "Representable Updates: WindowFocusReader"
+        },
+        {
+          "count": 15,
+          "key": "Other Updates: WindowDragBackground"
+        },
+        {
+          "count": 11,
+          "key": "View Body Updates: ThemeSurface"
+        },
+        {
+          "count": 10,
+          "key": "Representable Updates: BrowserThemeBackground.WindowMaterial"
+        },
+        {
+          "count": 10,
+          "key": "Representable Updates: BrowserWebView"
+        },
+        {
+          "count": 10,
+          "key": "Other Updates: Noise"
+        },
+        {
+          "count": 9,
+          "key": "Other Updates: BrowserScreenshotButton"
+        },
+        {
+          "count": 9,
+          "key": "View Body Updates: MeshGradientSurface"
+        },
+        {
+          "count": 8,
+          "key": "Other Updates: BrowserSplitView"
+        },
+        {
+          "count": 8,
+          "key": "View Body Updates: BrowserSplitView"
+        },
+        {
+          "count": 8,
+          "key": "Representable Updates: HazeEffect"
+        },
+        {
+          "count": 8,
+          "key": "View Body Updates: AstraTopBarButtonModifier"
+        },
+        {
+          "count": 8,
+          "key": "View Body Updates: BrowserAddressField"
+        },
+        {
+          "count": 7,
+          "key": "View Body Updates: MiniAstraView"
+        },
+        {
+          "count": 7,
+          "key": "View Body Updates: AstraTopBarIcon"
+        },
+        {
+          "count": 6,
+          "key": "View Body Updates: Noise"
+        },
+        {
+          "count": 6,
+          "key": "View Body Updates: ShellTopBarView"
+        },
+        {
+          "count": 6,
+          "key": "Other Updates: BrowserContentView"
+        },
+        {
+          "count": 6,
+          "key": "Representable Updates: WindowDragBackground"
+        },
+        {
+          "count": 6,
+          "key": "View Body Updates: ShellTopBarLoadingBar"
+        },
+        {
+          "count": 6,
+          "key": "View Body Updates: SizeReader"
+        },
+        {
+          "count": 5,
+          "key": "View Body Updates: BrowserThemeBackground"
+        },
+        {
+          "count": 5,
+          "key": "View Body Updates: BrowserPageView"
+        },
+        {
+          "count": 5,
+          "key": "View Body Updates: BrowserContentView"
+        },
+        {
+          "count": 5,
+          "key": "View Body Updates: BrowserAIHoverPreview"
+        },
+        {
+          "count": 5,
+          "key": "View Body Updates: AddressTextField"
+        },
+        {
+          "count": 5,
+          "key": "View Body Updates: KeepAliveWebStack"
+        },
+        {
+          "count": 5,
+          "key": "Other Updates: BrowserPageView"
+        },
+        {
+          "count": 5,
+          "key": "Other Updates: BrowserThemeBackground"
+        },
+        {
+          "count": 5,
+          "key": "Other Updates: BrowserAIHoverPreview"
+        },
+        {
+          "count": 5,
+          "key": "Other Updates: BrowserLoadingBar"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: BrowserRootView"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: DesktopBrowserShell"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: BrowserSpaceSwitcherOverlay"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: DownloadFlightOverlay"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: ShellSidebarColumn"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: SidebarScrollOpacityFadeModifier"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: ShellSpaceTabList"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: BrowserTranslationButton"
+        },
+        {
+          "count": 4,
+          "key": "Other Updates: ShellDownloadsBarView"
+        },
+        {
+          "count": 4,
+          "key": "Other Updates: BrowserMediaActivityCard"
+        },
+        {
+          "count": 4,
+          "key": "Other Updates: BrowserSpacesBar"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: ShellSidebarListView"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: BrowserAITabDivider"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: ShellContentColumn"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: BrowserAIChatSidebar"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: ShellExtensionControls"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: DimmedAddressOverlay"
+        },
+        {
+          "count": 4,
+          "key": "Other Updates: MiniAstraView"
+        },
+        {
+          "count": 4,
+          "key": "View Body Updates: StableRandomNoise"
+        },
+        {
+          "count": 3,
+          "key": "View Body Updates: BrowserScreenshotButton"
+        },
+        {
+          "count": 3,
+          "key": "View Body Updates: BrowserSiteInformationButton"
+        },
+        {
+          "count": 3,
+          "key": "View Body Updates: NavigationBackButton"
+        },
+        {
+          "count": 3,
+          "key": "View Body Updates: NavigationForwardButton"
+        },
+        {
+          "count": 3,
+          "key": "View Body Updates: NavigationReloadButton"
+        },
+        {
+          "count": 3,
+          "key": "Other Updates: NoiseShader"
+        },
+        {
+          "count": 3,
+          "key": "View Body Updates: BrowserSpacePickerPopover"
+        },
+        {
+          "count": 2,
+          "key": "View Body Updates: BrowserQuitFeedback"
+        },
+        {
+          "count": 2,
+          "key": "View Body Updates: ShellWebsiteNavigationControls"
+        },
+        {
+          "count": 2,
+          "key": "View Body Updates: NavigationIconLabel"
+        },
+        {
+          "count": 2,
+          "key": "View Body Updates: NoiseShader"
+        },
+        {
+          "count": 1,
+          "key": "View Body Updates: BrowserAgentControls"
+        },
+        {
+          "count": 1,
+          "key": "View Body Updates: BrowserNavigationControls"
+        },
+        {
+          "count": 1,
+          "key": "View Body Updates: BrowserZoomControls"
+        },
+        {
+          "count": 1,
+          "key": "View Body Updates: BrowserHistoryNavigationControls"
+        }
+      ],
+      "categories": [
+        {
+          "count": 123306,
+          "key": "Update"
+        },
+        {
+          "count": 15823,
+          "key": "Creation"
+        },
+        {
+          "count": 913,
+          "key": "Skipped Update"
+        }
+      ],
+      "count_bins": {
+        "10": 9,
+        "11": 8866,
+        "12": 1405,
+        "13": 8865,
+        "14": 10,
+        "15": 1157,
+        "16": 6150,
+        "17": 3364,
+        "19": 11,
+        "20": 3155,
+        "21": 6468,
+        "22": 36523,
+        "23": 138,
+        "24": 6058,
+        "25": 4364,
+        "26": 9201,
+        "6": 1,
+        "7": 36588,
+        "8": 6556,
+        "9": 1153
+      },
+      "covered_window": {
+        "duration_seconds": 19.542638875,
+        "end_seconds": 26.528404958,
+        "start_seconds": 6.985766083
+      },
+      "duration_bins_seconds": {
+        "10": 4.7706e-05,
+        "11": 0.0323656030000001,
+        "12": 0.018627539999999713,
+        "13": 0.07015850999999974,
+        "14": 9.016300000000001e-05,
+        "15": 0.009082691999999984,
+        "16": 0.041297898999999756,
+        "17": 0.020327425000000003,
+        "19": 4.3414e-05,
+        "20": 0.03173910999999993,
+        "21": 0.024821971000000054,
+        "22": 0.2637350919999984,
+        "23": 0.0014369919999999991,
+        "24": 0.03652836999999973,
+        "25": 0.022549226000000033,
+        "26": 0.039878636999999634,
+        "6": 1.5625e-05,
+        "7": 0.2879562709999938,
+        "8": 0.050487808999999474,
+        "9": 0.009179403999999997
+      },
+      "duration_seconds_by_update_type": {
+        "Other Updates": 0.8251323900001734,
+        "Representable Updates": 0.030543677999999984,
+        "View Body Updates": 0.10469339099999986
+      },
+      "duration_seconds_by_view_name": {
+        "": 0.2591801620000037,
+        "AccessibilityAttachmentModifier": 0.023263021999999925,
+        "AccessibilityButtonModifier.Representable": 0.00028548900000000004,
+        "AccessibilityContainerModifier": 0.00012561700000000001,
+        "AccessibilityControlStyle": 1.35e-05,
+        "AccessibilityFrameModifier": 0.0003645530000000011,
+        "AccessibilityImageModifier": 0.004389084000000006,
+        "AccessibilityLargeContentViewModifier": 7.5537e-05,
+        "AccessibilityProxyTransformModifier": 0.0017769080000000015,
+        "AccessibilityRepresentableStyleModifier": 3.4244e-05,
+        "AdaptiveContentView": 0.0001907,
+        "AddGestureModifier": 0.0013919160000000013,
+        "AddressTextField": 0.00132616,
+        "AlertModifier": 0.0009053529999999998,
+        "AllowsWindowActivationEventsModifier.Dynamic": 0.001375135999999996,
+        "AllowsWindowActivationEventsModifier.Static": 0.00021747200000000002,
+        "AnchorGeometryTransformModifier": 0.0011704349999999996,
+        "AnyView": 0.006953397,
+        "AppKitPocketElement": 1.7550999999999995e-05,
+        "AstraTopBarButtonModifier": 8.7953e-05,
+        "AstraTopBarIcon": 4.8246000000000005e-05,
+        "BorderedButtonMenuStyleBody": 0.0003166219999999999,
+        "BorderedButton_Mac": 0.00029215,
+        "BrowserAIChatSidebar": 0.0011328299999999998,
+        "BrowserAIChatStreamingResponse": 3.3666e-05,
+        "BrowserAIHoverPreview": 0.006849446999999999,
+        "BrowserAITabDivider": 0.000225872,
+        "BrowserAddressField": 0.008923326000000002,
+        "BrowserAgentControlledPageBorder?": 1.5081e-05,
+        "BrowserAgentControls": 3.1207e-05,
+        "BrowserContentView": 0.000173703,
+        "BrowserDropZone": 0.002425846999999998,
+        "BrowserHistoryNavigationControls": 5.2915000000000004e-05,
+        "BrowserHistoryNavigationControls?": 8.414000000000001e-06,
+        "BrowserLoadingBar": 0.001218737,
+        "BrowserMediaActivityCard": 7.583e-05,
+        "BrowserMediaActivityCard?": 3.3916e-05,
+        "BrowserMediaActivityView": 1.3416e-05,
+        "BrowserNavigationControls": 3.1832e-05,
+        "BrowserNavigationErrorView?": 7.624e-06,
+        "BrowserPageView": 0.000501536,
+        "BrowserQuitFeedback": 3.8291e-05,
+        "BrowserRootView": 0.0018048299999999999,
+        "BrowserScreenshotButton": 0.00081462,
+        "BrowserSidebarHeader": 3.6375e-05,
+        "BrowserSiteInformationButton": 0.000296873,
+        "BrowserSiteUserAgentPresenter": 1.1e-05,
+        "BrowserSpacePickerPopover": 0.002483082,
+        "BrowserSpaceSwitcherOverlay": 2.5248e-05,
+        "BrowserSpacesBar": 0.00035629,
+        "BrowserSplitView": 0.000542362,
+        "BrowserTabRow": 0.007611288000000001,
+        "BrowserThemeBackground": 5.3705e-05,
+        "BrowserThemeBackground.WindowMaterial": 0.0009188079999999999,
+        "BrowserTranslationButton": 0.000256623,
+        "BrowserUsageLimitsButton?": 8.083e-06,
+        "BrowserWebView": 0.0028108129999999997,
+        "BrowserWebsiteMonitorButton": 0.000577041,
+        "BrowserZoomControls": 6.6041e-05,
+        "Button": 0.008344261999999986,
+        "Button?": 0.0013717699999999994,
+        "ButtonActionModifier": 0.0033126700000000097,
+        "ButtonBehavior": 0.005254068,
+        "ButtonFocusInteractionModifier": 0.0011294630000000016,
+        "ButtonStyleContainerModifier": 0.00014169899999999999,
+        "Color": 0.00021205800000000008,
+        "Color?": 3.1744999999999995e-05,
+        "ColorView": 0.00023260500000000012,
+        "ConditionalGlassEffectButton": 0.00017246800000000003,
+        "ConfirmationDialogModifier": 0.000539744,
+        "ConfirmationDialogModifierCore": 0.0012986890000000002,
+        "ContainerStorageView": 0.00011876500000000002,
+        "ContentMarginModifier": 1.8874e-05,
+        "ContentShapeModifier_v2": 0.001774643999999994,
+        "ContextMenuModifier": 0.0014806660000000003,
+        "ContextMenuModifierCore": 0.013374289,
+        "CoreSheetPresentationModifier": 9.386500000000001e-05,
+        "CountViews": 4.625e-06,
+        "DesignLibraryMenuButton": 5.708e-06,
+        "DesignLibraryPopUpButton": 0.00015970400000000001,
+        "DesktopBrowserShell": 0.0034142469999999996,
+        "DimmedAddressOverlay": 0.000150578,
+        "DownloadFlightOverlay": 1.3999000000000001e-05,
+        "DraggableItemContainerModifier": 0.006472691000000031,
+        "DraggingDestinationView": 0.013411499000000004,
+        "DraggingPreviewModifier": 0.0017083300000000057,
+        "DropModifier": 0.010509116,
+        "EmptyView": 1.3739999999999999e-06,
+        "EquatableView": 4.4735999999999986e-05,
+        "FileDialogConfiguration": 0.000167537,
+        "FlexCoreInteractionModifier": 0.036561242999999584,
+        "FlexCoreInteractionModifier.FlexEffectModifier": 0.0021967,
+        "FlexCoreInteractionModifier.FlexGestureModifier": 0.000803327,
+        "FlexCoreInteractionModifier.GlowContainer": 0.003159358000000002,
+        "FlexInteractionAnchorWriteModifier": 4.165e-06,
+        "FlexInteractionGestureStateWriteModifier": 8.539e-06,
+        "FlexStateModifier": 0.000535481,
+        "FlexibleButtonFrameLayout": 1.8372e-05,
+        "FlexibleButtonFrameModifier": 6.0036000000000006e-05,
+        "FlexiblePaddingLayout": 1.1241000000000003e-05,
+        "FocusEffectView": 0.00018386300000000015,
+        "FocusStateBindingModifier": 0.0009993630000000044,
+        "ForEach": 0.01205275300000001,
+        "ForEach?": 2.0915000000000002e-05,
+        "GeometryReader": 0.004603085000000004,
+        "GeometryReaderLayout": 0.0055754479999999985,
+        "GestureComponentAttachmentModifier": 7.124499999999999e-05,
+        "GestureRecognizerModifier": 0.01773724899999981,
+        "GlassAppearanceScaleEffect": 0.0007485000000000001,
+        "GlassAppearanceStateModifier": 2.9904999999999996e-05,
+        "GlassContainerEffectsView": 0.000784436,
+        "GlassContainerResolver": 0.015984287999999992,
+        "GlassEffectContainerModifier": 0.0037706050000000024,
+        "GlassEffectLayout.Resolved": 0.007749968999999998,
+        "GlassEffectLayout.Resolved?": 0.0010107889999999991,
+        "GlassEffectLocalModifier": 0.00021734699999999998,
+        "GlassEffectModifier": 0.000126517,
+        "GlassEffectShapePathModifier": 0.0009667209999999997,
+        "GlassEntryAnimationSupport": 6.4829e-05,
+        "GlassEntryLayout.Resolved": 0.0037198799999999975,
+        "GlassEntryModifier": 0.00011348900000000002,
+        "GlassFlexInteractionStateModifier": 0.0003975439999999999,
+        "GlassItemView": 0.00045188700000000005,
+        "GlassMaterialEffect": 0.007799015000000006,
+        "GlassMaterialEffectModifier": 0.000812306,
+        "Group": 0.0021227550000000005,
+        "GroupElementsOfContent": 2.6789000000000004e-05,
+        "HStack": 4.728199999999999e-05,
+        "HazeEffect": 0.00019903100000000004,
+        "HelpView": 0.000105415,
+        "HiddenForReuseEffect": 0.0003504110000000001,
+        "IDView": 0.0017668310000000006,
+        "IDView?": 0.00036838200000000016,
+        "IdentifiedPreferenceTransformModifier": 2.0822e-05,
+        "Image": 0.03258924099999996,
+        "InlineReorderableViews": 0.0009542840000000001,
+        "KeepAliveWebStack": 0.000615457,
+        "KeyPressModifier": 0.00044434000000000015,
+        "KeyboardShortcutBindingBehavior": 0.00015876899999999998,
+        "KickEffect": 0.0005848290000000005,
+        "Label": 0.00038915100000000007,
+        "LabelIconPlatformItemModifier": 0.00011477999999999998,
+        "LabelStyleWritingModifier": 8.1988e-05,
+        "LabeledContent": 7.4622e-05,
+        "LabelsHiddenModifier": 2.583e-06,
+        "LayoutPriorityLayout": 3.0736000000000005e-05,
+        "LazyVGridLayout": 0.001164908,
+        "LazyVStack": 0.000107456,
+        "LazyVStackLayout": 0.00927775400000001,
+        "LazyView": 4.0622999999999994e-05,
+        "LiftedPresentationModifier": 2.0538000000000002e-05,
+        "LiftedPresentationModifier.LiftedEffect": 4.044899999999999e-05,
+        "LineLimitModifier": 1.5456000000000002e-05,
+        "LinearGradient": 1.791e-06,
+        "MacControlFill": 0.00012986899999999999,
+        "MacGlassButton": 0.002014811,
+        "MacPushButton": 0.0008296100000000004,
+        "MacWindowControlElement": 0.0006824479999999999,
+        "Menu": 0.000185497,
+        "MenuButtonInteractionModifier": 0.000507331,
+        "MenuPresentationModifier": 5.1367000000000005e-05,
+        "MergePlatformItemsView": 3.1412000000000004e-05,
+        "MeshGradient": 3.2367e-05,
+        "MeshGradientSurface": 2.8203e-05,
+        "MiniAstraView": 0.001740704,
+        "ModifiedContent?": 0.010560990999999997,
+        "NSViewPortal": 1.3539e-05,
+        "NavigationBackButton": 0.00043012200000000007,
+        "NavigationForwardButton": 0.000285163,
+        "NavigationIconLabel": 1.179e-05,
+        "NavigationReloadButton": 0.00034558099999999997,
+        "Noise": 0.000300741,
+        "NoiseShader": 1.4414000000000001e-05,
+        "NonDraggableTitlebarRegion": 0.0008675089999999997,
+        "OnCommandModifier": 0.002530834999999998,
+        "OnGlassInteractionStateChangeWriteModifier": 1.6662e-05,
+        "OnScrollPhaseChangeModifier": 0.0003317029999999999,
+        "OnSubmitModifier": 0.00028827700000000003,
+        "OpacityRendererEffect": 0.00746625799999988,
+        "PlaceholderContentView": 0.0009045269999999979,
+        "PlaceholderViews": 4.416e-05,
+        "PlainTextFieldStyle.BodyContent": 3.9537000000000004e-05,
+        "PlatformItemLabelView": 4.0494e-05,
+        "PlatformItemListGeneratingViewModifier": 3.8622e-05,
+        "PlatformItemListReader": 0.000648162,
+        "PlatformItemListTransformModifier": 0.00011797599999999994,
+        "PlatformItemsReader": 7.4913e-05,
+        "PlatformTextFieldAdaptor": 0.014819931000000005,
+        "PopUpButton": 1.6083e-05,
+        "PopUpButton.PopUpButtonBody": 0.00016153699999999998,
+        "PopoverContent": 0.000456039,
+        "PopoverPresentationModifier": 0.0014804439999999996,
+        "PopoverPresentationModifier.PopoverModifier": 0.002151947000000001,
+        "PositionStrokeShapeView": 4.037199999999999e-05,
+        "PrimitiveButtonStyleContainerModifier": 0.00015614700000000003,
+        "PrimitiveGlassItemView": 0.0005670339999999999,
+        "PrimitiveSystemTextField": 1.6706e-05,
+        "PushButtonFill": 0.0003946199999999998,
+        "QuitBannerOverlay?": 1.6124e-05,
+        "Rectangle": 5.291e-06,
+        "RelationshipModifier": 0.00015910600000000003,
+        "ReorderInlineItemDropCustomizationModifier": 9.415e-06,
+        "ReorderableContainerModifier": 0.00011053799999999999,
+        "ReorderableItemContainerDropModifier": 8.786499999999999e-05,
+        "ReorderableItemResponderModifier": 0.0011353679999999992,
+        "ReorderableModifier": 4.0787e-05,
+        "ResetContentMarginModifier": 2.5997e-05,
+        "ResetControlEnvironmentModifier": 0.00011849500000000002,
+        "ResetFormEnvironmentModifier": 0.00044687000000000004,
+        "ResetScrollEnvironmentModifier": 8.208e-06,
+        "ResetScrollEnvironmentModifier.AdditionalResetModifier": 0.000131118,
+        "ResetTabViewEnvironmentModifier": 7.786999999999998e-05,
+        "Resolved": 0.015029306000000006,
+        "ResolvedButtonStyle": 0.005670521000000001,
+        "ResolvedButtonStyleBody": 0.005566135999999993,
+        "ResolvedFallbackLabel": 0.000241405,
+        "ResolvedHelpStyle": 4.0664e-05,
+        "ResolvedLabelStyle": 0.0007873860000000002,
+        "ResolvedLabeledContent": 4.208e-06,
+        "ResolvedLabeledContent._Body": 4.791e-06,
+        "ResolvedMenuStyle": 0.000611373,
+        "ResolvedScrollBehaviorModifier": 0.00020311799999999996,
+        "ResolvedSystemTextField": 4.8705e-05,
+        "ResolvedTextFieldStyle": 5.3787e-05,
+        "Root Gesture": 5.83e-06,
+        "Root View for AnyView": 0.0009028759999999996,
+        "Root View for AppKitButton": 0.00045144800000000007,
+        "Root View for AppKitTextField": 1.2080000000000001e-06,
+        "Root View for MiniAstraView": 0.010225529000000013,
+        "Root View for RootView": 0.00035441799999999995,
+        "Root View for ThemeWidgetView": 0.00021158899999999996,
+        "Root View for VisualEffectMaterialView": 4.1789e-05,
+        "RootView": 0.0007457429999999999,
+        "SafeAreaBarModifier": 0.0002678290000000001,
+        "ScalePulseEffect": 0.00047495100000000015,
+        "ScalePulseModifier": 8.541399999999999e-05,
+        "ScalePulseProgressModifier": 7.2596e-05,
+        "SceneBridgeReader": 0.001298288,
+        "ScheduledAnimationModifier": 6.732899999999999e-05,
+        "ScrollEdgeEffectTagModifier": 0.00010285099999999997,
+        "ScrollView": 4.657999999999999e-05,
+        "ScrollViewReader": 2.0833e-05,
+        "Shader.ResolvedShader": 0.000344495,
+        "SheetPresentationModifier": 9.757699999999999e-05,
+        "ShellContentColumn": 0.000747997,
+        "ShellDownloadsBarView": 0.0017321629999999999,
+        "ShellExtensionControls": 0.00035408099999999996,
+        "ShellSidebarColumn": 0.000661496,
+        "ShellSidebarListView": 0.000354163,
+        "ShellSpaceTabList": 0.000142081,
+        "ShellTopBarLoadingBar": 0.00027549599999999997,
+        "ShellTopBarLoadingBar?": 0.0006823789999999999,
+        "ShellTopBarView": 0.0008477890000000002,
+        "ShellWebsiteNavigationControls": 0.00046524800000000003,
+        "SidebarScrollOpacityFadeModifier": 4.2456e-05,
+        "SizeReader": 9.3747e-05,
+        "Spacer": 1.0788e-05,
+        "Spacer?": 1.7331999999999996e-05,
+        "SpacingLayout": 0.00012879499999999993,
+        "SpatialHoverRegionModifier": 9.257600000000002e-05,
+        "StableRandomNoise": 3.9748e-05,
+        "StyledTextContentView": 0.00620739100000001,
+        "SubscriptionView": 0.0008526340000000001,
+        "Subview": 3.873e-06,
+        "SubviewsRoot": 8.8373e-05,
+        "SwiftUISwipeActionsModifier": 0.000135576,
+        "SwipeActionsContainerCore": 0.000102332,
+        "SwipeActionsHostModifier": 0.0007076550000000001,
+        "SwipeActionsModifier": 0.000289745,
+        "SwipeActionsPreferenceModifier": 0.00011952300000000001,
+        "SwipeActionsPresentationModifier": 0.00020316399999999998,
+        "SwipeActionsViewModifierCore": 0.0023357630000000007,
+        "SwipeTrackpadScrollAdapter": 0.001826606999999999,
+        "SwipeTrackpadScrollAdapter?": 0.001994902,
+        "SystemScrollView": 0.0026322800000000007,
+        "SystemScrollViewContainer": 0.000743456,
+        "SystemScrollViewContainer.EnvironmentAxesModifier": 3.5621e-05,
+        "SystemTextField": 0.0010071859999999995,
+        "TabCloseButton": 2.3916e-05,
+        "TabIconView": 0.0006188990000000002,
+        "TabTitleView": 0.001646606,
+        "Text": 0.019792488000000018,
+        "Text?": 3.664e-06,
+        "TextField": 0.000753038,
+        "ThemeSurface": 0.0014193939999999998,
+        "ThemeWidgetLiftedPresentationModifier": 1.2164000000000002e-05,
+        "ThemeWidgetView": 1.2374e-05,
+        "TooltipModifier": 0.00035590299999999986,
+        "TransactionalAnchorPreferenceTransformModifier": 0.0031672480000000027,
+        "TransactionalPreferenceTransformModifier": 0.00045272899999999997,
+        "TransformScrollStorageModifier": 0.0007783669999999999,
+        "TranslationKickModifier": 7.341200000000001e-05,
+        "TupleContent": 0.0029777209999999952,
+        "TupleContent?": 0.0004948620000000002,
+        "UniversalTextField": 2.3583e-05,
+        "UserActivityModifier": 7.4873e-05,
+        "VStack": 5.374e-06,
+        "VisualEffectModifier": 0.000123898,
+        "WindowControl": 1.0999000000000001e-05,
+        "WindowDragBackground": 0.00039057599999999995,
+        "WindowFocusReader": 0.0008810550000000001,
+        "WrappedButtonStyleBody": 0.000544491999999999,
+        "ZStack": 0.000534791,
+        "ZStack?": 0.00027822699999999987,
+        "[unknown view: created before tracing started?]": 0.0013511990000000013,
+        "_AlignmentLayout": 6.617299999999996e-05,
+        "_AlignmentWritingModifier": 7.796999999999996e-05,
+        "_AllowsHitTestingModifier": 0.002231098000000015,
+        "_AnchorTransformModifier2": 0.001123349999999999,
+        "_AnimationModifier": 0.00047980299999999875,
+        "_AppearanceActionModifier": 0.0007526729999999996,
+        "_AspectRatioLayout": 4.801700000000002e-05,
+        "_BackdropGroupEffect2": 0.0005617399999999999,
+        "_BackgroundModifier": 0.013584384000000265,
+        "_BackgroundPreferenceModifier": 5.1408e-05,
+        "_BackgroundStyleModifier": 0.00016314800000000006,
+        "_BindingActionModifier": 3.5205000000000006e-05,
+        "_BlurEffect": 0.006250089000000006,
+        "_CALayerView": 0.0005854350000000003,
+        "_ClipEffect": 0.004312954000000013,
+        "_CompositingGroupEffect": 6.210799999999998e-05,
+        "_ConditionalContent": 0.02095804599999999,
+        "_ConditionalContent?": 0.0010771590000000003,
+        "_ConditionalContent??": 1.3749e-05,
+        "_ContentShapeKindModifier": 4.5657999999999996e-05,
+        "_ContentShapeModifier": 4.3405e-05,
+        "_DefaultForegroundStyleModifier": 2.9989999999999996e-06,
+        "_DelayedPreferenceView": 0.00039203999999999997,
+        "_EnvironmentKeyTransformModifier": 0.0031281379999999986,
+        "_EnvironmentKeyWritingModifier<AnySegmentedControlStyle>": 0.0017469399999999998,
+        "_EnvironmentKeyWritingModifier<BackgroundProminence>": 0.00042225899999999997,
+        "_EnvironmentKeyWritingModifier<BarConfiguration?>": 5.2662e-05,
+        "_EnvironmentKeyWritingModifier<Binding<PresentationMode>>": 0.00014791,
+        "_EnvironmentKeyWritingModifier<Binding<SwipeActionsConfig.Visibility>>": 0.0004322,
+        "_EnvironmentKeyWritingModifier<Binding?>": 0.00018669200000000002,
+        "_EnvironmentKeyWritingModifier<Bool>": 0.000244931,
+        "_EnvironmentKeyWritingModifier<Bool?>": 7.8494e-05,
+        "_EnvironmentKeyWritingModifier<ButtonBorderShape>": 0.001378864999999999,
+        "_EnvironmentKeyWritingModifier<ButtonSizing>": 0.00025282099999999986,
+        "_EnvironmentKeyWritingModifier<ButtonTintProminence>": 4.0579e-05,
+        "_EnvironmentKeyWritingModifier<ColorScheme>": 9.4495e-05,
+        "_EnvironmentKeyWritingModifier<ContentTransition>": 0.00029619600000000004,
+        "_EnvironmentKeyWritingModifier<ControlSize>": 0.0003556829999999999,
+        "_EnvironmentKeyWritingModifier<EffectiveLabelStyle?>": 0.002522949000000003,
+        "_EnvironmentKeyWritingModifier<Font?>": 0.0015490579999999992,
+        "_EnvironmentKeyWritingModifier<Glass?>": 0.000246564,
+        "_EnvironmentKeyWritingModifier<GlassMaterialProvider.Pocket?>": 7.616099999999998e-05,
+        "_EnvironmentKeyWritingModifier<Int?>": 0.0013504530000000004,
+        "_EnvironmentKeyWritingModifier<KeyboardShortcut?>": 5.424600000000001e-05,
+        "_EnvironmentKeyWritingModifier<LayoutDirection>": 6.449400000000001e-05,
+        "_EnvironmentKeyWritingModifier<ListStackBehavior>": 7.491199999999999e-05,
+        "_EnvironmentKeyWritingModifier<Material?>": 6.7448e-05,
+        "_EnvironmentKeyWritingModifier<MaterialBackdropProxy?>": 4.049300000000001e-05,
+        "_EnvironmentKeyWritingModifier<NavigationEnabled>": 0.000115824,
+        "_EnvironmentKeyWritingModifier<NavigationState.SelectionSeed>": 0.000127281,
+        "_EnvironmentKeyWritingModifier<PresentSharingPickerAction?>": 0.000194953,
+        "_EnvironmentKeyWritingModifier<RefreshAction?>": 0.00031991299999999996,
+        "_EnvironmentKeyWritingModifier<String?>": 5.9869000000000006e-05,
+        "_EnvironmentKeyWritingModifier<SubmitLabel>": 0.00011460399999999998,
+        "_EnvironmentKeyWritingModifier<TextAlignment>": 0.0006634430000000002,
+        "_EnvironmentKeyWritingModifier<TintAdjustmentMode?>": 7.912e-05,
+        "_EnvironmentKeyWritingModifier<TriggerSubmitAction?>": 0.00018531600000000004,
+        "_EnvironmentKeyWritingModifier<VerticalButtonSizingBehavior>": 5.2827999999999996e-05,
+        "_EnvironmentKeyWritingModifier<Visibility>": 0.000175729,
+        "_EnvironmentKeyWritingModifier<_Glass.BackgroundContent>": 7.3202e-05,
+        "_EnvironmentKeyWritingModifier<_Glass.Frost>": 6.6702e-05,
+        "_FixedSizeLayout": 0.00017878899999999994,
+        "_FlexFrameLayout": 0.0009078480000000021,
+        "_FocusableModifier": 0.009442318000000055,
+        "_ForegroundStyleModifier": 0.00242239,
+        "_FrameLayout": 0.00589391999999995,
+        "_GeometryActionModifier": 0.00031499100000000003,
+        "_GeometryGroupEffect": 0.0007061310000000001,
+        "_GlassContainerStorageView": 0.00064296,
+        "_GlassEffectContainer": 0.00024601299999999995,
+        "_GlassEffectView": 0.0008866750000000002,
+        "_GlassEntryView": 0.0013304369999999999,
+        "_HStackLayout": 0.042091723999999976,
+        "_HoverRegionModifier": 0.0011685460000000008,
+        "_InsetPreferenceModifier": 0.000561062,
+        "_MaskAlignmentEffect": 0.0009774809999999997,
+        "_OffsetEffect": 6.863299999999999e-05,
+        "_OpacityEffect": 0.007311406999999948,
+        "_OverlayModifier": 0.008227970000000048,
+        "_PaddingLayout": 0.0019823310000000012,
+        "_PositionLayout": 5.1068999999999995e-05,
+        "_PreferenceActionModifier": 9.107700000000001e-05,
+        "_PreferenceTransformModifier": 0.0010067050000000031,
+        "_SafeAreaInsetsModifier": 0.00010221100000000003,
+        "_SafeAreaRegionsIgnoringLayout": 0.004014770000000001,
+        "_SaturationEffect": 0.000254115,
+        "_ScaleEffect": 0.004068863000000002,
+        "_ShaderFilterEffect": 7.724299999999998e-05,
+        "_ShadowEffect": 0.000123777,
+        "_ShadowEffect._Resolved": 0.00012542100000000002,
+        "_ShapeView": 0.007803557999999992,
+        "_SizeFittingRoot": 1.331e-06,
+        "_TaskValueModifier2": 0.000219404,
+        "_TaskValueModifier2.InnerModifier": 0.00036556699999999996,
+        "_TraitWritingModifier": 0.0005705629999999997,
+        "_TransactionModifier": 3.4913e-05,
+        "_TransformEffect": 0.00010339799999999996,
+        "_UnaryViewAdaptor": 9.060999999999996e-05,
+        "_VStackLayout": 0.00865878600000001,
+        "_ValueActionModifier2": 0.0012327669999999975,
+        "_ValueTransactionModifier": 0.00010079899999999994,
+        "_ViewList_View": 0.00022536400000000006,
+        "_ViewModifier_Content": 0.0003047590000000001,
+        "_ZStackLayout": 0.013929227000000056
+      },
+      "modules": [
+        {
+          "count": 129722,
+          "key": "SwiftUI"
+        },
+        {
+          "count": 3888,
+          "key": ""
+        },
+        {
+          "count": 3606,
+          "key": "libswiftCore.dylib"
+        },
+        {
+          "count": 1786,
+          "key": "astra"
+        },
+        {
+          "count": 675,
+          "key": "DesignLibrary"
+        },
+        {
+          "count": 302,
+          "key": "<unknown>"
+        },
+        {
+          "count": 63,
+          "key": "AppKit"
+        }
+      ],
+      "rows": 140042,
+      "timestamps_beyond_process_cpu_window": {
+        "process_cpu_end_seconds": 20.708316087,
+        "seconds_after_process_cpu_end": 5.820088870999999,
+        "table_end_seconds": 26.528404958
+      },
+      "update_types": [
+        {
+          "count": 132518,
+          "key": "Other Updates"
+        },
+        {
+          "count": 6600,
+          "key": "View Body Updates"
+        },
+        {
+          "count": 924,
+          "key": "Representable Updates"
+        }
+      ],
+      "view_descriptions": [
+        {
+          "count": 8140,
+          "key": "PropertiesTransform"
+        },
+        {
+          "count": 5818,
+          "key": "Preference List"
+        },
+        {
+          "count": 4246,
+          "key": "View Responders"
+        },
+        {
+          "count": 3527,
+          "key": "EnvironmentWriter: EnvironmentValues"
+        },
+        {
+          "count": 3343,
+          "key": "Action Callback"
+        },
+        {
+          "count": 3028,
+          "key": "DisplayList Item: RendererEffectDisplayList<_OpacityEffect>"
+        },
+        {
+          "count": 2765,
+          "key": "FlexCoreInteractionModifier.FlexValue"
+        },
+        {
+          "count": 2673,
+          "key": "FlexCoreInteractionModifier.FlexCoreInteractionModifier.FlexValue.ResolvedMovement"
+        },
+        {
+          "count": 2407,
+          "key": "External Environment"
+        },
+        {
+          "count": 2316,
+          "key": "DisplayList Item: GeometryEffectDisplayList<DefaultGeometryEffectProvider<_ScaleEffect>>"
+        },
+        {
+          "count": 2309,
+          "key": "EnvironmentWriter: MergedEnvironment"
+        },
+        {
+          "count": 2114,
+          "key": "PairPreferenceCombiner<DisplayList.Key>"
+        },
+        {
+          "count": 1916,
+          "key": "EnvironmentWriter: ButtonBorderShape"
+        },
+        {
+          "count": 1911,
+          "key": "DisplayList Item: GlassEffectContextDisplayList"
+        },
+        {
+          "count": 1790,
+          "key": "ShapeStyleResolver<AnyShapeStyle>"
+        },
+        {
+          "count": 1778,
+          "key": "Map<EnvironmentValues, CGFloat>"
+        },
+        {
+          "count": 1762,
+          "key": "DisplayList Item: PairPreferenceCombiner<DisplayList.Key>"
+        },
+        {
+          "count": 1712,
+          "key": "DisplayList Item: PreferenceCombiner<DisplayList.Key>"
+        },
+        {
+          "count": 1557,
+          "key": "Transaction"
+        },
+        {
+          "count": 1116,
+          "key": "DisplayList Item: DynamicPreferenceCombiner<DisplayList.Key>"
+        }
+      ],
+      "view_names": [
+        {
+          "count": 7197,
+          "key": "_BackgroundModifier"
+        },
+        {
+          "count": 6223,
+          "key": "FlexCoreInteractionModifier"
+        },
+        {
+          "count": 5803,
+          "key": "_OverlayModifier"
+        },
+        {
+          "count": 5621,
+          "key": "_FocusableModifier"
+        },
+        {
+          "count": 5469,
+          "key": "OpacityRendererEffect"
+        },
+        {
+          "count": 3888,
+          "key": ""
+        },
+        {
+          "count": 3707,
+          "key": "AccessibilityAttachmentModifier"
+        },
+        {
+          "count": 3596,
+          "key": "_ConditionalContent"
+        },
+        {
+          "count": 3522,
+          "key": "_ShapeView"
+        },
+        {
+          "count": 3360,
+          "key": "_OpacityEffect"
+        },
+        {
+          "count": 2953,
+          "key": "DraggingDestinationView"
+        },
+        {
+          "count": 2921,
+          "key": "TupleContent"
+        },
+        {
+          "count": 2807,
+          "key": "Resolved"
+        },
+        {
+          "count": 2696,
+          "key": "_ZStackLayout"
+        },
+        {
+          "count": 2330,
+          "key": "_HStackLayout"
+        },
+        {
+          "count": 2292,
+          "key": "GestureRecognizerModifier"
+        },
+        {
+          "count": 2047,
+          "key": "DraggableItemContainerModifier"
+        },
+        {
+          "count": 2046,
+          "key": "_BlurEffect"
+        },
+        {
+          "count": 2030,
+          "key": "_AllowsHitTestingModifier"
+        },
+        {
+          "count": 1836,
+          "key": "_FrameLayout"
+        }
+      ]
+    },
+    "time-profile": {
+      "binaries": [
+        {
+          "count": 2.403600000000648,
+          "key": "SwiftUICore"
+        },
+        {
+          "count": 2.269000000000364,
+          "key": "libsystem_pthread.dylib"
+        },
+        {
+          "count": 2.163400000000141,
+          "key": "libdispatch.dylib"
+        },
+        {
+          "count": 1.9530999999998013,
+          "key": "SwiftUITracingSupport"
+        },
+        {
+          "count": 1.819899999999816,
+          "key": "AttributeGraph"
+        },
+        {
+          "count": 1.6882999999998305,
+          "key": "libswiftCore.dylib"
+        },
+        {
+          "count": 1.6063999999998395,
+          "key": "dyld"
+        },
+        {
+          "count": 1.5995999999998403,
+          "key": "AppKit"
+        },
+        {
+          "count": 1.5733999999998431,
+          "key": "CoreFoundation"
+        },
+        {
+          "count": 1.5603999999998446,
+          "key": "astra"
+        },
+        {
+          "count": 1.4068999999998615,
+          "key": "HIToolbox"
+        },
+        {
+          "count": 0.8361999999999242,
+          "key": "QuartzCore"
+        },
+        {
+          "count": 0.7820999999999302,
+          "key": "UpdateCycle"
+        },
+        {
+          "count": 0.7707999999999314,
+          "key": "SwiftUI"
+        },
+        {
+          "count": 0.4096999999999712,
+          "key": "libsystem_kernel.dylib"
+        },
+        {
+          "count": 0.36639999999997597,
+          "key": "WebKit"
+        },
+        {
+          "count": 0.3249999999999805,
+          "key": "Foundation"
+        },
+        {
+          "count": 0.28659999999998476,
+          "key": "JavaScriptCore"
+        },
+        {
+          "count": 0.15119999999999967,
+          "key": "libobjc.A.dylib"
+        },
+        {
+          "count": 0.12790000000000223,
+          "key": "libsystem_malloc.dylib"
+        }
+      ],
+      "covered_window": {
+        "duration_seconds": 19.715497125,
+        "end_seconds": 20.703316875,
+        "start_seconds": 0.98781975
+      },
+      "inclusive_symbols": [
+        {
+          "count": 2.5351000000009254,
+          "key": "<deduplicated_symbol>"
+        },
+        {
+          "count": 2.150200000000113,
+          "key": "start_wqthread"
+        },
+        {
+          "count": 2.104100000000016,
+          "key": "_dispatch_client_callout"
+        },
+        {
+          "count": 2.0754999999999555,
+          "key": "_pthread_wqthread"
+        },
+        {
+          "count": 2.0039999999998046,
+          "key": "_dispatch_workloop_worker_thread"
+        },
+        {
+          "count": 1.9980999999997964,
+          "key": "_dispatch_root_queue_drain_deferred_wlh"
+        },
+        {
+          "count": 1.991699999999797,
+          "key": "_dispatch_lane_invoke"
+        },
+        {
+          "count": 1.9910999999997971,
+          "key": "_dispatch_lane_serial_drain"
+        },
+        {
+          "count": 1.8893999999998083,
+          "key": "_dispatch_call_block_and_release"
+        },
+        {
+          "count": 1.7146999999998276,
+          "key": "specialized Trace.add<A>(handle:)"
+        },
+        {
+          "count": 1.701999999999829,
+          "key": "closure #1 in Client.addHandleRegistration(_:_:)"
+        },
+        {
+          "count": 1.701799999999829,
+          "key": "specialized closure #1 in static SwiftUITrace.register<A>(h:)"
+        },
+        {
+          "count": 1.6493999999998348,
+          "key": "partial apply for closure #1 in synchronized(_:)"
+        },
+        {
+          "count": 1.6493999999998348,
+          "key": "closure #1 in synchronized(_:)"
+        },
+        {
+          "count": 1.6493999999998348,
+          "key": "closure #1 in closure #2 in Trace.SwiftUI.added()"
+        },
+        {
+          "count": 1.6492999999998348,
+          "key": "Transaction.synchronized<A>(_:)"
+        },
+        {
+          "count": 1.6491999999998348,
+          "key": "thunk for @escaping @callee_guaranteed (@unowned ReferenceAccessor<Trace.SwiftUI>) -> ()"
+        },
+        {
+          "count": 1.6491999999998348,
+          "key": "partial apply for closure #2 in Trace.SwiftUI.added()"
+        },
+        {
+          "count": 1.5535999999998453,
+          "key": "Trace.Control.writtenOnce(type:lazy:flush:)"
+        },
+        {
+          "count": 1.51079999999985,
+          "key": "Trace.Control.flushWrittenTypes()"
+        }
+      ],
+      "leaf_symbols": [
+        {
+          "count": 0.7804999999999304,
+          "key": "swift_conformsToProtocolMaybeInstantiateSuperclasses(swift::TargetMetadata<swift::InProcess> const*, swift::TargetProtocolDescriptor<swift::InProcess> const*, bool)"
+        },
+        {
+          "count": 0.1707999999999975,
+          "key": "mach_msg2_trap"
+        },
+        {
+          "count": 0.1600999999999987,
+          "key": "<deduplicated_symbol>"
+        },
+        {
+          "count": 0.07480000000000112,
+          "key": "objc_msgSend"
+        },
+        {
+          "count": 0.07400000000000109,
+          "key": "start_wqthread"
+        },
+        {
+          "count": 0.06830000000000093,
+          "key": "write"
+        },
+        {
+          "count": 0.042300000000000185,
+          "key": "swift::Demangle::__runtime::RemanglerBase::entryForNode(swift::Demangle::__runtime::Node*, bool)"
+        },
+        {
+          "count": 0.03680000000000003,
+          "key": "__kdebug_trace64"
+        },
+        {
+          "count": 0.03559999999999999,
+          "key": "_xzm_xzone_malloc_tiny"
+        },
+        {
+          "count": 0.032499999999999904,
+          "key": "__CF_IS_OBJC"
+        },
+        {
+          "count": 0.032199999999999895,
+          "key": "_platform_memmove"
+        },
+        {
+          "count": 0.029399999999999878,
+          "key": "void swift::Mangle::__runtime::mangleIdentifier<(anonymous namespace)::Remangler>((anonymous namespace)::Remangler&, __swift::__runtime::llvm::StringRef)"
+        },
+        {
+          "count": 0.02919999999999988,
+          "key": "swift::TargetMetadata<swift::InProcess>::getTypeContextDescriptor() const"
+        },
+        {
+          "count": 0.028599999999999882,
+          "key": "Hasher.combine(bytes:)"
+        },
+        {
+          "count": 0.02759999999999989,
+          "key": "kevent_id"
+        },
+        {
+          "count": 0.02749999999999989,
+          "key": "std::__1::pair<(anonymous namespace)::ConformanceCacheEntry*, unsigned int> swift::ConcurrentReadableHashMap<(anonymous namespace)::ConformanceCacheEntry, swift::LazyMutex>::find<(anonymous namespace)::ConformanceCacheKey>((anonymous namespace)::ConformanceCacheKey const&, swift::ConcurrentReadableHashMap<(anonymous namespace)::ConformanceCacheEntry, swift::LazyMutex>::IndexStorage, unsigned long, (anonymous namespace)::ConformanceCacheEntry*)"
+        },
+        {
+          "count": 0.0258999999999999,
+          "key": "mach_o::NListSymbolTable::findClosestDefinedSymbol(unsigned long long, mach_o::Symbol&) const"
+        },
+        {
+          "count": 0.0254999999999999,
+          "key": "swift::Demangle::__runtime::RemanglerBase::hashForNode(swift::Demangle::__runtime::Node*, bool)"
+        },
+        {
+          "count": 0.024599999999999907,
+          "key": "_platform_strlen"
+        },
+        {
+          "count": 0.021699999999999924,
+          "key": "AG::Graph::UpdateStack::update()"
+        }
+      ],
+      "rows": 39084,
+      "threads": [
+        {
+          "count": 18068,
+          "key": "astra (0xa4d75) (astra, pid: 28760)"
+        },
+        {
+          "count": 15969,
+          "key": "Main Thread (0x834db) (astra, pid: 28760)"
+        },
+        {
+          "count": 1194,
+          "key": "astra (0xa50a1) (astra, pid: 28760)"
+        },
+        {
+          "count": 762,
+          "key": "astra (0xa50a2) (astra, pid: 28760)"
+        },
+        {
+          "count": 597,
+          "key": "astra (0xa50a4) (astra, pid: 28760)"
+        },
+        {
+          "count": 463,
+          "key": "com.apple.NSEventThread (0x83702) (astra, pid: 28760)"
+        },
+        {
+          "count": 437,
+          "key": "astra (0xa5174) (astra, pid: 28760)"
+        },
+        {
+          "count": 427,
+          "key": "astra (0xa50a5) (astra, pid: 28760)"
+        },
+        {
+          "count": 271,
+          "key": "astra (0xa50a6) (astra, pid: 28760)"
+        },
+        {
+          "count": 222,
+          "key": "CVDisplayLink (0xa51ac) (astra, pid: 28760)"
+        },
+        {
+          "count": 186,
+          "key": "astra (0xa50a3) (astra, pid: 28760)"
+        },
+        {
+          "count": 153,
+          "key": "JavaScriptCore libpas scavenger (0xa3f88) (astra, pid: 28760)"
+        },
+        {
+          "count": 104,
+          "key": "astra (0xa52af) (astra, pid: 28760)"
+        },
+        {
+          "count": 78,
+          "key": "Log work queue (0x837ad) (astra, pid: 28760)"
+        },
+        {
+          "count": 71,
+          "key": "astra (0xa525d) (astra, pid: 28760)"
+        },
+        {
+          "count": 54,
+          "key": "astra (0xa5165) (astra, pid: 28760)"
+        },
+        {
+          "count": 8,
+          "key": "astra (0xa4126) (astra, pid: 28760)"
+        },
+        {
+          "count": 6,
+          "key": "CVDisplayLink (0xa517b) (astra, pid: 28760)"
+        },
+        {
+          "count": 6,
+          "key": "CVDisplayLink (0xa51de) (astra, pid: 28760)"
+        },
+        {
+          "count": 5,
+          "key": "CVDisplayLink (0xa5185) (astra, pid: 28760)"
+        }
+      ],
+      "weighted_sample_seconds": 3.9084000000038235
+    }
+  }
+}
