@@ -30,10 +30,12 @@ def register(cases,c,check,eventually):
         tab('navigate',url=c['page']+'#history-a');tab('wait_for_url',url='#history-a',timeout=8)
         tab('navigate',url=c['page']+'#history-b');tab('wait_for_url',url='#history-b',timeout=8)
         tab('go_back');tab('wait_for_url',url='#history-a',timeout=8)
+        check(tab('wait_for_load_state',state='complete',timeout=8)['matched'] is True,'back restores document readiness')
         check('#history-a' in tab('get_tab')['url'],'back destination')
     cases['go_back']=back
     def forward(_):
         tab('go_forward');tab('wait_for_url',url='#history-b',timeout=8)
+        check(tab('wait_for_load_state',state='complete',timeout=8)['matched'] is True,'forward restores document readiness')
         check('#history-b' in tab('get_tab')['url'],'forward destination')
     cases['go_forward']=forward
     def create_space(_):

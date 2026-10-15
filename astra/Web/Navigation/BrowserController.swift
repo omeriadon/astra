@@ -2488,9 +2488,6 @@ final class BrowserController: NSObject, Identifiable {
 		// the exact requested URL while the previously committed document lives.
 		guard awaitsNavigationCommit, !isInvalidated, !isDownloadHandoff,
 		      committedSecurityNavigationID == navigationIdentifier,
-		      let request = currentRequest, request.url == destination,
-		      (request.httpMethod ?? "GET") == "GET", request.httpBody == nil,
-		      request.httpBodyStream == nil,
 		      let committedURL, committedURL != destination,
 		      var previous = URLComponents(url: committedURL, resolvingAgainstBaseURL: false),
 		      var next = URLComponents(url: destination, resolvingAgainstBaseURL: false),
@@ -2498,6 +2495,15 @@ final class BrowserController: NSObject, Identifiable {
 		previous.fragment = nil
 		next.fragment = nil
 		guard previous == next else { return }
+		if let request = currentRequest {
+			guard request.url == destination, (request.httpMethod ?? "GET") == "GET",
+			      request.httpBody == nil, request.httpBodyStream == nil else { return }
+		} else {
+			// Back/Forward traversals have no URLRequest. WebKit's current
+			// history item identifies their destination without rebuilding it
+			// as a GET request (which would lose POST restoration semantics).
+			guard createdWebView?.backForwardList.currentItem?.url == destination else { return }
+		}
 		awaitsNavigationCommit = false
 	}
 
