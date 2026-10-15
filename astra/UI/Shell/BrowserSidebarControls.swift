@@ -183,15 +183,6 @@ struct ShellSidebarListView: View {
 					}
 				}
 				#endif
-				.onChange(of: selectedID) { oldID, newID in
-					// Preserve the user's scroll position when selecting a visible tab.
-					// Only reveal offscreen selections, without centering them.
-					guard isActiveSpace, oldID != newID, let newID else { return }
-					let hadPreviousSelection = oldID.flatMap { tabsByID[$0] } != nil
-					withAnimation(!reduceMotion && hadPreviousSelection ? .smooth(duration: 0.25) : nil) {
-						reader.scrollTo(newID)
-					}
-				}
 			}
 		}
 		// Keep cleanup attached to the interactive sidebar, not the divider's lazy row.

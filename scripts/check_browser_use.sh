@@ -45,5 +45,5 @@ if /usr/bin/sandbox-exec -p '(version 1)(allow default)(deny network-bind)' \
   print -u2 "Listener incorrectly stayed enabled after network binding was denied"
   exit 1
 fi
-rg -q 'Listener remains enabled: false; status: This build cannot accept' "$TASK_OUTPUT/denied.txt"
+/usr/bin/grep -Fq 'Listener remains enabled: false; status: This build cannot accept' "$TASK_OUTPUT/denied.txt"
 cat "$TASK_OUTPUT/denied.txt"
