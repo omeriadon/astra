@@ -1810,11 +1810,32 @@ final class Browser {
 		return !bookmarks.contains { $0.url == url }
 	}
 
+	/// Prefer the selected webpage, but keep AI available when an Easel or
+	/// other ineligible tab is selected beside an eligible webpage.
+	var aiSidebarPageTab: BrowserTab? {
+		guard !isPrivate else { return nil }
+		if let selectedTab, selectedTab.internalPage == nil, selectedTab.currentURL != nil {
+			return selectedTab
+		}
+		guard isShowingTabSplit else { return nil }
+		if let leftID = splitLeftTabID, let leftTab = tab(withID: leftID),
+		   leftTab.internalPage == nil, leftTab.currentURL != nil
+		{
+			return leftTab
+		}
+		if let rightID = splitRightTabID, let rightTab = tab(withID: rightID),
+		   rightTab.internalPage == nil, rightTab.currentURL != nil
+		{
+			return rightTab
+		}
+		return nil
+	}
+
 	var canShowAISidebar: Bool {
 		#if ASTRA_WEBSITE_APP_RUNTIME
 			false
 		#else
-			!isPrivate && !isShowingNewTab && selectedTab?.internalPage == nil && selectedTab?.currentURL != nil
+			aiSidebarPageTab != nil
 		#endif
 	}
 

@@ -46,7 +46,7 @@ final class BrowserAIChat {
 	}
 
 	func includeCurrentTab(in browser: Browser) {
-		guard browser.canShowAISidebar, let tab = browser.selectedTab, !linkedTabIDs.contains(tab.id) else { return }
+		guard browser.canShowAISidebar, let tab = browser.aiSidebarPageTab, !linkedTabIDs.contains(tab.id) else { return }
 		linkedTabIDs.append(tab.id)
 	}
 
