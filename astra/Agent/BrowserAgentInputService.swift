@@ -74,7 +74,8 @@
 			window.makeKeyAndOrderFront(nil)
 			window.makeFirstResponder(view)
 			let location = view.convert(point, to: nil)
-			guard let target = view.hitTest(view.convert(point, to: view.superview)) else { throw InputError("INPUT_TARGET_UNAVAILABLE: No WebKit target at coordinates.") }
+			let parent = unsafe view.superview
+			guard let target = view.hitTest(view.convert(point, to: parent)) else { throw InputError("INPUT_TARGET_UNAVAILABLE: No WebKit target at coordinates.") }
 			let right = operation == "right_click"
 			let modifiers = arguments["modifiers"] as? [String] ?? []
 			var flags: NSEvent.ModifierFlags = []
