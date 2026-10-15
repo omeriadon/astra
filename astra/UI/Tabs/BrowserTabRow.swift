@@ -144,7 +144,7 @@ struct BrowserTabRow: View {
 		}
 		.opacity(isOpenElsewhere ? 0.35 : 1)
 		.allowsHitTesting(!isOpenElsewhere)
-		.padding(.horizontal, 12)
+		.padding(.horizontal, 10)
 		.frame(maxWidth: .infinity, alignment: .leading)
 		.frame(height: onSelectTab == nil ? 36 : 48)
 		.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? rowTransitions)
@@ -154,25 +154,28 @@ struct BrowserTabRow: View {
 				Color.clear
 					.glassEffect(
 						.clear,
-						in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+						in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabCornerRadius)
 					)
 			} else if !compactSplitStyle, isMultiSelected {
-				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
-					.fill(theme.foregroundColor.opacity(0.19))
+				ZStack {
+					Color.clear
+						.glassEffect(
+							.clear,
+							in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabCornerRadius)
+						)
+					if isSelected {
+						Color.white.opacity(0.2)
+					}
+				}
 			} else if !compactSplitStyle, isHovered {
 				Color.clear
 					.glassEffect(
 						.regular,
-						in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+						in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabCornerRadius)
 					)
 			}
 		}
 		.overlay {
-			if isMultiSelected {
-				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
-					.strokeBorder(theme.foregroundColor.opacity(0.50), lineWidth: 1)
-					.allowsHitTesting(false)
-			}
 			if isSelected, tab.internalPage == nil, developerModeEnabled || tab.isDeveloperMode {
 				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
 					.strokeBorder(Color(red: 0.55, green: 0.4, blue: 0), lineWidth: 2)
@@ -465,31 +468,38 @@ private struct TabTitleView: View {
 					onSelectTab?(tab.id)
 				}
 			} label: {
-				Text(verbatim: tab.title)
-					.contentTransition(.opacity)
-					.animation(reduceMotion ? nil : .smooth(duration: 0.2), value: tab.title)
-					.lineLimit(1)
-					// Keep long titles inside the width proposed by the sidebar.
-					.frame(maxWidth: .infinity, alignment: .leading)
+				Color.clear
+					.frame(maxWidth: .infinity, maxHeight: .infinity)
+					.overlay(alignment: .leading) {
+						Text(verbatim: tab.title)
+							.contentTransition(.opacity)
+							.animation(
+								reduceMotion ? nil : .smooth(duration: 0.2),
+								value: tab.title
+							)
+							.lineLimit(1)
+							.fixedSize(horizontal: true, vertical: false)
+					}
 					.mask {
-						// A flexible opaque region plus a fixed-width trailing fade
-						// avoids measuring each title with a GeometryReader on scroll.
 						HStack(spacing: 0) {
 							Color.white
+
 							LinearGradient(
 								colors: [.white, .clear],
 								startPoint: .leading,
 								endPoint: .trailing
 							)
-							.frame(width: isHovered ? max(0, closeFadeWidth + 28 - hoverClearWidth) : closeFadeWidth)
+							.frame(
+								width: isHovered
+									? max(0, closeFadeWidth + 28 - hoverClearWidth)
+									: closeFadeWidth
+							)
+
 							if isHovered {
 								Color.clear.frame(width: hoverClearWidth)
 							}
 						}
-						.frame(maxWidth: .infinity)
 					}
-					.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-					.clipped()
 					.contentShape(Rectangle())
 			}
 			.buttonStyle(.plain)
