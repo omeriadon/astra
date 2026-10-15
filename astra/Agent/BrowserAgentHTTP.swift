@@ -72,14 +72,22 @@
 		private var requests: [UUID: Task<Void, Never>] = [:]
 		private var buffers: [UUID: Data] = [:]
 		private var stopped = false
+		private var started = false
+		private var listenerCancelled = false
+		private var stopWaiters: [CheckedContinuation<Void, Never>] = []
 		private let handler: @Sendable (BrowserAgentHTTPRequest) async -> Response
 
 		init(port: UInt16, state: @escaping @MainActor @Sendable (NWListener.State) -> Void, handler: @escaping @Sendable (BrowserAgentHTTPRequest) async -> Response) throws {
 			self.handler = handler
 			let parameters = NWParameters.tcp
+			// Rebind after accepted connections enter TIME_WAIT on shutdown.
+			parameters.allowLocalEndpointReuse = true
 			parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)
 			listener = try NWListener(using: parameters)
-			listener.stateUpdateHandler = { value in
+			listener.stateUpdateHandler = { [weak self] value in
+				if case .cancelled = value {
+					Task { await self?.didCancelListener() }
+				}
 				Task { @MainActor in state(value) }
 			}
 			listener.newConnectionHandler = { [weak self] connection in
@@ -88,16 +96,31 @@
 		}
 
 		func start() {
-			guard !stopped else { return }
+			guard !stopped, !started else { return }
+			started = true
 			listener.start(queue: queue)
 		}
 
-		func stop() {
-			stopped = true
-			listener.cancel()
-			for id in Array(connections.keys) {
-				finish(id)
+		func stop() async {
+			if !stopped {
+				// Even a listener superseded before startup needs its cancellation callback.
+				start()
+				stopped = true
+				listener.cancel()
+				for id in Array(connections.keys) {
+					finish(id)
+				}
 			}
+			// cancel() returns before Network.framework releases the bound socket.
+			guard !listenerCancelled else { return }
+			await withCheckedContinuation { stopWaiters.append($0) }
+		}
+
+		private func didCancelListener() {
+			listenerCancelled = true
+			let waiters = stopWaiters
+			stopWaiters.removeAll()
+			for waiter in waiters { waiter.resume() }
 		}
 
 		private func accept(_ connection: NWConnection) {

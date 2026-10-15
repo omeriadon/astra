@@ -20,14 +20,14 @@ struct BrowserUseHTTPChecks {
 		configuration.timeoutIntervalForRequest = 5
 		let session = URLSession(configuration: configuration)
 
-		func request(_ object: [String: Any], authorized: Bool = true, origin: String? = nil, method: String = "POST") async throws -> (Data, Int) {
+		func request(_ object: [String: Any], authorized: Bool = true, origin: String? = nil, method: String = "POST", bearer: String? = nil) async throws -> (Data, Int) {
 			var request = URLRequest(url: endpoint)
 			request.httpMethod = method
 			request.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
 			request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 			request.setValue("2025-11-25", forHTTPHeaderField: "MCP-Protocol-Version")
 			if authorized {
-				request.setValue("Bearer " + credential, forHTTPHeaderField: "Authorization")
+				request.setValue("Bearer " + (bearer ?? credential), forHTTPHeaderField: "Authorization")
 			}
 			if let origin {
 				request.setValue(origin, forHTTPHeaderField: "Origin")
@@ -94,18 +94,30 @@ struct BrowserUseHTTPChecks {
 		browser.isPrivate = false
 		browser.tabs.removeAll()
 		precondition(!server.isControlled(tab.id))
-		server.setEnabled(false)
-		precondition(!server.isEnabled && server.codexConfiguration.isEmpty)
-		server.setEnabled(true)
-		for _ in 0 ..< 100 {
-			if !server.endpoint.isEmpty {
-				break
+		var previousCredential = credential
+		for cycle in 0 ..< 5 {
+			server.setEnabled(false)
+			precondition(!server.isEnabled && server.codexConfiguration.isEmpty)
+			server.setEnabled(true)
+			// Exercise superseding a listener before its startup task runs, too.
+			if cycle == 0 {
+				server.setEnabled(false)
+				server.setEnabled(true)
 			}
-			try await Task.sleep(for: .milliseconds(50))
+			for _ in 0 ..< 100 {
+				if !server.endpoint.isEmpty { break }
+				try await Task.sleep(for: .milliseconds(50))
+			}
+			precondition(server.status == "Ready", "Restart \(cycle): \(server.status)")
+			precondition(URL(string: server.endpoint) == endpoint)
+			let newCredential = server.codexConfiguration.components(separatedBy: "Bearer ")[1].components(separatedBy: "\"")[0]
+			precondition(newCredential != previousCredential)
+			let oldCredential = try await request(initialize, bearer: previousCredential)
+			precondition(oldCredential.1 == 401)
+			let newSession = try await request(initialize, bearer: newCredential)
+			precondition(newSession.1 == 200)
+			previousCredential = newCredential
 		}
-		precondition(server.status == "Ready", server.status)
-		let oldCredential = try await request(initialize)
-		precondition(oldCredential.1 == 401)
 		server.setEnabled(false)
 		session.invalidateAndCancel()
 		print("MCP protocol, authorization, origin, URL validation, grant revocation during reads, private-tab exclusion, closure, and credential rotation checks passed")
