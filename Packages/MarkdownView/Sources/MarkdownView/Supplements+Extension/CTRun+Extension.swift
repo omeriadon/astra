@@ -5,13 +5,13 @@
 
 import CoreText
 #if canImport(UIKit)
-    import UIKit
+	import UIKit
 #elseif canImport(AppKit)
-    import AppKit
+	import AppKit
 #endif
 
 public extension CTRun {
-    var attributes: [NSAttributedString.Key: Any] {
-        (CTRunGetAttributes(self) as? [NSAttributedString.Key: Any]) ?? [:]
-    }
+	var attributes: [NSAttributedString.Key: Any] {
+		(CTRunGetAttributes(self) as? [NSAttributedString.Key: Any]) ?? [:]
+	}
 }

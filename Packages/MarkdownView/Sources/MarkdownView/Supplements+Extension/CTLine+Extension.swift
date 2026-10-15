@@ -7,7 +7,7 @@ import CoreText
 import Foundation
 
 public extension CTLine {
-    func glyphRuns() -> [CTRun] {
-        CTLineGetGlyphRuns(self) as! [CTRun]
-    }
+	func glyphRuns() -> [CTRun] {
+		CTLineGetGlyphRuns(self) as! [CTRun]
+	}
 }

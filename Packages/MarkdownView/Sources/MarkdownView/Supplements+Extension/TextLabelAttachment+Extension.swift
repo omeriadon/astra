@@ -15,58 +15,58 @@ import Litext
 /// ones; comparing them by value lets the label see the text before an edit as
 /// unchanged and keep the lines it typeset for it.
 private final class HolderAttachment: TextLabel.Attachment, Hashable {
-    /// What equality reads, fixed at creation so it never touches main-actor state.
-    private struct Payload: Hashable, @unchecked Sendable {
-        let representation: NSAttributedString
-        let size: CGSize
-        let descent: CGFloat?
+	/// What equality reads, fixed at creation so it never touches main-actor state.
+	private struct Payload: Hashable, @unchecked Sendable {
+		let representation: NSAttributedString
+		let size: CGSize
+		let descent: CGFloat?
 
-        static func == (lhs: Payload, rhs: Payload) -> Bool {
-            lhs.size == rhs.size
-                && lhs.descent == rhs.descent
-                && lhs.representation.isEqual(to: rhs.representation)
-        }
+		static func == (lhs: Payload, rhs: Payload) -> Bool {
+			lhs.size == rhs.size
+				&& lhs.descent == rhs.descent
+				&& lhs.representation.isEqual(to: rhs.representation)
+		}
 
-        func hash(into hasher: inout Hasher) {
-            hasher.combine(representation.string)
-        }
-    }
+		func hash(into hasher: inout Hasher) {
+			hasher.combine(representation.string)
+		}
+	}
 
-    private nonisolated let payload: Payload
+	private nonisolated let payload: Payload
 
-    init(attrString: NSAttributedString, size: CGSize, descent: CGFloat?) {
-        payload = .init(
-            representation: attrString.copy() as! NSAttributedString,
-            size: size,
-            descent: descent,
-        )
-        super.init()
-        self.size = size
-        self.descent = descent
-    }
+	init(attrString: NSAttributedString, size: CGSize, descent: CGFloat?) {
+		payload = .init(
+			representation: attrString.copy() as! NSAttributedString,
+			size: size,
+			descent: descent
+		)
+		super.init()
+		self.size = size
+		self.descent = descent
+	}
 
-    override func attributedStringRepresentation() -> NSAttributedString {
-        payload.representation
-    }
+	override func attributedStringRepresentation() -> NSAttributedString {
+		payload.representation
+	}
 
-    nonisolated static func == (lhs: HolderAttachment, rhs: HolderAttachment) -> Bool {
-        lhs === rhs || lhs.payload == rhs.payload
-    }
+	nonisolated static func == (lhs: HolderAttachment, rhs: HolderAttachment) -> Bool {
+		lhs === rhs || lhs.payload == rhs.payload
+	}
 
-    nonisolated func hash(into hasher: inout Hasher) {
-        hasher.combine(payload)
-    }
+	nonisolated func hash(into hasher: inout Hasher) {
+		hasher.combine(payload)
+	}
 }
 
 extension TextLabel.Attachment {
-    /// An attachment that copies as `attrString` and reserves `size`. Holders
-    /// compare by value, so pass the size and descent here rather than setting
-    /// them afterwards.
-    static func hold(
-        attrString: NSAttributedString,
-        size: CGSize = .zero,
-        descent: CGFloat? = nil,
-    ) -> TextLabel.Attachment {
-        HolderAttachment(attrString: attrString, size: size, descent: descent)
-    }
+	/// An attachment that copies as `attrString` and reserves `size`. Holders
+	/// compare by value, so pass the size and descent here rather than setting
+	/// them afterwards.
+	static func hold(
+		attrString: NSAttributedString,
+		size: CGSize = .zero,
+		descent: CGFloat? = nil
+	) -> TextLabel.Attachment {
+		HolderAttachment(attrString: attrString, size: size, descent: descent)
+	}
 }

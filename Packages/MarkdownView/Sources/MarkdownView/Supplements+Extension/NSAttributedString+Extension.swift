@@ -10,5 +10,5 @@ import Foundation
 import Litext
 
 public extension NSAttributedString.Key {
-    @inline(__always) static let coreTextRunDelegate = NSAttributedString.Key(rawValue: kCTRunDelegateAttributeName as String)
+	@inline(__always) static let coreTextRunDelegate = NSAttributedString.Key(rawValue: kCTRunDelegateAttributeName as String)
 }

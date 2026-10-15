@@ -105,7 +105,9 @@ struct BrowserUseHTTPChecks {
 				server.setEnabled(true)
 			}
 			for _ in 0 ..< 100 {
-				if !server.endpoint.isEmpty { break }
+				if !server.endpoint.isEmpty {
+					break
+				}
 				try await Task.sleep(for: .milliseconds(50))
 			}
 			precondition(server.status == "Ready", "Restart \(cycle): \(server.status)")

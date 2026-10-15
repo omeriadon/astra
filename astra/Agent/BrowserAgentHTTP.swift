@@ -120,7 +120,9 @@
 			listenerCancelled = true
 			let waiters = stopWaiters
 			stopWaiters.removeAll()
-			for waiter in waiters { waiter.resume() }
+			for waiter in waiters {
+				waiter.resume()
+			}
 		}
 
 		private func accept(_ connection: NWConnection) {
@@ -146,7 +148,7 @@
 			connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, complete, error in
 				Task { [weak self] in
 					guard let self else { return }
-					await self.received(id, data: data, complete: complete, error: error)
+					await received(id, data: data, complete: complete, error: error)
 				}
 			}
 		}
@@ -182,7 +184,7 @@
 						guard let self else { return }
 						let response = await handler(request)
 						guard !Task.isCancelled else { return }
-						await self.write(response, id: id)
+						await write(response, id: id)
 					}
 			}
 		}

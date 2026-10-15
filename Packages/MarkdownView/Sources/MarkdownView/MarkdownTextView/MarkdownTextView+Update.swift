@@ -9,55 +9,55 @@ import CoreText
 import Litext
 
 extension MarkdownTextView {
-    func updateTextExecute() {
-        assert(Thread.isMainThread)
+	func updateTextExecute() {
+		assert(Thread.isMainThread)
 
-        var oldViews: Set<PlatformView> = .init()
-        for view in contextViews {
-            oldViews.insert(view)
-            if let view = view as? CodeView {
-                viewProvider.stashCodeView(view)
-                continue
-            }
-            if let view = view as? TableView {
-                viewProvider.stashTableView(view)
-                continue
-            }
-            assertionFailure()
-        }
+		var oldViews: Set<PlatformView> = .init()
+		for view in contextViews {
+			oldViews.insert(view)
+			if let view = view as? CodeView {
+				viewProvider.stashCodeView(view)
+				continue
+			}
+			if let view = view as? TableView {
+				viewProvider.stashTableView(view)
+				continue
+			}
+			assertionFailure()
+		}
 
-        viewProvider.reorderViews(matching: contextViews)
-        let ownedContextViews = contextViews
-        contextViews.removeAll()
+		viewProvider.reorderViews(matching: contextViews)
+		let ownedContextViews = contextViews
+		contextViews.removeAll()
 
-        let artifacts = TextBuilder.build(
-            view: self,
-            viewProvider: viewProvider,
-            ownedContextViews: ownedContextViews,
-        )
-        contextViews = artifacts.subviews
-        let newContextViews = artifacts.subviews.filter { !oldViews.contains($0) }
-        applyDocument(artifacts.document, newContextViews: newContextViews, animated: rebuildIsStreamed)
-        renderedHighlightKeys = artifacts.highlightKeys
-        blockFragmentCache = artifacts.fragmentCache
+		let artifacts = TextBuilder.build(
+			view: self,
+			viewProvider: viewProvider,
+			ownedContextViews: ownedContextViews
+		)
+		contextViews = artifacts.subviews
+		let newContextViews = artifacts.subviews.filter { !oldViews.contains($0) }
+		applyDocument(artifacts.document, newContextViews: newContextViews, animated: rebuildIsStreamed)
+		renderedHighlightKeys = artifacts.highlightKeys
+		blockFragmentCache = artifacts.fragmentCache
 
-        for view in artifacts.subviews {
-            if let view = view as? CodeView {
-                view.textView.delegate = self
-            }
-            if let view = view as? TableView {
-                view.textSelectionDelegate = self
-            }
-        }
+		for view in artifacts.subviews {
+			if let view = view as? CodeView {
+				view.textView.delegate = self
+			}
+			if let view = view as? TableView {
+				view.textSelectionDelegate = self
+			}
+		}
 
-        for goneView in oldViews where !artifacts.subviews.contains(goneView) {
-            goneView.removeFromSuperview()
-        }
+		for goneView in oldViews where !artifacts.subviews.contains(goneView) {
+			goneView.removeFromSuperview()
+		}
 
-        textLabelView.markNeedsLayout()
-        markNeedsLayout()
+		textLabelView.markNeedsLayout()
+		markNeedsLayout()
 
-        textLabelView.markNeedsDisplay()
-        markNeedsDisplay()
-    }
+		textLabelView.markNeedsDisplay()
+		markNeedsDisplay()
+	}
 }

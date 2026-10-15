@@ -8,9 +8,9 @@ import Litext
 import MarkdownParser
 
 #if canImport(UIKit)
-    import UIKit
+	import UIKit
 #elseif canImport(AppKit)
-    import AppKit
+	import AppKit
 #endif
 
 /// The attachment a code block or a table stands on in the document.
@@ -27,76 +27,76 @@ import MarkdownParser
 /// direction: two attachments that compare equal let the label keep a layout
 /// built for the other one.
 final class ContextViewAttachment: TextLabel.Attachment, Hashable {
-    /// Everything about the block that reaches the screen.
-    struct Appearance: Equatable, @unchecked Sendable {
-        enum Kind: Equatable {
-            /// `content` is the text the code view shows, trimmed as shown.
-            case code(language: String, content: String)
-            /// The cells as the table shows them, after `<br>` became a newline.
-            case table(cells: [[NSAttributedString]], columnAlignments: [RawTableColumnAlignment])
-        }
+	/// Everything about the block that reaches the screen.
+	struct Appearance: Equatable, @unchecked Sendable {
+		enum Kind: Equatable {
+			/// `content` is the text the code view shows, trimmed as shown.
+			case code(language: String, content: String)
+			/// The cells as the table shows them, after `<br>` became a newline.
+			case table(cells: [[NSAttributedString]], columnAlignments: [RawTableColumnAlignment])
+		}
 
-        let kind: Kind
-        let theme: MarkdownTheme
-        /// The size the view asked for, and so the room the text reserves.
-        let size: CGSize
-    }
+		let kind: Kind
+		let theme: MarkdownTheme
+		/// The size the view asked for, and so the room the text reserves.
+		let size: CGSize
+	}
 
-    /// What copying the block yields. Immutable: a copy is taken on the way in.
-    private struct Payload: @unchecked Sendable {
-        let representation: NSAttributedString
-        let appearance: Appearance
-    }
+	/// What copying the block yields. Immutable: a copy is taken on the way in.
+	private struct Payload: @unchecked Sendable {
+		let representation: NSAttributedString
+		let appearance: Appearance
+	}
 
-    private nonisolated let payload: Payload
+	private nonisolated let payload: Payload
 
-    var appearance: Appearance {
-        payload.appearance
-    }
+	var appearance: Appearance {
+		payload.appearance
+	}
 
-    init(representation: NSAttributedString, appearance: Appearance) {
-        payload = .init(
-            representation: representation.copy() as! NSAttributedString,
-            appearance: appearance,
-        )
-        super.init()
-    }
+	init(representation: NSAttributedString, appearance: Appearance) {
+		payload = .init(
+			representation: representation.copy() as! NSAttributedString,
+			appearance: appearance
+		)
+		super.init()
+	}
 
-    override func attributedStringRepresentation() -> NSAttributedString {
-        payload.representation
-    }
+	override func attributedStringRepresentation() -> NSAttributedString {
+		payload.representation
+	}
 
-    nonisolated static func == (lhs: ContextViewAttachment, rhs: ContextViewAttachment) -> Bool {
-        if lhs === rhs {
-            return true
-        }
-        return lhs.payload.appearance == rhs.payload.appearance
-            && lhs.payload.representation.isEqual(to: rhs.payload.representation)
-    }
+	nonisolated static func == (lhs: ContextViewAttachment, rhs: ContextViewAttachment) -> Bool {
+		if lhs === rhs {
+			return true
+		}
+		return lhs.payload.appearance == rhs.payload.appearance
+			&& lhs.payload.representation.isEqual(to: rhs.payload.representation)
+	}
 
-    nonisolated func hash(into hasher: inout Hasher) {
-        hasher.combine(payload.representation.string)
-        hasher.combine(payload.appearance.size.width)
-        hasher.combine(payload.appearance.size.height)
-    }
+	nonisolated func hash(into hasher: inout Hasher) {
+		hasher.combine(payload.representation.string)
+		hasher.combine(payload.appearance.size.width)
+		hasher.combine(payload.appearance.size.height)
+	}
 }
 
 extension ContextViewAttachment.Appearance {
-    @MainActor
-    static func of(_ codeView: CodeView) -> Self {
-        .init(
-            kind: .code(language: codeView.language, content: codeView.content),
-            theme: codeView.theme,
-            size: codeView.intrinsicContentSize,
-        )
-    }
+	@MainActor
+	static func of(_ codeView: CodeView) -> Self {
+		.init(
+			kind: .code(language: codeView.language, content: codeView.content),
+			theme: codeView.theme,
+			size: codeView.intrinsicContentSize
+		)
+	}
 
-    @MainActor
-    static func of(_ tableView: TableView) -> Self {
-        .init(
-            kind: .table(cells: tableView.contents, columnAlignments: tableView.columnAlignments),
-            theme: tableView.theme,
-            size: CGSize(width: tableView.naturalContentWidth, height: tableView.intrinsicContentHeight),
-        )
-    }
+	@MainActor
+	static func of(_ tableView: TableView) -> Self {
+		.init(
+			kind: .table(cells: tableView.contents, columnAlignments: tableView.columnAlignments),
+			theme: tableView.theme,
+			size: CGSize(width: tableView.naturalContentWidth, height: tableView.intrinsicContentHeight)
+		)
+	}
 }

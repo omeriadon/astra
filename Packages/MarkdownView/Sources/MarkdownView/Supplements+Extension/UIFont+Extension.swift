@@ -6,52 +6,52 @@
 //
 
 #if canImport(UIKit)
-    import UIKit
+	import UIKit
 
-    public extension UIFont {
-        var bold: UIFont {
-            guard let descriptor = fontDescriptor.withSymbolicTraits(.traitBold) else { return self }
-            return UIFont(descriptor: descriptor, size: 0)
-        }
+	public extension UIFont {
+		var bold: UIFont {
+			guard let descriptor = fontDescriptor.withSymbolicTraits(.traitBold) else { return self }
+			return UIFont(descriptor: descriptor, size: 0)
+		}
 
-        var italic: UIFont {
-            guard let descriptor = fontDescriptor.withSymbolicTraits(.traitItalic) else { return self }
-            return UIFont(descriptor: descriptor, size: 0)
-        }
+		var italic: UIFont {
+			guard let descriptor = fontDescriptor.withSymbolicTraits(.traitItalic) else { return self }
+			return UIFont(descriptor: descriptor, size: 0)
+		}
 
-        var monospaced: UIFont {
-            let settings = [[
-                UIFontDescriptor.FeatureKey.type: kNumberSpacingType,
-                UIFontDescriptor.FeatureKey.selector: kMonospacedNumbersSelector,
-            ]]
+		var monospaced: UIFont {
+			let settings = [[
+				UIFontDescriptor.FeatureKey.type: kNumberSpacingType,
+				UIFontDescriptor.FeatureKey.selector: kMonospacedNumbersSelector,
+			]]
 
-            let attributes = [UIFontDescriptor.AttributeName.featureSettings: settings]
-            let newDescriptor = fontDescriptor.addingAttributes(attributes)
-            return UIFont(descriptor: newDescriptor, size: 0)
-        }
-    }
+			let attributes = [UIFontDescriptor.AttributeName.featureSettings: settings]
+			let newDescriptor = fontDescriptor.addingAttributes(attributes)
+			return UIFont(descriptor: newDescriptor, size: 0)
+		}
+	}
 
 #elseif canImport(AppKit)
-    import AppKit
+	import AppKit
 
-    public extension NSFont {
-        var bold: NSFont {
-            NSFontManager.shared.convert(self, toHaveTrait: .boldFontMask)
-        }
+	public extension NSFont {
+		var bold: NSFont {
+			NSFontManager.shared.convert(self, toHaveTrait: .boldFontMask)
+		}
 
-        var italic: NSFont {
-            NSFontManager.shared.convert(self, toHaveTrait: .italicFontMask)
-        }
+		var italic: NSFont {
+			NSFontManager.shared.convert(self, toHaveTrait: .italicFontMask)
+		}
 
-        var monospaced: NSFont {
-            let settings = [[
-                NSFontDescriptor.FeatureKey.typeIdentifier: kNumberSpacingType,
-                NSFontDescriptor.FeatureKey.selectorIdentifier: kMonospacedNumbersSelector,
-            ]]
+		var monospaced: NSFont {
+			let settings = [[
+				NSFontDescriptor.FeatureKey.typeIdentifier: kNumberSpacingType,
+				NSFontDescriptor.FeatureKey.selectorIdentifier: kMonospacedNumbersSelector,
+			]]
 
-            let attributes: [NSFontDescriptor.AttributeName: Any] = [.featureSettings: settings]
-            let newDescriptor = fontDescriptor.addingAttributes(attributes)
-            return NSFont(descriptor: newDescriptor, size: 0) ?? self
-        }
-    }
+			let attributes: [NSFontDescriptor.AttributeName: Any] = [.featureSettings: settings]
+			let newDescriptor = fontDescriptor.addingAttributes(attributes)
+			return NSFont(descriptor: newDescriptor, size: 0) ?? self
+		}
+	}
 #endif

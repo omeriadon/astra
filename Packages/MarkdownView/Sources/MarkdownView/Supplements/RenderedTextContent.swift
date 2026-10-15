@@ -8,19 +8,19 @@
 import Litext
 
 #if canImport(UIKit)
-    import UIKit
+	import UIKit
 #elseif canImport(AppKit)
-    import AppKit
+	import AppKit
 #endif
 
 public struct RenderedTextContent: @unchecked Sendable {
-    public let image: PlatformImage?
-    public let text: String
+	public let image: PlatformImage?
+	public let text: String
 
-    public typealias Map = [String: RenderedTextContent]
+	public typealias Map = [String: RenderedTextContent]
 
-    public init(image: PlatformImage?, text: String) {
-        self.image = image
-        self.text = text
-    }
+	public init(image: PlatformImage?, text: String) {
+		self.image = image
+		self.text = text
+	}
 }

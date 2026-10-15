@@ -20,7 +20,7 @@ struct BrowserQuickSearchOverlay: View {
 				.accessibilityLabel("Dismiss New Tab Search")
 				.accessibilityIdentifier("quick-search-dismiss")
 
-				NewTabView(browser: browser, isQuickSearch: true)
+				NewTabView(browser: browser)
 					.frame(width: min(640, max(0, geometry.size.width - 32)), height: min(440, max(0, geometry.size.height - 48)))
 					.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20))
 					.padding(.top, min(80, geometry.size.height * 0.12))

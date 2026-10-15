@@ -15,38 +15,38 @@ import Litext
 /// equal to the one it replaces, up to the item being written, and the label
 /// keeps the lines it typeset before the edit.
 final class MarkLineDrawingAction: TextLabel.LineDrawingAction {
-    enum Mark: Hashable {
-        case bullet(depth: Int)
-        case numbered(Int)
-        case checkbox(isDone: Bool)
-        case thematicBreak
-    }
+	enum Mark: Hashable {
+		case bullet(depth: Int)
+		case numbered(Int)
+		case checkbox(isDone: Bool)
+		case thematicBreak
+	}
 
-    nonisolated let mark: Mark
-    /// The colour and font the drawing falls back to when its line carries none.
-    nonisolated let theme: MarkdownTheme
-    /// The view the drawing measures from. Actions of two views are not
-    /// interchangeable.
-    nonisolated let owner: ObjectIdentifier?
+	nonisolated let mark: Mark
+	/// The colour and font the drawing falls back to when its line carries none.
+	nonisolated let theme: MarkdownTheme
+	/// The view the drawing measures from. Actions of two views are not
+	/// interchangeable.
+	nonisolated let owner: ObjectIdentifier?
 
-    init(
-        mark: Mark,
-        theme: MarkdownTheme,
-        owner: ObjectIdentifier?,
-        action: @escaping (CGContext, CTLine, CGPoint) -> Void,
-    ) {
-        self.mark = mark
-        self.theme = theme
-        self.owner = owner
-        super.init(action: action)
-    }
+	init(
+		mark: Mark,
+		theme: MarkdownTheme,
+		owner: ObjectIdentifier?,
+		action: @escaping (CGContext, CTLine, CGPoint) -> Void
+	) {
+		self.mark = mark
+		self.theme = theme
+		self.owner = owner
+		super.init(action: action)
+	}
 
-    override nonisolated func isEqual(_ object: Any?) -> Bool {
-        guard let other = object as? MarkLineDrawingAction else { return false }
-        return other === self || (mark == other.mark && owner == other.owner && theme == other.theme)
-    }
+	override nonisolated func isEqual(_ object: Any?) -> Bool {
+		guard let other = object as? MarkLineDrawingAction else { return false }
+		return other === self || (mark == other.mark && owner == other.owner && theme == other.theme)
+	}
 
-    override nonisolated var hash: Int {
-        mark.hashValue
-    }
+	override nonisolated var hash: Int {
+		mark.hashValue
+	}
 }

@@ -3,9 +3,9 @@ import MarkdownParser
 import Testing
 
 #if canImport(UIKit)
-    import UIKit
+	import UIKit
 #elseif canImport(AppKit)
-    import AppKit
+	import AppKit
 #endif
 
 /// The cheapest way to speed up streaming is to stop rebuilding blocks that did
@@ -16,305 +16,305 @@ import Testing
 ///
 /// These are the cases where sharing by block value would be wrong.
 struct MarkdownBlockIdentityTests {
-    @MainActor
-    private func blockquoteGroups(in text: NSAttributedString) -> [BlockquoteGroup] {
-        var groups: [BlockquoteGroup] = []
-        text.enumerateAttribute(
-            .blockquoteGroup,
-            in: NSRange(location: 0, length: text.length),
-            options: [],
-        ) { value, _, _ in
-            guard let group = value as? BlockquoteGroup else { return }
-            if !groups.contains(where: { $0 === group }) {
-                groups.append(group)
-            }
-        }
-        return groups
-    }
+	@MainActor
+	private func blockquoteGroups(in text: NSAttributedString) -> [BlockquoteGroup] {
+		var groups: [BlockquoteGroup] = []
+		text.enumerateAttribute(
+			.blockquoteGroup,
+			in: NSRange(location: 0, length: text.length),
+			options: []
+		) { value, _, _ in
+			guard let group = value as? BlockquoteGroup else { return }
+			if !groups.contains(where: { $0 === group }) {
+				groups.append(group)
+			}
+		}
+		return groups
+	}
 
-    @MainActor
-    @Test
-    func `Two identical quotes are two quotes, not one`() {
-        let view = RenderProbe.view("""
-        > 完全相同的引用 identical quote
+	@MainActor
+	@Test
+	func `Two identical quotes are two quotes, not one`() {
+		let view = RenderProbe.view("""
+		> 完全相同的引用 identical quote
 
-        Between the two quotes.
+		Between the two quotes.
 
-        > 完全相同的引用 identical quote
-        """)
+		> 完全相同的引用 identical quote
+		""")
 
-        let groups = blockquoteGroups(in: view.textLabelView.attributedText)
-        #expect(groups.count == 2)
-        #expect(groups[0] !== groups[1])
-        // One bar each: a shared group would union the two spans and paint a
-        // single bar straight through the paragraph between them.
-        #expect(view.blockquoteBars.count == 2)
-    }
+		let groups = blockquoteGroups(in: view.textLabelView.attributedText)
+		#expect(groups.count == 2)
+		#expect(groups[0] !== groups[1])
+		// One bar each: a shared group would union the two spans and paint a
+		// single bar straight through the paragraph between them.
+		#expect(view.blockquoteBars.count == 2)
+	}
 
-    @MainActor
-    @Test
-    func `Two identical quotes stay two quotes after a rebuild reuses them`() {
-        // The first build populates the block cache; the second is the one that
-        // can go wrong. A cache keyed on the block's value rather than on its
-        // position would hand both quotes the same fragment here, and with it
-        // the same group — one bar drawn straight through the paragraph between
-        // them.
-        let markdown = """
-        > 完全相同的引用 identical quote
+	@MainActor
+	@Test
+	func `Two identical quotes stay two quotes after a rebuild reuses them`() {
+		// The first build populates the block cache; the second is the one that
+		// can go wrong. A cache keyed on the block's value rather than on its
+		// position would hand both quotes the same fragment here, and with it
+		// the same group — one bar drawn straight through the paragraph between
+		// them.
+		let markdown = """
+		> 完全相同的引用 identical quote
 
-        Between the two quotes.
+		Between the two quotes.
 
-        > 完全相同的引用 identical quote
-        """
-        let view = RenderProbe.view(markdown)
-        RenderProbe.show(markdown, in: view)
+		> 完全相同的引用 identical quote
+		"""
+		let view = RenderProbe.view(markdown)
+		RenderProbe.show(markdown, in: view)
 
-        let groups = blockquoteGroups(in: view.textLabelView.attributedText)
-        #expect(groups.count == 2)
-        #expect(groups[0] !== groups[1])
-        #expect(view.blockquoteBars.count == 2)
-    }
+		let groups = blockquoteGroups(in: view.textLabelView.attributedText)
+		#expect(groups.count == 2)
+		#expect(groups[0] !== groups[1])
+		#expect(view.blockquoteBars.count == 2)
+	}
 
-    @MainActor
-    @Test
-    func `Adjacent quote lines stay one quote`() {
-        let view = RenderProbe.view("""
-        > 第一行 first line
-        > 第二行 second line
-        > 第三行 third line
-        """)
+	@MainActor
+	@Test
+	func `Adjacent quote lines stay one quote`() {
+		let view = RenderProbe.view("""
+		> 第一行 first line
+		> 第二行 second line
+		> 第三行 third line
+		""")
 
-        #expect(blockquoteGroups(in: view.textLabelView.attributedText).count == 1)
-        #expect(view.blockquoteBars.count == 1)
-    }
+		#expect(blockquoteGroups(in: view.textLabelView.attributedText).count == 1)
+		#expect(view.blockquoteBars.count == 1)
+	}
 
-    @MainActor
-    @Test
-    func `Two identical code blocks get two code views`() {
-        let view = RenderProbe.view("""
-        ```swift
-        let answer = 42
-        ```
+	@MainActor
+	@Test
+	func `Two identical code blocks get two code views`() {
+		let view = RenderProbe.view("""
+		```swift
+		let answer = 42
+		```
 
-        Between the two blocks.
+		Between the two blocks.
 
-        ```swift
-        let answer = 42
-        ```
-        """)
+		```swift
+		let answer = 42
+		```
+		""")
 
-        let codeViews = view.contextViews.compactMap { $0 as? CodeView }
-        #expect(codeViews.count == 2)
-        #expect(codeViews[0] !== codeViews[1])
-        // Both must be placed: a single view cannot sit in two places.
-        #expect(codeViews.allSatisfy { $0.superview === view && !$0.isHidden })
-        #expect(codeViews[0].frame.minY != codeViews[1].frame.minY)
-    }
+		let codeViews = view.contextViews.compactMap { $0 as? CodeView }
+		#expect(codeViews.count == 2)
+		#expect(codeViews[0] !== codeViews[1])
+		// Both must be placed: a single view cannot sit in two places.
+		#expect(codeViews.allSatisfy { $0.superview === view && !$0.isHidden })
+		#expect(codeViews[0].frame.minY != codeViews[1].frame.minY)
+	}
 
-    @MainActor
-    @Test
-    func `Two identical tables get two table views`() {
-        let view = RenderProbe.view("""
-        | A | B |
-        | - | - |
-        | 1 | 2 |
+	@MainActor
+	@Test
+	func `Two identical tables get two table views`() {
+		let view = RenderProbe.view("""
+		| A | B |
+		| - | - |
+		| 1 | 2 |
 
-        Between the two tables.
+		Between the two tables.
 
-        | A | B |
-        | - | - |
-        | 1 | 2 |
-        """)
+		| A | B |
+		| - | - |
+		| 1 | 2 |
+		""")
 
-        let tableViews = view.contextViews.compactMap { $0 as? TableView }
-        #expect(tableViews.count == 2)
-        #expect(tableViews[0] !== tableViews[1])
-        #expect(tableViews.allSatisfy { $0.superview === view && !$0.isHidden })
-        #expect(tableViews[0].frame.minY != tableViews[1].frame.minY)
-    }
+		let tableViews = view.contextViews.compactMap { $0 as? TableView }
+		#expect(tableViews.count == 2)
+		#expect(tableViews[0] !== tableViews[1])
+		#expect(tableViews.allSatisfy { $0.superview === view && !$0.isHidden })
+		#expect(tableViews[0].frame.minY != tableViews[1].frame.minY)
+	}
 
-    @MainActor
-    @Test
-    func `A repeated paragraph appears once per occurrence`() {
-        let view = RenderProbe.view("""
-        完全相同的一段 repeated paragraph.
+	@MainActor
+	@Test
+	func `A repeated paragraph appears once per occurrence`() {
+		let view = RenderProbe.view("""
+		完全相同的一段 repeated paragraph.
 
-        完全相同的一段 repeated paragraph.
+		完全相同的一段 repeated paragraph.
 
-        完全相同的一段 repeated paragraph.
-        """)
+		完全相同的一段 repeated paragraph.
+		""")
 
-        let text = view.textLabelView.attributedText.string as NSString
-        var count = 0
-        var cursor = 0
-        while cursor < text.length {
-            let range = text.range(
-                of: "repeated paragraph.",
-                options: [],
-                range: NSRange(location: cursor, length: text.length - cursor),
-            )
-            guard range.location != NSNotFound else { break }
-            count += 1
-            cursor = range.upperBound
-        }
-        #expect(count == 3)
-    }
+		let text = view.textLabelView.attributedText.string as NSString
+		var count = 0
+		var cursor = 0
+		while cursor < text.length {
+			let range = text.range(
+				of: "repeated paragraph.",
+				options: [],
+				range: NSRange(location: cursor, length: text.length - cursor)
+			)
+			guard range.location != NSNotFound else { break }
+			count += 1
+			cursor = range.upperBound
+		}
+		#expect(count == 3)
+	}
 
-    @MainActor
-    @Test
-    func `A numbered list carries its start index into each marker`() {
-        let view = RenderProbe.view("""
-        5. 第五 five
-        6. 第六 six
-        7. 第七 seven
-        """)
+	@MainActor
+	@Test
+	func `A numbered list carries its start index into each marker`() {
+		let view = RenderProbe.view("""
+		5. 第五 five
+		6. 第六 six
+		7. 第七 seven
+		""")
 
-        let markers = RenderProbe.attachmentTexts(in: view.textLabelView.attributedText)
-        #expect(markers == ["5. ", "6. ", "7. "])
-    }
+		let markers = RenderProbe.attachmentTexts(in: view.textLabelView.attributedText)
+		#expect(markers == ["5. ", "6. ", "7. "])
+	}
 
-    @MainActor
-    @Test
-    func `Identical list text at two depths gets two indents`() {
-        let view = RenderProbe.view("""
-        - 相同文字 same text outer
-          - 相同文字 same text inner
-        """)
-        let text = view.textLabelView.attributedText
+	@MainActor
+	@Test
+	func `Identical list text at two depths gets two indents`() {
+		let view = RenderProbe.view("""
+		- 相同文字 same text outer
+		  - 相同文字 same text inner
+		""")
+		let text = view.textLabelView.attributedText
 
-        let outer = RenderProbe.paragraphStyle(at: "same text outer", in: text)
-        let inner = RenderProbe.paragraphStyle(at: "same text inner", in: text)
+		let outer = RenderProbe.paragraphStyle(at: "same text outer", in: text)
+		let inner = RenderProbe.paragraphStyle(at: "same text inner", in: text)
 
-        #expect(outer?.headIndent == ListMarkerLayout.indent)
-        #expect(inner?.headIndent == ListMarkerLayout.indent * 2)
-        #expect(outer?.firstLineHeadIndent == outer?.headIndent)
-        #expect(inner?.firstLineHeadIndent == inner?.headIndent)
-    }
+		#expect(outer?.headIndent == ListMarkerLayout.indent)
+		#expect(inner?.headIndent == ListMarkerLayout.indent * 2)
+		#expect(outer?.firstLineHeadIndent == outer?.headIndent)
+		#expect(inner?.firstLineHeadIndent == inner?.headIndent)
+	}
 
-    @MainActor
-    @Test
-    func `Bullet, task and numbered markers stand for their own markdown`() {
-        let view = RenderProbe.view("""
-        - bullet one
-        - bullet two
+	@MainActor
+	@Test
+	func `Bullet, task and numbered markers stand for their own markdown`() {
+		let view = RenderProbe.view("""
+		- bullet one
+		- bullet two
 
-        1. numbered one
+		1. numbered one
 
-        - [ ] open task
-        - [x] done task
-        """)
+		- [ ] open task
+		- [x] done task
+		""")
 
-        let markers = RenderProbe.attachmentTexts(in: view.textLabelView.attributedText)
-        #expect(markers == ["- ", "- ", "1. ", "- [ ] ", "- [x] "])
-    }
+		let markers = RenderProbe.attachmentTexts(in: view.textLabelView.attributedText)
+		#expect(markers == ["- ", "- ", "1. ", "- [ ] ", "- [x] "])
+	}
 
-    @MainActor
-    @Test
-    func `A nested bullet marker carries its nesting`() {
-        let view = RenderProbe.view("""
-        - outer
-          - inner
-            - innermost
-        """)
+	@MainActor
+	@Test
+	func `A nested bullet marker carries its nesting`() {
+		let view = RenderProbe.view("""
+		- outer
+		  - inner
+		    - innermost
+		""")
 
-        #expect(RenderProbe.attachmentTexts(in: view.textLabelView.attributedText) == [
-            "- ", "  - ", "    - ",
-        ])
-    }
+		#expect(RenderProbe.attachmentTexts(in: view.textLabelView.attributedText) == [
+			"- ", "  - ", "    - ",
+		])
+	}
 
-    @MainActor
-    @Test
-    func `Blocks keep document order`() {
-        let view = RenderProbe.view("""
-        first paragraph
+	@MainActor
+	@Test
+	func `Blocks keep document order`() {
+		let view = RenderProbe.view("""
+		first paragraph
 
-        - a bullet
+		- a bullet
 
-        second paragraph
+		second paragraph
 
-        > a quote
+		> a quote
 
-        third paragraph
-        """)
-        let text = view.textLabelView.attributedText.string as NSString
+		third paragraph
+		""")
+		let text = view.textLabelView.attributedText.string as NSString
 
-        let first = text.range(of: "first paragraph").location
-        let bullet = text.range(of: "a bullet").location
-        let second = text.range(of: "second paragraph").location
-        let quote = text.range(of: "a quote").location
-        let third = text.range(of: "third paragraph").location
+		let first = text.range(of: "first paragraph").location
+		let bullet = text.range(of: "a bullet").location
+		let second = text.range(of: "second paragraph").location
+		let quote = text.range(of: "a quote").location
+		let third = text.range(of: "third paragraph").location
 
-        #expect(first < bullet)
-        #expect(bullet < second)
-        #expect(second < quote)
-        #expect(quote < third)
-    }
+		#expect(first < bullet)
+		#expect(bullet < second)
+		#expect(second < quote)
+		#expect(quote < third)
+	}
 
-    @MainActor
-    @Test
-    func `A code block reserves exactly the height its view occupies`() {
-        // The reserved height is read off the code view, so a cache that hands
-        // back a block built against a different view would reserve the wrong
-        // band and let the code paint over the paragraph below it.
-        let view = RenderProbe.view("""
-        Before.
+	@MainActor
+	@Test
+	func `A code block reserves exactly the height its view occupies`() {
+		// The reserved height is read off the code view, so a cache that hands
+		// back a block built against a different view would reserve the wrong
+		// band and let the code paint over the paragraph below it.
+		let view = RenderProbe.view("""
+		Before.
 
-        ```swift
-        let a = 1
-        let b = 2
-        let c = 3
-        ```
+		```swift
+		let a = 1
+		let b = 2
+		let c = 3
+		```
 
-        After.
-        """)
+		After.
+		""")
 
-        let codeView = view.contextViews.compactMap { $0 as? CodeView }.first
-        let text = view.textLabelView.attributedText
-        var reserved: CGFloat?
-        text.enumerateAttribute(
-            .contextView,
-            in: NSRange(location: 0, length: text.length),
-            options: [],
-        ) { value, range, _ in
-            guard value is CodeView else { return }
-            reserved = (text.attribute(.paragraphStyle, at: range.location, effectiveRange: nil)
-                as? NSParagraphStyle)?.minimumLineHeight
-        }
+		let codeView = view.contextViews.compactMap { $0 as? CodeView }.first
+		let text = view.textLabelView.attributedText
+		var reserved: CGFloat?
+		text.enumerateAttribute(
+			.contextView,
+			in: NSRange(location: 0, length: text.length),
+			options: []
+		) { value, range, _ in
+			guard value is CodeView else { return }
+			reserved = (text.attribute(.paragraphStyle, at: range.location, effectiveRange: nil)
+				as? NSParagraphStyle)?.minimumLineHeight
+		}
 
-        #expect(codeView != nil)
-        #expect(reserved == codeView?.intrinsicContentSize.height)
-        #expect((reserved ?? 0) > 0)
-    }
+		#expect(codeView != nil)
+		#expect(reserved == codeView?.intrinsicContentSize.height)
+		#expect((reserved ?? 0) > 0)
+	}
 
-    @MainActor
-    @Test
-    func `A table reserves exactly the height its view occupies`() {
-        let view = RenderProbe.view("""
-        Before.
+	@MainActor
+	@Test
+	func `A table reserves exactly the height its view occupies`() {
+		let view = RenderProbe.view("""
+		Before.
 
-        | A | B |
-        | - | - |
-        | 1 | 2 |
-        | 3 | 4 |
+		| A | B |
+		| - | - |
+		| 1 | 2 |
+		| 3 | 4 |
 
-        After.
-        """)
+		After.
+		""")
 
-        let tableView = view.contextViews.compactMap { $0 as? TableView }.first
-        let text = view.textLabelView.attributedText
-        var reserved: CGFloat?
-        text.enumerateAttribute(
-            .contextView,
-            in: NSRange(location: 0, length: text.length),
-            options: [],
-        ) { value, range, _ in
-            guard value is TableView else { return }
-            reserved = (text.attribute(.paragraphStyle, at: range.location, effectiveRange: nil)
-                as? NSParagraphStyle)?.minimumLineHeight
-        }
+		let tableView = view.contextViews.compactMap { $0 as? TableView }.first
+		let text = view.textLabelView.attributedText
+		var reserved: CGFloat?
+		text.enumerateAttribute(
+			.contextView,
+			in: NSRange(location: 0, length: text.length),
+			options: []
+		) { value, range, _ in
+			guard value is TableView else { return }
+			reserved = (text.attribute(.paragraphStyle, at: range.location, effectiveRange: nil)
+				as? NSParagraphStyle)?.minimumLineHeight
+		}
 
-        #expect(tableView != nil)
-        #expect(reserved == tableView?.intrinsicContentHeight)
-        #expect((reserved ?? 0) > 0)
-    }
+		#expect(tableView != nil)
+		#expect(reserved == tableView?.intrinsicContentHeight)
+		#expect((reserved ?? 0) > 0)
+	}
 }

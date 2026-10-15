@@ -5,9 +5,9 @@ import SwiftUI
 import Testing
 
 #if canImport(UIKit)
-    import UIKit
+	import UIKit
 #elseif canImport(AppKit)
-    import AppKit
+	import AppKit
 #endif
 
 private let demoDocument = """
@@ -110,154 +110,154 @@ Alignment and wrapping:
 """
 
 struct MarkdownViewBlockOrderTests {
-    @MainActor
-    @Test(arguments: [
-        180.0 as CGFloat, 220, 260, 320, 420,
-    ])
-    func `Narrow layout keeps every block below the previous block`(width: CGFloat) {
-        let view = MarkdownTextView()
-        let size = view.boundingSize(for: width)
-        view.setContentImmediately(MarkdownContent(
-            parserResult: MarkdownParser().parse(demoDocument),
-            theme: .default,
-        ))
-        let measured = view.boundingSize(for: width)
-        view.frame = .init(x: 0, y: 0, width: width, height: max(size.height, measured.height))
-        layout(view: view)
+	@MainActor
+	@Test(arguments: [
+		180.0 as CGFloat, 220, 260, 320, 420,
+	])
+	func `Narrow layout keeps every block below the previous block`(width: CGFloat) {
+		let view = MarkdownTextView()
+		let size = view.boundingSize(for: width)
+		view.setContentImmediately(MarkdownContent(
+			parserResult: MarkdownParser().parse(demoDocument),
+			theme: .default
+		))
+		let measured = view.boundingSize(for: width)
+		view.frame = .init(x: 0, y: 0, width: width, height: max(size.height, measured.height))
+		layout(view: view)
 
-        let boxes = view.verticalLayoutBoxes()
-        for index in boxes.indices.dropFirst() {
-            let previous = boxes[index - 1]
-            let current = boxes[index]
-            #expect(
-                current.frame.minY >= previous.frame.maxY - 0.5,
-                "\(current.label) overlaps \(previous.label) at width \(width)",
-            )
-        }
-    }
+		let boxes = view.verticalLayoutBoxes()
+		for index in boxes.indices.dropFirst() {
+			let previous = boxes[index - 1]
+			let current = boxes[index]
+			#expect(
+				current.frame.minY >= previous.frame.maxY - 0.5,
+				"\(current.label) overlaps \(previous.label) at width \(width)"
+			)
+		}
+	}
 
-    @MainActor
-    @Test
-    func `Shrinking the width keeps every block below the previous block`() {
-        let view = MarkdownTextView()
-        let coordinator = MarkdownViewCoordinator()
-        view.setContentImmediately(MarkdownContent(
-            parserResult: MarkdownParser().parse(demoDocument),
-            theme: .default,
-        ))
+	@MainActor
+	@Test
+	func `Shrinking the width keeps every block below the previous block`() {
+		let view = MarkdownTextView()
+		let coordinator = MarkdownViewCoordinator()
+		view.setContentImmediately(MarkdownContent(
+			parserResult: MarkdownParser().parse(demoDocument),
+			theme: .default
+		))
 
-        for width in stride(from: 700.0 as CGFloat, through: 180, by: -40) {
-            let size = coordinator.sizeThatFits(
-                ProposedViewSize(width: width, height: nil),
-                for: view,
-            ) ?? .init(width: width, height: view.bounds.height)
-            view.frame = .init(origin: .zero, size: size)
-            layout(view: view)
+		for width in stride(from: 700.0 as CGFloat, through: 180, by: -40) {
+			let size = coordinator.sizeThatFits(
+				ProposedViewSize(width: width, height: nil),
+				for: view
+			) ?? .init(width: width, height: view.bounds.height)
+			view.frame = .init(origin: .zero, size: size)
+			layout(view: view)
 
-            let boxes = view.verticalLayoutBoxes()
-            for index in boxes.indices.dropFirst() {
-                let previous = boxes[index - 1]
-                let current = boxes[index]
-                #expect(
-                    current.frame.minY >= previous.frame.maxY - 0.5,
-                    "\(current.label) overlaps \(previous.label) at width \(width)",
-                )
-            }
-        }
-    }
+			let boxes = view.verticalLayoutBoxes()
+			for index in boxes.indices.dropFirst() {
+				let previous = boxes[index - 1]
+				let current = boxes[index]
+				#expect(
+					current.frame.minY >= previous.frame.maxY - 0.5,
+					"\(current.label) overlaps \(previous.label) at width \(width)"
+				)
+			}
+		}
+	}
 
-    @MainActor
-    @Test
-    func `A stale height never leaves context views behind the text`() {
-        let view = MarkdownTextView()
-        view.setContentImmediately(MarkdownContent(
-            parserResult: MarkdownParser().parse(demoDocument),
-            theme: .default,
-        ))
+	@MainActor
+	@Test
+	func `A stale height never leaves context views behind the text`() {
+		let view = MarkdownTextView()
+		view.setContentImmediately(MarkdownContent(
+			parserResult: MarkdownParser().parse(demoDocument),
+			theme: .default
+		))
 
-        let wide = view.boundingSize(for: 700)
-        view.frame = .init(x: 0, y: 0, width: 700, height: wide.height)
-        layout(view: view)
+		let wide = view.boundingSize(for: 700)
+		view.frame = .init(x: 0, y: 0, width: 700, height: wide.height)
+		layout(view: view)
 
-        // SwiftUI can hand the view a narrower width while the height still
-        // reflects the previous, wider measurement.
-        view.frame = .init(x: 0, y: 0, width: 220, height: wide.height)
-        layout(view: view)
+		// SwiftUI can hand the view a narrower width while the height still
+		// reflects the previous, wider measurement.
+		view.frame = .init(x: 0, y: 0, width: 220, height: wide.height)
+		layout(view: view)
 
-        let boxes = view.verticalLayoutBoxes()
-        for index in boxes.indices.dropFirst() {
-            let previous = boxes[index - 1]
-            let current = boxes[index]
-            #expect(
-                current.frame.minY >= previous.frame.maxY - 0.5,
-                "\(current.label) overlaps \(previous.label)",
-            )
-        }
-    }
+		let boxes = view.verticalLayoutBoxes()
+		for index in boxes.indices.dropFirst() {
+			let previous = boxes[index - 1]
+			let current = boxes[index]
+			#expect(
+				current.frame.minY >= previous.frame.maxY - 0.5,
+				"\(current.label) overlaps \(previous.label)"
+			)
+		}
+	}
 
-    #if canImport(AppKit) && !targetEnvironment(macCatalyst)
-        @MainActor
-        @Test
-        func `Hosted markdown keeps blocks ordered while the window narrows`() throws {
-            let window = NSWindow(
-                contentRect: .init(x: 0, y: 0, width: 800, height: 600),
-                styleMask: [.titled, .resizable],
-                backing: .buffered,
-                defer: true,
-            )
-            let host = NSHostingView(rootView: ScrollView { MarkdownView(demoDocument).padding() })
-            window.contentView = host
-            host.layoutSubtreeIfNeeded()
+	#if canImport(AppKit) && !targetEnvironment(macCatalyst)
+		@MainActor
+		@Test
+		func `Hosted markdown keeps blocks ordered while the window narrows`() throws {
+			let window = NSWindow(
+				contentRect: .init(x: 0, y: 0, width: 800, height: 600),
+				styleMask: [.titled, .resizable],
+				backing: .buffered,
+				defer: true
+			)
+			let host = NSHostingView(rootView: ScrollView { MarkdownView(demoDocument).padding() })
+			window.contentView = host
+			host.layoutSubtreeIfNeeded()
 
-            let view = try #require(firstMarkdownTextView(in: host))
+			let view = try #require(firstMarkdownTextView(in: host))
 
-            for width in stride(from: 760.0 as CGFloat, through: 200, by: -40) {
-                window.setContentSize(.init(width: width, height: 600))
-                host.layoutSubtreeIfNeeded()
-                expectOrderedBlocks(in: view, context: "window width \(width)")
-            }
-        }
+			for width in stride(from: 760.0 as CGFloat, through: 200, by: -40) {
+				window.setContentSize(.init(width: width, height: 600))
+				host.layoutSubtreeIfNeeded()
+				expectOrderedBlocks(in: view, context: "window width \(width)")
+			}
+		}
 
-        @MainActor
-        private func firstMarkdownTextView(in view: NSView) -> MarkdownTextView? {
-            var queue: [NSView] = [view]
-            while !queue.isEmpty {
-                let next = queue.removeFirst()
-                if let match = next as? MarkdownTextView {
-                    return match
-                }
-                queue.append(contentsOf: next.subviews)
-            }
-            return nil
-        }
-    #endif
+		@MainActor
+		private func firstMarkdownTextView(in view: NSView) -> MarkdownTextView? {
+			var queue: [NSView] = [view]
+			while !queue.isEmpty {
+				let next = queue.removeFirst()
+				if let match = next as? MarkdownTextView {
+					return match
+				}
+				queue.append(contentsOf: next.subviews)
+			}
+			return nil
+		}
+	#endif
 }
 
 @MainActor
 private func expectOrderedBlocks(
-    in view: MarkdownTextView,
-    context: String,
-    sourceLocation: SourceLocation = #_sourceLocation,
+	in view: MarkdownTextView,
+	context: String,
+	sourceLocation: SourceLocation = #_sourceLocation
 ) {
-    let boxes = view.verticalLayoutBoxes()
-    for index in boxes.indices.dropFirst() {
-        let previous = boxes[index - 1]
-        let current = boxes[index]
-        #expect(
-            current.frame.minY >= previous.frame.maxY - 0.5,
-            "\(current.label) overlaps \(previous.label) — \(context)",
-            sourceLocation: sourceLocation,
-        )
-    }
+	let boxes = view.verticalLayoutBoxes()
+	for index in boxes.indices.dropFirst() {
+		let previous = boxes[index - 1]
+		let current = boxes[index]
+		#expect(
+			current.frame.minY >= previous.frame.maxY - 0.5,
+			"\(current.label) overlaps \(previous.label) — \(context)",
+			sourceLocation: sourceLocation
+		)
+	}
 }
 
 @MainActor
 private func layout(view: MarkdownTextView) {
-    #if canImport(UIKit)
-        view.setNeedsLayout()
-        view.layoutIfNeeded()
-    #elseif canImport(AppKit)
-        view.needsLayout = true
-        view.layoutSubtreeIfNeeded()
-    #endif
+	#if canImport(UIKit)
+		view.setNeedsLayout()
+		view.layoutIfNeeded()
+	#elseif canImport(AppKit)
+		view.needsLayout = true
+		view.layoutSubtreeIfNeeded()
+	#endif
 }

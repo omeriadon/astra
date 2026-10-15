@@ -245,13 +245,13 @@ import WebKit
 				completionHandler(nil)
 				return
 			}
-#if !ASTRA_WEBSITE_APP_HELPER
-            if let urls = BrowserAgentUploadScopes.shared.consume(controller: self, parameters: parameters) {
-                retainPanelUploadAccess(for: urls)
-                completionHandler(urls.isEmpty ? nil : urls)
-                return
-            }
-#endif
+			#if !ASTRA_WEBSITE_APP_HELPER
+				if let urls = BrowserAgentUploadScopes.shared.consume(controller: self, parameters: parameters) {
+					retainPanelUploadAccess(for: urls)
+					completionHandler(urls.isEmpty ? nil : urls)
+					return
+				}
+			#endif
 			beginLifecycleOperation()
 			let panel = NSOpenPanel()
 			panel.message = "Choose files for \(frame.securityOrigin.host)"

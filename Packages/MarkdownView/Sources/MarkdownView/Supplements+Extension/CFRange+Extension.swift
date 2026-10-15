@@ -6,7 +6,7 @@
 import Foundation
 
 extension CFRange {
-    var nsRange: NSRange {
-        NSMakeRange(location == kCFNotFound ? NSNotFound : location, length)
-    }
+	var nsRange: NSRange {
+		NSMakeRange(location == kCFNotFound ? NSNotFound : location, length)
+	}
 }

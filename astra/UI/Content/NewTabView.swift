@@ -3,7 +3,6 @@ import SwiftUI
 
 struct NewTabView: View {
 	@Bindable var browser: Browser
-	var isQuickSearch = false
 	@Default(.searchSuggestionsEnabled) private var searchSuggestionsEnabled
 	@Default(.browserSearchConfiguration) private var searchConfigurationValue
 	@Default(.startPagePreferences) private var startPagePreferencesValue
@@ -11,7 +10,6 @@ struct NewTabView: View {
 	@Namespace private var transitions
 	@State private var recentVisits: [BrowserVisit] = []
 	@State private var frequentVisits: [BrowserVisitSummary] = []
-	@State private var showingPreferences = false
 
 	private var searchConfiguration: BrowserSearchConfiguration {
 		BrowserSearchConfiguration.decode(searchConfigurationValue)
@@ -43,14 +41,6 @@ struct NewTabView: View {
 		let selectedResultID = browser.selectedNewTabSearchResult?.id
 		ScrollViewReader { proxy in
 			List {
-				if browser.newTabSearchText.isEmpty, !isQuickSearch {
-					startPageModules
-					if !hasStartPageContent {
-						Section {
-							ContentUnavailableView("Your Start Page Is Ready", systemImage: "sparkles", description: Text(emptyStartPageDescription))
-						}
-					}
-				}
 				BrowserSearchSuggestionsSection(
 					browser: browser,
 					results: browser.newTabSearchResults,
@@ -63,7 +53,7 @@ struct NewTabView: View {
 			}
 			.listStyle(.sidebar)
 			.scrollContentBackground(.hidden)
-			.safeAreaBar(edge: .top) {
+			.safeAreaBar(edge: .top, spacing: 0) {
 				searchHeader
 			}
 			.onChange(of: selectedResultID) { _, selection in
@@ -75,7 +65,6 @@ struct NewTabView: View {
 		.frame(maxWidth: 680)
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
 		.task(id: browser.quickSearchFocusRequest) {
-			guard isQuickSearch else { return }
 			await Task.yield()
 			isSearchFocused = true
 		}
@@ -121,13 +110,6 @@ struct NewTabView: View {
 			} catch {
 				// Local suggestions and submitting the query remain available offline.
 			}
-		}
-		.sheet(isPresented: $showingPreferences) {
-			StartPagePreferencesView(value: $startPagePreferencesValue)
-			#if os(iOS)
-				.navigationTransition(.zoom(sourceID: "start-page-preferences", in: transitions))
-				.presentationDetents([.fraction(0.6)])
-			#endif
 		}
 	}
 
@@ -231,23 +213,6 @@ struct NewTabView: View {
 
 	private var searchHeader: some View {
 		VStack(alignment: .leading, spacing: 14) {
-			if !isQuickSearch {
-				HStack {
-					Text(browser.isPrivate ? "astra private browsing" : "astra")
-						.monospaced()
-						.font(.largeTitle.bold())
-					Spacer()
-					Button {
-						showingPreferences = true
-					} label: {
-						Label("Customize Start Page", systemImage: "slider.horizontal.3")
-					}
-					.labelStyle(.iconOnly)
-					.accessibilityLabel("Customize Start Page")
-					.accessibilityIdentifier("start-page-preferences")
-					.matchedTransitionSource(id: "start-page-preferences", in: transitions)
-				}
-			}
 			HStack(spacing: 10) {
 				Image(systemName: "magnifyingglass")
 					.accessibilityHidden(true)
@@ -272,21 +237,17 @@ struct NewTabView: View {
 						return .handled
 					}
 					.onKeyPress(.escape) {
-						if isQuickSearch {
-							browser.dismissQuickSearch()
-						} else {
-							browser.newTabSearchSelection = "typed"
-						}
+						browser.dismissQuickSearch()
 						return .handled
 					}
 					.accessibilityLabel("Search the web, history, or browser actions")
 					.accessibilityIdentifier("new-tab-search")
 			}
 			.padding(14)
-			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
+			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
 		}
-		.padding(.horizontal, 24)
-		.padding(.top, isQuickSearch ? 16 : 32)
+		.padding(.horizontal, 10)
+		.padding(.top, 10)
 		.padding(.bottom, 16)
 	}
 }
@@ -335,89 +296,6 @@ private struct StartPageVisitRow: View {
 			.accessibilityLabel("Open \(title) in Background")
 			.accessibilityIdentifier("start-page-open-background-\(url.absoluteString)")
 		}
-	}
-}
-
-private struct StartPagePreferencesView: View {
-	@Binding var value: String
-	@Environment(\.dismiss) private var dismiss
-	@State private var preferences: BrowserStartPagePreferences
-	@State private var containsUnsupportedValue: Bool
-
-	init(value: Binding<String>) {
-		_value = value
-		let decoded = BrowserStartPagePreferences.decode(value.wrappedValue)
-		_preferences = State(initialValue: decoded ?? .default)
-		_containsUnsupportedValue = State(initialValue: decoded == nil)
-	}
-
-	var body: some View {
-		NavigationStack {
-			List {
-				if containsUnsupportedValue {
-					Section {
-						Label("These saved settings are unsupported or unreadable and cannot be edited here.", systemImage: "exclamationmark.triangle")
-							.foregroundStyle(.secondary)
-					}
-				}
-				Section("Visible Modules") {
-					ForEach(Array(preferences.moduleOrder.enumerated()), id: \.element) { index, module in
-						HStack {
-							Toggle(module.title, isOn: visibilityBinding(for: module))
-								.accessibilityIdentifier("start-page-module-\(module.id)")
-							Spacer(minLength: 8)
-							Button("Move \(module.title) Up", systemImage: "arrow.up") {
-								preferences.move(module, by: -1)
-								save()
-							}
-							.labelStyle(.iconOnly)
-							.disabled(containsUnsupportedValue || index == 0)
-							.accessibilityIdentifier("start-page-module-up-\(module.id)")
-							Button("Move \(module.title) Down", systemImage: "arrow.down") {
-								preferences.move(module, by: 1)
-								save()
-							}
-							.labelStyle(.iconOnly)
-							.disabled(containsUnsupportedValue || index == preferences.moduleOrder.count - 1)
-							.accessibilityIdentifier("start-page-module-down-\(module.id)")
-						}
-						.disabled(containsUnsupportedValue)
-					}
-				}
-			}
-			.listStyle(.sidebar)
-			.scrollContentBackground(.hidden)
-			.navigationTitle("Start Page")
-			.toolbar {
-				ToolbarItem(placement: .cancellationAction) {
-					Button(role: .cancel) { dismiss() }
-						.accessibilityLabel("Close Start Page Settings")
-						.accessibilityIdentifier("close-start-page-settings")
-				}
-			}
-		}
-		#if os(macOS)
-		.frame(width: 520, height: 360)
-		#endif
-	}
-
-	private func visibilityBinding(for module: BrowserStartPagePreferences.Module) -> Binding<Bool> {
-		Binding(
-			get: { preferences.isVisible(module) },
-			set: { isVisible in
-				if isVisible {
-					preferences.hiddenModules.remove(module)
-				} else {
-					preferences.hiddenModules.insert(module)
-				}
-				save()
-			}
-		)
-	}
-
-	private func save() {
-		guard !containsUnsupportedValue else { return }
-		value = preferences.encoded
 	}
 }
 

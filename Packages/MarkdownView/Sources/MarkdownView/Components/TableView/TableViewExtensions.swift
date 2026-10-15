@@ -8,32 +8,32 @@
 
 import Litext
 #if canImport(UIKit)
-    import UIKit
+	import UIKit
 #elseif canImport(AppKit)
-    import AppKit
+	import AppKit
 #endif
 
 // MARK: - TextLabel.AttachmentRepresentable Extension
 
 extension TableView: TextLabel.AttachmentRepresentable {
-    func attributedStringRepresentation() -> NSAttributedString {
-        let attributedString = NSMutableAttributedString()
+	func attributedStringRepresentation() -> NSAttributedString {
+		let attributedString = NSMutableAttributedString()
 
-        for (index, row) in contents.enumerated() {
-            let rowString = NSMutableAttributedString()
+		for (index, row) in contents.enumerated() {
+			let rowString = NSMutableAttributedString()
 
-            for cell in row {
-                rowString.append(cell)
-                rowString.append(NSAttributedString(string: "\t"))
-            }
+			for cell in row {
+				rowString.append(cell)
+				rowString.append(NSAttributedString(string: "\t"))
+			}
 
-            attributedString.append(rowString)
+			attributedString.append(rowString)
 
-            if index != contents.count - 1 {
-                attributedString.append(NSAttributedString(string: "\n"))
-            }
-        }
+			if index != contents.count - 1 {
+				attributedString.append(NSAttributedString(string: "\n"))
+			}
+		}
 
-        return attributedString
-    }
+		return attributedString
+	}
 }

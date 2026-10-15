@@ -11,15 +11,15 @@
 @_exported import Litext
 
 #if canImport(UIKit)
-    @_exported import UIKit
+	@_exported import UIKit
 
-    public typealias PlatformView = UIView
-    public typealias PlatformImage = UIImage
-    public typealias PlatformScrollView = UIScrollView
+	public typealias PlatformView = UIView
+	public typealias PlatformImage = UIImage
+	public typealias PlatformScrollView = UIScrollView
 #elseif canImport(AppKit)
-    @_exported import AppKit
+	@_exported import AppKit
 
-    public typealias PlatformView = NSView
-    public typealias PlatformImage = NSImage
-    public typealias PlatformScrollView = NSScrollView
+	public typealias PlatformView = NSView
+	public typealias PlatformImage = NSImage
+	public typealias PlatformScrollView = NSScrollView
 #endif
