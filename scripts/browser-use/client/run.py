@@ -125,6 +125,8 @@ def failure_and_auth_tests(c, check, eventually):
     client.call('wait_for_url',{'tabID':c['tab'],'url':'/authenticated','timeout':8})
     second=client.call('open_tab',{'url':c['page'].split('/?')[0]+'/authenticated','windowID':c['window']})['tabID']
     client.call('wait_for_text',{'tabID':second,'text':'fixture-user','timeout':8})
+    loaded=client.call('wait_for_load_state',{'tabID':second,'state':'complete','timeout':15})
+    check(loaded.get('matched') is True,'authenticated tab finished loading',loaded)
     check('"authenticated": true' in str(client.call('read_page',{'tabID':second})),'normal session authentication shared')
     control(c,'revoke',tabID=second)
     failure('read_page',{'tabID':second})
@@ -196,6 +198,8 @@ def main():
         check(any(tab["tabID"] == c["tab"] for tab in after), "opened tab exists", after)
         check(len(after) == len(before) + 1, "exactly one tab created", after)
         eventually(lambda: c["state"]().get("ready"), "real WebKit page load")
+        loaded = c["client"].call("wait_for_load_state", {"tabID": c["tab"], "state": "complete", "timeout": 15})
+        check(loaded.get("matched") is True, "WebKit finished loading fixture and child frames", loaded)
 
     def list_tabs(c):
         tabs = c["client"].call("list_tabs")
