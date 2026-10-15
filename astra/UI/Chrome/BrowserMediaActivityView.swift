@@ -133,8 +133,8 @@ private struct BrowserMediaActivityCard: View {
 	}
 }
 
-// This is a decorative playback indicator, not a meter of actual audio levels.
-// It is inserted only while media is playing, stopping the loop on pause.
+/// This is a decorative playback indicator, not a meter of actual audio levels.
+/// It is inserted only while media is playing, stopping the loop on pause.
 private struct PlayingMediaWaveform: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var drawingHeight = false

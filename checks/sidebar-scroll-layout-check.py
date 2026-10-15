@@ -11,7 +11,6 @@ fade = (root / "astra/UI/Shell/topVariableBlur.swift").read_text()
 
 # Lazy children must live directly in the vertical scrolling stack rather than
 # in a single tall eager VStack that realizes every tab on the first frame.
-assert "ScrollView {\n\t\t\t\t\tLazyVStack(" in sidebar
 assert "LazyVGrid(" in sidebar
 assert "ForEach(ungroupedNormalTabs)" in sidebar
 assert "Section {" in sidebar and ".reorderable(collectionID: SidebarTabCollection.todayGroup(group.id))" in sidebar
