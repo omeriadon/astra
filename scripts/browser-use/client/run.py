@@ -230,10 +230,13 @@ def main():
         action(c, "select_option", {"selector": "#fixture-select", "value": "two"}, "select", "two")
 
     def navigate(c):
-        for fragment in ("#navigated", "#second-fragment", "", "#navigated"):
+        # An explicit empty fragment stays within the document; loading the
+        # fragment-less URL may legitimately reload it without hashchange.
+        for fragment in ("#navigated", "#second-fragment", "#", "#navigated"):
             destination = c["page"] + fragment
             c["client"].call("navigate", {"tabID": c["tab"], "url": destination})
-            eventually(lambda: c["state"]().get("route") == fragment, "SPA navigation to " + destination)
+            expected_hash = "" if fragment == "#" else fragment
+            eventually(lambda: c["state"]().get("route") == expected_hash, "SPA navigation to " + destination)
             ready = c["client"].call("wait_for_load_state", {"tabID": c["tab"], "state": "complete", "timeout": 8})
             check(ready.get("matched") is True, "fragment navigation restores document readiness", ready)
             result = c["client"].call("evaluate_javascript", {"tabID": c["tab"], "contentWorld": "page",
