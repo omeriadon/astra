@@ -112,24 +112,3 @@ jobs:
           PY
           kill "$sync_log_pid" 2>/dev/null || true
           trap - EXIT
-
-  full-app:
-    name: Sync Debug and Release integration
-    if: (github.head_ref || github.ref_name) == 'fix/sync-cpu-scheduling'
-    runs-on: xcode-27
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@v4
-      - name: Verify Xcode 27 and Swift 6.4
-        run: bash scripts/ci/select-xcode-27.sh
-      - name: Sync Debug and Release integration
-        shell: bash
-        run: |
-          set -euo pipefail
-          xcodebuild -downloadComponent MetalToolchain
-          for configuration in Debug Release; do
-            xcodebuild build -project astra.xcodeproj -scheme astra \
-              -configuration "$configuration" -destination 'platform=macOS' \
-              -derivedDataPath "$RUNNER_TEMP/AstraSyncDerivedData" \
-              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
-          done
