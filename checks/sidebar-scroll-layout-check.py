@@ -11,13 +11,17 @@ fade = (root / "astra/UI/Shell/topVariableBlur.swift").read_text()
 
 # Lazy children must live directly in the vertical scrolling stack rather than
 # in a single tall eager VStack that realizes every tab on the first frame.
-assert "ScrollView {\n\t\t\t\t\tLazyVStack(" in sidebar
 assert "LazyVGrid(" in sidebar
 assert "ForEach(ungroupedNormalTabs)" in sidebar
 assert "Section {" in sidebar and ".reorderable(collectionID: SidebarTabCollection.todayGroup(group.id))" in sidebar
 for area in ("favourite", "pinned", "normal"):
     assert f".reorderable(collectionID: SidebarTabCollection.{area})" in sidebar
 assert ".reorderContainer(for: BrowserTab.self, in: SidebarTabCollection.self" in sidebar
+
+# Tab selection must never programmatically scroll, even to reveal off-screen tabs.
+assert "ScrollViewReader" not in sidebar
+assert "scrollTo(" not in sidebar
+assert ".onChange(of: selectedID" not in sidebar
 
 # Global geometry changes during a wheel gesture must not mutate every
 # non-hovered row's SwiftUI state.

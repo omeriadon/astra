@@ -71,6 +71,6 @@ if [[ ! -s "$TMP/handshake.json" ]]; then
   tail -80 "$TMP/app.log" >&2
   exit 1
 fi
-python3 "$ROOT/tests/browser-use/client/run.py" --handshake "$TMP/handshake.json" \
+python3 "$ROOT/scripts/browser-use/client/run.py" --handshake "$TMP/handshake.json" \
   --site "$TMP/site.json" --run "$RUN_ID" --profile "$PROFILE" --pid "$ASTRA_PID" \
   --upload-scope "$UPLOAD_SCOPE" 2>&1 | tee "$TMP/client.log"

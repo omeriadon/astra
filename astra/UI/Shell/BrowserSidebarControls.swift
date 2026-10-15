@@ -63,137 +63,125 @@ struct ShellSidebarListView: View {
 		let pinnedSelectionOrder = projection.pinnedSelectionOrder
 		let selectedID = space.selectedTabID
 		return GeometryReader { geometry in
-			ScrollViewReader { reader in
-				ScrollView {
-					LazyVStack(spacing: onSelectTab == nil ? 2 : 8) {
-						// Only animate the reserved space for the optional navigation header.
-						Color.clear
-							.frame(height: max(0, topMargin - (BrowserChromeMetrics.topBarRegionHeight + 5)))
-							.accessibilityHidden(true)
-						if let splitTabs {
-							BrowserUnifiedSplitRow(
-								browser: browser, left: splitTabs.0, right: splitTabs.1,
-								theme: theme, spaceID: space.id, selectedID: selectedID
-							)
-						}
-						if !favouriteTabs.isEmpty {
-							LazyVGrid(
-								columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4),
-								spacing: 6
-							) {
-								ForEach(favouriteTabs) { tab in
-									favouriteTile(tab, selectedID: selectedID)
-										.frame(maxWidth: .infinity)
-								}
-								.reorderable(collectionID: SidebarTabCollection.favourite)
+			ScrollView {
+				LazyVStack(spacing: onSelectTab == nil ? 2 : 8) {
+					// Only animate the reserved space for the optional navigation header.
+					Color.clear
+						.frame(height: max(0, topMargin - (BrowserChromeMetrics.topBarRegionHeight + 5)))
+						.accessibilityHidden(true)
+					if let splitTabs {
+						BrowserUnifiedSplitRow(
+							browser: browser, left: splitTabs.0, right: splitTabs.1,
+							theme: theme, spaceID: space.id, selectedID: selectedID
+						)
+					}
+					if !favouriteTabs.isEmpty {
+						LazyVGrid(
+							columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4),
+							spacing: 6
+						) {
+							ForEach(favouriteTabs) { tab in
+								favouriteTile(tab, selectedID: selectedID)
+									.frame(maxWidth: .infinity)
 							}
-							.padding(.bottom, 12)
+							.reorderable(collectionID: SidebarTabCollection.favourite)
 						}
-						if favouriteTabs.isEmpty {
-							ForEach([BrowserTab]()) { _ in EmptyView() }
-								.reorderable(collectionID: SidebarTabCollection.favourite)
-							Color.clear.frame(height: 14)
-						}
+						.padding(.bottom, 12)
+					}
+					if favouriteTabs.isEmpty {
+						ForEach([BrowserTab]()) { _ in EmptyView() }
+							.reorderable(collectionID: SidebarTabCollection.favourite)
+						Color.clear.frame(height: 14)
+					}
 
-						HStack {
-							Text("Pinned Tabs").font(.caption)
-							Spacer()
-						}
-						ForEach(space.pinnedFolders) { folder in
-							PinnedFolderRow(folder: folder, browser: browser, tabsByID: tabsByID,
-							                selectedID: selectedID, isActiveSpace: isActiveSpace, normalCount: normalTabs.count,
-							                spaceID: space.id, theme: theme, openElsewhereIDs: openElsewhereIDs,
-							                excludedTabIDs: splitIDs,
-							                onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions,
-							                sidebarSelection: sidebarSelection, selectionOrder: pinnedSelectionOrder)
-						}
-						ForEach(ungroupedPinnedTabs) { tab in
-							BrowserTabRow(tab: tab, browser: browser,
-							              isSelected: isActiveSpace && selectedID == tab.id,
-							              tabIndex: nil, normalCount: normalTabs.count, pinned: true,
-							              rowSpaceID: space.id, rowTheme: theme, splitSide: browser.splitSide(for: tab.id), isOpenElsewhere: openElsewhereIDs.contains(tab.id),
-							              onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions,
-							              sidebarSelection: sidebarSelection, selectionOrder: pinnedSelectionOrder)
-								.equatable()
-								.id(tab.id)
-						}
-						.reorderable(collectionID: SidebarTabCollection.pinned)
-						if pinnedTabs.isEmpty {
-							ForEach([BrowserTab]()) { _ in EmptyView() }
-								.reorderable(collectionID: SidebarTabCollection.pinned)
-						}
-						BrowserAITabDivider(browser: browser, tabs: normalTabs, action: $cleanupAction, canUndoGrouping: todayGroupsUndo != nil)
-						ForEach(space.todayTabGroups, id: \.id) { (group: BrowserTabGroupingFeature.Group) in
-							let groupTabs = (projection.groupedTabs[group.id] ?? []).filter { !splitIDs.contains($0.id) }
-							if !groupTabs.isEmpty {
-								// Keep each group virtualized while retaining its own native reorder collection.
-								Section {
-									ForEach(groupTabs) { tab in
-										BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, splitSide: browser.splitSide(for: tab.id), isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions, sidebarSelection: sidebarSelection, selectionOrder: normalSelectionOrder)
-											.equatable()
-											.id(tab.id)
-									}
-									.reorderable(collectionID: SidebarTabCollection.todayGroup(group.id))
-								} header: {
-									HStack {
-										Text(group.name)
-											.font(.caption.weight(.semibold))
-											.frame(maxWidth: .infinity, alignment: .leading)
-											.accessibilityAddTraits(.isHeader)
-										Button("Pin Section as Folder", systemImage: "pin") {
-											browser.pinTodayTabGroupAsFolder(group.id, in: space.id)
-										}
-										.labelStyle(.iconOnly)
-										.buttonStyle(.plain)
-										.accessibilityLabel("Pin \(group.name) as folder")
-										.accessibilityIdentifier("pin-today-tab-group-\(group.id)")
-										.disabled(browser.isPrivate || cleanupAction != nil)
-									}
-									.padding(.horizontal, 10)
-									.padding(.top, 8)
-									.accessibilityIdentifier("today-tab-group-\(group.id)")
-									.transition(unsafe reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+					HStack {
+						Text("Pinned Tabs").font(.caption)
+						Spacer()
+					}
+					ForEach(space.pinnedFolders) { folder in
+						PinnedFolderRow(folder: folder, browser: browser, tabsByID: tabsByID,
+						                selectedID: selectedID, isActiveSpace: isActiveSpace, normalCount: normalTabs.count,
+						                spaceID: space.id, theme: theme, openElsewhereIDs: openElsewhereIDs,
+						                excludedTabIDs: splitIDs,
+						                onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions,
+						                sidebarSelection: sidebarSelection, selectionOrder: pinnedSelectionOrder)
+					}
+					ForEach(ungroupedPinnedTabs) { tab in
+						BrowserTabRow(tab: tab, browser: browser,
+						              isSelected: isActiveSpace && selectedID == tab.id,
+						              tabIndex: nil, normalCount: normalTabs.count, pinned: true,
+						              rowSpaceID: space.id, rowTheme: theme, splitSide: browser.splitSide(for: tab.id), isOpenElsewhere: openElsewhereIDs.contains(tab.id),
+						              onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions,
+						              sidebarSelection: sidebarSelection, selectionOrder: pinnedSelectionOrder)
+							.equatable()
+							.id(tab.id)
+					}
+					.reorderable(collectionID: SidebarTabCollection.pinned)
+					if pinnedTabs.isEmpty {
+						ForEach([BrowserTab]()) { _ in EmptyView() }
+							.reorderable(collectionID: SidebarTabCollection.pinned)
+					}
+					BrowserAITabDivider(browser: browser, tabs: normalTabs, action: $cleanupAction, canUndoGrouping: todayGroupsUndo != nil)
+					ForEach(space.todayTabGroups, id: \.id) { (group: BrowserTabGroupingFeature.Group) in
+						let groupTabs = (projection.groupedTabs[group.id] ?? []).filter { !splitIDs.contains($0.id) }
+						if !groupTabs.isEmpty {
+							// Keep each group virtualized while retaining its own native reorder collection.
+							Section {
+								ForEach(groupTabs) { tab in
+									BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, splitSide: browser.splitSide(for: tab.id), isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions, sidebarSelection: sidebarSelection, selectionOrder: normalSelectionOrder)
+										.equatable()
+										.id(tab.id)
 								}
+								.reorderable(collectionID: SidebarTabCollection.todayGroup(group.id))
+							} header: {
+								HStack {
+									Text(group.name)
+										.font(.caption.weight(.semibold))
+										.frame(maxWidth: .infinity, alignment: .leading)
+										.accessibilityAddTraits(.isHeader)
+									Button("Pin Section as Folder", systemImage: "pin") {
+										browser.pinTodayTabGroupAsFolder(group.id, in: space.id)
+									}
+									.labelStyle(.iconOnly)
+									.buttonStyle(.plain)
+									.accessibilityLabel("Pin \(group.name) as folder")
+									.accessibilityIdentifier("pin-today-tab-group-\(group.id)")
+									.disabled(browser.isPrivate || cleanupAction != nil)
+								}
+								.padding(.horizontal, 10)
+								.padding(.top, 8)
+								.accessibilityIdentifier("today-tab-group-\(group.id)")
+								.transition(unsafe reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
 							}
 						}
-						ForEach(ungroupedNormalTabs) { tab in
-							BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, splitSide: browser.splitSide(for: tab.id), isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions, sidebarSelection: sidebarSelection, selectionOrder: normalSelectionOrder)
-								.equatable()
-								.id(tab.id)
-						}
-						.reorderable(collectionID: SidebarTabCollection.normal)
-						ShellNewTabButton(browser: browser, theme: theme, onNewTab: onNewTab)
-							.matchedTransitionSource(id: "sidebar-new-tab", in: navigationNamespace ?? sidebarTransitions)
 					}
-					.reorderContainer(for: BrowserTab.self, in: SidebarTabCollection.self, isEnabled: !browser.isPrivate && onSelectTab == nil) { difference in
-						applyReorder(difference)
+					ForEach(ungroupedNormalTabs) { tab in
+						BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: normalIndexes[tab.id], normalCount: normalTabs.count, pinned: false, rowSpaceID: space.id, rowTheme: theme, splitSide: browser.splitSide(for: tab.id), isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions, sidebarSelection: sidebarSelection, selectionOrder: normalSelectionOrder)
+							.equatable()
+							.id(tab.id)
 					}
-					.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: topMargin)
-					.padding(.horizontal, onSelectTab == nil ? BrowserChromeMetrics.shellEdgePadding : 16)
-					.padding(.top, 4)
-					.padding(.bottom, 48)
-					// Constrain the scroll content to the actual resized sidebar viewport.
-					.frame(width: max(0, geometry.size.width), alignment: .topLeading)
-					.frame(minHeight: geometry.size.height, alignment: .top)
+					.reorderable(collectionID: SidebarTabCollection.normal)
+					ShellNewTabButton(browser: browser, theme: theme, onNewTab: onNewTab)
+						.matchedTransitionSource(id: "sidebar-new-tab", in: navigationNamespace ?? sidebarTransitions)
 				}
-				#if os(macOS)
-				.onHover { hovering in
-					if !hovering {
-						BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
-					}
+				.reorderContainer(for: BrowserTab.self, in: SidebarTabCollection.self, isEnabled: !browser.isPrivate && onSelectTab == nil) { difference in
+					applyReorder(difference)
 				}
-				#endif
-				.onChange(of: selectedID, initial: true) { oldID, newID in
-					// Selecting a space leaves its saved vertical position unchanged.
-					guard let newID else { return }
-					// Initial layout and disk restoration should settle without a scroll animation.
-					let hadPreviousSelection = oldID.flatMap { tabsByID[$0] } != nil
-					let animate = isActiveSpace && !reduceMotion && oldID != newID && hadPreviousSelection
-					withAnimation(animate ? .smooth(duration: 0.25) : nil) {
-						reader.scrollTo(newID, anchor: .center)
-					}
+				.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: topMargin)
+				.padding(.horizontal, onSelectTab == nil ? BrowserChromeMetrics.shellEdgePadding : 16)
+				.padding(.top, 4)
+				.padding(.bottom, 48)
+				// Constrain the scroll content to the actual resized sidebar viewport.
+				.frame(width: max(0, geometry.size.width), alignment: .topLeading)
+				.frame(minHeight: geometry.size.height, alignment: .top)
+			}
+			#if os(macOS)
+			.onHover { hovering in
+				if !hovering {
+					BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
 				}
 			}
+			#endif
 		}
 		// Keep cleanup attached to the interactive sidebar, not the divider's lazy row.
 		.task(id: "\(space.id)|\(cleanupAction ?? "")|\(allFeatures)|\(isActiveSpace)") {
