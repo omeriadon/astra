@@ -31,7 +31,7 @@ PROFILE="com.omeriadon.astra.mcp-test.$RUN_ID"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $PROFILE" "$TMP/app/astra.app/Contents/Info.plist"
 # Debug-only ad-hoc signature applies to the copy, never the developer's app.
 codesign --force --deep --sign - "$TMP/app/astra.app"
-python3 "$ROOT/tests/browser-use/site/server.py" --ready-file "$TMP/site.json" >"$TMP/site.log" 2>&1 &
+python3 "$ROOT/scripts/browser-use/site/server.py" --ready-file "$TMP/site.json" >"$TMP/site.log" 2>&1 &
 SITE_PID=$!
 for ((i=0;i<100;i++)); do [[ -s "$TMP/site.json" ]] && break; sleep .05; done
 [[ -s "$TMP/site.json" ]] || { cat "$TMP/site.log" >&2; exit 1; }
@@ -54,6 +54,6 @@ if [[ ! -s "$TMP/handshake.json" ]]; then
   tail -80 "$TMP/app.log" >&2
   exit 1
 fi
-python3 "$ROOT/tests/browser-use/client/run.py" --handshake "$TMP/handshake.json" \
+python3 "$ROOT/scripts/browser-use/client/run.py" --handshake "$TMP/handshake.json" \
   --site "$TMP/site.json" --run "$RUN_ID" --profile "$PROFILE" --pid "$ASTRA_PID" \
   --upload-scope "$UPLOAD_SCOPE" 2>&1 | tee "$TMP/client.log"

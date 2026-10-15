@@ -8,8 +8,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
-sys.path.insert(0,str(ROOT/'tests/browser-use/client'))
-spec=importlib.util.spec_from_file_location('fixture',ROOT/'tests/browser-use/site/server.py')
+sys.path.insert(0,str(ROOT/'scripts/browser-use/client'))
+spec=importlib.util.spec_from_file_location('fixture',ROOT/'scripts/browser-use/site/server.py')
 fixture=importlib.util.module_from_spec(spec);spec.loader.exec_module(fixture)
 from page_cases import register as pages
 from native_cases import register as natives
