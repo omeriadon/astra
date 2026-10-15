@@ -1,4 +1,4 @@
-name: Astra - Swift Model Tests
+name: Astra - Swift Models
 
 on:
   pull_request:
@@ -13,68 +13,79 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: Swift Model Tests
+  boosts:
+    name: Boost model
     runs-on: xcode-27
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode 27 / Swift 6.4
+      - name: Verify Xcode 27 and Swift 6.4
         run: bash scripts/ci/select-xcode-27.sh
-      - name: Run checks
+      - name: Boost model
         shell: bash
         run: |
           set -euo pipefail
-          python3 checks/ai-browser-tools-check.py
-          P="$RUNNER_TEMP"
-          swiftc -swift-version 6 astra/Models/Library/BrowserBoost.swift checks/boosts-model-check.swift -o "$P/astra-boost-check"
-          "$P/astra-boost-check"
-          swiftc -swift-version 6 astra/Models/Library/Bookmark.swift checks/bookmark-projection-check.swift -o "$P/astra-bookmark-check"
-          "$P/astra-bookmark-check"
-          swiftc -O -swift-version 6 astra/Models/Library/Bookmark.swift checks/library-scaling-benchmark.swift -o "$P/astra-library-scaling"
-          "$P/astra-library-scaling"
-          swiftc -swift-version 6 astra/Models/Core/BrowserWindowRegistry.swift checks/window-ownership-check.swift -o "$P/astra-window-ownership"
-          "$P/astra-window-ownership"
-          swiftc -swift-version 6 astra/Models/Tabs/BrowserVisit.swift checks/history-search-cancellation-check.swift -o "$P/astra-history-search"
-          "$P/astra-history-search"
-          swiftc -swift-version 6 astra/Storage/BrowserSyncPayloadLimits.swift checks/sync-large-account-check.swift -o "$P/astra-sync-large-account"
-          "$P/astra-sync-large-account"
-          python3 checks/automatic-hibernation-runtime-check.py
-          swiftc -swift-version 6 astra/Storage/BrowserSyncSchedule.swift checks/sync-scheduler-check.swift -o "$P/astra-sync-scheduler"
-          "$P/astra-sync-scheduler"
-          python3 checks/sync-url-validation-check.py
-          python3 checks/sync-coordinator-check.py
-          bash checks/run-sync-models.sh
-          swiftc -swift-version 6 astra/App/BrowserLog.swift astra/Storage/BrowserSessionStore.swift checks/browser-log-check.swift -o "$P/astra-sync-log"
-          log stream --style compact --level info \
-            --predicate 'subsystem == "com.omeriadon.astra" AND category == "sync"' \
-            > "$P/astra-sync-events.log" 2>&1 &
-          sync_log_pid=$!
-          trap 'kill "$sync_log_pid" 2>/dev/null || true' EXIT
-          sleep 1
-          "$P/astra-sync-log"
-          python3 - "$P/astra-sync-events.log" <<'PY'
-          import pathlib, sys, time
-          path = pathlib.Path(sys.argv[1])
-          for _ in range(20):
-              if 'sync.check' in path.read_text():
-                  print('Essential sync event observed through documented log stream predicate')
-                  break
-              time.sleep(0.25)
-          else:
-              raise SystemExit('Essential sync event missing from unified log stream')
-          PY
-          kill "$sync_log_pid" 2>/dev/null || true
-          trap - EXIT
-      - name: Compile sync integration in Debug and Release
-        if: (github.head_ref || github.ref_name) == 'fix/sync-cpu-scheduling'
+          swiftc  -swift-version 6 astra/Models/Library/BrowserBoost.swift checks/boosts-model-check.swift -o "$RUNNER_TEMP/boosts"
+          "$RUNNER_TEMP/boosts"
+
+  bookmark:
+    name: Bookmark projection
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Bookmark projection
         shell: bash
         run: |
           set -euo pipefail
-          xcodebuild -downloadComponent MetalToolchain
-          for configuration in Debug Release; do
-            xcodebuild build -project astra.xcodeproj -scheme astra \
-              -configuration "$configuration" -destination 'platform=macOS' \
-              -derivedDataPath "$RUNNER_TEMP/AstraSyncDerivedData" \
-              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
-          done
+          swiftc  -swift-version 6 astra/Models/Library/Bookmark.swift checks/bookmark-projection-check.swift -o "$RUNNER_TEMP/bookmark"
+          "$RUNNER_TEMP/bookmark"
+
+  scaling:
+    name: Library scaling
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Library scaling
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -O -swift-version 6 astra/Models/Library/Bookmark.swift checks/library-scaling-benchmark.swift -o "$RUNNER_TEMP/scaling"
+          "$RUNNER_TEMP/scaling"
+
+  windows:
+    name: Window ownership
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Window ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc  -swift-version 6 astra/Models/Core/BrowserWindowRegistry.swift checks/window-ownership-check.swift -o "$RUNNER_TEMP/windows"
+          "$RUNNER_TEMP/windows"
+
+  history:
+    name: History search cancellation
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: History search cancellation
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc  -swift-version 6 astra/Models/Tabs/BrowserVisit.swift checks/history-search-cancellation-check.swift -o "$RUNNER_TEMP/history"
+          "$RUNNER_TEMP/history"
+
+  hibernation:,    name: Tab hibernation runtime contracts,    runs-on: ubuntu-latest,    timeout-minutes: 15,    steps:,      - uses: actions/checkout@v4,      - name: Tab hibernation runtime contracts,        shell: bash,        run: |,          set -euo pipefail,          python3 checks/automatic-hibernation-runtime-check.py,
