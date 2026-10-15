@@ -2076,10 +2076,11 @@ final class BrowserController: NSObject, Identifiable {
 			},
 			webView.observe(\.url, options: [.initial, .new]) { [weak self] webView, change in
 				MainActor.assumeIsolated {
-					guard let self else { return }
+					guard let self, self.owns(webView),
+					      let url = change.newValue ?? webView.url else { return }
+					self.finishFragmentNavigationIfNeeded(to: url)
 					guard !self.awaitsNavigationCommit else { return }
 					guard !self.isDownloadHandoff else { return }
-					guard let url = change.newValue ?? webView.url else { return }
 					if self.url != url {
 						self.aiPreviewDismissal += 1
 					}
@@ -2480,6 +2481,25 @@ final class BrowserController: NSObject, Identifiable {
 		}
 
 	#endif
+
+	private func finishFragmentNavigationIfNeeded(to destination: URL) {
+		// Same-document fragment loads report their URL through KVO without
+		// necessarily sending didCommit or didFinish. Only release the gate for
+		// the exact requested URL while the previously committed document lives.
+		guard awaitsNavigationCommit, !isInvalidated, !isDownloadHandoff,
+		      committedSecurityNavigationID == navigationIdentifier,
+		      let request = currentRequest, request.url == destination,
+		      (request.httpMethod ?? "GET") == "GET", request.httpBody == nil,
+		      request.httpBodyStream == nil,
+		      let committedURL, committedURL != destination,
+		      var previous = URLComponents(url: committedURL, resolvingAgainstBaseURL: false),
+		      var next = URLComponents(url: destination, resolvingAgainstBaseURL: false),
+		      previous.fragment != next.fragment else { return }
+		previous.fragment = nil
+		next.fragment = nil
+		guard previous == next else { return }
+		awaitsNavigationCommit = false
+	}
 
 	private func updateHistory(reportSameDocumentVisit: Bool = true) {
 		guard let currentURL = createdWebView?.url else { return }

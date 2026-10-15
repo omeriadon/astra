@@ -230,10 +230,16 @@ def main():
         action(c, "select_option", {"selector": "#fixture-select", "value": "two"}, "select", "two")
 
     def navigate(c):
-        c["client"].call("navigate", {"tabID": c["tab"], "url": c["page"] + "#navigated"})
-        eventually(lambda: c["state"]().get("route") == "#navigated", "SPA navigation")
-        ready = c["client"].call("wait_for_load_state", {"tabID": c["tab"], "state": "complete", "timeout": 8})
-        check(ready.get("matched") is True, "fragment navigation restores document readiness", ready)
+        for fragment in ("#navigated", "#second-fragment", "", "#navigated"):
+            destination = c["page"] + fragment
+            c["client"].call("navigate", {"tabID": c["tab"], "url": destination})
+            eventually(lambda: c["state"]().get("route") == fragment, "SPA navigation to " + destination)
+            ready = c["client"].call("wait_for_load_state", {"tabID": c["tab"], "state": "complete", "timeout": 8})
+            check(ready.get("matched") is True, "fragment navigation restores document readiness", ready)
+            result = c["client"].call("evaluate_javascript", {"tabID": c["tab"], "contentWorld": "page",
+                "expression": "({url:location.href,text:document.querySelector('#fixture-text').value})"})
+            value = result.get("result", result)
+            check(value == {"url": destination, "text": "Astra filled"}, "fragment navigation preserves the live document", value)
 
     cases = {"open_tab": open_tab, "list_tabs": list_tabs, "wait": wait,
              "read_page": read_page, "snapshot": snapshot, "click": click,
