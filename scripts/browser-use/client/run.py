@@ -232,6 +232,8 @@ def main():
     def navigate(c):
         c["client"].call("navigate", {"tabID": c["tab"], "url": c["page"] + "#navigated"})
         eventually(lambda: c["state"]().get("route") == "#navigated", "SPA navigation")
+        ready = c["client"].call("wait_for_load_state", {"tabID": c["tab"], "state": "complete", "timeout": 8})
+        check(ready.get("matched") is True, "fragment navigation restores document readiness", ready)
 
     cases = {"open_tab": open_tab, "list_tabs": list_tabs, "wait": wait,
              "read_page": read_page, "snapshot": snapshot, "click": click,

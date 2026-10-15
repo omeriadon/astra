@@ -3178,6 +3178,10 @@ extension BrowserController: WKNavigationDelegate {
 			BrowserLog.info(.navigation, "navigation.did-finish", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(webView.url)])
 		}
 		guard owns(webView), navigation === currentNavigation else { return }
+		// Fragment navigation can finish without didCommit because WebKit keeps
+		// the existing document. A successful finish of the current navigation
+		// must release the readiness gate set by load(_:), too.
+		awaitsNavigationCommit = false
 		#if os(macOS)
 			if BrowserPerformanceBenchmark.enabled,
 			   BrowserPerformanceBenchmark.shouldMeasureNavigation(webView)
