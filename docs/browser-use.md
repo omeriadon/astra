@@ -116,7 +116,7 @@ The focused HTTP check compiles the production HTTP parser with a minimal driver
 scripts/check_browser_use.sh /path/to/DerivedData/astra/Build/Products/Debug
 ```
 
-The deterministic HTTP website lives in `tests/browser-use/site/`; `server.py --ready-file /tmp/astra-browser-use-site.json` starts two loopback origins and writes their URLs and known download checksum. It exercises forms, authentication cookies, frames, dynamic DOM, download bytes, and observable state. The site by itself does not prove that a real MCP client controls Astra. A complete integration run must connect an external client to an explicitly isolated app instance, discover the live catalog, exercise every tool against Astra's real WebKit views, and verify website/browser postconditions. See [architecture](browser-use-architecture.md) for concurrency and validation boundaries.
+The deterministic HTTP website lives in `scripts/browser-use/site/`; `server.py --ready-file /tmp/astra-browser-use-site.json` starts two loopback origins and writes their URLs and known download checksum. It exercises forms, authentication cookies, frames, dynamic DOM, download bytes, and observable state. The site by itself does not prove that a real MCP client controls Astra. A complete integration run must connect an external client to an explicitly isolated app instance, discover the live catalog, exercise every tool against Astra's real WebKit views, and verify website/browser postconditions. See [architecture](browser-use-architecture.md) for concurrency and validation boundaries.
 
 On Linux, AppKit and WebKit compilation and live browser tests are unavailable. Do not treat syntax inspection, local website checks, or mocked fixtures as a passing macOS build or end-to-end run.
 
@@ -134,7 +134,7 @@ scripts/test-browser-use-e2e.sh /absolute/path/to/Debug/astra.app
 
 It requires macOS and a Debug build. The script copies the app, gives it a unique test bundle identifier, ad-hoc signs the copy, starts the two-origin fixture, and verifies the private handshake against the expected process, run and profile. The DEBUG-only bootstrap requires both the explicit test environment flag and the test bundle prefix. Normal windows in that test process share a nonpersistent WebKit store; private windows use separate nonpersistent stores. The runner never selects an unrelated existing Astra instance. The shell trap terminates started processes and deletes temporary app, handshake and website files.
 
-`tests/browser-use/client/run.py` discovers tools from the real endpoint and must reject any name lacking an executable case. A documented command and an implemented runner do not establish a passing runtime result; record the actual macOS run separately. Local checks and fixture state assertions are useful independent evidence, but are not an Xcode build or production WebKit integration test.
+`scripts/browser-use/client/run.py` discovers tools from the real endpoint and must reject any name lacking an executable case. A documented command and an implemented runner do not establish a passing runtime result; record the actual macOS run separately. Local checks and fixture state assertions are useful independent evidence, but are not an Xcode build or production WebKit integration test.
 
 ## Transport and output budgets
 
