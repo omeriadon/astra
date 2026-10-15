@@ -19,6 +19,11 @@ for area in ("favourite", "pinned", "normal"):
     assert f".reorderable(collectionID: SidebarTabCollection.{area})" in sidebar
 assert ".reorderContainer(for: BrowserTab.self, in: SidebarTabCollection.self" in sidebar
 
+# Tab selection must never programmatically scroll, even to reveal off-screen tabs.
+assert "ScrollViewReader" not in sidebar
+assert "scrollTo(" not in sidebar
+assert ".onChange(of: selectedID" not in sidebar
+
 # Global geometry changes during a wheel gesture must not mutate every
 # non-hovered row's SwiftUI state.
 assert re.search(r"if isHovered\s*(?:&&|,)\s*onSelectTab == nil \{", row)
