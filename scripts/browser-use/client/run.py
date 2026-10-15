@@ -10,6 +10,7 @@ import json
 import os
 import signal
 import time
+import traceback
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -260,15 +261,26 @@ def main():
     order = ["open_tab", "list_tabs", "wait", "read_page", "snapshot", "click", "fill", "select_option", "navigate"]
     order += [name for name in cases if name not in order and name not in native_order]
     order += native_order
+    failures = {}
     for name in order:
         check(name in tools, "required legacy tool is exposed", name)
         try:
             started = time.monotonic()
             cases[name](context)
         except Exception as error:
-            raise AssertionError(f"Tool {name} failed against {page}: {error}") from error
+            if name == "open_tab":
+                raise AssertionError(f"Tool {name} failed against {page}: {error}") from error
+            failures[name] = str(error)
+            print(f"FAIL {name} against {page}: {error}", flush=True)
+            traceback.print_exc()
+            continue
         print(f"PASS {name} duration_ms={(time.monotonic()-started)*1000:.2f}", flush=True)
-    failure_and_auth_tests(context, check, eventually)
+    try:
+        failure_and_auth_tests(context, check, eventually)
+    except Exception as error:
+        failures['failure_and_auth_tests'] = str(error)
+        traceback.print_exc()
+    check(not failures, "all live Browser Use cases must pass", failures)
     print(f"PASS {len(tools)} discovered tool cases; supported operations assert effects, explicit limitations assert honest output", flush=True)
 
 
