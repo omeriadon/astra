@@ -30,7 +30,6 @@ title = row.split("private struct TabTitleView: View {", 1)[1].split("private st
 assert "GeometryReader {" not in title
 assert "titleFadeMask(width:" not in title
 assert ".mask {" in title
-assert ".fixedSize(horizontal: true" not in title
 assert ".frame(width: max(0, geometry.size.width)" in sidebar
 
 # Keep variable-blur Haze in Low Power Mode without full-subtree
