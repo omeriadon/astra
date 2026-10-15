@@ -54,6 +54,7 @@
 			private var token = ""
 			private var generation = UUID()
 			private var http: BrowserAgentHTTP?
+			private var shutdownTask: Task<Void, Never>?
             private var router: BrowserAgentProtocol?
 			private var grants: [UUID: Grant] = [:]
 			private var snapshots: [UUID: Snapshot] = [:]
@@ -115,7 +116,14 @@
                     })
 					isEnabled = true
 					status = "Starting"
-					if let http { Task { await http.start() } }
+					if let http {
+						let shutdown = shutdownTask
+						Task { [weak self] in
+							await shutdown?.value
+							guard let self, self.generation == lifetime, self.isEnabled else { return }
+							await http.start()
+						}
+					}
 				} catch {
 					BrowserLog.error(.agent, "agent.server-start.failed", metadata: ["error": BrowserLog.errorDescription(error)])
 					stop()
@@ -138,7 +146,12 @@
                 let oldRouter = router
                 http = nil
                 router = nil
-                Task { await oldHTTP?.stop(); await oldRouter?.stop() }
+                let previousShutdown = shutdownTask
+                shutdownTask = Task {
+                    await previousShutdown?.value
+                    await oldRouter?.stop()
+                    await oldHTTP?.stop()
+                }
                 allowJavaScriptEvaluation = false
                 allowNativeMutations = false
                 allowBoostMutations = false
