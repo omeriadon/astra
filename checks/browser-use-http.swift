@@ -58,9 +58,9 @@ struct BrowserUseHTTPChecks {
 		let catalog = try JSONSerialization.jsonObject(with: listed.0) as! [String: Any]
 		let tools = (catalog["result"] as! [String: Any])["tools"] as! [[String: Any]]
 		let actualToolNames = tools.compactMap { $0["name"] as? String }
-		let expectedToolNames: Set<String> = [
+		let expectedToolNames: Set<String> = Set([
 			"list_tabs", "open_tab", "navigate", "read_page", "snapshot", "screenshot",
-		].union(BrowserAgentToolCatalog.pageActions).union(BrowserAgentToolCatalog.waits)
+		]).union(BrowserAgentToolCatalog.pageActions).union(BrowserAgentToolCatalog.waits)
 		precondition(actualToolNames.count == expectedToolNames.count && Set(actualToolNames) == expectedToolNames,
 		             "Unexpected or duplicate browser-use tools: \(actualToolNames)")
 		let unknownTab = try await request(["jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": ["name": "read_page", "arguments": ["tabID": UUID().uuidString]]])
