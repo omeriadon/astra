@@ -183,14 +183,13 @@ struct ShellSidebarListView: View {
 					}
 				}
 				#endif
-				.onChange(of: selectedID, initial: true) { oldID, newID in
-					// Selecting a space leaves its saved vertical position unchanged.
-					guard let newID else { return }
-					// Initial layout and disk restoration should settle without a scroll animation.
+				.onChange(of: selectedID) { oldID, newID in
+					// Preserve the user's scroll position when selecting a visible tab.
+					// Only reveal offscreen selections, without centering them.
+					guard isActiveSpace, oldID != newID, let newID else { return }
 					let hadPreviousSelection = oldID.flatMap { tabsByID[$0] } != nil
-					let animate = isActiveSpace && !reduceMotion && oldID != newID && hadPreviousSelection
-					withAnimation(animate ? .smooth(duration: 0.25) : nil) {
-						reader.scrollTo(newID, anchor: .center)
+					withAnimation(!reduceMotion && hadPreviousSelection ? .smooth(duration: 0.25) : nil) {
+						reader.scrollTo(newID)
 					}
 				}
 			}
