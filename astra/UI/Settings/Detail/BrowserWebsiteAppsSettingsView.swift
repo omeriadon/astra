@@ -154,11 +154,17 @@
 			if let entry = entries.object(forKey: key), entry.installation == installation { return entry.image }
 			let source = NSWorkspace.shared.icon(forFile: installation.bundlePath)
 			// Store a small raster backing rather than retaining every representation in the app icon.
-			let image = NSImage(size: NSSize(width: 32, height: 32), flipped: false) { rect in
-				source.draw(in: rect)
-				return true
-			}
-			let small = image.tiffRepresentation.flatMap(NSImage.init(data:)) ?? source
+			guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 64, pixelsHigh: 64,
+				bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+				colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+				let context = NSGraphicsContext(bitmapImageRep: bitmap) else { return source }
+			NSGraphicsContext.saveGraphicsState()
+			NSGraphicsContext.current = context
+			context.imageInterpolation = .high
+			source.draw(in: NSRect(x: 0, y: 0, width: 64, height: 64))
+			NSGraphicsContext.restoreGraphicsState()
+			guard let cgImage = bitmap.cgImage else { return source }
+			let small = NSImage(cgImage: cgImage, size: NSSize(width: 32, height: 32))
 			entries.setObject(Entry(installation, image: small), forKey: key, cost: 64 * 64 * 4)
 			return small
 		}

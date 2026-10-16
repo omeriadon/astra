@@ -106,6 +106,7 @@ struct NewTabView: View {
 			frequentVisits = BrowserStartPageProjection.frequent(visits, isPrivate: browser.isPrivate)
 		}
 		.task(id: historySearchRequest) {
+			guard !historySearchRequest.query.isEmpty else { return }
 			await browser.historySearch.update(historySearchRequest, scope: .newTab, visits: browser.historyVisits)
 		}
 		.task(id: suggestionRequest) {

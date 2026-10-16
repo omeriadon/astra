@@ -274,7 +274,10 @@ extension Browser {
 				id: "history-\(match.id)", kind: .history, title: match.title,
 				detail: "History · \(match.url.absoluteString)", symbol: "clock.arrow.circlepath",
 				score: match.score, destination: match.url.absoluteString,
-				perform: { self.openSearchDestination(match.url) }
+				perform: {
+					guard self.historyChangeRevision == request.revision else { return }
+					self.openSearchDestination(match.url)
+				}
 			)
 		}
 	}

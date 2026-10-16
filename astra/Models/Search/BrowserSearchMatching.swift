@@ -116,8 +116,26 @@ enum BrowserSearchMatching {
 
 	/// Existing callers retain the same scoring; indexed history prepares both sides once.
 	nonisolated static func score(normalizedQuery query: String, in text: String) -> Double {
-		score(PreparedQuery(query), in: PreparedText(text))
+		let text = normalized(text)
+		guard !query.isEmpty, !text.isEmpty else { return 0 }
+		if query == text {
+			return 1
+		}
+		if text.hasPrefix(query) {
+			return 0.92
+		}
+		if text.contains(query) {
+			return 0.78
+		}
+		let queryWords = query.split(whereSeparator: \.isWhitespace).map(String.init)
+		let textWords = text.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+		let scores = queryWords.map { word in
+			textWords.map { wordScore(word, in: $0) }.max() ?? 0
+		}
+		guard scores.allSatisfy({ $0 > 0 }) else { return 0 }
+		return scores.reduce(0, +) / Double(scores.count)
 	}
+
 
 	nonisolated static func score(_ query: PreparedQuery, in text: PreparedText) -> Double {
 		guard !query.text.isEmpty, !text.text.isEmpty else { return 0 }

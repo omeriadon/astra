@@ -296,6 +296,7 @@ struct BrowserAddressField: View {
 			browser.addressFieldIsFocused = false
 		}
 		.task(id: historySearchRequest) {
+			guard !historySearchRequest.query.isEmpty else { return }
 			await browser.historySearch.update(historySearchRequest, scope: .address, visits: browser.historyVisits)
 		}
 		.task(id: searchEngineDiscoveryScope) {
