@@ -118,7 +118,7 @@ struct BrowserTabRow: View {
 				browser: browser,
 				isRenaming: isRenaming,
 				isHovered: isHovered,
-				showsCloseButton: isSelected || onSelectTab != nil || isHovered,
+				showsCloseButton: isHovered,
 				closeFadeWidth: onSelectTab != nil ? 64 : (isSelected || isHovered ? 36 : 12),
 				renameText: $renameText,
 				isTitleFocused: $isTitleFocused,
@@ -128,9 +128,9 @@ struct BrowserTabRow: View {
 				onSelectTab: onSelectTab,
 				onActivate: activateTab
 			)
-			.foregroundStyle(Color.primary.mix(with: theme.tabColor, by: 0.25))
+			.foregroundStyle(Color.primary.mix(with: theme.tabColor, by: 0.15))
 			.overlay(alignment: .trailing) {
-				if isSelected || onSelectTab != nil {
+				if isHovered {
 					#if os(macOS)
 						TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
 							.keyboardShortcut(BrowserShortcutRegistry.shared.menuKeyboardShortcut("Close Tab", section: "File"))
@@ -138,16 +138,14 @@ struct BrowserTabRow: View {
 						TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
 							.keyboardShortcut("W", modifiers: .command)
 					#endif
-				} else if isHovered {
-					TabCloseButton(tab: tab, browser: browser, isPinned: isPinned, isCompact: onSelectTab != nil)
 				}
 			}
 		}
 		.opacity(isOpenElsewhere ? 0.35 : 1)
 		.allowsHitTesting(!isOpenElsewhere)
-		.padding(.horizontal, 10)
+		.padding(.horizontal, 8)
 		.frame(maxWidth: .infinity, alignment: .leading)
-		.frame(height: onSelectTab == nil ? 36 : 48)
+		.frame(height: 30)
 		.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? rowTransitions)
 		.foregroundStyle(theme.foregroundColor)
 		.background {
@@ -161,7 +159,7 @@ struct BrowserTabRow: View {
 				ZStack {
 					Color.clear
 						.glassEffect(
-							.clear,
+							.regular,
 							in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabCornerRadius)
 						)
 					if isSelected {
@@ -170,7 +168,7 @@ struct BrowserTabRow: View {
 				}
 			} else if !compactSplitStyle, isHovered {
 				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabCornerRadius)
-					.fill(.ultraThinMaterial)
+					.fill(.primary.opacity(0.2))
 			}
 		}
 		.overlay {
@@ -538,7 +536,7 @@ private struct TabCloseButton: View {
 						Color.primary
 							.colorInvert()
 							.opacity(0.3)
-							.clipShape(RoundedRectangle(cornerRadius: 9))
+							.clipShape(RoundedRectangle(cornerRadius: 12))
 					}
 				}
 				.contentShape(RoundedRectangle(cornerRadius: 9))
@@ -769,12 +767,12 @@ private struct SidebarSelectedTabsContextMenu: View {
 						BrowserTabHoverPreviewCard(tab: tab, browser: browser)
 							.id(tab.id)
 							.transition(.opacity)
-						}
-						.animation(.easeInOut(duration: 0.075), value: tab.id)
-						.frame(width: cardWidth, height: cardHeight)
-						.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
-						.position(x: x, y: y)
-						.animation(reduceMotion ? nil : .easeInOut(duration: 0.075), value: y)
+					}
+					.animation(.easeInOut(duration: 0.075), value: tab.id)
+					.frame(width: cardWidth, height: cardHeight)
+					.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
+					.position(x: x, y: y)
+					.animation(reduceMotion ? nil : .easeInOut(duration: 0.075), value: y)
 				}
 			}
 			.animation(.linear(duration: 0.1), value: coordinator.isVisible)

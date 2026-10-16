@@ -416,13 +416,13 @@ private struct ShellNewTabButton: View {
 		.keyboardShortcut("t", modifiers: .command)
 		.buttonStyle(.plain)
 		.padding(.horizontal, 8)
+		.frame(height: 30)
 		.foregroundStyle(theme.foregroundColor.opacity(0.65))
 		.onHover { newTabHovered = $0 }
-		.frame(height: onNewTab == nil ? 28 : 44)
 		.background {
 			if newTabHovered {
-				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
-					.fill(.ultraThinMaterial)
+				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabCornerRadius)
+					.fill(.primary.opacity(0.2))
 			}
 		}
 		.accessibilityIdentifier("new-tab")
