@@ -2076,10 +2076,11 @@ final class BrowserController: NSObject, Identifiable {
 			},
 			webView.observe(\.url, options: [.initial, .new]) { [weak self] webView, change in
 				MainActor.assumeIsolated {
-					guard let self else { return }
+					guard let self, self.owns(webView),
+					      let url = change.newValue ?? webView.url else { return }
+					self.finishFragmentNavigationIfNeeded(to: url)
 					guard !self.awaitsNavigationCommit else { return }
 					guard !self.isDownloadHandoff else { return }
-					guard let url = change.newValue ?? webView.url else { return }
 					if self.url != url {
 						self.aiPreviewDismissal += 1
 					}
@@ -2278,7 +2279,7 @@ final class BrowserController: NSObject, Identifiable {
 		invalidateFindResults()
 		historyVisitPolicy.userInitiatedNavigation()
 		currentRequest = nil
-		awaitsNavigationCommit = true
+		awaitsNavigationCommit = !isCurrentDocumentFragmentURL(webView.backForwardList.backItem?.url)
 		currentNavigation = webView.goBack()
 	}
 
@@ -2290,7 +2291,7 @@ final class BrowserController: NSObject, Identifiable {
 		invalidateFindResults()
 		historyVisitPolicy.userInitiatedNavigation()
 		currentRequest = nil
-		awaitsNavigationCommit = true
+		awaitsNavigationCommit = !isCurrentDocumentFragmentURL(webView.backForwardList.forwardItem?.url)
 		currentNavigation = webView.goForward()
 	}
 
@@ -2303,7 +2304,7 @@ final class BrowserController: NSObject, Identifiable {
 		   let item = webView.backForwardList.item(at: index - historyIndex)
 		{
 			currentRequest = nil
-			awaitsNavigationCommit = true
+			awaitsNavigationCommit = !isCurrentDocumentFragmentURL(item.url)
 			currentNavigation = webView.go(to: item)
 		} else {
 			// URL records from an earlier launch can be revisited; live navigation
@@ -2480,6 +2481,42 @@ final class BrowserController: NSObject, Identifiable {
 		}
 
 	#endif
+
+	private func isCurrentDocumentFragmentURL(_ destination: URL?) -> Bool {
+		guard hasCurrentPageDocument, committedSecurityNavigationID == navigationIdentifier,
+		      let committedURL, let destination, committedURL != destination,
+		      var previous = URLComponents(url: committedURL, resolvingAgainstBaseURL: false),
+		      var next = URLComponents(url: destination, resolvingAgainstBaseURL: false),
+		      previous.fragment != next.fragment else { return false }
+		previous.fragment = nil
+		next.fragment = nil
+		return previous == next
+	}
+
+	private func finishFragmentNavigationIfNeeded(to destination: URL) {
+		// Same-document fragment loads report their URL through KVO without
+		// necessarily sending didCommit or didFinish. Only release the gate for
+		// the exact requested URL while the previously committed document lives.
+		guard awaitsNavigationCommit, !isInvalidated, !isDownloadHandoff,
+		      committedSecurityNavigationID == navigationIdentifier,
+		      let committedURL, committedURL != destination,
+		      var previous = URLComponents(url: committedURL, resolvingAgainstBaseURL: false),
+		      var next = URLComponents(url: destination, resolvingAgainstBaseURL: false),
+		      previous.fragment != next.fragment else { return }
+		previous.fragment = nil
+		next.fragment = nil
+		guard previous == next else { return }
+		if let request = currentRequest {
+			guard request.url == destination, (request.httpMethod ?? "GET") == "GET",
+			      request.httpBody == nil, request.httpBodyStream == nil else { return }
+		} else {
+			// Back/Forward traversals have no URLRequest. WebKit's current
+			// history item identifies their destination without rebuilding it
+			// as a GET request (which would lose POST restoration semantics).
+			guard createdWebView?.backForwardList.currentItem?.url == destination else { return }
+		}
+		awaitsNavigationCommit = false
+	}
 
 	private func updateHistory(reportSameDocumentVisit: Bool = true) {
 		guard let currentURL = createdWebView?.url else { return }
@@ -3178,6 +3215,10 @@ extension BrowserController: WKNavigationDelegate {
 			BrowserLog.info(.navigation, "navigation.did-finish", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(webView.url)])
 		}
 		guard owns(webView), navigation === currentNavigation else { return }
+		// Fragment navigation can finish without didCommit because WebKit keeps
+		// the existing document. A successful finish of the current navigation
+		// must release the readiness gate set by load(_:), too.
+		awaitsNavigationCommit = false
 		#if os(macOS)
 			if BrowserPerformanceBenchmark.enabled,
 			   BrowserPerformanceBenchmark.shouldMeasureNavigation(webView)

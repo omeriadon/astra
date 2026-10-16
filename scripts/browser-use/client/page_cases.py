@@ -5,6 +5,10 @@ import struct
 
 def register(cases, c, check, eventually):
     def call(name, **args):
+        if name == 'find_elements':
+            # Navigation invalidates the server's snapshot and its references.
+            # Establish a current snapshot before asking for new references.
+            c['client'].call('snapshot', {'tabID': c['tab']})
         return c['client'].call(name, {'tabID': c['tab'], **args})
     def js(expression):
         result = call('evaluate_javascript', expression=expression, contentWorld='page')

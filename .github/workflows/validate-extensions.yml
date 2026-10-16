@@ -1,0 +1,38 @@
+name: Astra - Web Extensions
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hot-path:
+    name: WebExtensions hot path
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: WebExtensions hot path
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/extension-hot-path-check.py
+
+  file-worker:
+    name: WebExtensions file worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: WebExtensions file worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/extension-file-worker-check.py

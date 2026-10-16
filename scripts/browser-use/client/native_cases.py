@@ -1,10 +1,10 @@
 """Native catalog cases assert browser collection changes via independent reads."""
 def register(cases,c,check,eventually):
-    def call(name,**args):
+    def call(name,/,**args):
         value=c['client'].call(name,args)
         return value['items'] if isinstance(value,dict) and 'items' in value and 'offset' in value else value
-    def tab(name,**args):return call(name,tabID=c['tab'],**args)
-    def window(name,**args):return call(name,windowID=c['window'],**args)
+    def tab(name,/,**args):return call(name,tabID=c['tab'],**args)
+    def window(name,/,**args):return call(name,windowID=c['window'],**args)
     def contains(name,key,value):return any(x.get(key)==value for x in window(name))
     def windows(_):check(any(x['windowID']==c['window'] for x in call('list_windows')),'isolated window listed')
     cases['list_windows']=windows
@@ -30,10 +30,12 @@ def register(cases,c,check,eventually):
         tab('navigate',url=c['page']+'#history-a');tab('wait_for_url',url='#history-a',timeout=8)
         tab('navigate',url=c['page']+'#history-b');tab('wait_for_url',url='#history-b',timeout=8)
         tab('go_back');tab('wait_for_url',url='#history-a',timeout=8)
+        check(tab('wait_for_load_state',state='complete',timeout=8)['matched'] is True,'back restores document readiness')
         check('#history-a' in tab('get_tab')['url'],'back destination')
     cases['go_back']=back
     def forward(_):
         tab('go_forward');tab('wait_for_url',url='#history-b',timeout=8)
+        check(tab('wait_for_load_state',state='complete',timeout=8)['matched'] is True,'forward restores document readiness')
         check('#history-b' in tab('get_tab')['url'],'forward destination')
     cases['go_forward']=forward
     def create_space(_):
@@ -88,9 +90,12 @@ def register(cases,c,check,eventually):
         result=tab(name);check(result.get('tabID')==c['tab'] and ('playing' in result or 'loaded' in result),'native telemetry identity',result)
     for name in ['get_media_state','get_resource_info']:cases[name]=lambda c,n=name:media(n)
     def download(_):
-        tab('navigate',url=c['page'].split('/?')[0]+'/slow-download')
-        eventually(lambda:bool(window('list_downloads')),'native download creation')
-        c['download']=window('list_downloads')[-1]['downloadID']
+        source=call('open_tab',url=c['page']+'&download=cancel',windowID=c['window'])['tabID']
+        check(call('wait_for_load_state',tabID=source,state='complete',timeout=15)['matched'] is True,'cancellation fixture loaded')
+        c['downloadsBefore']={x['downloadID'] for x in window('list_downloads')}
+        call('navigate',tabID=source,url=c['page'].split('/?')[0]+'/slow-download')
+        eventually(lambda:any(x['downloadID'] not in c['downloadsBefore'] and x['status']=='downloading' for x in window('list_downloads')),'native active download creation')
+        c['download']=next(x['downloadID'] for x in window('list_downloads') if x['downloadID'] not in c['downloadsBefore'] and x['status']=='downloading')
     cases['list_downloads']=download
     def cancel(_):
         window('cancel_download',downloadID=c['download']);eventually(lambda:any(x['downloadID']==c['download'] and x['status'] not in ['downloading','paused','finalizing'] for x in window('list_downloads')),'download cancelled')

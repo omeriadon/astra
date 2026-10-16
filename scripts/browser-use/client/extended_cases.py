@@ -1,10 +1,10 @@
 """Expanded native APIs; successful mutations verified through separate collection reads."""
 def register(cases,c,check,eventually):
-    def call(name,**args):
+    def call(name,/,**args):
         result=c['client'].call(name,args)
         return result['items'] if isinstance(result,dict) and 'offset' in result and 'items' in result else result
-    def win(name,**args):return call(name,windowID=c['window'],**args)
-    def tab(name,**args):return call(name,tabID=c['tab'],**args)
+    def win(name,/,**args):return call(name,windowID=c['window'],**args)
+    def tab(name,/,**args):return call(name,tabID=c['tab'],**args)
     def contains(name,key,value):return any(x.get(key)==value for x in win(name))
     cases['get_space']=lambda c:check(win('get_space',spaceID=c['space'])['spaceID']==c['space'],'space identity')
     cases['get_current_space']=lambda c:check(win('get_current_space')['spaceID']==c['space'],'selected space identity')
@@ -71,7 +71,7 @@ def register(cases,c,check,eventually):
     for name in ['add_easel_text','add_easel_link','add_easel_quote']:
         def add(_,n=name):
             tab('select_tab');win('select_space',spaceID=c['space'])
-            id=win(n,easelID=c['easel'],tabID=c['tab'],text='E2E content',**({'url':c['page']} if n=='add_easel_link' else {}))['itemID'];check(any(x['itemID']==id and x['text']=='E2E content' for x in win('get_easel_contents',easelID=c['easel'])['contents']['items']),'easel item persisted')
+            id=win(n,easelID=c['easel'],tabID=c['tab'],text='E2E content',**({'url':c['page']} if n=='add_easel_link' else {}))['itemID'];check(any(x['itemID']==id and (x.get('quote',{}).get('text') if n=='add_easel_quote' else x['text'])=='E2E content' for x in win('get_easel_contents',easelID=c['easel'])['contents']['items']),'easel item persisted')
         cases[name]=add
     cases['get_boost']=lambda c:check(call('get_boost',boostID=c['boost'])['boostID']==c['boost'],'boost identity')
     def update_boost(_):
@@ -102,6 +102,9 @@ def register(cases,c,check,eventually):
 def prepare_download(c,call,win,eventually):
     if 'completedDownload' in c:return
     before={x['downloadID'] for x in win('list_downloads')}
-    call('navigate',tabID=c['tab'],url=c['page'].split('/?')[0]+'/download')
+    source=call('open_tab',url=c['page']+'&download=completed',windowID=c['window'])['tabID']
+    ready=call('wait_for_load_state',tabID=source,state='complete',timeout=15)
+    if not ready.get('matched'):raise AssertionError('download fixture did not load')
+    call('navigate',tabID=source,url=c['page'].split('/?')[0]+'/download')
     eventually(lambda:any(x['downloadID'] not in before and x['status']=='completed' for x in win('list_downloads')),'known download completed')
     c['completedDownload']=next(x['downloadID'] for x in win('list_downloads') if x['downloadID'] not in before and x['status']=='completed')

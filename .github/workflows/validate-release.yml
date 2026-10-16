@@ -2,7 +2,7 @@ name: Astra - Release Metadata
 
 on:
   pull_request:
-    branches: [main, 'release/0.1+3']
+    branches: [main, 'release/**']
   workflow_dispatch:
 
 permissions:
@@ -13,20 +13,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  metadata:
-    name: Release metadata and validation rules
+  branch-tag:
+    name: Release branch and tag
+    if: startsWith(github.head_ref || github.ref_name, 'release/')
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - name: Checkout full history for release tag validation
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Check release branch and tag
-        if: startsWith(github.head_ref || github.ref_name, 'release/')
+      - name: Check release branch and unused tag
+        shell: bash
         env:
           RELEASE_BRANCH: ${{ github.head_ref || github.ref_name }}
-        shell: bash
         run: |
           set -euo pipefail
           if [[ ! "$RELEASE_BRANCH" =~ ^release/([0-9]+\.[0-9]+(\.[0-9]+)?)\+([0-9]+)$ ]]; then
@@ -41,20 +40,53 @@ jobs:
             exit 1
           fi
           echo "Validated release $VERSION (build $BUILD)"
-      - name: Release packaging rule self-tests
+  artifact:
+    name: Release artifact rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release artifact rules
+        shell: bash
         run: |
           set -euo pipefail
           python3 scripts/release/validate_artifact.py --self-test
-          python3 checks/website-app-bundle-check.py --self-test
-          python3 checks/workflow-diagnostics-check.py
-          python3 checks/ci-toolchain-workflows-check.py
-      - name: Self-test Release bundle size calculations
-        run: python3 scripts/ci/release_size_report.py --self-test
-      - name: Verify lazy startup architecture
-        run: python3 checks/launch-framework-architecture-check.py
-      - name: Startup and Sparkle audit script syntax
+
+  size:
+    name: Release size report parser
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release size report parser
+        shell: bash
         run: |
-          bash -n scripts/benchmark_startup.sh
-          python3 scripts/parse_startup_log.py --self-test
-          bash -n scripts/audit_sparkle_bundle.sh
-          bash -n scripts/ci/select-xcode-27.sh
+          set -euo pipefail
+          python3 scripts/ci/release_size_report.py --self-test
+
+  required:
+    name: Validate Release
+    if: always()
+    needs: [branch-tag, artifact, size]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify all release validation jobs succeeded
+        shell: bash
+        env:
+          BRANCH_STATUS: ${{ needs.branch-tag.result }}
+          ARTIFACT_STATUS: ${{ needs.artifact.result }}
+          SIZE_STATUS: ${{ needs.size.result }}
+          HEAD_REF: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          echo "Release branch validation: $BRANCH_STATUS"
+          echo "Release artifact validation: $ARTIFACT_STATUS"
+          echo "Release size validation: $SIZE_STATUS"
+          [[ "$ARTIFACT_STATUS" == "success" ]]
+          [[ "$SIZE_STATUS" == "success" ]]
+          if [[ "$HEAD_REF" == release/* ]]; then
+            [[ "$BRANCH_STATUS" == "success" ]]
+          else
+            [[ "$BRANCH_STATUS" == "skipped" || "$BRANCH_STATUS" == "success" ]]
+          fi

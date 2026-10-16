@@ -1,0 +1,26 @@
+name: Astra - Sidebar
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scroll:
+    name: Sidebar scroll layout
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sidebar scroll layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/sidebar-scroll-layout-check.py

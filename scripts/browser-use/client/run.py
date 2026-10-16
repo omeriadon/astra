@@ -10,6 +10,7 @@ import json
 import os
 import signal
 import time
+import traceback
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -112,9 +113,20 @@ def failure_and_auth_tests(c, check, eventually):
     failure('fill',{'tabID':c['tab'],'selector':'#fixture-readonly','value':'bad'})
     failure('wait_for_text',{'tabID':c['tab'],'text':'never-present-marker','timeout':.1})
     # Independent clients issue concurrent reads, without sharing request IDs.
-    def read(_):return Client(client.endpoint,client.token).call('get_tab',{'tabID':c['tab']})
+    def read(_):
+        status,response=Client(client.endpoint,client.token).request('tools/call',{'name':'get_tab','arguments':{'tabID':c['tab']}})
+        check(status==200,'concurrent client transport',response)
+        return response['result']
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-        check(all(x['tabID']==c['tab'] for x in pool.map(read,range(12))),'concurrent client identity')
+        results=list(pool.map(read,range(12)))
+    for result in results:
+        payload=result.get('structuredContent',{})
+        if result.get('isError'):
+            check(payload.get('code')=='TAB_BUSY','concurrent requests only reject contention',result)
+        else:
+            check(payload.get('tabID')==c['tab'],'concurrent client identity',result)
+    check(any(not x.get('isError') for x in results),'concurrent batch makes progress',results)
+    check(client.call('get_tab',{'tabID':c['tab']})['tabID']==c['tab'],'tab remains available after contention')
     # Normal browsing session is shared by agent-created tabs. Login on one tab,
     # then verify the HttpOnly cookie through the server in a second actual tab.
     client.call('navigate',{'tabID':c['tab'],'url':c['page']})
@@ -125,6 +137,8 @@ def failure_and_auth_tests(c, check, eventually):
     client.call('wait_for_url',{'tabID':c['tab'],'url':'/authenticated','timeout':8})
     second=client.call('open_tab',{'url':c['page'].split('/?')[0]+'/authenticated','windowID':c['window']})['tabID']
     client.call('wait_for_text',{'tabID':second,'text':'fixture-user','timeout':8})
+    loaded=client.call('wait_for_load_state',{'tabID':second,'state':'complete','timeout':15})
+    check(loaded.get('matched') is True,'authenticated tab finished loading',loaded)
     check('"authenticated": true' in str(client.call('read_page',{'tabID':second})),'normal session authentication shared')
     control(c,'revoke',tabID=second)
     failure('read_page',{'tabID':second})
@@ -196,6 +210,8 @@ def main():
         check(any(tab["tabID"] == c["tab"] for tab in after), "opened tab exists", after)
         check(len(after) == len(before) + 1, "exactly one tab created", after)
         eventually(lambda: c["state"]().get("ready"), "real WebKit page load")
+        loaded = c["client"].call("wait_for_load_state", {"tabID": c["tab"], "state": "complete", "timeout": 15})
+        check(loaded.get("matched") is True, "WebKit finished loading fixture and child frames", loaded)
 
     def list_tabs(c):
         tabs = c["client"].call("list_tabs")
@@ -230,8 +246,19 @@ def main():
         action(c, "select_option", {"selector": "#fixture-select", "value": "two"}, "select", "two")
 
     def navigate(c):
-        c["client"].call("navigate", {"tabID": c["tab"], "url": c["page"] + "#navigated"})
-        eventually(lambda: c["state"]().get("route") == "#navigated", "SPA navigation")
+        # An explicit empty fragment stays within the document; loading the
+        # fragment-less URL may legitimately reload it without hashchange.
+        for fragment in ("#navigated", "#second-fragment", "#", "#navigated"):
+            destination = c["page"] + fragment
+            c["client"].call("navigate", {"tabID": c["tab"], "url": destination})
+            expected_hash = "" if fragment == "#" else fragment
+            eventually(lambda: c["state"]().get("route") == expected_hash, "SPA navigation to " + destination)
+            ready = c["client"].call("wait_for_load_state", {"tabID": c["tab"], "state": "complete", "timeout": 8})
+            check(ready.get("matched") is True, "fragment navigation restores document readiness", ready)
+            result = c["client"].call("evaluate_javascript", {"tabID": c["tab"], "contentWorld": "page",
+                "expression": "({url:location.href,text:document.querySelector('#fixture-text').value})"})
+            value = result.get("result", result)
+            check(value == {"url": destination, "text": "Astra filled"}, "fragment navigation preserves the live document", value)
 
     cases = {"open_tab": open_tab, "list_tabs": list_tabs, "wait": wait,
              "read_page": read_page, "snapshot": snapshot, "click": click,
@@ -245,15 +272,26 @@ def main():
     order = ["open_tab", "list_tabs", "wait", "read_page", "snapshot", "click", "fill", "select_option", "navigate"]
     order += [name for name in cases if name not in order and name not in native_order]
     order += native_order
+    failures = {}
     for name in order:
         check(name in tools, "required legacy tool is exposed", name)
         try:
             started = time.monotonic()
             cases[name](context)
         except Exception as error:
-            raise AssertionError(f"Tool {name} failed against {page}: {error}") from error
+            if name == "open_tab":
+                raise AssertionError(f"Tool {name} failed against {page}: {error}") from error
+            failures[name] = str(error)
+            print(f"FAIL {name} against {page}: {error}", flush=True)
+            traceback.print_exc()
+            continue
         print(f"PASS {name} duration_ms={(time.monotonic()-started)*1000:.2f}", flush=True)
-    failure_and_auth_tests(context, check, eventually)
+    try:
+        failure_and_auth_tests(context, check, eventually)
+    except Exception as error:
+        failures['failure_and_auth_tests'] = str(error)
+        traceback.print_exc()
+    check(not failures, "all live Browser Use cases must pass", failures)
     print(f"PASS {len(tools)} discovered tool cases; supported operations assert effects, explicit limitations assert honest output", flush=True)
 
 
