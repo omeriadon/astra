@@ -84,7 +84,7 @@ struct BrowserPersistenceCheck {
 		)
 		try newTabPersistence.savePersistedState(newTabState)
 		let restoredNewTabs = try newTabPersistence.loadPersistedState()
-		precondition(restoredNewTabs?.openTabs.map(\\.id) == newTabIDs)
+		precondition(restoredNewTabs?.openTabs.map(\.id) == newTabIDs)
 		precondition(restoredNewTabs?.openTabs[1].url == nil)
 		precondition(restoredNewTabs?.openTabs[2].url == nil)
 		precondition(restoredNewTabs?.snapshot.selectedTabID == emptyTab.id)
@@ -102,7 +102,8 @@ struct BrowserPersistenceCheck {
 			selectedTabID: anotherEmptyTab.id
 		)]
 		try newTabPersistence.savePersistedState(afterClosingNewTab)
-		precondition(try newTabPersistence.loadPersistedState()?.openTabs.map(\\.id) == [tab.id, anotherEmptyTab.id])
+		let savedAfterClose = try newTabPersistence.loadPersistedState()
+		precondition(savedAfterClose?.openTabs.map(\.id) == [tab.id, anotherEmptyTab.id])
 
 		for value in ["https://example.com", "http://localhost:8080/path"] {
 			assert(BrowserHomepage.validURL(value) != nil)
