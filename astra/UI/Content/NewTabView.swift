@@ -1,5 +1,8 @@
 import Defaults
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 struct NewTabView: View {
 	@Bindable var browser: Browser
@@ -8,6 +11,8 @@ struct NewTabView: View {
 	@Default(.startPagePreferences) private var startPagePreferencesValue
 	@FocusState private var isSearchFocused: Bool
 	@Namespace private var transitions
+	@AppStorage("astra.newTabBackgroundImage") private var backgroundImagePath = ""
+	@State private var choosingBackgroundImage = false
 	@State private var recentVisits: [BrowserVisit] = []
 	@State private var frequentVisits: [BrowserVisitSummary] = []
 
@@ -39,11 +44,13 @@ struct NewTabView: View {
 
 	var body: some View {
 		let selectedResultID = browser.selectedNewTabSearchResult?.id
+		ZStack(alignment: .bottomTrailing) {
+			newTabBackground
 		ScrollViewReader { proxy in
 			List {
 				BrowserSearchSuggestionsSection(
 					browser: browser,
-					results: browser.newTabSearchResults,
+					results: browser.newTabSearchText.isEmpty ? [] : browser.newTabSearchResults,
 					query: browser.newTabSearchText,
 					generation: browser.newTabSearchGeneration,
 					selectedResultID: selectedResultID,
@@ -64,6 +71,22 @@ struct NewTabView: View {
 		}
 		.frame(maxWidth: 680)
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
+		}
+		.overlay(alignment: .bottomTrailing) {
+			backgroundPicker.padding(20)
+		}
+		#if os(macOS)
+		.fileImporter(isPresented: $choosingBackgroundImage, allowedContentTypes: [.image]) { result in
+			guard case let .success(url) = result else { return }
+			let access = url.startAccessingSecurityScopedResource()
+			defer { if access { url.stopAccessingSecurityScopedResource() } }
+			let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Astra", isDirectory: true)
+			try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+			let target = directory.appendingPathComponent("new-tab-background.\(url.pathExtension)")
+			try? FileManager.default.removeItem(at: target)
+			if (try? FileManager.default.copyItem(at: url, to: target)) != nil { backgroundImagePath = target.path }
+		}
+		#endif
 		.task(id: browser.quickSearchFocusRequest) {
 			await Task.yield()
 			isSearchFocused = true
@@ -111,6 +134,37 @@ struct NewTabView: View {
 				// Local suggestions and submitting the query remain available offline.
 			}
 		}
+	}
+
+	@ViewBuilder
+	private var newTabBackground: some View {
+		#if os(macOS)
+		if !backgroundImagePath.isEmpty, let image = NSImage(contentsOfFile: backgroundImagePath) {
+			GeometryReader { geometry in
+				Image(nsImage: image).resizable().scaledToFill()
+					.frame(width: geometry.size.width, height: geometry.size.height).clipped()
+			}
+		} else {
+			Color(nsColor: .windowBackgroundColor)
+		}
+		#else
+		Color(.systemBackground)
+		#endif
+	}
+
+	private var backgroundPicker: some View {
+		Menu {
+			Button("Choose Background Image…", systemImage: "photo") { choosingBackgroundImage = true }
+			if !backgroundImagePath.isEmpty {
+				Button("Remove Background Image", systemImage: "trash") { backgroundImagePath = "" }
+			}
+		} label: {
+			Image(systemName: "paintpalette").font(.system(size: 15))
+				.padding(10)
+				.background(.regularMaterial, in: Circle())
+		}
+		.menuStyle(.borderlessButton)
+		.accessibilityLabel("Customize new tab background")
 	}
 
 	@ViewBuilder
@@ -244,7 +298,7 @@ struct NewTabView: View {
 					.accessibilityIdentifier("new-tab-search")
 			}
 			.padding(14)
-			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20))
+			.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
 		}
 		.padding(.horizontal, 10)
 		.padding(.top, 10)

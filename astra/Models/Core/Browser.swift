@@ -1291,7 +1291,8 @@ final class Browser {
 		newTabClipboardURL = clipboardURL
 		newTabSearchText = ""
 		newTabSearchSelection = nil
-		showsQuickSearch = true
+		showsQuickSearch = false
+		_ = addTab()
 		quickSearchFocusRequest += 1
 	}
 
