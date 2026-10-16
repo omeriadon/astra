@@ -244,7 +244,7 @@ struct NewTabView: View {
 					.accessibilityIdentifier("new-tab-search")
 			}
 			.padding(14)
-			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
+			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20))
 		}
 		.padding(.horizontal, 10)
 		.padding(.top, 10)
