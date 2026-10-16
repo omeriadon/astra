@@ -421,10 +421,8 @@ private struct ShellNewTabButton: View {
 		.frame(height: onNewTab == nil ? 28 : 44)
 		.background {
 			if newTabHovered {
-				Color.clear.glassEffect(
-					.regular,
-					in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
-				)
+				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+					.fill(.ultraThinMaterial)
 			}
 		}
 		.accessibilityIdentifier("new-tab")
