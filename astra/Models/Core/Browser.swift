@@ -1404,6 +1404,12 @@ final class Browser {
 		if isPrivate {
 			settingsPage = .privacyAndSecurity
 		}
+		#if os(macOS)
+			if page == .settings {
+				BrowserSettingsWindowController.shared.show(for: self)
+				return
+			}
+		#endif
 		if !inNewTab, let existing = visibleTabs.first(where: { $0.internalPage == page }) {
 			selectTab(existing.id)
 			return
