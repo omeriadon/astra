@@ -63,3 +63,30 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/ci/release_size_report.py --self-test
+
+  required:
+    name: Validate Release
+    if: always()
+    needs: [branch-tag, artifact, size]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify all release validation jobs succeeded
+        shell: bash
+        env:
+          BRANCH_STATUS: ${{ needs.branch-tag.result }}
+          ARTIFACT_STATUS: ${{ needs.artifact.result }}
+          SIZE_STATUS: ${{ needs.size.result }}
+          HEAD_REF: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          echo "Release branch validation: $BRANCH_STATUS"
+          echo "Release artifact validation: $ARTIFACT_STATUS"
+          echo "Release size validation: $SIZE_STATUS"
+          [[ "$ARTIFACT_STATUS" == "success" ]]
+          [[ "$SIZE_STATUS" == "success" ]]
+          if [[ "$HEAD_REF" == release/* ]]; then
+            [[ "$BRANCH_STATUS" == "success" ]]
+          else
+            [[ "$BRANCH_STATUS" == "skipped" || "$BRANCH_STATUS" == "success" ]]
+          fi
