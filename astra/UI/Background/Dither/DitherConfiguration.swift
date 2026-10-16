@@ -3,13 +3,13 @@ import Foundation
 /// SwiftUI-facing controls. Dimensions use points, so the grid is independent of Retina scale.
 nonisolated struct DitherConfiguration: Codable, Equatable, Sendable {
 	/// Width and height of each square, excluding the gap. Reasonable range: 1...24 pt.
-	var gridSize = 3.0
+	var gridSize = 4.0
 	/// Empty space between squares. Reasonable range: 0...12 pt.
-	var gridSpacing = 0.0
+	var gridSpacing = 1.0
 	/// Square corner radius; capped at half the square size. Reasonable range: 0...12 pt.
 	var cornerRadius = 0.0
 	/// Noise translation per second. Reasonable range: 0...0.2; negative values reverse motion.
-	var waveSpeed = 0.02
+	var waveSpeed = 0.055
 	/// Frequency multiplier between noise octaves. Reasonable range: 1...6.
 	var waveFrequency = 4.1
 	/// Contribution retained by each successive noise octave. Reasonable range: 0...0.8.
@@ -23,11 +23,11 @@ nonisolated struct DitherConfiguration: Codable, Equatable, Sendable {
 	/// Ordered threshold strength; zero produces plain quantized bands. Reasonable range: 0...1.
 	var ditherStrength = 1.0
 	/// Wave light/dark contrast around the midpoint. Reasonable range: 0.25...3.
-	var contrast = 1.0
+	var contrast = 1.45
 	/// Offset applied before quantization. Reasonable range: -0.5...0.5.
-	var brightness = 0.0
+	var brightness = 0.06
 	/// Minimum theme colour visible in dark wave regions. Reasonable range: 0...0.5.
-	var minimumIntensity = 0.02
+	var minimumIntensity = 0.14
 	/// Amount of the current mesh colour mixed into the waves. Reasonable range: 0...1.
 	var themeColorAmount = 1.0
 	/// Overall effect opacity, including squares and gaps. Reasonable range: 0...1.
@@ -49,7 +49,7 @@ nonisolated struct DitherConfiguration: Codable, Equatable, Sendable {
 	/// Radial displacement of the wave field around the cursor. Reasonable range: 0...0.3.
 	var cursorWarp = 0.07
 	/// Maximum animation refresh rate. Reasonable range: 15...120 fps; default 30 saves GPU work.
-	var framesPerSecond = 30.0
+	var framesPerSecond = 45.0
 
 	/// Public mutable controls are sanitized at the rendering boundary, including nonfinite values.
 	func safe(_ value: Double, _ range: ClosedRange<Double>, fallback: Double = 0) -> Double {

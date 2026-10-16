@@ -7,7 +7,7 @@ legacy image styles render the Default foundation.
 | Preset | Scope | Surface |
 | --- | --- | --- |
 | Smoke Reveal | Full new-tab page | Dark/light Space-color foundation with semi-transparent, marbled Space-color wisps and colored smoke |
-| Holographic Prismatic | Search bar **only** | A few broad dark-silver ribbons with slow prismatic movement; white text and placeholder |
+| Holographic Prismatic | Search bar **only** | Brighter embossed silver ribbons and a moving diffraction spectrum; white text and placeholder |
 | Live Ripple | Full new-tab page | Animated refraction over Space-mesh liquid; reduced to 56% opacity over the Default foundation |
 | Datamosh | Full new-tab page | Hard-edged Space-mesh color strata with periodically smeared 16-point codec blocks and RGB bleed |
 
@@ -19,19 +19,19 @@ weights instead of choosing just the first Space color; its light/dark
 foundation is derived from the Space appearance setting. Switching Space
 recomputes the palette without copying or modifying a static image.
 
-Holographic now has wide, lower-frequency ribbons rather than many noisy
-hairlines. The page behind it is Default, and its search text and prompt are
+Holographic uses broad, animated spectral reflections over embossed metal,
+without covering the search text with busy rainbow hairlines. The page behind it is Default, and its search text and prompt are
 explicitly white. Default uses an ultraThinMaterial search bar; the other
 full-page effects use regularMaterial at full strength.
 
-Effects remain exclusive with Float and Theme Dither. Float now has a 30-point
-blur. No effect loads a background image; the selected preset persists using
+Effects remain exclusive with Float and Theme Dither. Float retains its 30-point blur but uses exposure-corrected Space colours
+and strong, drifting bright and dark folds. No effect loads a background image; the selected preset persists using
 `astra.newTabBackgroundStyle`.
 
 ## Animation and interaction
 
-Source artwork is deterministic and resolution-independent. The 30 fps
-timeline now uses each frame's date as the shader clock. On macOS, the actual
+Source artwork is deterministic and resolution-independent. The 45 fps holographic timeline
+uses each frame's date as the shader clock. On macOS, the actual
 window's activity and occlusion are authoritative, and animation time pauses
 when the page becomes inactive or Reduce Motion is enabled.
 

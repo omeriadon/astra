@@ -75,18 +75,22 @@ float bayer(int2 cell) {
 	}
 
 	float2 p = (uv + warp) / wave.w;
-	// The original 0.02 speed looked stationary at a 30-fps redraw rate.
-	float drift = time * wave.x * 8.0;
+	// Advance the domain and wave fronts independently. A zero speed freezes both.
+	float drift = time * wave.x * 12.0;
 	int octaves = int(style.w);
 	float2 domain = float2(clouds(p - drift, wave.y, wave.z, octaves),
 		clouds(p + float2(11.7, 3.4) - drift, wave.y, wave.z, octaves));
 	float field = clouds(p + domain * 1.8, wave.y, wave.z, octaves);
-	field += sin(drift * 2.0 + uv.x * 4.0 + uv.y * 2.0) * 0.09;
-	field = (field - 0.5) * tones.z + 0.5 + tones.w - touch * cursor.y * 0.75;
+	float travelling = sin(uv.x * 9.0 + uv.y * 5.5 + domain.x * 4.0
+		- time * wave.x * 32.0);
+	float crossWave = sin(uv.y * 7.0 - uv.x * 2.7 + domain.y * 5.0
+		+ time * wave.x * 20.0);
+	field += travelling * 0.17 + crossWave * 0.10;
+	field = (field - 0.47) * tones.z * 1.27 + 0.53 + tones.w - touch * cursor.y * 0.75;
 	float levels = max(tones.x - 1.0, 1.0);
 	float quantized = floor(clamp(field + bayer(int2(cell)) * tones.y / levels, 0.0, 1.0) * levels + 0.5) / levels;
 	quantized = clamp(quantized, 0.0, 1.0);
-	float intensity = mix(style.x, 1.0, quantized);
+	float intensity = mix(max(style.x, 0.14), 1.0, quantized);
 
 	// Same inverse-square weights and 0.015 softness used to build Astra's 10x10 mesh.
 	// Sampling the continuous field keeps colours anchored to their theme positions as waves move.
@@ -101,7 +105,13 @@ float bayer(int2 cell) {
 	}
 	mesh = totalWeight > 0.0 ? mesh / totalWeight : float3(0.5);
 	float3 base = float3(background.rgb);
-	float3 tint = mix(float3(1.0), mesh, style.y);
-	float3 square = mix(base, tint * intensity, style.z);
+	// Expose dark Space colours without replacing their hue.
+	float peak = max(mesh.r, max(mesh.g, mesh.b));
+	float gain = mix(2.85, 1.2, smoothstep(0.12, 0.85, peak));
+	float3 litMesh = clamp(mesh * gain + float3(0.045), 0.0, 1.0);
+	float3 tint = mix(float3(1.0), litMesh, style.y);
+	float highlight = pow(smoothstep(0.55, 0.98, quantized), 2.0);
+	float3 litSquare = clamp(tint * (intensity + highlight * 0.14), 0.0, 1.0);
+	float3 square = mix(base, litSquare, style.z);
 	return half4(half3(mix(base, square, coverage)), 1.0h);
 }

@@ -470,10 +470,19 @@ static float3 livableCompositeColor(
     color = mix(color, primaryColor, clamp(primaryAlpha, 0.0, 1.0));
     color = mix(color, overlayColor, clamp(overlayAlpha, 0.0, 1.0));
 
-    float luminanceWave = sin((dot(uv, kLuminanceWaveDirection) * 1.05 + time * 0.028) * kTau);
-    color *= 1.0 + smoothstep(0.45, 1.0, luminanceWave) * 0.035;
-    color = livableIncreaseSaturation(color, 1.25);
-    return livableApplyContrast(color, 1.18);
+    // Without distinct moving light/dark regions, the blurred full-page
+    // virtual sheets read as a single dark colour rather than flowing.
+    float2 flowUV = float2(uv.x * aspect, uv.y);
+    float fold = sin(flowUV.x * 4.6 + flowUV.y * 3.3
+                     + sin(flowUV.y * 3.1 - time * 0.65) * 1.7
+                     - time * 0.78);
+    float crossFold = sin(flowUV.x * 2.8 - flowUV.y * 6.2
+                          + time * 0.47 + sin(flowUV.x * 2.5 + time * 0.3));
+    float light = smoothstep(-0.55, 0.92, fold * 0.72 + crossFold * 0.32);
+    float halo = pow(smoothstep(0.12, 1.0, light), 2.0);
+    color = color * (0.26 + 1.13 * light) + float3(0.11) * halo;
+    color = livableIncreaseSaturation(color, 1.22);
+    return clamp(livableApplyContrast(color, 1.13), 0.0, 1.0);
 }
 
 [[ stitchable ]] half4 astraLivable(

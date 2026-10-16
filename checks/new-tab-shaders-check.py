@@ -45,13 +45,13 @@ assert "if (preset == 3.0)" in metal  # monochrome holographic texture
 assert "theme.appearanceMode" in surface
 
 # No busy timers, and motion freezes cleanly when hidden/inactive.
-assert "TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !running))" in surface
+assert "TimelineView(.animation(minimumInterval: 1.0 / 45.0, paused: !running))" in surface
 assert "context.date.timeIntervalSinceReferenceDate" in surface
 assert "scenePhase == .active" in surface
 assert "clock.setRunning(false" in surface
 assert "return isVisible && canAnimate && !reduceMotion" in surface
 assert "float frame = floor(time * rate)" in metal
-assert "float silver = 0.07" in metal
+assert "float silver = 0.095" in metal
 assert "if (preset == 3.0)" in metal
 assert ".allowsHitTesting(false)" in surface
 assert "Copyright (c) 2026 Kris Puckett" in metal
@@ -66,5 +66,13 @@ assert "var canAnimate = true" in dither
 assert "context.date.timeIntervalSinceReferenceDate" in dither
 assert "event.window === window" in new_tab
 assert "self?.track(event)" in new_tab
-assert "float drift = time * wave.x * 8.0" in dither_metal
+assert "float drift = time * wave.x * 12.0" in dither_metal
+assert "float travelling = sin(" in dither_metal
+assert "float3 litMesh = clamp(" in dither_metal
+assert "float3 spectrum = " in metal
+assert "float glint = pow(sweep, 5.0)" in metal
+assert ".frame(maxWidth: .infinity, maxHeight: .infinity)" in new_tab
+livable = (root / "Packages/Livable/Sources/Livable/Shaders/Livable.metal").read_text()
+assert "float fold = sin(flowUV.x" in livable
+assert "float halo = pow(" in livable
 print("New-tab animation, materials and pointer checks: OK")
