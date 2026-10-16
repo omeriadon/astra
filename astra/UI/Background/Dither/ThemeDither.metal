@@ -75,12 +75,14 @@ float bayer(int2 cell) {
 	}
 
 	float2 p = (uv + warp) / wave.w;
-	float drift = time * wave.x;
+	// The original 0.02 speed looked stationary at a 30-fps redraw rate.
+	float drift = time * wave.x * 8.0;
 	int octaves = int(style.w);
 	float2 domain = float2(clouds(p - drift, wave.y, wave.z, octaves),
 		clouds(p + float2(11.7, 3.4) - drift, wave.y, wave.z, octaves));
 	float field = clouds(p + domain * 1.8, wave.y, wave.z, octaves);
-	field = (field - 0.5) * tones.z + 0.5 + tones.w - touch * cursor.y * 0.5;
+	field += sin(drift * 2.0 + uv.x * 4.0 + uv.y * 2.0) * 0.09;
+	field = (field - 0.5) * tones.z + 0.5 + tones.w - touch * cursor.y * 0.75;
 	float levels = max(tones.x - 1.0, 1.0);
 	float quantized = floor(clamp(field + bayer(int2(cell)) * tones.y / levels, 0.0, 1.0) * levels + 0.5) / levels;
 	quantized = clamp(quantized, 0.0, 1.0);
