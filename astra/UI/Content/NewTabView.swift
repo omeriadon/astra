@@ -192,8 +192,8 @@ struct NewTabView: View {
 
 	private var usesDefaultBackground: Bool {
 		switch backgroundStyle {
-			case "float", "dither": false
-			case "default", "solid": true
+			case "float", "dither", "smoke", "ripple", "datamosh": false
+			case "default", "solid", "holographic": true
 			default: backgroundImagePath.isEmpty
 		}
 	}
@@ -228,6 +228,8 @@ struct NewTabView: View {
 	private var newTabBackground: some View {
 		if backgroundStyle == "dither" {
 			DitherBackground(theme: browser.theme, configuration: DitherConfiguration.decode(ditherConfigurationData), pointer: ditherPointer)
+		} else if let preset = NewTabShaderPreset(rawValue: backgroundStyle), preset != .holographic {
+			NewTabShaderSurface(theme: browser.theme, preset: preset, canAnimate: animatesBackground)
 		} else if backgroundStyle == "float" {
 			Rectangle().fill(browser.theme.firstColor.color)
 				.livable(palette: livingPalette, isAnimated: animatesBackground)
@@ -265,6 +267,19 @@ struct NewTabView: View {
 			Button("Configure Dither…", systemImage: "slider.horizontal.3") {
 				backgroundStyle = "dither"
 				editingDither = true
+			}
+			Divider()
+			Button { backgroundStyle = "smoke" } label: {
+				Label("Smoke Reveal", systemImage: backgroundStyle == "smoke" ? "checkmark" : "smoke")
+			}
+			Button { backgroundStyle = "holographic" } label: {
+				Label("Holographic Prismatic (Search Bar)", systemImage: backgroundStyle == "holographic" ? "checkmark" : "sparkles")
+			}
+			Button { backgroundStyle = "ripple" } label: {
+				Label("Live Ripple", systemImage: backgroundStyle == "ripple" ? "checkmark" : "drop")
+			}
+			Button { backgroundStyle = "datamosh" } label: {
+				Label("Datamosh", systemImage: backgroundStyle == "datamosh" ? "checkmark" : "waveform.path")
 			}
 			Divider()
 			Button("Choose Background Image…", systemImage: "photo") { choosingBackgroundImage = true }
@@ -420,7 +435,14 @@ struct NewTabView: View {
 			.padding(.horizontal, 22)
 			.padding(.vertical, 20)
 			.background {
-				if usesDefaultBackground {
+				if backgroundStyle == "holographic" {
+					NewTabShaderSurface(theme: browser.theme, preset: .holographic, canAnimate: animatesBackground)
+						.overlay(.black.opacity(0.20))
+						.overlay {
+							RoundedRectangle(cornerRadius: 24, style: .continuous)
+								.strokeBorder(.white.opacity(0.24), lineWidth: 1)
+						}
+				} else if usesDefaultBackground {
 					RoundedRectangle(cornerRadius: 24, style: .continuous)
 						.fill(browser.theme.firstColor.color)
 						.livable(palette: livingPalette, isAnimated: animatesBackground)
@@ -431,7 +453,7 @@ struct NewTabView: View {
 				}
 			}
 			.clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-			.foregroundStyle(usesDefaultBackground ? browser.theme.foregroundColor : Color.primary)
+			.foregroundStyle(backgroundStyle == "holographic" ? Color.white : (usesDefaultBackground ? browser.theme.foregroundColor : Color.primary))
 		}
 		.padding(.horizontal, 10)
 		.padding(.top, 10)
