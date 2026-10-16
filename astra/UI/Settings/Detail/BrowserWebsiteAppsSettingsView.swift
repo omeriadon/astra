@@ -158,9 +158,9 @@
 			}
 			let source = NSWorkspace.shared.icon(forFile: installation.bundlePath)
 			// Store a small raster backing rather than retaining every representation in the app icon.
-			guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 64, pixelsHigh: 64,
-			                                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-			                                    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+			guard let bitmap = unsafe NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 64, pixelsHigh: 64,
+			                                           bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+			                                           colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
 				let context = NSGraphicsContext(bitmapImageRep: bitmap) else { return source }
 			NSGraphicsContext.saveGraphicsState()
 			NSGraphicsContext.current = context

@@ -3,6 +3,7 @@ import Livable
 import SwiftUI
 #if os(macOS)
 	import AppKit
+	import UniformTypeIdentifiers
 #endif
 
 struct NewTabView: View {
