@@ -31,7 +31,6 @@ jobs:
     name: ${{ matrix.suite }}
     runs-on: xcode-27
     timeout-minutes: 40
-    continue-on-error: ${{ matrix.suite == 'Live Astra WebKit E2E' }}
     strategy:
       fail-fast: false
       matrix:
@@ -57,6 +56,7 @@ jobs:
         run: zsh scripts/check_browser_use.sh "$RUNNER_TEMP/AstraMCP/Build/Products/Debug"
       - name: Real Astra and WebKit integration
         if: matrix.suite == 'Live Astra WebKit E2E'
+        continue-on-error: true
         env:
           ASTRA_BROWSER_USE_REPORT_DIR: ${{ runner.temp }}/astra-mcp-reports
         run: bash scripts/test-browser-use-e2e.sh "$RUNNER_TEMP/AstraMCP/Build/Products/Debug/astra.app"
