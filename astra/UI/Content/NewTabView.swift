@@ -576,6 +576,8 @@ private struct NewTabPointerTracker: NSViewRepresentable {
 	final class TrackingView: NSView {
 		var pointer: DitherPointerInput
 		private var monitor: Any?
+		private weak var monitoredWindow: NSWindow?
+		private var previousMouseMovedEvents: Bool?
 
 		init(pointer: DitherPointerInput) {
 			self.pointer = pointer
@@ -593,7 +595,10 @@ private struct NewTabPointerTracker: NSViewRepresentable {
 		override func viewDidMoveToWindow() {
 			super.viewDidMoveToWindow()
 			stopObserving()
-			guard window != nil else { return }
+			guard let window else { return }
+			monitoredWindow = window
+			previousMouseMovedEvents = window.acceptsMouseMovedEvents
+			window.acceptsMouseMovedEvents = true
 			monitor = NSEvent.addLocalMonitorForEvents(
 				matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
 			) { [weak self] event in
@@ -607,6 +612,11 @@ private struct NewTabPointerTracker: NSViewRepresentable {
 				NSEvent.removeMonitor(monitor)
 				self.monitor = nil
 			}
+			if let monitoredWindow, let previousMouseMovedEvents {
+				monitoredWindow.acceptsMouseMovedEvents = previousMouseMovedEvents
+			}
+			monitoredWindow = nil
+			previousMouseMovedEvents = nil
 			pointer.location = nil
 		}
 
