@@ -116,7 +116,10 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	@ObservationIgnored
 	private var activeRequests: [ObjectIdentifier: ActiveRequest] = [:]
 	@ObservationIgnored
-	private var currentNetworkRequests = 0
+	private var sharedRequests: [URL: (id: UUID, task: Task<Data?, Never>)] = [:]
+	@ObservationIgnored private var failedIconURLs: [URL: Date] = [:]
+	private static let failureRetryInterval: TimeInterval = 30
+	private static let maximumFailureEntries = 128
 
 	@ObservationIgnored
 	private let persistence: BrowserPersistence?
@@ -381,22 +384,16 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		var request = URLRequest(url: iconURL)
 		request.cachePolicy = .reloadRevalidatingCacheData
 		request.timeoutInterval = 15
-		guard currentNetworkRequests < Self.maximumConcurrentRequests else { return }
-		currentNetworkRequests += 1
-		defer { currentNetworkRequests -= 1 }
-		guard let data = await Self.fetchValidatedFaviconData(
-			session: networkSession,
-			request: request
-		) else { return }
+		guard let data = await sharedFaviconData(for: request) else { return }
 
 		guard !Task.isCancelled,
 		      activeRequests[webViewID] === activeRequest,
 		      generation == cacheGeneration,
-		      FaviconKey.origin(for: webView.url) == key,
-		      let platformImage = Self.makePlatformImage(data)
+		      FaviconKey.origin(for: webView.url) == key
 		else { return }
 
 		fetchedAt[key] = .now
+		guard favicons[key] != data, let platformImage = Self.makePlatformImage(data) else { return }
 		favicons[key] = data
 		faviconAccents[key] = nil
 		faviconAccentMisses.remove(key)
@@ -405,11 +402,45 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		scheduleFaviconSave()
 	}
 
+	/// Coalesce bytes by icon URL inside this store (normal/private sessions never share work).
+	/// Callers keep independent navigation/request-generation checks before committing the result.
+	private func sharedFaviconData(for request: URLRequest) async -> Data? {
+		guard let url = request.url, !Task.isCancelled else { return nil }
+		if let shared = sharedRequests[url] { return await shared.task.value }
+		let now = Date.now
+		failedIconURLs = failedIconURLs.filter { now.timeIntervalSince($0.value) < Self.failureRetryInterval }
+		guard failedIconURLs[url] == nil,
+		      sharedRequests.count < Self.maximumConcurrentRequests else { return nil }
+		let id = UUID()
+		let session = networkSession
+		let task = Task.detached(priority: .utility) {
+			await Self.fetchValidatedFaviconData(session: session, request: request)
+		}
+		sharedRequests[url] = (id, task)
+		let data = await task.value
+		// clear() can cancel/replace this request while the network is suspended.
+		guard sharedRequests[url]?.id == id else { return nil }
+		sharedRequests[url] = nil
+		if data == nil, !task.isCancelled {
+			if failedIconURLs.count >= Self.maximumFailureEntries,
+			   let oldest = failedIconURLs.min(by: { $0.value < $1.value })?.key {
+				failedIconURLs[oldest] = nil
+			}
+			failedIconURLs[url] = .now
+		} else {
+			failedIconURLs[url] = nil
+		}
+		return data
+	}
+
 	func clear() {
 		BrowserLog.notice(.favicons, "favicon.clear")
 		faviconAccents.removeAll()
 		faviconAccentMisses.removeAll()
 		cacheGeneration += 1
+		for request in sharedRequests.values { request.task.cancel() }
+		sharedRequests.removeAll()
+		failedIconURLs.removeAll()
 		activeRequests.removeAll()
 		decodedImages.removeAllObjects()
 		fetchedAt.removeAll()

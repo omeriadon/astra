@@ -1,6 +1,6 @@
 import Foundation
 
-struct SafariExtensionCandidate: Identifiable, Sendable {
+struct SafariExtensionCandidate: Identifiable, Equatable, Sendable {
 	let id: String
 	let name: String
 	let bundleURL: URL

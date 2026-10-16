@@ -18,6 +18,7 @@ struct ShellSidebarListView: View {
 	@Namespace private var sidebarTransitions
 	@State private var sidebarSelection = BrowserSidebarTabSelection()
 	@State private var projectionCache = SidebarProjectionCache()
+	@State private var collapsedFolderIDs: Set<UUID> = []
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	@ViewBuilder
@@ -39,7 +40,7 @@ struct ShellSidebarListView: View {
 		let tabsByID = browser.tabsByID
 		// Only reconstruct ordered/grouped projections when membership or grouping changes.
 		// A selection-only workspace mutation reuses the same tab arrays and selection orders.
-		let projection = projectionCache.resolve(
+		let baseProjection = projectionCache.resolve(
 			space: space, favouriteIDs: favouriteTabIDs, tabsByID: tabsByID,
 			structureRevision: browser.sidebarStructureRevision,
 			tabCollectionRevision: browser.tabCollectionRevision, isPrivate: browser.isPrivate
@@ -53,12 +54,13 @@ struct ShellSidebarListView: View {
 			return (left, right)
 		}()
 		let splitIDs = Set([splitTabs?.0.id, splitTabs?.1.id].compactMap(\.self))
-		let favouriteTabs = projection.favouriteTabs.filter { !splitIDs.contains($0.id) }
-		let pinnedTabs = projection.pinnedTabs.filter { !splitIDs.contains($0.id) }
-		let ungroupedPinnedTabs = projection.ungroupedPinnedTabs.filter { !splitIDs.contains($0.id) }
-		let normalTabs = projection.normalTabs.filter { !splitIDs.contains($0.id) }
+		let projection = projectionCache.excluding(splitIDs, from: baseProjection)
+		let favouriteTabs = projection.favouriteTabs
+		let pinnedTabs = projection.pinnedTabs
+		let ungroupedPinnedTabs = projection.ungroupedPinnedTabs
+		let normalTabs = projection.normalTabs
 		let normalIndexes = projection.normalIndexes
-		let ungroupedNormalTabs = projection.ungroupedNormalTabs.filter { !splitIDs.contains($0.id) }
+		let ungroupedNormalTabs = projection.ungroupedNormalTabs
 		let normalSelectionOrder = projection.normalSelectionOrder
 		let pinnedSelectionOrder = projection.pinnedSelectionOrder
 		let selectedID = space.selectedTabID
@@ -99,12 +101,32 @@ struct ShellSidebarListView: View {
 						Spacer()
 					}
 					ForEach(space.pinnedFolders) { folder in
-						PinnedFolderRow(folder: folder, browser: browser, tabsByID: tabsByID,
-						                selectedID: selectedID, isActiveSpace: isActiveSpace, normalCount: normalTabs.count,
-						                spaceID: space.id, theme: theme, openElsewhereIDs: openElsewhereIDs,
-						                excludedTabIDs: splitIDs,
-						                onSelectTab: onSelectTab, navigationNamespace: navigationNamespace ?? sidebarTransitions,
-						                sidebarSelection: sidebarSelection, selectionOrder: pinnedSelectionOrder)
+						// Section exposes children to the outer LazyVStack; no eager folder stack.
+						Section {
+							if !collapsedFolderIDs.contains(folder.id) {
+								ForEach(projection.folderTabs[folder.id] ?? []) { tab in
+									BrowserTabRow(tab: tab, browser: browser,
+									              isSelected: isActiveSpace && selectedID == tab.id,
+									              tabIndex: nil, normalCount: normalTabs.count, pinned: true,
+									              rowSpaceID: space.id, rowTheme: theme, splitSide: browser.splitSide(for: tab.id),
+									              isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab,
+									              navigationNamespace: navigationNamespace ?? sidebarTransitions,
+									              sidebarSelection: sidebarSelection, selectionOrder: pinnedSelectionOrder)
+										.equatable()
+										.padding(.leading, 12)
+										.id(tab.id)
+								}
+								.reorderable(collectionID: SidebarTabCollection.folder(folder.id))
+							}
+						} header: {
+							PinnedFolderHeader(folder: folder, browser: browser, isExpanded: Binding(
+								get: { !collapsedFolderIDs.contains(folder.id) },
+								set: { expanded in
+									if expanded { collapsedFolderIDs.remove(folder.id) }
+									else { collapsedFolderIDs.insert(folder.id) }
+								}
+							))
+						}
 					}
 					ForEach(ungroupedPinnedTabs) { tab in
 						BrowserTabRow(tab: tab, browser: browser,
@@ -123,7 +145,7 @@ struct ShellSidebarListView: View {
 					}
 					BrowserAITabDivider(browser: browser, tabs: normalTabs, action: $cleanupAction, canUndoGrouping: todayGroupsUndo != nil)
 					ForEach(space.todayTabGroups, id: \.id) { (group: BrowserTabGroupingFeature.Group) in
-						let groupTabs = (projection.groupedTabs[group.id] ?? []).filter { !splitIDs.contains($0.id) }
+						let groupTabs = projection.groupedTabs[group.id] ?? []
 						if !groupTabs.isEmpty {
 							// Keep each group virtualized while retaining its own native reorder collection.
 							Section {
@@ -340,60 +362,37 @@ struct ShellSidebarListView: View {
 	}
 }
 
-private struct PinnedFolderRow: View {
+private struct PinnedFolderHeader: View {
 	let folder: PinnedTabFolder
 	let browser: Browser
-	let tabsByID: [UUID: BrowserTab]
-	let selectedID: UUID?
-	let isActiveSpace: Bool
-	let normalCount: Int
-	let spaceID: UUID
-	let theme: BrowserTheme
-	let openElsewhereIDs: Set<UUID>
-	let excludedTabIDs: Set<UUID>
-	var onSelectTab: ((UUID) -> Void)?
-	let navigationNamespace: Namespace.ID
-	let sidebarSelection: BrowserSidebarTabSelection
-	let selectionOrder: [UUID]
-	@State private var isExpanded = true
+	@Binding var isExpanded: Bool
 	@State private var isRenaming = false
 	@State private var name = ""
 
 	var body: some View {
-		VStack(spacing: 2) {
-			Button {
-				isExpanded.toggle()
-			} label: {
-				Label(folder.name, systemImage: isExpanded ? "folder.fill" : "folder")
-					.frame(maxWidth: .infinity, alignment: .leading)
+		Button {
+			isExpanded.toggle()
+		} label: {
+			Label(folder.name, systemImage: isExpanded ? "folder.fill" : "folder")
+				.frame(maxWidth: .infinity, alignment: .leading)
+		}
+		.buttonStyle(.plain)
+		.accessibilityIdentifier("pinned-folder-\(folder.id.uuidString)")
+		.contextMenu {
+			Button("Rename Folder", systemImage: "pencil") {
+				name = folder.name
+				isRenaming = true
 			}
-			.buttonStyle(.plain)
-			.accessibilityIdentifier("pinned-folder-\(folder.id.uuidString)")
-			.contextMenu {
-				Button("Rename Folder", systemImage: "pencil") {
-					name = folder.name
-					isRenaming = true
-				}
-				Button("Delete Folder", systemImage: "trash", role: .destructive) {
-					browser.deletePinnedFolder(folder.id)
-				}
+			Button("Delete Folder", systemImage: "trash", role: .destructive) {
+				browser.deletePinnedFolder(folder.id)
 			}
-			.alert("Rename Folder", isPresented: $isRenaming) {
-				TextField("Folder Name", text: $name)
-				Button("Save", systemImage: "checkmark", role: .confirm) {
-					browser.renamePinnedFolder(folder.id, to: name)
-				}
-				Button(role: .cancel) {}
+		}
+		.alert("Rename Folder", isPresented: $isRenaming) {
+			TextField("Folder Name", text: $name)
+			Button("Save", systemImage: "checkmark", role: .confirm) {
+				browser.renamePinnedFolder(folder.id, to: name)
 			}
-			if isExpanded {
-				ForEach(folder.tabIDs.compactMap { tabsByID[$0] }.filter { !excludedTabIDs.contains($0.id) }) { tab in
-					BrowserTabRow(tab: tab, browser: browser, isSelected: isActiveSpace && selectedID == tab.id, tabIndex: nil, normalCount: normalCount, pinned: true, rowSpaceID: spaceID, rowTheme: theme, splitSide: browser.splitSide(for: tab.id), isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab, navigationNamespace: navigationNamespace, sidebarSelection: sidebarSelection, selectionOrder: selectionOrder)
-						.equatable()
-						.padding(.leading, 12)
-						.id(tab.id)
-				}
-				.reorderable(collectionID: SidebarTabCollection.folder(folder.id))
-			}
+			Button(role: .cancel) {}
 		}
 	}
 }
@@ -476,6 +475,7 @@ private final class SidebarProjectionCache {
 		let normalSelectionOrder: [UUID]
 		let pinnedSelectionOrder: [UUID]
 		let groupedTabs: [String: [BrowserTab]]
+		let folderTabs: [UUID: [BrowserTab]]
 	}
 
 	private struct Entry {
@@ -488,6 +488,27 @@ private final class SidebarProjectionCache {
 	}
 
 	private var cached: Entry?
+	private var excludedIDs: Set<UUID> = []
+	private var excludedProjection: Projection?
+
+	func excluding(_ ids: Set<UUID>, from projection: Projection) -> Projection {
+		guard !ids.isEmpty else { return projection }
+		if let excludedProjection, excludedIDs == ids { return excludedProjection }
+		let result = Projection(
+			favouriteTabs: projection.favouriteTabs.filter { !ids.contains($0.id) },
+			pinnedTabs: projection.pinnedTabs.filter { !ids.contains($0.id) },
+			ungroupedPinnedTabs: projection.ungroupedPinnedTabs.filter { !ids.contains($0.id) },
+			normalTabs: projection.normalTabs.filter { !ids.contains($0.id) },
+			ungroupedNormalTabs: projection.ungroupedNormalTabs.filter { !ids.contains($0.id) },
+			normalIndexes: projection.normalIndexes, normalSelectionOrder: projection.normalSelectionOrder,
+			pinnedSelectionOrder: projection.pinnedSelectionOrder,
+			groupedTabs: projection.groupedTabs.mapValues { $0.filter { !ids.contains($0.id) } },
+			folderTabs: projection.folderTabs.mapValues { $0.filter { !ids.contains($0.id) } }
+		)
+		excludedIDs = ids
+		excludedProjection = result
+		return result
+	}
 
 	func resolve(
 		space: BrowserSpace, favouriteIDs: [UUID], tabsByID: [UUID: BrowserTab],
@@ -502,6 +523,7 @@ private final class SidebarProjectionCache {
 		{
 			return cached.projection
 		}
+		excludedProjection = nil
 		// Measure only structural cache misses; selection-only hits stay allocation-free.
 		let started = BrowserLog.clock()
 		let favouriteTabs = isPrivate ? [] : favouriteIDs.compactMap { tabsByID[$0] }
@@ -528,7 +550,10 @@ private final class SidebarProjectionCache {
 			ungroupedPinnedTabs: ungroupedPinnedTabs, normalTabs: normalTabs,
 			ungroupedNormalTabs: ungroupedNormalTabs, normalIndexes: normalIndexes,
 			normalSelectionOrder: normalSelectionOrder, pinnedSelectionOrder: pinnedSelectionOrder,
-			groupedTabs: groupedTabs
+			groupedTabs: groupedTabs,
+			folderTabs: Dictionary(uniqueKeysWithValues: space.pinnedFolders.map { folder in
+				(folder.id, folder.tabIDs.compactMap { tabsByID[$0] })
+			})
 		)
 		cached = Entry(
 			spaceID: space.id, structureRevision: structureRevision,

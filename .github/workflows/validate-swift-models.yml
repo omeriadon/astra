@@ -87,6 +87,17 @@ jobs:
           set -euo pipefail
           swiftc  -swift-version 6 astra/Models/Tabs/BrowserVisit.swift checks/history-search-cancellation-check.swift -o "$RUNNER_TEMP/history"
           "$RUNNER_TEMP/history"
+      - name: Prepared history ranking and stale-result safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 6 \
+            astra/Models/Tabs/BrowserVisit.swift \
+            astra/Models/Search/BrowserSearchConfiguration.swift \
+            astra/Models/Search/BrowserSearchMatching.swift \
+            astra/Models/Search/BrowserHistorySearch.swift \
+            checks/prepared-history-search-check.swift -o "$RUNNER_TEMP/prepared-history"
+          "$RUNNER_TEMP/prepared-history"
 
   hibernation:
     name: Automatic hibernation policy

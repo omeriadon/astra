@@ -93,6 +93,8 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	private(set) var installedNames: [String] = []
 	private(set) var safariNames: Set<String> = []
 	private(set) var safariAppExtensions: [SafariExtensionCandidate] = []
+	@ObservationIgnored private var safariDiscoveryTask: (id: UUID, task: Task<[SafariExtensionCandidate], Never>)?
+	@ObservationIgnored private var safariDiscoveryCache: (at: Date, candidates: [SafariExtensionCandidate])?
 	private var safariBundlePaths: [String: String] = [:]
 	private var unpinnedNames: Set<String> = []
 	private(set) var actionsRevision = 0
@@ -439,9 +441,27 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		setEnabled(true, for: name)
 	}
 
-	func refreshSafariExtensions() async {
-		let discovered = await Task.detached(priority: .utility) { SafariExtensionCandidate.discover() }.value
-		safariAppExtensions = discovered.filter { !safariBundlePaths.values.contains($0.bundleURL.path) }
+	func refreshSafariExtensions(force: Bool = false) async {
+		let discovered: [SafariExtensionCandidate]
+		if !force, let cached = safariDiscoveryCache, Date.now.timeIntervalSince(cached.at) < 30 {
+			discovered = cached.candidates
+		} else {
+			let pending: (id: UUID, task: Task<[SafariExtensionCandidate], Never>)
+			if let existing = safariDiscoveryTask { pending = existing }
+			else {
+				pending = (UUID(), Task.detached(priority: .utility) { SafariExtensionCandidate.discover() })
+				safariDiscoveryTask = pending
+			}
+			discovered = await pending.task.value
+			if safariDiscoveryTask?.id == pending.id {
+				safariDiscoveryCache = (.now, discovered)
+				safariDiscoveryTask = nil
+			}
+		}
+		guard !Task.isCancelled else { return }
+		// Refilter current installations after the await; another caller may have installed one.
+		let candidates = discovered.filter { !safariBundlePaths.values.contains($0.bundleURL.path) }
+		if safariAppExtensions != candidates { safariAppExtensions = candidates }
 	}
 
 	func installSafariExtension(_ candidate: SafariExtensionCandidate) async {

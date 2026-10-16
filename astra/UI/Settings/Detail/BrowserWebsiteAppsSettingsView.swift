@@ -39,15 +39,18 @@
 			}
 			.scrollContentBackground(.hidden)
 			.listStyle(.sidebar)
+			.onChange(of: registry.installations) { old, new in
+				let current = Dictionary(uniqueKeysWithValues: new.map { ($0.id, $0) })
+				for previous in old where current[previous.id] != previous {
+					WebsiteAppSettingsIconCache.shared.remove(previous.id)
+				}
+			}
 		}
 
 		private func websiteAppRow(_ installation: BrowserWebsiteAppInstallation) -> some View {
 			VStack(alignment: .leading, spacing: 8) {
 				HStack {
-					Image(nsImage: NSWorkspace.shared.icon(forFile: installation.bundlePath))
-						.resizable()
-						.frame(width: 32, height: 32)
-						.accessibilityHidden(true)
+					WebsiteAppSettingsIcon(installation: installation)
 					TextField(
 						"Name",
 						text: Binding(
@@ -126,4 +129,59 @@
 			}
 		}
 	}
+	/// NSWorkspace is consulted once per installation version, outside row construction.
+	/// Keep AppKit image lookup on MainActor; moving it to an unisolated task is unnecessary.
+	@MainActor
+	private final class WebsiteAppSettingsIconCache {
+		static let shared = WebsiteAppSettingsIconCache()
+		private final class Entry: NSObject {
+			let installation: BrowserWebsiteAppInstallation
+			let image: NSImage
+			init(_ installation: BrowserWebsiteAppInstallation, image: NSImage) {
+				self.installation = installation
+				self.image = image
+			}
+		}
+		private let entries: NSCache<NSString, Entry> = {
+			let cache = NSCache<NSString, Entry>()
+			cache.countLimit = 128
+			cache.totalCostLimit = 8 * 1024 * 1024
+			return cache
+		}()
+
+		func image(for installation: BrowserWebsiteAppInstallation) -> NSImage {
+			let key = installation.id.uuidString as NSString
+			if let entry = entries.object(forKey: key), entry.installation == installation { return entry.image }
+			let source = NSWorkspace.shared.icon(forFile: installation.bundlePath)
+			// Store a small raster backing rather than retaining every representation in the app icon.
+			let image = NSImage(size: NSSize(width: 32, height: 32), flipped: false) { rect in
+				source.draw(in: rect)
+				return true
+			}
+			let small = image.tiffRepresentation.flatMap(NSImage.init(data:)) ?? source
+			entries.setObject(Entry(installation, image: small), forKey: key, cost: 64 * 64 * 4)
+			return small
+		}
+
+		func remove(_ id: UUID) { entries.removeObject(forKey: id.uuidString as NSString) }
+	}
+
+	private struct WebsiteAppSettingsIcon: View {
+		let installation: BrowserWebsiteAppInstallation
+		@State private var image: NSImage?
+		var body: some View {
+			Group {
+				if let image { Image(nsImage: image).resizable() }
+				else { Color.clear }
+			}
+			.frame(width: 32, height: 32)
+			.accessibilityHidden(true)
+			.task(id: installation) {
+				await Task.yield()
+				guard !Task.isCancelled else { return }
+				image = WebsiteAppSettingsIconCache.shared.image(for: installation)
+			}
+		}
+	}
+
 #endif

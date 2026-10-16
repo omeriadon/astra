@@ -86,8 +86,8 @@ enum BrowserSearchMatching {
 		return configuration.customTemplateIsValid ? template : nil
 	}
 
-	nonisolated static func normalized(_ text: String) -> String {
-		text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+	nonisolated static func normalized(_ text: String, locale: Locale = .current) -> String {
+		text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: locale)
 			.trimmingCharacters(in: .whitespacesAndNewlines)
 	}
 
@@ -96,24 +96,36 @@ enum BrowserSearchMatching {
 		score(normalizedQuery: normalized(query), in: text)
 	}
 
-	/// The caller can normalize once for an entire search across hundreds of
-	/// candidate titles and URLs rather than repeating it for every candidate.
+	nonisolated struct PreparedText: Sendable {
+		let text: String
+		let words: [String]
+		init(_ text: String, locale: Locale = .current) {
+			self.text = BrowserSearchMatching.normalized(text, locale: locale)
+			words = self.text.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+		}
+	}
+
+	nonisolated struct PreparedQuery: Sendable {
+		let text: String
+		let words: [String]
+		init(_ text: String, locale: Locale = .current) {
+			self.text = BrowserSearchMatching.normalized(text, locale: locale)
+			words = self.text.split(whereSeparator: \.isWhitespace).map(String.init)
+		}
+	}
+
+	/// Existing callers retain the same scoring; indexed history prepares both sides once.
 	nonisolated static func score(normalizedQuery query: String, in text: String) -> Double {
-		let text = normalized(text)
-		guard !query.isEmpty, !text.isEmpty else { return 0 }
-		if query == text {
-			return 1
-		}
-		if text.hasPrefix(query) {
-			return 0.92
-		}
-		if text.contains(query) {
-			return 0.78
-		}
-		let queryWords = query.split(whereSeparator: \.isWhitespace).map(String.init)
-		let textWords = text.split { !$0.isLetter && !$0.isNumber }.map(String.init)
-		let scores = queryWords.map { word in
-			textWords.map { wordScore(word, in: $0) }.max() ?? 0
+		score(PreparedQuery(query), in: PreparedText(text))
+	}
+
+	nonisolated static func score(_ query: PreparedQuery, in text: PreparedText) -> Double {
+		guard !query.text.isEmpty, !text.text.isEmpty else { return 0 }
+		if query.text == text.text { return 1 }
+		if text.text.hasPrefix(query.text) { return 0.92 }
+		if text.text.contains(query.text) { return 0.78 }
+		let scores = query.words.map { word in
+			text.words.map { wordScore(word, in: $0) }.max() ?? 0
 		}
 		guard scores.allSatisfy({ $0 > 0 }) else { return 0 }
 		return scores.reduce(0, +) / Double(scores.count)

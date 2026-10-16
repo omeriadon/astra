@@ -109,7 +109,7 @@ extension Browser {
 				}
 			}
 		}
-		results += historySearchResults(normalizedQuery: normalizedQuery)
+		results += historySearchResults(query: query, fromNewTab: includeActions)
 		results += bookmarkSearchResults(normalizedQuery: normalizedQuery)
 		results += openTabSearchResults(normalizedQuery: normalizedQuery)
 		let suggestions = remoteSuggestions ?? (includeActions ? newTabGoogleSuggestions : [])
@@ -267,52 +267,14 @@ extension Browser {
 		)
 	}
 
-	private func historySearchResults(normalizedQuery: String) -> [BrowserSearchResult] {
-		// Retain the SwiftUI observation dependency even when using the ignored cache.
-		_ = historyVisits.count
-		if historySearchIndex == nil {
-			// Build once per history mutation, not for every keystroke.
-			var newestVisit = Date.distantPast
-			var summaries: [URL: (visit: BrowserVisit, count: Int)] = [:]
-			for visit in historyVisits {
-				if visit.visitedAt > newestVisit {
-					newestVisit = visit.visitedAt
-				}
-				if var existing = summaries[visit.url] {
-					existing.count += 1
-					if visit.visitedAt > existing.visit.visitedAt ||
-						(visit.visitedAt == existing.visit.visitedAt &&
-							visit.id.uuidString < existing.visit.id.uuidString)
-					{
-						existing.visit = visit
-					}
-					summaries[visit.url] = existing
-				} else {
-					summaries[visit.url] = (visit, 1)
-				}
-			}
-			let entries = summaries.map { (url: $0.key, visit: $0.value.visit, count: $0.value.count) }
-			historySearchIndex = (newestVisit: newestVisit, entries: entries)
-		}
-		guard let index = historySearchIndex else { return [] }
-		return index.entries.compactMap { entry in
-			let url = entry.url
-			let visit = entry.visit
-			let count = entry.count
-			let match = max(
-				BrowserSearchMatching.score(normalizedQuery: normalizedQuery, in: visit.title),
-				BrowserSearchMatching.score(normalizedQuery: normalizedQuery, in: url.host ?? ""),
-				BrowserSearchMatching.score(normalizedQuery: normalizedQuery, in: url.absoluteString)
-			)
-			guard match > 0 else { return nil }
-			let age = max(0, index.newestVisit.timeIntervalSince(visit.visitedAt) / 86400)
-			let recency = 1 / (1 + age / 365)
-			return BrowserSearchResult(
-				id: "history-\(visit.id)", kind: .history, title: visit.title,
-				detail: "History · \(url.absoluteString)", symbol: "clock.arrow.circlepath",
-				score: match + min(Double(count), 20) * 0.002 + recency * 0.02,
-				destination: url.absoluteString,
-				perform: { self.openSearchDestination(url) }
+	private func historySearchResults(query: String, fromNewTab: Bool) -> [BrowserSearchResult] {
+		let request = BrowserHistorySearchModel.Request(query: query, revision: historyChangeRevision)
+		return historySearch.matches(for: request, scope: fromNewTab ? .newTab : .address).map { match in
+			BrowserSearchResult(
+				id: "history-\(match.id)", kind: .history, title: match.title,
+				detail: "History · \(match.url.absoluteString)", symbol: "clock.arrow.circlepath",
+				score: match.score, destination: match.url.absoluteString,
+				perform: { self.openSearchDestination(match.url) }
 			)
 		}
 	}
