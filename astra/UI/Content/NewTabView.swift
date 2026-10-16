@@ -391,7 +391,7 @@ struct NewTabView: View {
 				}
 			}
 			.clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-			.foregroundStyle(usesDefaultBackground ? Color.white : Color.primary)
+			.foregroundStyle(usesDefaultBackground ? browser.theme.foregroundColor : Color.primary)
 		}
 		.padding(.horizontal, 10)
 		.padding(.top, 10)
@@ -500,7 +500,8 @@ private struct NewTabWindowActivity: NSViewRepresentable {
 		}
 
 		private func publish() {
-			let visible = window.map { $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible) } ?? false
+			let owningWindow = unsafe window
+			let visible = owningWindow.map { $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible) } ?? false
 			onChange(NSApp.isActive && visible)
 		}
 	}
