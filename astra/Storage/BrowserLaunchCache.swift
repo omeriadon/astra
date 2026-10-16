@@ -26,15 +26,15 @@ enum BrowserLaunchCache {
 			selectedTabID: UUID? = nil,
 			favicons: [String: Data] = [:]
 		) {
-			// Do not repaint legacy blank New Tab rows before disk hydration finishes.
-			let restorableTabs = tabs.filter { $0.url != nil || $0.internalPage != nil }
-			let leadingTabs = Array(restorableTabs.prefix(BrowserLaunchCache.maximumTabs))
+			// Blank New Tabs are part of the session and must retain their IDs
+			// and positions during the fast pre-hydration launch shell.
+			let leadingTabs = Array(tabs.prefix(BrowserLaunchCache.maximumTabs))
 			if let selected = selectedTabID,
-			   restorableTabs.count > BrowserLaunchCache.maximumTabs,
+			   tabs.count > BrowserLaunchCache.maximumTabs,
 			   !leadingTabs.contains(where: { $0.id == selected }),
-			   let selectedTab = restorableTabs.first(where: { $0.id == selected })
+			   let selectedTab = tabs.first(where: { $0.id == selected })
 			{
-				self.tabs = Array(restorableTabs.prefix(BrowserLaunchCache.maximumTabs - 1)) + [selectedTab]
+				self.tabs = Array(tabs.prefix(BrowserLaunchCache.maximumTabs - 1)) + [selectedTab]
 			} else {
 				self.tabs = leadingTabs
 			}
