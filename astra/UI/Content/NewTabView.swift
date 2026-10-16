@@ -12,8 +12,7 @@ struct NewTabView: View {
 	@Default(.startPagePreferences) private var startPagePreferencesValue
 	@FocusState private var isSearchFocused: Bool
 	@Namespace private var transitions
-	@AppStorage("astra.newTabBackgroundImage") private var backgroundImagePath = ""
-	@AppStorage("astra.newTabBackgroundStyle") private var backgroundStyle = "image"
+	@AppStorage("astra.newTabBackgroundStyle") private var backgroundStyle = "default"
 	@AppStorage("astra.newTabDitherConfiguration") private var ditherConfigurationData = Data()
 	@State private var editingDither = false
 	@State private var ditherPointer = DitherPointerInput()
@@ -23,10 +22,8 @@ struct NewTabView: View {
 	@State private var isPresented = false
 	@State private var entered = false
 	#if os(macOS)
-		@State private var backgroundImage: NSImage?
 		@State private var windowCanAnimate = false
 	#endif
-	@State private var choosingBackgroundImage = false
 	@State private var recentVisits: [BrowserVisit] = []
 	@State private var frequentVisits: [BrowserVisitSummary] = []
 
@@ -98,9 +95,18 @@ struct NewTabView: View {
 				.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 			}
 		}
+		.overlay {
+			#if os(macOS)
+				if backgroundStyle == "dither" {
+					NewTabPointerTracker(pointer: ditherPointer)
+						.allowsHitTesting(false)
+				}
+			#endif
+		}
 		.overlay(alignment: .bottomTrailing) {
 			backgroundPicker.padding(20)
 		}
+		#if !os(macOS)
 		.onContinuousHover { phase in
 			guard backgroundStyle == "dither" else { return }
 			switch phase {
@@ -108,35 +114,12 @@ struct NewTabView: View {
 				case .ended: ditherPointer.location = nil
 			}
 		}
+		#endif
 		#if os(macOS)
 		.background {
 			NewTabWindowActivity { windowCanAnimate = $0 }
 		}
-		.fileImporter(isPresented: $choosingBackgroundImage, allowedContentTypes: [.image]) { result in
-			guard case let .success(url) = result else { return }
-			let access = url.startAccessingSecurityScopedResource()
-			defer {
-				if access {
-					url.stopAccessingSecurityScopedResource()
-				}
-			}
-			let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Astra", isDirectory: true)
-			try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-			let target = directory.appendingPathComponent("new-tab-background.\(url.pathExtension)")
-			try? FileManager.default.removeItem(at: target)
-			if (try? FileManager.default.copyItem(at: url, to: target)) != nil {
-				backgroundImagePath = target.path; backgroundStyle = "image"
-			}
-		}
-		.task(id: backgroundImagePath) {
-			let path = backgroundImagePath
-			backgroundImage = nil
-			guard !path.isEmpty else { return }
-			let data = await Task.detached(priority: .utility) { try? Data(contentsOf: URL(fileURLWithPath: path)) }.value
-			guard !Task.isCancelled, backgroundImagePath == path else { return }
-			backgroundImage = data.flatMap { NSImage(data: $0) }
-		}
-		#endif
+
 		.onAppear { isPresented = true }
 		.onDisappear { isPresented = false }
 		.task(id: browser.selectedTabID) {
@@ -201,8 +184,8 @@ struct NewTabView: View {
 	private var usesDefaultBackground: Bool {
 		switch backgroundStyle {
 			case "float", "dither", "smoke", "ripple", "datamosh": false
-			case "default", "solid", "holographic": true
-			default: backgroundImagePath.isEmpty
+			case "default", "solid", "image", "holographic": true
+			default: true
 		}
 	}
 
@@ -234,28 +217,24 @@ struct NewTabView: View {
 
 	@ViewBuilder
 	private var newTabBackground: some View {
-		if backgroundStyle == "dither" {
-			DitherBackground(theme: browser.theme, configuration: DitherConfiguration.decode(ditherConfigurationData), pointer: ditherPointer)
-		} else if let preset = NewTabShaderPreset(rawValue: backgroundStyle), preset != .holographic {
-			NewTabShaderSurface(theme: browser.theme, preset: preset, canAnimate: animatesBackground)
-		} else if backgroundStyle == "float" {
-			Rectangle().fill(browser.theme.firstColor.color)
-				.livable(palette: livingPalette, isAnimated: animatesBackground)
-				.overlay(defaultBackgroundColor.opacity(0.18))
-		} else {
-			#if os(macOS)
-				if !usesDefaultBackground, let image = backgroundImage {
-					GeometryReader { geometry in
-						Image(nsImage: image).resizable().scaledToFill()
-							.frame(width: geometry.size.width, height: geometry.size.height).clipped()
-					}
-				} else {
-					defaultBackgroundColor
-				}
-			#else
-				defaultBackgroundColor
-			#endif
+		ZStack {
+			// Every preset has the same dynamic light/dark foundation as Default.
+			// Legacy saved image styles also resolve to Default; no bitmap is loaded.
+			defaultBackgroundColor
+			if backgroundStyle == "dither" {
+				DitherBackground(theme: browser.theme, configuration: DitherConfiguration.decode(ditherConfigurationData),
+				                 pointer: ditherPointer, canAnimate: animatesBackground)
+			} else if let preset = NewTabShaderPreset(rawValue: backgroundStyle), preset != .holographic {
+				NewTabShaderSurface(theme: browser.theme, preset: preset, canAnimate: animatesBackground)
+					.opacity(preset == .ripple ? 0.56 : 1)
+			} else if backgroundStyle == "float" {
+				Rectangle().fill(browser.theme.firstColor.color)
+					.livable(palette: livingPalette, isAnimated: animatesBackground)
+					.blur(radius: 30)
+					.overlay(defaultBackgroundColor.opacity(0.18))
+			}
 		}
+		.clipped()
 	}
 
 	private var ditherConfiguration: Binding<DitherConfiguration> {
@@ -289,17 +268,7 @@ struct NewTabView: View {
 			Button { backgroundStyle = "datamosh" } label: {
 				Label("Datamosh", systemImage: backgroundStyle == "datamosh" ? "checkmark" : "waveform.path")
 			}
-			Divider()
-			Button("Choose Background Image…", systemImage: "photo") { choosingBackgroundImage = true }
-			if !backgroundImagePath.isEmpty {
-				Button("Use Background Image", systemImage: "photo.fill") { backgroundStyle = "image" }
-				Button("Remove Background Image", systemImage: "trash") {
-					backgroundImagePath = ""
-					if backgroundStyle == "image" {
-						backgroundStyle = "default"
-					}
-				}
-			}
+
 		} label: {
 			Image(systemName: "paintpalette").font(.system(size: 15))
 				.padding(10)
@@ -447,23 +416,20 @@ struct NewTabView: View {
 			.background {
 				if backgroundStyle == "holographic" {
 					NewTabShaderSurface(theme: browser.theme, preset: .holographic, canAnimate: animatesBackground)
-						.overlay(.black.opacity(0.20))
 						.overlay {
 							RoundedRectangle(cornerRadius: 24, style: .continuous)
 								.strokeBorder(.white.opacity(0.24), lineWidth: 1)
 						}
 				} else if usesDefaultBackground {
 					RoundedRectangle(cornerRadius: 24, style: .continuous)
-						.fill(browser.theme.firstColor.color)
-						.livable(palette: livingPalette, isAnimated: animatesBackground)
-						.overlay(.black.opacity(0.16), in: RoundedRectangle(cornerRadius: 24))
+						.fill(.ultraThinMaterial)
 				} else {
 					RoundedRectangle(cornerRadius: 24, style: .continuous)
-						.fill(.ultraThinMaterial).opacity(0.5)
+						.fill(.regularMaterial)
 				}
 			}
 			.clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-			.foregroundStyle(backgroundStyle == "holographic" ? Color.white : (usesDefaultBackground ? browser.theme.foregroundColor : Color.primary))
+			.foregroundStyle(backgroundStyle == "holographic" ? Color.white : Color.primary)
 		}
 		.padding(.horizontal, 10)
 		.padding(.top, 10)
@@ -585,4 +551,72 @@ private struct StartPageVisitRow: View {
 			}
 		}
 	}
+#endif
+
+#if os(macOS)
+/// AppKit's local mouse monitor sees pointer motion above TextFields and List
+/// rows, which a SwiftUI hover handler on a non-hit-testable backdrop misses.
+/// It is mounted only while Theme Dither is selected and never consumes events.
+private struct NewTabPointerTracker: NSViewRepresentable {
+	let pointer: DitherPointerInput
+
+	func makeNSView(context _: Context) -> TrackingView {
+		TrackingView(pointer: pointer)
+	}
+
+	func updateNSView(_ view: TrackingView, context _: Context) {
+		view.pointer = pointer
+	}
+
+	static func dismantleNSView(_ view: TrackingView, coordinator _: ()) {
+		view.stopObserving()
+	}
+
+	final class TrackingView: NSView {
+		var pointer: DitherPointerInput
+		private var monitor: Any?
+
+		init(pointer: DitherPointerInput) {
+			self.pointer = pointer
+			super.init(frame: .zero)
+		}
+
+		@available(*, unavailable)
+		required init?(coder _: NSCoder) {
+			fatalError("init(coder:) is unavailable")
+		}
+
+		override var isFlipped: Bool { true }
+		override func hitTest(_: NSPoint) -> NSView? { nil }
+
+		override func viewDidMoveToWindow() {
+			super.viewDidMoveToWindow()
+			stopObserving()
+			guard window != nil else { return }
+			monitor = NSEvent.addLocalMonitorForEvents(
+				matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+			) { [weak self] event in
+				self?.track(event)
+				return event
+			}
+		}
+
+		func stopObserving() {
+			if let monitor {
+				NSEvent.removeMonitor(monitor)
+				self.monitor = nil
+			}
+			pointer.location = nil
+		}
+
+		private func track(_ event: NSEvent) {
+			guard let window, event.window === window else {
+				pointer.location = nil
+				return
+			}
+			let point = convert(event.locationInWindow, from: nil)
+			pointer.location = bounds.contains(point) ? CGPoint(x: point.x, y: point.y) : nil
+		}
+	}
+}
 #endif
