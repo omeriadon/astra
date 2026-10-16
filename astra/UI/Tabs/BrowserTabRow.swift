@@ -128,6 +128,7 @@ struct BrowserTabRow: View {
 				onSelectTab: onSelectTab,
 				onActivate: activateTab
 			)
+			.foregroundStyle(Color.primary.mix(with: theme.tabColor, by: 0.25))
 			.overlay(alignment: .trailing) {
 				if isSelected || onSelectTab != nil {
 					#if os(macOS)
