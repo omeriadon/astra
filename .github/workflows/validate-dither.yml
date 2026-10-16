@@ -5,6 +5,9 @@ on:
     branches: [main, 'release/**']
     paths:
       - 'astra/UI/Background/Dither/**'
+      - 'astra/UI/Background/NewTabShaderSurface.swift'
+      - 'astra/UI/Background/NewTabShaderEffects.metal'
+      - 'checks/new-tab-shaders-check.py'
       - 'astra/UI/Content/NewTabView.swift'
       - 'checks/dither-motion-check.swift'
       - '.github/workflows/validate-dither.yml'
@@ -38,3 +41,20 @@ jobs:
         run: |
           xcrun -sdk macosx metal -c astra/UI/Background/Dither/ThemeDither.metal -o "$RUNNER_TEMP/dither.air"
           xcrun -sdk macosx metallib "$RUNNER_TEMP/dither.air" -o "$RUNNER_TEMP/dither.metallib"
+
+  new-tab-effects:
+    name: New-tab Metal effects and picker
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Check four preset integration paths
+        run: python3 checks/new-tab-shaders-check.py
+      - name: Install Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+      - name: Compile and link the four new-tab effects
+        run: |
+          xcrun -sdk macosx metal -c astra/UI/Background/NewTabShaderEffects.metal -o "$RUNNER_TEMP/new-tab.air"
+          xcrun -sdk macosx metallib "$RUNNER_TEMP/new-tab.air" -o "$RUNNER_TEMP/new-tab.metallib"
