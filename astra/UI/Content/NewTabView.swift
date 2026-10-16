@@ -46,6 +46,10 @@ struct NewTabView: View {
 		return "Favorites and visited pages will appear here."
 	}
 
+	private var historySearchRequest: BrowserHistorySearchModel.Request {
+		.init(query: browser.newTabSearchText.trimmingCharacters(in: .whitespacesAndNewlines), revision: browser.historyChangeRevision)
+	}
+
 	var body: some View {
 		let selectedResultID = browser.selectedNewTabSearchResult?.id
 		ZStack(alignment: .bottomTrailing) {
@@ -114,6 +118,10 @@ struct NewTabView: View {
 		.onChange(of: browser.historyVisits, initial: true) { _, visits in
 			recentVisits = BrowserStartPageProjection.recent(visits, isPrivate: browser.isPrivate)
 			frequentVisits = BrowserStartPageProjection.frequent(visits, isPrivate: browser.isPrivate)
+		}
+		.task(id: historySearchRequest) {
+			guard !historySearchRequest.query.isEmpty else { return }
+			await browser.historySearch.update(historySearchRequest, scope: .newTab, visits: browser.historyVisits)
 		}
 		.task(id: suggestionRequest) {
 			let request = suggestionRequest

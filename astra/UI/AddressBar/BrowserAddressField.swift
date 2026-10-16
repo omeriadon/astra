@@ -132,6 +132,10 @@ struct BrowserAddressField: View {
 		}
 	}
 
+	private var historySearchRequest: BrowserHistorySearchModel.Request {
+		.init(query: isFocused && !browser.isShowingNewTab ? addressText.trimmingCharacters(in: .whitespacesAndNewlines) : "", revision: browser.historyChangeRevision)
+	}
+
 	var body: some View {
 		HStack(spacing: 6) {
 			AddressTextField(
@@ -290,6 +294,10 @@ struct BrowserAddressField: View {
 		}
 		.onDisappear {
 			browser.addressFieldIsFocused = false
+		}
+		.task(id: historySearchRequest) {
+			guard !historySearchRequest.query.isEmpty else { return }
+			await browser.historySearch.update(historySearchRequest, scope: .address, visits: browser.historyVisits)
 		}
 		.task(id: searchEngineDiscoveryScope) {
 			await validateSearchEngineMetadata()
