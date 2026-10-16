@@ -80,7 +80,7 @@ struct NewTabShaderSurface: View {
 
 	var body: some View {
 		GeometryReader { geometry in
-			TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !running)) { context in
+			TimelineView(.animation(minimumInterval: 1.0 / 45.0, paused: !running)) { context in
 				// Sample the timeline date so shader uniforms change on every scheduled frame.
 				let time = Float(clock.value(at: context.date.timeIntervalSinceReferenceDate))
 				ZStack {
@@ -128,7 +128,7 @@ struct NewTabShaderSurface: View {
 			case .holographic:
 				ShaderLibrary.astraHolographicPrismatic(
 					.float2(size), .float(time),
-					.float(0.72), .float(5.5), .float(0.5), .float(0.785)
+					.float(0.92), .float(5.2), .float(1.0), .float(0.785)
 				)
 			case .ripple:
 				ShaderLibrary.astraLiveRipple(
