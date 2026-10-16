@@ -12,6 +12,10 @@ struct NewTabView: View {
 	@FocusState private var isSearchFocused: Bool
 	@Namespace private var transitions
 	@AppStorage("astra.newTabBackgroundImage") private var backgroundImagePath = ""
+	@AppStorage("astra.newTabBackgroundStyle") private var backgroundStyle = "solid"
+	@AppStorage("astra.newTabDitherConfiguration") private var ditherConfigurationData = Data()
+	@State private var editingDither = false
+	@State private var ditherPointer = DitherPointerInput()
 	@State private var choosingBackgroundImage = false
 	@State private var recentVisits: [BrowserVisit] = []
 	@State private var frequentVisits: [BrowserVisitSummary] = []
@@ -75,6 +79,13 @@ struct NewTabView: View {
 		.overlay(alignment: .bottomTrailing) {
 			backgroundPicker.padding(20)
 		}
+		.onContinuousHover { phase in
+			guard backgroundStyle == "dither" else { return }
+			switch phase {
+				case let .active(location): ditherPointer.location = location
+				case .ended: ditherPointer.location = nil
+			}
+		}
 		#if os(macOS)
 		.fileImporter(isPresented: $choosingBackgroundImage, allowedContentTypes: [.image]) { result in
 			guard case let .success(url) = result else { return }
@@ -84,7 +95,10 @@ struct NewTabView: View {
 			try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 			let target = directory.appendingPathComponent("new-tab-background.\(url.pathExtension)")
 			try? FileManager.default.removeItem(at: target)
-			if (try? FileManager.default.copyItem(at: url, to: target)) != nil { backgroundImagePath = target.path }
+			if (try? FileManager.default.copyItem(at: url, to: target)) != nil {
+				backgroundImagePath = target.path
+				backgroundStyle = "image"
+			}
 		}
 		#endif
 		.task(id: browser.quickSearchFocusRequest) {
@@ -138,6 +152,9 @@ struct NewTabView: View {
 
 	@ViewBuilder
 	private var newTabBackground: some View {
+		if backgroundStyle == "dither" {
+			DitherBackground(theme: browser.theme, configuration: DitherConfiguration.decode(ditherConfigurationData), pointer: ditherPointer)
+		} else {
 		#if os(macOS)
 		if !backgroundImagePath.isEmpty, let image = NSImage(contentsOfFile: backgroundImagePath) {
 			GeometryReader { geometry in
@@ -150,13 +167,33 @@ struct NewTabView: View {
 		#else
 		Color(.systemBackground)
 		#endif
+		}
+	}
+
+	private var ditherConfiguration: Binding<DitherConfiguration> {
+		Binding(get: { DitherConfiguration.decode(ditherConfigurationData) },
+			set: { ditherConfigurationData = $0.encoded })
 	}
 
 	private var backgroundPicker: some View {
 		Menu {
+			Button("Use Theme Dither", systemImage: "square.grid.3x3.fill") { backgroundStyle = "dither" }
+			Button("Configure Dither…", systemImage: "slider.horizontal.3") {
+				backgroundStyle = "dither"
+				editingDither = true
+			}
+			Button("Use Plain Background", systemImage: "square") {
+				backgroundStyle = "solid"
+				backgroundImagePath = ""
+			}
+			Divider()
 			Button("Choose Background Image…", systemImage: "photo") { choosingBackgroundImage = true }
 			if !backgroundImagePath.isEmpty {
-				Button("Remove Background Image", systemImage: "trash") { backgroundImagePath = "" }
+				Button("Use Background Image", systemImage: "photo") { backgroundStyle = "image" }
+				Button("Remove Background Image", systemImage: "trash") {
+					backgroundImagePath = ""
+					if backgroundStyle == "image" { backgroundStyle = "solid" }
+				}
 			}
 		} label: {
 			Image(systemName: "paintpalette").font(.system(size: 15))
@@ -165,6 +202,9 @@ struct NewTabView: View {
 		}
 		.menuStyle(.borderlessButton)
 		.accessibilityLabel("Customize new tab background")
+		.popover(isPresented: $editingDither) {
+			DitherControls(configuration: ditherConfiguration).frame(width: 360, height: 600)
+		}
 	}
 
 	@ViewBuilder
