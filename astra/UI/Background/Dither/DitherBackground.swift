@@ -9,6 +9,8 @@ struct DitherBackground: View {
 	var configuration = DitherConfiguration()
 	/// Optional input shared with an ancestor to track hover over foreground controls.
 	var pointer: DitherPointerInput?
+	/// Owning new-tab window visibility; defaults to true for standalone previews.
+	var canAnimate = true
 
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@Environment(\.scenePhase) private var scenePhase
@@ -18,7 +20,11 @@ struct DitherBackground: View {
 	@State private var clock = DitherClock()
 
 	private var running: Bool {
-		visible && scenePhase == .active && !reduceMotion && configuration.animationEnabled
+		#if os(macOS)
+			return visible && canAnimate && !reduceMotion && configuration.animationEnabled
+		#else
+			return visible && canAnimate && scenePhase == .active && !reduceMotion && configuration.animationEnabled
+		#endif
 	}
 
 	var body: some View {
@@ -27,8 +33,8 @@ struct DitherBackground: View {
 			TimelineView(.animation(
 				minimumInterval: 1 / settings.safe(settings.framesPerSecond, 15 ... 120, fallback: 30),
 				paused: !running
-			)) { _ in
-				let now = ProcessInfo.processInfo.systemUptime
+			)) { context in
+				let now = context.date.timeIntervalSinceReferenceDate
 				Rectangle()
 					.fill(shader(size: geometry.size, time: clock.value(at: now), now: now))
 					.opacity(settings.safe(settings.opacity, 0 ... 1))
@@ -47,15 +53,15 @@ struct DitherBackground: View {
 		.accessibilityHidden(true)
 		.onAppear {
 			visible = true
-			clock.setRunning(running, at: ProcessInfo.processInfo.systemUptime)
+			clock.setRunning(running, at: Date().timeIntervalSinceReferenceDate)
 		}
 		.onDisappear {
 			visible = false
-			clock.setRunning(false, at: ProcessInfo.processInfo.systemUptime)
+			clock.setRunning(false, at: Date().timeIntervalSinceReferenceDate)
 			motion = DitherMotion()
 		}
 		.onChange(of: running) { _, running in
-			clock.setRunning(running, at: ProcessInfo.processInfo.systemUptime)
+			clock.setRunning(running, at: Date().timeIntervalSinceReferenceDate)
 			if !running {
 				motion = DitherMotion()
 			}
@@ -69,7 +75,7 @@ struct DitherBackground: View {
 
 	private func track(_ location: CGPoint?) {
 		guard running, configuration.cursorInteractionEnabled else { return }
-		motion.move(to: location, at: ProcessInfo.processInfo.systemUptime,
+		motion.move(to: location, at: Date().timeIntervalSinceReferenceDate,
 		            response: configuration.safe(configuration.cursorResponse, 0.05 ... 1, fallback: 0.28),
 		            fade: configuration.safe(configuration.cursorFadeDuration, 0.1 ... 2, fallback: 0.5))
 	}
