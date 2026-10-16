@@ -168,11 +168,8 @@ struct BrowserTabRow: View {
 					}
 				}
 			} else if !compactSplitStyle, isHovered {
-				Color.clear
-					.glassEffect(
-						.regular,
-						in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabCornerRadius)
-					)
+				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabCornerRadius)
+					.fill(.ultraThinMaterial)
 			}
 		}
 		.overlay {
