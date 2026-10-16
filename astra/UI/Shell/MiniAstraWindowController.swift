@@ -129,6 +129,7 @@
 		}
 
 		func windowWillClose(_: Notification) {
+			BrowserSettingsWindowController.shared.close(for: browser)
 			if !isPromoting {
 				for tab in browser.tabs {
 					tab.stopForClose()

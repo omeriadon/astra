@@ -82,17 +82,15 @@ final class Browser {
 	private(set) var historyChangeRevision = 0
 	private(set) var historyVisits: [BrowserVisit] {
 		didSet {
-			historySearchIndex = nil
 			recentHistoryCache = nil
 			frequentHistoryCache = nil
 			historyChangeRevision &+= 1
+			historySearch.invalidate(before: historyChangeRevision)
 		}
 	}
 
-	/// Reuse the expensive per-URL history aggregation across successive search keystrokes.
-	/// The history property observer invalidates this for title edits, imports, sync and deletion.
-	@ObservationIgnored
-	var historySearchIndex: (newestVisit: Date, entries: [(url: URL, visit: BrowserVisit, count: Int)])?
+	/// Reuse prepared history on a worker; UI reads only revision/query-matched results.
+	let historySearch = BrowserHistorySearchModel()
 	@ObservationIgnored private var recentHistoryCache: (revision: Int, value: [BrowserVisit])?
 	@ObservationIgnored private var frequentHistoryCache: (revision: Int, value: [BrowserVisitSummary])?
 	/// Lamport-style local watermark for history tombstones, imports and visits.
@@ -1405,6 +1403,12 @@ final class Browser {
 		if isPrivate {
 			settingsPage = .privacyAndSecurity
 		}
+		#if os(macOS)
+			if page == .settings {
+				BrowserSettingsWindowController.shared.show(for: self)
+				return
+			}
+		#endif
 		if !inNewTab, let existing = visibleTabs.first(where: { $0.internalPage == page }) {
 			selectTab(existing.id)
 			return

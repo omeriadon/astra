@@ -93,11 +93,24 @@ private struct InternalPageHost: View {
 				case .themeEditor:
 					BrowserThemeEditorView(browser: browser)
 				case .settings:
+					#if os(macOS)
+						// Older sessions can still contain a Settings tab. Reopen its
+						// destination without embedding another settings hierarchy.
+						ContentUnavailableView {
+							Label("Settings", systemImage: "gearshape")
+						} description: {
+							Text("Settings are available in their own window.")
+						} actions: {
+							Button("Open Settings") { browser.openInternalPage(.settings) }
+						}
+						.task { browser.openInternalPage(.settings) }
+					#else
 					BrowserSettingsView(
 						browser: browser,
 						searchText: $settingsSearchText,
 						selectedPage: $browser.settingsPage
 					)
+					#endif
 				case .history:
 					BrowserHistoryView(browser: browser)
 				case .bookmarks:

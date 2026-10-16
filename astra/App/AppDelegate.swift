@@ -887,6 +887,10 @@
 		}
 
 		@objc private func closeTab(_: Any?) {
+			if BrowserSettingsWindowController.shared.isKeyWindow {
+				NSApp.keyWindow?.performClose(nil)
+				return
+			}
 			if let browser = activeBrowser, browser.showsQuickSearch {
 				browser.dismissQuickSearch()
 				return
@@ -952,12 +956,21 @@
 			activeBrowser?.openInternalPage(.themeEditor)
 		}
 
-		@objc private func openSettings(_: Any?) {
-			let browser: Browser = if activeAuthenticationBrowser == nil, let focusedBrowserWindow {
-				focusedBrowserWindow.browser
-			} else {
-				openBrowserWindow().browser
+		private var settingsBrowser: Browser {
+			if activeAuthenticationBrowser == nil, let browser = focusedBrowserWindow?.browser {
+				return browser
 			}
+			if let browser = BrowserSettingsWindowController.shared.browser {
+				return browser
+			}
+			// Reuse a normal session when no browser window has focus. Opening
+			// Settings should not raise an unrelated browser window.
+			return windows.first(where: { !$0.browser.isPrivate })?.browser
+				?? openBrowserWindow(showImmediately: false).browser
+		}
+
+		@objc private func openSettings(_: Any?) {
+			let browser = settingsBrowser
 			browser.openInternalPage(.settings)
 		}
 
@@ -1100,11 +1113,7 @@
 		}
 
 		@objc private func showAbout(_: Any?) {
-			let browser: Browser = if activeAuthenticationBrowser == nil, let focusedBrowserWindow {
-				focusedBrowserWindow.browser
-			} else {
-				openBrowserWindow().browser
-			}
+			let browser = settingsBrowser
 			browser.settingsPage = .about
 			browser.openInternalPage(.settings)
 		}
@@ -1394,7 +1403,7 @@
 				return browser.historyVisits.contains(where: { $0.id == id })
 			}
 			if menuItem.action == #selector(closeTab(_:)) {
-				return activeBrowser != nil || activeMiniWindow != nil
+				return activeBrowser != nil || activeMiniWindow != nil || BrowserSettingsWindowController.shared.isKeyWindow
 			}
 			if menuItem.action == #selector(closeWindow(_:)) || menuItem.action == #selector(toggleFullScreen(_:)) {
 				return NSApp.keyWindow != nil

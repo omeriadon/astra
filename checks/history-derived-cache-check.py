@@ -2,10 +2,9 @@
 from pathlib import Path
 source = Path("astra/Models/Core/Browser.swift").read_text()
 history = source.split("private(set) var historyVisits: [BrowserVisit]", 1)[1].split(
-    "/// Reuse the expensive per-URL", 1
+    "/// Reuse prepared history", 1
 )[0]
 for marker in (
-    "historySearchIndex = nil",
     "recentHistoryCache = nil",
     "frequentHistoryCache = nil",
     "historyChangeRevision &+= 1",
@@ -24,3 +23,5 @@ for name, cache in (
 assert "@ObservationIgnored private var recentHistoryCache" in source
 assert "@ObservationIgnored private var frequentHistoryCache" in source
 print("History projection observation and cache invalidation checks passed")
+
+assert "let historySearch = BrowserHistorySearchModel()" in source

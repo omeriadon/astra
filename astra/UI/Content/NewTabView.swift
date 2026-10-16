@@ -14,6 +14,9 @@ struct NewTabView: View {
 	@Namespace private var transitions
 	@AppStorage("astra.newTabBackgroundImage") private var backgroundImagePath = ""
 	@AppStorage("astra.newTabBackgroundStyle") private var backgroundStyle = "image"
+	@AppStorage("astra.newTabDitherConfiguration") private var ditherConfigurationData = Data()
+	@State private var editingDither = false
+	@State private var ditherPointer = DitherPointerInput()
 	@Environment(\.colorScheme) private var colorScheme
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@Environment(\.scenePhase) private var scenePhase
@@ -51,6 +54,10 @@ struct NewTabView: View {
 			return "Tabs closed in this private window will appear here."
 		}
 		return "Favorites and visited pages will appear here."
+	}
+
+	private var historySearchRequest: BrowserHistorySearchModel.Request {
+		.init(query: browser.newTabSearchText.trimmingCharacters(in: .whitespacesAndNewlines), revision: browser.historyChangeRevision)
 	}
 
 	var body: some View {
@@ -91,6 +98,13 @@ struct NewTabView: View {
 		}
 		.overlay(alignment: .bottomTrailing) {
 			backgroundPicker.padding(20)
+		}
+		.onContinuousHover { phase in
+			guard backgroundStyle == "dither" else { return }
+			switch phase {
+				case let .active(location): ditherPointer.location = location
+				case .ended: ditherPointer.location = nil
+			}
 		}
 		#if os(macOS)
 		.background {
@@ -137,6 +151,10 @@ struct NewTabView: View {
 			recentVisits = BrowserStartPageProjection.recent(visits, isPrivate: browser.isPrivate)
 			frequentVisits = BrowserStartPageProjection.frequent(visits, isPrivate: browser.isPrivate)
 		}
+		.task(id: historySearchRequest) {
+			guard !historySearchRequest.query.isEmpty else { return }
+			await browser.historySearch.update(historySearchRequest, scope: .newTab, visits: browser.historyVisits)
+		}
 		.task(id: suggestionRequest) {
 			let request = suggestionRequest
 			browser.newTabGoogleSuggestions = []
@@ -173,7 +191,11 @@ struct NewTabView: View {
 	}
 
 	private var usesDefaultBackground: Bool {
-		backgroundStyle != "float" && (backgroundStyle == "default" || backgroundImagePath.isEmpty)
+		switch backgroundStyle {
+			case "float", "dither": false
+			case "default", "solid": true
+			default: backgroundImagePath.isEmpty
+		}
 	}
 
 	private var animatesBackground: Bool {
@@ -204,7 +226,9 @@ struct NewTabView: View {
 
 	@ViewBuilder
 	private var newTabBackground: some View {
-		if backgroundStyle == "float" {
+		if backgroundStyle == "dither" {
+			DitherBackground(theme: browser.theme, configuration: DitherConfiguration.decode(ditherConfigurationData), pointer: ditherPointer)
+		} else if backgroundStyle == "float" {
 			Rectangle().fill(browser.theme.firstColor.color)
 				.livable(palette: livingPalette, isAnimated: animatesBackground)
 				.overlay(defaultBackgroundColor.opacity(0.18))
@@ -224,6 +248,11 @@ struct NewTabView: View {
 		}
 	}
 
+	private var ditherConfiguration: Binding<DitherConfiguration> {
+		Binding(get: { DitherConfiguration.decode(ditherConfigurationData) },
+			set: { ditherConfigurationData = $0.encoded })
+	}
+
 	private var backgroundPicker: some View {
 		Menu {
 			Button { backgroundStyle = "default" } label: {
@@ -232,11 +261,19 @@ struct NewTabView: View {
 			Button { backgroundStyle = "float" } label: {
 				Label("Float", systemImage: backgroundStyle == "float" ? "checkmark" : "water.waves")
 			}
+			Button("Use Theme Dither", systemImage: "square.grid.3x3.fill") { backgroundStyle = "dither" }
+			Button("Configure Dither…", systemImage: "slider.horizontal.3") {
+				backgroundStyle = "dither"
+				editingDither = true
+			}
 			Divider()
 			Button("Choose Background Image…", systemImage: "photo") { choosingBackgroundImage = true }
 			if !backgroundImagePath.isEmpty {
 				Button("Use Background Image", systemImage: "photo.fill") { backgroundStyle = "image" }
-				Button("Remove Background Image", systemImage: "trash") { backgroundImagePath = ""; backgroundStyle = "default" }
+				Button("Remove Background Image", systemImage: "trash") {
+					backgroundImagePath = ""
+					if backgroundStyle == "image" { backgroundStyle = "default" }
+				}
 			}
 		} label: {
 			Image(systemName: "paintpalette").font(.system(size: 15))
@@ -245,6 +282,9 @@ struct NewTabView: View {
 		}
 		.menuStyle(.borderlessButton)
 		.accessibilityLabel("Customize new tab background")
+		.popover(isPresented: $editingDither) {
+			DitherControls(configuration: ditherConfiguration).frame(width: 360, height: 600)
+		}
 	}
 
 	@ViewBuilder

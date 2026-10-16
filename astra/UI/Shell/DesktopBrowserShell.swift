@@ -72,7 +72,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	private var minimumPageWidth: CGFloat {
-		let page = BrowserChromeMetrics.minimumPageWidth(isSettings: browser.selectedTab?.internalPage == .settings)
+		let page = BrowserChromeMetrics.minimumPageWidth(isSettings: false)
 		return browser.isShowingTabSplit ? max(page, 728) : page
 	}
 
