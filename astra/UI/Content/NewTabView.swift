@@ -101,6 +101,7 @@ struct NewTabView: View {
 			#if os(macOS)
 				if backgroundStyle == "dither" {
 					NewTabPointerTracker(pointer: ditherPointer)
+						.frame(maxWidth: .infinity, maxHeight: .infinity)
 						.allowsHitTesting(false)
 				}
 			#endif
@@ -207,13 +208,20 @@ struct NewTabView: View {
 			: Color(.sRGB, red: 241.9 / 255, green: 242.06 / 255, blue: 242.19 / 255, opacity: 0.7)
 	}
 
-	/// Fixed-size palette also preserves each mesh point's location.
+	/// Preserve each mesh point but expose dark Space colours before shading.
+	/// Feeding near-black values to a blurred full-screen fill hid all motion.
 	private var livingPalette: [Float] {
 		let points = Array(browser.theme.meshColorPoints.prefix(4))
 		let fallback = ThemeColorPoint(color: browser.theme.firstColor, x: 0.5, y: 0.5)
 		return (0 ..< 4).flatMap { index -> [Float] in
 			let point = points.isEmpty ? fallback : points[index % points.count]
-			return [Float(point.x), Float(point.y), Float(point.color.red), Float(point.color.green), Float(point.color.blue)]
+			let source = point.color
+			let peak = max(source.red, max(source.green, source.blue))
+			let gain = min(3.2, max(1.0, 0.82 / max(peak, 0.12)))
+			let lift: (Double) -> Float = { component in
+				Float(min(1, max(0, component * gain + 0.045)))
+			}
+			return [Float(point.x), Float(point.y), lift(source.red), lift(source.green), lift(source.blue)]
 		}
 	}
 
@@ -230,9 +238,9 @@ struct NewTabView: View {
 					.opacity(preset == .ripple ? 0.56 : 1)
 			} else if backgroundStyle == "float" {
 				Rectangle().fill(browser.theme.firstColor.color)
-					.livable(palette: livingPalette, isAnimated: animatesBackground)
+					.livable(palette: livingPalette, isAnimated: animatesBackground, speed: 1.5)
 					.blur(radius: 30)
-					.overlay(defaultBackgroundColor.opacity(0.18))
+					.overlay(defaultBackgroundColor.opacity(0.08))
 			}
 		}
 		.clipped()
