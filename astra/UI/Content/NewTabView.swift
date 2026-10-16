@@ -384,7 +384,8 @@ struct NewTabView: View {
 			HStack(spacing: 10) {
 				Image(systemName: "magnifyingglass")
 					.accessibilityHidden(true)
-				TextField("Search or type a URL", text: $browser.newTabSearchText)
+				TextField("Search or type a URL", text: $browser.newTabSearchText,
+				          prompt: Text("Search or type a URL").foregroundColor(backgroundStyle == "holographic" ? .white : .secondary))
 					.focused($isSearchFocused)
 					.textFieldStyle(.plain)
 				#if os(macOS)
