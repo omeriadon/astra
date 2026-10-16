@@ -12,7 +12,7 @@ DitherBackground(
         gridSize: 4,
         gridSpacing: 1,
         cornerRadius: 1,
-        waveSpeed: 0.02,
+        waveSpeed: 0.055,
         waveFrequency: 4.1,
         waveAmplitude: 0.37,
         colorLevels: 5.4,
@@ -28,6 +28,10 @@ Every input has a description, units, and reasonable range immediately above its
 declaration in `DitherConfiguration.swift`. `DitherControls` is an optional editor
 for the same configuration. Square size excludes spacing; corner radius is capped
 at half the square size. Grid dimensions use SwiftUI points, not physical pixels.
+
+New dither defaults add visible cell separation, faster wave motion and higher
+contrast. Previously saved configurations remain compatible; the revised
+shader also boosts dark theme colours for those configurations.
 
 The original Metal fill is visually inspired by
 https://reactbits.dev/backgrounds/dither?waveSpeed=0.02&waveAmplitude=0.37&waveFrequency=4.1&colorNum=5.4&mouseRadius=0.6
@@ -55,7 +59,7 @@ inside the background: pointer writes then avoid rebuilding the containing view.
 Standalone backgrounds track their own hover. No click/drag gesture is installed,
 so foreground buttons, text selection, and scrolling keep their normal gestures.
 
-The frame clock is local to the background, defaults to 30 fps, and pauses while
+The frame clock is local to the background, defaults to 45 fps, and pauses while
 offscreen, inactive, manually disabled, or under Reduce Motion. Resume preserves
 wave time. Disabling animation or Reduce Motion also removes cursor motion.
 Only the effect subtree receives frame updates. One Metal fill draws the grid;
