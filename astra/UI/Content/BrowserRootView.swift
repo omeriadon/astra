@@ -25,13 +25,6 @@ struct BrowserRootView: View {
 
 	var body: some View {
 		shell
-			.allowsHitTesting(!browser.showsQuickSearch)
-			.accessibilityHidden(browser.showsQuickSearch)
-			.overlay {
-				if browser.showsQuickSearch {
-					BrowserQuickSearchOverlay(browser: browser)
-				}
-			}
 			.overlay(alignment: .bottom) {
 				if let error = browser.persistenceErrorDescription {
 					Label(error, systemImage: "exclamationmark.triangle")
