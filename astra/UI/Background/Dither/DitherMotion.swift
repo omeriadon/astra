@@ -19,6 +19,9 @@ nonisolated struct DitherMotion {
 
 		func sample(at time: Double) -> (SIMD2<Double>, SIMD2<Double>) {
 			let dt = max(0, time - self.time)
+			// Preserve the exact initial sample when a pointer event retargets the spring.
+			// Reconstructing it as target + (position - target) can lose precision.
+			guard dt > 0 else { return (position, velocity) }
 			let displacement = position - target
 			let coefficient = velocity + displacement * omega
 			let decay = exp(-omega * dt)
