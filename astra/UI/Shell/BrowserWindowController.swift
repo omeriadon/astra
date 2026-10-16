@@ -76,7 +76,7 @@
 			window.delegate = self
 			window.contentView = contentHost
 			window.contentMinSize = NSSize(width: BrowserChromeMetrics.minimumContentWidth, height: min(480, visibleFrame.height))
-			window.setBrowserMinimumContentWidth(BrowserChromeMetrics.minimumPageWidth(isSettings: browser.selectedTab?.internalPage == .settings)
+			window.setBrowserMinimumContentWidth(BrowserChromeMetrics.minimumPageWidth(isSettings: false)
 				+ (browser.sidebarShown ? BrowserChromeMetrics.expandedSidebarWidth : 0)
 				+ (browser.showsAISidebar && browser.canShowAISidebar && Defaults[.aiFeaturesEnabled] && Defaults[.aiSidebar] ? 364 : 0))
 			window.title = browser.isPrivate ? "astra — Private Browsing" : "astra"
@@ -185,6 +185,7 @@
 		}
 
 		func windowWillClose(_: Notification) {
+			BrowserSettingsWindowController.shared.close(for: browser)
 			BrowserExtensionManager.shared.closeWindow(for: browser)
 			BrowserWindowRegistry.shared.unregister(browser)
 			browser.flushPersistence()
