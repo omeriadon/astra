@@ -68,24 +68,25 @@ struct NewTabView: View {
 						.opacity(entered || reduceMotion ? 1 : 0)
 						.scaleEffect(entered || reduceMotion ? 1 : 0.94)
 						.offset(y: entered || reduceMotion ? 0 : 12)
-					ScrollViewReader { proxy in
-						List {
-							BrowserSearchSuggestionsSection(
-								browser: browser,
-								results: browser.newTabSearchText.isEmpty ? [] : browser.newTabSearchResults,
-								query: browser.newTabSearchText,
-								generation: browser.newTabSearchGeneration,
-								selectedResultID: selectedResultID,
-								fromNewTab: true,
-								onSelect: browser.performNewTabSearchResult
-							)
-						}
-						.listStyle(.sidebar)
-						.scrollContentBackground(.hidden)
-						.opacity(browser.newTabSearchText.isEmpty ? 0 : 1)
-						.onChange(of: selectedResultID) { _, selection in
-							if let selection {
-								proxy.scrollTo(selection)
+					if !browser.newTabSearchText.isEmpty {
+						ScrollViewReader { proxy in
+							List {
+								BrowserSearchSuggestionsSection(
+									browser: browser,
+									results: browser.newTabSearchResults,
+									query: browser.newTabSearchText,
+									generation: browser.newTabSearchGeneration,
+									selectedResultID: selectedResultID,
+									fromNewTab: true,
+									onSelect: browser.performNewTabSearchResult
+								)
+							}
+							.listStyle(.sidebar)
+							.scrollContentBackground(.hidden)
+							.onChange(of: selectedResultID) { _, selection in
+								if let selection {
+									proxy.scrollTo(selection)
+								}
 							}
 						}
 					}
@@ -120,7 +121,7 @@ struct NewTabView: View {
 		.background {
 			NewTabWindowActivity { windowCanAnimate = $0 }
 		}
-
+		#endif
 		.onAppear { isPresented = true }
 		.onDisappear { isPresented = false }
 		.task(id: browser.selectedTabID) {
@@ -216,7 +217,6 @@ struct NewTabView: View {
 		}
 	}
 
-	@ViewBuilder
 	private var newTabBackground: some View {
 		ZStack {
 			// Every preset has the same dynamic light/dark foundation as Default.
@@ -246,7 +246,10 @@ struct NewTabView: View {
 	private var backgroundPicker: some View {
 		Menu {
 			Button { backgroundStyle = "default" } label: {
-				Label("Default", systemImage: usesDefaultBackground ? "checkmark" : "circle")
+				Label(
+					"Default",
+					systemImage: backgroundStyle == "default" ? "checkmark" : "circle"
+				)
 			}
 			Button { backgroundStyle = "float" } label: {
 				Label("Float", systemImage: backgroundStyle == "float" ? "checkmark" : "water.waves")
@@ -556,79 +559,84 @@ private struct StartPageVisitRow: View {
 #endif
 
 #if os(macOS)
-/// AppKit's local mouse monitor sees pointer motion above TextFields and List
-/// rows, which a SwiftUI hover handler on a non-hit-testable backdrop misses.
-/// It is mounted only while Theme Dither is selected and never consumes events.
-private struct NewTabPointerTracker: NSViewRepresentable {
-	let pointer: DitherPointerInput
+	/// AppKit's local mouse monitor sees pointer motion above TextFields and List
+	/// rows, which a SwiftUI hover handler on a non-hit-testable backdrop misses.
+	/// It is mounted only while Theme Dither is selected and never consumes events.
+	private struct NewTabPointerTracker: NSViewRepresentable {
+		let pointer: DitherPointerInput
 
-	func makeNSView(context _: Context) -> TrackingView {
-		TrackingView(pointer: pointer)
-	}
-
-	func updateNSView(_ view: TrackingView, context _: Context) {
-		view.pointer = pointer
-	}
-
-	static func dismantleNSView(_ view: TrackingView, coordinator _: ()) {
-		view.stopObserving()
-	}
-
-	final class TrackingView: NSView {
-		var pointer: DitherPointerInput
-		private var monitor: Any?
-		private weak var monitoredWindow: NSWindow?
-		private var previousMouseMovedEvents: Bool?
-
-		init(pointer: DitherPointerInput) {
-			self.pointer = pointer
-			super.init(frame: .zero)
+		func makeNSView(context _: Context) -> TrackingView {
+			TrackingView(pointer: pointer)
 		}
 
-		@available(*, unavailable)
-		required init?(coder _: NSCoder) {
-			fatalError("init(coder:) is unavailable")
+		func updateNSView(_ view: TrackingView, context _: Context) {
+			view.pointer = pointer
 		}
 
-		override var isFlipped: Bool { true }
-		override func hitTest(_: NSPoint) -> NSView? { nil }
+		static func dismantleNSView(_ view: TrackingView, coordinator _: ()) {
+			view.stopObserving()
+		}
 
-		override func viewDidMoveToWindow() {
-			super.viewDidMoveToWindow()
-			stopObserving()
-			guard let window else { return }
-			monitoredWindow = window
-			previousMouseMovedEvents = window.acceptsMouseMovedEvents
-			window.acceptsMouseMovedEvents = true
-			monitor = NSEvent.addLocalMonitorForEvents(
-				matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
-			) { [weak self] event in
-				self?.track(event)
-				return event
+		final class TrackingView: NSView {
+			var pointer: DitherPointerInput
+			private var monitor: Any?
+			private weak var monitoredWindow: NSWindow?
+			private var previousMouseMovedEvents: Bool?
+
+			init(pointer: DitherPointerInput) {
+				self.pointer = pointer
+				super.init(frame: .zero)
 			}
-		}
 
-		func stopObserving() {
-			if let monitor {
-				NSEvent.removeMonitor(monitor)
-				self.monitor = nil
+			@available(*, unavailable)
+			required init?(coder _: NSCoder) {
+				fatalError("init(coder:) is unavailable")
 			}
-			if let monitoredWindow, let previousMouseMovedEvents {
-				monitoredWindow.acceptsMouseMovedEvents = previousMouseMovedEvents
-			}
-			monitoredWindow = nil
-			previousMouseMovedEvents = nil
-			pointer.location = nil
-		}
 
-		private func track(_ event: NSEvent) {
-			guard let window, event.window === window else {
+			override var isFlipped: Bool {
+				true
+			}
+
+			override func hitTest(_: NSPoint) -> NSView? {
+				nil
+			}
+
+			override func viewDidMoveToWindow() {
+				super.viewDidMoveToWindow()
+				stopObserving()
+				guard let window else { return }
+				monitoredWindow = window
+				previousMouseMovedEvents = window.acceptsMouseMovedEvents
+				window.acceptsMouseMovedEvents = true
+				monitor = NSEvent.addLocalMonitorForEvents(
+					matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+				) { [weak self] event in
+					self?.track(event)
+					return event
+				}
+			}
+
+			func stopObserving() {
+				if let monitor {
+					NSEvent.removeMonitor(monitor)
+					self.monitor = nil
+				}
+				if let monitoredWindow, let previousMouseMovedEvents {
+					monitoredWindow.acceptsMouseMovedEvents = previousMouseMovedEvents
+				}
+				monitoredWindow = nil
+				previousMouseMovedEvents = nil
 				pointer.location = nil
-				return
 			}
-			let point = convert(event.locationInWindow, from: nil)
-			pointer.location = bounds.contains(point) ? CGPoint(x: point.x, y: point.y) : nil
+
+			private func track(_ event: NSEvent) {
+				guard let window, event.window === window else {
+					pointer.location = nil
+					return
+				}
+				let point = convert(event.locationInWindow, from: nil)
+				pointer.location = bounds.contains(point) ? CGPoint(x: point.x, y: point.y) : nil
+			}
 		}
 	}
-}
 #endif
