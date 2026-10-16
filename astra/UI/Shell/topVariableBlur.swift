@@ -155,7 +155,7 @@ private struct SidebarScrollVariableBlurModifier: ViewModifier {
 							startPoint: .bottom, endPoint: .top,
 							startOpacity: 1, endOpacity: 0, isSmooth: true
 						),
-						maxBlurRadius: 6, isolatesBackdrop: true
+						maxBlurRadius: 3, isolatesBackdrop: true
 					)
 					.frame(height: bottom)
 					.allowsHitTesting(false)
