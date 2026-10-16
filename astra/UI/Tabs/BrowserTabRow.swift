@@ -740,6 +740,7 @@ private struct SidebarSelectedTabsContextMenu: View {
 	struct BrowserTabHoverPreviewOverlay: View {
 		let browser: Browser
 		@State private var coordinator = BrowserTabHoverPreviewCoordinator.shared
+		@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 		private let cardWidth: CGFloat = 320
 		private let cardHeight: CGFloat = 306
@@ -764,13 +765,16 @@ private struct SidebarSelectedTabsContextMenu: View {
 						max(cardHeight / 2 + margin, geometry.size.height - cardHeight / 2 - margin)
 					)
 
-					BrowserTabHoverPreviewCard(tab: tab, browser: browser)
-						.frame(width: cardWidth, height: cardHeight)
-						.position(x: x, y: y)
-						.id(tab.id)
-						.transaction { transaction in
-							transaction.animation = nil
+					ZStack {
+						BrowserTabHoverPreviewCard(tab: tab, browser: browser)
+							.id(tab.id)
+							.transition(.opacity)
 						}
+						.animation(.easeInOut(duration: 0.075), value: tab.id)
+						.frame(width: cardWidth, height: cardHeight)
+						.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
+						.position(x: x, y: y)
+						.animation(reduceMotion ? nil : .easeInOut(duration: 0.075), value: y)
 				}
 			}
 			.animation(.linear(duration: 0.1), value: coordinator.isVisible)
@@ -873,7 +877,6 @@ private struct SidebarSelectedTabsContextMenu: View {
 			}
 			.padding(12)
 			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
 			.task(id: tab.id) {
 				memorySnapshot = nil
 				hasSampledMemory = false
