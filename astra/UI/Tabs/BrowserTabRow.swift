@@ -151,28 +151,19 @@ struct BrowserTabRow: View {
 		.foregroundStyle(theme.foregroundColor)
 		.background {
 			if !compactSplitStyle, isSelected || splitSide != nil {
-				Color.clear
-					.glassEffect(
-						.clear,
-						in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabCornerRadius)
-					)
+				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabCornerRadius)
+					.fill(.regularMaterial)
 			} else if !compactSplitStyle, isMultiSelected {
 				ZStack {
-					Color.clear
-						.glassEffect(
-							.clear,
-							in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabCornerRadius)
-						)
+					RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabCornerRadius)
+						.fill(.regularMaterial)
 					if isSelected {
 						Color.white.opacity(0.2)
 					}
 				}
 			} else if !compactSplitStyle, isHovered {
-				Color.clear
-					.glassEffect(
-						.regular,
-						in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabCornerRadius)
-					)
+				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabCornerRadius)
+					.fill(.regularMaterial)
 			}
 		}
 		.overlay {

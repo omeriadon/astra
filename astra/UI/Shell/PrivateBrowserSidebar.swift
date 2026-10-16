@@ -55,7 +55,8 @@ private struct PrivateBrowserTabRow: View {
 		.padding(8)
 		.background {
 			if browser.selectedTabID == tab.id {
-				Color.clear.glassEffect(.clear, in: RoundedRectangle(cornerRadius: 10))
+				RoundedRectangle(cornerRadius: 10)
+					.fill(.regularMaterial)
 			}
 		}
 	}

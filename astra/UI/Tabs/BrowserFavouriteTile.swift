@@ -41,8 +41,8 @@ struct BrowserFavouriteTile: View {
 			.matchedTransitionSource(id: tab.id.uuidString, in: navigationNamespace ?? tileTransitions)
 			.background {
 				if isSelected {
-					Color.clear
-						.glassEffect(.clear.interactive(), in: RoundedRectangle(cornerRadius: 10))
+					RoundedRectangle(cornerRadius: 10)
+						.fill(.regularMaterial)
 				} else {
 					RoundedRectangle(cornerRadius: 10)
 						.fill(.white.opacity(0.12))
