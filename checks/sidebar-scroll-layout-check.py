@@ -46,7 +46,7 @@ assert ".modifier(SidebarScrollVariableBlurModifier(top: top, bottom: bottom))" 
 assert ".compositingGroup()" not in low_power_path
 assert "HazeEffect(" in fade and ".compositingGroup()" in fade
 assert "blurScale:" not in fade
-assert "maxBlurRadius: 6, isolatesBackdrop: true" in fade
+assert "maxBlurRadius: 3, isolatesBackdrop: true" in fade
 assert "maxBlurRadius: 2, isolatesBackdrop: true" in fade
 
 print("Sidebar lazy layout, hover-only geometry, and low-power fade checks passed")
