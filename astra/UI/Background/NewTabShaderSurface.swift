@@ -38,7 +38,12 @@ struct NewTabShaderSurface: View {
 	}
 
 	private var running: Bool {
-		isVisible && canAnimate && !reduceMotion && scenePhase == .active
+		#if os(macOS)
+			// canAnimate already tracks NSApp activity and the owning window's occlusion.
+			return isVisible && canAnimate && !reduceMotion
+		#else
+			return isVisible && canAnimate && !reduceMotion && scenePhase == .active
+		#endif
 	}
 
 	private var baseColor: Color {
@@ -75,8 +80,9 @@ struct NewTabShaderSurface: View {
 
 	var body: some View {
 		GeometryReader { geometry in
-			TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !running)) { _ in
-				let time = Float(clock.value(at: ProcessInfo.processInfo.systemUptime))
+			TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !running)) { context in
+				// Sample the timeline date so shader uniforms change on every scheduled frame.
+				let time = Float(clock.value(at: context.date.timeIntervalSinceReferenceDate))
 				ZStack {
 					baseColor
 					Rectangle()
@@ -90,14 +96,14 @@ struct NewTabShaderSurface: View {
 		.accessibilityHidden(true)
 		.onAppear {
 			isVisible = true
-			clock.setRunning(running, at: ProcessInfo.processInfo.systemUptime)
+			clock.setRunning(running, at: Date().timeIntervalSinceReferenceDate)
 		}
 		.onDisappear {
 			isVisible = false
-			clock.setRunning(false, at: ProcessInfo.processInfo.systemUptime)
+			clock.setRunning(false, at: Date().timeIntervalSinceReferenceDate)
 		}
 		.onChange(of: running) { _, value in
-			clock.setRunning(value, at: ProcessInfo.processInfo.systemUptime)
+			clock.setRunning(value, at: Date().timeIntervalSinceReferenceDate)
 		}
 	}
 
@@ -122,17 +128,17 @@ struct NewTabShaderSurface: View {
 			case .holographic:
 				ShaderLibrary.astraHolographicPrismatic(
 					.float2(size), .float(time),
-					.float(0.85), .float(14), .float(0.85), .float(0.785)
+					.float(0.72), .float(5.5), .float(0.5), .float(0.785)
 				)
 			case .ripple:
 				ShaderLibrary.astraLiveRipple(
 					.float2(size), .float(time),
-					.float(13), .float(26), .float(3.8), .float(2.0), .float(3)
+					.float(17), .float(34), .float(4.8), .float(1.6), .float(3)
 				)
 			case .datamosh:
 				ShaderLibrary.astraDatamosh(
 					.float2(size), .float(time),
-					.float(0.34), .float(34), .float(0.65), .float(1.6)
+					.float(0.48), .float(42), .float(0.65), .float(12)
 				)
 		}
 	}

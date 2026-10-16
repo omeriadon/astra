@@ -25,9 +25,15 @@ for function in (
 
 # Prismatic is bar-only; the page must stay default even when a custom
 # image path is saved. Other effects must fill the background only.
-assert 'case "default", "solid", "holographic": true' in new_tab
+assert 'case "default", "solid", "image", "holographic": true' in new_tab
 assert "preset != .holographic" in new_tab
 assert "preset: .holographic, canAnimate: animatesBackground" in new_tab
+assert ".fill(.ultraThinMaterial)" in new_tab
+assert ".fill(.regularMaterial)" in new_tab
+assert ".blur(radius: 30)" in new_tab
+assert "NewTabPointerTracker(pointer: ditherPointer)" in new_tab
+assert "Choose Background Image" not in new_tab
+assert "backgroundImagePath" not in new_tab
 assert 'if backgroundStyle == "holographic" {' in new_tab
 
 # Current Space colors and mesh positions, not a fixed backdrop or a bitmap.
@@ -40,9 +46,25 @@ assert "theme.appearanceMode" in surface
 
 # No busy timers, and motion freezes cleanly when hidden/inactive.
 assert "TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !running))" in surface
+assert "context.date.timeIntervalSinceReferenceDate" in surface
+assert "scenePhase == .active" in surface
 assert "clock.setRunning(false" in surface
-assert "!reduceMotion && scenePhase == .active" in surface
+assert "return isVisible && canAnimate && !reduceMotion" in surface
+assert "float frame = floor(time * rate)" in metal
+assert "float silver = 0.07" in metal
+assert "if (preset == 3.0)" in metal
 assert ".allowsHitTesting(false)" in surface
 assert "Copyright (c) 2026 Kris Puckett" in metal
 
 print("New-tab shader preset integration: OK")
+
+# The dither viewport must consume pointer events above interactive controls
+# without overriding hit testing, and must use the same timeline time base.
+dither = (root / "astra/UI/Background/Dither/DitherBackground.swift").read_text()
+dither_metal = (root / "astra/UI/Background/Dither/ThemeDither.metal").read_text()
+assert "var canAnimate = true" in dither
+assert "context.date.timeIntervalSinceReferenceDate" in dither
+assert "event.window === window" in new_tab
+assert "self?.track(event)" in new_tab
+assert "float drift = time * wave.x * 8.0" in dither_metal
+print("New-tab animation, materials and pointer checks: OK")

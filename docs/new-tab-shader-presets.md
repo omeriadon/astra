@@ -1,13 +1,14 @@
 # New-tab Shader Presets
 
-Adds four native Metal options to the existing new-tab palette menu. No WebView,
-web content, download, network fetch, or bundled bitmap is required.
+The palette provides procedural Metal/SwiftUI effects and the translucent
+Default background. Image imports and image loading have been removed; saved
+legacy image styles render the Default foundation.
 
 | Preset | Scope | Surface |
 | --- | --- | --- |
 | Smoke Reveal | Full new-tab page | Dark/light Space-color foundation with semi-transparent, marbled Space-color wisps and colored smoke |
-| Holographic Prismatic | Search bar **only** | High-contrast black/grey/silver procedural streaks illuminated by moving luminance-masked prismatic bands |
-| Live Ripple | Full new-tab page | Space-mesh-colored textured liquid with three concentric animated refraction sources |
+| Holographic Prismatic | Search bar **only** | A few broad dark-silver ribbons with slow prismatic movement; white text and placeholder |
+| Live Ripple | Full new-tab page | Animated refraction over Space-mesh liquid; reduced to 56% opacity over the Default foundation |
 | Datamosh | Full new-tab page | Hard-edged Space-mesh color strata with periodically smeared 16-point codec blocks and RGB bleed |
 
 ## Theme handling
@@ -18,26 +19,26 @@ weights instead of choosing just the first Space color; its light/dark
 foundation is derived from the Space appearance setting. Switching Space
 recomputes the palette without copying or modifying a static image.
 
-Holographic deliberately uses monochrome silver/black/white artwork so the
-foil shader has a sharp luminance mask; this mode leaves the normal new-tab
-page background in place, even if a custom background image was previously
-saved. Its search text is white above a dark overlay for legibility.
+Holographic now has wide, lower-frequency ribbons rather than many noisy
+hairlines. The page behind it is Default, and its search text and prompt are
+explicitly white. Default uses an ultraThinMaterial search bar; the other
+full-page effects use regularMaterial at full strength.
 
-Effects are mutually exclusive with Float, Theme Dither and uploaded images.
-The picker preserves the path of any uploaded image while another mode is
-active. The new preset is persisted in the existing
-`astra.newTabBackgroundStyle` setting.
+Effects remain exclusive with Float and Theme Dither. Float now has a 30-point
+blur. No effect loads a background image; the selected preset persists using
+`astra.newTabBackgroundStyle`.
 
 ## Animation and interaction
 
-The source artwork is deterministic and resolution-independent. Only the
-chosen effect is rendered with a 30 fps timeline. The accumulated time pauses
-when the view disappears, the window cannot animate, the app is inactive, or
-Reduce Motion is on. Search-bar hit testing remains with its native TextField.
+Source artwork is deterministic and resolution-independent. The 30 fps
+timeline now uses each frame's date as the shader clock. On macOS, the actual
+window's activity and occlusion are authoritative, and animation time pauses
+when the page becomes inactive or Reduce Motion is enabled.
 
-The ripples are continuous as in the upstream *Live Ripple* shader, not mouse-
-triggered. The four presets do not change Dither's configurable cursor
-interaction or its editor.
+Ripples remain continuous. Datamosh now updates codec blocks at 12 Hz and
+drifts smoothly between updates. Dither's wave travels visibly, and a
+non-consuming macOS pointer monitor tracks motion above the search field and
+suggestions list without blocking controls. It is scoped to the Dither view.
 
 ## Upstream and licensing
 
@@ -52,8 +53,9 @@ No entire upstream package or additional dependency is vendored.
 
 ## Validation
 
-`checks/new-tab-shaders-check.py` checks picker routing, Space palette
-propagation, all five Metal entry points, animation pausing and attribution.
+`checks/new-tab-shaders-check.py` checks picker routing, positioned Space
+palette propagation, animation frame date, pointer tracking, material search
+fields, bitmap removal, all five Metal entry points and attribution.
 The existing `Astra - Metal Dither` workflow now checks that integration
 and compiles/links the additional Metal source with Xcode 27.
 
@@ -65,10 +67,11 @@ and compiles/links the additional Metal source with Xcode 27.
    between them in Smoke, Ripple and Datamosh. Check each background responds.
 3. Switch between light/dark/auto Space appearance and confirm the Smoke
    foundation's contrast changes. Holographic must only change the search bar.
-4. Pick a custom image, choose Holographic, and return to the image option.
-   The image must be retained and Holographic must not show it behind the bar.
-5. Toggle Reduce Motion, minimize/occlude the browser, switch tabs/Spaces,
-   then return. Time must be paused while inactive; no idle animation loops.
+4. Confirm Float is visibly blurred, Default uses ultraThinMaterial, and
+   no preset offers an image import or shows an image from old preferences.
+5. Verify all shader presets visibly move while the window is active; move
+   the cursor above controls in Dither and verify the delayed wake. Toggle
+   Reduce Motion, minimize/occlude, switch tabs/Spaces and verify motion pauses.
 6. Test large and small window sizes, full-screen, 100%/200% display scaling.
    Check the marbling and ripple edges for cropping, aliasing and readability.
 7. Profile GPU Frame Capture, Energy Log and SwiftUI template at 30 fps,
