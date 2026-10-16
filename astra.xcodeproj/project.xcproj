@@ -61,6 +61,9 @@
       "path": "Packages/Haze",
     }, {
       "kind": "local",
+      "path": "Packages/Livable",
+    }, {
+      "kind": "local",
       "path": "Packages/AstraAutomationCore",
     }, {
       "kind": "local",
@@ -184,6 +187,10 @@
       ],
       "package-product-members": [
         {
+          "package": "Livable",
+          "product-name": "Livable",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
           "product-name": "Haze",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "ios" ] },
         }, {
@@ -441,6 +448,7 @@
         "resources",
       ],
       "package-product-members": [
+        { "package": "Livable", "product-name": "Livable", "build-phase": { "build-phase": "frameworks" } },
         {
           "product-name": "Haze",
           "build-phase": { "build-phase": "frameworks" },

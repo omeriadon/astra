@@ -1,4 +1,5 @@
 import Defaults
+import Livable
 import SwiftUI
 #if os(macOS)
 import AppKit
@@ -12,10 +13,19 @@ struct NewTabView: View {
 	@FocusState private var isSearchFocused: Bool
 	@Namespace private var transitions
 	@AppStorage("astra.newTabBackgroundImage") private var backgroundImagePath = ""
-	@AppStorage("astra.newTabBackgroundStyle") private var backgroundStyle = "solid"
+	@AppStorage("astra.newTabBackgroundStyle") private var backgroundStyle = "image"
 	@AppStorage("astra.newTabDitherConfiguration") private var ditherConfigurationData = Data()
 	@State private var editingDither = false
 	@State private var ditherPointer = DitherPointerInput()
+	@Environment(\.colorScheme) private var colorScheme
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	@Environment(\.scenePhase) private var scenePhase
+	@State private var isPresented = false
+	@State private var entered = false
+	#if os(macOS)
+	@State private var backgroundImage: NSImage?
+	@State private var windowCanAnimate = false
+	#endif
 	@State private var choosingBackgroundImage = false
 	@State private var recentVisits: [BrowserVisit] = []
 	@State private var frequentVisits: [BrowserVisitSummary] = []
@@ -54,31 +64,37 @@ struct NewTabView: View {
 		let selectedResultID = browser.selectedNewTabSearchResult?.id
 		ZStack(alignment: .bottomTrailing) {
 			newTabBackground
-		ScrollViewReader { proxy in
-			List {
-				BrowserSearchSuggestionsSection(
-					browser: browser,
-					results: browser.newTabSearchText.isEmpty ? [] : browser.newTabSearchResults,
-					query: browser.newTabSearchText,
-					generation: browser.newTabSearchGeneration,
-					selectedResultID: selectedResultID,
-					fromNewTab: true,
-					onSelect: browser.performNewTabSearchResult
-				)
-			}
-			.listStyle(.sidebar)
-			.scrollContentBackground(.hidden)
-			.safeAreaBar(edge: .top, spacing: 0) {
-				searchHeader
-			}
-			.onChange(of: selectedResultID) { _, selection in
-				if let selection {
-					proxy.scrollTo(selection)
+			GeometryReader { geometry in
+				VStack(spacing: 0) {
+					searchHeader
+						.opacity(entered || reduceMotion ? 1 : 0)
+						.scaleEffect(entered || reduceMotion ? 1 : 0.94)
+						.offset(y: entered || reduceMotion ? 0 : 12)
+					ScrollViewReader { proxy in
+						List {
+							BrowserSearchSuggestionsSection(
+								browser: browser,
+								results: browser.newTabSearchText.isEmpty ? [] : browser.newTabSearchResults,
+								query: browser.newTabSearchText,
+								generation: browser.newTabSearchGeneration,
+								selectedResultID: selectedResultID,
+								fromNewTab: true,
+								onSelect: browser.performNewTabSearchResult
+							)
+						}
+						.listStyle(.sidebar)
+						.scrollContentBackground(.hidden)
+						.opacity(browser.newTabSearchText.isEmpty ? 0 : 1)
+						.onChange(of: selectedResultID) { _, selection in
+							if let selection { proxy.scrollTo(selection) }
+						}
+					}
 				}
+				.frame(maxWidth: 680)
+				.padding(.horizontal, 24)
+				.padding(.top, max(24, geometry.size.height * 0.20))
+				.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 			}
-		}
-		.frame(maxWidth: 680)
-		.frame(maxWidth: .infinity, maxHeight: .infinity)
 		}
 		.overlay(alignment: .bottomTrailing) {
 			backgroundPicker.padding(20)
@@ -91,6 +107,9 @@ struct NewTabView: View {
 			}
 		}
 		#if os(macOS)
+		.background {
+			NewTabWindowActivity { windowCanAnimate = $0 }
+		}
 		.fileImporter(isPresented: $choosingBackgroundImage, allowedContentTypes: [.image]) { result in
 			guard case let .success(url) = result else { return }
 			let access = url.startAccessingSecurityScopedResource()
@@ -99,12 +118,25 @@ struct NewTabView: View {
 			try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 			let target = directory.appendingPathComponent("new-tab-background.\(url.pathExtension)")
 			try? FileManager.default.removeItem(at: target)
-			if (try? FileManager.default.copyItem(at: url, to: target)) != nil {
-				backgroundImagePath = target.path
-				backgroundStyle = "image"
-			}
+			if (try? FileManager.default.copyItem(at: url, to: target)) != nil { backgroundImagePath = target.path; backgroundStyle = "image" }
+		}
+		.task(id: backgroundImagePath) {
+			let path = backgroundImagePath
+			backgroundImage = nil
+			guard !path.isEmpty else { return }
+			let data = await Task.detached(priority: .utility) { try? Data(contentsOf: URL(fileURLWithPath: path)) }.value
+			guard !Task.isCancelled, backgroundImagePath == path else { return }
+			backgroundImage = data.flatMap { NSImage(data: $0) }
 		}
 		#endif
+		.onAppear { isPresented = true }
+		.onDisappear { isPresented = false }
+		.task(id: browser.selectedTabID) {
+			entered = false
+			await Task.yield()
+			guard !Task.isCancelled else { return }
+			withAnimation(reduceMotion || !usesDefaultBackground ? nil : .smooth(duration: 0.55)) { entered = true }
+		}
 		.task(id: browser.quickSearchFocusRequest) {
 			await Task.yield()
 			isSearchFocused = true
@@ -158,23 +190,61 @@ struct NewTabView: View {
 		}
 	}
 
+	private var usesDefaultBackground: Bool {
+		switch backgroundStyle {
+			case "float", "dither": false
+			case "default", "solid": true
+			default: backgroundImagePath.isEmpty
+		}
+	}
+
+	private var animatesBackground: Bool {
+		#if os(macOS)
+		isPresented && windowCanAnimate && !reduceMotion
+		#else
+		isPresented && scenePhase == .active && !reduceMotion
+		#endif
+	}
+
+	private var defaultBackgroundColor: Color {
+		let dark = browser.theme.appearanceMode == .dark
+			|| (browser.theme.appearanceMode == .auto && colorScheme == .dark)
+		return dark
+			? Color(.sRGB, red: 24.933 / 255, green: 24.933 / 255, blue: 24.933 / 255, opacity: 0.7)
+			: Color(.sRGB, red: 241.9 / 255, green: 242.06 / 255, blue: 242.19 / 255, opacity: 0.7)
+	}
+
+	/// Fixed-size palette also preserves each mesh point's location.
+	private var livingPalette: [Float] {
+		let points = Array(browser.theme.meshColorPoints.prefix(4))
+		let fallback = ThemeColorPoint(color: browser.theme.firstColor, x: 0.5, y: 0.5)
+		return (0..<4).flatMap { index -> [Float] in
+			let point = points.isEmpty ? fallback : points[index % points.count]
+			return [Float(point.x), Float(point.y), Float(point.color.red), Float(point.color.green), Float(point.color.blue)]
+		}
+	}
+
 	@ViewBuilder
 	private var newTabBackground: some View {
 		if backgroundStyle == "dither" {
 			DitherBackground(theme: browser.theme, configuration: DitherConfiguration.decode(ditherConfigurationData), pointer: ditherPointer)
+		} else if backgroundStyle == "float" {
+			Rectangle().fill(browser.theme.firstColor.color)
+				.livable(palette: livingPalette, isAnimated: animatesBackground)
+				.overlay(defaultBackgroundColor.opacity(0.18))
 		} else {
-		#if os(macOS)
-		if !backgroundImagePath.isEmpty, let image = NSImage(contentsOfFile: backgroundImagePath) {
-			GeometryReader { geometry in
-				Image(nsImage: image).resizable().scaledToFill()
-					.frame(width: geometry.size.width, height: geometry.size.height).clipped()
+			#if os(macOS)
+			if !usesDefaultBackground, let image = backgroundImage {
+				GeometryReader { geometry in
+					Image(nsImage: image).resizable().scaledToFill()
+						.frame(width: geometry.size.width, height: geometry.size.height).clipped()
+				}
+			} else {
+				defaultBackgroundColor
 			}
-		} else {
-			Color(nsColor: .windowBackgroundColor)
-		}
-		#else
-		Color(.systemBackground)
-		#endif
+			#else
+			defaultBackgroundColor
+			#endif
 		}
 	}
 
@@ -185,22 +255,24 @@ struct NewTabView: View {
 
 	private var backgroundPicker: some View {
 		Menu {
+			Button { backgroundStyle = "default" } label: {
+				Label("Default", systemImage: usesDefaultBackground ? "checkmark" : "circle")
+			}
+			Button { backgroundStyle = "float" } label: {
+				Label("Float", systemImage: backgroundStyle == "float" ? "checkmark" : "water.waves")
+			}
 			Button("Use Theme Dither", systemImage: "square.grid.3x3.fill") { backgroundStyle = "dither" }
 			Button("Configure Dither…", systemImage: "slider.horizontal.3") {
 				backgroundStyle = "dither"
 				editingDither = true
 			}
-			Button("Use Plain Background", systemImage: "square") {
-				backgroundStyle = "solid"
-				backgroundImagePath = ""
-			}
 			Divider()
 			Button("Choose Background Image…", systemImage: "photo") { choosingBackgroundImage = true }
 			if !backgroundImagePath.isEmpty {
-				Button("Use Background Image", systemImage: "photo") { backgroundStyle = "image" }
+				Button("Use Background Image", systemImage: "photo.fill") { backgroundStyle = "image" }
 				Button("Remove Background Image", systemImage: "trash") {
 					backgroundImagePath = ""
-					if backgroundStyle == "image" { backgroundStyle = "solid" }
+					if backgroundStyle == "image" { backgroundStyle = "default" }
 				}
 			}
 		} label: {
@@ -345,8 +417,21 @@ struct NewTabView: View {
 					.accessibilityLabel("Search the web, history, or browser actions")
 					.accessibilityIdentifier("new-tab-search")
 			}
-			.padding(14)
-			.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+			.padding(.horizontal, 22)
+			.padding(.vertical, 20)
+			.background {
+				if usesDefaultBackground {
+					RoundedRectangle(cornerRadius: 24, style: .continuous)
+						.fill(browser.theme.firstColor.color)
+						.livable(palette: livingPalette, isAnimated: animatesBackground)
+						.overlay(.black.opacity(0.16), in: RoundedRectangle(cornerRadius: 24))
+				} else {
+					RoundedRectangle(cornerRadius: 24, style: .continuous)
+						.fill(.ultraThinMaterial).opacity(0.5)
+				}
+			}
+			.clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+			.foregroundStyle(usesDefaultBackground ? browser.theme.foregroundColor : Color.primary)
 		}
 		.padding(.horizontal, 10)
 		.padding(.top, 10)
@@ -404,3 +489,61 @@ private struct StartPageVisitRow: View {
 #Preview {
 	NewTabView(browser: Browser())
 }
+
+#if os(macOS)
+/// One observer per displayed page. Saved blank tabs own no renderer or observers.
+private struct NewTabWindowActivity: NSViewRepresentable {
+	let onChange: (Bool) -> Void
+
+	func makeNSView(context: Context) -> ActivityView {
+		ActivityView(onChange: onChange)
+	}
+
+	func updateNSView(_ view: ActivityView, context: Context) {
+		view.onChange = onChange
+	}
+
+	static func dismantleNSView(_ view: ActivityView, coordinator: ()) {
+		view.stopObserving()
+	}
+
+	final class ActivityView: NSView {
+		var onChange: (Bool) -> Void
+		private var tokens: [NSObjectProtocol] = []
+
+		init(onChange: @escaping (Bool) -> Void) {
+			self.onChange = onChange
+			super.init(frame: .zero)
+		}
+
+		@available(*, unavailable)
+		required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+		override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+		override func viewDidMoveToWindow() {
+			super.viewDidMoveToWindow()
+			stopObserving()
+			for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification,
+				NSWindow.didDeminiaturizeNotification, NSApplication.didBecomeActiveNotification,
+				NSApplication.didResignActiveNotification] {
+				tokens.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+					Task { @MainActor [weak self] in self?.publish() }
+				})
+			}
+			Task { @MainActor [weak self] in self?.publish() }
+		}
+
+		func stopObserving() {
+			for token in tokens { NotificationCenter.default.removeObserver(token) }
+			tokens.removeAll()
+		}
+
+		private func publish() {
+			let owningWindow = unsafe window
+			let visible = owningWindow.map { $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible) } ?? false
+			onChange(NSApp.isActive && visible)
+		}
+	}
+}
+#endif
