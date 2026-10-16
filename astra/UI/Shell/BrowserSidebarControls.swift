@@ -421,8 +421,10 @@ private struct ShellNewTabButton: View {
 		.frame(height: onNewTab == nil ? 28 : 44)
 		.background {
 			if newTabHovered {
-				RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
-					.fill(.regularMaterial)
+				Color.clear.glassEffect(
+					.regular,
+					in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
+				)
 			}
 		}
 		.accessibilityIdentifier("new-tab")
@@ -457,8 +459,7 @@ private struct BrowserUnifiedSplitRow: View {
 		}
 		.frame(height: 28)
 		.background {
-			RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar)
-				.fill(.regularMaterial)
+			Color.clear.glassEffect(.clear, in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
 		}
 		.accessibilityElement(children: .contain)
 		.accessibilityIdentifier("sidebar-unified-split-tab")
