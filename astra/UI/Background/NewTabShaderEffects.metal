@@ -67,14 +67,15 @@ float3 spaceColor(float2 uv, device const float *points, int pointCount,
     float aspect = min(size.x / max(size.y, 1.0), 3.0);
     float2 p = float2(uv.x * aspect, uv.y);
     if (preset == 3.0) {
-        // A few wide, smooth silver ribbons; no high-frequency hairlines or
-        // scanlines behind glyphs. Keep the field dark enough for white text.
-        float2 q = float2(p.x * 0.8, p.y * 1.5);
-        float flow = fbm(q * 1.8 + 2.1, 3);
-        float ribbon = sin(q.x * 7.0 + q.y * 2.0 + flow * 2.2);
-        float silver = 0.07 + 0.24 * smoothstep(-0.55, 0.9, ribbon);
-        silver += 0.05 * pow(max(ribbon, 0.0), 8.0);
-        return half4(half3(silver), 1.0h);
+        // Embossed foil with enough mid-tones for spectral diffraction.
+        // Fine grain stays metallic rather than becoming busy rainbow hairlines.
+        float2 q = float2(p.x * 0.85, p.y * 1.25);
+        float flow = fbm(q * 2.1 + 2.1, 3);
+        float ribbon = sin(q.x * 6.9 + q.y * 1.75 + flow * 2.1);
+        float silver = 0.095 + 0.29 * smoothstep(-0.65, 0.85, ribbon);
+        silver += 0.13 * pow(max(ribbon, 0.0), 12.0);
+        silver += (noise(p * float2(76.0, 12.0)) - 0.5) * 0.034;
+        return half4(half3(clamp(silver, 0.065, 0.62)), 1.0h);
     }
     float broad = fbm(p * 2.7 + 2.1, 4);
     float fine = fbm(p * 10.0 + broad * 3.0, 3);
@@ -156,14 +157,24 @@ float3 spaceColor(float2 uv, device const float *points, int pointCount,
 ) {
     float2 uv = position / max(size, float2(1.0));
     half4 original = layer.sample(position);
-    float phase = (uv.x * cos(angle) + uv.y * sin(angle)) * scale + time * speed;
-    half3 rainbow = half3(sin(phase), sin(phase + 2.094), sin(phase + 4.189)) * 0.5h + 0.5h;
+    // A moving spectral phase changes actual pixel output rather than only
+    // the source texture. Independent glints make the foil visibly animate.
+    float projection = uv.x * cos(angle) + uv.y * sin(angle);
+    float phase = projection * scale * 6.2831853
+                  - time * speed * 1.65
+                  + sin(uv.y * 5.5 + time * 0.38) * 0.48;
+    float3 spectrum = 0.5 + 0.5 * sin(float3(0.0, 2.094, 4.189)
+                      + phase * 0.85 + time * speed * 0.42);
+    float sweep = 0.5 + 0.5 * sin(phase * 0.66 + time * speed * 0.95);
+    float glint = pow(sweep, 5.0);
     float lum = dot(float3(original.rgb), float3(0.299, 0.587, 0.114));
-    float mask = smoothstep(0.12, 0.40, lum);
-    // Subtle broad spectral tint follows the few silver bands without
-    // amplifying highlights or filling the whole field with rainbow detail.
-    half3 result = mix(original.rgb, rainbow * 0.70h, half(intensity * mask));
-    return half4(clamp(result, 0.0h, 1.0h), original.a);
+    float foil = smoothstep(0.08, 0.47, lum);
+    // Preserve a legible dark substrate beneath the white search text.
+    float3 metal = float3(original.rgb) * (0.76 + 0.16 * sweep);
+    float3 refracted = spectrum * (0.22 + 0.22 * foil) * (0.50 + 0.50 * sweep);
+    float3 result = metal + refracted * intensity
+                    + float3(0.16) * glint * foil * intensity;
+    return half4(half3(clamp(result, 0.0, 0.89)), original.a);
 }
 
 // Live Ripple: radially displaced layered rings adapted from bcs_liveRipple.
