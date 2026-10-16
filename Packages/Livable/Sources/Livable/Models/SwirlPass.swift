@@ -14,52 +14,56 @@ import Foundation
 /// rotation, and wobble characteristics, while the swirl and sheet warp are
 /// now shared across all passes to avoid recomputing per pixel.
 enum SwirlPass: Int, CaseIterable {
-    /// The zoomed-in backdrop layer.
-    case background = 0
+	/// The zoomed-in backdrop layer.
+	case background = 0
 
-    /// The dominant centered layer.
-    case primary
+	/// The dominant centered layer.
+	case primary
 
-    /// The smaller satellite layer that orbits the primary.
-    case overlay
+	/// The smaller satellite layer that orbits the primary.
+	case overlay
 }
 
 extension SwirlPass {
-    /// The stable integer seed that feeds low-discrepancy generators for this
-    /// pass's per-axis parameters.
-    var seed: Int { rawValue + 1 }
+	/// The stable integer seed that feeds low-discrepancy generators for this
+	/// pass's per-axis parameters.
+	var seed: Int {
+		rawValue + 1
+	}
 
-    /// Multiplier on the shared shader clock for this pass's surface transform.
-    var surfaceTimeScale: Float {
-        switch self {
-        case .background: return 0.16
-        case .primary: return 0.18
-        case .overlay: return 0.27
-        }
-    }
+	/// Multiplier on the shared shader clock for this pass's surface transform.
+	var surfaceTimeScale: Float {
+		switch self {
+			case .background: 0.16
+			case .primary: 0.18
+			case .overlay: 0.27
+		}
+	}
 
-    /// Constant phase offset applied to the per-pass surface time.
-    var surfaceTimeOffset: Float {
-        switch self {
-        case .background: return Float.tau * Math.halton2(100)
-        case .primary: return 0
-        case .overlay: return Float.tau * Math.halton2(102)
-        }
-    }
+	/// Constant phase offset applied to the per-pass surface time.
+	var surfaceTimeOffset: Float {
+		switch self {
+			case .background: Float.tau * Math.halton2(100)
+			case .primary: 0
+			case .overlay: Float.tau * Math.halton2(102)
+		}
+	}
 
-    /// Scalar multiplier on the per-pass rotation angle.
-    var angleAmplitude: Float {
-        switch self {
-        case .background: return 0.22
-        case .primary: return 0.32
-        case .overlay: return 1.0
-        }
-    }
+	/// Scalar multiplier on the per-pass rotation angle.
+	var angleAmplitude: Float {
+		switch self {
+			case .background: 0.22
+			case .primary: 0.32
+			case .overlay: 1.0
+		}
+	}
 
-    /// Returns the effective time argument for this pass.
-    ///
-    /// - Parameter time: The shared shader time after speed scaling.
-    /// - Returns: The pass-specific time argument used to evaluate wobble and
-    ///   surface rotation.
-    func surfaceTime(time: Float) -> Float { time * surfaceTimeScale + surfaceTimeOffset }
+	/// Returns the effective time argument for this pass.
+	///
+	/// - Parameter time: The shared shader time after speed scaling.
+	/// - Returns: The pass-specific time argument used to evaluate wobble and
+	///   surface rotation.
+	func surfaceTime(time: Float) -> Float {
+		time * surfaceTimeScale + surfaceTimeOffset
+	}
 }

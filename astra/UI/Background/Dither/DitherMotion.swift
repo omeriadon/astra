@@ -23,7 +23,7 @@ nonisolated struct DitherMotion {
 			let coefficient = velocity + displacement * omega
 			let decay = exp(-omega * dt)
 			return (target + (displacement + coefficient * dt) * decay,
-				(velocity - coefficient * (omega * dt)) * decay)
+			        (velocity - coefficient * (omega * dt)) * decay)
 		}
 	}
 
@@ -49,10 +49,12 @@ nonisolated struct DitherMotion {
 		}
 		let current = segments.last?.sample(at: time) ?? (target, .zero)
 		segments.append(Segment(time: time, position: current.0, velocity: current.1,
-			target: target, omega: 5 / max(0.05, response)))
+		                        target: target, omega: 5 / max(0.05, response)))
 		// Bound event memory and retain enough history for a one-second trail at high mouse rates.
 		segments.removeAll { $0.time < time - 1.5 }
-		if segments.count > 512 { segments.removeFirst(segments.count - 512) }
+		if segments.count > 512 {
+			segments.removeFirst(segments.count - 512)
+		}
 	}
 
 	func presence(at time: Double, fade: Double) -> Double {
@@ -67,7 +69,7 @@ nonisolated struct DitherMotion {
 	func trail(at time: Double, duration: Double, fade: Double) -> [Float] {
 		let currentPresence = presence(at: time, fade: fade)
 		guard currentPresence > 0.001 else { return [] }
-		return (0..<8).flatMap { index -> [Float] in
+		return (0 ..< 8).flatMap { index -> [Float] in
 			let fraction = Double(index) / 7
 			let sampleTime = time - fraction * duration
 			guard let segment = segments.last(where: { $0.time <= sampleTime }) else { return [0, 0, 0] }
@@ -83,7 +85,9 @@ nonisolated struct DitherClock {
 	private var startedAt: Double?
 
 	mutating func setRunning(_ running: Bool, at time: Double) {
-		if running, startedAt == nil { startedAt = time }
+		if running, startedAt == nil {
+			startedAt = time
+		}
 		if !running, let start = startedAt {
 			accumulated += max(0, time - start)
 			startedAt = nil

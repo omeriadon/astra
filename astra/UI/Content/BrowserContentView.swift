@@ -105,11 +105,11 @@ private struct InternalPageHost: View {
 						}
 						.task { browser.openInternalPage(.settings) }
 					#else
-					BrowserSettingsView(
-						browser: browser,
-						searchText: $settingsSearchText,
-						selectedPage: $browser.settingsPage
-					)
+						BrowserSettingsView(
+							browser: browser,
+							searchText: $settingsSearchText,
+							selectedPage: $browser.settingsPage
+						)
 					#endif
 				case .history:
 					BrowserHistoryView(browser: browser)

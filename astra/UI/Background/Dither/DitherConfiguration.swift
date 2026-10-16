@@ -60,5 +60,7 @@ nonisolated struct DitherConfiguration: Codable, Equatable, Sendable {
 		(try? JSONDecoder().decode(Self.self, from: data)) ?? Self()
 	}
 
-	var encoded: Data { (try? JSONEncoder().encode(self)) ?? Data() }
+	var encoded: Data {
+		(try? JSONEncoder().encode(self)) ?? Data()
+	}
 }

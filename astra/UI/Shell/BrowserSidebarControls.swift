@@ -122,8 +122,11 @@ struct ShellSidebarListView: View {
 							PinnedFolderHeader(folder: folder, browser: browser, isExpanded: Binding(
 								get: { !collapsedFolderIDs.contains(folder.id) },
 								set: { expanded in
-									if expanded { collapsedFolderIDs.remove(folder.id) }
-									else { collapsedFolderIDs.insert(folder.id) }
+									if expanded {
+										collapsedFolderIDs.remove(folder.id)
+									} else {
+										collapsedFolderIDs.insert(folder.id)
+									}
 								}
 							))
 						}
@@ -493,7 +496,9 @@ private final class SidebarProjectionCache {
 
 	func excluding(_ ids: Set<UUID>, from projection: Projection) -> Projection {
 		guard !ids.isEmpty else { return projection }
-		if let excludedProjection, excludedIDs == ids { return excludedProjection }
+		if let excludedProjection, excludedIDs == ids {
+			return excludedProjection
+		}
 		let result = Projection(
 			favouriteTabs: projection.favouriteTabs.filter { !ids.contains($0.id) },
 			pinnedTabs: projection.pinnedTabs.filter { !ids.contains($0.id) },

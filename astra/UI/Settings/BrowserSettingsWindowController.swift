@@ -11,7 +11,9 @@
 		private(set) var browser: Browser?
 		private var window: NSWindow?
 
-		var isKeyWindow: Bool { window?.isKeyWindow == true }
+		var isKeyWindow: Bool {
+			window?.isKeyWindow == true
+		}
 
 		func show(for browser: Browser) {
 			if self.browser === browser, let window {

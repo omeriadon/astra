@@ -406,7 +406,9 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 	/// Callers keep independent navigation/request-generation checks before committing the result.
 	private func sharedFaviconData(for request: URLRequest) async -> Data? {
 		guard let url = request.url, !Task.isCancelled else { return nil }
-		if let shared = sharedRequests[url] { return await shared.task.value }
+		if let shared = sharedRequests[url] {
+			return await shared.task.value
+		}
 		let now = Date.now
 		failedIconURLs = failedIconURLs.filter { now.timeIntervalSince($0.value) < Self.failureRetryInterval }
 		guard failedIconURLs[url] == nil,
@@ -423,7 +425,8 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		sharedRequests[url] = nil
 		if data == nil, !task.isCancelled {
 			if failedIconURLs.count >= Self.maximumFailureEntries,
-			   let oldest = failedIconURLs.min(by: { $0.value < $1.value })?.key {
+			   let oldest = failedIconURLs.min(by: { $0.value < $1.value })?.key
+			{
 				failedIconURLs[oldest] = nil
 			}
 			failedIconURLs[url] = .now
@@ -438,7 +441,9 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		faviconAccents.removeAll()
 		faviconAccentMisses.removeAll()
 		cacheGeneration += 1
-		for request in sharedRequests.values { request.task.cancel() }
+		for request in sharedRequests.values {
+			request.task.cancel()
+		}
 		sharedRequests.removeAll()
 		failedIconURLs.removeAll()
 		activeRequests.removeAll()

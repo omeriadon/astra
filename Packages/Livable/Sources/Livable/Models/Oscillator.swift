@@ -12,20 +12,22 @@ import Foundation
 ///
 /// An oscillator evaluates `amplitude * sin(time * frequency + phase)`.
 struct Oscillator {
-    /// The maximum distance from the neutral value.
-    let amplitude: Float
+	/// The maximum distance from the neutral value.
+	let amplitude: Float
 
-    /// The angular rate applied to shader time.
-    let frequency: Float
+	/// The angular rate applied to shader time.
+	let frequency: Float
 
-    /// The constant phase offset, in radians.
-    let phase: Float
+	/// The constant phase offset, in radians.
+	let phase: Float
 }
 
 extension Oscillator {
-    /// Returns the oscillator value at the specified time.
-    ///
-    /// - Parameter time: The effective shader time for the current frame.
-    /// - Returns: The signed displacement at `time`.
-    func value(time: Float) -> Float { amplitude * sin(time * frequency + phase) }
+	/// Returns the oscillator value at the specified time.
+	///
+	/// - Parameter time: The effective shader time for the current frame.
+	/// - Returns: The signed displacement at `time`.
+	func value(time: Float) -> Float {
+		amplitude * sin(time * frequency + phase)
+	}
 }

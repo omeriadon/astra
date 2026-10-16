@@ -2,7 +2,7 @@ import Defaults
 import Livable
 import SwiftUI
 #if os(macOS)
-import AppKit
+	import AppKit
 #endif
 
 struct NewTabView: View {
@@ -23,8 +23,8 @@ struct NewTabView: View {
 	@State private var isPresented = false
 	@State private var entered = false
 	#if os(macOS)
-	@State private var backgroundImage: NSImage?
-	@State private var windowCanAnimate = false
+		@State private var backgroundImage: NSImage?
+		@State private var windowCanAnimate = false
 	#endif
 	@State private var choosingBackgroundImage = false
 	@State private var recentVisits: [BrowserVisit] = []
@@ -86,7 +86,9 @@ struct NewTabView: View {
 						.scrollContentBackground(.hidden)
 						.opacity(browser.newTabSearchText.isEmpty ? 0 : 1)
 						.onChange(of: selectedResultID) { _, selection in
-							if let selection { proxy.scrollTo(selection) }
+							if let selection {
+								proxy.scrollTo(selection)
+							}
 						}
 					}
 				}
@@ -113,12 +115,18 @@ struct NewTabView: View {
 		.fileImporter(isPresented: $choosingBackgroundImage, allowedContentTypes: [.image]) { result in
 			guard case let .success(url) = result else { return }
 			let access = url.startAccessingSecurityScopedResource()
-			defer { if access { url.stopAccessingSecurityScopedResource() } }
+			defer {
+				if access {
+					url.stopAccessingSecurityScopedResource()
+				}
+			}
 			let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Astra", isDirectory: true)
 			try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 			let target = directory.appendingPathComponent("new-tab-background.\(url.pathExtension)")
 			try? FileManager.default.removeItem(at: target)
-			if (try? FileManager.default.copyItem(at: url, to: target)) != nil { backgroundImagePath = target.path; backgroundStyle = "image" }
+			if (try? FileManager.default.copyItem(at: url, to: target)) != nil {
+				backgroundImagePath = target.path; backgroundStyle = "image"
+			}
 		}
 		.task(id: backgroundImagePath) {
 			let path = backgroundImagePath
@@ -200,9 +208,9 @@ struct NewTabView: View {
 
 	private var animatesBackground: Bool {
 		#if os(macOS)
-		isPresented && windowCanAnimate && !reduceMotion
+			isPresented && windowCanAnimate && !reduceMotion
 		#else
-		isPresented && scenePhase == .active && !reduceMotion
+			isPresented && scenePhase == .active && !reduceMotion
 		#endif
 	}
 
@@ -218,7 +226,7 @@ struct NewTabView: View {
 	private var livingPalette: [Float] {
 		let points = Array(browser.theme.meshColorPoints.prefix(4))
 		let fallback = ThemeColorPoint(color: browser.theme.firstColor, x: 0.5, y: 0.5)
-		return (0..<4).flatMap { index -> [Float] in
+		return (0 ..< 4).flatMap { index -> [Float] in
 			let point = points.isEmpty ? fallback : points[index % points.count]
 			return [Float(point.x), Float(point.y), Float(point.color.red), Float(point.color.green), Float(point.color.blue)]
 		}
@@ -236,23 +244,23 @@ struct NewTabView: View {
 				.overlay(defaultBackgroundColor.opacity(0.18))
 		} else {
 			#if os(macOS)
-			if !usesDefaultBackground, let image = backgroundImage {
-				GeometryReader { geometry in
-					Image(nsImage: image).resizable().scaledToFill()
-						.frame(width: geometry.size.width, height: geometry.size.height).clipped()
+				if !usesDefaultBackground, let image = backgroundImage {
+					GeometryReader { geometry in
+						Image(nsImage: image).resizable().scaledToFill()
+							.frame(width: geometry.size.width, height: geometry.size.height).clipped()
+					}
+				} else {
+					defaultBackgroundColor
 				}
-			} else {
-				defaultBackgroundColor
-			}
 			#else
-			defaultBackgroundColor
+				defaultBackgroundColor
 			#endif
 		}
 	}
 
 	private var ditherConfiguration: Binding<DitherConfiguration> {
 		Binding(get: { DitherConfiguration.decode(ditherConfigurationData) },
-			set: { ditherConfigurationData = $0.encoded })
+		        set: { ditherConfigurationData = $0.encoded })
 	}
 
 	private var backgroundPicker: some View {
@@ -287,7 +295,9 @@ struct NewTabView: View {
 				Button("Use Background Image", systemImage: "photo.fill") { backgroundStyle = "image" }
 				Button("Remove Background Image", systemImage: "trash") {
 					backgroundImagePath = ""
-					if backgroundStyle == "image" { backgroundStyle = "default" }
+					if backgroundStyle == "image" {
+						backgroundStyle = "default"
+					}
 				}
 			}
 		} label: {
@@ -513,59 +523,66 @@ private struct StartPageVisitRow: View {
 }
 
 #if os(macOS)
-/// One observer per displayed page. Saved blank tabs own no renderer or observers.
-private struct NewTabWindowActivity: NSViewRepresentable {
-	let onChange: (Bool) -> Void
+	/// One observer per displayed page. Saved blank tabs own no renderer or observers.
+	private struct NewTabWindowActivity: NSViewRepresentable {
+		let onChange: (Bool) -> Void
 
-	func makeNSView(context: Context) -> ActivityView {
-		ActivityView(onChange: onChange)
-	}
-
-	func updateNSView(_ view: ActivityView, context: Context) {
-		view.onChange = onChange
-	}
-
-	static func dismantleNSView(_ view: ActivityView, coordinator: ()) {
-		view.stopObserving()
-	}
-
-	final class ActivityView: NSView {
-		var onChange: (Bool) -> Void
-		private var tokens: [NSObjectProtocol] = []
-
-		init(onChange: @escaping (Bool) -> Void) {
-			self.onChange = onChange
-			super.init(frame: .zero)
+		func makeNSView(context _: Context) -> ActivityView {
+			ActivityView(onChange: onChange)
 		}
 
-		@available(*, unavailable)
-		required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+		func updateNSView(_ view: ActivityView, context _: Context) {
+			view.onChange = onChange
+		}
 
-		override func hitTest(_ point: NSPoint) -> NSView? { nil }
+		static func dismantleNSView(_ view: ActivityView, coordinator _: ()) {
+			view.stopObserving()
+		}
 
-		override func viewDidMoveToWindow() {
-			super.viewDidMoveToWindow()
-			stopObserving()
-			for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification,
-				NSWindow.didDeminiaturizeNotification, NSApplication.didBecomeActiveNotification,
-				NSApplication.didResignActiveNotification] {
-				tokens.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-					Task { @MainActor [weak self] in self?.publish() }
-				})
+		final class ActivityView: NSView {
+			var onChange: (Bool) -> Void
+			private var tokens: [NSObjectProtocol] = []
+
+			init(onChange: @escaping (Bool) -> Void) {
+				self.onChange = onChange
+				super.init(frame: .zero)
 			}
-			Task { @MainActor [weak self] in self?.publish() }
-		}
 
-		func stopObserving() {
-			for token in tokens { NotificationCenter.default.removeObserver(token) }
-			tokens.removeAll()
-		}
+			@available(*, unavailable)
+			required init?(coder _: NSCoder) {
+				fatalError("init(coder:) is unavailable")
+			}
 
-		private func publish() {
-			let owningWindow = unsafe window
-			let visible = owningWindow.map { $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible) } ?? false
-			onChange(NSApp.isActive && visible)
+			override func hitTest(_: NSPoint) -> NSView? {
+				nil
+			}
+
+			override func viewDidMoveToWindow() {
+				super.viewDidMoveToWindow()
+				stopObserving()
+				for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification,
+				             NSWindow.didDeminiaturizeNotification, NSApplication.didBecomeActiveNotification,
+				             NSApplication.didResignActiveNotification]
+				{
+					tokens.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+						Task { @MainActor [weak self] in self?.publish() }
+					})
+				}
+				Task { @MainActor [weak self] in self?.publish() }
+			}
+
+			func stopObserving() {
+				for token in tokens {
+					NotificationCenter.default.removeObserver(token)
+				}
+				tokens.removeAll()
+			}
+
+			private func publish() {
+				let owningWindow = unsafe window
+				let visible = owningWindow.map { $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible) } ?? false
+				onChange(NSApp.isActive && visible)
+			}
 		}
 	}
-}
 #endif

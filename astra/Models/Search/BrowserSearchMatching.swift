@@ -136,12 +136,17 @@ enum BrowserSearchMatching {
 		return scores.reduce(0, +) / Double(scores.count)
 	}
 
-
 	nonisolated static func score(_ query: PreparedQuery, in text: PreparedText) -> Double {
 		guard !query.text.isEmpty, !text.text.isEmpty else { return 0 }
-		if query.text == text.text { return 1 }
-		if text.text.hasPrefix(query.text) { return 0.92 }
-		if text.text.contains(query.text) { return 0.78 }
+		if query.text == text.text {
+			return 1
+		}
+		if text.text.hasPrefix(query.text) {
+			return 0.92
+		}
+		if text.text.contains(query.text) {
+			return 0.78
+		}
 		let scores = query.words.map { word in
 			text.words.map { wordScore(word, in: $0) }.max() ?? 0
 		}

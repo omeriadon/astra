@@ -447,8 +447,9 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			discovered = cached.candidates
 		} else {
 			let pending: (id: UUID, task: Task<[SafariExtensionCandidate], Never>)
-			if let existing = safariDiscoveryTask { pending = existing }
-			else {
+			if let existing = safariDiscoveryTask {
+				pending = existing
+			} else {
 				pending = (UUID(), Task.detached(priority: .utility) { SafariExtensionCandidate.discover() })
 				safariDiscoveryTask = pending
 			}
@@ -461,7 +462,9 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		guard !Task.isCancelled else { return }
 		// Refilter current installations after the await; another caller may have installed one.
 		let candidates = discovered.filter { !safariBundlePaths.values.contains($0.bundleURL.path) }
-		if safariAppExtensions != candidates { safariAppExtensions = candidates }
+		if safariAppExtensions != candidates {
+			safariAppExtensions = candidates
+		}
 	}
 
 	func installSafariExtension(_ candidate: SafariExtensionCandidate) async {

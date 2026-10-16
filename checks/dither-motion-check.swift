@@ -4,12 +4,12 @@ import Foundation
 	static func main() {
 		// A retarget must preserve both position and momentum; no cursor teleport at an event.
 		let first = DitherMotion.Segment(time: 0, position: .zero, velocity: .zero,
-			target: SIMD2(100, 50), omega: 18)
+		                                 target: SIMD2(100, 50), omega: 18)
 		let moving = first.sample(at: 0.08)
 		precondition(moving.0.x > 0 && moving.0.x < 100)
 		precondition(moving.1.x > 0)
 		let second = DitherMotion.Segment(time: 0.08, position: moving.0, velocity: moving.1,
-			target: SIMD2(0, 100), omega: 18)
+		                                  target: SIMD2(0, 100), omega: 18)
 		precondition(second.sample(at: 0.08).0 == moving.0)
 		precondition(second.sample(at: 0.08).1 == moving.1)
 		let settled = second.sample(at: 10)
@@ -19,7 +19,9 @@ import Foundation
 		// Closed-form sampling must be independent of 30/60/120 Hz frame schedules.
 		for fps in [30, 60, 120] {
 			var sample = (SIMD2<Double>.zero, SIMD2<Double>.zero)
-			for frame in 0...fps { sample = first.sample(at: Double(frame) / Double(fps)) }
+			for frame in 0 ... fps {
+				sample = first.sample(at: Double(frame) / Double(fps))
+			}
 			precondition(sample.0 == first.sample(at: 1).0)
 		}
 
@@ -40,9 +42,9 @@ import Foundation
 		precondition(reentry[0] == 900 && reentry[1] == 500, "Reentry must not sweep from the old location")
 
 		// Large input rates must remain finite and leave a valid eight-sample trail.
-		for i in 0..<10_000 {
+		for i in 0 ..< 10000 {
 			motion.move(to: CGPoint(x: Double(i % 500), y: Double(i % 300)), at: 12 + Double(i) / 1000,
-				response: 0.05, fade: 0.1)
+			            response: 0.05, fade: 0.1)
 		}
 		precondition(motion.trail(at: 22, duration: 1, fade: 0.1).allSatisfy(\.isFinite))
 
@@ -58,9 +60,9 @@ import Foundation
 		configuration.cursorInteractionEnabled = false
 		precondition(DitherConfiguration.decode(configuration.encoded) == configuration)
 		precondition(DitherConfiguration.decode(Data("invalid".utf8)) == DitherConfiguration())
-		precondition(configuration.safe(.nan, 1...24, fallback: 3) == 3)
-		precondition(configuration.safe(-100, 1...24) == 1)
-		precondition(configuration.safe(100, 1...24) == 24)
+		precondition(configuration.safe(.nan, 1 ... 24, fallback: 3) == 3)
+		precondition(configuration.safe(-100, 1 ... 24) == 1)
+		precondition(configuration.safe(100, 1 ... 24) == 24)
 		print("Dither motion, clock, configuration and persistence checks passed")
 	}
 }

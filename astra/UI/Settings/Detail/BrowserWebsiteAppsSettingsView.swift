@@ -129,6 +129,7 @@
 			}
 		}
 	}
+
 	/// NSWorkspace is consulted once per installation version, outside row construction.
 	/// Keep AppKit image lookup on MainActor; moving it to an unisolated task is unnecessary.
 	@MainActor
@@ -142,6 +143,7 @@
 				self.image = image
 			}
 		}
+
 		private let entries: NSCache<NSString, Entry> = {
 			let cache = NSCache<NSString, Entry>()
 			cache.countLimit = 128
@@ -151,12 +153,14 @@
 
 		func image(for installation: BrowserWebsiteAppInstallation) -> NSImage {
 			let key = installation.id.uuidString as NSString
-			if let entry = entries.object(forKey: key), entry.installation == installation { return entry.image }
+			if let entry = entries.object(forKey: key), entry.installation == installation {
+				return entry.image
+			}
 			let source = NSWorkspace.shared.icon(forFile: installation.bundlePath)
 			// Store a small raster backing rather than retaining every representation in the app icon.
 			guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 64, pixelsHigh: 64,
-				bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-				colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+			                                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+			                                    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
 				let context = NSGraphicsContext(bitmapImageRep: bitmap) else { return source }
 			NSGraphicsContext.saveGraphicsState()
 			NSGraphicsContext.current = context
@@ -169,7 +173,9 @@
 			return small
 		}
 
-		func remove(_ id: UUID) { entries.removeObject(forKey: id.uuidString as NSString) }
+		func remove(_ id: UUID) {
+			entries.removeObject(forKey: id.uuidString as NSString)
+		}
 	}
 
 	private struct WebsiteAppSettingsIcon: View {
@@ -177,8 +183,11 @@
 		@State private var image: NSImage?
 		var body: some View {
 			Group {
-				if let image { Image(nsImage: image).resizable() }
-				else { Color.clear }
+				if let image {
+					Image(nsImage: image).resizable()
+				} else {
+					Color.clear
+				}
 			}
 			.frame(width: 32, height: 32)
 			.accessibilityHidden(true)

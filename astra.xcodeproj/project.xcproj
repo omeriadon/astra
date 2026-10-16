@@ -187,10 +187,6 @@
       ],
       "package-product-members": [
         {
-          "package": "Livable",
-          "product-name": "Livable",
-          "build-phase": { "build-phase": "frameworks" },
-        }, {
           "product-name": "Haze",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "ios" ] },
         }, {
@@ -222,6 +218,10 @@
           "package": "KeyboardShortcuts",
           "product-name": "KeyboardShortcuts",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
+        }, {
+          "package": "Livable",
+          "product-name": "Livable",
+          "build-phase": { "build-phase": "frameworks" },
         }, {
           "package": "MarkdownView",
           "product-name": "MarkdownView",
@@ -448,7 +448,6 @@
         "resources",
       ],
       "package-product-members": [
-        { "package": "Livable", "product-name": "Livable", "build-phase": { "build-phase": "frameworks" } },
         {
           "product-name": "Haze",
           "build-phase": { "build-phase": "frameworks" },
@@ -464,6 +463,10 @@
           "package": "KeyboardShortcuts",
           "product-name": "KeyboardShortcuts",
           "build-phase": { "build-phase": "frameworks", "platforms": [ "macos" ] },
+        }, {
+          "package": "Livable",
+          "product-name": "Livable",
+          "build-phase": { "build-phase": "frameworks" },
         }, {
           "package": "MaterialView",
           "product-name": "MaterialView",

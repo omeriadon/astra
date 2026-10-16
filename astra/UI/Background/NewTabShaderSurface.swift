@@ -42,22 +42,24 @@ struct NewTabShaderSurface: View {
 	}
 
 	private var baseColor: Color {
-		if preset == .holographic { return .black }
+		if preset == .holographic {
+			return .black
+		}
 		let primary = theme.firstColor
 		return Color(.sRGB,
-			red: isDark ? primary.red * 0.25 : 0.72 + primary.red * 0.28,
-			green: isDark ? primary.green * 0.25 : 0.72 + primary.green * 0.28,
-			blue: isDark ? primary.blue * 0.25 : 0.72 + primary.blue * 0.28,
-			opacity: 1)
+		             red: isDark ? primary.red * 0.25 : 0.72 + primary.red * 0.28,
+		             green: isDark ? primary.green * 0.25 : 0.72 + primary.green * 0.28,
+		             blue: isDark ? primary.blue * 0.25 : 0.72 + primary.blue * 0.28,
+		             opacity: 1)
 	}
 
 	private var smokeColor: Color {
 		let primary = theme.firstColor
 		return Color(.sRGB,
-			red: isDark ? 0.07 + primary.red * 0.52 : 0.66 + primary.red * 0.26,
-			green: isDark ? 0.07 + primary.green * 0.52 : 0.66 + primary.green * 0.26,
-			blue: isDark ? 0.07 + primary.blue * 0.52 : 0.66 + primary.blue * 0.26,
-			opacity: 1)
+		             red: isDark ? 0.07 + primary.red * 0.52 : 0.66 + primary.red * 0.26,
+		             green: isDark ? 0.07 + primary.green * 0.52 : 0.66 + primary.green * 0.26,
+		             blue: isDark ? 0.07 + primary.blue * 0.52 : 0.66 + primary.blue * 0.26,
+		             opacity: 1)
 	}
 
 	private var positionedPalette: ([Float], [Color]) {
@@ -67,7 +69,7 @@ struct NewTabShaderSurface: View {
 		}
 		return (
 			points.flatMap { [Float($0.x), Float($0.y)] },
-			points.map { $0.color.color }
+			points.map(\.color.color)
 		)
 	}
 
@@ -80,7 +82,7 @@ struct NewTabShaderSurface: View {
 					Rectangle()
 						.fill(textureShader(size: geometry.size))
 						.layerEffect(effectShader(size: geometry.size, time: time),
-							maxSampleOffset: preset == .holographic ? .zero : CGSize(width: 64, height: 64))
+						             maxSampleOffset: preset == .holographic ? .zero : CGSize(width: 64, height: 64))
 				}
 			}
 		}
@@ -113,22 +115,22 @@ struct NewTabShaderSurface: View {
 	private func effectShader(size: CGSize, time: Float) -> Shader {
 		switch preset {
 			case .smoke:
-				return ShaderLibrary.astraSmokeReveal(
+				ShaderLibrary.astraSmokeReveal(
 					.float2(size), .float(time),
 					.float(0.8), .color(smokeColor)
 				)
 			case .holographic:
-				return ShaderLibrary.astraHolographicPrismatic(
+				ShaderLibrary.astraHolographicPrismatic(
 					.float2(size), .float(time),
 					.float(0.85), .float(14), .float(0.85), .float(0.785)
 				)
 			case .ripple:
-				return ShaderLibrary.astraLiveRipple(
+				ShaderLibrary.astraLiveRipple(
 					.float2(size), .float(time),
 					.float(13), .float(26), .float(3.8), .float(2.0), .float(3)
 				)
 			case .datamosh:
-				return ShaderLibrary.astraDatamosh(
+				ShaderLibrary.astraDatamosh(
 					.float2(size), .float(time),
 					.float(0.34), .float(34), .float(0.65), .float(1.6)
 				)
