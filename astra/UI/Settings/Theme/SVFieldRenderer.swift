@@ -37,7 +37,7 @@ enum SVFieldRenderer {
 			pixels[index + 3] = 255
 		}
 		let provider = CGDataProvider(data: Data(pixels) as CFData)!
-		return CGImage(
+		return unsafe CGImage(
 			width: dimension,
 			height: dimension,
 			bitsPerComponent: 8,

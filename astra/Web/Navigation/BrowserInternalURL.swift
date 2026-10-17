@@ -75,7 +75,7 @@ nonisolated enum BrowserInternalURL {
 		guard let destination = destination(for: url, source: source) else { return false }
 		switch destination {
 			case .newTab:
-				browser.addTab()
+				browser.requestNewTab()
 			case let .settings(page):
 				if let page {
 					browser.settingsPage = browser.isPrivate ? .privacyAndSecurity : page

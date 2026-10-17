@@ -1,8 +1,10 @@
+import Defaults
 import SwiftUI
 
 struct BrowserRootView: View {
 	@Binding var browser: Browser
 	@State private var sync = BrowserSync.shared
+	@Default(.historyRetentionDays) private var historyRetentionDays
 	@Environment(\.scenePhase) private var scenePhase
 
 	#if os(macOS)
@@ -23,13 +25,6 @@ struct BrowserRootView: View {
 
 	var body: some View {
 		shell
-			.allowsHitTesting(!browser.showsQuickSearch)
-			.accessibilityHidden(browser.showsQuickSearch)
-			.overlay {
-				if browser.showsQuickSearch {
-					BrowserQuickSearchOverlay(browser: browser)
-				}
-			}
 			.overlay(alignment: .bottom) {
 				if let error = browser.persistenceErrorDescription {
 					Label(error, systemImage: "exclamationmark.triangle")
@@ -41,9 +36,10 @@ struct BrowserRootView: View {
 				}
 			}
 			.onAppear {
+				BrowserReaderScript.prewarm()
 				sync.attach(browser)
 			}
-			.onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+			.onChange(of: historyRetentionDays) { _, _ in
 				browser.applyHistoryRetention()
 			}
 			.onChange(of: scenePhase) { _, phase in
@@ -51,47 +47,68 @@ struct BrowserRootView: View {
 					browser.flushPersistence()
 				}
 			}
+		#if !ASTRA_WEBSITE_APP_RUNTIME
+			.userActivity(
+				BrowserHandoffTabReference.activityType,
+				isActive: BrowserHandoff.canAdvertise(from: browser, sceneIsActive: handoffSceneIsActive)
+			) { activity in
+				BrowserHandoff.configure(activity, from: browser)
+			}
+			.onContinueUserActivity(BrowserHandoffTabReference.activityType) { activity in
+				_ = BrowserHandoff.shared.continueActivity(activity, in: browser)
+			}
+		#endif
 		#if os(macOS)
 			.background {
-				BrowserDropZone(
-					browser: browser,
-					area: .normal,
-					spaceID: browser.workspace.selectedSpaceID,
-					beforeTabID: nil,
-					isWindowFallback: true
-				)
-			}
-			.background {
-				WindowFocusReader { window in
-					hostWindow = window
-					controlTabSwitcher.setWindow(window)
-					if window?.isKeyWindow == true {
-						BrowserWindowRegistry.shared.activate(browser)
-					}
-				}
-				.allowsHitTesting(false)
-			}
-			.onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
-				if let window = notification.object as? NSWindow, window === hostWindow {
+			BrowserDropZone(
+				browser: browser,
+				area: .normal,
+				spaceID: browser.workspace.selectedSpaceID,
+				beforeTabID: nil,
+				isWindowFallback: true
+			)
+		}
+		.background {
+			WindowFocusReader { window in
+				hostWindow = window
+				controlTabSwitcher.setWindow(window)
+				if window?.isKeyWindow == true {
 					BrowserWindowRegistry.shared.activate(browser)
 				}
 			}
-			.overlay {
-				ControlTabSwitcherPreview(browser: browser, switcher: controlTabSwitcher)
-					.animation(.easeInOut(duration: 0.05), value: controlTabSwitcher.isPreviewVisible)
+			.allowsHitTesting(false)
+		}
+		.onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
+			if let window = notification.object as? NSWindow, window === hostWindow {
+				BrowserWindowRegistry.shared.activate(browser)
 			}
-			.onAppear {
-				controlTabSwitcher.start()
-			}
-			.onChange(of: browser.visibleTabs.map(\.id)) { _, _ in
-				controlTabSwitcher.tabsDidChange()
-			}
-			.onDisappear {
-				controlTabSwitcher.stop()
-			}
-			.modifier(BrowserQuitFeedback(browser: browser))
+		}
+		.overlay {
+			ControlTabSwitcherPreview(browser: browser, switcher: controlTabSwitcher)
+				.animation(.easeInOut(duration: 0.05), value: controlTabSwitcher.isPreviewVisible)
+		}
+		.onAppear {
+			controlTabSwitcher.start()
+		}
+		.onChange(of: browser.visibleTabMembershipRevision) { _, _ in
+			controlTabSwitcher.tabsDidChange()
+		}
+		.onDisappear {
+			controlTabSwitcher.stop()
+		}
+		.modifier(BrowserQuitFeedback(browser: browser))
 		#endif
 	}
+
+	#if !ASTRA_WEBSITE_APP_RUNTIME
+		private var handoffSceneIsActive: Bool {
+			#if os(iOS)
+				scenePhase == .active
+			#else
+				true
+			#endif
+		}
+	#endif
 
 	@ViewBuilder
 	var shell: some View {
@@ -116,6 +133,9 @@ struct BrowserRootView: View {
 
 		func body(content: Content) -> some View {
 			content
+				// The shell already draws beneath the titlebar, but this outer blur layer
+				// must also cover the titlebar safe area to avoid a visible horizontal seam.
+				.ignoresSafeArea(.container, edges: .top)
 				.blur(radius: browser.isAboutToQuit ? 5 : 0)
 				.overlay(alignment: .center) {
 					if Date.now < quitExpiry {

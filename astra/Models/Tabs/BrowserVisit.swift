@@ -76,6 +76,25 @@ nonisolated struct BrowserVisit: Codable, Identifiable, Equatable, Sendable {
 		}
 	}
 
+	/// The History UI abandons obsolete searches as the user types or closes
+	/// the view. Checking cancellation inside the scan prevents a cancelled
+	/// 50,000-visit search from consuming CPU after its results are irrelevant.
+	static func matchingUnlessCancelled(_ visits: [Self], query: String) -> [Self]? {
+		guard !Task.isCancelled else { return nil }
+		guard !query.isEmpty else { return visits }
+		var result: [Self] = []
+		result.reserveCapacity(min(visits.count, 256))
+		for visit in visits {
+			guard !Task.isCancelled else { return nil }
+			if visit.title.localizedCaseInsensitiveContains(query)
+				|| visit.url.absoluteString.localizedCaseInsensitiveContains(query)
+			{
+				result.append(visit)
+			}
+		}
+		return result
+	}
+
 	static func inRange(_ visits: [Self], from start: Date?, until end: Date?) -> [Self] {
 		visits.filter { visit in
 			(start.map { visit.visitedAt >= $0 } ?? true)
@@ -93,17 +112,36 @@ nonisolated struct BrowserVisit: Codable, Identifiable, Equatable, Sendable {
 		visitID != nil && lastURL == url && lastNavigationID == navigationID
 	}
 
-	static func summaries(_ visits: [Self]) -> [BrowserVisitSummary] {
-		let groups = Dictionary(grouping: visits, by: \.url)
-		return groups.map { url, visits in
-			let latest = visits.max { lhs, rhs in
-				lhs.visitedAt == rhs.visitedAt
-					? lhs.id.uuidString > rhs.id.uuidString
-					: lhs.visitedAt < rhs.visitedAt
+	static func summaries(_ visits: [Self], sortByRecency: Bool = true) -> [BrowserVisitSummary] {
+		// One pass rather than Dictionary(grouping:) allocating an array of
+		// every visit for each URL and then scanning each group for its latest.
+		var summaries: [URL: (latest: Self, count: Int)] = [:]
+		for visit in visits {
+			if var existing = summaries[visit.url] {
+				existing.count += 1
+				if visit.visitedAt > existing.latest.visitedAt
+					|| (visit.visitedAt == existing.latest.visitedAt
+						&& visit.id.uuidString < existing.latest.id.uuidString)
+				{
+					existing.latest = visit
+				}
+				summaries[visit.url] = existing
+			} else {
+				summaries[visit.url] = (visit, 1)
 			}
-			return BrowserVisitSummary(url: url, title: latest?.title ?? url.host ?? url.absoluteString,
-			                           visitCount: visits.count, lastVisitedAt: latest?.visitedAt ?? .distantPast)
-		}.sorted {
+		}
+		let results = summaries.map { url, summary in
+			BrowserVisitSummary(
+				url: url,
+				title: summary.latest.title,
+				visitCount: summary.count,
+				lastVisitedAt: summary.latest.visitedAt
+			)
+		}
+		// Frequent-site consumers immediately rank by visit count instead.
+		// Sorting by recency first is wasted work for those callers.
+		guard sortByRecency else { return results }
+		return results.sorted {
 			$0.lastVisitedAt == $1.lastVisitedAt
 				? $0.url.absoluteString < $1.url.absoluteString
 				: $0.lastVisitedAt > $1.lastVisitedAt

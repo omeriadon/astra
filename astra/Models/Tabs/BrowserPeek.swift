@@ -13,6 +13,7 @@ final class BrowserPeek: Identifiable {
 	var hasPresented: Bool
 	var isPresented: Bool
 	var isDismissing = false
+	let easelQuote: BrowserEaselQuote?
 
 	var openPeek: OpenPeek {
 		OpenPeek(
@@ -24,7 +25,8 @@ final class BrowserPeek: Identifiable {
 			history: controller.history.map(BrowserAddress.withoutCredentials),
 			historyIndex: controller.historyIndex,
 			pageZoom: controller.pageZoom,
-			scrollPosition: controller.scrollPosition
+			scrollPosition: controller.scrollPosition,
+			easelQuote: easelQuote
 		)
 	}
 
@@ -35,12 +37,15 @@ final class BrowserPeek: Identifiable {
 		parentZoom: Double,
 		zoomsOut: Bool,
 		session: BrowserWebSession? = nil,
-		existingController: BrowserController? = nil
+		existingController: BrowserController? = nil,
+		easelQuote: BrowserEaselQuote? = nil
 	) {
 		id = UUID()
+		self.easelQuote = easelQuote
 		self.depth = depth
 		self.source = source
 		controller = existingController ?? BrowserController(initialURL: url, session: session, scrollPosition: .zero)
+		controller.easelQuoteHighlight = easelQuote
 		hasPresented = false
 		isPresented = false
 
@@ -51,8 +56,9 @@ final class BrowserPeek: Identifiable {
 		}
 	}
 
-	init(openPeek: OpenPeek, session: BrowserWebSession = .shared) {
+	init(openPeek: OpenPeek, session: BrowserWebSession? = nil) {
 		id = openPeek.id
+		easelQuote = openPeek.easelQuote
 		depth = openPeek.depth
 		source = UnitPoint(
 			x: CGFloat(openPeek.sourceX),
@@ -65,6 +71,7 @@ final class BrowserPeek: Identifiable {
 			historyIndex: openPeek.historyIndex,
 			scrollPosition: openPeek.scrollPosition
 		)
+		controller.easelQuoteHighlight = openPeek.easelQuote
 		controller.pageZoom = openPeek.pageZoom
 		hasPresented = true
 		isPresented = true

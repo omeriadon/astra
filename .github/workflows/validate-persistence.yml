@@ -1,0 +1,111 @@
+name: Astra - Persistence and Restoration
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  window-sync:
+    name: Window sync no-op
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Window sync no-op
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/window-sync-noop-check.py
+          python3 checks/spotlight-new-tab-migration-check.py
+
+  history-cache:
+    name: History derived cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: History derived cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/history-derived-cache-check.py
+
+  privacy-cache:
+    name: Checkpoint privacy cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkpoint privacy cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/checkpoint-privacy-cache-check.py
+
+  library-observation:
+    name: Library observation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Library observation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/library-observation-check.py
+
+  window-sidecar:
+    name: Window record sidecar
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Window record sidecar
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/window-record-sidecar-check.py
+
+  scroll-journal:
+    name: Scroll journal storage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scroll journal storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/scroll-journal-check.py
+
+  startup-hydration:
+    name: Startup hydration dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Startup hydration dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/startup-hydration-dependencies-check.py
+
+  sync-separation:
+    name: Persistence and sync separation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Persistence and sync separation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/persistence-sync-separation-check.py

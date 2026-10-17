@@ -29,10 +29,11 @@ private struct BrowserMediaActivityCard: View {
 	let controller: BrowserController
 	let title: String
 	let openTab: () -> Void
-	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	var body: some View {
-		if controller.isPlayingMedia || controller.hasPausedMedia || controller.isCapturing || controller.pausedFromBrowser || controller.areMediaElementsMuted || controller.canEnterPictureInPicture || controller.isPictureInPictureActive {
+		// Do not pin idle tabs here solely because WebKit has a paused player,
+		// a muted element or a video eligible for Picture in Picture.
+		if controller.isPlayingMedia || controller.isCapturing || controller.pausedFromBrowser || controller.isPictureInPictureActive || controller.isEnteringPictureInPicture {
 			HStack(spacing: 8) {
 				Button(action: openTab) {
 					Label {
@@ -46,8 +47,13 @@ private struct BrowserMediaActivityCard: View {
 								.lineLimit(1)
 						}
 					} icon: {
-						Image(systemName: controller.isCapturing ? "mic.fill" : controller.isPlayingMedia ? "waveform" : "pause.fill")
-							.symbolEffect(.variableColor, isActive: controller.isPlayingMedia && !reduceMotion)
+						if controller.isCapturing {
+							Image(systemName: "mic.fill")
+						} else if controller.isPlayingMedia {
+							PlayingMediaWaveform()
+						} else {
+							Image(systemName: "pause.fill")
+						}
 					}
 					.frame(maxWidth: .infinity, alignment: .leading)
 				}
@@ -124,5 +130,39 @@ private struct BrowserMediaActivityCard: View {
 			return controller.mediaArtist ?? "Playing media"
 		}
 		return controller.hasPausedMedia ? "Paused media" : "Picture in Picture available"
+	}
+}
+
+/// This is a decorative playback indicator, not a meter of actual audio levels.
+/// It is inserted only while media is playing, stopping the loop on pause.
+private struct PlayingMediaWaveform: View {
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	@State private var drawingHeight = false
+
+	private let height: CGFloat = 16
+	private let animation = Animation.linear(duration: 0.5).repeatForever(autoreverses: true)
+
+	var body: some View {
+		HStack(alignment: .bottom, spacing: 2) {
+			bar(low: 0.4, speed: 1.5)
+			bar(low: 0.3, speed: 1.2)
+			bar(low: 0.5, speed: 1.0)
+			bar(low: 0.3, speed: 1.7)
+			bar(low: 0.5, speed: 1.0)
+		}
+		.frame(width: 18, height: height)
+		.onAppear { drawingHeight = !reduceMotion }
+		.onChange(of: reduceMotion) { _, reduced in
+			drawingHeight = !reduced
+		}
+		.accessibilityHidden(true)
+	}
+
+	private func bar(low: CGFloat, speed: Double) -> some View {
+		RoundedRectangle(cornerRadius: 1)
+			.fill(.tint)
+			.frame(width: 2, height: (drawingHeight ? 1 : low) * height)
+			.frame(height: height, alignment: .bottom)
+			.animation(reduceMotion ? nil : animation.speed(speed), value: drawingHeight)
 	}
 }

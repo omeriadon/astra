@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 nonisolated enum BrowserSessionStore {
-	private static let service = "com.omeriadon.browser.sync"
+	private static let service = "com.omeriadon.astra.performance.foreground20261011.sync"
 	private static let account = "session"
 
 	/// Stateless Keychain access; nonisolated so launch never blocks on it.
@@ -12,7 +12,7 @@ nonisolated enum BrowserSessionStore {
 		query[kSecMatchLimit as String] = kSecMatchLimitOne
 
 		var result: CFTypeRef?
-		let status = SecItemCopyMatching(query as CFDictionary, &result)
+		let status = unsafe SecItemCopyMatching(query as CFDictionary, &result)
 		if status == errSecItemNotFound {
 			return nil
 		}
@@ -61,9 +61,24 @@ nonisolated enum BrowserSessionStore {
 	}
 }
 
-enum BrowserSessionStoreError: LocalizedError {
+nonisolated enum BrowserSessionStoreError: LocalizedError, CustomNSError {
 	case keychain(OSStatus)
 	case invalidToken
+
+	static var errorDomain: String {
+		"com.omeriadon.astra.keychain"
+	}
+
+	var errorCode: Int {
+		switch self {
+			case let .keychain(status): Int(status)
+			case .invalidToken: 1
+		}
+	}
+
+	var errorUserInfo: [String: Any] {
+		[NSLocalizedDescriptionKey: errorDescription ?? "Keychain failure"]
+	}
 
 	var errorDescription: String? {
 		switch self {

@@ -1,5 +1,4 @@
 #if os(macOS)
-	import Sparkle
 	import SwiftUI
 
 	struct BrowserUpdateSheet: View {

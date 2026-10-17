@@ -40,10 +40,10 @@ provider.
 
 Signing out or changing servers prevents further snapshots and final output
 once the next stream event is processed. A provider timeout bounds an idle
-cloud connection. HTTP errors before streaming starts throw normally. A
+cloud connection. HTTP 500/502/503/504 errors before streaming starts are retried with 1s and 3s backoff. Other HTTP errors throw normally. A
 midstream error is a terminal SSE error; the client throws and does not
 return partial text as a successful result. EOF without a final event also
-throws. Calls do not automatically retry or switch providers.
+throws. A stream that has begun (including a provider error event, malformed event, or premature EOF) is **never replayed**, because browser tools may already have executed. Non-streaming cloud POST requests use the same bounded pre-response transient-failure retries. Calls never silently switch providers.
 
 ## Server wire format
 
@@ -75,3 +75,15 @@ The proxy ignores OpenRouter comments and supports multiline SSE fields,
 CR/LF delimiters, split UTF-8, and repeated finish reasons in usage frames.
 It emits only the normalized event fields above; credentials, provider error
 details, and usage identifiers are not forwarded.
+
+## Debug diagnostics
+
+Astra logs a shared operation UUID from the feature invocation through HTTP
+attempts, response status, duration, and server request ID (when provided).
+Debug builds additionally log the server's error body (up to 8 KiB), model,
+prompt metadata and content, SSE event progression, chat context sizes, tool
+execution and final output previews. Release builds redact user content and
+never log authorization header values or token-bearing request bodies.
+HTTP 5xx from both AI and Sync can indicate a shared service problem; retries
+do not fix a persistent server outage. Debug logs can contain private page
+content and should not be shared publicly.

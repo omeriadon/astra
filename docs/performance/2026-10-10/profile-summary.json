@@ -1,0 +1,218 @@
+{
+  "reference-v2-release": {
+    "startup_main_thread_samples": 520,
+    "sampling_weight_ms": 520.0,
+    "dyld_inclusive_weight_ms": 41.0,
+    "swiftui_attributegraph_inclusive_weight_ms": 348.0,
+    "appkit_inclusive_weight_ms": 482.0,
+    "top_leaf_frames": [
+      [
+        "<deduplicated_symbol>",
+        13.0
+      ],
+      [
+        "getMethodNoSuper_nolock(objc_class*, objc_selector*)",
+        12.0
+      ],
+      [
+        "AG::Graph::UpdateStack::update()",
+        12.0
+      ],
+      [
+        "objc_msgSend",
+        9.0
+      ],
+      [
+        "_platform_memmove",
+        9.0
+      ],
+      [
+        "mach_o::GenericTrie::find(CString, bool) const",
+        8.0
+      ],
+      [
+        "_xzm_xzone_malloc_tiny",
+        8.0
+      ],
+      [
+        "AG::Graph::propagate_dirty(AG::AttributeID)",
+        8.0
+      ],
+      [
+        "bool swift::RefCounts<swift::RefCountBitsT<(swift::RefCountInlinedness)1>>::doDecrementSlow<(swift::PerformDeinit)1>(swift::RefCountBitsT<(swift::RefCountInlinedness)1>, unsigned int)",
+        7.0
+      ],
+      [
+        "mach_msg2_trap",
+        6.0
+      ],
+      [
+        "swift_retain",
+        6.0
+      ],
+      [
+        "__kdebug_trace64",
+        5.0
+      ]
+    ],
+    "top_inclusive_frames": [
+      [
+        "<deduplicated_symbol>",
+        425.0
+      ],
+      [
+        "NSPerformVisuallyAtomicChange",
+        300.0
+      ],
+      [
+        "0x19daf6e80",
+        291.0
+      ],
+      [
+        "0x19daf6e58",
+        291.0
+      ],
+      [
+        "__56-[NSView _layoutSubtreeIfNeededAndAllowTemporaryEngine:]_block_invoke",
+        287.0
+      ],
+      [
+        "-[NSView _layoutSubtreeIfNeededAndAllowTemporaryEngine:]",
+        287.0
+      ],
+      [
+        "-[NSWindow(NSConstraintBasedLayoutInternal) layoutIfNeeded]",
+        286.0
+      ],
+      [
+        "-[NSView layoutSubtreeIfNeeded]",
+        286.0
+      ],
+      [
+        "-[NSWindow(NSConstraintBasedLayoutInternal) _layoutViewTree]",
+        285.0
+      ],
+      [
+        "0x19db0db14",
+        283.0
+      ],
+      [
+        "0x19db0e680",
+        283.0
+      ],
+      [
+        "__36-[NSView _layoutSubtreeWithOldSize:]_block_invoke",
+        282.0
+      ]
+    ],
+    "method": "Main-thread samples through logged window readiness; artificial pre-resume suspension excluded; inclusive weights overlap and are not elapsed wall-clock durations."
+  },
+  "candidate-v2-release": {
+    "startup_main_thread_samples": 518,
+    "sampling_weight_ms": 518.0,
+    "dyld_inclusive_weight_ms": 34.0,
+    "swiftui_attributegraph_inclusive_weight_ms": 350.0,
+    "appkit_inclusive_weight_ms": 476.0,
+    "top_leaf_frames": [
+      [
+        "getMethodNoSuper_nolock(objc_class*, objc_selector*)",
+        19.0
+      ],
+      [
+        "<deduplicated_symbol>",
+        12.0
+      ],
+      [
+        "_xzm_xzone_malloc_tiny",
+        10.0
+      ],
+      [
+        "AG::Graph::UpdateStack::update()",
+        9.0
+      ],
+      [
+        "mach_msg2_trap",
+        8.0
+      ],
+      [
+        "objc_msgSend",
+        8.0
+      ],
+      [
+        "_platform_memmove",
+        7.0
+      ],
+      [
+        "swift::TargetContextDescriptor<swift::InProcess>::getGenericContext() const",
+        7.0
+      ],
+      [
+        "dyld4::PrebuiltLoader::contains(dyld4::RuntimeState&, void const*, void const**, unsigned long long*, unsigned char*) const",
+        6.0
+      ],
+      [
+        "__CFStringHash",
+        6.0
+      ],
+      [
+        "swift::MetadataCacheKey::operator==(swift::MetadataCacheKey const&) const",
+        6.0
+      ],
+      [
+        "AccelerateCrypto_SHA256_compress",
+        6.0
+      ]
+    ],
+    "top_inclusive_frames": [
+      [
+        "<deduplicated_symbol>",
+        424.0
+      ],
+      [
+        "NSPerformVisuallyAtomicChange",
+        300.0
+      ],
+      [
+        "0x19daf6e80",
+        292.0
+      ],
+      [
+        "0x19daf6e58",
+        292.0
+      ],
+      [
+        "__56-[NSView _layoutSubtreeIfNeededAndAllowTemporaryEngine:]_block_invoke",
+        289.0
+      ],
+      [
+        "-[NSWindow(NSConstraintBasedLayoutInternal) layoutIfNeeded]",
+        288.0
+      ],
+      [
+        "0x19db0db14",
+        288.0
+      ],
+      [
+        "0x19db0e680",
+        288.0
+      ],
+      [
+        "___NSViewLayout_block_invoke",
+        287.0
+      ],
+      [
+        "-[NSView layoutSubtreeIfNeeded]",
+        287.0
+      ],
+      [
+        "-[NSView _layoutSubtreeIfNeededAndAllowTemporaryEngine:]",
+        287.0
+      ],
+      [
+        "-[NSWindow(NSConstraintBasedLayoutInternal) _layoutViewTree]",
+        287.0
+      ]
+    ],
+    "method": "Main-thread samples through logged window readiness; artificial pre-resume suspension excluded; inclusive weights overlap and are not elapsed wall-clock durations."
+  }
+}

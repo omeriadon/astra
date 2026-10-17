@@ -1,10 +1,11 @@
 import Foundation
 
-struct OpenTab: Codable, Identifiable, Equatable, Sendable {
+nonisolated struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 	var id: UUID
 	var internalPage: String?
 	var pageTitle: String
 	var customTitle: String?
+	var monitorMatch: BrowserMonitorMatch?
 	var url: URL?
 	var history: [URL]
 	var historyIndex: Int
@@ -18,6 +19,17 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 	var fileAccessBookmark: Data?
 	var restorationState: Data?
 	var recordsNavigationHistory: Bool
+	var easel: BrowserEaselDocument?
+
+	/// Legacy New Tab pages have no URL or recoverable content. Never restore,
+	/// sync, or persist these as normal tabs; leave Easels and navigable tabs intact.
+	nonisolated var isDiscardableNewTab: Bool {
+		// Pattern matching does not invoke BrowserEaselDocument's actor-isolated
+		// synthesized Equatable conformance when checking an optional for nil.
+		guard case .none = easel else { return false }
+		return internalPage == nil && url == nil && history.isEmpty && peeks.isEmpty
+			&& restorationState == nil && fileAccessBookmark == nil
+	}
 
 	nonisolated func hasSameNavigationState(as other: Self) -> Bool {
 		url == other.url
@@ -31,9 +43,11 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		var updated = self
 		updated.pageTitle = remote.pageTitle
 		updated.customTitle = remote.customTitle
+		updated.monitorMatch = remote.monitorMatch
 		updated.pageZoom = remote.pageZoom
 		updated.modifiedAt = remote.modifiedAt
 		updated.recordsNavigationHistory = remote.recordsNavigationHistory
+		updated.easel = remote.easel
 		if !remote.recordsNavigationHistory {
 			updated.history = updated.url.map { [$0] } ?? []
 			updated.historyIndex = 0
@@ -48,6 +62,7 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		internalPage: String? = nil,
 		pageTitle: String = "New Tab",
 		customTitle: String? = nil,
+		monitorMatch: BrowserMonitorMatch? = nil,
 		url: URL? = nil,
 		history: [URL] = [],
 		historyIndex: Int = 0,
@@ -60,12 +75,14 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		closedNormalIndex: Int? = nil,
 		recordsNavigationHistory: Bool = true,
 		restorationState: Data? = nil,
-		fileAccessBookmark: Data? = nil
+		fileAccessBookmark: Data? = nil,
+		easel: BrowserEaselDocument? = nil
 	) {
 		self.id = id
 		self.internalPage = internalPage
 		self.pageTitle = pageTitle
 		self.customTitle = customTitle
+		self.monitorMatch = monitorMatch
 		self.url = url
 		self.history = history
 		self.historyIndex = Self.clampedIndex(historyIndex, count: history.count)
@@ -79,6 +96,10 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		self.recordsNavigationHistory = recordsNavigationHistory
 		self.restorationState = restorationState
 		self.fileAccessBookmark = fileAccessBookmark
+		self.easel = easel
+		if self.internalPage == nil, easel != nil {
+			self.internalPage = "easel"
+		}
 	}
 
 	private enum CodingKeys: String, CodingKey {
@@ -87,6 +108,7 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		case title
 		case pageTitle
 		case customTitle
+		case monitorMatch
 		case url
 		case history
 		case historyIndex
@@ -100,6 +122,7 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		case recordsNavigationHistory
 		case restorationState
 		case fileAccessBookmark
+		case easel
 	}
 
 	nonisolated init(from decoder: Decoder) throws {
@@ -131,6 +154,15 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		recordsNavigationHistory = try container.decodeIfPresent(Bool.self, forKey: .recordsNavigationHistory) ?? true
 		restorationState = try container.decodeIfPresent(Data.self, forKey: .restorationState)
 		fileAccessBookmark = try container.decodeIfPresent(Data.self, forKey: .fileAccessBookmark)
+		easel = try container.decodeIfPresent(BrowserEaselDocument.self, forKey: .easel)
+		// A cached shell may have saved easel content before receiving its internal page type.
+		if internalPage == nil, easel != nil {
+			internalPage = "easel"
+		}
+		if let easel, !easel.isValid {
+			throw DecodingError.dataCorruptedError(forKey: .easel, in: container, debugDescription: "Invalid easel document")
+		}
+		monitorMatch = try container.decodeIfPresent(BrowserMonitorMatch.self, forKey: .monitorMatch)
 	}
 
 	nonisolated func encode(to encoder: Encoder) throws {
@@ -139,6 +171,7 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		try container.encodeIfPresent(internalPage, forKey: .internalPage)
 		try container.encode(pageTitle, forKey: .pageTitle)
 		try container.encodeIfPresent(customTitle, forKey: .customTitle)
+		try container.encodeIfPresent(monitorMatch, forKey: .monitorMatch)
 		try container.encodeIfPresent(url, forKey: .url)
 		try container.encode(history, forKey: .history)
 		try container.encode(historyIndex, forKey: .historyIndex)
@@ -152,6 +185,7 @@ struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		try container.encode(recordsNavigationHistory, forKey: .recordsNavigationHistory)
 		try container.encodeIfPresent(restorationState, forKey: .restorationState)
 		try container.encodeIfPresent(fileAccessBookmark, forKey: .fileAccessBookmark)
+		try container.encodeIfPresent(easel, forKey: .easel)
 	}
 
 	private nonisolated static func clampedIndex(_ index: Int, count: Int) -> Int {

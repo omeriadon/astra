@@ -8,8 +8,11 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 	@State private var isClearing = false
 	@State private var confirmsClear = false
 	@State private var confirmsSitePreferenceReset = false
+	@State private var showsClearWebsiteData = false
+	@State private var showsWebsiteData = false
 	@State private var websiteDataRange: BrowserWebsiteDataRange = .allTime
 	@State private var recordsRefreshID = UUID()
+	@Namespace private var presentations
 	@Default(.historyRetentionDays) private var historyRetentionDays
 	@Default(.tryHTTPSFirst) private var tryHTTPSFirst
 	@Default(.globalPrivacyControl) private var globalPrivacyControl
@@ -66,18 +69,19 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 					? "This window uses temporary website storage. Downloaded files are kept."
 					: "Spaces share cookies, logins, and website storage. WebKit manages HTTP caching automatically.")
 					.foregroundStyle(.secondary)
-				Picker("Time Range", selection: $websiteDataRange) {
-					ForEach(BrowserWebsiteDataRange.allCases) { range in
-						Text(range.title).tag(range)
-					}
-				}
-				.accessibilityIdentifier("website-data-range")
-				Button("Clear Website Data", systemImage: "trash", role: .destructive) {
-					confirmsClear = true
+				Button("Clear Website Data", systemImage: "trash") {
+					showsClearWebsiteData = true
 				}
 				.disabled(isClearing)
 				.accessibilityIdentifier("clear-website-data")
+				.matchedTransitionSource(id: "clear-website-data", in: presentations)
 				.id("Clear Website Data")
+				Button("Manage Website Data", systemImage: "list.bullet") {
+					showsWebsiteData = true
+				}
+				.disabled(isClearing)
+				.accessibilityIdentifier("manage-website-data")
+				.matchedTransitionSource(id: "manage-website-data", in: presentations)
 				Text("WebKit selects website records by when a website last changed the record. It cannot promise exact per-cookie or per-origin time deletion. Each listed site is WebKit's grouped domain label, not an exact origin. Clearing website data also clears all saved Astra favicons. History and website permission choices remain separate.")
 					.font(.caption)
 					.foregroundStyle(.secondary)
@@ -100,25 +104,6 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 					.disabled(session.favicons.isEmpty)
 					.accessibilityIdentifier("clear-all-favicons")
 					.id("Clear All Favicons")
-				ForEach(records, id: \.displayName) { record in
-					HStack {
-						Text(verbatim: record.displayName)
-						Spacer()
-						Button("Remove Website Data", systemImage: "trash", role: .destructive) {
-							Task {
-								guard !isClearing else { return }
-								isClearing = true
-								defer { isClearing = false }
-								await session.clearWebsiteData(for: record)
-								await refreshRecords()
-							}
-						}
-						.labelStyle(.iconOnly)
-						.disabled(isClearing)
-						.accessibilityLabel("Remove data for \(record.displayName)")
-						.accessibilityIdentifier("clear-site-\(record.displayName)")
-					}
-				}
 			}
 			.id("Website Data")
 
@@ -163,14 +148,98 @@ struct BrowserPrivacyAndSecuritySettingsView: View {
 		.scrollContentBackground(.hidden)
 		.listStyle(.sidebar)
 		.task { await refreshRecords() }
-		.confirmationDialog("Clear website data for the selected range?", isPresented: $confirmsClear) {
-			Button("Clear Website Data", systemImage: "trash", role: .confirm) {
-				Task { await clearWebsiteData() }
+		.sheet(isPresented: $showsClearWebsiteData) {
+			NavigationStack {
+				List {
+					Section("Clear Website Data") {
+						Picker("Time Range", selection: $websiteDataRange) {
+							ForEach(BrowserWebsiteDataRange.allCases) { range in
+								Text(range.title).tag(range)
+							}
+						}
+						.accessibilityIdentifier("website-data-range")
+						Text(verbatim: clearWebsiteDataMessage)
+							.foregroundStyle(.secondary)
+					}
+				}
+				.scrollContentBackground(.hidden)
+				.listStyle(.sidebar)
+				.navigationTitle("Clear Website Data")
+				.toolbar {
+					ToolbarItem(placement: .cancellationAction) {
+						Button(role: .cancel) { showsClearWebsiteData = false }
+							.accessibilityLabel("Cancel clearing website data")
+							.accessibilityIdentifier("clear-website-data-cancel")
+					}
+					ToolbarItem(placement: .confirmationAction) {
+						Button("Clear", systemImage: "trash", role: .confirm) {
+							confirmsClear = true
+						}
+						.buttonStyle(.glassProminent)
+						.disabled(isClearing)
+						.accessibilityIdentifier("clear-website-data-confirm")
+					}
+				}
+				.confirmationDialog("Clear website data for the selected range?", isPresented: $confirmsClear) {
+					Button("Clear Website Data", systemImage: "trash", role: .confirm) {
+						Task { await clearWebsiteData() }
+					}
+					.buttonStyle(.glassProminent)
+					Button(role: .cancel) {}
+				} message: {
+					Text(verbatim: clearWebsiteDataMessage)
+				}
 			}
-			.buttonStyle(.glassProminent)
-			Button(role: .cancel) {}
-		} message: {
-			Text(verbatim: clearWebsiteDataMessage)
+			.presentationDetents([.fraction(0.6)])
+			#if os(iOS)
+				.navigationTransition(.zoom(sourceID: "clear-website-data", in: presentations))
+			#endif
+			#if os(macOS)
+			.frame(width: 480, height: 420)
+			#endif
+		}
+		.sheet(isPresented: $showsWebsiteData) {
+			NavigationStack {
+				List {
+					ForEach(records, id: \.displayName) { record in
+						HStack {
+							Text(verbatim: record.displayName)
+							Spacer()
+							Button("Remove Website Data", systemImage: "trash", role: .destructive) {
+								Task {
+									guard !isClearing else { return }
+									isClearing = true
+									defer { isClearing = false }
+									await session.clearWebsiteData(for: record)
+									await refreshRecords()
+								}
+							}
+							.labelStyle(.iconOnly)
+							.disabled(isClearing)
+							.accessibilityLabel("Remove data for \(record.displayName)")
+							.accessibilityIdentifier("clear-site-\(record.displayName)")
+						}
+					}
+				}
+				.scrollContentBackground(.hidden)
+				.listStyle(.sidebar)
+				.task { await refreshRecords() }
+				.navigationTitle("Website Data")
+				.toolbar {
+					ToolbarItem(placement: .cancellationAction) {
+						Button(role: .cancel) { showsWebsiteData = false }
+							.accessibilityLabel("Close website data")
+							.accessibilityIdentifier("website-data-cancel")
+					}
+				}
+			}
+			.presentationDetents([.fraction(0.6), .large])
+			#if os(iOS)
+				.navigationTransition(.zoom(sourceID: "manage-website-data", in: presentations))
+			#endif
+			#if os(macOS)
+			.frame(width: 520, height: 500)
+			#endif
 		}
 		.confirmationDialog("Reset all site preferences?", isPresented: $confirmsSitePreferenceReset) {
 			Button("Reset Site Preferences", systemImage: "arrow.counterclockwise", role: .confirm) {

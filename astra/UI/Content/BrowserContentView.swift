@@ -1,10 +1,12 @@
 import Defaults
-import Haze
+import Observation
 import SwiftUI
 
 struct BrowserContentView: View, Animatable {
 	let browser: Browser
 	var insets = BrowserViewportInsets()
+	/// Keeps the outgoing page visible for the first half of a space crossfade.
+	var displayedTabID: UUID?
 	@Environment(\.colorScheme) private var colorScheme
 
 	var animatableData: CGFloat {
@@ -14,22 +16,23 @@ struct BrowserContentView: View, Animatable {
 
 	var body: some View {
 		GeometryReader { proxy in
-			let selectedTab = browser.selectedTab
+			let selectedTab = displayedTabID.flatMap { browser.tab(withID: $0) } ?? browser.selectedTab
+			let hasActiveDuplicate = BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
 			ZStack {
-				KeepAliveWebStack(browser: browser, insets: insets)
+				KeepAliveWebStack(browser: browser, insets: insets, displayedTabID: selectedTab?.id)
 					.zIndex(0)
-				content
+				content(hasActiveDuplicate: hasActiveDuplicate, tab: selectedTab)
 					.zIndex(1)
 			}
 			.animation(nil, value: browser.selectedTabID)
-			.animation(nil, value: BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser))
+			.animation(nil, value: hasActiveDuplicate)
 			#if os(macOS)
 				.overlay(alignment: .bottomLeading) {
-					if !BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser),
-					   let controller = browser.selectedTab?.activeController,
+					if !hasActiveDuplicate,
+					   let controller = selectedTab?.activeController,
 					   let url = controller.hoveredLinkURL
 					{
-						BrowserLinkPreview(url: url)
+						BrowserLinkPreview(url: url, isPrivate: browser.isPrivate)
 							.frame(maxWidth: min(700, proxy.size.width * 0.75), alignment: .leading)
 							.frame(maxWidth: .infinity, alignment: controller.hoveredLinkUsesTrailingCorner ? .trailing : .leading)
 							.padding(8)
@@ -45,32 +48,31 @@ struct BrowserContentView: View, Animatable {
 	}
 
 	@ViewBuilder
-	private var content: some View {
+	private func content(hasActiveDuplicate: Bool, tab: BrowserTab?) -> some View {
 		#if os(macOS)
-			if let controller = browser.selectedTab?.activeController, controller.url != nil,
-			   BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
+			if let controller = tab?.activeController, controller.url != nil,
+			   hasActiveDuplicate
 			{
 				BrowserTabMirrorView(controller: controller)
 			} else {
-				selectedContent
+				selectedContent(tab: tab)
 			}
 		#else
-			selectedContent
+			selectedContent(tab: tab)
 		#endif
 	}
 
 	@ViewBuilder
-	private var selectedContent: some View {
-		if let tab = browser.selectedTab, tab.internalPage != nil {
-			InternalPageHost(browser: browser)
-		} else if let tab = browser.selectedTab, tab.controller?.url != nil {
+	private func selectedContent(tab: BrowserTab?) -> some View {
+		if let tab, tab.internalPage != nil {
+			InternalPageHost(browser: browser, tab: tab)
+		} else if let tab, tab.controller?.url != nil {
 			Color.clear
 				.allowsHitTesting(false)
-		} else if let tab = browser.selectedTab, tab.isHibernated {
+		} else if let tab, tab.isHibernated {
 			HibernatedPlaceholder(browser: browser, tab: tab)
-		} else if browser.selectedTab != nil {
+		} else if tab != nil {
 			NewTabView(browser: browser)
-				.padding(.top, insets.obscured.top)
 		} else {
 			ContentUnavailableView("Tab Unavailable", systemImage: "exclamationmark.triangle")
 		}
@@ -79,26 +81,43 @@ struct BrowserContentView: View, Animatable {
 
 private struct InternalPageHost: View {
 	@Bindable var browser: Browser
+	let tab: BrowserTab
 	@State private var settingsSearchText = ""
 	#if DEBUG
 		@State private var failedStateRefreshID = 0
 	#endif
 
 	var body: some View {
-		if let tab = browser.selectedTab, let page = tab.internalPage {
+		if let page = tab.internalPage {
 			switch page {
 				case .themeEditor:
 					BrowserThemeEditorView(browser: browser)
 				case .settings:
-					BrowserSettingsView(
-						browser: browser,
-						searchText: $settingsSearchText,
-						selectedPage: $browser.settingsPage
-					)
+					#if os(macOS)
+						// Older sessions can still contain a Settings tab. Reopen its
+						// destination without embedding another settings hierarchy.
+						ContentUnavailableView {
+							Label("Settings", systemImage: "gearshape")
+						} description: {
+							Text("Settings are available in their own window.")
+						} actions: {
+							Button("Open Settings") { browser.openInternalPage(.settings) }
+						}
+						.task { browser.openInternalPage(.settings) }
+					#else
+						BrowserSettingsView(
+							browser: browser,
+							searchText: $settingsSearchText,
+							selectedPage: $browser.settingsPage
+						)
+					#endif
 				case .history:
 					BrowserHistoryView(browser: browser)
 				case .bookmarks:
 					BrowserBookmarksView(browser: browser)
+				case .easel:
+					BrowserEaselView(browser: browser, tab: tab)
+						.id(tab.id)
 				#if DEBUG
 					case let .failedWebsiteState(kind):
 						BrowserNavigationErrorView(kind: kind) {
@@ -114,11 +133,17 @@ private struct InternalPageHost: View {
 private struct KeepAliveWebStack: View {
 	let browser: Browser
 	let insets: BrowserViewportInsets
+	let displayedTabID: UUID?
 
 	var body: some View {
-		let selectedTab = browser.selectedTab
+		let selectedTab = displayedTabID.flatMap { browser.tab(withID: $0) } ?? browser.selectedTab
+		// Each WebKit view can have exactly one AppKit parent. A split contains
+		// two BrowserPageViews, so only attach the current pane's web view.
+		let controllers = browser.isShowingTabSplit
+			? browser.tabResources.controllersForDisplay().filter { $0 === selectedTab?.controller }
+			: browser.tabResources.controllersForDisplay()
 		ZStack {
-			ForEach(keepAliveControllers()) { controller in
+			ForEach(controllers) { controller in
 				BrowserWebView(
 					controller: controller,
 					windowID: browser.windowID,
@@ -128,9 +153,9 @@ private struct KeepAliveWebStack: View {
 					maximumViewportInsets: insets.maximum
 				)
 				.id(controller.id)
-				.opacity(controller === selectedTab?.controller && selectedTab?.internalPage == nil && controller.navigationFailure == nil ? 1 : 0)
-				.allowsHitTesting(controller === selectedTab?.controller && selectedTab?.activeController === controller && controller.navigationFailure == nil)
-				.accessibilityHidden(controller !== selectedTab?.controller || selectedTab?.activeController !== controller || controller.navigationFailure != nil)
+				.opacity(controller === selectedTab?.controller && selectedTab?.internalPage == nil && controller.committedURL != nil && controller.navigationFailure == nil ? 1 : 0)
+				.allowsHitTesting(controller === selectedTab?.controller && selectedTab?.activeController === controller && controller.committedURL != nil && controller.navigationFailure == nil)
+				.accessibilityHidden(controller !== selectedTab?.controller || selectedTab?.activeController !== controller || controller.committedURL == nil || controller.navigationFailure != nil)
 			}
 
 			if let failure = selectedTab?.controller?.navigationFailure, selectedTab?.internalPage == nil {
@@ -139,40 +164,91 @@ private struct KeepAliveWebStack: View {
 				}
 			}
 		}
-		.task(id: browser.selectedTabID) {
-			// Controller is usually already prepared by openHistory/addTab;
-			// this is just the fallback for restored/hibernated tabs.
-			if let controller = browser.selectedTab?.controller, !controller.isWebViewReady {
+		.task(id: selectedTab?.id) {
+			// Each side prepares its own WebKit controller, even when the
+			// globally selected tab is the other split pane.
+			if let controller = selectedTab?.controller, !controller.isWebViewReady {
 				controller.prepareWebView()
 			}
 		}
 	}
+}
 
-	private func keepAliveControllers() -> [BrowserController] {
+/// Per-browser WebKit attachment policy. The normal warm budget is four
+/// controllers; pressure reduces idle retention without overriding media,
+/// capture, unsaved-form or active lifecycle protection from WebKit.
+@MainActor
+@Observable
+final class BrowserTabResourceManager {
+	@ObservationIgnored private weak var browser: Browser?
+	private(set) var warmControllerLimit = 4
+
+	init(browser: Browser) {
+		self.browser = browser
+	}
+
+	func updateMemoryPressure(_ level: BrowserHibernationManager.PressureLevel) {
+		let limit = switch level {
+			case .normal: 4
+			case .warning: 2
+			case .critical: 1
+		}
+		guard warmControllerLimit != limit else { return }
+		warmControllerLimit = limit
+		BrowserLog.debug(.performance, "webkit.warm-controller-budget", metadata: ["count": String(limit)])
+	}
+
+	func controllersForDisplay() -> [BrowserController] {
+		guard let browser else { return [] }
+		let started = BrowserLog.clock()
 		let selectedTab = browser.selectedTab
+		let registry = BrowserWindowRegistry.shared
+		// All tabs belong to this window when there is no competing normal
+		// window. Skip materializing the otherwise redundant UUID ownership set.
+		let ownedTabIDs = registry.hasCompetingNormalWindow(for: browser)
+			? registry.ownedTabIDs(in: browser) : nil
+		func isOwned(_ id: UUID) -> Bool {
+			ownedTabIDs?.contains(id) ?? true
+		}
+		let tabsByID = browser.tabsByID
 		var result: [BrowserController] = []
 		var seen = Set<UUID>()
 		func append(_ controller: BrowserController?) {
 			guard let controller, controller.url != nil, seen.insert(controller.id).inserted else { return }
 			result.append(controller)
 		}
-		if let selectedTab, BrowserWindowRegistry.shared.ownsTab(selectedTab.id, in: browser) {
+		if browser.isShowingTabSplit {
+			for splitID in [browser.splitLeftTabID, browser.splitRightTabID].compactMap(\.self)
+				where isOwned(splitID)
+			{
+				append(tabsByID[splitID]?.controller)
+			}
+		}
+		if let selectedTab, isOwned(selectedTab.id) {
 			append(selectedTab.controller)
 		}
-		for id in browser.recentlyUsedTabIDs where result.count < 4 {
-			guard let tab = browser.tab(withID: id), tab.internalPage == nil,
-			      BrowserWindowRegistry.shared.ownsTab(tab.id, in: browser) else { continue }
+		// Pressure applies only to idle recency retention. Independently
+		// protected controllers are always included below regardless of budget.
+		for id in browser.recentlyUsedTabIDs where result.count < warmControllerLimit {
+			guard isOwned(id),
+			      let tab = tabsByID[id], tab.internalPage == nil else { continue }
 			append(tab.controller)
 		}
-		// ponytail: retain all playing or paused media while iframe PiP state is unobservable; narrow this when WebKit exposes a frame-aware callback.
-		for tab in browser.tabs where BrowserWindowRegistry.shared.ownsTab(tab.id, in: browser) {
-			append(tab.controller?.requiresMediaTeardownConfirmation == true ? tab.controller : nil)
+		for tab in browser.tabs where isOwned(tab.id) {
+			append(tab.controller?.shouldKeepWebViewAttached == true ? tab.controller : nil)
 			for peek in tab.id == selectedTab?.id ? [] : tab.peeks {
-				if peek.controller.requiresMediaTeardownConfirmation {
+				if peek.controller.shouldKeepWebViewAttached {
 					append(peek.controller)
 				}
 			}
 		}
+		BrowserLog.duration(.performance, "workflow.webview-hosts.resolve",
+		                    since: started, warnAboveMilliseconds: 8,
+		                    metadata: [
+		                    	"tab_count": String(browser.tabs.count),
+		                    	"host_count": String(result.count),
+		                    	"warm_budget": String(warmControllerLimit),
+		                    ])
 		return result
 	}
 }

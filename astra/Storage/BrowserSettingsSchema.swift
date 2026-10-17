@@ -3,7 +3,15 @@ import Foundation
 
 @MainActor
 enum BrowserSettingsSchema {
-	static let currentVersion = 1
+	static let currentVersion = 2
+	private static var didMigrateNewTabs = false
+
+	/// The legacy page/overlay preference is no longer configurable or synchronized.
+	static func migrateLegacyNewTabPreference() {
+		guard !didMigrateNewTabs else { return }
+		didMigrateNewTabs = true
+		UserDefaults.standard.removeObject(forKey: "newTabStyle")
+	}
 
 	/// Settings that may leave the device through Astra's timestamped sync document.
 	static var portableNames: Set<String> {
@@ -17,8 +25,27 @@ enum BrowserSettingsSchema {
 		"syncServerURL",
 		"miniAstraEnabled",
 		"miniAstraWindowAnimation",
-		"miniAstraShortcutEnabled",
 		"webInspectorEnabled",
+		"developerModeEnabled",
+		"usageLimitsProvider",
+		"automaticHibernationEnabled",
+		"aiFeaturesEnabled",
+		"aiBrowserActionPermissions",
+		"aiBookmarkTitles",
+		"aiWebsiteMonitoring",
+		"deliveredWebsiteMonitors",
+		"aiLinkPreviews",
+		"adBlockingEnabled",
+		"aiLinkPreviewMode",
+		"aiLinkPreviewShiftOverride",
+		"aiTabGroups",
+		"aiFind",
+		"aiSidebar",
+		"aiTabTitles",
+		"aiProvider",
+		"aiCodexModel",
+		"aiClaudeModel",
+		"aiFeaturePresets",
 		"downloadsFolderBookmark",
 	]
 
@@ -36,17 +63,32 @@ enum BrowserSettingsSchema {
 	/// Restore browser preferences without clearing browsing data, bookmarks,
 	/// downloads, extension packages, credentials, account identity, or cookies.
 	static func resetBrowserSettings() {
-		Defaults[.newTabStyle] = .page
 		Defaults[.startupBehavior] = .restore
 		Defaults[.homepageURL] = "https://www.google.com"
 		Defaults[.tryHTTPSFirst] = true
 		Defaults[.globalPrivacyControl] = true
+		Defaults[.adBlockingEnabled] = true
 		Defaults[.historyRetentionDays] = 0
 		Defaults[.searchSuggestionsEnabled] = true
 		Defaults[.browserSearchConfiguration] = BrowserSearchConfiguration.default.encoded
 		Defaults[.startPagePreferences] = BrowserStartPagePreferences.default.encoded
 		Defaults[.browserTheme] = BrowserTheme()
 		Defaults[.renameDownloadsWithAppleIntelligence] = true
+		Defaults[.aiFeaturesEnabled] = true
+		Defaults[.aiBrowserActionPermissions] = "{}"
+		Defaults[.aiBookmarkTitles] = true
+		Defaults[.aiWebsiteMonitoring] = true
+		Defaults[.aiLinkPreviews] = true
+		Defaults[.aiLinkPreviewMode] = "always"
+		Defaults[.aiLinkPreviewShiftOverride] = false
+		Defaults[.aiTabGroups] = true
+		Defaults[.aiFind] = true
+		Defaults[.aiSidebar] = true
+		Defaults[.aiTabTitles] = true
+		Defaults[.aiProvider] = "presets"
+		Defaults[.aiCodexModel] = ""
+		Defaults[.aiClaudeModel] = ""
+		Defaults[.aiFeaturePresets] = "{}"
 		Defaults[.downloadsAskWhereToSave] = false
 		Defaults[.copyMailtoAddresses] = true
 		Defaults[.requireDoublePressToQuit] = true
@@ -59,8 +101,10 @@ enum BrowserSettingsSchema {
 		Defaults[.sidebarShown] = true
 		Defaults[.miniAstraEnabled] = true
 		Defaults[.miniAstraWindowAnimation] = true
-		Defaults[.miniAstraShortcutEnabled] = false
 		Defaults[.webInspectorEnabled] = false
+		Defaults[.developerModeEnabled] = false
+		Defaults[.usageLimitsProvider] = .none
+		Defaults[.automaticHibernationEnabled] = true
 		Defaults[.downloadsFolderBookmark] = ""
 	}
 }

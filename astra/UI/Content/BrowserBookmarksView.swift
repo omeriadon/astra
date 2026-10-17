@@ -1,6 +1,8 @@
+import Defaults
 import SwiftUI
 
 struct BrowserBookmarksView: View {
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	let browser: Browser
 	#if os(iOS)
 		@Environment(\.editMode) private var editMode
@@ -9,36 +11,20 @@ struct BrowserBookmarksView: View {
 	@State private var searchText = ""
 	@State private var showingReadingList = false
 	@State private var editingBookmark: Bookmark?
-
-	private var visibleBookmarks: [Bookmark] {
-		browser.bookmarks
-			.filter { searchText.isEmpty || [$0.name, $0.url.absoluteString, $0.folder].contains { $0.localizedCaseInsensitiveContains(searchText) } }
-			.sorted {
-				if $0.folder != $1.folder {
-					return $0.folder.localizedStandardCompare($1.folder) == .orderedAscending
-				}
-				if $0.order != $1.order {
-					return $0.order < $1.order
-				}
-				return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-			}
-	}
-
-	private var visibleReadingList: [ReadingListItem] {
-		browser.readingList
-			.filter { searchText.isEmpty || [$0.title, $0.url.absoluteString].contains { $0.localizedCaseInsensitiveContains(searchText) } }
-			.sorted {
-				$0.addedAt == $1.addedAt
-					? $0.id.uuidString < $1.id.uuidString
-					: $0.addedAt > $1.addedAt
-			}
-	}
+	@Default(.bookmarkFolderNames) private var emptyFolders
+	@Default(.aiFeaturesEnabled) private var allAI
+	@Default(.aiBookmarkTitles) private var aiTitles
+	@State private var cleanupRequested = false
+	@State private var cleanupError: String?
+	@State private var libraryProjection = BrowserLibraryProjection.empty
+	@State private var libraryTask: Task<Void, Never>?
+	@State private var libraryRevision = 0
 
 	var body: some View {
-		let bookmarkGroups = Dictionary(grouping: visibleBookmarks, by: \.folder)
-		let bookmarkFolders = bookmarkGroups.keys.sorted()
+		let bookmarkGroups = libraryProjection.bookmarkGroups
+		let bookmarkFolders = Set(Array(bookmarkGroups.keys) + emptyFolders.filter { searchText.isEmpty || $0.localizedCaseInsensitiveContains(searchText) }).sorted()
 		let bookmarkCount = bookmarkGroups.values.reduce(0) { $0 + $1.count }
-		let readingItems = visibleReadingList
+		let readingItems = libraryProjection.readingItems
 		List {
 			if showingReadingList {
 				Section("Reading List") {
@@ -72,6 +58,9 @@ struct BrowserBookmarksView: View {
 				ForEach(bookmarkFolders, id: \.self) { folder in
 					let items = bookmarkGroups[folder] ?? []
 					Section(folder.isEmpty ? "Bookmarks" : folder) {
+						if items.isEmpty {
+							Text("No bookmarks in this folder").foregroundStyle(.secondary)
+						}
 						bookmarkRows(items)
 					}
 				}
@@ -89,6 +78,11 @@ struct BrowserBookmarksView: View {
 					Label(showingReadingList ? "Reading List" : "Bookmarks", systemImage: showingReadingList ? "text.book.closed" : "bookmark")
 						.font(.title2.bold())
 					Spacer()
+					if !showingReadingList, allAI, aiTitles {
+						Button("Clean Bookmark Titles", systemImage: "text.badge.checkmark") { cleanupRequested = true }
+							.disabled(cleanupRequested || browser.isPrivate || browser.bookmarks.isEmpty)
+							.accessibilityIdentifier("clean-bookmark-titles")
+					}
 					BrowserLibraryTransferControls(browser: browser, scope: .bookmarks)
 					#if os(iOS)
 						if !showingReadingList, searchText.isEmpty, bookmarkCount > 1 {
@@ -107,10 +101,17 @@ struct BrowserBookmarksView: View {
 				TextField(showingReadingList ? "Search Reading List" : "Search Bookmarks", text: $searchText)
 					.textFieldStyle(.plain)
 					.accessibilityIdentifier(showingReadingList ? "reading-list-search" : "bookmark-search")
+				if let cleanupError {
+					Text(cleanupError).font(.caption).foregroundStyle(.secondary)
+				}
 			}
 			.padding(.horizontal, 24)
 			.padding(.vertical, 14)
 		}
+		.onAppear { updateLibraryProjection() }
+		.onChange(of: browser.libraryChangeRevision) { _, _ in updateLibraryProjection() }
+		.onChange(of: searchText) { _, _ in updateLibraryProjection() }
+		.onDisappear { libraryTask?.cancel() }
 		.sheet(item: $editingBookmark) { bookmark in
 			BookmarkEditor(bookmark: bookmark) { name, folder, favorite in
 				browser.updateBookmark(bookmark.id, name: name, folder: folder, isFavorite: favorite, order: bookmark.order)
@@ -120,14 +121,87 @@ struct BrowserBookmarksView: View {
 			.presentationDetents([.fraction(0.6)])
 			#endif
 		}
+		.task(id: cleanupRequested) {
+			guard cleanupRequested else { return }
+			defer { cleanupRequested = false }
+			cleanupError = nil
+			do {
+				let originals = browser.bookmarks
+				for bookmark in originals {
+					var displayed = bookmark
+					var completed = false
+					defer {
+						if !completed, browser.bookmarks.first(where: { $0.id == bookmark.id }) == displayed {
+							withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
+								browser.updateBookmark(bookmark.id, name: bookmark.name, folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order)
+							}
+						}
+					}
+					let title = try await BrowserAI.shared.performStreaming(BrowserBookmarkTitleFeature(), input: bookmark) { snapshot in
+						let partial = BrowserAIOutput.title(snapshot)
+						guard !Task.isCancelled, allAI, aiTitles,
+						      BrowserAIOutput.validLine(partial, maximumWords: 40),
+						      browser.bookmarks.first(where: { $0.id == bookmark.id }) == displayed else { return }
+						withAnimation(reduceMotion ? nil : .smooth(duration: 0.2)) {
+							browser.updateBookmark(bookmark.id, name: partial, folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order)
+						}
+						if let current = browser.bookmarks.first(where: { $0.id == bookmark.id }) {
+							displayed = current
+						}
+					}
+					try Task.checkCancellation()
+					guard browser.bookmarks.first(where: { $0.id == bookmark.id }) == displayed, allAI, aiTitles else { throw BrowserAIError.pageUnavailable }
+					withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
+						browser.updateBookmark(bookmark.id, name: title, folder: bookmark.folder, isFavorite: bookmark.isFavorite, order: bookmark.order)
+					}
+					completed = true
+				}
+			} catch {
+				if !Task.isCancelled {
+					cleanupError = error.localizedDescription
+				}
+			}
+		}
 		.overlay {
 			if showingReadingList, readingItems.isEmpty, searchText.isEmpty {
 				ContentUnavailableView("No Reading List Items", systemImage: "text.book.closed")
 			} else if showingReadingList, readingItems.isEmpty {
 				ContentUnavailableView("No Search Results", systemImage: "magnifyingglass")
-			} else if !showingReadingList, bookmarkCount == 0 {
+			} else if !showingReadingList, bookmarkCount == 0, bookmarkFolders.isEmpty {
 				ContentUnavailableView(searchText.isEmpty ? "No Bookmarks" : "No Search Results", systemImage: searchText.isEmpty ? "bookmark" : "magnifyingglass")
 			}
+		}
+	}
+
+	private func updateLibraryProjection() {
+		libraryRevision &+= 1
+		let revision = libraryRevision
+		let query = searchText
+		libraryTask?.cancel()
+		libraryTask = Task { @MainActor in
+			// Search typing should not queue multiple full-library scans.
+			if !query.isEmpty {
+				do {
+					try await Task.sleep(for: .milliseconds(100))
+				} catch {
+					return
+				}
+			}
+			guard !Task.isCancelled, revision == libraryRevision else { return }
+			// Capture the COW arrays only after search debouncing. Rapid typing
+			// should not pin successive library buffers before they are needed.
+			let bookmarks = browser.bookmarks
+			let readingList = browser.readingList
+			let worker = Task.detached(priority: .userInitiated) {
+				BrowserLibraryProjection.build(bookmarks: bookmarks, readingList: readingList, query: query)
+			}
+			let result = await withTaskCancellationHandler {
+				await worker.value
+			} onCancel: {
+				worker.cancel()
+			}
+			guard !Task.isCancelled, revision == libraryRevision, let result else { return }
+			libraryProjection = result
 		}
 	}
 

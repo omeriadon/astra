@@ -6,69 +6,112 @@ struct DownloadsSidebarView: View {
 	let theme: BrowserTheme
 	@State private var previewURL: URL?
 	@State private var scopedPreviewURL: URL?
+	@State private var selectedDownloadIDs: Set<UUID> = []
+	#if os(macOS)
+		@FocusState private var downloadsFocused: Bool
+	#endif
 
 	var body: some View {
-		GeometryReader { geometry in
-			ScrollView {
-				LazyVStack(alignment: .leading, spacing: 5) {
-					#if os(macOS)
-						Text("Downloads")
-							.font(.headline)
-							.padding(.horizontal, 8)
-							.padding(.bottom, 6)
-					#endif
-
-					ForEach(manager.items) { item in
-						DownloadRowView(
-							item: item,
-							manager: manager,
-							theme: theme,
-							previewURL: $previewURL,
-							scopedPreviewURL: $scopedPreviewURL
-						)
-						.equatable()
+		List(selection: $selectedDownloadIDs) {
+			ForEach(manager.items) { item in
+				DownloadRowView(
+					item: item,
+					manager: manager,
+					theme: theme,
+					previewURL: $previewURL,
+					scopedPreviewURL: $scopedPreviewURL
+				)
+				.equatable()
+				.tag(item.id)
+				#if os(macOS)
+					.onTapGesture(count: 2) {
+						selectedDownloadIDs = [item.id]
+						if item.status == .completed {
+							manager.open(item.id)
+						}
 					}
-				}
-				.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
-				#if os(macOS)
-					.padding(.top, 35)
-				#else
-					.padding(.vertical, 16)
+					.simultaneousGesture(TapGesture().onEnded {
+						downloadsFocused = true
+					})
 				#endif
-					.frame(minHeight: geometry.size.height, alignment: .top)
+					.listRowInsets(EdgeInsets(top: 3, leading: BrowserChromeMetrics.shellEdgePadding, bottom: 3, trailing: BrowserChromeMetrics.shellEdgePadding))
+					.listRowBackground(selectedDownloadIDs.contains(item.id) ? Color.accentColor.opacity(0.15) : Color.clear)
+					.listRowSeparator(.hidden)
+					.swipeActions(edge: .trailing, allowsFullSwipe: true) {
+						if item.status == .downloading || item.status == .paused || item.status == .finalizing {
+							Button("Cancel", systemImage: "xmark.circle", role: .destructive) { manager.cancel(item.id) }
+						} else if item.status == .completed {
+							#if os(macOS)
+								Button("Move to Bin", systemImage: "trash", role: .destructive) { manager.moveToTrash(item.id) }
+							#else
+								Button("Remove Download", systemImage: "trash", role: .destructive) { manager.delete(item.id) }
+							#endif
+						} else {
+							Button("Remove Download", systemImage: "trash", role: .destructive) { manager.delete(item.id) }
+						}
+					}
+			}
+		}
+		.listStyle(.plain)
+		.scrollContentBackground(.hidden)
+		#if os(macOS)
+			.contentMargins(.top, 35)
+			.contentMargins(.bottom, 48)
+			.focusable()
+			.focused($downloadsFocused)
+			.onKeyPress(.space) {
+				guard downloadsFocused, !selectedDownloadIDs.isEmpty else { return .ignored }
+				quickLookSelectedDownload()
+				return .handled
+			}
+			.onKeyPress(.delete) {
+				guard downloadsFocused, !selectedDownloadIDs.isEmpty else { return .ignored }
+				for id in selectedDownloadIDs {
+					manager.moveToTrash(id)
+				}
+				selectedDownloadIDs.removeAll()
+				return .handled
+			}
+		#endif
+			.overlay {
+				if manager.items.isEmpty {
+					DownloadsEmptyView()
+				}
+			}
+			.quickLookPreview($previewURL)
+			.onChange(of: previewURL) { previousURL, currentURL in
 				#if os(macOS)
-					.background {
-						WindowDragBackground()
+					if let previousURL, previousURL != currentURL {
+						if scopedPreviewURL == previousURL {
+							manager.endPreview(at: previousURL)
+							scopedPreviewURL = nil
+						}
 					}
 				#endif
 			}
-		}
-		.overlay {
-			if manager.items.isEmpty {
-				DownloadsEmptyView()
-			}
-		}
-		.quickLookPreview($previewURL)
-		.onChange(of: previewURL) { previousURL, currentURL in
-			#if os(macOS)
-				if let previousURL, previousURL != currentURL {
-					if scopedPreviewURL == previousURL {
-						manager.endPreview(at: previousURL)
-						scopedPreviewURL = nil
+			.onDisappear {
+				#if os(macOS)
+					if let scopedPreviewURL {
+						manager.endPreview(at: scopedPreviewURL)
+						self.scopedPreviewURL = nil
 					}
-				}
-			#endif
-		}
-		.onDisappear {
-			#if os(macOS)
-				if let scopedPreviewURL {
-					manager.endPreview(at: scopedPreviewURL)
-					self.scopedPreviewURL = nil
-				}
-			#endif
-		}
-		.accessibilityIdentifier("downloads-list")
+				#endif
+			}
+			.accessibilityIdentifier("downloads-list")
 	}
+
+	#if os(macOS)
+		private func quickLookSelectedDownload() {
+			guard let item = manager.items.first(where: { selectedDownloadIDs.contains($0.id) && $0.status == .completed }),
+			      previewURL != item.fileURL,
+			      manager.beginPreview(item.id) else { return }
+			if let scopedPreviewURL {
+				manager.endPreview(at: scopedPreviewURL)
+			}
+			scopedPreviewURL = item.fileURL
+			previewURL = item.fileURL
+		}
+	#endif
 }
 
 private struct DownloadsEmptyView: View {
@@ -79,6 +122,7 @@ private struct DownloadsEmptyView: View {
 }
 
 private struct DownloadRowView: View {
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	let item: BrowserDownload
 	let manager: BrowserDownloadManager
 	let theme: BrowserTheme
@@ -92,7 +136,9 @@ private struct DownloadRowView: View {
 				.accessibilityHidden(true)
 
 			VStack(alignment: .leading, spacing: 3) {
-				Text(item.name)
+				Text(manager.aiSuggestedNames[item.id] ?? item.name)
+					.contentTransition(.opacity)
+					.animation(reduceMotion ? nil : .smooth(duration: 0.2), value: manager.aiSuggestedNames[item.id] ?? item.name)
 					.lineLimit(2)
 					.font(.subheadline)
 				if let host = item.sourceURL?.host {
@@ -101,12 +147,17 @@ private struct DownloadRowView: View {
 						.font(.caption)
 						.opacity(0.65)
 				}
-				if item.status == .downloading {
-					Text(item.progressDetails)
+				if item.status == .downloading || item.status == .paused || item.status == .finalizing {
+					Text(item.statusSummary)
 						.font(.caption.monospacedDigit())
 						.foregroundStyle(.secondary)
-					HStack(spacing: 2) {
-						if let segments = item.segments {
+					if let finish = item.estimatedFinish {
+						Text("Estimated finish: \(finish.formatted(date: .omitted, time: .shortened))")
+							.font(.caption.monospacedDigit())
+							.foregroundStyle(.secondary)
+					}
+					HStack(spacing: 3) {
+						if let segments = item.segments, !segments.isEmpty {
 							ForEach(segments.indices, id: \.self) { index in
 								let segment = segments[index]
 								let size = Double(segment.end - segment.start + 1)
@@ -119,7 +170,7 @@ private struct DownloadRowView: View {
 							SegmentProgressBar(progress: item.progress, theme: theme)
 						}
 					}
-					.frame(height: 5)
+					.frame(height: 7)
 					.accessibilityElement(children: .ignore)
 					.accessibilityLabel("Download progress")
 					.accessibilityValue("\(Int(item.progress * 100)) percent")
@@ -129,6 +180,32 @@ private struct DownloadRowView: View {
 						.lineLimit(2)
 						.opacity(0.65)
 				}
+				HStack(spacing: 8) {
+					if item.status == .downloading {
+						Button("Pause", systemImage: "pause.fill") {
+							manager.pause(item.id)
+						}
+						.accessibilityIdentifier("download-pause-\(item.id.uuidString)")
+					} else if item.canResume {
+						Button("Resume", systemImage: "play.fill") {
+							manager.resume(item.id)
+						}
+						.accessibilityIdentifier("download-resume-\(item.id.uuidString)")
+					} else if item.canRetry {
+						Button("Restart", systemImage: "arrow.clockwise") {
+							manager.retry(item.id)
+						}
+						.accessibilityIdentifier("download-restart-\(item.id.uuidString)")
+					}
+					if item.status == .downloading || item.status == .paused || item.status == .finalizing {
+						Button("Cancel", systemImage: "xmark.circle", role: .destructive) {
+							manager.cancel(item.id)
+						}
+						.accessibilityIdentifier("download-cancel-\(item.id.uuidString)")
+					}
+				}
+				.buttonStyle(.borderless)
+				.font(.caption)
 			}
 			.frame(maxWidth: .infinity, alignment: .leading)
 		}
@@ -180,13 +257,26 @@ private struct DownloadRowView: View {
 				.accessibilityLabel("Retry download")
 				.accessibilityIdentifier("download-retry-\(item.id.uuidString)")
 			}
-			if item.status == .downloading {
+			if item.status == .downloading || item.status == .paused {
+				if item.status == .downloading {
+					Button("Pause", systemImage: "pause.fill") {
+						manager.pause(item.id)
+					}
+					.accessibilityIdentifier("download-pause-menu-\(item.id.uuidString)")
+				}
 				Button("Cancel Download", systemImage: "xmark.circle", role: .destructive) {
-					manager.delete(item.id)
+					manager.cancel(item.id)
 				}
 				.accessibilityLabel("Cancel download")
 				.accessibilityIdentifier("download-cancel-\(item.id.uuidString)")
 			} else {
+				#if os(macOS)
+					if item.status == .completed {
+						Button("Move to Bin", systemImage: "trash", role: .destructive) {
+							manager.moveToTrash(item.id)
+						}
+					}
+				#endif
 				Button(
 					item.status == .completed ? "Remove from Downloads" : "Delete",
 					systemImage: "trash",

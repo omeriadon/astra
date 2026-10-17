@@ -69,7 +69,7 @@
 			let viewRoot = NSMenuItem(title: "View", action: nil, keyEquivalent: "")
 			viewRoot.submenu = viewMenu
 			main.addItem(viewRoot)
-			let toggle = NSMenuItem(title: "Toggle Top Bar", action: #selector(toggleTopBar(_:)), keyEquivalent: "s")
+			let toggle = NSMenuItem(title: "Toggle Top Bar", action: #selector(toggleTopBar(_:)), keyEquivalent: "d")
 			toggle.keyEquivalentModifierMask = [.command]
 			toggle.target = self
 			viewMenu.addItem(toggle)
