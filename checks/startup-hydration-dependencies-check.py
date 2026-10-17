@@ -20,9 +20,10 @@ print("Startup concurrent hydration dependency checks passed")
 restoration_start = source.index("let restoredTabs = savedTabs.compactMap")
 restoration_end = source.index("var newTabs = restoredTabs", restoration_start)
 restoration = source[restoration_start:restoration_end]
-assert "let savedTabs = loaded.tabs.filter { !$0.isDiscardableNewTab }" in source, (
-    "Legacy empty new-tab records must be discarded before restoration"
+assert "let savedTabs = loaded.tabs" in source, (
+    "New Tabs must be retained for restoration, even without a URL"
 )
+assert "loaded.tabs.filter { !$0.isDiscardableNewTab }" not in source
 assert "foregroundSavedID" in source
 assert "savedWindow?.restoredSelection(availableTabIDs:" in source
 assert "isHibernated: saved.isHibernated || startupBehavior != .restore || saved.id != foregroundSavedID" in restoration

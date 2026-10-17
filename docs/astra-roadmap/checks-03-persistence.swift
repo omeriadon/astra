@@ -53,6 +53,58 @@ struct BrowserPersistenceCheck {
 		let restored = try persistence.loadPersistedState()
 		assert(restored?.openTabs.map(\.id) == [tab.id])
 		assert(restored?.windowRecords?.first?.tabIDs == [tab.id])
+		// URL-less New Tabs must survive a full atomic disk round-trip with
+		// their IDs, order, selected tab and workspace membership intact.
+		let emptyTab = OpenTab()
+		let anotherEmptyTab = OpenTab()
+		let newTabDirectory = directory.appendingPathComponent("durable-new-tabs", isDirectory: true)
+		try FileManager.default.createDirectory(at: newTabDirectory, withIntermediateDirectories: true)
+		let newTabPersistence = BrowserPersistence(directory: newTabDirectory)
+		let newTabIDs = [tab.id, emptyTab.id, anotherEmptyTab.id]
+		let newTabWindowID = UUID()
+		let newTabState = BrowserPersistedState(
+			bookmarks: [],
+			openTabs: [tab, emptyTab, anotherEmptyTab],
+			closedTabs: [],
+			workspace: BrowserWorkspace(
+				spaces: [BrowserSpace(
+					id: BrowserSpace.firstID,
+					tabIDs: newTabIDs,
+					selectedTabID: emptyTab.id
+				)],
+				favouriteTabIDs: [],
+				selectedSpaceID: BrowserSpace.firstID
+			),
+			snapshot: BrowserSnapshot(selectedTabID: emptyTab.id),
+			windowRecords: [BrowserWindowRecord(
+				windowID: newTabWindowID,
+				tabIDs: newTabIDs,
+				selectedTabID: emptyTab.id
+			)]
+		)
+		try newTabPersistence.savePersistedState(newTabState)
+		let restoredNewTabs = try newTabPersistence.loadPersistedState()
+		precondition(restoredNewTabs?.openTabs.map(\.id) == newTabIDs)
+		precondition(restoredNewTabs?.openTabs[1].url == nil)
+		precondition(restoredNewTabs?.openTabs[2].url == nil)
+		precondition(restoredNewTabs?.snapshot.selectedTabID == emptyTab.id)
+		precondition(restoredNewTabs?.workspace.spaces[0].tabIDs == newTabIDs)
+		precondition(restoredNewTabs?.windowRecords?[0].selectedTabID == emptyTab.id)
+		// Closing a blank tab must commit its removal rather than resurrect it.
+		var afterClosingNewTab = newTabState
+		afterClosingNewTab.openTabs.removeAll { $0.id == emptyTab.id }
+		afterClosingNewTab.workspace.spaces[0].tabIDs.removeAll { $0 == emptyTab.id }
+		afterClosingNewTab.workspace.spaces[0].selectedTabID = anotherEmptyTab.id
+		afterClosingNewTab.snapshot.selectedTabID = anotherEmptyTab.id
+		afterClosingNewTab.windowRecords = [BrowserWindowRecord(
+			windowID: newTabWindowID,
+			tabIDs: [tab.id, anotherEmptyTab.id],
+			selectedTabID: anotherEmptyTab.id
+		)]
+		try newTabPersistence.savePersistedState(afterClosingNewTab)
+		let savedAfterClose = try newTabPersistence.loadPersistedState()
+		precondition(savedAfterClose?.openTabs.map(\.id) == [tab.id, anotherEmptyTab.id])
+
 		for value in ["https://example.com", "http://localhost:8080/path"] {
 			assert(BrowserHomepage.validURL(value) != nil)
 		}

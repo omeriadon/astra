@@ -861,7 +861,7 @@ final class Browser {
 		let cachedDefaultPageZoom = launchCache == nil ? nil : Defaults[.defaultPageZoom]
 		let placeholderID = placeholder.id
 		let placeholderModifiedAt = placeholder.modifiedAt
-		let cachedTabs = launchCache?.tabs.filter { $0.url != nil || $0.internalPage != nil }.sorted { $0.order < $1.order }.map { cached in
+		let cachedTabs = launchCache?.tabs.sorted { $0.order < $1.order }.map { cached in
 			BrowserTab(
 				id: cached.id,
 				internalPage: cached.internalPage.flatMap(BrowserInternalPage.init(persistenceID:)),
@@ -1115,7 +1115,8 @@ final class Browser {
 			persist()
 			BrowserSync.shared.hydrationDidFinish(self)
 		}
-		let savedTabs = loaded.tabs.filter { !$0.isDiscardableNewTab }
+		// Empty New Tabs are real session entries, not disposable restoration anchors.
+		let savedTabs = loaded.tabs
 		let placeholderIsUntouched = tabs.count == 1
 			&& tabs.first?.id == placeholderID
 			&& tabs.first?.modifiedAt == placeholderModifiedAt
@@ -1162,6 +1163,8 @@ final class Browser {
 				settings: [:]
 			)
 			let merged = current.merging(cached)
+				.preservingLocalOnlyData(from: cached)
+				.preservingLocalOnlyData(from: current)
 			applySyncDocument(merged)
 			if selectionBeforeHydration == placeholderID || cacheSelectionIsUntouched,
 			   let record = loaded.windowRecords.first(where: { $0.windowID == windowID }) ?? restorationRecord,
@@ -1170,9 +1173,6 @@ final class Browser {
 				selectTab(selection)
 			}
 			closedHistoryTabs = loaded.closedTabs
-			if tabs.allSatisfy(\.openTab.isDiscardableNewTab) {
-				requestNewTab()
-			}
 			return
 		}
 		let startupBehavior: BrowserStartupBehavior
@@ -1223,14 +1223,14 @@ final class Browser {
 				initialRestorationBaseline: saved
 			)
 		}
-		// A blank-start request opens Spotlight over the restored session;
-		// it must not create another persistent New Tab sidebar entry.
+		// Preserve restored New Tabs; an explicit blank-start preference opens
+		// one additional new tab without replacing the saved session.
 		var newTabs = restoredTabs
 		if startupBehavior == .homepage, let homepage = BrowserHomepage.validURL(Defaults[.homepageURL]) {
 			newTabs.append(BrowserTab(initialURL: homepage, session: session))
 		}
 		if newTabs.isEmpty {
-			newTabs = [BrowserTab(session: session)] // Transient empty-window anchor, not persisted.
+			newTabs = [BrowserTab(session: session)] // First session tab when there is no saved content.
 		}
 		let restoredWindowSelection = savedWindow?.restoredSelection(availableTabIDs: Set(newTabs.map(\.id)))
 		let newSelectedTabID = startupBehavior != .homepage
@@ -1278,7 +1278,7 @@ final class Browser {
 			configure(selectedTab)
 		}
 		BrowserExtensionManager.shared.sync(self)
-		if startupBehavior == .blank || newTabs.allSatisfy(\.openTab.isDiscardableNewTab) {
+		if startupBehavior == .blank {
 			requestNewTab()
 		}
 	}
@@ -3122,7 +3122,7 @@ final class Browser {
 
 	private func completeLocalSyncDocument(settings: [String: SyncedSetting]) -> BrowserSyncDocument {
 		BrowserSyncDocument(
-			tabs: tabs.map(\.openTab).filter { !$0.isDiscardableNewTab },
+			tabs: tabs.map(\.openTab),
 			workspace: workspace,
 			bookmarks: bookmarks,
 			readingList: readingList,
@@ -3165,7 +3165,9 @@ final class Browser {
 		let incomingReadingItems = Dictionary(document.readingList.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
 		let removedReadingIDs = Set(readingList.filter { incomingReadingItems[$0.id]?.url != $0.url }.map(\.id))
 		let currentTabs = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
-		let changedTabs = document.tabs.filter { !$0.isDiscardableNewTab }.compactMap { saved -> BrowserTab? in
+		// Portable projection excludes blank tabs, but locally retained blank tabs
+		// must survive sync merges and shared-window publications.
+		let changedTabs = document.tabs.compactMap { saved -> BrowserTab? in
 			let internalPage = saved.internalPage.flatMap(BrowserInternalPage.init(persistenceID:))
 			guard saved.internalPage == nil || internalPage != nil else { return nil }
 			if let current = currentTabs[saved.id] ?? BrowserWindowRegistry.shared.sharedTab(withID: saved.id, for: self),
@@ -3371,8 +3373,13 @@ final class Browser {
 			}
 			incomingState.workspace = sourceWorkspace
 		}
+		// The publishing normal window is authoritative for locally stored
+		// blank tabs, including their closure. Preserve other local-only data.
+		var localWithoutBlankTabs = localState
+		localWithoutBlankTabs.tabs.removeAll { $0.isDiscardableNewTab }
 		var merged = localState.merging(incomingState)
-		merged = merged.preservingLocalOnlyData(from: localState)
+		merged = merged.preservingLocalOnlyData(from: localWithoutBlankTabs)
+		merged = merged.preservingLocalOnlyData(from: incomingState)
 		let documentChanged = merged != localState
 		if documentChanged {
 			applySyncDocument(merged)
@@ -3650,9 +3657,9 @@ final class Browser {
 		pendingScrollTabIDs.removeAll()
 		scrollPersistenceTask?.cancel()
 		scrollPersistenceTask = nil
-		// Strip pre-Spotlight empty tabs from the durable session and every
-		// workspace membership list. Keep a transient anchor only in memory.
-		let savedTabs = tabs.map(\.openTab).filter { !$0.isDiscardableNewTab }
+		// Persist New Tabs (including URL-less ones) with stable IDs, order,
+		// selection and space membership, just like navigated tabs.
+		let savedTabs = tabs.map(\.openTab)
 		let savedIDs = Set(savedTabs.map(\.id))
 		var savedWorkspace = workspace
 		savedWorkspace.reconcileMembership(existingTabIDs: savedIDs, unassignedTabIDs: [])

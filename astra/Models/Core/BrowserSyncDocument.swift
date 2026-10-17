@@ -150,8 +150,10 @@ nonisolated struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		let assignedIDs = Set((workspace?.favouriteTabIDs ?? []) + (workspace?.spaces.flatMap(\.tabIDs) ?? []))
 		let unassignedEaselIDs = Set(tabs.filter { $0.internalPage == "easel" && !assignedIDs.contains($0.id) }.map(\.id))
 		let localTabs = local.tabs.filter {
-			!$0.isDiscardableNewTab
-				&& ((!isPortableSyncTab($0) && $0.internalPage == nil) || unassignedEaselIDs.contains($0.id))
+			// Blank tabs stay on this device and are never part of the
+			// portable sync projection, but must survive a remote merge.
+			$0.isDiscardableNewTab
+				|| ((!isPortableSyncTab($0) && $0.internalPage == nil) || unassignedEaselIDs.contains($0.id))
 		}
 		let localTabIDs = Set(localTabs.map(\.id))
 		var tabsByID = Dictionary(projected.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })

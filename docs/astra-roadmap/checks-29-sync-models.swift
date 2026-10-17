@@ -107,6 +107,25 @@ struct BrowserSyncModelCheck {
 		assert(!outbound.workspace!.spaces[0].tabIDs.contains(localFileTab.id))
 		assert(!outbound.workspace!.spaces[0].pinnedFolders.contains(where: { $0.id == localWorkspace.spaces[0].pinnedFolders[0].id }))
 
+
+		// New Tabs are durable local session state but must never enter
+		// the portable sync payload or disappear when remote changes apply.
+		let blankTab = OpenTab()
+		var withBlankTab = localOnlyDocument
+		withBlankTab.tabs.append(blankTab)
+		var withBlankWorkspace = withBlankTab.workspace!
+		withBlankWorkspace.spaces[0].tabIDs.append(blankTab.id)
+		withBlankWorkspace.spaces[0].selectedTabID = blankTab.id
+		withBlankTab.workspace = withBlankWorkspace
+		withBlankTab.browser.selectedTabID = blankTab.id
+		assert(blankTab.isDiscardableNewTab)
+		let portableWithBlank = withBlankTab.portableProjection()
+		assert(!portableWithBlank.tabs.contains(where: { $0.id == blankTab.id }))
+		assert(!portableWithBlank.workspace!.spaces[0].tabIDs.contains(blankTab.id))
+		let preservedWithBlank = oldDoc.preservingLocalOnlyData(from: withBlankTab)
+		assert(preservedWithBlank.tabs.contains(where: { $0.id == blankTab.id }))
+		assert(preservedWithBlank.workspace!.spaces[0].tabIDs.contains(blankTab.id))
+
 		let applied = oldDoc.preservingLocalOnlyData(from: localOnlyDocument)
 		let preservedFileTab = applied.tabs.first { $0.id == localFileTab.id }
 		assert(preservedFileTab?.url?.isFileURL == true)
