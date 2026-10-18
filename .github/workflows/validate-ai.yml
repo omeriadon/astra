@@ -25,3 +25,14 @@ jobs:
           set -euo pipefail
           python3 checks/ai-browser-tools-check.py
           node checks/website-augment-check.mjs
+
+  markdown-cache:
+    name: Markdown attachment cache lifetime
+    runs-on: xcode-27
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Test attachment cleanup and inline rendering
+        run: swift test --package-path Packages/MarkdownView --filter 'MainActorLRUCacheTests|InlineCodeTests|MarkdownRebuildEqualityTests'

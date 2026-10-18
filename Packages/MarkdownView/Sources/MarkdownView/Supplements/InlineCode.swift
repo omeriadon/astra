@@ -6,7 +6,6 @@
 import CoreText
 import Foundation
 import Litext
-import LRUCache
 
 #if canImport(UIKit)
 	import UIKit
@@ -101,7 +100,7 @@ enum InlineCode {
 		let font: PlatformFont
 	}
 
-	private static let spacers = LRUCache<SpacerKey, NSAttributedString>(countLimit: 64)
+	private static let spacers = MainActorLRUCache<SpacerKey, NSAttributedString>(countLimit: 64)
 }
 
 /// The pill behind one inline code span. Spans that look the same compare

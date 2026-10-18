@@ -11,7 +11,7 @@ new_tab = (root / "astra/UI/Content/NewTabView.swift").read_text()
 surface = (root / "astra/UI/Background/NewTabShaderSurface.swift").read_text()
 metal = (root / "astra/UI/Background/NewTabShaderEffects.metal").read_text()
 
-for value in ("smoke", "holographic", "ripple", "datamosh"):
+for value in ("smoke", "holographic", "ripple", "datamosh", "topographic"):
     assert f'backgroundStyle = "{value}"' in new_tab, f"missing picker: {value}"
     assert f'case .{value}:' in surface, f"missing rendering implementation: {value}"
 for function in (
@@ -20,17 +20,17 @@ for function in (
     "astraHolographicPrismatic",
     "astraLiveRipple",
     "astraDatamosh",
+    "astraTopographic",
 ):
     assert f"[[ stitchable ]] half4 {function}(" in metal, function
 
-# Prismatic is bar-only; the page must stay default even when a custom
-# image path is saved. Other effects must fill the background only.
+# Prismatic is bar-only. Topographic owns its image source.
 assert 'case "default", "solid", "image", "holographic": true' in new_tab
 assert "preset != .holographic" in new_tab
 assert "preset: .holographic, canAnimate: animatesBackground" in new_tab
 assert ".fill(.ultraThinMaterial)" in new_tab
 assert ".fill(.regularMaterial)" in new_tab
-assert ".blur(radius: 30)" in new_tab
+assert 'value("float", "blur")' in new_tab
 assert "NewTabPointerTracker(pointer: ditherPointer)" in new_tab
 assert "Choose Background Image" not in new_tab
 assert "backgroundImagePath" not in new_tab
