@@ -86,7 +86,9 @@ enum BrowserAISettings {
 
 	static func effectiveModel(_ preset: BrowserAIModel) -> BrowserAIModel {
 		#if os(macOS)
-			switch Defaults[.aiProvider] {
+			let provider = Defaults[.aiProvider]
+			guard BrowserAICLI.isProviderDetected(provider) else { return preset }
+			switch provider {
 				case "codex": return .codex(modelID: Defaults[.aiCodexModel])
 				case "claude": return .claude(modelID: Defaults[.aiClaudeModel])
 				default: break

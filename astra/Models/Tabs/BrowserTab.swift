@@ -263,7 +263,7 @@ final class BrowserTab: Identifiable {
 			scrollPosition: controller?.scrollPosition ?? storedScrollPosition,
 			isHibernated: isHibernated,
 			modifiedAt: modifiedAt,
-			peeks: recordsNavigationHistory ? (isHibernated ? storedPeeks : peeks.map(\.openPeek)) : [],
+			peeks: recordsNavigationHistory ? (isHibernated ? storedPeeks : peeks.filter { !$0.controller.snapshotNavigationOnly }.map(\.openPeek)) : [],
 			recordsNavigationHistory: recordsNavigationHistory,
 			restorationState: recordsNavigationHistory && !session.isPrivate ? controller?.encryptedInteractionState ?? storedRestorationState : nil,
 			fileAccessBookmark: controller?.fileAccessBookmark ?? storedFileAccessBookmark,
@@ -387,7 +387,7 @@ final class BrowserTab: Identifiable {
 		storedHistoryIndex = controller.historyIndex
 		storedPageZoom = controller.pageZoom
 		storedScrollPosition = controller.scrollPosition
-		storedPeeks = peeks.map(\.openPeek)
+		storedPeeks = peeks.filter { !$0.controller.snapshotNavigationOnly }.map(\.openPeek)
 		restorationBaseline = openTab
 		for peek in peeks {
 			peek.controller.stopForClose()

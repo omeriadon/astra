@@ -1,3 +1,4 @@
+import Defaults
 import Foundation
 #if os(macOS)
 	import AppKit
@@ -23,6 +24,24 @@ enum BrowserAICLI {
 				&& !requestedAccountAccess.contains(provider)
 		}
 	#endif
+
+	private(set) static var detectedProviders: [String] = detectProviders()
+
+	static func refreshDetectedProviders() {
+		detectedProviders = detectProviders()
+	}
+
+	static func isProviderDetected(_ provider: String) -> Bool {
+		detectedProviders.contains(provider)
+	}
+
+	private static func detectProviders() -> [String] {
+		#if os(macOS)
+			return ["codex", "claude"].filter { BrowserAICommand.isDetected(name: $0) }
+		#else
+			return []
+		#endif
+	}
 
 	static func generate(
 		_ request: BrowserAIRequest,
@@ -191,6 +210,7 @@ enum BrowserAICLI {
 			UserDefaults.standard.set(bookmark, forKey: "ai-command-executable-access-\(provider)")
 			UserDefaults.standard.set(executable.path, forKey: "ai-command-executable-\(provider)")
 			modelCatalogTasks[provider] = nil
+			refreshDetectedProviders()
 			return true
 		}
 
@@ -208,6 +228,7 @@ enum BrowserAICLI {
 			      let bookmark = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) else { return false }
 			UserDefaults.standard.set(bookmark, forKey: "ai-command-access-\(provider)")
 			modelCatalogTasks[provider] = nil
+			refreshDetectedProviders()
 			return true
 		}
 	#endif
@@ -231,14 +252,19 @@ enum BrowserAICLI {
 	#if os(macOS)
 		static func startModelCatalogRefresh() {
 			guard modelCatalogRefresh == nil else { return }
+			let provider = Defaults[.aiProvider]
+			if provider != "presets", !isProviderDetected(provider) {
+				Defaults[.aiProvider] = "presets"
+			}
 			modelCatalogRefresh = Task {
 				while !Task.isCancelled {
 					// Background refresh must not present account-access panels.
-					for provider in ["codex", "claude"] {
+					for provider in detectedProviders {
 						_ = try? await cachedModelCatalog(provider: provider)
 					}
 					do {
 						try await Task.sleep(for: .seconds(3600))
+						refreshDetectedProviders()
 					} catch {
 						break
 					}
@@ -400,6 +426,38 @@ nonisolated struct BrowserAICommandResponse {
 			unsafe getpwuid(getuid()).map { URL(fileURLWithPath: unsafe String(cString: $0.pointee.pw_dir)) } ?? FileManager.default.homeDirectoryForCurrentUser
 		}
 
+		static func isDetected(name: String) -> Bool {
+			var scopedURLs: [URL] = []
+			defer { scopedURLs.forEach { $0.stopAccessingSecurityScopedResource() } }
+			for key in ["ai-command-access-\(name)", "ai-command-executable-access-\(name)"] {
+				guard let bookmark = UserDefaults.standard.data(forKey: key) else { continue }
+				var stale = false
+				if let url = try? URL(resolvingBookmarkData: bookmark, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &stale),
+				   url.startAccessingSecurityScopedResource()
+				{
+					scopedURLs.append(url)
+				}
+			}
+			return executablePath(name: name) != nil
+		}
+
+		private static func executablePath(name: String) -> String? {
+			let nodeVersions = (try? FileManager.default.contentsOfDirectory(at: realHome.appendingPathComponent(".nvm/versions/node"), includingPropertiesForKeys: nil)) ?? []
+			let paths = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
+				+ ["/opt/homebrew/bin", "/usr/local/bin", realHome.appendingPathComponent(".local/bin").path]
+				+ nodeVersions.sorted { $0.lastPathComponent.compare($1.lastPathComponent, options: .numeric) == .orderedDescending }.map { $0.appendingPathComponent("bin").path }
+			let configured = UserDefaults.standard.string(forKey: "ai-command-executable-\(name)")
+			func isExecutable(_ path: String) -> Bool {
+				var isDirectory: ObjCBool = false
+				return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+					&& !isDirectory.boolValue && FileManager.default.isExecutableFile(atPath: path)
+			}
+			return ([configured].compactMap(\.self) + paths.map { URL(fileURLWithPath: $0).appendingPathComponent(name).path })
+				.first(where: isExecutable)
+				?? ["/Applications/Codex.app/Contents/Resources/codex", realHome.appendingPathComponent("Applications/Codex.app/Contents/Resources/codex").path]
+				.first(where: { name == "codex" && isExecutable($0) })
+		}
+
 		var workingDirectory: URL {
 			directory
 		}
@@ -449,16 +507,9 @@ nonisolated struct BrowserAICommandResponse {
 					}
 				}
 			}
-			let nodeVersions = (try? FileManager.default.contentsOfDirectory(at: realHome.appendingPathComponent(".nvm/versions/node"), includingPropertiesForKeys: nil)) ?? []
-			let paths = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
-				+ ["/opt/homebrew/bin", "/usr/local/bin", realHome.appendingPathComponent(".local/bin").path]
-				+ nodeVersions.sorted { $0.lastPathComponent.compare($1.lastPathComponent, options: .numeric) == .orderedDescending }.map { $0.appendingPathComponent("bin").path }
-			let configured = UserDefaults.standard.string(forKey: "ai-command-executable-\(name)")
-			guard let path = ([configured].compactMap(\.self) + paths.map { URL(fileURLWithPath: $0).appendingPathComponent(name).path })
-				.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
-				?? ["/Applications/Codex.app/Contents/Resources/codex", realHome.appendingPathComponent("Applications/Codex.app/Contents/Resources/codex").path]
-				.first(where: { name == "codex" && FileManager.default.isExecutableFile(atPath: $0) })
-			else { throw BrowserAIError.commandMissing(name.capitalized) }
+			guard let path = Self.executablePath(name: name) else {
+				throw BrowserAIError.commandMissing(name.capitalized)
+			}
 			directory = FileManager.default.temporaryDirectory.appendingPathComponent("astra-ai-\(UUID().uuidString)")
 			try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
 			diagnosticURL = directory.appendingPathComponent("diagnostics.log")

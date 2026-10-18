@@ -15,17 +15,20 @@ struct BrowserChatTitleFeature: BrowserAIFeature {
 		BrowserAIFeatureID.chat.model
 	}
 
-	func request(for input: Input) -> BrowserAIRequest {
+	func request(for input: Input) throws -> BrowserAIRequest {
 		BrowserAIRequest(
 			instructions: BrowserAIPrompts.chatTitle,
-			prompt: "User: \(String(input.question.prefix(2000)))\nAssistant: \(String(input.answer.prefix(6000)))",
+			prompt: String(decoding: try JSONEncoder().encode([
+				"userRequest": String(input.question.prefix(2000)),
+				"assistantAnswer": String(input.answer.prefix(1500))
+			]), as: UTF8.self),
 			maximumResponseTokens: 48
 		)
 	}
 
 	func output(from text: String) throws -> String {
 		let title = BrowserAIOutput.title(text)
-		guard BrowserAIOutput.validLine(title, maximumWords: 40) else { throw BrowserAIError.emptyResponse }
+		guard BrowserAIOutput.validLine(title, maximumWords: 7) else { throw BrowserAIError.emptyResponse }
 		return title
 	}
 }

@@ -26,6 +26,9 @@ nonisolated enum BrowserAIAction: String, CaseIterable, Identifiable, Sendable {
 	case moveTabsToSpace = "move_tabs_to_space"
 	case readPage = "read_page"
 	case webSearch = "web_search"
+	case listTools = "list_tools"
+	case getPageStructure = "get_page_structure"
+	case augmentWebsite = "augment_website"
 
 	var id: String {
 		rawValue
@@ -49,6 +52,9 @@ nonisolated enum BrowserAIAction: String, CaseIterable, Identifiable, Sendable {
 			case .moveTabsToSpace: "Move Tabs Between Spaces"
 			case .readPage: "Read Open Pages"
 			case .webSearch: "Search the Web"
+			case .listTools: "List Available Tools"
+			case .getPageStructure: "Inspect Website Structure"
+			case .augmentWebsite: "Website Augment"
 		}
 	}
 
@@ -103,8 +109,9 @@ nonisolated struct BrowserAIToolCall: Codable, Sendable {
 		}
 
 		func request(for input: Input) -> BrowserAIRequest {
-			.init(instructions: BrowserAIPrompts.chatTools + "\nEnabled tools and arguments (all argument values are strings):\n" + input.catalog,
-			      prompt: "<context>\n\(input.context)\n</context>\nUser request: \(input.question)", maximumResponseTokens: 2048,
+			let payload = (try? JSONSerialization.data(withJSONObject: ["referenceContext": input.context, "userRequest": input.question], options: [.sortedKeys])) ?? Data()
+			return .init(instructions: BrowserAIPrompts.chatTools + "\nEnabled tools and arguments (all argument values are strings):\n" + input.catalog,
+			      prompt: String(decoding: payload, as: UTF8.self), maximumResponseTokens: 8192,
 			      images: input.images.isEmpty ? nil : input.images, reasoningEffort: input.reasoning, files: input.files.isEmpty ? nil : input.files)
 		}
 
@@ -127,7 +134,7 @@ nonisolated struct BrowserAIToolCall: Codable, Sendable {
 						} else {
 							throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.")
 						}
-						guard string.utf8.count <= 8192 else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
+						guard string.utf8.count <= (name == BrowserAIAction.augmentWebsite.rawValue ? 65536 : 8192) else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
 						arguments[key] = string
 					}
 					return BrowserAIToolCall(name: name, arguments: arguments)
@@ -171,7 +178,8 @@ enum BrowserAITools {
 				case .deleteBookmark: "bookmarkID"
 				case .openTab: "url, optional name"
 				case .closeTab: "tabID for one tab; for bulk close use phase=preview with tabIDs (comma-separated) OR domain (exact host), optional keepOwner (GitHub repository owner), then phase=apply with planID"
-				case .selectTab, .readPage: "tabID"
+				case .selectTab: "tabID"
+				case .readPage: "tabID, optional offset (character offset, default 0), limit (1–24000, default 12000). Returns rendered text with pagination metadata."
 				case .listTabs: "optional spaceID (UUID, current or all), offset, limit (1–100)"
 				case .githubAccount: "no arguments"
 				case .moveTabsToSpace: "phase=preview with tabIDs (comma-separated) and destinationSpaceID; then phase=apply with planID"
@@ -179,6 +187,9 @@ enum BrowserAITools {
 				case .moveTabToFolder: "tabID, folderID"
 				case .renameTab: "tabID, name"
 				case .webSearch: "query"
+				case .listTools: "no arguments; returns the current enabled tool catalog"
+				case .getPageStructure: "tabID, optional selector, offset (default 0), limit (1–30). Inspect compact DOM structure before augmenting; repeated children are sampled, not omitted from the local snapshot."
+				case .augmentWebsite: "tabID, title, operations (JSON array string; may include a javascript operation). See Website Augment contract. Produces a saved artifact; never edits the original page."
 			}
 			return "\(action.rawValue): \(arguments)"
 		}.joined(separator: "\n")
@@ -189,10 +200,11 @@ enum BrowserAITools {
 		let folders = browser.selectedSpace.pinnedFolders.map { "folderID=\($0.id) name=\($0.name)" }
 		let bookmarks = browser.bookmarks.map { "bookmarkID=\($0.id) name=\($0.name) folder=\($0.folder) url=\($0.url.absoluteString)" }
 		let spaces = browser.workspace.spaces.map { "spaceID=\($0.id) name=\($0.name)" }.joined(separator: "\n")
-		return "Current space: \(browser.selectedSpace.name) (\(browser.selectedSpace.id))\nAvailable spaces:\n\(spaces)\n" + (tabs + folders + bookmarks).joined(separator: "\n")
+		let currentPage = browser.aiSidebarPageTab.map { "Current viewed page: tabID=\($0.id) title=\($0.title)" } ?? "No current website page."
+		return "\(currentPage)\nCurrent space: \(browser.selectedSpace.name) (\(browser.selectedSpace.id))\nAvailable spaces:\n\(spaces)\n" + (tabs + folders + bookmarks).joined(separator: "\n")
 	}
 
-	static func execute(_ call: BrowserAIToolCall, browser: Browser, spaceID: UUID, model: BrowserAIModel) async throws -> String {
+	static func execute(_ call: BrowserAIToolCall, browser: Browser, spaceID: UUID, model: BrowserAIModel, onArtifact: ((BrowserWebsiteAugmentArtifact) throws -> Void)? = nil) async throws -> String {
 		guard Defaults[.aiFeaturesEnabled], !browser.isPrivate, browser.selectedSpace.id == spaceID,
 		      let action = BrowserAIAction(rawValue: call.name), action.enabled else { throw BrowserAIError.toolDenied }
 		#if os(macOS)
@@ -276,7 +288,39 @@ enum BrowserAITools {
 				return try bulkAction(arguments, kind: .move, browser: browser)
 			case .readPage:
 				guard let controller = try tab().activeController else { throw BrowserAIError.pageUnavailable }
-				return try await BrowserAIPageText.extract(from: controller).prompt
+				let page = try await BrowserAIPageText.extract(from: controller)
+				let offset = arguments["offset"].flatMap(Int.init) ?? 0
+				let limit = arguments["limit"].flatMap(Int.init) ?? 12000
+				guard arguments["offset"] == nil || Int(arguments["offset"]!) != nil,
+				      arguments["limit"] == nil || Int(arguments["limit"]!) != nil,
+				      offset >= 0, (1 ... 24000).contains(limit) else { throw BrowserAIError.invalidRequest }
+				let text = String(page.text.dropFirst(offset).prefix(limit))
+				let next = offset + text.count
+				return "Characters total=\(page.text.count) offset=\(offset) nextOffset=\(next < page.text.count ? String(next) : "none").\n" + BrowserAIPageText(title: page.title, url: page.url, text: text).prompt
+			case .listTools:
+				return catalog()
+			case .getPageStructure:
+				#if ASTRA_WEBSITE_APP_RUNTIME
+					throw BrowserAIError.toolDenied
+				#else
+				let offset = arguments["offset"].flatMap(Int.init) ?? 0
+				let limit = arguments["limit"].flatMap(Int.init) ?? 12
+				guard arguments["offset"] == nil || Int(arguments["offset"]!) != nil,
+				      arguments["limit"] == nil || Int(arguments["limit"]!) != nil,
+				      offset >= 0, (1 ... 30).contains(limit) else { throw BrowserAIError.invalidRequest }
+				return try await BrowserWebsiteAugment.inspect(tab: tab(), selector: arguments["selector"], offset: offset, limit: limit)
+				#endif
+			case .augmentWebsite:
+				#if ASTRA_WEBSITE_APP_RUNTIME
+					throw BrowserAIError.toolDenied
+				#else
+				_ = try tab()
+				let artifact = try await BrowserWebsiteAugment.apply(arguments: arguments, browser: browser)
+				try Task.checkCancellation()
+				guard !browser.isPrivate, browser.selectedSpace.id == spaceID else { throw BrowserAIError.toolDenied }
+				try onArtifact?(artifact)
+				return "Created Website Augment artifact \(artifact.id): \(artifact.title). It is available in this chat."
+				#endif
 			case .webSearch:
 				guard let query = arguments["query"], !query.isEmpty else { throw BrowserAIError.invalidRequest }
 				return try await BrowserAI.shared.perform(BrowserAIWebSearchFeature(), input: query, model: model)

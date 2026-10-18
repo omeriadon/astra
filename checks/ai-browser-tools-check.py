@@ -48,8 +48,14 @@ check("browser.tab(withID: item.id) == nil" in tools,
 check("browser.moveTabs(pinned, to: .pinned, in: destination)" in tools
       and "browser.moveTabs(normal, to: .normal, in: destination)" in tools,
       "Cross-space bulk moves must preserve pinned state")
-check('call.arguments["phase"] == "apply"' in chat and "after the entire model response" in chat,
-      "Bulk apply must not run from incomplete streaming output")
+check(chat.index("let turn = try await BrowserAI.shared.performStreaming") < chat.index("for call in turn.actions") < chat.index("BrowserAITools.execute"),
+      "Actions must execute only after complete output validation")
+check("BrowserAIOutput.completedObjects(in: snapshot)" not in chat,
+      "Partial streaming objects must never execute actions")
+for action in ("list_tools", "get_page_structure", "augment_website"):
+    check(f'"{action}"' in tools, f"Missing Website Augment action {action}")
+check("augmentArtifacts: turnArtifacts" in chat and "toolCalls: toolCalls" in chat,
+      "Augment artifacts and tool history must persist with chat")
 check("Never guess an owner" in prompts and "planID" in prompts,
       "The model must not guess GitHub owners or bypass action previews")
 check("self == .deleteBookmark || self == .closeTab" in tools,
