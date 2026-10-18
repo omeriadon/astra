@@ -235,10 +235,10 @@ struct BrowserPageAnswerFeature: BrowserAIFeature {
 		feature.model
 	}
 
-	func request(for input: Input) -> BrowserAIRequest {
+	func request(for input: Input) throws -> BrowserAIRequest {
 		BrowserAIRequest(
 			instructions: BrowserAIPrompts.pageAnswer,
-			prompt: "<context>\n\(input.context)\n</context>\nQuestion: \(input.question)",
+			prompt: String(decoding: try JSONEncoder().encode(["context": input.context, "userRequest": input.question]), as: UTF8.self),
 			maximumResponseTokens: 2048,
 			images: input.images.isEmpty ? nil : input.images
 		)

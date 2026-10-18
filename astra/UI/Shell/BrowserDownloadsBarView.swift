@@ -72,7 +72,17 @@ struct ShellDownloadsBarView: View {
 					browser.showsAISidebar.toggle()
 				}
 				.labelStyle(.iconOnly)
+				.frame(width: 25, height: 25)
+				.background {
+					if browser.showsAISidebar {
+						RoundedRectangle(cornerRadius: 8)
+							.fill(Color.primary.gradient)
+							.opacity(0.4)
+					}
+				}
+				.contentShape(Rectangle())
 				.buttonStyle(.plain)
+				.accessibilityValue(browser.showsAISidebar ? "Open" : "Closed")
 				.accessibilityIdentifier("sidebar-ai-toggle")
 			}
 

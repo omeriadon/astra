@@ -24,6 +24,7 @@ struct BrowserAISettingsView: View {
 	@Default(.aiBrowserActionPermissions) private var permissions
 	@Default(.aiBookmarkTitles) private var bookmarkTitles
 	@Default(.aiWebsiteMonitoring) private var monitoring
+	@State private var detectedProviders = BrowserAICLI.detectedProviders
 	@State private var showsMonitoredWebsites = false
 	@State private var websiteMonitors = BrowserWebsiteMonitoring.shared
 	@State private var usageLog = BrowserAIUsageLog.shared
@@ -145,11 +146,12 @@ struct BrowserAISettingsView: View {
 				Section("Requests") {
 					Picker("Use AI With", selection: $provider) {
 						Label("Default", systemImage: "sparkles").tag("presets")
-						Label("Codex", systemImage: "terminal").tag("codex")
-						Label("Claude", systemImage: "terminal").tag("claude")
+						ForEach(detectedProviders, id: \.self) { provider in
+							Label(provider == "codex" ? "Codex" : "Claude", systemImage: "terminal").tag(provider)
+						}
 					}
 					.accessibilityIdentifier("ai-request-provider")
-					if provider == "codex" || provider == "claude" {
+					if detectedProviders.contains(provider) {
 						BrowserAIModelControls(
 							selectedProvider: .constant(provider),
 							selectedModelID: provider == "codex" ? $codexModel : $claudeModel,
@@ -183,7 +185,7 @@ struct BrowserAISettingsView: View {
 				#endif
 			}
 			.id("Usage Log")
-			Text("AI processes extracted page text for previews, Find, and explicitly linked chat pages. Chat sends the full linked text. Tab organization sends titles and URLs. Responses can be inaccurate.")
+			Text("AI processes extracted page text for previews, Find, and explicitly linked chat pages. Chat starts with linked-page excerpts and can read more as needed. Website Augment sends selected structure and applies changes to a local snapshot. Tab organization sends titles and URLs. Responses can be inaccurate.")
 				.font(.caption)
 				.foregroundStyle(.secondary)
 				.lineLimit(10)
@@ -237,6 +239,11 @@ struct BrowserAISettingsView: View {
 			}
 		}
 		.onAppear {
+			BrowserAICLI.refreshDetectedProviders()
+			detectedProviders = BrowserAICLI.detectedProviders
+			if provider != "presets", !detectedProviders.contains(provider) {
+				provider = "presets"
+			}
 			// Migrate old fractional/out-of-range delays to whole seconds.
 			let bounded = BrowserAISettings.linkPreviewDelay
 			if previewDelay != bounded {

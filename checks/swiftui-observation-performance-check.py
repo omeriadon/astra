@@ -22,9 +22,9 @@ assert re.search(r"if isHovered\s*(?:&&|,)\s*onSelectTab == nil", row)
 assert re.search(r"if previewEnabled\s*(?:&&|,)\s*isHovered", favourite)
 assert "onAppear { updateHoveredFrame" in row
 assert "onAppear { recordHoverFrame" in favourite
-assert "lastActionScanAt" in chat
-assert "for call in turn.actions where seen.count < 5" in chat
-assert "if preview != turn.response" in chat
+assert "lastPublished" in chat and ".milliseconds(85)" in chat
+assert "BrowserAIOutput.completedObjects(in: snapshot)" not in chat
+assert "preview = turn.response" in chat
 assert "abs(width - lastReportedWidth) < 8" in split
 assert "tabCollectionRevision &+= 1" in browser
 assert "sidebarStructureRevision &+= 1" in browser

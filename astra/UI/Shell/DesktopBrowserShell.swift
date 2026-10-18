@@ -739,6 +739,11 @@ private struct ShellContentColumn: View {
 					} else {
 						BrowserPageView(browser: browser, cornerRadius: contentCornerRadius)
 							.equatable()
+							.overlay {
+								if let tab = browser.selectedTab {
+									WebsiteAugmentEditingOverlay(browser: browser, tab: tab, cornerRadius: contentCornerRadius)
+								}
+							}
 					}
 				}
 				.padding(.top, hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)

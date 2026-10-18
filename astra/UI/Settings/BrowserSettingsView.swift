@@ -188,7 +188,36 @@ struct BrowserSettingsView: View {
 
 	private var sidebar: some View {
 		let pages = matchingPages
-		return VStack(spacing: 0) {
+		return ScrollView {
+			LazyVStack(alignment: .leading, spacing: 4) {
+				if pages.isEmpty {
+					Text("No settings found")
+						.foregroundStyle(.secondary)
+						.padding(.horizontal, 12)
+				}
+
+				ForEach(Page.Section.allCases, id: \.self) { section in
+					let sectionPages = pages.filter {
+						$0.definition.section == section
+					}
+
+					if !sectionPages.isEmpty {
+						Text(section.rawValue)
+							.font(.caption)
+							.foregroundStyle(.secondary)
+							.padding(.leading, 12)
+							.padding(.top, 12)
+
+						ForEach(sectionPages, id: \.self) { page in
+							row(for: page)
+						}
+					}
+				}
+			}
+			.padding(.bottom, 12)
+		}
+		.scrollIndicators(.automatic)
+		.safeAreaBar(edge: .top) {
 			HStack(spacing: 8) {
 				Image(systemName: "magnifyingglass")
 					.accessibilityHidden(true)
@@ -208,48 +237,21 @@ struct BrowserSettingsView: View {
 			.padding(.horizontal, 12)
 			.padding(.top, 12)
 			.padding(.bottom, 12)
+		}
+		.safeAreaBar(edge: .bottom) {
+			VStack(spacing: 0) {
+				Divider()
 
-			ScrollView {
-				LazyVStack(alignment: .leading, spacing: 4) {
-					if pages.isEmpty {
-						Text("No settings found")
-							.foregroundStyle(.secondary)
-							.padding(.horizontal, 12)
-					}
-
-					ForEach(Page.Section.allCases, id: \.self) { section in
-						let sectionPages = pages.filter {
-							$0.definition.section == section
-						}
-
-						if !sectionPages.isEmpty {
-							Text(section.rawValue)
-								.font(.caption)
-								.foregroundStyle(.secondary)
-								.padding(.leading, 12)
-								.padding(.top, 12)
-
-							ForEach(sectionPages, id: \.self) { page in
-								row(for: page)
-							}
-						}
+				VStack(spacing: 8) {
+					ForEach(
+						pages.filter { $0.definition.section == nil },
+						id: \.self
+					) { page in
+						row(for: page)
 					}
 				}
-				.padding(.bottom, 12)
+				.padding(.vertical, 8)
 			}
-			.scrollIndicators(.automatic)
-
-			Divider()
-
-			VStack(spacing: 8) {
-				ForEach(
-					pages.filter { $0.definition.section == nil },
-					id: \.self
-				) { page in
-					row(for: page)
-				}
-			}
-			.padding(.vertical, 8)
 		}
 		.foregroundStyle(theme.foregroundColor)
 	}

@@ -80,6 +80,7 @@
 				name: NSWorkspace.didActivateApplicationNotification,
 				object: nil
 			)
+			BrowserAICLI.startModelCatalogRefresh()
 			installMainMenu()
 			NSApp.servicesProvider = AstraServicesProvider.shared
 			NSAppleEventManager.shared().setEventHandler(
