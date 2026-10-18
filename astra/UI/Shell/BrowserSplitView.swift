@@ -130,10 +130,9 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View, Animatable {
 									)
 								}
 								.onEnded { _ in
-									// Reconcile the exact width after coalesced parent updates.
+									// Commit the exact width once, after local live layout.
 									if let resizedWidth {
-										lastReportedWidth = resizedWidth
-										onWidthChange?(resizedWidth)
+										reportWidth(resizedWidth)
 									}
 								}
 						)
@@ -163,17 +162,23 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View, Animatable {
 			.animation(nil, value: geometry.size)
 			.animation(nil, value: visibleWidth)
 			.animation(nil, value: reservedWidth)
+			.onChange(of: resizeStartWidth) { _, startWidth in
+				// GestureState also resets on cancellation, which has no onEnded.
+				if startWidth == nil { reportWidth(width) }
+			}
 			.onChange(of: width, initial: true) { _, width in
 				// A drag is local layout. Publishing it to DesktopBrowserShell starts
 				// updateWindowMinimumSize's visibility animation and invalidates both
 				// panes. Commit once on release; still report external window clamps.
 				guard resizeStartWidth == nil else { return }
-				if let lastReportedWidth, abs(width - lastReportedWidth) < 8 {
-					return
-				}
-				lastReportedWidth = width
-				onWidthChange?(width)
+				reportWidth(width)
 			}
 		}
+	}
+
+	private func reportWidth(_ width: CGFloat) {
+		guard lastReportedWidth != width else { return }
+		lastReportedWidth = width
+		onWidthChange?(width)
 	}
 }

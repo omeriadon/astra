@@ -10,6 +10,8 @@ private struct BrowserSidebarTraits: Equatable {
 	let reduceMotion: Bool
 	let reduceTransparency: Bool
 	let contrast: ColorSchemeContrast
+	let enabled: Bool
+	let controlSize: ControlSize
 
 	init(_ environment: EnvironmentValues) {
 		colorScheme = environment.colorScheme
@@ -19,6 +21,8 @@ private struct BrowserSidebarTraits: Equatable {
 		reduceMotion = environment.accessibilityReduceMotion
 		reduceTransparency = environment.accessibilityReduceTransparency
 		contrast = environment.colorSchemeContrast
+		enabled = environment.isEnabled
+		controlSize = environment.controlSize
 	}
 }
 
@@ -75,6 +79,7 @@ struct BrowserSidebarScrollView<Revision: Equatable, Row: View>: NSViewRepresent
 		scroll.documentView = nil
 	}
 
+	@MainActor
 	final class Coordinator: NSObject, NSCollectionViewDataSource, NSCollectionViewDelegate {
 		static var cellID: NSUserInterfaceItemIdentifier { .init("sidebar-hosted-row") }
 		static var tabType: NSPasteboard.PasteboardType { .init("com.omeriadon.astra.tab") }
@@ -157,7 +162,7 @@ struct BrowserSidebarScrollView<Revision: Equatable, Row: View>: NSViewRepresent
 			guard parent?.move != nil, !draggedIDs(info).isEmpty,
 			      layout.geometry.dropTarget(at: collectionView.convert(info.draggingLocation, from: nil), items: parent?.items ?? []) != nil else { return [] }
 			if let insertion = layout.geometry.insertion(at: collectionView.convert(info.draggingLocation, from: nil)) {
-				path.pointee = NSIndexPath(item: insertion.index + (insertion.after ? 1 : 0), section: 0)
+				path.pointee = NSIndexPath(forItem: insertion.index + (insertion.after ? 1 : 0), inSection: 0)
 			}
 			operation.pointee = .before
 			return info.draggingSourceOperationMask.contains(.move) ? .move : .copy
@@ -331,6 +336,7 @@ struct BrowserSidebarScrollView<Revision: Equatable, Row: View>: UIViewRepresent
 		coordinator.parent = nil
 	}
 
+	@MainActor
 	final class Coordinator: NSObject, UICollectionViewDataSource, UICollectionViewDragDelegate, UICollectionViewDropDelegate {
 		let layout = BrowserSidebarCollectionLayout()
 		var parent: BrowserSidebarScrollView?
