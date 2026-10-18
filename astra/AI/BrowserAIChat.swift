@@ -355,7 +355,7 @@ final class BrowserAIChat {
 			toolCalls.append(ToolActivity(name: call.name, status: "Running"))
 			do {
 				let result = try await BrowserAITools.execute(call, browser: browser, spaceID: spaceID, model: model) { artifact in
-					turnArtifacts.append(artifact)
+					self.turnArtifacts.append(artifact)
 					// Keep the artifact even if a tab vanished while opening its peek.
 					try BrowserWebsiteAugment.open(artifact, in: browser)
 				}

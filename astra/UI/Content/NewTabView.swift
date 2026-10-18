@@ -633,7 +633,7 @@ private struct StartPageVisitRow: View {
 			override func viewDidMoveToWindow() {
 				super.viewDidMoveToWindow()
 				stopObserving()
-				guard let window else { return }
+				guard let window = unsafe window else { return }
 				monitoredWindow = window
 				previousMouseMovedEvents = window.acceptsMouseMovedEvents
 				window.acceptsMouseMovedEvents = true
@@ -659,7 +659,7 @@ private struct StartPageVisitRow: View {
 			}
 
 			private func track(_ event: NSEvent) {
-				guard let window, event.window === window else {
+				guard let window = unsafe window, event.window === window else {
 					pointer.location = nil
 					return
 				}

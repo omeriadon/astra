@@ -121,7 +121,7 @@ struct WebsiteAugmentEditingOverlay: View {
 		configuration.rect = webView.bounds
 		// snapshotWidth is in points; account for backing scale to cap pixels.
 		#if os(macOS)
-			let scale = max(1, webView.window?.backingScaleFactor ?? 2)
+			let scale = max(1, unsafe webView.window?.backingScaleFactor ?? 2)
 		#else
 			let scale = max(1, webView.window?.screen.scale ?? 2)
 		#endif

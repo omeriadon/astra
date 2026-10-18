@@ -32,7 +32,7 @@ struct BrowserWindowFrameReader: NSViewRepresentable {
 				scroll.contentView.postsBoundsChangedNotifications = true
 				NotificationCenter.default.addObserver(self, selector: #selector(geometryChanged), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
 			}
-			if let window {
+			if let window = unsafe window {
 				NotificationCenter.default.addObserver(self, selector: #selector(geometryChanged), name: NSWindow.didResizeNotification, object: window)
 			}
 			publishSoon()
@@ -51,7 +51,7 @@ struct BrowserWindowFrameReader: NSViewRepresentable {
 			DispatchQueue.main.async { [weak self] in
 				guard let self else { return }
 				publicationPending = false
-				guard let content = window?.contentView, onFrame != nil else { return }
+				guard let content = unsafe window?.contentView, onFrame != nil else { return }
 				var rect = convert(bounds, to: content)
 				if !content.isFlipped { rect.origin.y = content.bounds.maxY - rect.maxY }
 				guard rect != lastFrame else { return }

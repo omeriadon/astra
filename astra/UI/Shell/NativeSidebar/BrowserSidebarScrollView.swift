@@ -168,9 +168,9 @@ struct BrowserSidebarScrollView<Revision: Equatable, Row: View>: NSViewRepresent
 			guard parent?.move != nil, !draggedIDs(info).isEmpty,
 			      layout.geometry.dropTarget(at: collectionView.convert(info.draggingLocation, from: nil), items: parent?.items ?? []) != nil else { return [] }
 			if let insertion = layout.geometry.insertion(at: collectionView.convert(info.draggingLocation, from: nil)) {
-				path.pointee = NSIndexPath(forItem: insertion.index + (insertion.after ? 1 : 0), inSection: 0)
+				unsafe path.pointee = NSIndexPath(forItem: insertion.index + (insertion.after ? 1 : 0), inSection: 0)
 			}
-			operation.pointee = .before
+			unsafe operation.pointee = .before
 			return info.draggingSourceOperationMask.contains(.move) ? .move : .copy
 		}
 

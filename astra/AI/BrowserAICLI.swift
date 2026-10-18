@@ -441,15 +441,19 @@ nonisolated struct BrowserAICommandResponse {
 			return executablePath(name: name) != nil
 		}
 
-		private static func executablePath(name: String) -> String? {
+		private static var executableSearchPaths: [String] {
 			let nodeVersions = (try? FileManager.default.contentsOfDirectory(at: realHome.appendingPathComponent(".nvm/versions/node"), includingPropertiesForKeys: nil)) ?? []
-			let paths = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
+			return (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
 				+ ["/opt/homebrew/bin", "/usr/local/bin", realHome.appendingPathComponent(".local/bin").path]
 				+ nodeVersions.sorted { $0.lastPathComponent.compare($1.lastPathComponent, options: .numeric) == .orderedDescending }.map { $0.appendingPathComponent("bin").path }
+		}
+
+		private static func executablePath(name: String) -> String? {
+			let paths = executableSearchPaths
 			let configured = UserDefaults.standard.string(forKey: "ai-command-executable-\(name)")
 			func isExecutable(_ path: String) -> Bool {
 				var isDirectory: ObjCBool = false
-				return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+				return unsafe FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
 					&& !isDirectory.boolValue && FileManager.default.isExecutableFile(atPath: path)
 			}
 			return ([configured].compactMap(\.self) + paths.map { URL(fileURLWithPath: $0).appendingPathComponent(name).path })
@@ -533,7 +537,7 @@ nonisolated struct BrowserAICommandResponse {
 			if name == "codex" {
 				environment["CODEX_HOME"] = (accountDirectory ?? realHome.appendingPathComponent(".codex")).path
 			}
-			environment["PATH"] = ([URL(fileURLWithPath: path).resolvingSymlinksInPath().deletingLastPathComponent().path] + paths).joined(separator: ":")
+			environment["PATH"] = ([URL(fileURLWithPath: path).resolvingSymlinksInPath().deletingLastPathComponent().path] + Self.executableSearchPaths).joined(separator: ":")
 			environment["CLAUDE_CODE_EFFORT_LEVEL"] = "low"
 			process.environment = environment
 		}

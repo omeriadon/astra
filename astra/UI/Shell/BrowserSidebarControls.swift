@@ -56,10 +56,6 @@ struct ShellSidebarListView: View {
 		let splitIDs = Set([splitTabs?.0.id, splitTabs?.1.id].compactMap(\.self))
 		let projection = projectionCache.excluding(splitIDs, from: baseProjection)
 		let normalTabs = projection.normalTabs
-		let normalIndexes = projection.normalIndexes
-		let normalSelectionOrder = projection.normalSelectionOrder
-		let pinnedSelectionOrder = projection.pinnedSelectionOrder
-		let selectedID = space.selectedTabID
 		let items = nativeItems(projection: projection, splitTabs: splitTabs)
 		let revision = SidebarContentRevision(
 			space: space, theme: theme, favourites: favouriteTabIDs, active: isActiveSpace,
@@ -74,66 +70,7 @@ struct ShellSidebarListView: View {
 			spacing: onSelectTab == nil ? 2 : 8,
 			move: !browser.isPrivate && onSelectTab == nil ? applyNativeReorder : nil
 		) { item in
-			switch item.kind {
-				case .favourite:
-					if let tab = item.tabID.flatMap({ tabsByID[$0] }) {
-						favouriteTile(tab, selectedID: selectedID)
-					}
-				case .tab:
-					if let tab = item.tabID.flatMap({ tabsByID[$0] }) {
-						let pinned = item.isPinned
-						BrowserTabRow(tab: tab, browser: browser,
-						              isSelected: isActiveSpace && selectedID == tab.id,
-						              tabIndex: pinned ? nil : normalIndexes[tab.id], normalCount: normalTabs.count, pinned: pinned,
-						              rowSpaceID: space.id, rowTheme: theme, splitSide: browser.splitSide(for: tab.id),
-						              isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab,
-						              navigationNamespace: navigationNamespace ?? sidebarTransitions,
-						              sidebarSelection: sidebarSelection, selectionOrder: pinned ? pinnedSelectionOrder : normalSelectionOrder)
-							.equatable()
-							.padding(.leading, item.indentation)
-					}
-				case .split:
-					if let splitTabs {
-						BrowserUnifiedSplitRow(browser: browser, left: splitTabs.0, right: splitTabs.1,
-						                       theme: theme, spaceID: space.id, selectedID: selectedID)
-					}
-				case .emptyFavourites:
-					Color.clear.accessibilityHidden(true)
-				case .pinnedHeader:
-					Text("Pinned Tabs").font(.caption).frame(maxWidth: .infinity, alignment: .leading)
-				case let .folder(id):
-					if let folder = space.pinnedFolders.first(where: { $0.id == id }) {
-						PinnedFolderHeader(folder: folder, browser: browser, isExpanded: Binding(
-							get: { !collapsedFolderIDs.contains(id) },
-							set: { expanded in
-								if expanded { collapsedFolderIDs.remove(id) } else { collapsedFolderIDs.insert(id) }
-							}
-						))
-					}
-				case .divider:
-					BrowserAITabDivider(browser: browser, tabs: normalTabs, action: $cleanupAction, canUndoGrouping: todayGroupsUndo != nil)
-				case let .group(id):
-					if let group = space.todayTabGroups.first(where: { $0.id == id }) {
-						HStack {
-							Text(group.name).font(.caption.weight(.semibold))
-								.frame(maxWidth: .infinity, alignment: .leading).accessibilityAddTraits(.isHeader)
-							Button("Pin Section as Folder", systemImage: "pin") {
-								browser.pinTodayTabGroupAsFolder(group.id, in: space.id)
-							}
-							.labelStyle(.iconOnly).buttonStyle(.plain)
-							.accessibilityLabel("Pin \(group.name) as folder")
-							.accessibilityIdentifier("pin-today-tab-group-\(group.id)")
-							.disabled(browser.isPrivate || cleanupAction != nil)
-						}
-						.padding(.horizontal, 10).padding(.top, 8)
-						.accessibilityIdentifier("today-tab-group-\(group.id)")
-					}
-				case .newTab:
-					ShellNewTabButton(browser: browser, theme: theme, onNewTab: onNewTab)
-						.matchedTransitionSource(id: "sidebar-new-tab", in: navigationNamespace ?? sidebarTransitions)
-				case .privateHeader:
-					EmptyView()
-			}
+			sidebarRow(item, projection: projection, splitTabs: splitTabs, openElsewhereIDs: openElsewhereIDs)
 		}
 		#if os(macOS)
 		.onHover { hovering in
@@ -144,6 +81,82 @@ struct ShellSidebarListView: View {
 		.task(id: "\(space.id)|\(cleanupAction ?? "")|\(allFeatures)|\(isActiveSpace)") {
 			guard isActiveSpace || onSelectTab != nil else { return }
 			await performTabCleanup(in: space, tabs: normalTabs)
+		}
+	}
+
+	@ViewBuilder
+	private func sidebarRow(
+		_ item: BrowserSidebarItem,
+		projection: SidebarProjectionCache.Projection,
+		splitTabs: (BrowserTab, BrowserTab)?,
+		openElsewhereIDs: Set<UUID>
+	) -> some View {
+		let tabsByID = browser.tabsByID
+		let selectedID = space.selectedTabID
+		let normalTabs = projection.normalTabs
+		let normalIndexes = projection.normalIndexes
+		let normalSelectionOrder = projection.normalSelectionOrder
+		let pinnedSelectionOrder = projection.pinnedSelectionOrder
+
+		switch item.kind {
+			case .favourite:
+				if let tab = item.tabID.flatMap({ tabsByID[$0] }) {
+					favouriteTile(tab, selectedID: selectedID)
+				}
+			case .tab:
+				if let tab = item.tabID.flatMap({ tabsByID[$0] }) {
+					let pinned = item.isPinned
+					BrowserTabRow(tab: tab, browser: browser,
+					              isSelected: isActiveSpace && selectedID == tab.id,
+					              tabIndex: pinned ? nil : normalIndexes[tab.id], normalCount: normalTabs.count, pinned: pinned,
+					              rowSpaceID: space.id, rowTheme: theme, splitSide: browser.splitSide(for: tab.id),
+					              isOpenElsewhere: openElsewhereIDs.contains(tab.id), onSelectTab: onSelectTab,
+					              navigationNamespace: navigationNamespace ?? sidebarTransitions,
+					              sidebarSelection: sidebarSelection, selectionOrder: pinned ? pinnedSelectionOrder : normalSelectionOrder)
+						.equatable()
+						.padding(.leading, item.indentation)
+				}
+			case .split:
+				if let splitTabs {
+					BrowserUnifiedSplitRow(browser: browser, left: splitTabs.0, right: splitTabs.1,
+					                       theme: theme, spaceID: space.id, selectedID: selectedID)
+				}
+			case .emptyFavourites:
+				Color.clear.accessibilityHidden(true)
+			case .pinnedHeader:
+				Text("Pinned Tabs").font(.caption).frame(maxWidth: .infinity, alignment: .leading)
+			case let .folder(id):
+				if let folder = space.pinnedFolders.first(where: { $0.id == id }) {
+					PinnedFolderHeader(folder: folder, browser: browser, isExpanded: Binding(
+						get: { !collapsedFolderIDs.contains(id) },
+						set: { expanded in
+							if expanded { collapsedFolderIDs.remove(id) } else { collapsedFolderIDs.insert(id) }
+						}
+					))
+				}
+			case .divider:
+				BrowserAITabDivider(browser: browser, tabs: normalTabs, action: $cleanupAction, canUndoGrouping: todayGroupsUndo != nil)
+			case let .group(id):
+				if let group = space.todayTabGroups.first(where: { $0.id == id }) {
+					HStack {
+						Text(group.name).font(.caption.weight(.semibold))
+							.frame(maxWidth: .infinity, alignment: .leading).accessibilityAddTraits(.isHeader)
+						Button("Pin Section as Folder", systemImage: "pin") {
+							browser.pinTodayTabGroupAsFolder(group.id, in: space.id)
+						}
+						.labelStyle(.iconOnly).buttonStyle(.plain)
+						.accessibilityLabel("Pin \(group.name) as folder")
+						.accessibilityIdentifier("pin-today-tab-group-\(group.id)")
+						.disabled(browser.isPrivate || cleanupAction != nil)
+					}
+					.padding(.horizontal, 10).padding(.top, 8)
+					.accessibilityIdentifier("today-tab-group-\(group.id)")
+				}
+			case .newTab:
+				ShellNewTabButton(browser: browser, theme: theme, onNewTab: onNewTab)
+					.matchedTransitionSource(id: "sidebar-new-tab", in: navigationNamespace ?? sidebarTransitions)
+			case .privateHeader:
+				EmptyView()
 		}
 	}
 
