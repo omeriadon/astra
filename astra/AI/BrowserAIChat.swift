@@ -10,8 +10,21 @@ final class BrowserAIChat {
 		let isUser: Bool
 		let text: String
 		var attachments: [BrowserAIAttachment] = []
+		var augmentArtifacts: [BrowserWebsiteAugmentArtifact]? = nil
+		var toolCalls: [ToolActivity]? = nil
 	}
 
+	nonisolated struct ToolActivity: Codable, Identifiable, Sendable {
+		var id = UUID()
+		let name: String
+		var status: String
+		var detail: String? = nil
+	}
+
+	private(set) var isAugmenting = false
+	private(set) var augmentingTabID: UUID?
+	private(set) var toolCalls: [ToolActivity] = []
+	@ObservationIgnored private var turnArtifacts: [BrowserWebsiteAugmentArtifact] = []
 	private(set) var id = UUID()
 	private(set) var title = "New Chat"
 	private var titleIsGenerated = false
@@ -127,6 +140,10 @@ final class BrowserAIChat {
 		error = nil
 		canRetry = false
 		attemptedBrowserAction = false
+		toolCalls = []
+		turnArtifacts = []
+		isAugmenting = false
+		augmentingTabID = nil
 	}
 
 	func send(in browser: Browser) async {
@@ -142,6 +159,10 @@ final class BrowserAIChat {
 		let started = BrowserLog.clock()
 		var answerCommitted = false
 		attemptedBrowserAction = false
+		toolCalls = []
+		turnArtifacts = []
+		isAugmenting = false
+		augmentingTabID = nil
 		isResponding = true
 		error = nil
 		canRetry = false
@@ -156,7 +177,7 @@ final class BrowserAIChat {
 			"linked_tabs": String(linkedTabIDs.count),
 			"pending_pages": String(pendingPages.count),
 		])
-		defer { isResponding = false }
+		defer { isResponding = false; isAugmenting = false; augmentingTabID = nil }
 		do {
 			try await BrowserAI.shared.checkAccess(for: model, feature: "AI Sidebar")
 			BrowserLog.debug(.ai, "ai.chat.preflight-passed", metadata: ["id": BrowserLog.id(sendID)])
@@ -193,7 +214,14 @@ final class BrowserAIChat {
 			let images = files.compactMap(\.image)
 			guard images.count <= 8, images.reduce(0, { $0 + $1.data.count }) <= 10 * 1024 * 1024 else { throw BrowserAIError.attachmentTooLarge }
 			let conversation = messages.map { "\($0.isUser ? "User" : "Assistant"): \($0.text)" }.joined(separator: "\n")
-			let context = contextPages.sorted { $0.key.uuidString < $1.key.uuidString }.map(\.value.prompt).joined(separator: "\n\n")
+			// Keep full page context locally; send a bounded excerpt first. The model
+			// can inspect DOM structure or paginate read_page without resending huge lists.
+			let context = contextPages.sorted { $0.key.uuidString < $1.key.uuidString }.map { entry in
+				let page = entry.value
+				let excerpt = BrowserAIPageText(title: page.title, url: page.url, text: String(page.text.prefix(6000)))
+				let identity = tabs.contains(where: { $0.id == entry.key }) ? "tabID=\(entry.key)" : "referenceID=\(entry.key) (attached reference, not an open tab)"
+				return "Context \(identity). Characters shown=\(min(page.text.count, 6000)) total=\(page.text.count). Use read_page offset/limit for more or get_page_structure for augmentation.\n" + excerpt.prompt
+			}.joined(separator: "\n\n")
 			let fileContext = files.map(\.prompt).joined(separator: "\n\n")
 			var toolResults = ""
 			var answer = ""
@@ -233,7 +261,7 @@ final class BrowserAIChat {
 			guard id == conversationID else { return }
 			pages = contextPages
 			messages.append(Message(isUser: true, text: question, attachments: newAttachments))
-			messages.append(Message(isUser: false, text: answer))
+			messages.append(Message(isUser: false, text: answer, augmentArtifacts: turnArtifacts.isEmpty ? nil : turnArtifacts, toolCalls: toolCalls.isEmpty ? nil : toolCalls))
 			answerCommitted = true
 			if messages.count == 2 {
 				title = String(question.prefix(70))
@@ -268,6 +296,16 @@ final class BrowserAIChat {
 				}
 			}
 		} catch {
+			// A completed augmentation remains reopenable even if a later provider round fails.
+			if !answerCommitted, !turnArtifacts.isEmpty, id == conversationID {
+				messages.append(Message(isUser: true, text: question, attachments: newAttachments))
+				messages.append(Message(isUser: false, text: "Website Augment created. The follow-up response did not finish.", augmentArtifacts: turnArtifacts, toolCalls: toolCalls))
+				draft = ""
+				attachments = []
+				pendingPages = []
+				linkedTabIDs = []
+				try? await save()
+			}
 			preview = ""
 			if !Task.isCancelled {
 				self.error = attemptedBrowserAction
@@ -289,129 +327,51 @@ final class BrowserAIChat {
 
 	private func streamTurn(input: BrowserAIChatTurnFeature.Input, model: BrowserAIModel, browser: Browser, spaceID: UUID) async throws -> (BrowserAIChatTurnFeature.Turn, String) {
 		let feature = BrowserAIChatTurnFeature()
-		// Tool calls are pushed as they are decoded. The previous 30 ms
-		// polling loop woke continuously during long model responses even
-		// when no tool had arrived.
-		let (pendingCalls, continuation) = AsyncStream.makeStream(of: BrowserAIToolCall.self)
-		var seen = Set<Data>()
+		var lastPublished: ContinuousClock.Instant?
+		// Validate the entire model response before executing any actions. A completed
+		// nested object inside malformed or truncated JSON is never authorization.
+		let turn = try await BrowserAI.shared.performStreaming(feature, input: input, model: model) { snapshot in
+			let now = ContinuousClock.now
+			guard lastPublished.map({ $0.duration(to: now) >= .milliseconds(85) }) ?? true else { return }
+			lastPublished = now
+			preview = BrowserAIOutput.streamedString("response", in: snapshot)
+				?? (snapshot.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") ? "" : snapshot)
+			if snapshot.contains("augment_website") || snapshot.contains("get_page_structure") {
+				isAugmenting = true
+				if augmentingTabID == nil { augmentingTabID = browser.aiSidebarPageTab?.id }
+			}
+		}
+		preview = turn.response
 		var results = ""
-		let turnID = UUID()
-		BrowserLog.debug(.ai, "ai.chat.stream-turn-start", metadata: [
-			"id": BrowserLog.id(turnID),
-			"context_bytes": String(input.context.utf8.count),
-			"question_bytes": String(input.question.utf8.count),
-			"images": String(input.images.count),
-			"model": BrowserLog.value(model.identifier),
-		])
-		let generation = Task { @MainActor in
-			defer { continuation.finish() }
-			var lastPreviewPublishedAt: ContinuousClock.Instant?
-			var latestPreview = ""
-			var lastActionScanAt: ContinuousClock.Instant?
-			let turn = try await BrowserAI.shared.performStreaming(feature, input: input, model: model) { snapshot in
-				BrowserLog.trace(.ai, "ai.chat.stream-progress", metadata: [
-					"id": BrowserLog.id(turnID), "bytes": String(snapshot.utf8.count),
-				])
-				// Avoid decoding the growing response snapshot on every token.
-				// Tool detection below still runs immediately, independently of UI throttling.
-				let now = ContinuousClock.now
-				if lastPreviewPublishedAt.map({ $0.duration(to: now) >= .milliseconds(85) }) ?? true {
-					latestPreview = BrowserAIOutput.streamedString("response", in: snapshot)
-						?? (snapshot.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") ? "" : snapshot)
-					if preview != latestPreview {
-						preview = latestPreview
-					}
-					lastPreviewPublishedAt = now
-				}
-				// The JSON actions array comes after response text. Avoid
-				// reparsing all completed JSON objects before it even exists.
-				guard seen.count < 5, snapshot.contains("\"actions\"") else { return }
-				// Completed-action JSON scanning is relatively expensive because each
-				// snapshot includes previously streamed text. Throttle scans, then
-				// perform a guaranteed final reconciliation after stream completion.
-				if lastActionScanAt.map({ $0.duration(to: now) < .milliseconds(100) }) == true {
-					return
-				}
-				lastActionScanAt = now
-				for data in BrowserAIOutput.completedObjects(in: snapshot) {
-					guard seen.count < 5,
-					      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-					      object["name"] != nil, object["arguments"] != nil,
-					      let envelope = try? JSONSerialization.data(withJSONObject: ["response": "", "actions": [object]]),
-					      let turn = try? feature.output(from: String(decoding: envelope, as: UTF8.self)),
-					      let call = turn.actions.first else { continue }
-					// A bulk apply is destructive or moves multiple tabs. Execute it only
-					// after the entire model response has been parsed and validated.
-					guard !(call.arguments["phase"] == "apply"
-						&& (call.name == BrowserAIAction.closeTab.rawValue
-							|| call.name == BrowserAIAction.moveTabsToSpace.rawValue)) else { continue }
-					let encoder = JSONEncoder()
-					encoder.outputFormatting = .sortedKeys
-					guard let identifier = try? encoder.encode(call), seen.insert(identifier).inserted else { continue }
-					BrowserLog.debug(.ai, "ai.chat.tool-decoded", metadata: [
-						"id": BrowserLog.id(turnID), "tool": call.name,
-						"arguments_bytes": String(identifier.count),
-					])
-					continuation.yield(call)
-				}
+		for call in turn.actions {
+			try Task.checkCancellation()
+			attemptedBrowserAction = true
+			activity = call.name == BrowserAIAction.augmentWebsite.rawValue ? "Augmenting Website" : "Using Browser Tools"
+			if call.name == BrowserAIAction.augmentWebsite.rawValue || call.name == BrowserAIAction.getPageStructure.rawValue {
+				isAugmenting = true
+				augmentingTabID = call.arguments["tabID"].flatMap(UUID.init(uuidString:))
 			}
-			// The final decoded response is authoritative even if the last
-			// streaming callback occurred inside the UI throttle interval.
-			if preview != turn.response {
-				preview = turn.response
-			}
-			// A tool object may have completed inside the final throttle window.
-			// Reconcile by action identity so every emitted action is executed once.
-			for call in turn.actions where seen.count < 5 {
-				let encoder = JSONEncoder()
-				encoder.outputFormatting = .sortedKeys
-				guard let identifier = try? encoder.encode(call),
-				      seen.insert(identifier).inserted else { continue }
-				continuation.yield(call)
-			}
-			BrowserLog.debug(.ai, "ai.chat.stream-turn-finished", metadata: [
-				"id": BrowserLog.id(turnID), "actions": String(turn.actions.count),
-				"response_bytes": String(turn.response.utf8.count),
-				"response": BrowserLog.value(String(turn.response.prefix(8192))),
-			])
-			return turn
-		}
-		defer { generation.cancel(); continuation.finish() }
-		return try await withTaskCancellationHandler {
-			for await call in pendingCalls {
+			let index = toolCalls.count
+			toolCalls.append(ToolActivity(name: call.name, status: "Running"))
+			do {
+				let result = try await BrowserAITools.execute(call, browser: browser, spaceID: spaceID, model: model) { artifact in
+					turnArtifacts.append(artifact)
+					// Keep the artifact even if a tab vanished while opening its peek.
+					try BrowserWebsiteAugment.open(artifact, in: browser)
+				}
+				toolCalls[index].status = "Completed"
+				toolCalls[index].detail = String(result.prefix(2000))
+				results += "\n\(call.name): \(result)\n"
+				await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "success", details: "phase=tool")
+			} catch {
+				toolCalls[index].status = Task.isCancelled ? "Cancelled" : "Failed"
+				toolCalls[index].detail = error.localizedDescription
 				try Task.checkCancellation()
-				let toolStarted = BrowserLog.clock()
-				attemptedBrowserAction = true
-				activity = "Using Browser Tools"
-				BrowserLog.debug(.ai, "ai.chat.tool-start", metadata: [
-					"id": BrowserLog.id(turnID), "tool": call.name,
-				])
-				do {
-					let result = try await BrowserAITools.execute(call, browser: browser, spaceID: spaceID, model: model)
-					BrowserLog.debug(.ai, "ai.chat.tool-success", metadata: [
-						"id": BrowserLog.id(turnID), "tool": call.name,
-						"elapsed_ms": String(Int((BrowserLog.clock() - toolStarted) * 1000)),
-						"result_bytes": String(result.utf8.count),
-						"result": BrowserLog.value(String(result.prefix(4096))),
-					])
-					results += "\n\(call.name): \(result)\n"
-					await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "success", details: "phase=tool")
-				} catch {
-					try Task.checkCancellation()
-					BrowserLog.error(.ai, "ai.chat.tool-failure", metadata: [
-						"id": BrowserLog.id(turnID), "tool": call.name,
-						"elapsed_ms": String(Int((BrowserLog.clock() - toolStarted) * 1000)),
-						"error": BrowserLog.errorDescription(error),
-					])
-					results += "\n\(call.name): Failed. \(error.localizedDescription)\n"
-					await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "failed", details: "phase=tool")
-				}
+				results += "\n\(call.name): Failed. \(error.localizedDescription)\n"
+				await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "failed", details: "phase=tool")
 			}
-			return try await (generation.value, results)
-		} onCancel: {
-			generation.cancel()
-			continuation.finish()
 		}
+		return (turn, results)
 	}
 
 	private func save() async throws {
@@ -433,6 +393,10 @@ final class BrowserAIChat {
 		error = nil
 		canRetry = false
 		attemptedBrowserAction = false
+		toolCalls = []
+		turnArtifacts = []
+		isAugmenting = false
+		augmentingTabID = nil
 	}
 }
 

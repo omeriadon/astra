@@ -24,6 +24,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 checks/ai-browser-tools-check.py
+          node checks/website-augment-check.mjs
 
   markdown-cache:
     name: Markdown attachment cache lifetime

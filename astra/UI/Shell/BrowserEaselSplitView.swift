@@ -15,6 +15,9 @@ struct BrowserEaselSplitView: View {
 			let leftWidth = min(max(minimum, usableWidth * fraction), usableWidth - minimum)
 			HStack(spacing: 0) {
 				BrowserPageView(browser: browser, cornerRadius: cornerRadius, tabID: leftTab.id, showsPeeks: leftTab.internalPage != .easel)
+					#if !ASTRA_WEBSITE_APP_RUNTIME
+					.overlay { WebsiteAugmentEditingOverlay(browser: browser, tab: leftTab, cornerRadius: cornerRadius) }
+					#endif
 					.frame(width: leftWidth)
 					.simultaneousGesture(TapGesture().onEnded { browser.selectTab(leftTab.id) })
 				Rectangle()
@@ -58,6 +61,9 @@ struct BrowserEaselSplitView: View {
 							.id(rightTab.id)
 					} else {
 						BrowserPageView(browser: browser, cornerRadius: cornerRadius, tabID: rightTab.id)
+							#if !ASTRA_WEBSITE_APP_RUNTIME
+							.overlay { WebsiteAugmentEditingOverlay(browser: browser, tab: rightTab, cornerRadius: cornerRadius) }
+							#endif
 					}
 				}
 				.frame(width: usableWidth - leftWidth)

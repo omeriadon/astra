@@ -231,6 +231,11 @@ final class BrowserController: NSObject, Identifiable {
 	private var lastExternalApplicationRequestTime: TimeInterval?
 	@ObservationIgnored
 	var navigationIntercept: ((URL) -> Bool)?
+	/// Saved website snapshots retain their local document and cannot open destinations.
+	@ObservationIgnored
+	var snapshotNavigationOnly = false
+	@ObservationIgnored
+	var snapshotSourceURL: URL?
 	var pictureInPictureRestoreRequested: (() -> Void)?
 
 	var isCapturing: Bool {
@@ -2214,7 +2219,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	private func load(_ url: URL, isExplicitAddressRequest: Bool) {
-		guard !isInvalidated else { return }
+		guard !isInvalidated, !snapshotNavigationOnly else { return }
 		if BrowserAddress.externalApplicationScheme(for: url) != nil,
 		   handleExternalLink(
 		   	url,
@@ -2230,7 +2235,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func loadWebArchive(_ data: Data, baseURL: URL) {
-		guard !isInvalidated,
+		guard !isInvalidated, !snapshotNavigationOnly,
 		      let safeURL = BrowserHomepage.validURL(baseURL.absoluteString) else { return }
 		historyVisitPolicy.userInitiatedNavigation()
 		createdWebView?.stopLoading()
@@ -2257,7 +2262,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	func navigate(_ request: URLRequest) {
 		BrowserLog.info(.navigation, "navigation.request", metadata: ["controller": BrowserLog.id(id), "request": BrowserLog.request(request)])
-		guard !isInvalidated else { return }
+		guard !isInvalidated, !snapshotNavigationOnly else { return }
 		guard let url = request.url else { return }
 		historyVisitPolicy.userInitiatedNavigation()
 		createdWebView?.stopLoading()
@@ -2324,6 +2329,7 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	private func reload(usingOrigin: Bool) {
+		guard !snapshotNavigationOnly else { return }
 		if !hasCurrentPageDocument {
 			if let pendingRequest {
 				load(pendingRequest)
@@ -2576,7 +2582,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	private func load(_ request: URLRequest, resetConnectivityRetry: Bool = true) {
 		BrowserLog.debug(.navigation, "navigation.dispatch", metadata: ["controller": BrowserLog.id(id), "request": BrowserLog.request(request), "reset_retry": String(resetConnectivityRetry), "content_blocker_ready": String(session.contentBlocking.isReadyForNavigation)])
-		guard !isInvalidated else { return }
+		guard !isInvalidated, !snapshotNavigationOnly else { return }
 		pendingWebArchive = nil
 		pendingLocalFile = nil
 		awaitsNavigationCommit = true
@@ -2814,6 +2820,13 @@ extension BrowserController: WKNavigationDelegate {
 	) {
 		guard owns(webView) else {
 			decisionHandler(.cancel, preferences)
+			return
+		}
+		if snapshotNavigationOnly {
+			let isSnapshotLoad = navigationAction.targetFrame?.isMainFrame == true
+				&& navigationAction.navigationType == .other
+				&& navigationAction.request.url?.absoluteString == "about:blank"
+			decisionHandler(isSnapshotLoad ? .allow : .cancel, preferences)
 			return
 		}
 		if navigationAction.targetFrame?.isMainFrame == true, navigationAction.navigationType == .backForward {
@@ -3615,7 +3628,7 @@ extension BrowserController: WKUIDelegate {
 		for navigationAction: WKNavigationAction,
 		windowFeatures _: WKWindowFeatures
 	) -> WKWebView? {
-		guard owns(webView) else { return nil }
+		guard owns(webView), !snapshotNavigationOnly else { return nil }
 		if BrowserAuthenticationPolicy.canInterceptCallback(
 			isSourceMainFrame: navigationAction.sourceFrame.isMainFrame,
 			targetsMainFrame: navigationAction.targetFrame?.isMainFrame == true,
@@ -3751,6 +3764,7 @@ extension BrowserController: WKUIDelegate {
 		isExplicitAddressRequest: Bool = false,
 		in webView: WKWebView
 	) -> Bool {
+		guard !snapshotNavigationOnly else { return true }
 		guard let scheme = BrowserAddress.externalApplicationScheme(for: url) else { return false }
 		let documentID = navigationIdentifier
 		#if os(macOS)

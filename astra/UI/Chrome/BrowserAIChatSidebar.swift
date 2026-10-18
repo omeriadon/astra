@@ -42,23 +42,38 @@ struct BrowserAIChatSidebar: View {
 				ScrollView {
 					LazyVStack(alignment: .leading, spacing: 16) {
 						if chat.messages.isEmpty {
-							Text("Ask a question. Type @ to link an open page. Suggestions come from this space; type an exact page title to link another space.")
-								.foregroundStyle(.secondary)
+							VStack(alignment: .leading, spacing: 6) {
+								Text("Work with this page")
+									.font(.title3.weight(.medium))
+								Text("Ask a question, summarise, or change what’s shown. Use @ to add another tab.")
+									.font(.callout)
+									.foregroundStyle(.secondary)
+							}
+							.padding(.vertical, 20)
 						}
 						ForEach(chat.messages) { message in
-							VStack(alignment: .leading, spacing: 5) {
-								Text(message.isUser ? "You" : "AI")
-									.font(.caption.weight(.semibold))
-									.foregroundStyle(.secondary)
+							VStack(alignment: .leading, spacing: 10) {
 								if !message.attachments.isEmpty {
 									attachmentRow(message.attachments, removable: false)
 								}
 								if message.isUser {
-									Text(message.text).textSelection(.enabled)
+									Text(message.text)
+										.textSelection(.enabled)
+										.foregroundStyle(Color.primary.mix(with: browser.theme.tabColor, by: 0.3))
+										.padding(12)
+										.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+										.frame(maxWidth: .infinity, alignment: .trailing)
 								} else {
-									chatMarkdown(message.text, streaming: false)
+									if let calls = message.toolCalls, !calls.isEmpty {
+										BrowserAIChatToolActivity(calls: calls)
+									}
+									if !message.text.isEmpty { chatMarkdown(message.text, streaming: false) }
+									ForEach(message.augmentArtifacts ?? []) { artifact in
+										artifactCard(artifact)
+									}
 								}
 							}
+							.frame(maxWidth: .infinity, alignment: .leading)
 							.id(message.id)
 						}
 						// Streaming responses update many times per second. Keep
@@ -86,11 +101,16 @@ struct BrowserAIChatSidebar: View {
 				HStack(spacing: 8) {
 					Text(chat.title)
 						.font(.headline)
+						.contentTransition(.opacity)
+						.animation(.easeInOut(duration: 0.3), value: chat.title)
 						.lineLimit(1)
 						.accessibilityIdentifier("ai-chat-title")
 					Spacer(minLength: 0)
 					Button("Recent Chats", systemImage: "clock.arrow.circlepath") { showsHistory.toggle() }
 						.labelStyle(.iconOnly)
+						.frame(width: 28, height: 28)
+						.contentShape(RoundedRectangle(cornerRadius: 8))
+						.foregroundStyle(.secondary)
 						.disabled(chat.isResponding || chat.isImporting)
 						.accessibilityIdentifier("ai-chat-history")
 						.popover(isPresented: $showsHistory) {
@@ -123,26 +143,14 @@ struct BrowserAIChatSidebar: View {
 						}
 					Button("New Chat", systemImage: "square.and.pencil", action: chat.clear)
 						.labelStyle(.iconOnly)
+						.frame(width: 28, height: 28)
+						.contentShape(RoundedRectangle(cornerRadius: 8))
+						.foregroundStyle(.secondary)
 						.disabled(chat.isResponding || chat.isImporting)
 						.accessibilityIdentifier("ai-chat-new")
-					Button("Close AI Sidebar", systemImage: "xmark") { browser.showsAISidebar = false }
-						.labelStyle(.iconOnly)
-						.accessibilityIdentifier("ai-chat-close")
 				}
-				.buttonStyle(.glass)
+				.buttonStyle(.plain)
 				.padding([.top, .horizontal], 12)
-				if isVisible, ["codex", "claude"].contains(provider) {
-					BrowserAIModelControls(
-						selectedProvider: $chat.selectedProvider,
-						selectedModelID: $chat.selectedModelID,
-						selectedReasoning: $chat.selectedReasoning,
-						provider: provider,
-						isDisabled: chat.isResponding,
-						initialModelID: provider == "codex" ? Defaults[.aiCodexModel] : Defaults[.aiClaudeModel],
-						initialReasoning: provider == "codex" ? Defaults[.aiCodexReasoning] : Defaults[.aiClaudeReasoning]
-					)
-					.padding(.horizontal, 12)
-				}
 				if needsSignIn {
 					VStack(alignment: .leading, spacing: 6) {
 						Label("Sign in to Astra to use Default AI.", systemImage: "person.crop.circle.badge.exclamationmark")
@@ -160,14 +168,17 @@ struct BrowserAIChatSidebar: View {
 		}
 		.safeAreaBar(edge: .bottom) {
 			VStack(alignment: .leading, spacing: 8) {
-				Button("Summarise", systemImage: "text.alignleft") {
-					chat.includeCurrentTab(in: browser)
-					chat.draft = "Summarise the current page."
-					send()
+				if chat.messages.isEmpty, !chat.isResponding, chat.error == nil {
+					Button("Summarise", systemImage: "text.alignleft") {
+						chat.includeCurrentTab(in: browser)
+						chat.draft = "Summarise the current page."
+						send()
+					}
+					.buttonStyle(.plain)
+					.foregroundStyle(.secondary)
+					.disabled(chat.isResponding || !chat.draft.isEmpty)
+					.accessibilityIdentifier("ai-chat-summarise")
 				}
-				.buttonStyle(.glass)
-				.disabled(chat.isResponding || !chat.draft.isEmpty)
-				.accessibilityIdentifier("ai-chat-summarise")
 				if chat.mentionQuery != nil {
 					ScrollView {
 						VStack(alignment: .leading, spacing: 4) {
@@ -181,25 +192,19 @@ struct BrowserAIChatSidebar: View {
 					}
 					.frame(maxHeight: 160)
 				}
-				ForEach(chat.linkedTabIDs, id: \.self) { id in
-					HStack {
-						Label(chat.availableTabs(in: browser).first(where: { $0.id == id })?.title ?? "Closed Page", systemImage: "link")
-							.lineLimit(1)
-						Spacer()
-						Button("Remove Linked Page", systemImage: "xmark") { chat.linkedTabIDs.removeAll { $0 == id } }
-							.labelStyle(.iconOnly)
-							.disabled(chat.isResponding)
-							.accessibilityIdentifier("ai-chat-unlink-\(id.uuidString)")
-					}
-				}
-				ForEach(chat.pendingPages) { page in
-					HStack {
-						Label(page.title, systemImage: "globe").lineLimit(1)
-						Spacer()
-						Button("Remove Page Context", systemImage: "xmark") { chat.pendingPages.removeAll { $0.id == page.id } }
-							.labelStyle(.iconOnly)
-							.disabled(chat.isResponding)
-							.accessibilityIdentifier("ai-chat-remove-preview-context")
+				if !chat.linkedTabIDs.isEmpty || !chat.pendingPages.isEmpty {
+					VStack(spacing: 6) {
+						ForEach(chat.linkedTabIDs, id: \.self) { id in
+							let tab = chat.availableTabs(in: browser).first { $0.id == id }
+							pageContextRow(title: tab?.title ?? "Closed Page", subtitle: tab?.currentURL?.host(), identifier: "ai-chat-unlink-\(id.uuidString)") {
+								chat.linkedTabIDs.removeAll { $0 == id }
+							}
+						}
+						ForEach(chat.pendingPages) { page in
+							pageContextRow(title: page.title, subtitle: page.url.host(), identifier: "ai-chat-remove-preview-context") {
+								chat.pendingPages.removeAll { $0.id == page.id }
+							}
+						}
 					}
 				}
 				if !chat.attachments.isEmpty {
@@ -213,7 +218,7 @@ struct BrowserAIChatSidebar: View {
 					.textFieldStyle(.plain)
 					.focused($focused)
 					.padding(12)
-					.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+					.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
 					.onSubmit { send() }
 					.disabled(chat.isResponding)
 					.accessibilityLabel("Message AI. Type at to link a page.")
@@ -221,21 +226,37 @@ struct BrowserAIChatSidebar: View {
 				HStack {
 					Button("Attach Images or Files", systemImage: "paperclip") { showsFileImporter = true }
 						.labelStyle(.iconOnly)
-						.buttonStyle(.glass)
+						.buttonStyle(.plain)
+						.frame(width: 28, height: 28)
+						.foregroundStyle(.secondary)
 						.disabled(chat.isResponding || chat.isImporting)
 						.accessibilityIdentifier("ai-chat-attach")
-					Text("Pages and files are sent as context.")
-						.font(.caption2)
-						.foregroundStyle(.secondary)
+					if isVisible, BrowserAICLI.isProviderDetected(provider) {
+						BrowserAIModelControls(
+							selectedProvider: $chat.selectedProvider,
+							selectedModelID: $chat.selectedModelID,
+							selectedReasoning: $chat.selectedReasoning,
+							provider: provider,
+							isDisabled: chat.isResponding,
+							initialModelID: provider == "codex" ? Defaults[.aiCodexModel] : Defaults[.aiClaudeModel],
+							initialReasoning: provider == "codex" ? Defaults[.aiCodexReasoning] : Defaults[.aiClaudeReasoning]
+						)
+						.layoutPriority(-1)
+					}
 					Spacer()
 					if chat.isResponding {
 						Button("Stop Answer", systemImage: "stop.fill") { requestID = nil }
 							.labelStyle(.iconOnly)
+							.buttonStyle(.plain)
+							.frame(width: 28, height: 28)
+							.background(Color.primary.opacity(0.08), in: Circle())
 							.accessibilityIdentifier("ai-chat-stop")
 					} else {
 						Button("Send Message", systemImage: "arrow.up", role: .confirm, action: send)
 							.labelStyle(.iconOnly)
-							.buttonStyle(.glassProminent)
+							.buttonStyle(.plain)
+							.frame(width: 28, height: 28)
+							.background(browser.theme.tabColor.opacity(canSend ? 0.25 : 0.08), in: Circle())
 							.disabled(!canSend)
 							.accessibilityIdentifier("ai-chat-send")
 					}
@@ -305,6 +326,51 @@ struct BrowserAIChatSidebar: View {
 			}
 		}
 		.accessibilityIdentifier("ai-chat-sidebar")
+	}
+
+	private func pageContextRow(title: String, subtitle: String?, identifier: String, remove: @escaping () -> Void) -> some View {
+		HStack(spacing: 9) {
+			Image(systemName: "globe").foregroundStyle(.secondary)
+			VStack(alignment: .leading, spacing: 2) {
+				Text(title).font(.caption.weight(.medium)).lineLimit(1)
+				if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+			}
+			Spacer(minLength: 4)
+			Button("Remove Page Context", systemImage: "xmark", action: remove)
+				.labelStyle(.iconOnly)
+				.font(.caption2)
+				.buttonStyle(.plain)
+				.foregroundStyle(.secondary)
+				.disabled(chat.isResponding)
+				.accessibilityIdentifier(identifier)
+		}
+		.padding(.horizontal, 10)
+		.padding(.vertical, 8)
+		.background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+	}
+
+	private func artifactCard(_ artifact: BrowserWebsiteAugmentArtifact) -> some View {
+		Button {
+			do { try BrowserWebsiteAugment.open(artifact, in: browser) }
+			catch { browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error.localizedDescription) }
+		} label: {
+			HStack(spacing: 12) {
+				Image(systemName: "rectangle.3.group").font(.title2).foregroundStyle(browser.theme.tabColor)
+				VStack(alignment: .leading, spacing: 4) {
+					Text(artifact.title).font(.body.weight(.medium)).lineLimit(2)
+					Text(artifact.sourceURL.host() ?? "Website augment").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+				}
+				Spacer(minLength: 0)
+				Image(systemName: "arrow.up.right").font(.caption).foregroundStyle(.secondary)
+			}
+			.padding(14)
+			.frame(maxWidth: .infinity, alignment: .leading)
+			.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+			.overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.08)))
+		}
+		.buttonStyle(.plain)
+		.accessibilityLabel("Open \(artifact.title)")
+		.accessibilityIdentifier("ai-chat-artifact-\(artifact.id)")
 	}
 
 	@ViewBuilder
@@ -377,6 +443,62 @@ struct BrowserAIChatSidebar: View {
 	}
 }
 
+private struct BrowserAIChatThinkingIndicator: View {
+	let tint: Color
+	let activity: String
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	@State private var glowing = false
+
+	var body: some View {
+		HStack(spacing: 8) {
+			Image(systemName: "sparkle")
+				.font(.system(size: 18, weight: .medium))
+				.foregroundStyle(tint)
+				.scaleEffect(glowing ? 1.08 : 0.85)
+				.opacity(glowing ? 1 : 0.5)
+				.shadow(color: tint.opacity(glowing ? 0.35 : 0), radius: 5)
+			Text(activity).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+		}
+		.frame(height: 24)
+		.accessibilityElement(children: .combine)
+		.accessibilityLabel(activity)
+		.onAppear {
+			guard !reduceMotion else { glowing = true; return }
+			withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { glowing = true }
+		}
+	}
+}
+
+private struct BrowserAIChatToolActivity: View {
+	let calls: [BrowserAIChat.ToolActivity]
+
+	var body: some View {
+		DisclosureGroup {
+			VStack(alignment: .leading, spacing: 8) {
+				ForEach(calls) { call in
+					VStack(alignment: .leading, spacing: 3) {
+						HStack {
+							Text(call.name).fontWeight(.medium)
+							Spacer()
+							Text(call.status)
+						}
+						if let detail = call.detail, !detail.isEmpty {
+							Text(detail).textSelection(.enabled)
+						}
+					}
+				}
+			}
+			.padding(.top, 5)
+		} label: {
+			Label("\(calls.count) browser \(calls.count == 1 ? "action" : "actions")", systemImage: "wrench.and.screwdriver")
+		}
+		.font(.caption)
+		.foregroundStyle(.secondary)
+		.tint(Color.secondary)
+		.accessibilityIdentifier("ai-chat-tool-activity")
+	}
+}
+
 /// Observation boundary for per-token chat streaming. The transcript
 /// and composer never subscribe directly to preview text.
 private struct BrowserAIChatStreamingResponse: View {
@@ -392,8 +514,9 @@ private struct BrowserAIChatStreamingResponse: View {
 	var body: some View {
 		Group {
 			if chat.isResponding {
+				if !chat.toolCalls.isEmpty { BrowserAIChatToolActivity(calls: chat.toolCalls) }
 				if presentedPreview.isEmpty {
-					ProgressView(chat.activity)
+					BrowserAIChatThinkingIndicator(tint: browser.theme.tabColor, activity: chat.activity)
 				} else {
 					#if os(macOS)
 						BrowserAIChatMarkdown(
@@ -419,6 +542,11 @@ private struct BrowserAIChatStreamingResponse: View {
 					#endif
 				}
 			}
+			if !chat.isResponding, chat.error != nil, !chat.toolCalls.isEmpty,
+			   chat.messages.last?.toolCalls?.last?.id != chat.toolCalls.last?.id {
+				BrowserAIChatToolActivity(calls: chat.toolCalls)
+			}
+
 			if chat.canRetry {
 				Button("Retry Message", systemImage: "arrow.clockwise", action: onRetry)
 					.buttonStyle(.glass)

@@ -20,65 +20,81 @@ struct BrowserAIModelControls: View {
 	}
 
 	var body: some View {
-		VStack(alignment: .leading, spacing: 8) {
-			Button(selected?.title ?? "Choose Model", systemImage: "cpu") { showingModels = true }
-				.lineLimit(1)
-				.accessibilityLabel("Model: \(selected?.title ?? "Choose Model")")
-				.accessibilityIdentifier("\(identifierPrefix)-model")
-				.popover(isPresented: $showingModels) {
-					List {
-						if loading {
-							ProgressView("Retrieving Models")
-						}
-						if let error {
-							Text(error)
-								.foregroundStyle(.secondary)
-								.fixedSize(horizontal: false, vertical: true)
-						}
-						#if os(macOS)
-							if error != nil {
-								Button("Allow Account Files", systemImage: "folder.badge.plus") {
-									Task {
-										if await BrowserAICLI.authorize(provider: provider) {
-											await refresh()
-										}
-									}
-								}
-								.accessibilityIdentifier("ai-allow-account-files")
-								Button("Allow Installed Command", systemImage: "terminal") {
-									Task {
-										if await BrowserAICLI.authorizeCommand(provider: provider) {
-											await refresh()
-										}
-									}
-								}
-								.accessibilityIdentifier("ai-allow-installed-command")
-							}
-						#endif
-						ForEach(models) { model in
-							Button(model.title, systemImage: "cpu") {
-								selectedProvider = provider
-								selectedModelID = model.id
-								selectedReasoning = model.reasoningLevels.contains("low") ? "low" : model.defaultReasoning ?? ""
-								showingModels = false
-							}
-							.accessibilityIdentifier("\(identifierPrefix)-model-\(model.id)")
+		Button { showingModels = true } label: {
+			HStack(spacing: 5) {
+				Text(selected?.title ?? (selectedModelID.isEmpty ? "Choose Model" : selectedModelID))
+				Image(systemName: "chevron.down").font(.caption2)
+			}
+			.font(.body)
+			.foregroundStyle(.secondary)
+		}
+		.lineLimit(1)
+		.accessibilityLabel("Model: \(selected?.title ?? "Choose Model")")
+		.accessibilityIdentifier("\(identifierPrefix)-model")
+		.popover(isPresented: $showingModels) {
+			List {
+				Section("Reasoning") {
+					Picker("Reasoning", selection: $selectedReasoning) {
+						Text("Provider Default").tag("")
+						ForEach(selected?.reasoningLevels ?? [], id: \.self) { level in
+							Text(level.capitalized).tag(level)
 						}
 					}
-					.listStyle(.sidebar)
-					.scrollContentBackground(.hidden)
-					.frame(width: 340, height: 350)
-					.task { await refresh() }
+					.pickerStyle(.menu)
+					.accessibilityIdentifier("\(identifierPrefix)-reasoning")
 				}
-			Picker("Reasoning", selection: $selectedReasoning) {
-				Text("Provider Default").tag("")
-				ForEach(selected?.reasoningLevels ?? [], id: \.self) { level in
-					Text(level.capitalized).tag(level)
+				if loading {
+					ProgressView("Retrieving Models")
+				}
+				if let error {
+					Text(error)
+						.foregroundStyle(.secondary)
+						.fixedSize(horizontal: false, vertical: true)
+				}
+				#if os(macOS)
+					if error != nil {
+						Button("Allow Account Files", systemImage: "folder.badge.plus") {
+							Task {
+								if await BrowserAICLI.authorize(provider: provider) {
+									await refresh()
+								}
+							}
+						}
+						.accessibilityIdentifier("ai-allow-account-files")
+						Button("Allow Installed Command", systemImage: "terminal") {
+							Task {
+								if await BrowserAICLI.authorizeCommand(provider: provider) {
+									await refresh()
+								}
+							}
+						}
+						.accessibilityIdentifier("ai-allow-installed-command")
+					}
+				#endif
+				ForEach(models) { model in
+					Button {
+						selectedProvider = provider
+						selectedModelID = model.id
+						selectedReasoning = model.reasoningLevels.contains("low") ? "low" : model.defaultReasoning ?? ""
+						showingModels = false
+					} label: {
+						HStack {
+							Text(model.title).font(.body)
+							Spacer()
+							if model.id == selectedModelID { Image(systemName: "checkmark").font(.body) }
+						}
+						.contentShape(Rectangle())
+					}
+					.buttonStyle(.plain)
+					.accessibilityIdentifier("\(identifierPrefix)-model-\(model.id)")
 				}
 			}
-			.accessibilityIdentifier("\(identifierPrefix)-reasoning")
+			.listStyle(.sidebar)
+			.scrollContentBackground(.hidden)
+			.frame(width: 340, height: 350)
+			.task { await refresh() }
 		}
-		.buttonStyle(.glass)
+		.buttonStyle(.plain)
 		.disabled(isDisabled)
 		.task(id: provider) {
 			if selectedProvider != provider {
@@ -93,6 +109,11 @@ struct BrowserAIModelControls: View {
 
 	private func refresh() async {
 		let requestedProvider = provider
+		guard BrowserAICLI.isProviderDetected(requestedProvider) else {
+			models = []
+			error = "This provider is not installed."
+			return
+		}
 		guard loadingProvider != requestedProvider else { return }
 		loadingProvider = requestedProvider
 		loading = true
