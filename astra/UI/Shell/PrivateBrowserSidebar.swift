@@ -2,27 +2,33 @@ import SwiftUI
 
 struct PrivateBrowserSidebar: View {
 	let browser: Browser
+	var topMargin: CGFloat = 0
 
 	var body: some View {
-		ScrollView {
-			VStack(spacing: 2) {
-				Label("Private Browsing", systemImage: "eye.slash")
-					.font(.headline)
-					.frame(maxWidth: .infinity, alignment: .leading)
-					.padding(.vertical, 12)
-				ForEach(browser.tabs) { tab in
-					PrivateBrowserTabRow(tab: tab, browser: browser)
-				}
-				Button("New Tab", systemImage: "plus") {
-					browser.requestNewTab()
-				}
-				.buttonStyle(.plain)
-				.frame(maxWidth: .infinity, alignment: .leading)
-				.padding(8)
-				.accessibilityIdentifier("private-new-tab")
+		let tabs = browser.tabs
+		let items = [BrowserSidebarItem(id: "private-header", kind: .privateHeader, height: 48)]
+			+ tabs.map { BrowserSidebarItem(id: $0.id.uuidString, height: 34, tabID: $0.id) }
+			+ [BrowserSidebarItem(id: "private-new-tab", kind: .newTab, height: 34)]
+		BrowserSidebarScrollView(items: items, revision: browser.selectedTabID, top: topMargin) { item in
+			switch item.kind {
+				case .privateHeader:
+					Label("Private Browsing", systemImage: "eye.slash")
+						.font(.headline)
+						.frame(maxWidth: .infinity, alignment: .leading)
+						.padding(.vertical, 12)
+				case .tab:
+					if let tab = item.tabID.flatMap({ browser.tabsByID[$0] }) {
+						PrivateBrowserTabRow(tab: tab, browser: browser)
+					}
+				case .newTab:
+					Button("New Tab", systemImage: "plus") { browser.requestNewTab() }
+						.buttonStyle(.plain)
+						.frame(maxWidth: .infinity, alignment: .leading)
+						.padding(8)
+						.accessibilityIdentifier("private-new-tab")
+				default:
+					EmptyView()
 			}
-			.padding(.horizontal, BrowserChromeMetrics.shellEdgePadding)
-			.padding(.bottom, 48)
 		}
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
 		.accessibilityIdentifier("private-sidebar")

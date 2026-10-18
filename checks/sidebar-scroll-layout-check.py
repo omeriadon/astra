@@ -9,14 +9,21 @@ row = (root / "astra/UI/Tabs/BrowserTabRow.swift").read_text()
 favourite = (root / "astra/UI/Tabs/BrowserFavouriteTile.swift").read_text()
 fade = (root / "astra/UI/Shell/topVariableBlur.swift").read_text()
 
-# Lazy children must live directly in the vertical scrolling stack rather than
-# in a single tall eager VStack that realizes every tab on the first frame.
-assert "LazyVGrid(" in sidebar
-assert "ForEach(ungroupedNormalTabs)" in sidebar
-assert "Section {" in sidebar and ".reorderable(collectionID: SidebarTabCollection.todayGroup(group.id))" in sidebar
-for area in ("favourite", "pinned", "normal"):
-    assert f".reorderable(collectionID: SidebarTabCollection.{area})" in sidebar
-assert ".reorderContainer(for: BrowserTab.self, in: SidebarTabCollection.self" in sidebar
+# The scroll viewport and cell virtualization are native on both platforms.
+# A single NSHostingView around LazyVStack would make all rows eager.
+native = (root / "astra/UI/Shell/NativeSidebar/BrowserSidebarScrollView.swift").read_text()
+assert "BrowserSidebarScrollView(" in sidebar
+assert "ScrollView {" not in sidebar and "LazyVStack(" not in sidebar
+assert "NSScrollView()" in native and "NSCollectionView()" in native
+assert "UICollectionView(frame:" in native and "UIHostingConfiguration" in native
+assert "host.sizingOptions = []" in native
+assert "if contentChanged, !structureChanged" in native
+assert "visibleIndices(in:" in native
+assert "prepareForReuse()" in native and "AnyView(EmptyView())" in native
+for area in ("favourite", "pinned", "normal", "folder", "todayGroup"):
+    assert f"collection: .{area}" in sidebar
+assert "applyNativeReorder" in sidebar and "sourceIDs = sources" in sidebar
+assert "sidebarSelection.tabIDs.count > 1" in sidebar
 
 # Tab selection must never programmatically scroll, even to reveal off-screen tabs.
 assert "ScrollViewReader" not in sidebar
@@ -27,14 +34,16 @@ assert ".onChange(of: selectedID" not in sidebar
 # non-hovered row's SwiftUI state.
 assert re.search(r"if isHovered\s*(?:&&|,)\s*onSelectTab == nil \{", row)
 assert re.search(r"if previewEnabled\s*(?:&&|,)\s*isHovered \{", favourite)
-assert row.count(".onGeometryChange(for: CGRect.self)") == 1
-assert favourite.count(".onGeometryChange(for: CGRect.self)") == 1
+assert "BrowserWindowFrameReader { updateHoveredFrame($0) }" in row
+assert ".onGeometryChange(for: CGRect.self)" not in row
+assert "BrowserWindowFrameReader { recordHoverFrame($0) }" in favourite
+assert ".onGeometryChange(for: CGRect.self)" not in favourite
 assert "hoverFrame = .zero" in row and "hoverFrame = .zero" in favourite
 title = row.split("private struct TabTitleView: View {", 1)[1].split("private struct TabCloseButton", 1)[0]
 assert "GeometryReader {" not in title
 assert "titleFadeMask(width:" not in title
 assert ".mask {" in title
-assert ".frame(width: max(0, geometry.size.width)" in sidebar
+assert "top: topMargin" in sidebar
 
 # Keep variable-blur Haze in Low Power Mode without full-subtree
 # compositing. Reduce Transparency still disables blur.
@@ -49,4 +58,4 @@ assert "blurScale:" not in fade
 assert "maxBlurRadius: 3, isolatesBackdrop: true" in fade
 assert "maxBlurRadius: 2, isolatesBackdrop: true" in fade
 
-print("Sidebar lazy layout, hover-only geometry, and low-power fade checks passed")
+print("Sidebar native virtualization, hover-only geometry, and low-power fade checks passed")

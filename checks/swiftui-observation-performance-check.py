@@ -17,11 +17,13 @@ assert "projectionCache.resolve(" in sidebar
 assert "cached.structureRevision == structureRevision" in sidebar
 assert 'BrowserLog.duration(.performance, "sidebar.projection.resolve"' in sidebar
 assert "cached.tabIDs == space.tabIDs" not in sidebar
-assert re.search(r"LazyVStack\(spacing: (?:2|onSelectTab == nil \? 2 : 8)\)", sidebar)
+assert "BrowserSidebarScrollView(" in sidebar
+assert "SidebarContentRevision(" in sidebar
+assert "guard resizeStartWidth == nil else { return }" in split
 assert re.search(r"if isHovered\s*(?:&&|,)\s*onSelectTab == nil", row)
 assert re.search(r"if previewEnabled\s*(?:&&|,)\s*isHovered", favourite)
-assert "onAppear { updateHoveredFrame" in row
-assert "onAppear { recordHoverFrame" in favourite
+assert "BrowserWindowFrameReader { updateHoveredFrame" in row
+assert "BrowserWindowFrameReader { recordHoverFrame" in favourite
 assert "lastActionScanAt" in chat
 assert "for call in turn.actions where seen.count < 5" in chat
 assert "if preview != turn.response" in chat

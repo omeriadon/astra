@@ -174,13 +174,7 @@ struct BrowserFavouriteTile: View {
 				}
 				.background {
 					if previewEnabled, isHovered {
-						GeometryReader { proxy in
-							Color.clear
-								.onAppear { recordHoverFrame(proxy.frame(in: .global)) }
-								.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
-									recordHoverFrame(frame)
-								}
-						}
+						BrowserWindowFrameReader { recordHoverFrame($0) }
 						.allowsHitTesting(false)
 					}
 				}

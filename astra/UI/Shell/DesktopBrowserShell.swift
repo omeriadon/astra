@@ -113,6 +113,11 @@ struct DesktopBrowserShell: View {
 	#if os(macOS)
 		private func updateWindowMinimumSize() {
 			guard let window = hostWindow else { return }
+			if presentedSidebarShown == sidebarShown, presentedAISidebarShown == showsAISidebar {
+				reservedMinimumWidth = minimumWindowWidth
+				window.setBrowserMinimumContentWidth(reservedMinimumWidth)
+				return
+			}
 			paneTransitionGeneration += 1
 			let generation = paneTransitionGeneration
 			reservedMinimumWidth = max(reservedMinimumWidth, minimumWindowWidth)
@@ -507,8 +512,7 @@ private struct ShellSidebarColumn: View {
 		return ZStack(alignment: .top) {
 			Group {
 				if browser.isPrivate {
-					PrivateBrowserSidebar(browser: browser)
-						.sidebarScrollContentMargins(top: sidebarHeaderReservation)
+					PrivateBrowserSidebar(browser: browser, topMargin: sidebarHeaderReservation)
 				} else {
 					ShellSpaceTabList(
 						browser: browser,
@@ -630,7 +634,6 @@ private struct ShellSpaceTabList: View {
 		)
 		.id(space.id)
 		.foregroundStyle(space.theme.foregroundColor)
-		.sidebarScrollContentMargins(top: BrowserChromeMetrics.topBarRegionHeight + 5)
 		.accessibilityIdentifier("sidebar-space-pages")
 		.opacity(listOpacity)
 		.allowsHitTesting(space.id == browser.selectedSpace.id)

@@ -24,3 +24,36 @@ jobs:
         run: |
           set -euo pipefail
           python3 checks/sidebar-scroll-layout-check.py
+
+  native:
+    name: Native sidebar viewport
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and exercise production AppKit viewport with 10,000 rows
+        run: |
+          swiftc -swift-version 6 -parse-as-library \
+            astra/UI/Shell/NativeSidebar/BrowserSidebarLayout.swift \
+            astra/UI/Shell/NativeSidebar/BrowserSidebarScrollView.swift \
+            astra/UI/Tabs/BrowserWindowFrameReader.swift \
+            checks/native-sidebar-check.swift \
+            -o "$RUNNER_TEMP/native-sidebar-check"
+          "$RUNNER_TEMP/native-sidebar-check"
+      - name: Typecheck production UIKit viewport against the simulator SDK
+        run: |
+          SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          ARCH="$(uname -m)"
+          # Minimal names used by the shared viewport, without importing the app.
+          cat > "$RUNNER_TEMP/sidebar-stubs.swift" <<'SWIFT'
+          import Foundation
+          enum SidebarTabCollection: Hashable, Sendable {
+            case favourite, pinned, normal, folder(UUID), todayGroup(String)
+          }
+          enum BrowserChromeMetrics { static let shellEdgePadding: CGFloat = 4 }
+          SWIFT
+          xcrun swiftc -typecheck -swift-version 6 -sdk "$SDK" \
+            -target "$ARCH-apple-ios18.0-simulator" \
+            astra/UI/Shell/NativeSidebar/BrowserSidebarLayout.swift \
+            astra/UI/Shell/NativeSidebar/BrowserSidebarScrollView.swift \
+            "$RUNNER_TEMP/sidebar-stubs.swift"
