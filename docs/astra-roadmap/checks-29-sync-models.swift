@@ -107,7 +107,6 @@ struct BrowserSyncModelCheck {
 		assert(!outbound.workspace!.spaces[0].tabIDs.contains(localFileTab.id))
 		assert(!outbound.workspace!.spaces[0].pinnedFolders.contains(where: { $0.id == localWorkspace.spaces[0].pinnedFolders[0].id }))
 
-
 		// New Tabs are durable local session state but must never enter
 		// the portable sync payload or disappear when remote changes apply.
 		let blankTab = OpenTab()

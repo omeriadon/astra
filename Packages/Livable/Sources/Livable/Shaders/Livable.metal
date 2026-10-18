@@ -21,7 +21,7 @@ constant int kUniformFloatCount = 23;
 /// The unit direction for the luminance wave.
 ///
 /// This is precomputed from `lvHalton2(200) * kTau`.
-constant float2 kLuminanceWaveDirection = float2(-0.89322430, -0.44961133);
+//constant float2 kLuminanceWaveDirection = float2(-0.89322430, -0.44961133);
 
 // MARK: - Low-discrepancy generators
 

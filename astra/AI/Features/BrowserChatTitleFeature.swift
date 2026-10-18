@@ -16,11 +16,11 @@ struct BrowserChatTitleFeature: BrowserAIFeature {
 	}
 
 	func request(for input: Input) throws -> BrowserAIRequest {
-		BrowserAIRequest(
+		try BrowserAIRequest(
 			instructions: BrowserAIPrompts.chatTitle,
-			prompt: String(decoding: try JSONEncoder().encode([
+			prompt: String(decoding: JSONEncoder().encode([
 				"userRequest": String(input.question.prefix(2000)),
-				"assistantAnswer": String(input.answer.prefix(1500))
+				"assistantAnswer": String(input.answer.prefix(1500)),
 			]), as: UTF8.self),
 			maximumResponseTokens: 48
 		)

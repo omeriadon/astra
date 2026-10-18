@@ -18,7 +18,7 @@ private enum Probe {
 
 	static func content(_ items: [BrowserSidebarItem], revision: Int = 0, top: CGFloat = 38) -> some View {
 		BrowserSidebarScrollView(items: items, revision: revision, top: top) { item in
-			let _ = { factories += 1 }()
+			let _ = factories += 1
 			Text(item.id).frame(height: item.height)
 				.background { BrowserWindowFrameReader { anchors[item.id] = $0 } }
 		}
@@ -29,7 +29,7 @@ private enum Probe {
 	}
 
 	static func pulse(_ view: NSView) {
-		for _ in 0..<3 {
+		for _ in 0 ..< 3 {
 			view.layoutSubtreeIfNeeded()
 			RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.03))
 		}
@@ -42,7 +42,7 @@ struct NativeSidebarCheck {
 		geometryChecks()
 		let application = NSApplication.shared
 		application.setActivationPolicy(.prohibited)
-		let items = (0..<10_000).map { BrowserSidebarItem(id: "tab-\($0)", tabID: UUID(), collection: .normal) }
+		let items = (0 ..< 10000).map { BrowserSidebarItem(id: "tab-\($0)", tabID: UUID(), collection: .normal) }
 		let host = NSHostingView(rootView: Probe.content(items))
 		host.sizingOptions = []
 		let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
@@ -53,7 +53,7 @@ struct NativeSidebarCheck {
 		guard let scroll = Probe.descendants(host, of: NSScrollView.self).first,
 		      let collection = scroll.documentView as? NSCollectionView else { fatalError("Viewport must be NSScrollView + NSCollectionView") }
 		precondition(Probe.factories > 0 && Probe.factories < 100, "Must instantiate viewport rows, not all 10,000")
-		precondition(collection.numberOfItems(inSection: 0) == 10_000)
+		precondition(collection.numberOfItems(inSection: 0) == 10000)
 		// Header reservation changes at the top must reveal space for the header,
 		// rather than compensating with a new nonzero scroll offset.
 		host.rootView = Probe.content(items, top: 100)
@@ -74,9 +74,12 @@ struct NativeSidebarCheck {
 		let origin = scroll.contentView.bounds.origin.y
 		if let path = collection.indexPathsForVisibleItems().min(by: { $0.item < $1.item }),
 		   let layout = collection.collectionViewLayout as? BrowserSidebarCollectionLayout,
-		   let anchor = Probe.anchors[items[path.item].id] {
+		   let anchor = Probe.anchors[items[path.item].id]
+		{
 			precondition(abs(anchor.minY - (layout.geometry.frames[path.item].minY - origin)) < 0.5, "Preview anchor is local to a reused host instead of the window")
-		} else { fatalError("Visible hosted row did not publish its window frame") }
+		} else {
+			fatalError("Visible hosted row did not publish its window frame")
+		}
 		let beforeSelection = Probe.factories
 		host.rootView = Probe.content(items, revision: 1)
 		Probe.pulse(host)
@@ -91,9 +94,9 @@ struct NativeSidebarCheck {
 	}
 
 	static func geometryChecks() {
-		let favourites = (0..<9).map { BrowserSidebarItem(id: "f-\($0)", kind: .favourite, isFavourite: true, tabID: UUID(), collection: .favourite) }
+		let favourites = (0 ..< 9).map { BrowserSidebarItem(id: "f-\($0)", kind: .favourite, isFavourite: true, tabID: UUID(), collection: .favourite) }
 		let items = favourites + [.init(id: "pinned", kind: .pinnedHeader, height: 20, collection: .pinned)]
-			+ (0..<10_000).map { BrowserSidebarItem(id: "n-\($0)", tabID: UUID(), collection: .normal) }
+			+ (0 ..< 10000).map { BrowserSidebarItem(id: "n-\($0)", tabID: UUID(), collection: .normal) }
 		for width: CGFloat in [0, 180, 260, 400] {
 			let geometry = BrowserSidebarLayoutGeometry(items: items, width: width, top: 38, padding: 4, spacing: 2)
 			precondition(geometry.frames.count == items.count)

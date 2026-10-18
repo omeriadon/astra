@@ -67,7 +67,9 @@ struct BrowserAIChatSidebar: View {
 									if let calls = message.toolCalls, !calls.isEmpty {
 										BrowserAIChatToolActivity(calls: calls)
 									}
-									if !message.text.isEmpty { chatMarkdown(message.text, streaming: false) }
+									if !message.text.isEmpty {
+										chatMarkdown(message.text, streaming: false)
+									}
 									ForEach(message.augmentArtifacts ?? []) { artifact in
 										artifactCard(artifact)
 									}
@@ -333,7 +335,9 @@ struct BrowserAIChatSidebar: View {
 			Image(systemName: "globe").foregroundStyle(.secondary)
 			VStack(alignment: .leading, spacing: 2) {
 				Text(title).font(.caption.weight(.medium)).lineLimit(1)
-				if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+				if let subtitle {
+					Text(subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+				}
 			}
 			Spacer(minLength: 4)
 			Button("Remove Page Context", systemImage: "xmark", action: remove)
@@ -514,7 +518,9 @@ private struct BrowserAIChatStreamingResponse: View {
 	var body: some View {
 		Group {
 			if chat.isResponding {
-				if !chat.toolCalls.isEmpty { BrowserAIChatToolActivity(calls: chat.toolCalls) }
+				if !chat.toolCalls.isEmpty {
+					BrowserAIChatToolActivity(calls: chat.toolCalls)
+				}
 				if presentedPreview.isEmpty {
 					BrowserAIChatThinkingIndicator(tint: browser.theme.tabColor, activity: chat.activity)
 				} else {
@@ -543,7 +549,8 @@ private struct BrowserAIChatStreamingResponse: View {
 				}
 			}
 			if !chat.isResponding, chat.error != nil, !chat.toolCalls.isEmpty,
-			   chat.messages.last?.toolCalls?.last?.id != chat.toolCalls.last?.id {
+			   chat.messages.last?.toolCalls?.last?.id != chat.toolCalls.last?.id
+			{
 				BrowserAIChatToolActivity(calls: chat.toolCalls)
 			}
 

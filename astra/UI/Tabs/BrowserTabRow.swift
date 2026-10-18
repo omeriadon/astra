@@ -221,7 +221,7 @@ struct BrowserTabRow: View {
 			// Do not install a geometry observer for every non-hovered tab.
 			if isHovered, onSelectTab == nil {
 				BrowserWindowFrameReader { updateHoveredFrame($0) }
-				.allowsHitTesting(false)
+					.allowsHitTesting(false)
 			}
 		}
 		.onChange(of: tab.id) { oldID, _ in

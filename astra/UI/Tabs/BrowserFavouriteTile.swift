@@ -175,7 +175,7 @@ struct BrowserFavouriteTile: View {
 				.background {
 					if previewEnabled, isHovered {
 						BrowserWindowFrameReader { recordHoverFrame($0) }
-						.allowsHitTesting(false)
+							.allowsHitTesting(false)
 					}
 				}
 				.onChange(of: tabID) { oldID, _ in

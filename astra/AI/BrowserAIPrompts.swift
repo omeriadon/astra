@@ -2,7 +2,7 @@ import Foundation
 
 /// All browser feature instructions. Page content, filenames, and user queries belong in prompts, not here.
 nonisolated enum BrowserAIPrompts {
-	// Keep these behavioral rules shared across provider adapters and page/chat features.
+	/// Keep these behavioral rules shared across provider adapters and page/chat features.
 	private static let userFirst = """
 	Follow the user's latest request and use conversation history to resolve references.
 	Use website context only when it helps with that request; an open page is not itself a request to discuss it.

@@ -2,6 +2,13 @@ import Defaults
 import SwiftUI
 import WebKit
 
+private struct SidebarCleanupTaskID: Equatable {
+	let spaceID: UUID
+	let action: String?
+	let featuresEnabled: Bool
+	let isActiveSpace: Bool
+}
+
 struct ShellSidebarListView: View {
 	let browser: Browser
 	let space: BrowserSpace
@@ -64,21 +71,38 @@ struct ShellSidebarListView: View {
 			cleanup: cleanupAction, canUndo: todayGroupsUndo != nil, collapsed: collapsedFolderIDs,
 			compact: onSelectTab != nil
 		)
-		return BrowserSidebarScrollView(
-			items: items, revision: revision, top: topMargin,
-			padding: onSelectTab == nil ? BrowserChromeMetrics.shellEdgePadding : 16,
+
+		return BrowserSidebarScrollView<SidebarContentRevision, AnyView>(
+			items: items,
+			revision: revision,
+			top: topMargin,
+			padding: onSelectTab == nil
+				? BrowserChromeMetrics.shellEdgePadding : 16,
 			spacing: onSelectTab == nil ? 2 : 8,
-			move: !browser.isPrivate && onSelectTab == nil ? applyNativeReorder : nil
+			move: !browser.isPrivate && onSelectTab == nil
+				? applyNativeReorder : nil
 		) { item in
-			sidebarRow(item, projection: projection, splitTabs: splitTabs, openElsewhereIDs: openElsewhereIDs)
+			AnyView(sidebarRow(
+				item,
+				projection: projection,
+				splitTabs: splitTabs,
+				openElsewhereIDs: openElsewhereIDs
+			))
 		}
 		#if os(macOS)
 		.onHover { hovering in
-			if !hovering { BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID) }
+			if !hovering {
+				BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
+			}
 		}
 		#endif
 		// Keep cleanup attached to the interactive sidebar, not the divider's lazy row.
-		.task(id: "\(space.id)|\(cleanupAction ?? "")|\(allFeatures)|\(isActiveSpace)") {
+		.task(id: SidebarCleanupTaskID(
+			spaceID: space.id,
+			action: cleanupAction,
+			featuresEnabled: allFeatures,
+			isActiveSpace: isActiveSpace
+		)) {
 			guard isActiveSpace || onSelectTab != nil else { return }
 			await performTabCleanup(in: space, tabs: normalTabs)
 		}
@@ -130,7 +154,11 @@ struct ShellSidebarListView: View {
 					PinnedFolderHeader(folder: folder, browser: browser, isExpanded: Binding(
 						get: { !collapsedFolderIDs.contains(id) },
 						set: { expanded in
-							if expanded { collapsedFolderIDs.remove(id) } else { collapsedFolderIDs.insert(id) }
+							if expanded {
+								collapsedFolderIDs.remove(id)
+							} else {
+								collapsedFolderIDs.insert(id)
+							}
 						}
 					))
 				}
@@ -162,7 +190,9 @@ struct ShellSidebarListView: View {
 
 	private func nativeItems(projection: SidebarProjectionCache.Projection, splitTabs: (BrowserTab, BrowserTab)?) -> [BrowserSidebarItem] {
 		var items: [BrowserSidebarItem] = []
-		if let splitTabs { items.append(.init(id: "split-\(splitTabs.0.id)-\(splitTabs.1.id)", kind: .split, height: 28)) }
+		if let splitTabs {
+			items.append(.init(id: "split-\(splitTabs.0.id)-\(splitTabs.1.id)", kind: .split, height: 28))
+		}
 		if projection.favouriteTabs.isEmpty {
 			items.append(.init(id: "empty-favourites", kind: .emptyFavourites, height: 14, collection: .favourite))
 		} else {

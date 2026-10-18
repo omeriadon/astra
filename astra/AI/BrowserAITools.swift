@@ -111,8 +111,8 @@ nonisolated struct BrowserAIToolCall: Codable, Sendable {
 		func request(for input: Input) -> BrowserAIRequest {
 			let payload = (try? JSONSerialization.data(withJSONObject: ["referenceContext": input.context, "userRequest": input.question], options: [.sortedKeys])) ?? Data()
 			return .init(instructions: BrowserAIPrompts.chatTools + "\nEnabled tools and arguments (all argument values are strings):\n" + input.catalog,
-			      prompt: String(decoding: payload, as: UTF8.self), maximumResponseTokens: 8192,
-			      images: input.images.isEmpty ? nil : input.images, reasoningEffort: input.reasoning, files: input.files.isEmpty ? nil : input.files)
+			             prompt: String(decoding: payload, as: UTF8.self), maximumResponseTokens: 8192,
+			             images: input.images.isEmpty ? nil : input.images, reasoningEffort: input.reasoning, files: input.files.isEmpty ? nil : input.files)
 		}
 
 		func output(from text: String) throws -> Turn {
@@ -303,23 +303,23 @@ enum BrowserAITools {
 				#if ASTRA_WEBSITE_APP_RUNTIME
 					throw BrowserAIError.toolDenied
 				#else
-				let offset = arguments["offset"].flatMap(Int.init) ?? 0
-				let limit = arguments["limit"].flatMap(Int.init) ?? 12
-				guard arguments["offset"] == nil || Int(arguments["offset"]!) != nil,
-				      arguments["limit"] == nil || Int(arguments["limit"]!) != nil,
-				      offset >= 0, (1 ... 30).contains(limit) else { throw BrowserAIError.invalidRequest }
-				return try await BrowserWebsiteAugment.inspect(tab: tab(), selector: arguments["selector"], offset: offset, limit: limit)
+					let offset = arguments["offset"].flatMap(Int.init) ?? 0
+					let limit = arguments["limit"].flatMap(Int.init) ?? 12
+					guard arguments["offset"] == nil || Int(arguments["offset"]!) != nil,
+					      arguments["limit"] == nil || Int(arguments["limit"]!) != nil,
+					      offset >= 0, (1 ... 30).contains(limit) else { throw BrowserAIError.invalidRequest }
+					return try await BrowserWebsiteAugment.inspect(tab: tab(), selector: arguments["selector"], offset: offset, limit: limit)
 				#endif
 			case .augmentWebsite:
 				#if ASTRA_WEBSITE_APP_RUNTIME
 					throw BrowserAIError.toolDenied
 				#else
-				_ = try tab()
-				let artifact = try await BrowserWebsiteAugment.apply(arguments: arguments, browser: browser)
-				try Task.checkCancellation()
-				guard !browser.isPrivate, browser.selectedSpace.id == spaceID else { throw BrowserAIError.toolDenied }
-				try onArtifact?(artifact)
-				return "Created Website Augment artifact \(artifact.id): \(artifact.title). It is available in this chat."
+					_ = try tab()
+					let artifact = try await BrowserWebsiteAugment.apply(arguments: arguments, browser: browser)
+					try Task.checkCancellation()
+					guard !browser.isPrivate, browser.selectedSpace.id == spaceID else { throw BrowserAIError.toolDenied }
+					try onArtifact?(artifact)
+					return "Created Website Augment artifact \(artifact.id): \(artifact.title). It is available in this chat."
 				#endif
 			case .webSearch:
 				guard let query = arguments["query"], !query.isEmpty else { throw BrowserAIError.invalidRequest }

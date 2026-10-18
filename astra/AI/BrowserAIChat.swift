@@ -338,7 +338,9 @@ final class BrowserAIChat {
 				?? (snapshot.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") ? "" : snapshot)
 			if snapshot.contains("augment_website") || snapshot.contains("get_page_structure") {
 				isAugmenting = true
-				if augmentingTabID == nil { augmentingTabID = browser.aiSidebarPageTab?.id }
+				if augmentingTabID == nil {
+					augmentingTabID = browser.aiSidebarPageTab?.id
+				}
 			}
 		}
 		preview = turn.response

@@ -130,13 +130,15 @@ struct NewTabShaderSurface: View {
 
 	private var sampleOffset: CGSize {
 		switch preset {
-		case .holographic, .topographic: .zero
-		case .datamosh: CGSize(width: 96, height: 96)
-		default: CGSize(width: 64, height: 64)
+			case .holographic, .topographic: .zero
+			case .datamosh: CGSize(width: 96, height: 96)
+			default: CGSize(width: 64, height: 64)
 		}
 	}
 
-	private func value(_ key: String) -> Float { Float(settings.value(preset.rawValue, key)) }
+	private func value(_ key: String) -> Float {
+		Float(settings.value(preset.rawValue, key))
+	}
 
 	private func textureShader(size: CGSize) -> Shader {
 		let (locations, colors) = positionedPalette

@@ -164,7 +164,9 @@ struct BrowserSplitView<Sidebar: View, Content: View>: View, Animatable {
 			.animation(nil, value: reservedWidth)
 			.onChange(of: resizeStartWidth) { _, startWidth in
 				// GestureState also resets on cancellation, which has no onEnded.
-				if startWidth == nil { reportWidth(width) }
+				if startWidth == nil {
+					reportWidth(width)
+				}
 			}
 			.onChange(of: width, initial: true) { _, width in
 				// A drag is local layout. Publishing it to DesktopBrowserShell starts

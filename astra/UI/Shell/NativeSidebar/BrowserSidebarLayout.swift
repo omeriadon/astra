@@ -7,6 +7,7 @@ struct BrowserSidebarItem: Equatable {
 		case tab, favourite, split, pinnedHeader, divider, newTab, emptyFavourites, privateHeader
 		case folder(UUID), group(String)
 	}
+
 	let id: String
 	var kind: Kind = .tab
 	var height: CGFloat = 30
@@ -22,7 +23,9 @@ struct BrowserSidebarItem: Equatable {
 	}
 
 	var indentation: CGFloat {
-		if case .folder(_)? = collection { return 12 }
+		if case .folder(_)? = collection {
+			return 12
+		}
 		return 0
 	}
 }
@@ -62,7 +65,9 @@ struct BrowserSidebarLayoutGeometry {
 				y += item.height + spacing
 			}
 		}
-		if inFavourites { y += 42 }
+		if inFavourites {
+			y += 42
+		}
 		contentSize = CGSize(width: width, height: y + 48)
 	}
 
@@ -72,11 +77,17 @@ struct BrowserSidebarLayoutGeometry {
 		var upper = frames.count
 		while lower < upper {
 			let middle = (lower + upper) / 2
-			if frames[middle].maxY <= rect.minY { lower = middle + 1 } else { upper = middle }
+			if frames[middle].maxY <= rect.minY {
+				lower = middle + 1
+			} else {
+				upper = middle
+			}
 		}
 		let start = lower
-		while lower < frames.count, frames[lower].minY < rect.maxY { lower += 1 }
-		return start..<lower
+		while lower < frames.count, frames[lower].minY < rect.maxY {
+			lower += 1
+		}
+		return start ..< lower
 	}
 
 	func insertion(at point: CGPoint) -> (index: Int, after: Bool)? {
@@ -100,7 +111,9 @@ struct BrowserSidebarLayoutGeometry {
 		      let collection = items[insertion.index].collection else { return nil }
 		let item = items[insertion.index]
 		guard item.tabID != nil else { return (collection, nil) } // Empty regions and folder/group headers.
-		if !insertion.after { return (collection, item.tabID) }
+		if !insertion.after {
+			return (collection, item.tabID)
+		}
 		let next = insertion.index + 1
 		// At a section boundary, "after the last favourite" still means
 		// favourite; it must not silently become "before the first pinned tab".

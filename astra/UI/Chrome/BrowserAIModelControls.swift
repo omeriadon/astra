@@ -81,7 +81,9 @@ struct BrowserAIModelControls: View {
 						HStack {
 							Text(model.title).font(.body)
 							Spacer()
-							if model.id == selectedModelID { Image(systemName: "checkmark").font(.body) }
+							if model.id == selectedModelID {
+								Image(systemName: "checkmark").font(.body)
+							}
 						}
 						.contentShape(Rectangle())
 					}
