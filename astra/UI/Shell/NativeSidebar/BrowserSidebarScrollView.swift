@@ -12,6 +12,9 @@ private struct BrowserSidebarTraits: Equatable {
 	let contrast: ColorSchemeContrast
 	let enabled: Bool
 	let controlSize: ControlSize
+	let voiceOver: Bool
+	let differentiateWithoutColor: Bool
+	let displayScale: CGFloat
 
 	init(_ environment: EnvironmentValues) {
 		colorScheme = environment.colorScheme
@@ -23,6 +26,9 @@ private struct BrowserSidebarTraits: Equatable {
 		contrast = environment.colorSchemeContrast
 		enabled = environment.isEnabled
 		controlSize = environment.controlSize
+		voiceOver = environment.accessibilityVoiceOverEnabled
+		differentiateWithoutColor = environment.accessibilityDifferentiateWithoutColor
+		displayScale = environment.displayScale
 	}
 }
 
@@ -99,7 +105,7 @@ struct BrowserSidebarScrollView<Revision: Equatable, Row: View>: NSViewRepresent
 			// when AI inserts groups, folders collapse, or a tab above it closes.
 			let origin = scroll.contentView.bounds.origin
 			let anchor = layout.geometry.visibleIndices(in: scroll.contentView.bounds).first.flatMap { index -> (String, CGFloat)? in
-				guard let old, old.items.indices.contains(index) else { return nil }
+				guard structureChanged, origin.y > 0, let old, old.items.indices.contains(index) else { return nil }
 				return (old.items[index].id, origin.y - layout.geometry.frames[index].minY)
 			}
 			parent = new
@@ -299,7 +305,7 @@ struct BrowserSidebarScrollView<Revision: Equatable, Row: View>: UIViewRepresent
 		let metricsChanged = structureChanged || old?.top != top || old?.padding != padding || old?.spacing != spacing
 		let origin = collection.contentOffset
 		let anchor = coordinator.layout.geometry.visibleIndices(in: collection.bounds).first.flatMap { index -> (String, CGFloat)? in
-			guard let old, old.items.indices.contains(index) else { return nil }
+			guard structureChanged, origin.y > 0, let old, old.items.indices.contains(index) else { return nil }
 			return (old.items[index].id, origin.y - coordinator.layout.geometry.frames[index].minY)
 		}
 		coordinator.parent = self
@@ -356,6 +362,7 @@ struct BrowserSidebarScrollView<Revision: Equatable, Row: View>: UIViewRepresent
 				parent.row(item).environment(\.self, parent.environment).id(item.id)
 			}
 			.margins(.all, 0)
+			.minSize(width: 0, height: 0)
 			cell.backgroundConfiguration = .clear()
 		}
 

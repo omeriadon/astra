@@ -16,8 +16,8 @@ private enum Probe {
 	static var factories = 0
 	static var anchors: [String: CGRect] = [:]
 
-	static func content(_ items: [BrowserSidebarItem], revision: Int = 0) -> some View {
-		BrowserSidebarScrollView(items: items, revision: revision, top: 38) { item in
+	static func content(_ items: [BrowserSidebarItem], revision: Int = 0, top: CGFloat = 38) -> some View {
+		BrowserSidebarScrollView(items: items, revision: revision, top: top) { item in
 			let _ = { factories += 1 }()
 			Text(item.id).frame(height: item.height)
 				.background { BrowserWindowFrameReader { anchors[item.id] = $0 } }
@@ -54,6 +54,13 @@ struct NativeSidebarCheck {
 		      let collection = scroll.documentView as? NSCollectionView else { fatalError("Viewport must be NSScrollView + NSCollectionView") }
 		precondition(Probe.factories > 0 && Probe.factories < 100, "Must instantiate viewport rows, not all 10,000")
 		precondition(collection.numberOfItems(inSection: 0) == 10_000)
+		// Header reservation changes at the top must reveal space for the header,
+		// rather than compensating with a new nonzero scroll offset.
+		host.rootView = Probe.content(items, top: 100)
+		Probe.pulse(host)
+		precondition(abs(scroll.contentView.bounds.origin.y) < 0.1, "Header reservation scrolled a list pinned at the top")
+		host.rootView = Probe.content(items)
+		Probe.pulse(host)
 		let beforeResize = Probe.factories
 		for width in stride(from: 240, through: 400, by: 20) {
 			window.setContentSize(NSSize(width: CGFloat(width), height: 600))
