@@ -17,15 +17,18 @@ assert "projectionCache.resolve(" in sidebar
 assert "cached.structureRevision == structureRevision" in sidebar
 assert 'BrowserLog.duration(.performance, "sidebar.projection.resolve"' in sidebar
 assert "cached.tabIDs == space.tabIDs" not in sidebar
-assert re.search(r"LazyVStack\(spacing: (?:2|onSelectTab == nil \? 2 : 8)\)", sidebar)
+assert "BrowserSidebarScrollView(" in sidebar
+assert "SidebarContentRevision(" in sidebar
+assert "guard resizeStartWidth == nil else { return }" in split
 assert re.search(r"if isHovered\s*(?:&&|,)\s*onSelectTab == nil", row)
 assert re.search(r"if previewEnabled\s*(?:&&|,)\s*isHovered", favourite)
-assert "onAppear { updateHoveredFrame" in row
-assert "onAppear { recordHoverFrame" in favourite
+assert "BrowserWindowFrameReader { updateHoveredFrame" in row
+assert "BrowserWindowFrameReader { recordHoverFrame" in favourite
 assert "lastPublished" in chat and ".milliseconds(85)" in chat
 assert "BrowserAIOutput.completedObjects(in: snapshot)" not in chat
 assert "preview = turn.response" in chat
-assert "abs(width - lastReportedWidth) < 8" in split
+assert "guard lastReportedWidth != width else { return }" in split
+assert ".onChange(of: resizeStartWidth)" in split
 assert "tabCollectionRevision &+= 1" in browser
 assert "sidebarStructureRevision &+= 1" in browser
 assert "chromeSummaryRevision != itemsRevision" in Path("astra/Web/Downloads/BrowserDownloadManager.swift").read_text()

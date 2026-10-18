@@ -220,13 +220,7 @@ struct BrowserTabRow: View {
 		.background {
 			// Do not install a geometry observer for every non-hovered tab.
 			if isHovered, onSelectTab == nil {
-				GeometryReader { proxy in
-					Color.clear
-						.onAppear { updateHoveredFrame(proxy.frame(in: .global)) }
-						.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
-							updateHoveredFrame(frame)
-						}
-				}
+				BrowserWindowFrameReader { updateHoveredFrame($0) }
 				.allowsHitTesting(false)
 			}
 		}
