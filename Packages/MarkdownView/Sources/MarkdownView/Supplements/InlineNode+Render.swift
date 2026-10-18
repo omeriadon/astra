@@ -7,7 +7,6 @@
 
 import Foundation
 import Litext
-import LRUCache
 import MarkdownParser
 import SwiftMath
 #if canImport(UIKit)
@@ -244,5 +243,5 @@ private enum InlineMathCache {
 		let color: PlatformColor
 	}
 
-	static let storage = LRUCache<Key, NSAttributedString>(countLimit: 512)
+	static let storage = MainActorLRUCache<Key, NSAttributedString>(countLimit: 512)
 }
