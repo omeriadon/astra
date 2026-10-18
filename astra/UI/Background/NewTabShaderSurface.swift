@@ -7,10 +7,11 @@ enum NewTabShaderPreset: String {
 	case holographic
 	case ripple
 	case datamosh
+	case topographic
 
 	var textureIndex: Float {
 		switch self {
-			case .smoke: 0
+			case .smoke, .topographic: 0
 			case .ripple: 1
 			case .datamosh: 2
 			case .holographic: 3
@@ -18,13 +19,15 @@ enum NewTabShaderPreset: String {
 	}
 }
 
-/// Creates themed artwork procedurally rather than loading an external
-/// bitmap. Only the selected new-tab effect mounts a timeline. The clock
+/// Uses procedural Space artwork, or an imported image for Topographic. Only the selected new-tab effect mounts a timeline. The clock
 /// pauses (rather than jumping) on tab switching, occlusion and Reduce Motion.
 struct NewTabShaderSurface: View {
 	let theme: BrowserTheme
 	let preset: NewTabShaderPreset
 	let canAnimate: Bool
+	var settings = NewTabEffectSettings()
+	var imageID = ""
+	@State private var sourceImage: CGImage?
 
 	@Environment(\.colorScheme) private var colorScheme
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -85,15 +88,22 @@ struct NewTabShaderSurface: View {
 				let time = Float(clock.value(at: context.date.timeIntervalSinceReferenceDate))
 				ZStack {
 					baseColor
-					Rectangle()
-						.fill(textureShader(size: geometry.size))
+					source(size: geometry.size)
 						.layerEffect(effectShader(size: geometry.size, time: time),
-						             maxSampleOffset: preset == .holographic ? .zero : CGSize(width: 64, height: 64))
+						             maxSampleOffset: sampleOffset)
 				}
 			}
 		}
 		.allowsHitTesting(false)
 		.accessibilityHidden(true)
+		.task(id: preset == .topographic ? imageID : "") {
+			let id = preset == .topographic ? imageID : ""
+			sourceImage = nil
+			guard !id.isEmpty else { return }
+			let loaded = await Task.detached { NewTabImageStore.load(id) }.value
+			guard !Task.isCancelled else { return }
+			sourceImage = loaded
+		}
 		.onAppear {
 			isVisible = true
 			clock.setRunning(running, at: Date().timeIntervalSinceReferenceDate)
@@ -106,6 +116,27 @@ struct NewTabShaderSurface: View {
 			clock.setRunning(value, at: Date().timeIntervalSinceReferenceDate)
 		}
 	}
+
+	@ViewBuilder
+	private func source(size: CGSize) -> some View {
+		if preset == .topographic, let sourceImage {
+			Image(decorative: sourceImage, scale: 1)
+				.resizable().scaledToFill()
+				.frame(width: size.width, height: size.height).clipped()
+		} else {
+			Rectangle().fill(textureShader(size: size))
+		}
+	}
+
+	private var sampleOffset: CGSize {
+		switch preset {
+		case .holographic, .topographic: .zero
+		case .datamosh: CGSize(width: 96, height: 96)
+		default: CGSize(width: 64, height: 64)
+		}
+	}
+
+	private func value(_ key: String) -> Float { Float(settings.value(preset.rawValue, key)) }
 
 	private func textureShader(size: CGSize) -> Shader {
 		let (locations, colors) = positionedPalette
@@ -122,23 +153,28 @@ struct NewTabShaderSurface: View {
 		switch preset {
 			case .smoke:
 				ShaderLibrary.astraSmokeReveal(
-					.float2(size), .float(time),
-					.float(0.8), .color(smokeColor)
+					.float2(size), .float(time * value("speed")),
+					.float(value("amount")), .float(value("scale")), .float(value("turbulence")), .color(smokeColor)
 				)
 			case .holographic:
 				ShaderLibrary.astraHolographicPrismatic(
 					.float2(size), .float(time),
-					.float(0.92), .float(5.2), .float(1.0), .float(0.785)
+					.float(value("intensity")), .float(value("scale")), .float(value("speed")), .float(value("angle"))
 				)
 			case .ripple:
 				ShaderLibrary.astraLiveRipple(
 					.float2(size), .float(time),
-					.float(17), .float(34), .float(4.8), .float(1.6), .float(3)
+					.float(value("amplitude")), .float(value("frequency")), .float(value("speed")), .float(value("damping")), .float(value("rings"))
+				)
+			case .topographic:
+				ShaderLibrary.astraTopographic(
+					.float2(size), .float(time), .float(value("lineCount")),
+					.float(value("lineWidth")), .float(value("colorize")), .float(value("animate"))
 				)
 			case .datamosh:
 				ShaderLibrary.astraDatamosh(
 					.float2(size), .float(time),
-					.float(0.48), .float(42), .float(0.65), .float(12)
+					.float(value("corruption")), .float(value("smear")), .float(value("bleed")), .float(value("rate"))
 				)
 		}
 	}

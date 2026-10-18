@@ -16,6 +16,9 @@ struct NewTabView: View {
 	@AppStorage("astra.newTabBackgroundStyle") private var backgroundStyle = "default"
 	@AppStorage("astra.newTabDitherConfiguration") private var ditherConfigurationData = Data()
 	@State private var editingDither = false
+	@State private var editingEffect = false
+	@AppStorage("astra.newTabEffectSettings") private var effectSettingsData = Data()
+	@AppStorage("astra.newTabTopographicImage") private var topographicImageID = ""
 	@State private var ditherPointer = DitherPointerInput()
 	@Environment(\.colorScheme) private var colorScheme
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -186,7 +189,7 @@ struct NewTabView: View {
 
 	private var usesDefaultBackground: Bool {
 		switch backgroundStyle {
-			case "float", "dither", "smoke", "ripple", "datamosh": false
+			case "float", "dither", "smoke", "ripple", "datamosh", "topographic": false
 			case "default", "solid", "image", "holographic": true
 			default: true
 		}
@@ -228,22 +231,28 @@ struct NewTabView: View {
 	private var newTabBackground: some View {
 		ZStack {
 			// Every preset has the same dynamic light/dark foundation as Default.
-			// Legacy saved image styles also resolve to Default; no bitmap is loaded.
+			// Legacy image styles resolve to Default. Topographic owns its source image.
 			defaultBackgroundColor
 			if backgroundStyle == "dither" {
 				DitherBackground(theme: browser.theme, configuration: DitherConfiguration.decode(ditherConfigurationData),
 				                 pointer: ditherPointer, canAnimate: animatesBackground)
 			} else if let preset = NewTabShaderPreset(rawValue: backgroundStyle), preset != .holographic {
-				NewTabShaderSurface(theme: browser.theme, preset: preset, canAnimate: animatesBackground)
-					.opacity(preset == .ripple ? 0.56 : 1)
+				NewTabShaderSurface(theme: browser.theme, preset: preset, canAnimate: animatesBackground,
+				                    settings: effectSettings.wrappedValue, imageID: topographicImageID)
+					.opacity(preset == .ripple ? effectSettings.wrappedValue.value("ripple", "opacity") : 1)
 			} else if backgroundStyle == "float" {
 				Rectangle().fill(browser.theme.firstColor.color)
-					.livable(palette: livingPalette, isAnimated: animatesBackground, speed: 1.5)
-					.blur(radius: 30)
+					.livable(palette: livingPalette, isAnimated: animatesBackground, speed: Float(effectSettings.wrappedValue.value("float", "speed")))
+					.blur(radius: effectSettings.wrappedValue.value("float", "blur"))
 					.overlay(defaultBackgroundColor.opacity(0.08))
 			}
 		}
 		.clipped()
+	}
+
+	private var effectSettings: Binding<NewTabEffectSettings> {
+		Binding(get: { NewTabEffectSettings.decode(effectSettingsData) },
+		        set: { effectSettingsData = $0.encoded })
 	}
 
 	private var ditherConfiguration: Binding<DitherConfiguration> {
@@ -281,6 +290,13 @@ struct NewTabView: View {
 				Label("Datamosh", systemImage: backgroundStyle == "datamosh" ? "checkmark" : "waveform.path")
 			}
 
+			Button { backgroundStyle = "topographic" } label: {
+				Label("Topographic", systemImage: backgroundStyle == "topographic" ? "checkmark" : "map")
+			}
+			Divider()
+			if !NewTabEffectSettings.parameters(backgroundStyle).isEmpty {
+				Button("Configure Effect…", systemImage: "slider.horizontal.3") { editingEffect = true }
+			}
 		} label: {
 			Image(systemName: "paintpalette").font(.system(size: 15))
 				.padding(10)
@@ -288,6 +304,10 @@ struct NewTabView: View {
 		}
 		.menuStyle(.borderlessButton)
 		.accessibilityLabel("Customize new tab background")
+		.popover(isPresented: $editingEffect) {
+			NewTabEffectControls(effect: backgroundStyle, settings: effectSettings, imageID: $topographicImageID)
+				.frame(width: 360, height: 560)
+		}
 		.popover(isPresented: $editingDither) {
 			DitherControls(configuration: ditherConfiguration).frame(width: 360, height: 600)
 		}
@@ -428,7 +448,8 @@ struct NewTabView: View {
 			.padding(.vertical, 20)
 			.background {
 				if backgroundStyle == "holographic" {
-					NewTabShaderSurface(theme: browser.theme, preset: .holographic, canAnimate: animatesBackground)
+					NewTabShaderSurface(theme: browser.theme, preset: .holographic, canAnimate: animatesBackground,
+					                    settings: effectSettings.wrappedValue)
 						.overlay {
 							RoundedRectangle(cornerRadius: 24, style: .continuous)
 								.strokeBorder(.white.opacity(0.24), lineWidth: 1)
