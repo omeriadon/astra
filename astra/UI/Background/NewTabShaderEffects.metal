@@ -128,14 +128,14 @@ float3 spaceColor(float2 uv, device const float *points, int pointCount,
 // to the Space's light/dark companion color, not the upstream neutral grey.
 [[ stitchable ]] half4 astraSmokeReveal(
     float2 position, SwiftUI::Layer layer, float2 size, float time,
-    float amount, half4 fogColor
+    float amount, float scale, float turbulence, half4 fogColor
 ) {
     using namespace astra_newtab;
     float2 uv = position / max(size, float2(1.0));
-    float2 smokeUV = uv * 5.0;
+    float2 smokeUV = uv * scale;
     float wx = fbm(smokeUV + float2(time * 0.45, time * 0.15), 3);
     float wy = fbm(smokeUV + float2(time * 0.15, -time * 0.3) + 5.2, 3);
-    float density = fbm(smokeUV + float2(wx, wy) * 1.5
+    float density = fbm(smokeUV + float2(wx, wy) * turbulence
                        + float2(time * 0.22, time * 0.12), 4);
     density = clamp(density * density * amount * 1.5, 0.0, 1.0);
     float2 displaced = clamp(position + (float2(wx, wy) - 0.5) * 8.0 * density,
@@ -234,4 +234,58 @@ float3 spaceColor(float2 uv, device const float *points, int pointCount,
     float edge = 1.0 - step(0.03, min(blockPos.x, blockPos.y));
     smudged.rgb = clamp(smudged.rgb + half3(edge * 0.08), 0.0h, 1.0h);
     return smudged;
+}
+
+// MARK: - Topographic
+// Contour map visualization, converts image into elevation lines
+
+[[ stitchable ]] half4 astraTopographic(
+    float2 position,
+    SwiftUI::Layer layer,
+    float2 size,
+    float time,
+    float lineCount,   // 5-40: number of contour lines
+    float lineWidth,   // 0.01-0.15: thickness
+    float colorize,    // 0-1: blend between original and topo colors
+    float animate      // 0-1: animation speed of elevation shift
+) {
+    float2 uv = position / size;
+    half4 original = layer.sample(position);
+
+    float lum = dot(float3(original.rgb), float3(0.299, 0.587, 0.114));
+    float elevation = lum + time * animate * 0.05;
+
+    float contourValue = fract(elevation * lineCount);
+    float contourLine = 1.0 - smoothstep(lineWidth, lineWidth + 0.02, contourValue)
+                       + 1.0 - smoothstep(lineWidth, lineWidth + 0.02, 1.0 - contourValue);
+    contourLine = clamp(contourLine, 0.0, 1.0);
+
+    float majorContour = fract(elevation * lineCount / 5.0);
+    float majorLine = 1.0 - smoothstep(lineWidth * 2.0, lineWidth * 2.0 + 0.03, majorContour)
+                     + 1.0 - smoothstep(lineWidth * 2.0, lineWidth * 2.0 + 0.03, 1.0 - majorContour);
+    majorLine = clamp(majorLine, 0.0, 1.0);
+
+    half3 topoColor;
+    if (lum < 0.2) {
+        topoColor = mix(half3(0.1h, 0.3h, 0.5h), half3(0.15h, 0.45h, 0.3h), half(lum * 5.0));
+    } else if (lum < 0.5) {
+        topoColor = mix(half3(0.15h, 0.45h, 0.3h), half3(0.8h, 0.75h, 0.4h), half((lum - 0.2) * 3.33));
+    } else if (lum < 0.75) {
+        topoColor = mix(half3(0.8h, 0.75h, 0.4h), half3(0.65h, 0.45h, 0.3h), half((lum - 0.5) * 4.0));
+    } else {
+        topoColor = mix(half3(0.65h, 0.45h, 0.3h), half3(0.95h, 0.95h, 0.97h), half((lum - 0.75) * 4.0));
+    }
+
+    half3 baseColor = mix(original.rgb, topoColor, half(colorize));
+    half3 lineColor = half3(0.15h, 0.12h, 0.1h);
+    half3 majorLineColor = half3(0.05h, 0.04h, 0.03h);
+
+    half3 result = baseColor;
+    result = mix(result, lineColor, half(contourLine * 0.7));
+    result = mix(result, majorLineColor, half(majorLine * 0.9));
+
+    float paper = astra_newtab::noise(uv * 200.0) * 0.06 - 0.03;
+    result += half3(paper);
+
+    return half4(result, original.a);
 }

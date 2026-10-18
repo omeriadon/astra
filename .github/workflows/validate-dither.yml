@@ -5,7 +5,7 @@ on:
     branches: [main, 'release/**']
     paths:
       - 'astra/UI/Background/Dither/**'
-      - 'astra/UI/Background/NewTabShaderSurface.swift'
+      - 'astra/UI/Background/NewTabShader*.swift'
       - 'astra/UI/Background/NewTabShaderEffects.metal'
       - 'checks/new-tab-shaders-check.py'
       - 'astra/UI/Content/NewTabView.swift'
@@ -50,11 +50,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify Xcode 27 and Swift 6.4
         run: bash scripts/ci/select-xcode-27.sh
-      - name: Check four preset integration paths
+      - name: Check new-tab preset integration paths
         run: python3 checks/new-tab-shaders-check.py
       - name: Install Metal Toolchain
         run: xcodebuild -downloadComponent MetalToolchain
-      - name: Compile and link the four new-tab effects
+      - name: Compile and link new-tab effects
         run: |
           xcrun -sdk macosx metal -c astra/UI/Background/NewTabShaderEffects.metal -o "$RUNNER_TEMP/new-tab.air"
           xcrun -sdk macosx metallib "$RUNNER_TEMP/new-tab.air" -o "$RUNNER_TEMP/new-tab.metallib"
