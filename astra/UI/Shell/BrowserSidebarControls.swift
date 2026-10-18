@@ -80,7 +80,9 @@ struct ShellSidebarListView: View {
 				? BrowserChromeMetrics.shellEdgePadding : 16,
 			spacing: onSelectTab == nil ? 2 : 8,
 			move: !browser.isPrivate && onSelectTab == nil
-				? applyNativeReorder : nil
+				? { sources, destination, beforeID in
+					applyNativeReorder(sources, destination, beforeID)
+				} : nil
 		) { item in
 			AnyView(sidebarRow(
 				item,
