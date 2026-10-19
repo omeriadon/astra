@@ -7,7 +7,6 @@ struct BrowserBookmarksView: View {
 	#if os(iOS)
 		@Environment(\.editMode) private var editMode
 	#endif
-	@Namespace private var transitions
 	@State private var searchText = ""
 	@State private var showingReadingList = false
 	@State private var editingBookmark: Bookmark?
@@ -52,7 +51,8 @@ struct BrowserBookmarksView: View {
 							title: bookmark.name, detail: bookmark.url.absoluteString,
 							url: bookmark.url,
 							symbol: bookmark.isFavorite ? "star.fill" : "bookmark",
-							isFavorite: bookmark.isFavorite
+							isFavorite: bookmark.isFavorite,
+							canAddToReadingList: browser.canAddToReadingList(bookmark.url)
 						)
 					},
 					emptyMessage: "No bookmarks in this folder"
@@ -147,7 +147,6 @@ struct BrowserBookmarksView: View {
 				browser.updateBookmark(bookmark.id, name: name, folder: folder, isFavorite: favorite, order: bookmark.order)
 			}
 			#if os(iOS)
-			.navigationTransition(.zoom(sourceID: "bookmark-edit-\(bookmark.id.uuidString)", in: transitions))
 			.presentationDetents([.fraction(0.6)])
 			#endif
 		}
