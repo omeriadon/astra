@@ -105,7 +105,7 @@ import SwiftUI
 			}
 		}
 
-		private final class EaselLibraryMenuItem: NSMenuItem {
+		nonisolated private final class EaselLibraryMenuItem: NSMenuItem {
 			var performAction: (() -> Void)?
 			init(_ title: String, image: String, enabled: Bool = true, action: @escaping () -> Void) {
 				super.init(title: title, action: nil, keyEquivalent: "")
@@ -291,10 +291,10 @@ import SwiftUI
 					alert.informativeText = "Its contents will be permanently deleted from your devices and open peeks will close."
 					alert.addButton(withTitle: "Delete Easel")
 					alert.addButton(withTitle: "Cancel")
-					if let window = table?.window {
+					if let window = unsafe table?.window {
 						alert.beginSheetModal(for: window) { result in
 							if result == .alertFirstButtonReturn {
-								model?.browser.deleteEasel(id, confirmed: true)
+								model.browser.deleteEasel(id, confirmed: true)
 							}
 						}
 					}

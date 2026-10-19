@@ -374,7 +374,7 @@ import SwiftUI
 			}
 			if chat.canRetry {
 				let button = TranscriptActionButton(title: "Retry Message", symbol: "arrow.clockwise", action: retry)
-				button.accessibilityIdentifier = "ai-chat-retry"
+				button.setAccessibilityIdentifier("ai-chat-retry")
 				add(button, height: 28)
 			}
 			measuredHeight = pieces.isEmpty ? 1 : pieces.reduce(0) { $0 + $1.height } + CGFloat(pieces.count - 1) * 10 + 16
