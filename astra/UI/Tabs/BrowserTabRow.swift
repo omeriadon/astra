@@ -676,10 +676,10 @@ private struct TabCloseButton: View {
 			setAccessibilityLabel(title)
 			if isRenaming {
 				editField.setAccessibilityIdentifier("tab-name-\(tabID.uuidString)")
-				if editField.stringValue != renameText, window?.firstResponder !== editField.currentEditor() {
+				if editField.stringValue != renameText, unsafe window?.firstResponder !== editField.currentEditor() {
 					editField.stringValue = renameText
 				}
-				if focused, let window, window.firstResponder !== editField.currentEditor() {
+				if focused, let window = unsafe window, window.firstResponder !== editField.currentEditor() {
 					window.makeFirstResponder(editField)
 					editField.selectText(nil)
 				}
@@ -691,13 +691,13 @@ private struct TabCloseButton: View {
 		override func viewDidMoveToWindow() {
 			super.viewDidMoveToWindow()
 			if isRenaming, focusRequested {
-				window?.makeFirstResponder(editField)
+				unsafe window?.makeFirstResponder(editField)
 				editField.selectText(nil)
 			}
 		}
 
 		override func hitTest(_ point: NSPoint) -> NSView? {
-			isRenaming ? super.hitTest(point) : bounds.contains(convert(point, from: superview)) ? self : nil
+			isRenaming ? super.hitTest(point) : bounds.contains(convert(point, from: unsafe superview)) ? self : nil
 		}
 
 		override func mouseUp(with event: NSEvent) {

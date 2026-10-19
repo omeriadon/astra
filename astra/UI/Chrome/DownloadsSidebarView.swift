@@ -59,6 +59,20 @@ struct DownloadsSidebarView: View {
 	/// This adapter fulfills native file promises through the existing async,
 	/// security-scope-aware download drag provider. A userInfo strong reference
 	/// keeps the delegate alive if the sidebar closes before the drop completes.
+	/// NSItemProvider's callback is @Sendable, while AppKit's promise completion
+	/// is not. This immutable box forwards the single terminal result safely.
+	nonisolated private final class DownloadFilePromiseCompletion: @unchecked Sendable {
+		private let handler: ((any Error)?) -> Void
+
+		init(_ handler: @escaping ((any Error)?) -> Void) {
+			self.handler = handler
+		}
+
+		func finish(_ error: (any Error)?) {
+			handler(error)
+		}
+	}
+
 	private final class DownloadNativeFilePromise: NSObject, NSFilePromiseProviderDelegate {
 		let source: NSItemProvider
 		let name: String
@@ -85,16 +99,17 @@ struct DownloadsSidebarView: View {
 		func filePromiseProvider(_: NSFilePromiseProvider,
 		                         writePromiseTo url: URL, completionHandler: @escaping ((any Error)?) -> Void)
 		{
+			let completion = DownloadFilePromiseCompletion(completionHandler)
 			source.loadFileRepresentation(forTypeIdentifier: type) { sourceURL, error in
 				guard let sourceURL else {
-					completionHandler(error ?? CocoaError(.fileNoSuchFile))
+					completion.finish(error ?? CocoaError(.fileNoSuchFile))
 					return
 				}
 				do {
 					try FileManager.default.copyItem(at: sourceURL, to: url)
-					completionHandler(nil)
+					completion.finish(nil)
 				} catch {
-					completionHandler(error)
+					completion.finish(error)
 				}
 			}
 		}
@@ -123,7 +138,7 @@ struct DownloadsSidebarView: View {
 		}
 	}
 
-	private final class DownloadMenuItem: NSMenuItem {
+	nonisolated private final class DownloadMenuItem: NSMenuItem {
 		var run: (() -> Void)?
 		init(_ title: String, symbol: String, run: @escaping () -> Void) {
 			super.init(title: title, action: nil, keyEquivalent: "")

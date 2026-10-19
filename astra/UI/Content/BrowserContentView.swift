@@ -225,7 +225,7 @@ private struct BrowserNativeWebStack {
 
 	@MainActor
 	private final class BrowserNativeWebStackNSView: NSView {
-		private var hosts: [UUID: BrowserWebView.BrowserWebViewHost] = [:]
+		private var hosts: [UUID: BrowserWebViewHost] = [:]
 		private var allowsWebInteraction = false
 
 		override func hitTest(_ point: NSPoint) -> NSView? {
@@ -244,7 +244,7 @@ private struct BrowserNativeWebStack {
 			allowsWebInteraction = stack.entries.contains(where: \.allowsInteraction)
 			for entry in stack.entries {
 				let specification = stack.specification(for: entry)
-				let host: BrowserWebView.BrowserWebViewHost
+				let host: BrowserWebViewHost
 				if let existing = hosts[entry.id], existing.specification.controller === entry.controller {
 					host = existing
 				} else {
@@ -252,7 +252,7 @@ private struct BrowserNativeWebStack {
 						previous.unmountWebView()
 						previous.removeFromSuperview()
 					}
-					host = BrowserWebView.BrowserWebViewHost(specification: specification)
+					host = BrowserWebViewHost(specification: specification)
 					host.frame = bounds
 					host.autoresizingMask = [.width, .height]
 					host.isHidden = !entry.showsPage
