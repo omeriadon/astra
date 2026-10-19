@@ -129,7 +129,9 @@ struct BrowserAIChatSidebar: View {
 											Task { @MainActor in
 												let currentID = chat.id
 												let draft = chat.draft
-												if let saved = await history.conversation(conversation.id), !chat.isResponding, !chat.isImporting, chat.id == currentID, chat.draft == draft, historySelection == token { chat.select(saved) }
+												if let saved = await history.conversation(conversation.id), !chat.isResponding, !chat.isImporting, chat.id == currentID, chat.draft == draft, historySelection == token {
+													chat.select(saved)
+												}
 											}
 											showsHistory = false
 										} label: {
@@ -870,9 +872,9 @@ private struct BrowserAIChatStreamingResponse: View {
 /// bytes and display dimensions are unchanged, preserving existing sampling.
 @MainActor private enum BrowserAIThumbnailCache {
 	#if os(macOS)
-	typealias NativeImage = NSImage
+		typealias NativeImage = NSImage
 	#else
-	typealias NativeImage = UIImage
+		typealias NativeImage = UIImage
 	#endif
 	private static let cache: NSCache<NSString, NativeImage> = {
 		let value = NSCache<NSString, NativeImage>()
@@ -880,9 +882,12 @@ private struct BrowserAIChatStreamingResponse: View {
 		value.totalCostLimit = 64 * 1024 * 1024
 		return value
 	}()
+
 	static func image(id: UUID, data: Data) -> NativeImage? {
 		let key = id.uuidString as NSString
-		if let cached = cache.object(forKey: key) { return cached }
+		if let cached = cache.object(forKey: key) {
+			return cached
+		}
 		guard let image = NativeImage(data: data) else { return nil }
 		let pixels = Double(image.size.width) * Double(image.size.height) * 4
 		let cost = pixels.isFinite ? Int(min(max(pixels, Double(data.count)), Double(Int.max / 2))) : data.count

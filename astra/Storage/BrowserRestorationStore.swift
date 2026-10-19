@@ -25,7 +25,10 @@ enum BrowserRestorationStore {
 			return try? AES.GCM.seal(data, using: key, authenticating: Data(url.absoluteString.utf8)).combined
 		}
 	}
-	static var sealer: Sealer? { key.map { Sealer(key: $0) } }
+
+	static var sealer: Sealer? {
+		key.map { Sealer(key: $0) }
+	}
 
 	static func open(_ data: Data, for url: URL) -> Data? {
 		guard let key else {

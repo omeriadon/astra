@@ -195,17 +195,21 @@ final class BrowserTabResourceManager {
 		protectedControllers = protectedControllers.filter { ids.contains($0.key) }
 		observationTokens = observationTokens.filter { ids.contains($0.key) }
 		observedTabIdentities = observedTabIdentities.filter { ids.contains($0.key) }
-		for tab in browser.tabs where observedTabIdentities[tab.id] != ObjectIdentifier(tab) { observeProtection(of: tab) }
+		for tab in browser.tabs where observedTabIdentities[tab.id] != ObjectIdentifier(tab) {
+			observeProtection(of: tab)
+		}
 	}
 
-	func refreshProtection(of tab: BrowserTab) { observeProtection(of: tab) }
+	func refreshProtection(of tab: BrowserTab) {
+		observeProtection(of: tab)
+	}
 
 	private func observeProtection(of tab: BrowserTab) {
 		let token = UUID()
 		observationTokens[tab.id] = token
 		observedTabIdentities[tab.id] = ObjectIdentifier(tab)
 		let controllers = withObservationTracking {
-			([tab.controller].compactMap(\.self) + tab.peeks.map(\.controller)).filter { $0.shouldKeepWebViewAttached }
+			([tab.controller].compactMap(\.self) + tab.peeks.map(\.controller)).filter(\.shouldKeepWebViewAttached)
 		} onChange: { [weak self, weak tab] in
 			Task { @MainActor in
 				guard let self, let tab, self.observationTokens[tab.id] == token,
@@ -272,7 +276,9 @@ final class BrowserTabResourceManager {
 		}
 		for (tabID, controllers) in protectedControllers where isOwned(tabID) {
 			for controller in controllers {
-				if tabID != selectedTab?.id || controller === selectedTab?.controller { append(controller) }
+				if tabID != selectedTab?.id || controller === selectedTab?.controller {
+					append(controller)
+				}
 			}
 		}
 		BrowserLog.duration(.performance, "workflow.webview-hosts.resolve",

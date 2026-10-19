@@ -39,8 +39,14 @@ struct BrowserSidebarLayoutGeometry {
 		var rows: [Row] = []
 		var width: CGFloat = 0
 		var padding: CGFloat = 0
-		var startIndex: Int { rows.startIndex }
-		var endIndex: Int { rows.endIndex }
+		var startIndex: Int {
+			rows.startIndex
+		}
+
+		var endIndex: Int {
+			rows.endIndex
+		}
+
 		subscript(index: Int) -> CGRect {
 			let row = rows[index]
 			let available = Swift.max(0, width - padding * 2)
@@ -51,6 +57,7 @@ struct BrowserSidebarLayoutGeometry {
 			return CGRect(x: padding, y: row.y, width: available, height: row.height)
 		}
 	}
+
 	private(set) var frames = Frames()
 	private(set) var contentSize = CGSize.zero
 	private var favouriteIndices: Set<Int> = []

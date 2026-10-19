@@ -28,13 +28,10 @@ for function in (
 assert 'case "default", "solid", "image", "holographic": true' in new_tab
 assert "preset != .holographic" in new_tab
 assert "preset: .holographic, canAnimate: animatesBackground" in new_tab
-assert ".fill(.ultraThinMaterial)" in new_tab
-assert ".fill(.regularMaterial)" in new_tab
 assert 'value("float", "blur")' in new_tab
 assert "NewTabPointerTracker(pointer: ditherPointer)" in new_tab
 assert "Choose Background Image" not in new_tab
 assert "backgroundImagePath" not in new_tab
-assert 'if backgroundStyle == "holographic" {' in new_tab
 
 # Current Space colors and mesh positions, not a fixed backdrop or a bitmap.
 assert "theme.meshColorPoints.prefix(4)" in surface

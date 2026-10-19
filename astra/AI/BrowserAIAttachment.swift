@@ -1,6 +1,6 @@
 import Foundation
-import PDFKit
 import ImageIO
+import PDFKit
 import UniformTypeIdentifiers
 #if os(macOS)
 	import AppKit
@@ -35,7 +35,11 @@ nonisolated struct BrowserAIAttachment: Codable, Equatable, Identifiable, Sendab
 
 	@MainActor static func read(_ url: URL) async throws -> Self {
 		let scoped = url.startAccessingSecurityScopedResource()
-		defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+		defer {
+			if scoped {
+				url.stopAccessingSecurityScopedResource()
+			}
+		}
 		let worker = Task.detached(priority: .userInitiated) { try prepare(url) }
 		return try await withTaskCancellationHandler {
 			let result = try await worker.value
@@ -62,10 +66,10 @@ nonisolated struct BrowserAIAttachment: Codable, Equatable, Identifiable, Sendab
 		if type?.conforms(to: .image) == true {
 			guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
 			      let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-				kCGImageSourceCreateThumbnailFromImageAlways: true,
-				kCGImageSourceCreateThumbnailWithTransform: true,
-				kCGImageSourceThumbnailMaxPixelSize: 2048,
-				kCGImageSourceShouldCacheImmediately: true,
+			      	kCGImageSourceCreateThumbnailFromImageAlways: true,
+			      	kCGImageSourceCreateThumbnailWithTransform: true,
+			      	kCGImageSourceThumbnailMaxPixelSize: 2048,
+			      	kCGImageSourceShouldCacheImmediately: true,
 			      ] as CFDictionary) else { throw BrowserAIError.attachmentUnreadable(name) }
 			try Task.checkCancellation()
 			let encoded = NSMutableData()
@@ -108,7 +112,9 @@ nonisolated struct BrowserAIAttachment: Codable, Equatable, Identifiable, Sendab
 		var images = 0
 		for attachment in attachments {
 			bytes += (attachment.file?.data.count ?? 0) + (attachment.image?.data.count ?? 0) + (attachment.text?.utf8.count ?? 0)
-			if let image = attachment.image { images += 1; imageBytes += image.data.count }
+			if let image = attachment.image {
+				images += 1; imageBytes += image.data.count
+			}
 			guard bytes <= maximumTotalBytes, images <= 8, imageBytes <= 10 * 1024 * 1024 else { throw BrowserAIError.attachmentTooLarge }
 		}
 	}

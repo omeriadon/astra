@@ -1226,7 +1226,9 @@ final class BrowserController: NSObject, Identifiable {
 		mediaObservationTask = Task { @MainActor [weak self] in
 			while !Task.isCancelled {
 				guard self?.createdWebView != nil else { return }
-				if let self { self.attachmentActivityRevision &+= 1 }
+				if let self {
+					attachmentActivityRevision &+= 1
+				}
 				let hasActivity = self?.isPlayingMedia == true
 					|| self?.isCapturing == true
 					|| self?.displayCaptureState == true

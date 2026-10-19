@@ -15,7 +15,7 @@ nonisolated struct BrowserAIPageText: Codable, Identifiable, Sendable {
 		"Page title: \(title)\nURL: \(BrowserAddress.withoutCredentials(url).absoluteString)\n<page-text>\n\(text)\n</page-text>"
 	}
 
-	@MainActor static func extract(from controller: BrowserController, characterBudget: Int = 120000) async throws -> Self {
+	@MainActor static func extract(from controller: BrowserController, characterBudget: Int = 120_000) async throws -> Self {
 		let document = controller.navigationIdentifier
 		guard let webView = controller.webViewIfLoaded, !webView.isLoading else { throw BrowserAIError.pageUnavailable }
 		let page = try await extract(from: webView, characterBudget: characterBudget)
@@ -23,7 +23,7 @@ nonisolated struct BrowserAIPageText: Codable, Identifiable, Sendable {
 		return page
 	}
 
-	@MainActor static func extract(from webView: WKWebView, characterBudget: Int = 120000) async throws -> Self {
+	@MainActor static func extract(from webView: WKWebView, characterBudget: Int = 120_000) async throws -> Self {
 		let result = try await webView.callAsyncJavaScript(extractionScript, arguments: ["characterBudget": min(max(characterBudget, 1), 2_000_000)], in: nil, contentWorld: .defaultClient)
 		guard let value = result as? [String: String], let text = value["text"],
 		      !text.isEmpty, let url = value["url"].flatMap(URL.init(string:)) else { throw BrowserAIError.pageUnavailable }

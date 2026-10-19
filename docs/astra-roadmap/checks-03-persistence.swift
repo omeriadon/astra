@@ -318,6 +318,5 @@ struct BrowserPersistenceCheck {
 		try closedStore.savePersistedState(closedState)
 		let payloads = try FileManager.default.contentsOfDirectory(at: closedDirectory.appendingPathComponent("closed-tab-payloads"), includingPropertiesForKeys: nil)
 		assert(payloads.isEmpty, "Deleted closed-tab payload survived a privacy-safe checkpoint")
-
 	}
 }

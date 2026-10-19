@@ -375,7 +375,8 @@ final class BrowserTab: Identifiable {
 			guard controller.hasCurrentPageDocument, let url = controller.committedURL else { return nil }
 			let address = BrowserAddress.withoutCredentials(url)
 			if let cached = restorationCapture, cached.0 == controller.id, cached.1 == controller.navigationIdentifier,
-			   cached.3 == address, cached.4 == controller.history.count, cached.5 == controller.historyIndex {
+			   cached.3 == address, cached.4 == controller.history.count, cached.5 == controller.historyIndex
+			{
 				return (cached.2, cached.3)
 			}
 			guard let data = controller.webViewIfLoaded?.interactionState as? Data, data.count <= 4 * 1024 * 1024 else { return nil }

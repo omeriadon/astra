@@ -1,5 +1,5 @@
-import Foundation
 import CryptoKit
+import Foundation
 
 // Collaborators only: transport, attachment preparation, archive and ranking
 // below compile directly from production files with the app's actor isolation.
@@ -7,6 +7,7 @@ nonisolated struct BrowserAIPageText: Codable, Sendable { let title: String; let
 @MainActor final class BrowserAIChat {
 	nonisolated struct Message: Codable, Sendable { var id = UUID(); let isUser: Bool; let text: String; var attachments: [BrowserAIAttachment] = [] }
 }
+
 nonisolated enum BrowserAIError: Error { case chatStorage, attachmentTooLarge, attachmentUnreadable(String) }
 
 @main struct PerformanceWorkerCheck {
@@ -31,7 +32,7 @@ nonisolated enum BrowserAIError: Error { case chatStorage, attachmentTooLarge, a
 		precondition(started.duration(to: .now) < .seconds(2), "Cancellation did not unblock the transport")
 		try? pipe.fileHandleForReading.close()
 		let normal = Pipe()
-		let expected = String(repeating: "abcdef", count: 100000)
+		let expected = String(repeating: "abcdef", count: 100_000)
 		let reader = Task.detached { try normal.fileHandleForReading.readToEnd() }
 		try await BrowserAICommandInput(normal.fileHandleForWriting).write(expected, close: true)
 		let actual = try await reader.value
@@ -100,7 +101,9 @@ nonisolated enum BrowserAIError: Error { case chatStorage, attachmentTooLarge, a
 		let both = try await reopened.load()
 		precondition(both.count == 2, "Revision ordering dropped another conversation")
 		let folders = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { $0.lastPathComponent != "index.json" }
-		for folder in folders { try FileManager.default.removeItem(at: folder) }
+		for folder in folders {
+			try FileManager.default.removeItem(at: folder)
+		}
 		let metadataOnly = BrowserAIChatArchive(directory: directory)
 		let metadata = try await metadataOnly.load()
 		precondition(metadata.count == 2, "Metadata load read a body eagerly")

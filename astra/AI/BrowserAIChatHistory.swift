@@ -91,7 +91,9 @@ actor BrowserAIChatArchive {
 	private var loaded = false
 	private var cache: [(UUID, BrowserAIConversation)] = []
 	private let testDirectory: URL?
-	init(directory: URL? = nil) { testDirectory = directory }
+	init(directory: URL? = nil) {
+		testDirectory = directory
+	}
 
 	private func root() throws -> URL {
 		if let testDirectory {
@@ -103,12 +105,16 @@ actor BrowserAIChatArchive {
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 		return directory
 	}
+
 	private func write(_ data: Data, to url: URL) throws {
 		try data.write(to: url, options: [.atomic, .completeFileProtectionUnlessOpen])
 		try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
 	}
+
 	func load() throws -> [BrowserAIConversation] {
-		if loaded { return records.map(\.summary) }
+		if loaded {
+			return records.map(\.summary)
+		}
 		let directory = try root()
 		let index = directory.appendingPathComponent("index.json")
 		if FileManager.default.fileExists(atPath: index.path) {
@@ -118,7 +124,9 @@ actor BrowserAIChatArchive {
 			if FileManager.default.fileExists(atPath: legacy.path) {
 				let conversations = try JSONDecoder().decode([BrowserAIConversation].self, from: Data(contentsOf: legacy))
 				var migrated: [Record] = []
-				for conversation in conversations { migrated.append(try writeBody(conversation, directory: directory)) }
+				for conversation in conversations {
+					try migrated.append(writeBody(conversation, directory: directory))
+				}
 				try write(JSONEncoder().encode(migrated), to: index)
 				records = migrated
 				// Keep the legacy file as a recovery copy; never replace it during migration.
@@ -127,6 +135,7 @@ actor BrowserAIChatArchive {
 		loaded = true
 		return records.map(\.summary)
 	}
+
 	private func writeBody(_ conversation: BrowserAIConversation, directory: URL) throws -> Record {
 		let generation = UUID()
 		let folder = directory.appendingPathComponent(generation.uuidString, isDirectory: true)
@@ -156,6 +165,7 @@ actor BrowserAIChatArchive {
 		try write(JSONEncoder().encode(Body(conversation: body, assets: assets)), to: folder.appendingPathComponent("body.json"))
 		return Record(summary: conversation.summary, generation: generation)
 	}
+
 	func conversation(_ id: UUID) throws -> BrowserAIConversation? {
 		_ = try load()
 		if let index = cache.firstIndex(where: { $0.0 == id }) {
@@ -177,6 +187,7 @@ actor BrowserAIChatArchive {
 		cache = Array(cache.prefix(2))
 		return body.conversation
 	}
+
 	func save(_ conversation: BrowserAIConversation, revision: Int) throws {
 		_ = try load()
 		guard revision >= (savedRevisions[conversation.id] ?? 0) else { return }
@@ -189,6 +200,8 @@ actor BrowserAIChatArchive {
 		records = next
 		savedRevisions[conversation.id] = revision
 		cache.removeAll { $0.0 == conversation.id }
-		if let previous { try? FileManager.default.removeItem(at: directory.appendingPathComponent(previous.generation.uuidString)) }
+		if let previous {
+			try? FileManager.default.removeItem(at: directory.appendingPathComponent(previous.generation.uuidString))
+		}
 	}
 }

@@ -377,7 +377,7 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		let data: Data
 	}
 
-	// Version 4 prevents older builds from overwriting lazy closed-tab references.
+	/// Version 4 prevents older builds from overwriting lazy closed-tab references.
 	private nonisolated static let currentVersion = 4
 
 	@MainActor

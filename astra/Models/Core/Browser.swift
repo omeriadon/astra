@@ -1652,7 +1652,9 @@ final class Browser {
 		do {
 			if let persistence, summary.closedArchiveID != nil {
 				saved = try await Task.detached(priority: .userInitiated) { try persistence.loadClosedTab(summary) }.value
-			} else { saved = summary }
+			} else {
+				saved = summary
+			}
 		} catch { persistenceErrorDescription = error.localizedDescription; return nil }
 		guard !Task.isCancelled, let index = closedHistoryTabs.firstIndex(where: { $0.id == id && $0.modifiedAt == summary.modifiedAt }) else { return nil }
 		closedHistoryTabs.remove(at: index)
@@ -1705,7 +1707,9 @@ final class Browser {
 	}
 
 	private func selectTab(_ id: UUID, inSpace requestedSpaceID: UUID?) {
-		if let selectedTab { tabResources.refreshProtection(of: selectedTab) }
+		if let selectedTab {
+			tabResources.refreshProtection(of: selectedTab)
+		}
 		let selectionStartedAt = BrowserLog.clock()
 		BrowserLog.debug(.tabs, "tab.select", metadata: ["window": BrowserLog.id(windowID), "from": BrowserLog.id(selectedTabID), "to": BrowserLog.id(id)])
 		guard let tab = tab(withID: id) else { return }
@@ -3111,7 +3115,9 @@ final class Browser {
 		let snapshots = removedTabs.filter { $0.internalPage == nil }
 			.map { tab in
 				var snapshot = tab.openTab
-				if let input = tab.restorationInput { pendingClosedRestoration[tab.id] = input }
+				if let input = tab.restorationInput {
+					pendingClosedRestoration[tab.id] = input
+				}
 				snapshot.modifiedAt = .now
 				if let space = workspace.spaces.first(where: { $0.tabIDs.contains(tab.id) }) {
 					snapshot.closedSpaceID = space.id
@@ -3670,11 +3676,14 @@ final class Browser {
 		if !BrowserLaunchCache.containsSelection(tabID: selectedTabID, spaceID: workspace.selectedSpaceID), let selectedTab {
 			let space = selectedSpace
 			var tabIDs = Array(space.tabIDs.prefix(BrowserLaunchCache.maximumTabs))
-			if !tabIDs.contains(selectedTabID) { tabIDs.append(selectedTabID) }
+			if !tabIDs.contains(selectedTabID) {
+				tabIDs.append(selectedTabID)
+			}
 			BrowserLaunchCache.includeSelection(
 				tab: .init(id: selectedTabID, url: selectedTab.currentURL.map(BrowserAddress.withoutCredentials), title: String(selectedTab.title.prefix(240)), order: BrowserLaunchCache.maximumTabs - 1, internalPage: selectedTab.internalPage == .easel ? "easel" : nil),
 				space: .init(id: space.id, name: String(space.name.prefix(80)), symbol: space.symbol, theme: space.theme, tabIDs: tabIDs, selectedTabID: selectedTabID),
-				isFavourite: workspace.favouriteTabIDs.contains(selectedTabID))
+				isFavourite: workspace.favouriteTabIDs.contains(selectedTabID)
+			)
 		}
 		let update = BrowserSelectionUpdate(
 			windowID: windowID,
@@ -3782,7 +3791,9 @@ final class Browser {
 				await MainActor.run { [weak self] in
 					guard let self else { return }
 					persistenceErrorDescription = nil
-					for id in closedRestorationInputs.keys { pendingClosedRestoration[id] = nil }
+					for id in closedRestorationInputs.keys {
+						pendingClosedRestoration[id] = nil
+					}
 					let compacted = Dictionary(uniqueKeysWithValues: compactedClosedTabs.map { ($0.id, $0) })
 					closedHistoryTabs = closedHistoryTabs.map { current in
 						guard current.closedArchiveID == nil, let summary = compacted[current.id], summary.modifiedAt == current.modifiedAt else { return current }
@@ -3808,13 +3819,18 @@ final class Browser {
 		guard !isPrivate, !isMini else { return }
 		var launchTabs = Array(tabs.prefix(BrowserLaunchCache.maximumTabs))
 		if let selectedTab, !launchTabs.contains(where: { $0.id == selectedTab.id }) {
-			if !launchTabs.isEmpty { launchTabs.removeLast() }
+			if !launchTabs.isEmpty {
+				launchTabs.removeLast()
+			}
 			launchTabs.append(selectedTab)
 		}
 		var launchSpaces = Array(workspace.spaces.prefix(BrowserLaunchCache.maximumSpaces))
 		if let selected = workspace.spaces.first(where: { $0.id == workspace.selectedSpaceID }),
-		   !launchSpaces.contains(where: { $0.id == selected.id }) {
-			if !launchSpaces.isEmpty { launchSpaces.removeLast() }
+		   !launchSpaces.contains(where: { $0.id == selected.id })
+		{
+			if !launchSpaces.isEmpty {
+				launchSpaces.removeLast()
+			}
 			launchSpaces.append(selected)
 		}
 		let favicons = session.favicons.favicons

@@ -245,10 +245,22 @@ private struct BrowserSidebarTraits: Equatable {
 	}
 
 	final class BrowserSidebarCollectionLayout: NSCollectionViewLayout {
-		var items: [BrowserSidebarItem] = [] { didSet { metricsDirty = true } }
-		var top: CGFloat = 0 { didSet { metricsDirty = true } }
-		var padding: CGFloat = 4 { didSet { metricsDirty = true } }
-		var spacing: CGFloat = 2 { didSet { metricsDirty = true } }
+		var items: [BrowserSidebarItem] = [] {
+			didSet { metricsDirty = true }
+		}
+
+		var top: CGFloat = 0 {
+			didSet { metricsDirty = true }
+		}
+
+		var padding: CGFloat = 4 {
+			didSet { metricsDirty = true }
+		}
+
+		var spacing: CGFloat = 2 {
+			didSet { metricsDirty = true }
+		}
+
 		private var metricsDirty = true
 		private(set) var geometry = BrowserSidebarLayoutGeometry(items: [], width: 0, top: 0, padding: 0, spacing: 0)
 
@@ -433,10 +445,22 @@ private struct BrowserSidebarTraits: Equatable {
 	}
 
 	final class BrowserSidebarCollectionLayout: UICollectionViewLayout {
-		var items: [BrowserSidebarItem] = [] { didSet { metricsDirty = true } }
-		var top: CGFloat = 0 { didSet { metricsDirty = true } }
-		var padding: CGFloat = 4 { didSet { metricsDirty = true } }
-		var spacing: CGFloat = 2 { didSet { metricsDirty = true } }
+		var items: [BrowserSidebarItem] = [] {
+			didSet { metricsDirty = true }
+		}
+
+		var top: CGFloat = 0 {
+			didSet { metricsDirty = true }
+		}
+
+		var padding: CGFloat = 4 {
+			didSet { metricsDirty = true }
+		}
+
+		var spacing: CGFloat = 2 {
+			didSet { metricsDirty = true }
+		}
+
 		private var metricsDirty = true
 		private(set) var geometry = BrowserSidebarLayoutGeometry(items: [], width: 0, top: 0, padding: 0, spacing: 0)
 

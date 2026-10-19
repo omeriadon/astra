@@ -1,6 +1,6 @@
 import SwiftUI
 #if os(macOS)
-import AppKit
+	import AppKit
 #endif
 
 /// Decorative animations share the owning window's actual render eligibility.
@@ -12,16 +12,17 @@ struct BrowserAnimationEligibility: ViewModifier {
 	let update: (Bool) -> Void
 	private var eligible: Bool {
 		#if os(macOS)
-		return windowVisible && !reduceMotion
+			return windowVisible && !reduceMotion
 		#else
-		return scenePhase == .active && !reduceMotion
+			return scenePhase == .active && !reduceMotion
 		#endif
 	}
+
 	func body(content: Content) -> some View {
 		content
 			.background {
 				#if os(macOS)
-				BrowserAnimationWindowReader { windowVisible = $0 }
+					BrowserAnimationWindowReader { windowVisible = $0 }
 				#endif
 			}
 			.onAppear { update(eligible) }
@@ -31,37 +32,51 @@ struct BrowserAnimationEligibility: ViewModifier {
 }
 
 #if os(macOS)
-private struct BrowserAnimationWindowReader: NSViewRepresentable {
-	let update: (Bool) -> Void
-	func makeNSView(context: Context) -> VisibilityView { VisibilityView() }
-	func updateNSView(_ view: VisibilityView, context: Context) { view.update = update; view.publishSoon() }
-	static func dismantleNSView(_ view: VisibilityView, coordinator: ()) {
-		NotificationCenter.default.removeObserver(view)
-		view.update = nil
-	}
-	final class VisibilityView: NSView {
-		var update: ((Bool) -> Void)?
-		private var pending = false
-		private var lastValue: Bool?
-		override func hitTest(_ point: NSPoint) -> NSView? { nil }
-		override func viewDidMoveToWindow() {
-			super.viewDidMoveToWindow()
-			NotificationCenter.default.removeObserver(self)
-			for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification, NSApplication.didHideNotification, NSApplication.didUnhideNotification] {
-				NotificationCenter.default.addObserver(self, selector: #selector(changed), name: name, object: nil)
-			}
-			publishSoon()
+	private struct BrowserAnimationWindowReader: NSViewRepresentable {
+		let update: (Bool) -> Void
+		func makeNSView(context _: Context) -> VisibilityView {
+			VisibilityView()
 		}
-		@objc private func changed(_ notification: Notification) { publishSoon() }
-		func publishSoon() {
-			guard !pending else { return }; pending = true
-			DispatchQueue.main.async { [weak self] in
-				guard let self else { return }; pending = false
-				let window = unsafe window
-				let value = !NSApp.isHidden && window?.isVisible == true && window?.isMiniaturized == false && window?.occlusionState.contains(.visible) == true
-				guard value != lastValue else { return }; lastValue = value; update?(value)
+
+		func updateNSView(_ view: VisibilityView, context _: Context) {
+			view.update = update; view.publishSoon()
+		}
+
+		static func dismantleNSView(_ view: VisibilityView, coordinator _: ()) {
+			NotificationCenter.default.removeObserver(view)
+			view.update = nil
+		}
+
+		final class VisibilityView: NSView {
+			var update: ((Bool) -> Void)?
+			private var pending = false
+			private var lastValue: Bool?
+			override func hitTest(_: NSPoint) -> NSView? {
+				nil
+			}
+
+			override func viewDidMoveToWindow() {
+				super.viewDidMoveToWindow()
+				NotificationCenter.default.removeObserver(self)
+				for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification, NSApplication.didHideNotification, NSApplication.didUnhideNotification] {
+					NotificationCenter.default.addObserver(self, selector: #selector(changed), name: name, object: nil)
+				}
+				publishSoon()
+			}
+
+			@objc private func changed(_: Notification) {
+				publishSoon()
+			}
+
+			func publishSoon() {
+				guard !pending else { return }; pending = true
+				DispatchQueue.main.async { [weak self] in
+					guard let self else { return }; pending = false
+					let window = unsafe window
+					let value = !NSApp.isHidden && window?.isVisible == true && window?.isMiniaturized == false && window?.occlusionState.contains(.visible) == true
+					guard value != lastValue else { return }; lastValue = value; update?(value)
+				}
 			}
 		}
 	}
-}
 #endif

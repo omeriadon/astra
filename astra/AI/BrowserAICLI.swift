@@ -337,8 +337,12 @@ enum BrowserAICLI {
 			let message: [String: Any]
 			if let threadID {
 				var params: [String: Any] = ["threadId": threadID, "input": content]
-				if let directory { params["sandboxPolicy"] = ["type": "readOnly", "access": ["type": "restricted", "includePlatformDefaults": true, "readableRoots": [directory]]] }
-				if let effort, !effort.isEmpty, effort != "provider-default" { params["effort"] = effort }
+				if let directory {
+					params["sandboxPolicy"] = ["type": "readOnly", "access": ["type": "restricted", "includePlatformDefaults": true, "readableRoots": [directory]]]
+				}
+				if let effort, !effort.isEmpty, effort != "provider-default" {
+					params["effort"] = effort
+				}
 				message = ["id": 3, "method": "turn/start", "params": params]
 			} else {
 				message = ["type": "user", "session_id": "", "message": ["role": "user", "content": content], "parent_tool_use_id": NSNull()]
@@ -666,11 +670,17 @@ nonisolated struct BrowserAICommandResponse {
 			Task.detached {
 				let forceStop = Task.detached {
 					do { try await Task.sleep(for: .seconds(2)) } catch { return }
-					if process.isRunning { _ = Darwin.kill(process.processIdentifier, SIGKILL) }
+					if process.isRunning {
+						_ = Darwin.kill(process.processIdentifier, SIGKILL)
+					}
 				}
-				if process.isRunning { process.waitUntilExit() }
+				if process.isRunning {
+					process.waitUntilExit()
+				}
 				forceStop.cancel()
-				for url in access { url.stopAccessingSecurityScopedResource() }
+				for url in access {
+					url.stopAccessingSecurityScopedResource()
+				}
 				try? FileManager.default.removeItem(at: directory)
 			}
 		}

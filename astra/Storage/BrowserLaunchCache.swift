@@ -156,7 +156,9 @@ enum BrowserLaunchCache {
 	private static let writer = BrowserLaunchCacheWriter()
 
 	static func load() -> Snapshot? {
-		if pendingSave { return applyingSelection(to: lastDecodedSnapshot) }
+		if pendingSave {
+			return applyingSelection(to: lastDecodedSnapshot)
+		}
 		let data = Defaults[.browserLaunchCache]
 		if let lastDecodedData, lastDecodedData == data {
 			return applyingSelection(to: lastDecodedSnapshot)
@@ -177,19 +179,29 @@ enum BrowserLaunchCache {
 	static func includeSelection(tab: Tab, space: Space, isFavourite: Bool) {
 		guard var snapshot = lastDecodedSnapshot else { return }
 		if !snapshot.tabs.contains(where: { $0.id == tab.id }) {
-			if snapshot.tabs.count >= maximumTabs { snapshot.tabs.removeLast() }
+			if snapshot.tabs.count >= maximumTabs {
+				snapshot.tabs.removeLast()
+			}
 			snapshot.tabs.append(tab)
 		}
 		if let index = snapshot.spaces.firstIndex(where: { $0.id == space.id }) {
-			if !isFavourite, !snapshot.spaces[index].tabIDs.contains(tab.id) { snapshot.spaces[index].tabIDs.append(tab.id) }
+			if !isFavourite, !snapshot.spaces[index].tabIDs.contains(tab.id) {
+				snapshot.spaces[index].tabIDs.append(tab.id)
+			}
 			snapshot.spaces[index].selectedTabID = tab.id
 		} else {
-			if snapshot.spaces.count >= maximumSpaces { snapshot.spaces.removeLast() }
+			if snapshot.spaces.count >= maximumSpaces {
+				snapshot.spaces.removeLast()
+			}
 			var space = space
-			if isFavourite { space.tabIDs.removeAll { $0 == tab.id } }
+			if isFavourite {
+				space.tabIDs.removeAll { $0 == tab.id }
+			}
 			snapshot.spaces.append(space)
 		}
-		if isFavourite, !snapshot.favouriteTabIDs.contains(tab.id) { snapshot.favouriteTabIDs.append(tab.id) }
+		if isFavourite, !snapshot.favouriteTabIDs.contains(tab.id) {
+			snapshot.favouriteTabIDs.append(tab.id)
+		}
 		snapshot.selectedTabID = tab.id; snapshot.selectedSpaceID = space.id
 		snapshot = Snapshot(tabs: snapshot.tabs, spaces: snapshot.spaces, favouriteTabIDs: snapshot.favouriteTabIDs, selectedSpaceID: space.id, selectedTabID: tab.id, favicons: snapshot.favicons)
 		save(snapshot)
@@ -205,7 +217,9 @@ enum BrowserLaunchCache {
 			let data = await writer.save(snapshot, revision: revision)
 			guard saveRevision == revision else { return }
 			pendingSave = false
-			if let data { lastDecodedData = data }
+			if let data {
+				lastDecodedData = data
+			}
 		}
 	}
 

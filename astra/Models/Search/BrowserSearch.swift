@@ -288,10 +288,10 @@ extension Browser {
 	func updateLibrarySearch(_ request: BrowserLibrarySearchModel.Request, scope: BrowserHistorySearchModel.Scope) async {
 		await librarySearch.update(request, scope: scope) {
 			bookmarks.map { .init(id: $0.id, url: $0.url, title: $0.name, isTab: false, bonus: $0.isFavorite ? 0.03 : 0) }
-			+ tabs.compactMap { tab in
-				guard let url = tab.activeController?.url ?? tab.currentURL else { return nil }
-				return .init(id: tab.id, url: url, title: tab.title.isEmpty ? url.host ?? url.absoluteString : tab.title, isTab: true, bonus: 0.04)
-			}
+				+ tabs.compactMap { tab in
+					guard let url = tab.activeController?.url ?? tab.currentURL else { return nil }
+					return .init(id: tab.id, url: url, title: tab.title.isEmpty ? url.host ?? url.absoluteString : tab.title, isTab: true, bonus: 0.04)
+				}
 		}
 	}
 
@@ -311,7 +311,8 @@ extension Browser {
 						guard self.bookmarks.contains(where: { $0.id == entry.id && $0.url == entry.url }) else { return }
 						self.openSearchDestination(entry.url)
 					}
-				})
+				}
+			)
 		}
 	}
 

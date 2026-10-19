@@ -84,7 +84,9 @@ struct BrowserEaselView: View {
 			drawingPoints = []
 		}
 		.onChange(of: gestureActive) { _, active in
-			if !active { commitGesture() }
+			if !active {
+				commitGesture()
+			}
 		}
 		.onDisappear { commitGesture() }
 		.onChange(of: isManipulating ? nil : document) { _, value in
@@ -608,7 +610,7 @@ struct BrowserEaselView: View {
 		guard let index = document.items.firstIndex(where: { $0.id == id }) else { return }
 		var next = document
 		change(&next.items[index])
-		guard (isManipulating ? next.items[index].geometryIsValid : next.isValid) else {
+		guard isManipulating ? next.items[index].geometryIsValid : next.isValid else {
 			editorError = "This change exceeds the easel's content limits."
 			return
 		}
