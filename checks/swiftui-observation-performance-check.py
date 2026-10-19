@@ -19,7 +19,8 @@ assert 'BrowserLog.duration(.performance, "sidebar.projection.resolve"' in sideb
 assert "cached.tabIDs == space.tabIDs" not in sidebar
 assert re.search(r"BrowserSidebarScrollView(?:<[^\n]+>)?\(", sidebar)
 assert "SidebarContentRevision(" in sidebar
-assert "guard resizeStartWidth == nil else { return }" in split
+assert "dragStart == nil" in split
+assert "DragGesture(" not in split and "@GestureState" not in split
 assert re.search(r"if isHovered\s*(?:&&|,)\s*onSelectTab == nil", row)
 assert re.search(r"if previewEnabled\s*(?:&&|,)\s*isHovered", favourite)
 assert "BrowserWindowFrameReader { updateHoveredFrame" in row
@@ -28,7 +29,8 @@ assert "lastPublished" in chat and ".milliseconds(85)" in chat
 assert "BrowserAIOutput.completedObjects(in: snapshot)" not in chat
 assert "preview = turn.response" in chat
 assert "guard lastReportedWidth != width else { return }" in split
-assert ".onChange(of: resizeStartWidth)" in split
+assert "state.end(bounds.size)" in split
+assert "state.end(view.bounds.size)" in split
 assert "tabCollectionRevision &+= 1" in browser
 assert "sidebarStructureRevision &+= 1" in browser
 assert "chromeSummaryRevision != itemsRevision" in Path("astra/Web/Downloads/BrowserDownloadManager.swift").read_text()

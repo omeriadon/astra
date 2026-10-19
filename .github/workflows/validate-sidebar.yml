@@ -27,10 +27,12 @@ jobs:
 
   native:
     name: Native sidebar viewport
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Verify Xcode 27 / Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
       - name: Compile and exercise production AppKit viewport with 10,000 rows
         run: |
           swiftc -swift-version 6 -parse-as-library \
@@ -40,6 +42,22 @@ jobs:
             checks/native-sidebar-check.swift \
             -o "$RUNNER_TEMP/native-sidebar-check"
           "$RUNNER_TEMP/native-sidebar-check"
+      - name: Compile and exercise production native split containers
+        run: |
+          swiftc -swift-version 6 -parse-as-library \
+            astra/UI/Chrome/BrowserChromeMetrics.swift \
+            astra/UI/Shell/BrowserSplitView.swift \
+            checks/native-split-check.swift \
+            -o "$RUNNER_TEMP/native-split-check"
+          "$RUNNER_TEMP/native-split-check"
+      - name: Typecheck production UIKit split against the simulator SDK
+        run: |
+          SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          ARCH="$(uname -m)"
+          xcrun swiftc -typecheck -swift-version 6 -sdk "$SDK" \
+            -target "$ARCH-apple-ios18.0-simulator" \
+            astra/UI/Chrome/BrowserChromeMetrics.swift \
+            astra/UI/Shell/BrowserSplitView.swift
       - name: Typecheck production UIKit viewport against the simulator SDK
         run: |
           SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
