@@ -99,6 +99,18 @@ nonisolated struct BrowserEaselDocument: Codable, Equatable, Sendable {
 			var y: Double
 		}
 
+		/// Gesture-only geometry checks; imported bytes remain fully validated
+		/// at document commit/import boundaries, never on each pointer event.
+		nonisolated var geometryIsValid: Bool {
+			x.isFinite && (0 ... 10000).contains(x)
+				&& y.isFinite && (0 ... 1_000_000).contains(y)
+				&& width.isFinite && (32 ... 10000).contains(width)
+				&& height.isFinite && (0.01 ... 10000).contains(height)
+				&& rotation.isFinite && (-360 ... 360).contains(rotation)
+				&& points.count <= 10000
+				&& points.allSatisfy { $0.x.isFinite && $0.y.isFinite && abs($0.x) <= 10000 && abs($0.y) <= 10000 }
+		}
+
 		mutating func constrainShape(_ constrained: Bool) {
 			if constrained, [.rectangle, .ellipse].contains(kind) {
 				height = width

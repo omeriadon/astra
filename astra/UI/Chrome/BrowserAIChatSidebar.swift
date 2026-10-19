@@ -18,6 +18,7 @@ struct BrowserAIChatSidebar: View {
 	@State private var hoveredLinkShiftPressed = false
 	@State private var requestID: UUID?
 	@State private var showsHistory = false
+	@State private var historySelection = UUID()
 	@State private var showsFileImporter = false
 	@State private var history = BrowserAIChatHistory.shared
 	@State private var sync = BrowserSync.shared
@@ -123,7 +124,13 @@ struct BrowserAIChatSidebar: View {
 									}
 									ForEach(history.conversations) { conversation in
 										Button {
-											chat.select(conversation)
+											let token = UUID()
+											historySelection = token
+											Task { @MainActor in
+												let currentID = chat.id
+												let draft = chat.draft
+												if let saved = await history.conversation(conversation.id), !chat.isResponding, !chat.isImporting, chat.id == currentID, chat.draft == draft, historySelection == token { chat.select(saved) }
+											}
 											showsHistory = false
 										} label: {
 											VStack(alignment: .leading, spacing: 4) {
@@ -408,11 +415,11 @@ struct BrowserAIChatSidebar: View {
 						Group {
 							if let data = attachment.image?.data {
 								#if os(macOS)
-									if let image = NSImage(data: data) {
+									if let image = BrowserAIThumbnailCache.image(id: attachment.id, data: data) {
 										Image(nsImage: image).resizable().scaledToFit()
 									}
 								#else
-									if let image = UIImage(data: data) {
+									if let image = BrowserAIThumbnailCache.image(id: attachment.id, data: data) {
 										Image(uiImage: image).resizable().scaledToFit()
 									}
 								#endif
@@ -452,6 +459,7 @@ private struct BrowserAIChatThinkingIndicator: View {
 	let activity: String
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var glowing = false
+	@State private var canAnimate = false
 
 	var body: some View {
 		HStack(spacing: 8) {
@@ -466,10 +474,8 @@ private struct BrowserAIChatThinkingIndicator: View {
 		.frame(height: 24)
 		.accessibilityElement(children: .combine)
 		.accessibilityLabel(activity)
-		.onAppear {
-			guard !reduceMotion else { glowing = true; return }
-			withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { glowing = true }
-		}
+		.animation(canAnimate ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true) : nil, value: glowing)
+		.modifier(BrowserAnimationEligibility { value in canAnimate = value; glowing = value })
 	}
 }
 
@@ -859,3 +865,28 @@ private struct BrowserAIChatStreamingResponse: View {
 		}
 	}
 #endif
+
+/// Reuse the same native image object across transcript/composer reflows. Image
+/// bytes and display dimensions are unchanged, preserving existing sampling.
+@MainActor private enum BrowserAIThumbnailCache {
+	#if os(macOS)
+	typealias NativeImage = NSImage
+	#else
+	typealias NativeImage = UIImage
+	#endif
+	private static let cache: NSCache<NSString, NativeImage> = {
+		let value = NSCache<NSString, NativeImage>()
+		value.countLimit = 32
+		value.totalCostLimit = 64 * 1024 * 1024
+		return value
+	}()
+	static func image(id: UUID, data: Data) -> NativeImage? {
+		let key = id.uuidString as NSString
+		if let cached = cache.object(forKey: key) { return cached }
+		guard let image = NativeImage(data: data) else { return nil }
+		let pixels = Double(image.size.width) * Double(image.size.height) * 4
+		let cost = pixels.isFinite ? Int(min(max(pixels, Double(data.count)), Double(Int.max / 2))) : data.count
+		cache.setObject(image, forKey: key, cost: cost)
+		return image
+	}
+}

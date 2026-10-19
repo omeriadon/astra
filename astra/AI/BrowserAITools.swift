@@ -299,12 +299,12 @@ enum BrowserAITools {
 				return try bulkAction(arguments, kind: .move, browser: browser)
 			case .readPage:
 				guard let controller = try tab().activeController else { throw BrowserAIError.pageUnavailable }
-				let page = try await BrowserAIPageText.extract(from: controller)
 				let offset = arguments["offset"].flatMap(Int.init) ?? 0
 				let limit = arguments["limit"].flatMap(Int.init) ?? 12000
 				guard arguments["offset"] == nil || Int(arguments["offset"]!) != nil,
 				      arguments["limit"] == nil || Int(arguments["limit"]!) != nil,
-				      offset >= 0, (1 ... 24000).contains(limit) else { throw BrowserAIError.invalidRequest }
+				      (0 ... 2_000_000).contains(offset), (1 ... 24000).contains(limit) else { throw BrowserAIError.invalidRequest }
+				let page = try await BrowserAIPageText.extract(from: controller, characterBudget: max(120000, min(2_000_000, offset + limit + 1)))
 				let text = String(page.text.dropFirst(offset).prefix(limit))
 				let next = offset + text.count
 				return "Characters total=\(page.text.count) offset=\(offset) nextOffset=\(next < page.text.count ? String(next) : "none").\n" + BrowserAIPageText(title: page.title, url: page.url, text: text).prompt

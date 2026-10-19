@@ -132,7 +132,7 @@ final class BrowserHibernationManager {
 		let ownedTabIDs: Set<UUID>
 		let visibleTabIDs: Set<UUID>
 		let pinnedTabIDs: Set<UUID>
-		let anyDownloadActive: Bool
+		let downloadingTabIDs: Set<UUID>
 	}
 
 	private func currentEligibility(in browser: Browser) -> EligibilityContext {
@@ -150,7 +150,7 @@ final class BrowserHibernationManager {
 			ownedTabIDs: registry.ownedTabIDs(in: browser),
 			visibleTabIDs: visibleTabIDs,
 			pinnedTabIDs: pinnedTabIDs,
-			anyDownloadActive: browser.session.downloads.activeProgress != nil
+			downloadingTabIDs: Set(browser.tabs.filter { browser.session.downloads.protects($0.controller?.webViewIfLoaded) }.map(\.id))
 		)
 	}
 
@@ -184,7 +184,7 @@ final class BrowserHibernationManager {
 		      tab.peeks.isEmpty,
 		      tab.controller?.webViewIfLoaded != nil,
 		      unsafe tab.controller?.webViewIfLoaded?.window == nil,
-		      !current.anyDownloadActive
+		      !current.downloadingTabIDs.contains(tab.id)
 		else { return false }
 		return idleTime == .zero || now.timeIntervalSince(tab.lastInteractionAt) >= idleTime.timeInterval
 	}

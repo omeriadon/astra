@@ -20,6 +20,7 @@ nonisolated struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 	var restorationState: Data?
 	var recordsNavigationHistory: Bool
 	var easel: BrowserEaselDocument?
+	var closedArchiveID: UUID? = nil
 
 	/// Legacy New Tab pages have no URL or recoverable content. Never restore,
 	/// sync, or persist these as normal tabs; leave Easels and navigable tabs intact.
@@ -123,6 +124,7 @@ nonisolated struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		case restorationState
 		case fileAccessBookmark
 		case easel
+		case closedArchiveID
 	}
 
 	nonisolated init(from decoder: Decoder) throws {
@@ -155,6 +157,7 @@ nonisolated struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		restorationState = try container.decodeIfPresent(Data.self, forKey: .restorationState)
 		fileAccessBookmark = try container.decodeIfPresent(Data.self, forKey: .fileAccessBookmark)
 		easel = try container.decodeIfPresent(BrowserEaselDocument.self, forKey: .easel)
+		closedArchiveID = try container.decodeIfPresent(UUID.self, forKey: .closedArchiveID)
 		// A cached shell may have saved easel content before receiving its internal page type.
 		if internalPage == nil, easel != nil {
 			internalPage = "easel"
@@ -186,6 +189,7 @@ nonisolated struct OpenTab: Codable, Identifiable, Equatable, Sendable {
 		try container.encodeIfPresent(restorationState, forKey: .restorationState)
 		try container.encodeIfPresent(fileAccessBookmark, forKey: .fileAccessBookmark)
 		try container.encodeIfPresent(easel, forKey: .easel)
+		try container.encodeIfPresent(closedArchiveID, forKey: .closedArchiveID)
 	}
 
 	private nonisolated static func clampedIndex(_ index: Int, count: Int) -> Int {

@@ -107,18 +107,13 @@ enum BrowserAICLI {
 			}
 			return try await withTaskCancellationHandler {
 				defer { command.stop() }
-				let fileContext = try command.attachFiles(files)
+				let fileContext = try await command.attachFiles(files)
 				let prompt = request.prompt + fileContext
 				var input = prompt
 				if codex {
 					input = try json(initialize()) + "\n"
 				} else if !images.isEmpty {
-					var content: [[String: Any]] = [["type": "text", "text": prompt]]
-					for image in images {
-						content.append(["type": "text", "text": "Attached image: " + image.name])
-						content.append(["type": "image", "source": ["type": "base64", "media_type": image.mediaType, "data": image.data.base64EncodedString()]])
-					}
-					input = try json(["type": "user", "session_id": "", "message": ["role": "user", "content": content], "parent_tool_use_id": NSNull()]) + "\n"
+					input = try await encodedPrompt(prompt, images: images)
 				}
 				try Task.checkCancellation()
 				try command.start(input: input, closeInput: !codex)
@@ -131,8 +126,8 @@ enum BrowserAICLI {
 							throw command.failure(message: error["message"] as? String)
 						}
 						if event["id"] as? Int == 1 {
-							try command.write(json(["method": "initialized", "params": [:]]) + "\n")
-							try command.write(json(["id": 4, "method": "config/read", "params": ["includeLayers": false]]) + "\n")
+							try await command.write(json(["method": "initialized", "params": [:]]) + "\n")
+							try await command.write(json(["id": 4, "method": "config/read", "params": ["includeLayers": false]]) + "\n")
 						} else if event["id"] as? Int == 4 {
 							let result = event["result"] as? [String: Any] ?? [:]
 							let configuration = result["config"] as? [String: Any] ?? [:]
@@ -151,26 +146,17 @@ enum BrowserAICLI {
 							if case let .codex(modelID) = model, !modelID.isEmpty {
 								params["model"] = modelID
 							}
-							try command.write(json(["id": 2, "method": "thread/start", "params": params]) + "\n")
+							try await command.write(json(["id": 2, "method": "thread/start", "params": params]) + "\n")
 						} else if event["id"] as? Int == 2 {
 							guard let result = event["result"] as? [String: Any],
 							      let thread = result["thread"] as? [String: Any], let id = thread["id"] as? String else { throw BrowserAIError.invalidStream }
-							var content: [[String: Any]] = [["type": "text", "text": prompt]]
-							for image in images {
-								content.append(["type": "image", "url": "data:\(image.mediaType);base64,\(image.data.base64EncodedString())"])
-							}
-							var params: [String: Any] = ["threadId": id, "input": content]
-							if !files.isEmpty {
-								params["sandboxPolicy"] = ["type": "readOnly", "access": ["type": "restricted", "includePlatformDefaults": true, "readableRoots": [command.workingDirectory.path]]]
-							}
-							let effort = request.reasoningEffort ?? "low"
-							if !effort.isEmpty, effort != "provider-default" {
-								params["effort"] = effort
-							}
-							try command.write(json(["id": 3, "method": "turn/start", "params": params]) + "\n")
+							let input = try await encodedPrompt(prompt, images: images, threadID: id,
+							                                    directory: files.isEmpty ? nil : command.workingDirectory.path,
+							                                    effort: request.reasoningEffort ?? "low")
+							try await command.write(input)
 						} else if let id = event["id"], event["method"] != nil {
 							// Never approve commands or external tool requests on the model's behalf.
-							try command.write(json(["id": id, "error": ["code": -32601, "message": "Astra does not allow this tool request."]]) + "\n")
+							try await command.write(json(["id": id, "error": ["code": -32601, "message": "Astra does not allow this tool request."]]) + "\n")
 						}
 					}
 					if response.consume(event, codex: codex) {
@@ -304,8 +290,8 @@ enum BrowserAICLI {
 					}
 					if codex {
 						if event["id"] as? Int == 1 {
-							try command.write(json(["method": "initialized", "params": [:]]) + "\n")
-							try command.write(json(["id": 2, "method": "model/list", "params": ["limit": 100, "includeHidden": false]]) + "\n")
+							try await command.write(json(["method": "initialized", "params": [:]]) + "\n")
+							try await command.write(json(["id": 2, "method": "model/list", "params": ["limit": 100, "includeHidden": false]]) + "\n")
 						} else if event["id"] as? Int == 2, let result = event["result"] as? [String: Any] {
 							options += (result["data"] as? [[String: Any]] ?? []).compactMap { item in
 								guard let id = item["model"] as? String else { return nil }
@@ -313,7 +299,7 @@ enum BrowserAICLI {
 								return BrowserAIModelOption(id: id, title: item["displayName"] as? String ?? id, reasoningLevels: efforts.compactMap { $0["reasoningEffort"] as? String }, defaultReasoning: item["defaultReasoningEffort"] as? String)
 							}
 							if let cursor = result["nextCursor"] as? String {
-								try command.write(json(["id": 2, "method": "model/list", "params": ["limit": 100, "cursor": cursor]]) + "\n")
+								try await command.write(json(["id": 2, "method": "model/list", "params": ["limit": 100, "cursor": cursor]]) + "\n")
 							} else {
 								return options
 							}
@@ -333,7 +319,38 @@ enum BrowserAICLI {
 		}
 	#endif
 
-	private static func json(_ value: [String: Any]) throws -> String {
+	/// Only immutable values cross this boundary; base64 and large JSON payloads
+	/// are prepared off the UI actor before the ordered transport writes them.
+	private nonisolated static func encodedPrompt(_ prompt: String, images: [BrowserAIImage], threadID: String? = nil, directory: String? = nil, effort: String? = nil) async throws -> String {
+		let worker = Task.detached(priority: .userInitiated) {
+			try Task.checkCancellation()
+			var content: [[String: Any]] = [["type": "text", "text": prompt]]
+			for image in images {
+				try Task.checkCancellation()
+				if threadID != nil {
+					content.append(["type": "image", "url": "data:\(image.mediaType);base64,\(image.data.base64EncodedString())"])
+				} else {
+					content.append(["type": "text", "text": "Attached image: " + image.name])
+					content.append(["type": "image", "source": ["type": "base64", "media_type": image.mediaType, "data": image.data.base64EncodedString()]])
+				}
+			}
+			let message: [String: Any]
+			if let threadID {
+				var params: [String: Any] = ["threadId": threadID, "input": content]
+				if let directory { params["sandboxPolicy"] = ["type": "readOnly", "access": ["type": "restricted", "includePlatformDefaults": true, "readableRoots": [directory]]] }
+				if let effort, !effort.isEmpty, effort != "provider-default" { params["effort"] = effort }
+				message = ["id": 3, "method": "turn/start", "params": params]
+			} else {
+				message = ["type": "user", "session_id": "", "message": ["role": "user", "content": content], "parent_tool_use_id": NSNull()]
+			}
+			let result = try json(message) + "\n"
+			try Task.checkCancellation()
+			return result
+		}
+		return try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+	}
+
+	private nonisolated static func json(_ value: [String: Any]) throws -> String {
 		try String(decoding: JSONSerialization.data(withJSONObject: value), as: UTF8.self)
 	}
 }
@@ -412,6 +429,7 @@ nonisolated struct BrowserAICommandResponse {
 		private let process = Process()
 		private let input = Pipe()
 		private let output = Pipe()
+		private lazy var inputWriter = BrowserAICommandInput(input.fileHandleForWriting)
 		private let directory: URL
 		private let name: String
 		private let diagnosticFile: FileHandle
@@ -561,21 +579,15 @@ nonisolated struct BrowserAICommandResponse {
 				stop()
 				throw BrowserAIError.commandFailed(name.capitalized, "The installed command could not be started. Check its permissions.")
 			}
-			let handle = input.fileHandleForWriting
-			Task.detached {
-				do {
-					try handle.write(contentsOf: Data(text.utf8))
-					if closeInput {
-						try handle.close()
-					}
-				} catch {
-					BrowserLog.warning(.ai, "ai.cli.stdin-write.failed", metadata: [
-						"bytes": String(text.utf8.count),
-						"error": BrowserLog.errorDescription(error),
-					])
+			let writer = inputWriter
+			Task {
+				do { try await writer.write(text, close: closeInput) }
+				catch {
+					BrowserLog.warning(.ai, "ai.cli.stdin-write.failed", metadata: ["error": BrowserLog.errorDescription(error)])
 					continuation.finish()
 				}
 			}
+
 			timeout = Task { [weak self] in
 				do { try await Task.sleep(for: .seconds(180)) } catch { return }
 				self?.timedOut = true
@@ -583,26 +595,20 @@ nonisolated struct BrowserAICommandResponse {
 			}
 		}
 
-		func attachFiles(_ files: [BrowserAIFile]) throws -> String {
-			var context = ""
-			for (index, file) in files.enumerated() {
-				let name = URL(fileURLWithPath: file.name).lastPathComponent
-				let url = directory.appendingPathComponent("attachment-\(index)-\(name)")
-				try file.data.write(to: url, options: .atomic)
-				context += "\nAttached file (\(file.mediaType)): \(url.path)"
+		func attachFiles(_ files: [BrowserAIFile]) async throws -> String {
+			let directory = directory
+			let worker = Task.detached(priority: .userInitiated) {
+				var context = ""
+				for (index, file) in files.enumerated() {
+					try Task.checkCancellation()
+					let name = URL(fileURLWithPath: file.name).lastPathComponent
+					let url = directory.appendingPathComponent("attachment-\(index)-\(name)")
+					try file.data.write(to: url, options: .atomic)
+					context += "\nAttached file (\(file.mediaType)): \(url.path)"
+				}
+				return context
 			}
-			return context
-		}
-
-		func attach(_ images: [BrowserAIImage]) throws {
-			var arguments = process.arguments ?? []
-			for (index, image) in images.enumerated() {
-				let extensionName = image.mediaType == "image/jpeg" ? "jpg" : image.mediaType == "image/webp" ? "webp" : image.mediaType == "image/gif" ? "gif" : "png"
-				let url = directory.appendingPathComponent("image-\(index).\(extensionName)")
-				try image.data.write(to: url, options: .atomic)
-				arguments.insert(contentsOf: ["--image", url.path], at: max(0, arguments.count - 1))
-			}
-			process.arguments = arguments
+			return try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
 		}
 
 		func failure(message: String? = nil) -> BrowserAIError {
@@ -640,8 +646,8 @@ nonisolated struct BrowserAICommandResponse {
 			return .commandFailed(name.capitalized, reason)
 		}
 
-		func write(_ text: String) throws {
-			try input.fileHandleForWriting.write(contentsOf: Data(text.utf8))
+		func write(_ text: String) async throws {
+			try await inputWriter.write(text)
 		}
 
 		func stop() {
@@ -651,22 +657,22 @@ nonisolated struct BrowserAICommandResponse {
 			}
 			output.fileHandleForReading.readabilityHandler = nil
 			continuation.finish()
-			try? input.fileHandleForWriting.close()
+			inputWriter.cancel()
 			try? diagnosticFile.close()
 			let access = scopedAccess
 			scopedAccess = []
-			if !access.isEmpty {
-				let process = process
-				Task.detached {
-					if process.isRunning {
-						process.waitUntilExit()
-					}
-					for url in access {
-						url.stopAccessingSecurityScopedResource()
-					}
+			let process = process
+			let directory = directory
+			Task.detached {
+				let forceStop = Task.detached {
+					do { try await Task.sleep(for: .seconds(2)) } catch { return }
+					if process.isRunning { _ = Darwin.kill(process.processIdentifier, SIGKILL) }
 				}
+				if process.isRunning { process.waitUntilExit() }
+				forceStop.cancel()
+				for url in access { url.stopAccessingSecurityScopedResource() }
+				try? FileManager.default.removeItem(at: directory)
 			}
-			try? FileManager.default.removeItem(at: directory)
 		}
 	}
 #endif

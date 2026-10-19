@@ -221,10 +221,10 @@ final class BrowserController: NSObject, Identifiable {
 	var closeRequested: (() -> Void)?
 	@ObservationIgnored
 	var promptOwnership: ((WKWebView) -> Bool)?
-	@ObservationIgnored
 	private var isOpeningExternalApplication = false
-	@ObservationIgnored
 	private var pendingLifecycleOperations = 0
+	private var popupDependencyRevision = 0
+	private var attachmentActivityRevision = 0
 	private let livePopupControllers = NSHashTable<BrowserController>.weakObjects()
 	@ObservationIgnored
 	// ponytail: controller-wide two-second throttle; per-origin limits if abuse becomes measurable.
@@ -293,7 +293,8 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	private var hasLivePopupDependency: Bool {
-		livePopupControllers.allObjects.contains { $0.isWebViewReady && $0.webViewIfLoaded != nil }
+		_ = popupDependencyRevision
+		return livePopupControllers.allObjects.contains { $0.isWebViewReady && $0.webViewIfLoaded != nil }
 	}
 
 	func beginLifecycleOperation() {
@@ -325,7 +326,9 @@ final class BrowserController: NSObject, Identifiable {
 	/// detached host could interrupt. Ordinary retained pages can be detached
 	/// by BrowserWebView without rebuilding their WebView.
 	var shouldKeepWebViewAttached: Bool {
-		requiresMediaTeardownConfirmation
+		// Re-evaluate the native display-capture probe when activity is refreshed.
+		_ = attachmentActivityRevision
+		return requiresMediaTeardownConfirmation
 			|| isCapturing
 			|| isLoading
 			|| hasUnsavedChanges
@@ -1223,8 +1226,10 @@ final class BrowserController: NSObject, Identifiable {
 		mediaObservationTask = Task { @MainActor [weak self] in
 			while !Task.isCancelled {
 				guard self?.createdWebView != nil else { return }
+				if let self { self.attachmentActivityRevision &+= 1 }
 				let hasActivity = self?.isPlayingMedia == true
 					|| self?.isCapturing == true
+					|| self?.displayCaptureState == true
 					|| self?.isPictureInPictureActive == true
 					|| self?.isEnteringPictureInPicture == true
 				let isDetached = unsafe self?.createdWebView?.window == nil
@@ -1258,7 +1263,7 @@ final class BrowserController: NSObject, Identifiable {
 	func refreshActivity() async -> Bool {
 		guard !isInvalidated, !isRefreshingActivity, let webView = createdWebView else { return false }
 		isRefreshingActivity = true
-		defer { isRefreshingActivity = false }
+		defer { isRefreshingActivity = false; attachmentActivityRevision &+= 1 }
 		let documentID = navigationIdentifier
 		let script = """
 		(() => {
@@ -1859,16 +1864,6 @@ final class BrowserController: NSObject, Identifiable {
 
 	private func owns(_ webView: WKWebView) -> Bool {
 		!isInvalidated && createdWebView === webView
-	}
-
-	var encryptedInteractionState: Data? {
-		encryptedInteractionState(from: createdWebView?.interactionState)
-	}
-
-	func encryptedInteractionState(from state: Any?) -> Data? {
-		guard !session.isPrivate, canRecordVisit, let committedURL,
-		      let data = state as? Data else { return nil }
-		return BrowserRestorationStore.seal(data, for: BrowserAddress.withoutCredentials(committedURL))
 	}
 
 	func restoreInteractionState(_ state: Any, historyPrefix: [URL]) {
@@ -3714,6 +3709,7 @@ extension BrowserController: WKUIDelegate {
 		guard let popup = popupRequested?(configuration, source, inBackground) else { return nil }
 		if let controller = popup.navigationDelegate as? BrowserController {
 			livePopupControllers.add(controller)
+			popupDependencyRevision &+= 1
 			if isAuthenticationSessionBrowser {
 				controller.isAuthenticationSessionBrowser = true
 			}

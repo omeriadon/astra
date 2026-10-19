@@ -2,6 +2,16 @@ import Defaults
 import Foundation
 
 /// Disposable metadata used to paint the browser shell while the authoritative session loads.
+private actor BrowserLaunchCacheWriter {
+	private var latestRevision: UInt64 = 0
+	func save(_ snapshot: BrowserLaunchCache.Snapshot, revision: UInt64) -> Data? {
+		guard revision >= latestRevision, let data = BrowserLaunchCache.encoded(snapshot) else { return nil }
+		latestRevision = revision
+		UserDefaults.standard.set(data, forKey: "browserLaunchCache")
+		return data
+	}
+}
+
 enum BrowserLaunchCache {
 	// shortcut: 256 tabs, 32 spaces, 64 favicons, and 2 MB total bound startup decoding; increase if normal sessions exceed these limits.
 	nonisolated static let maximumTabs = 256
@@ -10,7 +20,7 @@ enum BrowserLaunchCache {
 	nonisolated static let maximumFaviconBytes = 512 * 1024
 	nonisolated static let maximumEncodedBytes = 2 * 1024 * 1024
 
-	struct Snapshot: Codable, Equatable, Sendable {
+	nonisolated struct Snapshot: Codable, Equatable, Sendable {
 		var tabs: [Tab]
 		var spaces: [Space]
 		var favouriteTabIDs: [UUID]
@@ -89,7 +99,7 @@ enum BrowserLaunchCache {
 		}
 	}
 
-	struct Tab: Codable, Equatable, Sendable {
+	nonisolated struct Tab: Codable, Equatable, Sendable {
 		var id: UUID
 		var url: URL?
 		var title: String
@@ -111,7 +121,7 @@ enum BrowserLaunchCache {
 		}
 	}
 
-	struct Space: Codable, Equatable, Sendable {
+	nonisolated struct Space: Codable, Equatable, Sendable {
 		var id: UUID
 		var name: String
 		var symbol: String
@@ -141,23 +151,85 @@ enum BrowserLaunchCache {
 	// data changes; retain equality checks so external settings edits are seen.
 	@MainActor private static var lastDecodedData: Data?
 	@MainActor private static var lastDecodedSnapshot: Snapshot?
+	@MainActor private static var saveRevision: UInt64 = 0
+	@MainActor private static var pendingSave = false
+	private static let writer = BrowserLaunchCacheWriter()
 
 	static func load() -> Snapshot? {
+		if pendingSave { return applyingSelection(to: lastDecodedSnapshot) }
 		let data = Defaults[.browserLaunchCache]
 		if let lastDecodedData, lastDecodedData == data {
-			return lastDecodedSnapshot
+			return applyingSelection(to: lastDecodedSnapshot)
 		}
 		let snapshot = decoded(data)
 		lastDecodedData = data
 		lastDecodedSnapshot = snapshot
-		return snapshot
+		return applyingSelection(to: snapshot)
+	}
+
+	static func containsSelection(tabID: UUID, spaceID: UUID) -> Bool {
+		guard let snapshot = lastDecodedSnapshot else { return false }
+		return snapshot.tabs.contains { $0.id == tabID } && snapshot.spaces.contains { $0.id == spaceID }
+	}
+
+	/// A selection outside the bounded shell only replaces one metadata entry.
+	/// Normal selection writes still touch just the tiny selection journal.
+	static func includeSelection(tab: Tab, space: Space, isFavourite: Bool) {
+		guard var snapshot = lastDecodedSnapshot else { return }
+		if !snapshot.tabs.contains(where: { $0.id == tab.id }) {
+			if snapshot.tabs.count >= maximumTabs { snapshot.tabs.removeLast() }
+			snapshot.tabs.append(tab)
+		}
+		if let index = snapshot.spaces.firstIndex(where: { $0.id == space.id }) {
+			if !isFavourite, !snapshot.spaces[index].tabIDs.contains(tab.id) { snapshot.spaces[index].tabIDs.append(tab.id) }
+			snapshot.spaces[index].selectedTabID = tab.id
+		} else {
+			if snapshot.spaces.count >= maximumSpaces { snapshot.spaces.removeLast() }
+			var space = space
+			if isFavourite { space.tabIDs.removeAll { $0 == tab.id } }
+			snapshot.spaces.append(space)
+		}
+		if isFavourite, !snapshot.favouriteTabIDs.contains(tab.id) { snapshot.favouriteTabIDs.append(tab.id) }
+		snapshot.selectedTabID = tab.id; snapshot.selectedSpaceID = space.id
+		snapshot = Snapshot(tabs: snapshot.tabs, spaces: snapshot.spaces, favouriteTabIDs: snapshot.favouriteTabIDs, selectedSpaceID: space.id, selectedTabID: tab.id, favicons: snapshot.favicons)
+		save(snapshot)
 	}
 
 	static func save(_ snapshot: Snapshot) {
-		guard let data = encoded(snapshot) else { return }
-		Defaults[.browserLaunchCache] = data
-		lastDecodedData = data
+		saveRevision &+= 1
+		let revision = saveRevision
 		lastDecodedSnapshot = snapshot
+		pendingSave = true
+		updateSelection(tabID: snapshot.selectedTabID, spaceID: snapshot.selectedSpaceID)
+		Task { @MainActor in
+			let data = await writer.save(snapshot, revision: revision)
+			guard saveRevision == revision else { return }
+			pendingSave = false
+			if let data { lastDecodedData = data }
+		}
+	}
+
+	/// Frequent selection changes persist only two UUIDs, never favicon bytes.
+	static func updateSelection(tabID: UUID?, spaceID: UUID?) {
+		var selection: [String: String] = [:]
+		selection["tab"] = tabID?.uuidString
+		selection["space"] = spaceID?.uuidString
+		UserDefaults.standard.set(selection, forKey: "browserLaunchSelection")
+	}
+
+	private static func applyingSelection(to snapshot: Snapshot?) -> Snapshot? {
+		guard var snapshot else { return nil }
+		let selection = UserDefaults.standard.dictionary(forKey: "browserLaunchSelection") as? [String: String] ?? [:]
+		if let id = selection["tab"].flatMap(UUID.init(uuidString:)), snapshot.tabs.contains(where: { $0.id == id }) {
+			snapshot.selectedTabID = id
+		}
+		if let id = selection["space"].flatMap(UUID.init(uuidString:)), let index = snapshot.spaces.firstIndex(where: { $0.id == id }) {
+			snapshot.selectedSpaceID = id
+			if let tab = snapshot.selectedTabID, snapshot.spaces[index].tabIDs.contains(tab) || snapshot.favouriteTabIDs.contains(tab) {
+				snapshot.spaces[index].selectedTabID = tab
+			}
+		}
+		return snapshot
 	}
 
 	static func updateFavicons(_ favicons: [String: Data]) {
@@ -188,14 +260,14 @@ enum BrowserLaunchCache {
 		save(updated)
 	}
 
-	static func encoded(_ snapshot: Snapshot) -> Data? {
+	nonisolated static func encoded(_ snapshot: Snapshot) -> Data? {
 		let encoder = PropertyListEncoder()
 		encoder.outputFormat = .binary
 		guard let data = try? encoder.encode(snapshot), data.count <= maximumEncodedBytes else { return nil }
 		return data
 	}
 
-	static func decoded(_ data: Data) -> Snapshot? {
+	nonisolated static func decoded(_ data: Data) -> Snapshot? {
 		guard !data.isEmpty, data.count <= maximumEncodedBytes else { return nil }
 		return try? PropertyListDecoder().decode(Snapshot.self, from: data)
 	}

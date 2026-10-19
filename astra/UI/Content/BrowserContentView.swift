@@ -45,6 +45,7 @@ struct BrowserContentView: View, Animatable {
 				.allowsHitTesting(selectedTab?.peeks.isEmpty == true || selectedTab?.activeController === selectedTab?.controller)
 				.accessibilityHidden(!(selectedTab?.peeks.isEmpty == true || selectedTab?.activeController === selectedTab?.controller))
 		}
+		.task(id: browser.tabCollectionRevision) { browser.tabResources.reconcileProtectedControllers() }
 	}
 
 	@ViewBuilder
@@ -182,6 +183,41 @@ private struct KeepAliveWebStack: View {
 final class BrowserTabResourceManager {
 	@ObservationIgnored private weak var browser: Browser?
 	private(set) var warmControllerLimit = 4
+	private var protectedControllers: [UUID: [BrowserController]] = [:]
+	@ObservationIgnored private var observationTokens: [UUID: UUID] = [:]
+	@ObservationIgnored private var observedTabIdentities: [UUID: ObjectIdentifier] = [:]
+
+	/// Install dependency tracking once per tab membership change. Each activity
+	/// change then refreshes only its tab; rendering never scans every WebView.
+	func reconcileProtectedControllers() {
+		guard let browser else { return }
+		let ids = Set(browser.tabs.map(\.id))
+		protectedControllers = protectedControllers.filter { ids.contains($0.key) }
+		observationTokens = observationTokens.filter { ids.contains($0.key) }
+		observedTabIdentities = observedTabIdentities.filter { ids.contains($0.key) }
+		for tab in browser.tabs where observedTabIdentities[tab.id] != ObjectIdentifier(tab) { observeProtection(of: tab) }
+	}
+
+	func refreshProtection(of tab: BrowserTab) { observeProtection(of: tab) }
+
+	private func observeProtection(of tab: BrowserTab) {
+		let token = UUID()
+		observationTokens[tab.id] = token
+		observedTabIdentities[tab.id] = ObjectIdentifier(tab)
+		let controllers = withObservationTracking {
+			([tab.controller].compactMap(\.self) + tab.peeks.map(\.controller)).filter { $0.shouldKeepWebViewAttached }
+		} onChange: { [weak self, weak tab] in
+			Task { @MainActor in
+				guard let self, let tab, self.observationTokens[tab.id] == token,
+				      self.browser?.tab(withID: tab.id) === tab else { return }
+				self.observeProtection(of: tab)
+			}
+		}
+		let previous = protectedControllers[tab.id] ?? []
+		if previous.map(\.id) != controllers.map(\.id) {
+			protectedControllers[tab.id] = controllers.isEmpty ? nil : controllers
+		}
+	}
 
 	init(browser: Browser) {
 		self.browser = browser
@@ -234,12 +270,9 @@ final class BrowserTabResourceManager {
 			      let tab = tabsByID[id], tab.internalPage == nil else { continue }
 			append(tab.controller)
 		}
-		for tab in browser.tabs where isOwned(tab.id) {
-			append(tab.controller?.shouldKeepWebViewAttached == true ? tab.controller : nil)
-			for peek in tab.id == selectedTab?.id ? [] : tab.peeks {
-				if peek.controller.shouldKeepWebViewAttached {
-					append(peek.controller)
-				}
+		for (tabID, controllers) in protectedControllers where isOwned(tabID) {
+			for controller in controllers {
+				if tabID != selectedTab?.id || controller === selectedTab?.controller { append(controller) }
 			}
 		}
 		BrowserLog.duration(.performance, "workflow.webview-hosts.resolve",

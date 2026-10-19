@@ -265,7 +265,7 @@ final class BrowserTab: Identifiable {
 			modifiedAt: modifiedAt,
 			peeks: recordsNavigationHistory ? (isHibernated ? storedPeeks : peeks.filter { !$0.controller.snapshotNavigationOnly }.map(\.openPeek)) : [],
 			recordsNavigationHistory: recordsNavigationHistory,
-			restorationState: recordsNavigationHistory && !session.isPrivate ? controller?.encryptedInteractionState ?? storedRestorationState : nil,
+			restorationState: recordsNavigationHistory && !session.isPrivate ? storedRestorationState : nil,
 			fileAccessBookmark: controller?.fileAccessBookmark ?? storedFileAccessBookmark,
 			easel: storedEasel
 		)
@@ -366,6 +366,26 @@ final class BrowserTab: Identifiable {
 		)
 	}
 
+	@ObservationIgnored private var restorationCapture: (UUID, Int, Data, URL, Int, Int)?
+	/// Capture WebKit once per committed document. Scrolling has its own journal;
+	/// encryption runs in the serialized persistence job, never in openTab.
+	var restorationInput: (Data, URL)? {
+		guard recordsNavigationHistory, !session.isPrivate else { return nil }
+		if let controller {
+			guard controller.hasCurrentPageDocument, let url = controller.committedURL else { return nil }
+			let address = BrowserAddress.withoutCredentials(url)
+			if let cached = restorationCapture, cached.0 == controller.id, cached.1 == controller.navigationIdentifier,
+			   cached.3 == address, cached.4 == controller.history.count, cached.5 == controller.historyIndex {
+				return (cached.2, cached.3)
+			}
+			guard let data = controller.webViewIfLoaded?.interactionState as? Data, data.count <= 4 * 1024 * 1024 else { return nil }
+			restorationCapture = (controller.id, controller.navigationIdentifier, data, address, controller.history.count, controller.historyIndex)
+			return (data, address)
+		}
+		guard let data = storedInteractionState as? Data, let url = currentURL, data.count <= 4 * 1024 * 1024 else { return nil }
+		return (data, BrowserAddress.withoutCredentials(url))
+	}
+
 	var canHibernate: Bool {
 		controller?.canHibernate != false && peeks.allSatisfy(\.controller.canHibernate)
 	}
@@ -377,8 +397,9 @@ final class BrowserTab: Identifiable {
 	func hibernate(interactionState: Any? = nil) {
 		guard internalPage == nil, let controller, canHibernate else { return }
 		let interactionState = interactionState ?? controller.webViewIfLoaded?.interactionState
-		storedRestorationState = controller.encryptedInteractionState(from: interactionState)
-		storedInteractionState = storedRestorationState == nil ? interactionState : nil
+		storedRestorationState = nil
+		storedInteractionState = interactionState
+		restorationCapture = nil
 		storedFileAccessBookmark = controller.fileAccessBookmark
 		storedHistoryPrefix = controller.liveHistoryPrefix
 		storedURL = controller.url

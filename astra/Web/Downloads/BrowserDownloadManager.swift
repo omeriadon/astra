@@ -251,6 +251,11 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		showToast(symbol: "exclamationmark.triangle", message: "Saved downloads could not be read. Existing download data was preserved.")
 	}
 
+	func protects(_ webView: WKWebView?) -> Bool {
+		guard let webView else { return false }
+		return downloads.values.contains { $0.webView === webView }
+	}
+
 	func start(_ download: WKDownload, sourceURL: URL? = nil, source: UnitPoint = .center) {
 		BrowserLog.info(.downloads, "download.start", metadata: ["source": BrowserLog.url(sourceURL ?? download.webView?.url), "request": BrowserLog.request(download.originalRequest), "private": String(privateDataStore != nil)])
 		guard !isClosing else {
