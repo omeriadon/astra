@@ -51,6 +51,51 @@ struct DownloadsSidebarView: View {
 
 #if os(macOS)
 import AppKit
+import UniformTypeIdentifiers
+
+/// NSTableView requires NSPasteboardWriting rather than SwiftUI's NSItemProvider.
+/// This adapter fulfills native file promises through the existing async,
+/// security-scope-aware download drag provider. A userInfo strong reference
+/// keeps the delegate alive if the sidebar closes before the drop completes.
+private final class DownloadNativeFilePromise: NSObject, NSFilePromiseProviderDelegate {
+	let source: NSItemProvider
+	let name: String
+	let type: String
+	private let worker = OperationQueue()
+
+	init(source: NSItemProvider, name: String, type: String) {
+		self.source = source
+		self.name = name
+		self.type = type
+		super.init()
+		worker.maxConcurrentOperationCount = 1
+		worker.qualityOfService = .userInitiated
+	}
+
+	func operationQueue(for filePromiseProvider: NSFilePromiseProvider) -> OperationQueue {
+		worker
+	}
+
+	func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider, fileNameForType fileType: String) -> String {
+		name
+	}
+
+	func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider,
+	                         writePromiseTo url: URL, completionHandler: @escaping ((any Error)?) -> Void) {
+		source.loadFileRepresentation(forTypeIdentifier: type) { sourceURL, error in
+			guard let sourceURL else {
+				completionHandler(error ?? CocoaError(.fileNoSuchFile))
+				return
+			}
+			do {
+				try FileManager.default.copyItem(at: sourceURL, to: url)
+				completionHandler(nil)
+			} catch {
+				completionHandler(error)
+			}
+		}
+	}
+}
 
 private final class DownloadActionButton: NSButton {
 	var run: (() -> Void)?
@@ -451,7 +496,12 @@ private struct NativeDownloadsList: NSViewRepresentable {
 		}
 		func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> (any NSPasteboardWriting)? {
 			guard let model, let item = model.items[safe: row], item.status == .completed else { return nil }
-			return (model.manager.dragProvider(item.id) as? (any NSPasteboardWriting)) ?? (item.fileURL as NSURL)
+			guard let source = model.manager.dragProvider(item.id) else { return nil }
+			let type = (UTType(filenameExtension: item.fileURL.pathExtension) ?? .data).identifier
+			let delegate = DownloadNativeFilePromise(source: source, name: item.name, type: type)
+			let promise = NSFilePromiseProvider(fileType: type, delegate: delegate)
+			promise.userInfo = delegate
+			return promise
 		}
 	}
 }
