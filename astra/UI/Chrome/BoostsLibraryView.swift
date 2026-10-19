@@ -85,7 +85,11 @@ private final class NativeBoostCell: NSTableCellView {
 	}
 	required init?(coder: NSCoder) { nil }
 
-	func configure(_ boost: BrowserBoost, store: BrowserBoostStore) {
+	func configure(_ boost: BrowserBoost, store: BrowserBoostStore, theme: BrowserTheme) {
+		let ink = NSColor(theme.foregroundColor)
+		nameLabel.textColor = ink
+		domainLabel.textColor = ink.withAlphaComponent(0.65)
+		edit.contentTintColor = ink
 		indicator.image = NSImage(systemSymbolName: boost.isEnabled ? "checkmark.circle.fill" : "circle",
 		                          accessibilityDescription: "Toggle Boost")
 		indicator.contentTintColor = boost.isEnabled ? .controlAccentColor : .secondaryLabelColor
@@ -123,6 +127,8 @@ private final class NativeBoostsContainer: NSView {
 		scroll.hasHorizontalScroller = false
 		scroll.autohidesScrollers = true
 		table.backgroundColor = .clear
+		table.frame = scroll.contentView.bounds
+		table.autoresizingMask = [.width]
 		table.headerView = nil
 		table.intercellSpacing = NSSize(width: 0, height: 0)
 		table.selectionHighlightStyle = .none
@@ -203,6 +209,9 @@ private struct NativeBoostsList: NSViewRepresentable {
 			guard let container else { return }
 			if previous?.boosts != next.boosts { container.table.reloadData() }
 			container.count.stringValue = "\(next.boosts.count) Boosts"
+			container.count.textColor = NSColor(next.browser.theme.foregroundColor).withAlphaComponent(0.65)
+			container.create.contentTintColor = NSColor(next.browser.theme.foregroundColor)
+			container.empty.textColor = NSColor(next.browser.theme.foregroundColor).withAlphaComponent(0.65)
 			container.empty.isHidden = !next.boosts.isEmpty
 			container.create.run = { [weak self] in
 				guard let model = self?.model else { return }
@@ -218,7 +227,7 @@ private struct NativeBoostsList: NSViewRepresentable {
 			let cell = (tableView.makeView(withIdentifier: id, owner: nil) as? NativeBoostCell)
 				?? NativeBoostCell(frame: .zero)
 			cell.identifier = id
-			cell.configure(model.boosts[row], store: model.store)
+			cell.configure(model.boosts[row], store: model.store, theme: model.browser.theme)
 			return cell
 		}
 		func menu(row: Int) -> NSMenu? {
