@@ -83,10 +83,10 @@ final class BrowserAIChatHistory {
 /// Each save writes an immutable generation before atomically replacing the index;
 /// a failed migration/save leaves the previous archive readable.
 actor BrowserAIChatArchive {
-	private struct Record: Codable { let summary: BrowserAIConversation; let generation: UUID }
-	private struct Asset: Codable { let message: Int; let attachment: Int; let image: Bool; let filename: String }
-	private struct Body: Codable { var conversation: BrowserAIConversation; let assets: [Asset] }
-	private var savedRevision = 0
+	private nonisolated struct Record: Codable { let summary: BrowserAIConversation; let generation: UUID }
+	private nonisolated struct Asset: Codable { let message: Int; let attachment: Int; let image: Bool; let filename: String }
+	private nonisolated struct Body: Codable { var conversation: BrowserAIConversation; let assets: [Asset] }
+	private var savedRevisions: [UUID: Int] = [:]
 	private var records: [Record] = []
 	private var loaded = false
 	private var cache: [(UUID, BrowserAIConversation)] = []
@@ -179,7 +179,7 @@ actor BrowserAIChatArchive {
 	}
 	func save(_ conversation: BrowserAIConversation, revision: Int) throws {
 		_ = try load()
-		guard revision >= savedRevision else { return }
+		guard revision >= (savedRevisions[conversation.id] ?? 0) else { return }
 		let directory = try root()
 		let record = try writeBody(conversation, directory: directory)
 		let previous = records.first { $0.summary.id == conversation.id }
@@ -187,7 +187,7 @@ actor BrowserAIChatArchive {
 		next.insert(record, at: 0)
 		try write(JSONEncoder().encode(next), to: directory.appendingPathComponent("index.json"))
 		records = next
-		savedRevision = revision
+		savedRevisions[conversation.id] = revision
 		cache.removeAll { $0.0 == conversation.id }
 		if let previous { try? FileManager.default.removeItem(at: directory.appendingPathComponent(previous.generation.uuidString)) }
 	}

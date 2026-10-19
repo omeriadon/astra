@@ -164,6 +164,14 @@ struct NativeSidebarCheck {
 				precondition(geometry.visibleIndices(in: rect).count < 40)
 			}
 		}
+		var resized = BrowserSidebarLayoutGeometry(items: items, width: 260, top: 38, padding: 4, spacing: 2)
+		let vertical = resized.frames.map { ($0.minY, $0.height) }
+		for width: CGFloat in [168, 400, 220, 260] {
+			resized.resize(width: width)
+			let reference = BrowserSidebarLayoutGeometry(items: items, width: width, top: 38, padding: 4, spacing: 2)
+			precondition(Array(resized.frames) == Array(reference.frames), "Width-only reuse changed row pixels")
+			precondition(zip(resized.frames, vertical).allSatisfy { $0.0.minY == $0.1.0 && $0.0.height == $0.1.1 })
+		}
 		let geometry = BrowserSidebarLayoutGeometry(items: items, width: 260, top: 38, padding: 4, spacing: 2)
 		let lastFavourite = geometry.frames[8]
 		let endFavourite = geometry.dropTarget(at: CGPoint(x: lastFavourite.maxX - 1, y: lastFavourite.midY), items: items)

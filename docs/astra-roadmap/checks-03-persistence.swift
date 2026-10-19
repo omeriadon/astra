@@ -294,5 +294,30 @@ struct BrowserPersistenceCheck {
 		try persistence.saveShutdownMetadata(clean: true)
 		let cleanShutdown = try persistence.loadShutdownMetadata()
 		assert(cleanShutdown?.clean == true)
+		// Closed payload compaction preserves complete navigation and permissions,
+		// while the resident/persisted index carries only display metadata.
+		let closedDirectory = directory.appendingPathComponent("closed-payloads", isDirectory: true)
+		try FileManager.default.createDirectory(at: closedDirectory, withIntermediateDirectories: true)
+		let closedStore = BrowserPersistence(directory: closedDirectory)
+		var closed = tab
+		closed.history = [URL(string: "https://one.example")!, URL(string: "https://two.example")!]
+		closed.historyIndex = 1
+		closed.restorationState = Data(repeating: 42, count: 1024 * 1024)
+		closed.fileAccessBookmark = Data([1, 2, 3])
+		let compacted = try closedStore.compactClosedTabs([closed])
+		assert(compacted[0].closedArchiveID != nil && compacted[0].history.isEmpty && compacted[0].restorationState == nil)
+		let restoredClosed = try closedStore.loadClosedTab(compacted[0])
+		assert(restoredClosed == closed)
+		var closedState = state
+		closedState.closedTabs = compacted
+		closedState.openTabs = []
+		try closedStore.savePersistedState(closedState)
+		let lazyClosed = try closedStore.loadPersistedState()
+		assert(lazyClosed?.closedTabs.first?.closedArchiveID == compacted[0].closedArchiveID)
+		closedState.closedTabs = []
+		try closedStore.savePersistedState(closedState)
+		let payloads = try FileManager.default.contentsOfDirectory(at: closedDirectory.appendingPathComponent("closed-tab-payloads"), includingPropertiesForKeys: nil)
+		assert(payloads.isEmpty, "Deleted closed-tab payload survived a privacy-safe checkpoint")
+
 	}
 }

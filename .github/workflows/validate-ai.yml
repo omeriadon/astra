@@ -25,6 +25,7 @@ jobs:
           set -euo pipefail
           python3 checks/ai-browser-tools-check.py
           node checks/website-augment-check.mjs
+          node checks/page-extraction-budget-check.mjs
 
   markdown-cache:
     name: Markdown attachment cache lifetime
@@ -36,3 +37,29 @@ jobs:
         run: bash scripts/ci/select-xcode-27.sh
       - name: Test attachment cleanup and inline rendering
         run: swift test --package-path Packages/MarkdownView --filter 'MainActorLRUCacheTests|InlineCodeTests|MarkdownRebuildEqualityTests'
+
+  performance-workers:
+    name: Performance worker regressions
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Exercise production transport, search, archive, encryption and attachment workers
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 6 -default-isolation MainActor -strict-concurrency=complete \
+            astra/App/BrowserLog.swift \
+            astra/Models/Tabs/BrowserVisit.swift \
+            astra/Models/Search/BrowserSearchConfiguration.swift \
+            astra/Models/Search/BrowserSearchMatching.swift \
+            astra/Models/Search/BrowserHistorySearch.swift \
+            astra/Models/Search/BrowserLibrarySearch.swift \
+            astra/AI/BrowserAICommandInput.swift \
+            astra/AI/BrowserAIAttachment.swift \
+            astra/AI/BrowserAIChatHistory.swift \
+            astra/Storage/BrowserRestorationStore.swift \
+            checks/performance-worker-check.swift -o "$RUNNER_TEMP/performance-workers"
+          "$RUNNER_TEMP/performance-workers"

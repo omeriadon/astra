@@ -80,7 +80,10 @@ nonisolated struct BrowserAIPageText: Codable, Identifiable, Sendable {
 	    if (!node || depth > 200 || visited.has(node)) return;
 	    visited.add(node);
 	    if (node.nodeType === 3) {
-	        const text = node.nodeValue.replace(/\s+/g, ' ').trim();
+	        const remaining = maximumCharacters - characters;
+	        const raw = node.nodeValue || '';
+	        const text = raw.slice(0, remaining).replace(/\s+/g, ' ').trim();
+	        if (raw.length > remaining) truncated = true;
 	        if (text) append(text);
 	        return;
 	    }
@@ -104,7 +107,7 @@ nonisolated struct BrowserAIPageText: Codable, Identifiable, Sendable {
 	}
 	await walk(document.body);
 	const text = lines.join(' ').split('\n').map(line => line.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
-	return { title: document.title.trim(), url: location.href, text: text + (truncated ? "\n[Page excerpt truncated. Use page tools to inspect additional content.]" : "") };
+	return { title: document.title.slice(0, 4096).trim(), url: location.href, text: text + (truncated ? "\n[Page excerpt truncated. Use page tools to inspect additional content.]" : "") };
 	"""#
 }
 

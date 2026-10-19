@@ -18,6 +18,7 @@ struct BrowserAIChatSidebar: View {
 	@State private var hoveredLinkShiftPressed = false
 	@State private var requestID: UUID?
 	@State private var showsHistory = false
+	@State private var historySelection = UUID()
 	@State private var showsFileImporter = false
 	@State private var history = BrowserAIChatHistory.shared
 	@State private var sync = BrowserSync.shared
@@ -123,9 +124,12 @@ struct BrowserAIChatSidebar: View {
 									}
 									ForEach(history.conversations) { conversation in
 										Button {
+											let token = UUID()
+											historySelection = token
 											Task { @MainActor in
 												let currentID = chat.id
-												if let saved = await history.conversation(conversation.id), !chat.isResponding, chat.id == currentID { chat.select(saved) }
+												let draft = chat.draft
+												if let saved = await history.conversation(conversation.id), !chat.isResponding, !chat.isImporting, chat.id == currentID, chat.draft == draft, historySelection == token { chat.select(saved) }
 											}
 											showsHistory = false
 										} label: {

@@ -101,7 +101,7 @@ nonisolated struct BrowserEaselDocument: Codable, Equatable, Sendable {
 
 		/// Gesture-only geometry checks; imported bytes remain fully validated
 		/// at document commit/import boundaries, never on each pointer event.
-		var geometryIsValid: Bool {
+		nonisolated var geometryIsValid: Bool {
 			x.isFinite && (0 ... 10000).contains(x)
 				&& y.isFinite && (0 ... 1_000_000).contains(y)
 				&& width.isFinite && (32 ... 10000).contains(width)

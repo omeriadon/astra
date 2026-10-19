@@ -327,7 +327,9 @@ final class BrowserController: NSObject, Identifiable {
 	/// detached host could interrupt. Ordinary retained pages can be detached
 	/// by BrowserWebView without rebuilding their WebView.
 	var shouldKeepWebViewAttached: Bool {
-		requiresMediaTeardownConfirmation
+		// Re-evaluate the native display-capture probe when activity is refreshed.
+		_ = isRefreshingActivity
+		return requiresMediaTeardownConfirmation
 			|| isCapturing
 			|| isLoading
 			|| hasUnsavedChanges

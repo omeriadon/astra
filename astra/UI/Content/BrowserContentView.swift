@@ -196,6 +196,8 @@ final class BrowserTabResourceManager {
 		for tab in browser.tabs where observationTokens[tab.id] == nil { observeProtection(of: tab) }
 	}
 
+	func refreshProtection(of tab: BrowserTab) { observeProtection(of: tab) }
+
 	private func observeProtection(of tab: BrowserTab) {
 		let token = UUID()
 		observationTokens[tab.id] = token

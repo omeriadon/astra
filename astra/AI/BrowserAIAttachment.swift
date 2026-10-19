@@ -62,10 +62,10 @@ nonisolated struct BrowserAIAttachment: Codable, Equatable, Identifiable, Sendab
 		if type?.conforms(to: .image) == true {
 			guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
 			      let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-			      	kCGImageSourceCreateThumbnailFromImageAlways: true,
-			      	kCGImageSourceCreateThumbnailWithTransform: true,
-			      	kCGImageSourceThumbnailMaxPixelSize: 2048,
-			      	kCGImageSourceShouldCacheImmediately: true,
+				kCGImageSourceCreateThumbnailFromImageAlways: true,
+				kCGImageSourceCreateThumbnailWithTransform: true,
+				kCGImageSourceThumbnailMaxPixelSize: 2048,
+				kCGImageSourceShouldCacheImmediately: true,
 			      ] as CFDictionary) else { throw BrowserAIError.attachmentUnreadable(name) }
 			try Task.checkCancellation()
 			let encoded = NSMutableData()

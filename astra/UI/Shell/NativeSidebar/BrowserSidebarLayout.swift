@@ -31,7 +31,7 @@ struct BrowserSidebarItem: Equatable {
 }
 
 /// Shared AppKit/UIKit geometry. There are no SwiftUI size probes on resize or
-/// scroll. Only width or item metrics changes rebuild the inexpensive frame index.
+/// scroll. Item metric changes rebuild the index; width changes reuse it.
 struct BrowserSidebarLayoutGeometry {
 	struct Frames: RandomAccessCollection {
 		typealias Index = Int

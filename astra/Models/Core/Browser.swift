@@ -1704,6 +1704,7 @@ final class Browser {
 	}
 
 	private func selectTab(_ id: UUID, inSpace requestedSpaceID: UUID?) {
+		if let selectedTab { tabResources.refreshProtection(of: selectedTab) }
 		let selectionStartedAt = BrowserLog.clock()
 		BrowserLog.debug(.tabs, "tab.select", metadata: ["window": BrowserLog.id(windowID), "from": BrowserLog.id(selectedTabID), "to": BrowserLog.id(id)])
 		guard let tab = tab(withID: id) else { return }
@@ -3642,6 +3643,14 @@ final class Browser {
 	private func persistSelectionOnly() {
 		guard !hydrationFailed, didFinishHydration, !isPrivate, let persistence else { return }
 		BrowserLaunchCache.updateSelection(tabID: selectedTabID, spaceID: workspace.selectedSpaceID)
+		if !BrowserLaunchCache.containsSelection(tabID: selectedTabID, spaceID: workspace.selectedSpaceID), let selectedTab {
+			let space = selectedSpace
+			var tabIDs = Array(space.tabIDs.prefix(BrowserLaunchCache.maximumTabs))
+			if !tabIDs.contains(selectedTabID) { tabIDs.append(selectedTabID) }
+			BrowserLaunchCache.includeSelection(
+				tab: .init(id: selectedTabID, url: selectedTab.currentURL.map(BrowserAddress.withoutCredentials), title: String(selectedTab.title.prefix(240)), order: BrowserLaunchCache.maximumTabs - 1, internalPage: selectedTab.internalPage == .easel ? "easel" : nil),
+				space: .init(id: space.id, name: String(space.name.prefix(80)), symbol: space.symbol, theme: space.theme, tabIDs: tabIDs, selectedTabID: selectedTabID))
+		}
 		let update = BrowserSelectionUpdate(
 			windowID: windowID,
 			selectedTabID: selectedTabID,

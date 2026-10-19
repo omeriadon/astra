@@ -20,7 +20,7 @@ enum BrowserLaunchCache {
 	nonisolated static let maximumFaviconBytes = 512 * 1024
 	nonisolated static let maximumEncodedBytes = 2 * 1024 * 1024
 
-	struct Snapshot: Codable, Equatable, Sendable {
+	nonisolated struct Snapshot: Codable, Equatable, Sendable {
 		var tabs: [Tab]
 		var spaces: [Space]
 		var favouriteTabIDs: [UUID]
@@ -99,7 +99,7 @@ enum BrowserLaunchCache {
 		}
 	}
 
-	struct Tab: Codable, Equatable, Sendable {
+	nonisolated struct Tab: Codable, Equatable, Sendable {
 		var id: UUID
 		var url: URL?
 		var title: String
@@ -121,7 +121,7 @@ enum BrowserLaunchCache {
 		}
 	}
 
-	struct Space: Codable, Equatable, Sendable {
+	nonisolated struct Space: Codable, Equatable, Sendable {
 		var id: UUID
 		var name: String
 		var symbol: String
@@ -165,6 +165,31 @@ enum BrowserLaunchCache {
 		lastDecodedData = data
 		lastDecodedSnapshot = snapshot
 		return applyingSelection(to: snapshot)
+	}
+
+	static func containsSelection(tabID: UUID, spaceID: UUID) -> Bool {
+		guard let snapshot = lastDecodedSnapshot else { return false }
+		return snapshot.tabs.contains { $0.id == tabID } && snapshot.spaces.contains { $0.id == spaceID }
+	}
+
+	/// A selection outside the bounded shell only replaces one metadata entry.
+	/// Normal selection writes still touch just the tiny selection journal.
+	static func includeSelection(tab: Tab, space: Space) {
+		guard var snapshot = lastDecodedSnapshot else { return }
+		if !snapshot.tabs.contains(where: { $0.id == tab.id }) {
+			if snapshot.tabs.count >= maximumTabs { snapshot.tabs.removeLast() }
+			snapshot.tabs.append(tab)
+		}
+		if let index = snapshot.spaces.firstIndex(where: { $0.id == space.id }) {
+			if !snapshot.spaces[index].tabIDs.contains(tab.id) { snapshot.spaces[index].tabIDs.append(tab.id) }
+			snapshot.spaces[index].selectedTabID = tab.id
+		} else {
+			if snapshot.spaces.count >= maximumSpaces { snapshot.spaces.removeLast() }
+			snapshot.spaces.append(space)
+		}
+		snapshot.selectedTabID = tab.id; snapshot.selectedSpaceID = space.id
+		snapshot = Snapshot(tabs: snapshot.tabs, spaces: snapshot.spaces, favouriteTabIDs: snapshot.favouriteTabIDs, selectedSpaceID: space.id, selectedTabID: tab.id, favicons: snapshot.favicons)
+		save(snapshot)
 	}
 
 	static func save(_ snapshot: Snapshot) {
