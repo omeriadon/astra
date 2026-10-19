@@ -36,9 +36,9 @@ private enum Probe {
 	}
 }
 
-// Model AppKit asking about invalidation after installing the proposed bounds.
-// Reporting the new bounds without triggering AppKit's layout scheduling keeps
-// this case deterministic and leaves the geometry cached at the previous width.
+/// Model AppKit asking about invalidation after installing the proposed bounds.
+/// Reporting the new bounds without triggering AppKit's layout scheduling keeps
+/// this case deterministic and leaves the geometry cached at the previous width.
 @MainActor
 private final class InstalledBoundsCollectionView: NSCollectionView {
 	var installedBounds: NSRect?
