@@ -28,6 +28,7 @@ struct BrowserNativeLibraryRow: Identifiable, Equatable {
 	let symbol: String
 	var isFavorite = false
 	var isRead = false
+	var canAddToReadingList = false
 }
 
 enum BrowserNativeLibraryAction: Int, CaseIterable {
@@ -234,6 +235,9 @@ struct BrowserNativeLibraryList: NSViewRepresentable {
 			      }),
 			      case let .item(folder, _) = source else { return [] }
 			if index == entries.count { return .move }
+			if index > 0, case let .item(previousFolder, _) = entries[index - 1], previousFolder == folder {
+				return .move // Includes the gap before the next section header.
+			}
 			guard entries.indices.contains(index) else { return [] }
 			if case let .item(destinationFolder, row) = entries[index],
 			   destinationFolder == folder, row.kind == .bookmark { return .move }
@@ -324,6 +328,7 @@ private final class BrowserNativeLibraryMacRow: NSView {
 
 	func configure(row: BrowserNativeLibraryRow, open: @escaping (Bool) -> Void,
 	               action: @escaping (BrowserNativeLibraryAction) -> Void) {
+		if current?.id != row.id { hovered = false }
 		current = row
 		onOpen = open
 		onAction = action
@@ -371,7 +376,10 @@ private final class BrowserNativeLibraryMacRow: NSView {
 			item.tag = action.rawValue
 			item.target = self
 			item.image = NSImage(systemSymbolName: action.icon(for: current), accessibilityDescription: nil)
-			if action == .addToReadingList { item.isEnabled = true }
+			if action == .addToReadingList { item.isEnabled = current.canAddToReadingList }
+			if action == .openOffline { item.identifier = NSUserInterfaceItemIdentifier("reading-open-offline-\(current.recordID.uuidString)") }
+			if action == .toggleRead { item.identifier = NSUserInterfaceItemIdentifier("reading-toggle-read-\(current.recordID.uuidString)") }
+			if action == .removeReadingList { item.identifier = NSUserInterfaceItemIdentifier("reading-remove-\(current.recordID.uuidString)") }
 			menu.addItem(item)
 		}
 		return menu
@@ -464,7 +472,6 @@ struct BrowserNativeLibraryList: UIViewRepresentable {
 			content.imageProperties.maximumSize = CGSize(width: 16, height: 16)
 			content.textToSecondaryTextVerticalPadding = 2
 			cell.contentConfiguration = content
-			cell.backgroundColor = .clear
 			cell.selectionStyle = .none
 			cell.accessibilityIdentifier = row.id
 			cell.accessibilityLabel = "Open \(row.title)"
@@ -490,7 +497,7 @@ struct BrowserNativeLibraryList: UIViewRepresentable {
 				UIMenu(children: BrowserNativeLibraryAction.available(for: row).map { action in
 					UIAction(title: action.label(for: row),
 					         image: UIImage(systemName: action.icon(for: row)),
-					         attributes: action.isDestructive ? .destructive : []) { _ in
+					         attributes: action == .addToReadingList && !row.canAddToReadingList ? [.disabled] : (action.isDestructive ? [.destructive] : [])) { _ in
 						self?.parent?.action(row, action)
 					}
 				})
