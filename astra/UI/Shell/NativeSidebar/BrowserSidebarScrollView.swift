@@ -50,7 +50,7 @@ private struct BrowserSidebarTraits: Equatable {
 		}
 
 		func makeNSView(context: Context) -> NSScrollView {
-			let scroll = NSScrollView()
+			let scroll = BrowserSidebarNativeScrollView()
 			scroll.drawsBackground = false
 			scroll.contentView.drawsBackground = false
 			scroll.hasVerticalScroller = true
@@ -197,6 +197,20 @@ private struct BrowserSidebarTraits: Equatable {
 		}
 	}
 
+	/// NSScrollView can retain a document's previous content width when its viewport
+	/// shrinks. Keep the native document tied to that viewport, without replacing
+	/// SwiftUI roots (which would reset hover/rename state on every drag frame).
+	private final class BrowserSidebarNativeScrollView: NSScrollView {
+		override func tile() {
+			super.tile()
+			guard let collection = documentView as? NSCollectionView else { return }
+			let width = contentView.bounds.width
+			guard collection.frame.width != width else { return }
+			collection.setFrameSize(NSSize(width: width, height: collection.frame.height))
+			collection.collectionViewLayout?.invalidateLayout()
+		}
+	}
+
 	private final class BrowserSidebarHostingItem: NSCollectionViewItem {
 		private var host: NSHostingView<AnyView>?
 		private var rowID: String?
@@ -277,7 +291,9 @@ private struct BrowserSidebarTraits: Equatable {
 		}
 
 		override func shouldInvalidateLayout(forBoundsChange newBounds: NSRect) -> Bool {
-			newBounds.width != collectionView?.bounds.width
+			// Compare with the width used to build the frames, not the collection's
+			// bounds: AppKit/UIKit may already have installed the new bounds here.
+			newBounds.width != geometry.contentSize.width
 		}
 	}
 #endif
@@ -438,7 +454,9 @@ private struct BrowserSidebarTraits: Equatable {
 		}
 
 		override func shouldInvalidateLayout(forBoundsChange newBounds: CGRect) -> Bool {
-			newBounds.width != collectionView?.bounds.width
+			// Compare with the width used to build the frames, not the collection's
+			// bounds: AppKit/UIKit may already have installed the new bounds here.
+			newBounds.width != geometry.contentSize.width
 		}
 	}
 #endif

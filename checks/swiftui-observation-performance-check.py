@@ -17,7 +17,7 @@ assert "projectionCache.resolve(" in sidebar
 assert "cached.structureRevision == structureRevision" in sidebar
 assert 'BrowserLog.duration(.performance, "sidebar.projection.resolve"' in sidebar
 assert "cached.tabIDs == space.tabIDs" not in sidebar
-assert "BrowserSidebarScrollView(" in sidebar
+assert re.search(r"BrowserSidebarScrollView(?:<[^\n]+>)?\(", sidebar)
 assert "SidebarContentRevision(" in sidebar
 assert "guard resizeStartWidth == nil else { return }" in split
 assert re.search(r"if isHovered\s*(?:&&|,)\s*onSelectTab == nil", row)

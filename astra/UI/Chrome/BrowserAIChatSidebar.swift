@@ -477,29 +477,45 @@ private struct BrowserAIChatToolActivity: View {
 	let calls: [BrowserAIChat.ToolActivity]
 
 	var body: some View {
-		DisclosureGroup {
-			VStack(alignment: .leading, spacing: 8) {
-				ForEach(calls) { call in
-					VStack(alignment: .leading, spacing: 3) {
-						HStack {
-							Text(call.name).fontWeight(.medium)
-							Spacer()
-							Text(call.status)
-						}
-						if let detail = call.detail, !detail.isEmpty {
-							Text(detail).textSelection(.enabled)
-						}
-					}
-				}
+		VStack(alignment: .leading, spacing: 8) {
+			ForEach(calls) { call in
+				let action = BrowserAIAction(rawValue: call.name)
+				Label(action?.title ?? call.name.replacingOccurrences(of: "_", with: " ").capitalized,
+				      systemImage: action?.chatSystemImage ?? "wrench.and.screwdriver")
+					.lineLimit(1)
+					.truncationMode(.tail)
+					.accessibilityIdentifier("ai-chat-tool-\(call.id)")
 			}
-			.padding(.top, 5)
-		} label: {
-			Label("\(calls.count) browser \(calls.count == 1 ? "action" : "actions")", systemImage: "wrench.and.screwdriver")
 		}
 		.font(.caption)
 		.foregroundStyle(.secondary)
-		.tint(Color.secondary)
+		.frame(maxWidth: .infinity, alignment: .leading)
 		.accessibilityIdentifier("ai-chat-tool-activity")
+	}
+}
+
+private extension BrowserAIAction {
+	var chatSystemImage: String {
+		switch self {
+			case .createSpaceFolder, .createBookmarkFolder: "folder.badge.plus"
+			case .createBookmark: "bookmark"
+			case .deleteBookmark: "bookmark.slash"
+			case .openTab: "plus.rectangle.on.rectangle"
+			case .closeTab: "xmark.rectangle"
+			case .pinTab: "pin"
+			case .favouriteTab: "star"
+			case .moveTabToFolder: "folder"
+			case .renameTab: "pencil"
+			case .selectTab: "rectangle.on.rectangle"
+			case .listTabs: "list.bullet.rectangle"
+			case .githubAccount: "person.crop.circle"
+			case .moveTabsToSpace: "arrow.left.arrow.right"
+			case .readPage: "doc.text"
+			case .webSearch: "magnifyingglass"
+			case .listTools: "wrench.and.screwdriver"
+			case .getPageStructure: "list.bullet.indent"
+			case .augmentWebsite: "wand.and.stars"
+		}
 	}
 }
 

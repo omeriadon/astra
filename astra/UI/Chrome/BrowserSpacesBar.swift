@@ -15,22 +15,25 @@ struct BrowserSpacesBar: View {
 			Button {
 				showsSpacePicker.toggle()
 			} label: {
-				HStack {
-					Label(browser.selectedSpace.name, systemImage: browser.selectedSpace.symbol)
-						.lineLimit(1)
-						.contentShape(Rectangle())
-						.popover(isPresented: $showsSpacePicker, arrowEdge: .bottom) {
-							BrowserSpacePickerPopover(
-								browser: browser,
-								onDismiss: { showsSpacePicker = false },
-								onRequestDeleteSpace: { space in
-									onRequestDeleteSpace?(space)
-								}
-							)
-						}
-					Spacer()
+				HStack(spacing: 0) {
+					ViewThatFits(in: .horizontal) {
+						Label(browser.selectedSpace.name, systemImage: browser.selectedSpace.symbol)
+							.fixedSize(horizontal: true, vertical: false)
+						Label(browser.selectedSpace.name, systemImage: browser.selectedSpace.symbol)
+							.labelStyle(.iconOnly)
+					}
+					Spacer(minLength: 0)
 				}
+				.frame(minWidth: 0, maxWidth: .infinity)
 				.frame(height: 25)
+				.contentShape(Rectangle())
+			}
+			.popover(isPresented: $showsSpacePicker, arrowEdge: .bottom) {
+				BrowserSpacePickerPopover(
+					browser: browser,
+					onDismiss: { showsSpacePicker = false },
+					onRequestDeleteSpace: { space in onRequestDeleteSpace?(space) }
+				)
 			}
 			.buttonStyle(.plain)
 			.accessibilityLabel("Switch Space")

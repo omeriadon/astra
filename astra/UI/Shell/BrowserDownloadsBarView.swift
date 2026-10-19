@@ -14,7 +14,7 @@ struct ShellDownloadsBarView: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	var body: some View {
-		HStack {
+		HStack(spacing: 6) {
 			Button {
 				withAnimation(reduceMotion ? .none : .smooth(duration: 0.32)) {
 					showsDownloads.toggle()
@@ -64,7 +64,7 @@ struct ShellDownloadsBarView: View {
 					browser: browser,
 					onRequestDeleteSpace: onRequestDeleteSpace
 				)
-				.frame(maxWidth: .infinity)
+				.frame(minWidth: 0, maxWidth: .infinity)
 			}
 
 			if allAIFeatures, browser.canShowAISidebar, Defaults[.aiSidebar] {
@@ -92,6 +92,7 @@ struct ShellDownloadsBarView: View {
 				}
 				.labelStyle(.iconOnly)
 				.buttonStyle(.plain)
+				.frame(width: 25, height: 25)
 				.accessibilityIdentifier("sidebar-create-easel")
 			}
 

@@ -83,6 +83,17 @@ nonisolated struct BrowserAIToolCall: Codable, Sendable {
 	let arguments: [String: String]
 }
 
+/// App execution metadata stays separate from untrusted page/reference content.
+nonisolated struct BrowserAIToolResult: Sendable {
+	let call: BrowserAIToolCall
+	let succeeded: Bool
+	let result: String
+
+	var payload: [String: Any] {
+		["name": call.name, "arguments": call.arguments, "status": succeeded ? "success" : "error", "result": result]
+	}
+}
+
 #if !ASTRA_WEBSITE_APP_RUNTIME
 	@MainActor
 	struct BrowserAIChatTurnFeature: BrowserAIFeature {
@@ -93,6 +104,7 @@ nonisolated struct BrowserAIToolCall: Codable, Sendable {
 			let images: [BrowserAIImage]
 			let reasoning: String
 			var files: [BrowserAIFile] = []
+			var toolResults: [BrowserAIToolResult] = []
 		}
 
 		nonisolated struct Turn: Decodable, Sendable {
@@ -109,7 +121,7 @@ nonisolated struct BrowserAIToolCall: Codable, Sendable {
 		}
 
 		func request(for input: Input) -> BrowserAIRequest {
-			let payload = (try? JSONSerialization.data(withJSONObject: ["referenceContext": input.context, "userRequest": input.question], options: [.sortedKeys])) ?? Data()
+			let payload = (try? JSONSerialization.data(withJSONObject: ["referenceContext": input.context, "userRequest": input.question, "toolResults": input.toolResults.map(\.payload)], options: [.sortedKeys])) ?? Data()
 			return .init(instructions: BrowserAIPrompts.chatTools + "\nEnabled tools and arguments (all argument values are strings):\n" + input.catalog,
 			             prompt: String(decoding: payload, as: UTF8.self), maximumResponseTokens: 8192,
 			             images: input.images.isEmpty ? nil : input.images, reasoningEffort: input.reasoning, files: input.files.isEmpty ? nil : input.files)
@@ -188,7 +200,7 @@ enum BrowserAITools {
 				case .renameTab: "tabID, name"
 				case .webSearch: "query"
 				case .listTools: "no arguments; returns the current enabled tool catalog"
-				case .getPageStructure: "tabID, optional selector, offset (default 0), limit (1–30). Inspect compact DOM structure before augmenting; repeated children are sampled, not omitted from the local snapshot."
+				case .getPageStructure: "tabID, optional selector, contains (case-insensitive text filter), offset (default 0), limit (1–30). Inspect DOM selectors before augmenting. List/table containers expose itemSelector for all rows and sample children. To find matching rows anywhere in a large table, inspect selector=the itemSelector with contains=requested text. Filters and pagination only limit inspection, never the snapshot."
 				case .augmentWebsite: "tabID, title, operations (JSON array string; may include a javascript operation). See Website Augment contract. Produces a saved artifact; never edits the original page."
 			}
 			return "\(action.rawValue): \(arguments)"
@@ -308,7 +320,7 @@ enum BrowserAITools {
 					guard arguments["offset"] == nil || Int(arguments["offset"]!) != nil,
 					      arguments["limit"] == nil || Int(arguments["limit"]!) != nil,
 					      offset >= 0, (1 ... 30).contains(limit) else { throw BrowserAIError.invalidRequest }
-					return try await BrowserWebsiteAugment.inspect(tab: tab(), selector: arguments["selector"], offset: offset, limit: limit)
+					return try await BrowserWebsiteAugment.inspect(tab: tab(), selector: arguments["selector"], contains: arguments["contains"], offset: offset, limit: limit)
 				#endif
 			case .augmentWebsite:
 				#if ASTRA_WEBSITE_APP_RUNTIME

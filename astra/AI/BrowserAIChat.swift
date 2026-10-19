@@ -223,7 +223,7 @@ final class BrowserAIChat {
 				return "Context \(identity). Characters shown=\(min(page.text.count, 6000)) total=\(page.text.count). Use read_page offset/limit for more or get_page_structure for augmentation.\n" + excerpt.prompt
 			}.joined(separator: "\n\n")
 			let fileContext = files.map(\.prompt).joined(separator: "\n\n")
-			var toolResults = ""
+			var toolResults: [BrowserAIToolResult] = []
 			var answer = ""
 			BrowserLog.debug(.ai, "ai.chat.context-ready", metadata: [
 				"id": BrowserLog.id(sendID), "pages": String(contextPages.count),
@@ -238,15 +238,15 @@ final class BrowserAIChat {
 				try Task.checkCancellation()
 				BrowserLog.debug(.ai, "ai.chat.turn-start", metadata: [
 					"id": BrowserLog.id(sendID), "round": String(round + 1),
-					"tool_results_bytes": String(toolResults.utf8.count),
+					"tool_result_count": String(toolResults.count),
 				])
-				let (turn, results) = try await streamTurn(input: .init(context: context + "\n" + fileContext + "\n<conversation>\n" + conversation + "\n</conversation>\n" + BrowserAITools.inventory(browser) + "\n<tool-results>\n" + toolResults + "\n</tool-results>", question: question, catalog: BrowserAITools.catalog(), images: images, reasoning: selectedReasoning.isEmpty ? "provider-default" : selectedReasoning, files: files.compactMap(\.file)), model: model, browser: browser, spaceID: spaceID)
+				let (turn, results) = try await streamTurn(input: .init(context: context + "\n" + fileContext + "\n<conversation>\n" + conversation + "\n</conversation>\n" + BrowserAITools.inventory(browser), question: question, catalog: BrowserAITools.catalog(), images: images, reasoning: selectedReasoning.isEmpty ? "provider-default" : selectedReasoning, files: files.compactMap(\.file), toolResults: toolResults), model: model, browser: browser, spaceID: spaceID)
 				BrowserLog.debug(.ai, "ai.chat.turn-complete", metadata: [
 					"id": BrowserLog.id(sendID), "round": String(round + 1),
 					"action_count": String(turn.actions.count),
 					"action_names": turn.actions.map(\.name).joined(separator: ","),
 					"response_bytes": String(turn.response.utf8.count),
-					"tool_results_bytes": String(results.utf8.count),
+					"tool_result_count": String(results.count),
 				])
 				toolResults += results
 				if turn.actions.isEmpty {
@@ -325,7 +325,7 @@ final class BrowserAIChat {
 		}
 	}
 
-	private func streamTurn(input: BrowserAIChatTurnFeature.Input, model: BrowserAIModel, browser: Browser, spaceID: UUID) async throws -> (BrowserAIChatTurnFeature.Turn, String) {
+	private func streamTurn(input: BrowserAIChatTurnFeature.Input, model: BrowserAIModel, browser: Browser, spaceID: UUID) async throws -> (BrowserAIChatTurnFeature.Turn, [BrowserAIToolResult]) {
 		let feature = BrowserAIChatTurnFeature()
 		var lastPublished: ContinuousClock.Instant?
 		// Validate the entire model response before executing any actions. A completed
@@ -344,7 +344,7 @@ final class BrowserAIChat {
 			}
 		}
 		preview = turn.response
-		var results = ""
+		var results: [BrowserAIToolResult] = []
 		for call in turn.actions {
 			try Task.checkCancellation()
 			attemptedBrowserAction = true
@@ -363,13 +363,13 @@ final class BrowserAIChat {
 				}
 				toolCalls[index].status = "Completed"
 				toolCalls[index].detail = String(result.prefix(2000))
-				results += "\n\(call.name): \(result)\n"
+				results.append(.init(call: call, succeeded: true, result: result))
 				await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "success", details: "phase=tool")
 			} catch {
 				toolCalls[index].status = Task.isCancelled ? "Cancelled" : "Failed"
 				toolCalls[index].detail = error.localizedDescription
 				try Task.checkCancellation()
-				results += "\n\(call.name): Failed. \(error.localizedDescription)\n"
+				results.append(.init(call: call, succeeded: false, result: error.localizedDescription))
 				await BrowserAIUsageLog.shared.record(id: UUID(), feature: call.name, provider: "Browser", event: "failed", details: "phase=tool")
 			}
 		}
