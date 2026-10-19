@@ -84,8 +84,10 @@ struct BrowserAIChatTranscript: NSViewRepresentable {
             guard let table else { return }
             let ids = new.chat.messages.map(\.id)
             let width = max(1, table.bounds.width - 24)
-            let changed = conversationID != new.chat.id || ids != messageIDs ||
-                (old == nil)
+            let sameConversation = conversationID == new.chat.id
+            let appended = sameConversation && ids.count >= messageIDs.count &&
+                ids.prefix(messageIDs.count).elementsEqual(messageIDs)
+            let changed = !sameConversation || ids != messageIDs || (old == nil)
             let widthChanged = abs(lastWidth - width) > 1
             let streamChanged = lastStreaming != new.chat.isResponding
             let tint = NSColor(new.browser.theme.tabColor)
@@ -96,7 +98,7 @@ struct BrowserAIChatTranscript: NSViewRepresentable {
             lastWidth = width
             lastStreaming = new.chat.isResponding
             if changed || widthChanged || tintChanged {
-                if changed { sizingCache.removeAll(keepingCapacity: true) }
+                if changed && !appended { sizingCache.removeAll(keepingCapacity: true) }
                 table.reloadData()
                 if changed { scrollToBottom() }
             } else if streamChanged {
@@ -695,7 +697,7 @@ struct BrowserAIChatTranscript: UIViewRepresentable {
             scroller.showsHorizontalScrollIndicator = false
             scroller.heightAnchor.constraint(equalToConstant: 90).isActive = true
             for (index, attachment) in message.attachments.enumerated() {
-                let image = UIImageView(image: attachment.image?.data.flatMap { UIImage(data: $0) } ?? UIImage(systemName: "doc.text"))
+                let image = UIImageView(image: attachment.image?.data.flatMap { BrowserAIThumbnailCache.image(id: attachment.id, data: $0) } ?? UIImage(systemName: "doc.text"))
                 image.contentMode = .scaleAspectFit
                 image.frame = CGRect(x: CGFloat(index) * 88, y: 0, width: 80, height: 64)
                 scroller.addSubview(image)
@@ -733,11 +735,54 @@ struct BrowserAIChatTranscript: UIViewRepresentable {
             if let calls = message.toolCalls { tools(calls) }
             if !message.text.isEmpty { markdown(message.text, open: open) }
             for item in message.augmentArtifacts ?? [] {
-                let button = UIButton(type: .system)
-                button.configuration = .tinted()
-                button.configuration?.title = item.title
-                button.configuration?.image = UIImage(systemName: "rectangle.3.group")
+                let button = UIButton(type: .custom)
+                button.heightAnchor.constraint(equalToConstant: 78).isActive = true
+                button.layer.cornerRadius = 14
+                button.clipsToBounds = true
                 button.accessibilityIdentifier = "ai-chat-artifact-\(item.id)"
+                button.accessibilityLabel = "Open \(item.title)"
+                let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+                blur.translatesAutoresizingMaskIntoConstraints = false
+                blur.isUserInteractionEnabled = false
+                button.addSubview(blur)
+                let contents = UIStackView()
+                contents.axis = .horizontal
+                contents.alignment = .center
+                contents.spacing = 12
+                contents.isUserInteractionEnabled = false
+                contents.translatesAutoresizingMaskIntoConstraints = false
+                button.addSubview(contents)
+                let image = UIImageView(image: UIImage(systemName: "rectangle.3.group"))
+                image.tintColor = tint
+                image.contentMode = .scaleAspectFit
+                image.widthAnchor.constraint(equalToConstant: 24).isActive = true
+                image.heightAnchor.constraint(equalToConstant: 24).isActive = true
+                contents.addArrangedSubview(image)
+                let descriptions = UIStackView()
+                descriptions.axis = .vertical
+                descriptions.spacing = 4
+                let title = text(item.title)
+                title.font = .systemFont(ofSize: 14, weight: .medium)
+                title.numberOfLines = 2
+                descriptions.addArrangedSubview(title)
+                let subtitle = text(item.sourceURL.host() ?? "Website augment", size: 12, secondary: true)
+                subtitle.numberOfLines = 1
+                descriptions.addArrangedSubview(subtitle)
+                contents.addArrangedSubview(descriptions)
+                let arrow = UIImageView(image: UIImage(systemName: "arrow.up.right"))
+                arrow.tintColor = .secondaryLabel
+                arrow.widthAnchor.constraint(equalToConstant: 12).isActive = true
+                contents.addArrangedSubview(arrow)
+                NSLayoutConstraint.activate([
+                    blur.topAnchor.constraint(equalTo: button.topAnchor),
+                    blur.bottomAnchor.constraint(equalTo: button.bottomAnchor),
+                    blur.leadingAnchor.constraint(equalTo: button.leadingAnchor),
+                    blur.trailingAnchor.constraint(equalTo: button.trailingAnchor),
+                    contents.topAnchor.constraint(equalTo: button.topAnchor, constant: 12),
+                    contents.bottomAnchor.constraint(equalTo: button.bottomAnchor, constant: -12),
+                    contents.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 14),
+                    contents.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -14)
+                ])
                 button.addAction(UIAction { _ in artifact(item) }, for: .touchUpInside)
                 stack.addArrangedSubview(button)
             }
