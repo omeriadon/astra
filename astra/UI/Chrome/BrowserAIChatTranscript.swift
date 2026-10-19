@@ -95,9 +95,9 @@ struct BrowserAIChatTranscript: NSViewRepresentable {
             currentTint = tint
             conversationID = new.chat.id
             messageIDs = ids
-            lastWidth = width
             lastStreaming = new.chat.isResponding
-            if changed || widthChanged || tintChanged {
+            if widthChanged { scheduleResize() }
+            if changed || tintChanged {
                 if changed && !appended { sizingCache.removeAll(keepingCapacity: true) }
                 table.reloadData()
                 if changed { scrollToBottom() }
@@ -175,6 +175,10 @@ struct BrowserAIChatTranscript: NSViewRepresentable {
         }
 
         func tableViewColumnDidResize(_: Notification) {
+            scheduleResize()
+        }
+
+        private func scheduleResize() {
             resizeTask?.cancel()
             resizeTask = Task { [weak self] in
                 do { try await Task.sleep(for: .milliseconds(75)) }
