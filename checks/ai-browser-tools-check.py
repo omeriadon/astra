@@ -62,4 +62,13 @@ check("self == .deleteBookmark || self == .closeTab" in tools,
       "The pre-existing destructive action default must remain disabled")
 check('!browser.isPrivate' in tools and 'browser.selectedSpace.id == spaceID' in tools,
       "Private browsing and originating space must remain enforced")
+check(r'"toolResults": input.toolResults.map(\.payload)' in tools,
+      "App tool execution history must be supplied as structured request data")
+check('"status": succeeded ? "success" : "error"' in tools and '"arguments": call.arguments' in tools,
+      "Tool result metadata must identify success and the exact call")
+check('results.append(.init(call: call, succeeded: true, result: result))' in chat
+      and 'results.append(.init(call: call, succeeded: false, result: error.localizedDescription))' in chat,
+      "Successful and failed tools must preserve execution results for subsequent rounds")
+check('"\\n<tool-results>\\n"' not in chat,
+      "Execution metadata must not be buried in unstructured reference context")
 print("AI browser tool source-contract checks passed")

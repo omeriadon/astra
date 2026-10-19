@@ -14,12 +14,14 @@ nonisolated struct BrowserWebsiteAugmentArtifact: Codable, Identifiable, Sendabl
 #if !ASTRA_WEBSITE_APP_RUNTIME
 	@MainActor
 	enum BrowserWebsiteAugment {
-		static func inspect(tab: BrowserTab, selector: String? = nil, offset: Int = 0, limit: Int = 12) async throws -> String {
+		static func inspect(tab: BrowserTab, selector: String? = nil, contains: String? = nil, offset: Int = 0, limit: Int = 12) async throws -> String {
 			guard let controller = tab.activeController, let webView = controller.webViewIfLoaded, !webView.isLoading else { throw BrowserAIError.pageUnavailable }
 			let generation = controller.navigationIdentifier
-			let result = try await webView.callAsyncJavaScript(structureScript, arguments: ["selector": selector ?? "", "offset": max(0, offset), "limit": min(30, max(1, limit))], in: nil, contentWorld: .defaultClient)
+			let result = try await webView.callAsyncJavaScript(structureScript, arguments: ["selector": selector ?? "", "contains": contains ?? "", "offset": max(0, offset), "limit": min(30, max(1, limit))], in: nil, contentWorld: .defaultClient)
 			guard tab.activeController === controller, controller.navigationIdentifier == generation, !Task.isCancelled, let text = result as? String else { throw BrowserAIError.pageUnavailable }
-			return text
+			guard let data = text.data(using: .utf8), var structure = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw BrowserAIError.pageUnavailable }
+			structure["tabID"] = tab.id.uuidString
+			return String(decoding: try JSONSerialization.data(withJSONObject: structure, options: [.sortedKeys]), as: UTF8.self)
 		}
 
 		static func apply(arguments: [String: String], browser: Browser) async throws -> BrowserWebsiteAugmentArtifact {
@@ -89,20 +91,24 @@ nonisolated struct BrowserWebsiteAugmentArtifact: Codable, Identifiable, Sendabl
 		    return {selector: path(el), tag: el.localName, role: el.getAttribute('role'), classes: [...el.classList].slice(0,6), children: el.children.length, text: compact(text).slice(0, 320)};
 		}
 		let matches;
-		try { matches = [...document.querySelectorAll(selector || 'main,article,section,nav,header,footer,aside,h1,h2,h3,ul,ol,table,[role="main"]')].filter(visible); }
+		try { matches = [...document.querySelectorAll(selector || 'main,article,section,nav,header,footer,aside,h1,h2,h3,ul,ol,table,[role="main"],[role="list"],[role="grid"]')].filter(visible); }
 		catch { throw new Error('Invalid selector'); }
+		const totalBeforeFilter = matches.length;
+		if (contains) matches = matches.filter(el => compact(el.textContent).toLocaleLowerCase().includes(contains.toLocaleLowerCase()));
 		const items = matches.slice(offset, offset + limit).map(el => {
 		    const item = summary(el);
-		    if (el.matches('ul,ol,table,[role="list"],[role="grid"]')) {
+		    if (el.matches('ul,ol,table,thead,tbody,tfoot,[role="list"],[role="grid"],[role="rowgroup"]') || [...el.children].some(child => child.matches('li,tr,[role="listitem"],[role="row"]'))) {
 		        const rows = [...el.querySelectorAll('li,tr,[role="listitem"],[role="row"]')].filter(visible);
 		        item.itemCount = rows.length;
+		        item.itemSelector = item.selector + ' :is(li,tr,[role="listitem"],[role="row"])';
+		        if (el.matches('table')) item.itemSelector = item.selector + ' > tbody > tr';
 		        item.samples = rows.slice(0,3).map(summary);
 		    }
 		    return item;
 		});
 		while (items.length > 1 && JSON.stringify(items).length > 16000) items.pop();
 		const next = offset + items.length;
-		return JSON.stringify({title: document.title.slice(0,200), url: location.origin + location.pathname, total: matches.length, offset, nextOffset: next < matches.length ? next : null, items});
+		return JSON.stringify({title: document.title.slice(0,200), url: location.origin + location.pathname, total: matches.length, totalBeforeFilter, contains: contains || null, offset, nextOffset: next < matches.length ? next : null, items});
 		"""#
 
 		static let captureScript = #"""

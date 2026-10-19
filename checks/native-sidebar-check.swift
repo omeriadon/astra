@@ -36,12 +36,26 @@ private enum Probe {
 	}
 }
 
+// Model AppKit asking about invalidation after installing the proposed bounds.
+// Reporting the new bounds without triggering AppKit's layout scheduling keeps
+// this case deterministic and leaves the geometry cached at the previous width.
+@MainActor
+private final class InstalledBoundsCollectionView: NSCollectionView {
+	var installedBounds: NSRect?
+
+	override var bounds: NSRect {
+		get { installedBounds ?? super.bounds }
+		set { super.bounds = newValue }
+	}
+}
+
 @main
 struct NativeSidebarCheck {
 	@MainActor static func main() {
 		geometryChecks()
 		let application = NSApplication.shared
 		application.setActivationPolicy(.prohibited)
+		installedBoundsInvalidationCheck()
 		let items = (0 ..< 10000).map { BrowserSidebarItem(id: "tab-\($0)", tabID: UUID(), collection: .normal) }
 		let host = NSHostingView(rootView: Probe.content(items))
 		host.sizingOptions = []
@@ -62,9 +76,27 @@ struct NativeSidebarCheck {
 		host.rootView = Probe.content(items)
 		Probe.pulse(host)
 		let beforeResize = Probe.factories
-		for width in stride(from: 240, through: 400, by: 20) {
-			window.setContentSize(NSSize(width: CGFloat(width), height: 600))
+		// Exercise both directions and the actual minimum sidebar width. The
+		// original bug left wide row frames behind when shrinking the viewport.
+		for width: CGFloat in [400, 300, 220, 168, 220, 300, 400, 168, 400] {
+			window.setContentSize(NSSize(width: width, height: 600))
 			Probe.pulse(host)
+			guard let layout = collection.collectionViewLayout as? BrowserSidebarCollectionLayout else {
+				fatalError("Missing production sidebar layout")
+			}
+			let viewportWidth = scroll.contentView.bounds.width
+			precondition(abs(scroll.frame.width - width) < 0.5, "Native viewport did not follow the resized sidebar")
+			precondition(abs(collection.frame.width - viewportWidth) < 0.5, "Document retained a previous sidebar width")
+			precondition(abs(layout.geometry.contentSize.width - viewportWidth) < 0.5, "Cached row geometry retained a previous sidebar width")
+			for path in collection.indexPathsForVisibleItems() {
+				guard let attributes = layout.layoutAttributesForItem(at: path),
+				      let cell = collection.item(at: path) else { fatalError("Visible row is missing") }
+				precondition(attributes.frame.minX >= 0 && attributes.frame.maxX <= viewportWidth + 0.5, "Row layout extends beyond the sidebar viewport")
+				precondition(abs(cell.view.frame.width - attributes.frame.width) < 0.5, "Visible native cell retained a previous row width")
+				for hostedView in cell.view.subviews {
+					precondition(abs(hostedView.frame.width - cell.view.bounds.width) < 0.5, "SwiftUI host retained a previous native cell width")
+				}
+			}
 		}
 		precondition(Probe.factories == beforeResize, "Width-only layout replaced hosted roots")
 		scroll.contentView.scroll(to: NSPoint(x: 0, y: 100_000))
@@ -91,6 +123,27 @@ struct NativeSidebarCheck {
 		window.contentView = nil
 		window.close()
 		print("Native sidebar: 10,000 rows, visible-only hosting, width-only root retention, selection and structural scroll anchors passed")
+	}
+
+	@MainActor
+	static func installedBoundsInvalidationCheck() {
+		let collection = InstalledBoundsCollectionView(frame: NSRect(x: 0, y: 0, width: 400, height: 600))
+		let layout = BrowserSidebarCollectionLayout()
+		layout.items = [BrowserSidebarItem(id: "resize-probe")]
+		collection.collectionViewLayout = layout
+		for width: CGFloat in [300, 220, 168, 220, 300, 400] {
+			layout.prepare()
+			let cachedWidth = layout.geometry.contentSize.width
+			var proposedBounds = collection.bounds
+			proposedBounds.size.width = width
+			collection.installedBounds = proposedBounds
+			precondition(cachedWidth != width, "Probe must retain geometry from before the bounds change")
+			precondition(collection.bounds == proposedBounds)
+			precondition(layout.shouldInvalidateLayout(forBoundsChange: proposedBounds), "Installed new bounds hid a required sidebar width invalidation")
+			layout.prepare()
+			precondition(layout.geometry.contentSize.width == width, "Invalidated geometry did not adopt the installed width")
+			precondition(!layout.shouldInvalidateLayout(forBoundsChange: proposedBounds), "Unchanged width must not invalidate on vertical scrolling")
+		}
 	}
 
 	static func geometryChecks() {

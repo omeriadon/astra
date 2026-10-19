@@ -12,14 +12,27 @@ fade = (root / "astra/UI/Shell/topVariableBlur.swift").read_text()
 # The scroll viewport and cell virtualization are native on both platforms.
 # A single NSHostingView around LazyVStack would make all rows eager.
 native = (root / "astra/UI/Shell/NativeSidebar/BrowserSidebarScrollView.swift").read_text()
-assert "BrowserSidebarScrollView(" in sidebar
+assert re.search(r"BrowserSidebarScrollView(?:<[^\n]+>)?\(", sidebar)
 assert "ScrollView {" not in sidebar and "LazyVStack(" not in sidebar
-assert "NSScrollView()" in native and "NSCollectionView()" in native
+assert "BrowserSidebarNativeScrollView()" in native and "NSCollectionView()" in native
 assert "UICollectionView(frame:" in native and "UIHostingConfiguration" in native
 assert "host.sizingOptions = []" in native
 assert "if contentChanged, !structureChanged" in native
 assert "visibleIndices(in:" in native
 assert "prepareForReuse()" in native and "AnyView(EmptyView())" in native
+# Width changes resize native cells; they must not rebuild every hosted row.
+assert "override func tile()" in native
+assert "let width = contentView.bounds.width" in native
+assert "collection.setFrameSize(NSSize(width: width" in native
+assert native.count("newBounds.width != geometry.contentSize.width") == 2
+assert "newBounds.width != collectionView?.bounds.width" not in native
+spaces = (root / "astra/UI/Chrome/BrowserSpacesBar.swift").read_text()
+media = (root / "astra/UI/Chrome/BrowserMediaActivityView.swift").read_text()
+assert "ViewThatFits(in: .horizontal)" in spaces
+assert "Spacer(minLength: 0)" in spaces
+assert "ViewThatFits(in: .horizontal)" in media
+assert "GridItem(.adaptive(minimum: 40)" in media
+
 for area in ("favourite", "pinned", "normal", "folder", "todayGroup"):
     assert f"collection: .{area}" in sidebar
 assert "applyNativeReorder" in sidebar and "sourceIDs = sources" in sidebar

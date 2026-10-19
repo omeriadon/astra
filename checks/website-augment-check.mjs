@@ -6,7 +6,7 @@ import vm from 'node:vm';
 // integration (content rules, ephemeral store and peek presentation) needs macOS.
 const source = fs.readFileSync('astra/AI/BrowserWebsiteAugment.swift', 'utf8');
 function script(name) {
-  const match = source.match(new RegExp('static let ' + name + ' = #"""\\n([\\s\\S]*?)\\n\\t"""#'));
+  const match = source.match(new RegExp('static let ' + name + ' = #"""\\n([\\s\\S]*?)\\n[\\t ]*"""#'));
   assert.ok(match, name);
   return match[1];
 }
@@ -53,6 +53,9 @@ function run(ops, fixture = page()) {
   return {result: vm.runInNewContext('(function(){'+transform+'})()',context),...fixture};
 }
 assert.equal(run([{action:'filter',selector:'li',contains:'apple'}]).elements.filter(n=>n.isConnected).length,2);
+const longList = page(Array.from({length: 838}, (_, i) => i === 700 ? 'Philosophy' : 'Other unit'));
+assert.equal(run([{action:'filter',selector:'li',contains:'philosophy'}], longList).elements.filter(n=>n.isConnected).length,1);
+assert.equal(longList.elements[700].isConnected, true);
 assert.equal(run([{action:'filter',selector:'li',contains:'APPLE',exclude:true}]).elements.filter(n=>n.isConnected).length,1);
 assert.equal(run([{action:'remove',selector:'li'}]).elements.filter(n=>n.isConnected).length,0);
 assert.ok(run([{action:'replace',selector:'li',text:'Updated'}]).elements.every(n=>n.textContent==='Updated'));
@@ -100,3 +103,58 @@ guardedBefore('func navigate(_ request:', 'func goBack', '!snapshotNavigationOnl
 guardedBefore('decidePolicyFor navigationAction:', 'decidePolicyFor navigationResponse:', 'if snapshotNavigationOnly', 'handleExternalLink(');
 guardedBefore('createWebViewWith configuration:', 'private func newWindowSource', '!snapshotNavigationOnly', 'handleExternalLink(');
 console.log('Website augment mutation and independent validation checks passed.');
+
+// Regression: focusing an 838-row tbody must retain usable row selectors,
+// and text discovery must search all rows rather than only the first samples.
+function structureFixture() {
+  const body = new Element('body');
+  const table = new Element('table', '', {id: 'courses'});
+  const tbody = new Element('tbody');
+  const rows = Array.from({length: 838}, (_, i) => new Element('tr', i === 700 ? 'PHIL2001 Philosophy of mind' : 'Unit ' + i));
+  body.children = [table]; table.parentElement = body;
+  table.children = [tbody]; tbody.parentElement = table;
+  tbody.children = rows;
+  for (const row of rows) row.parentElement = tbody;
+  for (const el of [body, table, tbody, ...rows]) {
+    el.localName = el.tag; el.id = el.attrs.id || ''; el.classList = [];
+    el.closest = () => null;
+  }
+  const doc = {
+    body, title: 'Electives',
+    querySelectorAll(selector) {
+      if (selector === 'tbody') return [tbody];
+      if (selector === 'tr') return rows;
+      throw new Error('Unsupported fixture selector');
+    },
+    createTreeWalker(el) {
+      const texts = [el, ...el.querySelectorAll('*')].map(n => ({nodeValue: n.textContent}));
+      return {nextNode() { return texts.shift(); }};
+    },
+  };
+  return {doc, rows};
+}
+function inspectFixture(selector, contains = '', offset = 0, limit = 12) {
+  const {doc} = structureFixture();
+  return JSON.parse(vm.runInNewContext('(function(){' + script('structureScript') + '})()', {
+    document: doc, selector, contains, offset, limit,
+    CSS: {escape: value => value}, NodeFilter: {SHOW_ELEMENT: 1, SHOW_TEXT: 4},
+    getComputedStyle: () => ({display: 'block', visibility: 'visible'}),
+    location: {origin: 'https://example.com', pathname: '/electives'},
+  }));
+}
+const tableBody = inspectFixture('tbody');
+assert.equal(tableBody.items[0].itemCount, 838);
+assert.equal(tableBody.items[0].samples.length, 3);
+assert.equal(tableBody.items[0].samples[0].selector, '#courses > tbody > tr:nth-of-type(1)');
+assert.equal(tableBody.items[0].itemSelector, '#courses > tbody :is(li,tr,[role="listitem"],[role="row"])');
+const philosophy = inspectFixture('tr', 'PHILOSOPHY');
+assert.equal(philosophy.totalBeforeFilter, 838);
+assert.equal(philosophy.total, 1);
+assert.equal(philosophy.items[0].selector, '#courses > tbody > tr:nth-of-type(701)');
+assert.match(philosophy.items[0].text, /Philosophy/);
+assert.equal(philosophy.nextOffset, null);
+const nextRows = inspectFixture('tr', '', 30, 12);
+assert.equal(nextRows.items.length, 12);
+assert.equal(nextRows.nextOffset, 42);
+assert.equal(nextRows.items[0].selector, '#courses > tbody > tr:nth-of-type(31)');
+console.log('Website structure large-table discovery checks passed.');
