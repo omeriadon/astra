@@ -191,13 +191,11 @@ public struct MTMathListBuilder {
 			var atom: MTMathAtom? = nil
 			let char = getNextCharacter()
 
-			if oneCharOnly {
-				if char == "^" || char == "}" || char == "_" || char == "&" {
-					// this is not the character we are looking for.
-					// They are meant for the caller to look at.
-					unlookCharacter()
-					return list
-				}
+			if oneCharOnly, char == "^" || char == "}" || char == "_" || char == "&" {
+				// this is not the character we are looking for.
+				// They are meant for the caller to look at.
+				unlookCharacter()
+				return list
 			}
 			// If there is a stop character, keep scanning 'til we find it
 			if stop != nil, char == stop! {

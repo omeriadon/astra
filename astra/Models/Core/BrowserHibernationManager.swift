@@ -94,9 +94,7 @@ final class BrowserHibernationManager {
 				      pressureLevel == pressureAtStart,
 				      Defaults[.automaticHibernationEnabled],
 				      let tab = browser.tab(withID: id),
-				      isEligible(tab, now: .now, idleTime: idleTime)
-				else { continue }
-				guard let controller = tab.controller else { continue }
+				      isEligible(tab, now: .now, idleTime: idleTime), let controller = tab.controller else { continue }
 				let activityBefore = tab.lastInteractionAt
 				let navigationBefore = controller.navigationIdentifier
 				guard await controller.refreshHibernationSafety(),
@@ -105,9 +103,7 @@ final class BrowserHibernationManager {
 				      tab.lastInteractionAt == activityBefore,
 				      Defaults[.automaticHibernationEnabled],
 				      isEligible(tab, now: .now, idleTime: idleTime),
-				      !Task.isCancelled, pressureLevel == pressureAtStart
-				else { continue }
-				guard let interactionState = controller.webViewIfLoaded?.interactionState as? Data,
+				      !Task.isCancelled, pressureLevel == pressureAtStart, let interactionState = controller.webViewIfLoaded?.interactionState as? Data,
 				      interactionState.count <= 4 * 1024 * 1024 else { continue }
 				#if os(macOS)
 					let memory = browser.isPrivate ? nil : await controller.tabProcessMemorySnapshot()

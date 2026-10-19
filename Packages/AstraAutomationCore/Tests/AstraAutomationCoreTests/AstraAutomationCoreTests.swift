@@ -30,6 +30,6 @@ final class AstraAutomationCoreTests: XCTestCase {
 		for candidate in ["javascript:alert(1)", "file:///tmp/file", "https://user:secret@example.com", "ftp://example.com"] {
 			XCTAssertThrowsError(try AstraWebAddress(XCTUnwrap(URL(string: candidate))))
 		}
-		XCTAssertThrowsError(try AstraWebAddress(URL(string: "https://example.com/" + String(repeating: "x", count: 17000))!))
+		XCTAssertThrowsError(try AstraWebAddress(XCTUnwrap(URL(string: "https://example.com/" + String(repeating: "x", count: 17000)))))
 	}
 }

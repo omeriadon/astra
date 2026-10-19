@@ -70,10 +70,8 @@ public class MTMathAtomFactory {
 				if let existingValue = output[value] {
 					if key.count > existingValue.count {
 						continue
-					} else if key.count == existingValue.count {
-						if key.compare(existingValue) == .orderedDescending {
-							continue
-						}
+					} else if key.count == existingValue.count, key.compare(existingValue) == .orderedDescending {
+						continue
 					}
 				}
 				output[value] = key
@@ -113,10 +111,8 @@ public class MTMathAtomFactory {
 				if let existingValue = output[value] {
 					if key.count > existingValue.count {
 						continue
-					} else if key.count == existingValue.count {
-						if key.compare(existingValue) == .orderedDescending {
-							continue
-						}
+					} else if key.count == existingValue.count, key.compare(existingValue) == .orderedDescending {
+						continue
 					}
 				}
 				output[value] = key
@@ -466,11 +462,11 @@ public class MTMathAtomFactory {
 					if key.count > existingText.count {
 						// Keep the shorter command
 						continue
-					} else if key.count == existingText.count {
-						// If the length is the same, keep the alphabetically first
-						if key.compare(existingText) == .orderedDescending {
-							continue
-						}
+					} else if key.count == existingText.count,
+					          // If the length is the same, keep the alphabetically first
+					          key.compare(existingText) == .orderedDescending
+					{
+						continue
 					}
 				}
 				output[atom.nucleus] = key

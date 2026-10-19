@@ -286,8 +286,7 @@ final class BrowserSitePermissions {
 	private static func normalized(_ entries: [Entry]) -> [Entry] {
 		var byID: [String: Entry] = [:]
 		for entry in entries {
-			guard entry.decision != .allowOnce else { continue }
-			guard let origin = normalizedOrigin(entry.origin),
+			guard entry.decision != .allowOnce, let origin = normalizedOrigin(entry.origin),
 			      let topOrigin = normalizedOrigin(entry.topOrigin) else { continue }
 			let value = Entry(origin: origin, topOrigin: topOrigin, capability: entry.capability, decision: entry.decision)
 			byID[value.id] = value

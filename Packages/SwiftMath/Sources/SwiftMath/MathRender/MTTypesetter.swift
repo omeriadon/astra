@@ -425,14 +425,14 @@ class MTTypesetter {
 				atom.type = .ordinary
 			}
 
-			if atom.type == .ordinary {
-				// This is Rule 14 to merge ordinary characters.
-				// combine ordinary atoms together
-				if prevNode != nil, prevNode.type == .ordinary, prevNode.subScript == nil, prevNode.superScript == nil {
-					prevNode.fuse(with: atom)
-					// skip the current node, we are done here.
-					continue
-				}
+			if atom.type == .ordinary,
+			   // This is Rule 14 to merge ordinary characters.
+			   // combine ordinary atoms together
+			   prevNode != nil, prevNode.type == .ordinary, prevNode.subScript == nil, prevNode.superScript == nil
+			{
+				prevNode.fuse(with: atom)
+				// skip the current node, we are done here.
+				continue
 			}
 
 			// TODO: add italic correction here or in second pass?

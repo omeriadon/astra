@@ -15,8 +15,8 @@ import SwiftMath
 	import AppKit
 #endif
 
+@MainActor
 extension [MarkdownInlineNode] {
-	@MainActor
 	func render(
 		theme: MarkdownTheme,
 		context: MarkdownContent,
@@ -34,8 +34,8 @@ extension [MarkdownInlineNode] {
 	}
 }
 
+@MainActor
 extension MarkdownInlineNode {
-	@MainActor
 	func render(
 		theme: MarkdownTheme,
 		context: MarkdownContent,

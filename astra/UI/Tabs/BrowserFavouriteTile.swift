@@ -193,8 +193,7 @@ struct BrowserFavouriteTile: View {
 		}
 
 		private func recordHoverFrame(_ frame: CGRect) {
-			guard previewEnabled, isHovered else { return }
-			guard frame != hoverFrame || !hoverPreviewStarted else { return }
+			guard previewEnabled, isHovered, frame != hoverFrame || !hoverPreviewStarted else { return }
 			hoverFrame = frame
 			if hoverPreviewStarted {
 				BrowserTabHoverPreviewCoordinator.shared.updateFrame(for: tabID, windowID: windowID, frame: frame)

@@ -279,11 +279,7 @@ import WebKit
 						return
 					}
 				}
-				guard let window else {
-					finish(nil)
-					return
-				}
-				guard let self, ownsFileUpload(in: webView, documentID: documentID, window: window), window.isVisible else {
+				guard let window, let self, ownsFileUpload(in: webView, documentID: documentID, window: window), window.isVisible else {
 					finish(nil)
 					return
 				}
@@ -799,8 +795,7 @@ extension BrowserController {
 		guard ownsPrompt(in: webView, documentID: documentID),
 		      permissions.revision == requestRevision,
 		      let currentTopURL = committedURL ?? webView.url,
-		      BrowserSitePermissions.origin(for: currentTopURL) == topOrigin else { return .deny }
-		guard let permissionDecision = BrowserSitePermissions.Decision(response: choice) else { return .deny }
+		      BrowserSitePermissions.origin(for: currentTopURL) == topOrigin, let permissionDecision = BrowserSitePermissions.Decision(response: choice) else { return .deny }
 		if permissionDecision == .deny {
 			for capability in pendingCapabilities {
 				permissions.set(.deny, origin: originID, topOrigin: topOrigin, capability: capability)

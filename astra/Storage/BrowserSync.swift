@@ -140,8 +140,7 @@ final class BrowserSync {
 
 	func attach(_ browser: Browser) {
 		BrowserLog.info(.sync, "sync.attach", metadata: ["window": BrowserLog.id(browser.windowID), "signed_in": String(isSignedIn)])
-		guard !browser.isPrivate, !browser.isMini else { return }
-		guard self.browser !== browser else { return }
+		guard !browser.isPrivate, !browser.isMini, self.browser !== browser else { return }
 		self.browser = browser
 		if isSignedIn, browser.isReadyForSync {
 			reschedule(reason: "startup")

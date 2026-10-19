@@ -90,8 +90,7 @@ extension CodeHighlighter {
 	func scheduleHighlight(requests: [CodeHighlightRequest], requester: ObjectIdentifier? = nil) {
 		var pending: OrderedDictionary<Int, CodeHighlightRequest> = [:]
 		for var request in requests {
-			guard request.key != inflightKey else { continue }
-			guard renderCache.value(forKey: request.key) == nil else { continue }
+			guard request.key != inflightKey, renderCache.value(forKey: request.key) == nil else { continue }
 			request.requester = requester
 			pending[request.key] = request
 		}
@@ -104,8 +103,7 @@ extension CodeHighlighter {
 	}
 
 	private func processNextRequestIfNeeded() {
-		guard inflightKey == nil else { return }
-		guard let next = pendingRequests.elements.first else { return }
+		guard inflightKey == nil, let next = pendingRequests.elements.first else { return }
 		pendingRequests.removeValue(forKey: next.key)
 		let request = next.value
 		inflightKey = request.key

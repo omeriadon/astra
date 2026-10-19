@@ -329,10 +329,8 @@ struct ShellSidebarListView: View {
 					let originalTitle = tab.title
 					guard let url = tab.currentURL else { continue }
 					var text = ""
-					if let controller = tab.controller, controller.webViewIfLoaded != nil {
-						if let page = try? await BrowserAIPageText.extract(from: controller).limited(to: 2000) {
-							text = page.text
-						}
+					if let controller = tab.controller, controller.webViewIfLoaded != nil, let page = try? await BrowserAIPageText.extract(from: controller).limited(to: 2000) {
+						text = page.text
 					}
 					var displayedTitle = originalTitle
 					var completed = false

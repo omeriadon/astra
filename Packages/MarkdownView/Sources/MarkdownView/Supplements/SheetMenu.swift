@@ -37,9 +37,9 @@ enum SheetMenuSymbol {
 }
 
 #if canImport(UIKit)
+	@MainActor
 	extension UIBarButtonItem {
 		/// A bar button that opens Copy, Download and Close.
-		@MainActor
 		static func sheetMenu(_ actions: SheetMenuActions) -> UIBarButtonItem {
 			let menu = UIMenu(children: [
 				UIAction(title: TableTitleText.copy, image: UIImage(systemName: TableSymbol.copy)) { _ in

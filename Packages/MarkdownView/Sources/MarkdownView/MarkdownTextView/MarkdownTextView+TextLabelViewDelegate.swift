@@ -43,8 +43,7 @@ extension MarkdownTextView: TextLabelViewDelegate {}
 #elseif canImport(AppKit)
 	extension MarkdownTextView {
 		func autoScroll(_ scrollView: NSScrollView, toFollowDragAt location: CGPoint, in label: TextLabelView) {
-			guard let documentView = scrollView.documentView else { return }
-			guard documentView.bounds.height > scrollView.bounds.height else { return }
+			guard let documentView = scrollView.documentView, documentView.bounds.height > scrollView.bounds.height else { return }
 
 			let edgeDetection = CGFloat(16)
 			let visibleRect = scrollView.documentVisibleRect.insetBy(dx: -10000, dy: edgeDetection)

@@ -28,13 +28,11 @@ public extension MarkdownParser {
 			guard text.hasPrefix("`"), text.hasSuffix("`") else { return .unknown }
 		}
 		let text = text.trimmingCharacters(in: backtickCharacterSet)
-		guard text.hasPrefix("md://content?") else { return .unknown }
-		guard let comps = URLComponents(string: text) else {
+		guard text.hasPrefix("md://content?"), let comps = URLComponents(string: text) else {
 			return .unknown
 		}
 		for queryItem in comps.queryItems ?? [] where queryItem.name == "type" {
-			guard let value = queryItem.value else { return .unknown }
-			guard let type = ReplacementContentType(rawValue: value) else { return .unknown }
+			guard let value = queryItem.value, let type = ReplacementContentType(rawValue: value) else { return .unknown }
 			return type
 		}
 		return .unknown

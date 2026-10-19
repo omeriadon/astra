@@ -18,8 +18,7 @@ nonisolated struct BrowserWebsiteAugmentArtifact: Codable, Identifiable, Sendabl
 			guard let controller = tab.activeController, let webView = controller.webViewIfLoaded, !webView.isLoading else { throw BrowserAIError.pageUnavailable }
 			let generation = controller.navigationIdentifier
 			let result = try await webView.callAsyncJavaScript(structureScript, arguments: ["selector": selector ?? "", "contains": contains ?? "", "offset": max(0, offset), "limit": min(30, max(1, limit))], in: nil, contentWorld: .defaultClient)
-			guard tab.activeController === controller, controller.navigationIdentifier == generation, !Task.isCancelled, let text = result as? String else { throw BrowserAIError.pageUnavailable }
-			guard let data = text.data(using: .utf8), var structure = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw BrowserAIError.pageUnavailable }
+			guard tab.activeController === controller, controller.navigationIdentifier == generation, !Task.isCancelled, let text = result as? String, let data = text.data(using: .utf8), var structure = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw BrowserAIError.pageUnavailable }
 			structure["tabID"] = tab.id.uuidString
 			return try String(decoding: JSONSerialization.data(withJSONObject: structure, options: [.sortedKeys]), as: UTF8.self)
 		}

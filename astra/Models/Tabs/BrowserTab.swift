@@ -2,12 +2,12 @@ import Defaults
 import Foundation
 import Observation
 
+// stop removing import webkit, it is used by `pageZoom`
+import WebKit
+
 #if os(macOS)
 	import AppKit
 #endif
-
-// stop removing import webkit, it is used by `pageZoom`
-import WebKit
 
 enum BrowserInternalPage: Equatable, CaseIterable {
 	case themeEditor
@@ -375,8 +375,7 @@ final class BrowserTab: Identifiable {
 	}
 
 	func hibernate(interactionState: Any? = nil) {
-		guard internalPage == nil else { return }
-		guard let controller, canHibernate else { return }
+		guard internalPage == nil, let controller, canHibernate else { return }
 		let interactionState = interactionState ?? controller.webViewIfLoaded?.interactionState
 		storedRestorationState = controller.encryptedInteractionState(from: interactionState)
 		storedInteractionState = storedRestorationState == nil ? interactionState : nil
@@ -407,8 +406,7 @@ final class BrowserTab: Identifiable {
 	}
 
 	func wake() {
-		guard internalPage == nil else { return }
-		guard controller == nil else { return }
+		guard internalPage == nil, controller == nil else { return }
 		let controller = BrowserController(
 			initialURL: storedURL,
 			session: session,

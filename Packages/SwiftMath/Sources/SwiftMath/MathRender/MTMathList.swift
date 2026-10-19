@@ -1010,8 +1010,7 @@ public class MTMathList: NSObject {
 	/// - throws NSException if the atom is of type kMTMathAtomBoundary
 	public func insert(_ atom: MTMathAtom?, at index: Int) {
 		// NSParamException(atom)
-		guard let atom else { return }
-		guard atoms.indices.contains(index) || index == atoms.endIndex else { return }
+		guard let atom, atoms.indices.contains(index) || index == atoms.endIndex else { return }
 		// guard self.atoms.endIndex >= index else { NSIndexException(); return }
 		if isAtomAllowed(atom) {
 			// NSIndexException(self.atoms, index: index)

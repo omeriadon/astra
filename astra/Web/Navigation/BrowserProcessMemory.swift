@@ -144,8 +144,7 @@
 					}
 				}
 				for (index, process) in [snapshot.webContent, snapshot.graphics, snapshot.network, snapshot.model].enumerated() {
-					guard let process else { continue }
-					guard let bytes = process.bytes else { continue }
+					guard let process, let bytes = process.bytes else { continue }
 					roleBytes[index][process.identity] = bytes
 				}
 			}

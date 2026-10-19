@@ -19,8 +19,7 @@ struct BrowserWebsiteMonitorButton: View {
 					Color.clear
 						.frame(width: 0, height: 0)
 						.onReceive(NotificationCenter.default.publisher(for: .astraMonitorWebsite)) { notification in
-							guard let owner = notification.object as? Browser, owner === browser else { return }
-							guard browser.selectedTab?.activeController?.hasCurrentPageDocument == true else { return }
+							guard let owner = notification.object as? Browser, owner === browser, browser.selectedTab?.activeController?.hasCurrentPageDocument == true else { return }
 							presented = true
 						}
 				#else

@@ -676,8 +676,7 @@ final class Browser {
 		let existing = Set(tabs.map(\.id))
 		var seen = Set<UUID>()
 		let moving = ids.filter { existing.contains($0) && seen.insert($0).inserted }
-		guard !moving.isEmpty else { return }
-		guard area != .normal || moving.allSatisfy({ tab(withID: $0)?.internalPage != .easel }) else { return }
+		guard !moving.isEmpty, area != .normal || moving.allSatisfy({ tab(withID: $0)?.internalPage != .easel }) else { return }
 		let movingSet = Set(moving)
 		guard targetID.map({ !movingSet.contains($0) }) ?? true else { return }
 		let destinationID = spaceID ?? workspace.selectedSpaceID
@@ -755,8 +754,7 @@ final class Browser {
 	}
 
 	func moveTab(_ id: UUID, to area: TabArea, in spaceID: UUID? = nil, before targetID: UUID? = nil) {
-		guard !isPrivate, tabs.contains(where: { $0.id == id }), targetID != id else { return }
-		guard area != .normal || tab(withID: id)?.internalPage != .easel else { return }
+		guard !isPrivate, tabs.contains(where: { $0.id == id }), targetID != id, area != .normal || tab(withID: id)?.internalPage != .easel else { return }
 		let destinationIndex = area == .favourite
 			? nil
 			: workspace.spaces.firstIndex(where: { $0.id == (spaceID ?? workspace.selectedSpaceID) })
@@ -1398,8 +1396,7 @@ final class Browser {
 
 	func openInternalPage(_ page: BrowserInternalPage, inNewTab: Bool = false) {
 		BrowserLog.info(.navigation, "internal.open", metadata: ["page": String(describing: page), "new_tab": String(inNewTab)])
-		guard !isPrivate || page == .settings else { return }
-		guard page != .easel || !isMini else { return }
+		guard !isPrivate || page == .settings, page != .easel || !isMini else { return }
 		if isPrivate {
 			settingsPage = .privacyAndSecurity
 		}
@@ -1892,8 +1889,7 @@ final class Browser {
 		guard let index = bookmarks.firstIndex(where: { $0.id == id }) else { return }
 		let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
 		let folder = folder.trimmingCharacters(in: .whitespacesAndNewlines)
-		guard name.utf8.count <= 16384, folder.utf8.count <= 4096 else { return }
-		guard bookmarks[index].name != name || bookmarks[index].folder != folder
+		guard name.utf8.count <= 16384, folder.utf8.count <= 4096, bookmarks[index].name != name || bookmarks[index].folder != folder
 			|| bookmarks[index].isFavorite != isFavorite || bookmarks[index].order != order else { return }
 		bookmarks[index].name = name
 		bookmarks[index].folder = folder
@@ -3643,8 +3639,7 @@ final class Browser {
 
 	private func persist() {
 		BrowserLog.debug(.persistence, "browser.persistence.snapshot", metadata: ["window": BrowserLog.id(windowID), "tabs": String(tabs.count), "bookmarks": String(bookmarks.count), "history": String(historyVisits.count)])
-		guard !hydrationFailed else { return }
-		guard let persistence else { return }
+		guard !hydrationFailed, let persistence else { return }
 		guard didFinishHydration else {
 			pendingFullPersistence = true
 			return

@@ -709,9 +709,7 @@ private struct ShellContentColumn: View {
 	}
 
 	private var topBarHeight: CGFloat {
-		guard browser.selectedTab?.internalPage == nil, !browser.isShowingNewTab else { return 0 }
-		guard !(sidebarShown && !showsTopBar) else { return 0 }
-		guard showsTopBar || isTopBarRevealed else { return 0 }
+		guard browser.selectedTab?.internalPage == nil, !browser.isShowingNewTab, !(sidebarShown && !showsTopBar), showsTopBar || isTopBarRevealed else { return 0 }
 		return BrowserChromeMetrics.topBarRegionHeight
 			+ BrowserChromeMetrics.shellEdgePadding
 	}

@@ -153,8 +153,7 @@ nonisolated struct BrowserAIToolResult: Sendable {
 				}
 				return Turn(response: response, actions: calls)
 			}
-			guard !String(decoding: data, as: UTF8.self).hasPrefix("{") else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
-			guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
+			guard !String(decoding: data, as: UTF8.self).hasPrefix("{"), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw BrowserAIError.invalidResponse("The AI returned malformed browser actions. Incomplete or invalid actions were not applied.") }
 			return Turn(response: text, actions: [])
 		}
 	}

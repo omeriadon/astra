@@ -3,6 +3,7 @@ import MarkdownParser
 
 // MARK: - Parser
 
+@MainActor
 extension MarkdownViewBenchmark {
 	/// The parser alone, on documents shaped like the answers a model streams.
 	///
@@ -11,7 +12,6 @@ extension MarkdownViewBenchmark {
 	/// streamed answer is reparsed on each update, and reports the average
 	/// parse; later prefixes cost more, so read it against `parser/doc/*` at
 	/// the same size.
-	@MainActor
 	static func parserCases() -> [BenchmarkCase] {
 		let parser = MarkdownParser()
 		var cases: [BenchmarkCase] = []

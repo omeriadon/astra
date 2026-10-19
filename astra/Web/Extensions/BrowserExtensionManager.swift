@@ -546,14 +546,12 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 	}
 
 	func action(for name: String, in browser: Browser) -> WKWebExtension.Action? {
-		guard !browser.isPrivate else { return nil }
-		guard let context = contexts[name], context.isLoaded else { return nil }
+		guard !browser.isPrivate, let context = contexts[name], context.isLoaded else { return nil }
 		return context.action(for: extensionTab(for: browser.selectedTabID, in: browser))
 	}
 
 	func performAction(_ name: String, in browser: Browser) {
-		guard !browser.isPrivate else { return }
-		guard let context = contexts[name], context.isLoaded else { return }
+		guard !browser.isPrivate, let context = contexts[name], context.isLoaded else { return }
 		if !allowsAllSites(name), let url = browser.selectedTab?.currentURL,
 		   url.scheme == "https" || url.scheme == "http"
 		{

@@ -314,8 +314,7 @@ struct BrowserTabRow: View {
 
 	#if os(macOS)
 		private func updateHoveredFrame(_ frame: CGRect) {
-			guard isHovered && onSelectTab == nil && NSEvent.pressedMouseButtons == 0 else { return }
-			guard frame != hoverFrame || !hoverPreviewStarted else { return }
+			guard isHovered && onSelectTab == nil && NSEvent.pressedMouseButtons == 0, frame != hoverFrame || !hoverPreviewStarted else { return }
 			hoverFrame = frame
 			if hoverPreviewStarted {
 				BrowserTabHoverPreviewCoordinator.shared.updateFrame(

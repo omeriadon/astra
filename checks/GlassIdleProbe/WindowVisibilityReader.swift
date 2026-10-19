@@ -61,8 +61,7 @@ struct WindowVisibilityReader: NSViewRepresentable {
 				center.addObserver(forName: name, object: nil, queue: .main) { [weak self, weak window] notification in
 					let notificationWindow = notification.object as? NSWindow
 					MainActor.assumeIsolated { [weak self, weak window] in
-						guard let self, let window else { return }
-						guard name == NSApplication.didHideNotification || name == NSApplication.didUnhideNotification || notificationWindow === window else { return }
+						guard let self, let window, name == NSApplication.didHideNotification || name == NSApplication.didUnhideNotification || notificationWindow === window else { return }
 						publish()
 					}
 				}

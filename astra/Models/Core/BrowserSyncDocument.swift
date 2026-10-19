@@ -186,8 +186,7 @@ nonisolated struct BrowserSyncDocument: Codable, Equatable, Sendable {
 				folder.tabIDs = members
 				return folder
 			}
-			guard !localMembers.isEmpty || !localPinned.isEmpty || !localFolders.isEmpty else { continue }
-			guard !isDeleted(
+			guard !localMembers.isEmpty || !localPinned.isEmpty || !localFolders.isEmpty, !isDeleted(
 				localSpace.id,
 				modifiedAt: localSpace.modifiedAt,
 				dates: target.deletedSpacesAt,

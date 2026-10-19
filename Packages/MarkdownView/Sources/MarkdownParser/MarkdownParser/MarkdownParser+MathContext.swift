@@ -292,8 +292,7 @@ public extension MarkdownParser {
 		}
 
 		func inlineNode(forReplacementText text: String) -> MarkdownInlineNode? {
-			guard !contents.isEmpty, text.utf8Contains("md://content?") else { return nil }
-			guard let identifier = Self.placeholderIdentifier(in: text)
+			guard !contents.isEmpty, text.utf8Contains("md://content?"), let identifier = Self.placeholderIdentifier(in: text)
 				?? Self.parsedMathIdentifier(in: text),
 				let value = Int(identifier),
 				let content = contents[value]

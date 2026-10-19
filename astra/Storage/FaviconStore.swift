@@ -384,9 +384,7 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		var request = URLRequest(url: iconURL)
 		request.cachePolicy = .reloadRevalidatingCacheData
 		request.timeoutInterval = 15
-		guard let data = await sharedFaviconData(for: request) else { return }
-
-		guard !Task.isCancelled,
+		guard let data = await sharedFaviconData(for: request), !Task.isCancelled,
 		      activeRequests[webViewID] === activeRequest,
 		      generation == cacheGeneration,
 		      FaviconKey.origin(for: webView.url) == key

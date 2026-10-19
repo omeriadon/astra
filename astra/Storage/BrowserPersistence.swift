@@ -1034,10 +1034,7 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 	}
 
 	private nonisolated func decodeSnapshot(_ data: Data) throws -> BrowserPersistedState {
-		guard data.count <= 64 * 1024 * 1024 else {
-			throw BrowserPersistenceError.invalidSnapshot
-		}
-		guard let header = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+		guard data.count <= 64 * 1024 * 1024, let header = try JSONSerialization.jsonObject(with: data) as? [String: Any],
 		      let version = header["version"] as? Int
 		else { throw BrowserPersistenceError.invalidSnapshot }
 		guard (1 ... Self.currentVersion).contains(version) else {

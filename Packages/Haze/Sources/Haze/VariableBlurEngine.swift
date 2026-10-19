@@ -59,8 +59,8 @@ public final class VariableBlurEngine {
             let caFilterClass = NSClassFromString("CAFilter") as AnyObject as? NSObject,
             caFilterClass.responds(to: filterWithTypeSelector),
             let variableBlur = caFilterClass
-            .perform(filterWithTypeSelector, with: "variableBlur")
-            .takeUnretainedValue() as? NSObject
+                .perform(filterWithTypeSelector, with: "variableBlur")
+                .takeUnretainedValue() as? NSObject
         else {
             return nil
         }

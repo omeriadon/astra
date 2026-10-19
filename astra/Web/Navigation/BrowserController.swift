@@ -285,9 +285,7 @@ final class BrowserController: NSObject, Identifiable {
 		      !isPreparingReader,
 		      pendingRequest == nil,
 		      !awaitsNavigationCommit,
-		      canHibernate
-		else { return false }
-		guard createdWebView == nil || displayCaptureState == false else { return false }
+		      canHibernate, createdWebView == nil || displayCaptureState == false else { return false }
 		#if os(macOS)
 			guard unsafe createdWebView?.window?.attachedSheet == nil else { return false }
 		#endif
@@ -2084,8 +2082,7 @@ final class BrowserController: NSObject, Identifiable {
 					guard let self, self.owns(webView),
 					      let url = change.newValue ?? webView.url else { return }
 					self.finishFragmentNavigationIfNeeded(to: url)
-					guard !self.awaitsNavigationCommit else { return }
-					guard !self.isDownloadHandoff else { return }
+					guard !self.awaitsNavigationCommit, !self.isDownloadHandoff else { return }
 					if self.url != url {
 						self.aiPreviewDismissal += 1
 					}
@@ -2262,8 +2259,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	func navigate(_ request: URLRequest) {
 		BrowserLog.info(.navigation, "navigation.request", metadata: ["controller": BrowserLog.id(id), "request": BrowserLog.request(request)])
-		guard !isInvalidated, !snapshotNavigationOnly else { return }
-		guard let url = request.url else { return }
+		guard !isInvalidated, !snapshotNavigationOnly, let url = request.url else { return }
 		historyVisitPolicy.userInitiatedNavigation()
 		createdWebView?.stopLoading()
 		createdWebView?.closeAllMediaPresentations(completionHandler: nil)
@@ -2433,8 +2429,7 @@ final class BrowserController: NSObject, Identifiable {
 		func refreshPreviewSnapshot() async {
 			guard let webView = createdWebView, owns(webView) else { return }
 			let generation = navigationGeneration
-			guard let image = await takeSnapshot() else { return }
-			guard owns(webView), generation == navigationGeneration else { return }
+			guard let image = await takeSnapshot(), owns(webView), generation == navigationGeneration else { return }
 			previewSnapshot = image
 			previewSnapshotGeneration = generation
 		}
@@ -2556,9 +2551,7 @@ final class BrowserController: NSObject, Identifiable {
 		      	currentDocumentID: navigationIdentifier,
 		      	isNavigating: awaitsNavigationCommit,
 		      	isFailure: navigationFailure != nil
-		      )
-		else { return }
-		guard let committedURL else { return }
+		      ), let committedURL else { return }
 
 		committedHasOnlySecureContent = webView.hasOnlySecureContent
 		committedCertificateSummary = webView.serverTrust.flatMap {
@@ -2591,11 +2584,7 @@ final class BrowserController: NSObject, Identifiable {
 		if resetConnectivityRetry {
 			retriedAfterConnectivityReturn = false
 		}
-		guard session.contentBlocking.isReadyForNavigation else {
-			pendingRequest = request
-			return
-		}
-		guard let webView = createdWebView else {
+		guard session.contentBlocking.isReadyForNavigation, let webView = createdWebView else {
 			pendingRequest = request
 			return
 		}
@@ -3589,7 +3578,7 @@ extension BrowserController: WKUIDelegate {
 							guard let self, let webView,
 							      ownsPrompt(in: webView, documentID: documentID),
 							      let url = BrowserSearchConfiguration.decode(Defaults[.browserSearchConfiguration])
-							      .destination(for: selectedText, isPrivate: session.isPrivate)
+							      	.destination(for: selectedText, isPrivate: session.isPrivate)
 							else { return }
 							newTabRequested?(URLRequest(url: url), false)
 						}

@@ -992,8 +992,7 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 		for task in pendingRenames {
 			task.cancel()
 		}
-		guard pauseTasks[itemID] == nil, let index = items.firstIndex(where: { $0.id == itemID }) else { return }
-		guard deletingItems.insert(itemID).inserted else { return }
+		guard pauseTasks[itemID] == nil, let index = items.firstIndex(where: { $0.id == itemID }), deletingItems.insert(itemID).inserted else { return }
 		if !pendingRenames.isEmpty, items[index].status == .completed {
 			Task { @MainActor [weak self] in
 				for task in pendingRenames {
@@ -1173,12 +1172,12 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			lifetime: BrowserDownloadDragFile
 		) async throws -> URL {
 			guard let item = items.first(where: {
-				$0.id == itemID
-					&& $0.status == .completed
-					&& $0.fileURL.standardizedFileURL == expectedURL.standardizedFileURL
-					&& $0.name == expectedName
-			}),
-				!deletingItems.contains(itemID)
+			      	$0.id == itemID
+			      		&& $0.status == .completed
+			      		&& $0.fileURL.standardizedFileURL == expectedURL.standardizedFileURL
+			      		&& $0.name == expectedName
+			      }),
+			      !deletingItems.contains(itemID)
 			else { throw CocoaError(.fileNoSuchFile) }
 			let sourceURL = item.fileURL
 			let bookmark = item.fileAccessBookmark ?? item.folderBookmark
@@ -1187,12 +1186,12 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				try lifetime.copy(sourceURL, named: expectedName, bookmark: bookmark)
 			}.value
 			guard items.contains(where: {
-				$0.id == itemID
-					&& $0.status == .completed
-					&& $0.fileURL.standardizedFileURL == expectedURL.standardizedFileURL
-					&& $0.name == expectedName
-			}),
-				!deletingItems.contains(itemID)
+			      	$0.id == itemID
+			      		&& $0.status == .completed
+			      		&& $0.fileURL.standardizedFileURL == expectedURL.standardizedFileURL
+			      		&& $0.name == expectedName
+			      }),
+			      !deletingItems.contains(itemID)
 			else {
 				lifetime.discard(copy.fileURL)
 				throw CocoaError(.fileNoSuchFile)
@@ -1771,12 +1770,8 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 				guard response == .OK, let url = panel.url else { return nil }
 				guard !isClosing,
 				      downloads[downloadID] != nil,
-				      items.contains(where: { $0.id == itemID && $0.status == .downloading })
+				      items.contains(where: { $0.id == itemID && $0.status == .downloading }), BrowserDownload.safeFilename(url.lastPathComponent) == url.lastPathComponent
 				else {
-					url.stopAccessingSecurityScopedResource()
-					return nil
-				}
-				guard BrowserDownload.safeFilename(url.lastPathComponent) == url.lastPathComponent else {
 					url.stopAccessingSecurityScopedResource()
 					return nil
 				}
@@ -1901,16 +1896,12 @@ final class BrowserDownloadManager: NSObject, WKDownloadDelegate {
 			guard response == .OK, let folder = panel.url else { return nil }
 			guard !isClosing,
 			      downloads[downloadID] != nil,
-			      let index = items.firstIndex(where: { $0.id == itemID && $0.status == .downloading })
+			      let index = items.firstIndex(where: { $0.id == itemID && $0.status == .downloading }), let bookmark = try? folder.bookmarkData(
+			      	options: [.withSecurityScope],
+			      	includingResourceValuesForKeys: nil,
+			      	relativeTo: nil
+			      )
 			else {
-				folder.stopAccessingSecurityScopedResource()
-				return nil
-			}
-			guard let bookmark = try? folder.bookmarkData(
-				options: [.withSecurityScope],
-				includingResourceValuesForKeys: nil,
-				relativeTo: nil
-			) else {
 				folder.stopAccessingSecurityScopedResource()
 				return nil
 			}

@@ -129,13 +129,13 @@ public final class MarkdownContent: @unchecked Sendable {
 	}
 }
 
+@available(*, deprecated, renamed: "MarkdownContent")
 public extension MarkdownTextView {
-	@available(*, deprecated, renamed: "MarkdownContent")
 	typealias PreprocessedContent = MarkdownContent
 }
 
+@MainActor
 public extension MarkdownParser.ParseResult {
-	@MainActor
 	fileprivate func renderMathContent(_ theme: MarkdownTheme, _ renderedContexts: inout [String: RenderedTextContent]) {
 		for (key, value) in mathContext {
 			var image = MathRenderer.renderToImage(
@@ -156,7 +156,6 @@ public extension MarkdownParser.ParseResult {
 	}
 
 	/// Renders math expressions into images keyed by their replacement text.
-	@MainActor
 	func renderedContent(theme: MarkdownTheme) -> RenderedTextContent.Map {
 		var renderedContexts: [String: RenderedTextContent] = [:]
 		renderMathContent(theme, &renderedContexts)
@@ -164,14 +163,13 @@ public extension MarkdownParser.ParseResult {
 	}
 
 	@available(*, deprecated, renamed: "renderedContent(theme:)")
-	@MainActor
 	func render(theme: MarkdownTheme) -> RenderedTextContent.Map {
 		renderedContent(theme: theme)
 	}
 }
 
+@MainActor
 public extension MarkdownParser.ParseResult {
-	@MainActor
 	fileprivate func renderHighlightMap(_: MarkdownTheme, highlightMaps: inout [Int: CodeHighlighter.HighlightMap]) {
 		var pendingRequests: [CodeHighlightRequest] = []
 		var queue: [MarkdownBlockNode] = document
@@ -199,7 +197,6 @@ public extension MarkdownParser.ParseResult {
 
 	/// Collects cached highlight maps for code blocks and schedules
 	/// asynchronous highlighting for the rest.
-	@MainActor
 	func highlightMaps(theme: MarkdownTheme) -> [Int: CodeHighlighter.HighlightMap] {
 		var highlightMap = [Int: CodeHighlighter.HighlightMap]()
 		renderHighlightMap(theme, highlightMaps: &highlightMap)
@@ -207,7 +204,6 @@ public extension MarkdownParser.ParseResult {
 	}
 
 	@available(*, deprecated, renamed: "highlightMaps(theme:)")
-	@MainActor
 	func render(theme: MarkdownTheme) -> [Int: CodeHighlighter.HighlightMap] {
 		highlightMaps(theme: theme)
 	}

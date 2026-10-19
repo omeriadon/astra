@@ -59,7 +59,7 @@ import Testing
 			let middle = band[band.startIndex + band.count / 2]
 			let pill = (0 ..< rep.pixelsWide).filter { isPill($0, middle) }
 			// Ink inside the pill's horizontal extent: the code glyphs.
-			let inkColumns = try (#require(pill.first) ... pill.last!).filter { x in band.contains { isInk(x, $0) } }
+			let inkColumns = try (#require(pill.first) ... #require(pill.last)).filter { x in band.contains { isInk(x, $0) } }
 			let pillMax = try #require(pill.last)
 			let inkMax = try #require(inkColumns.last)
 

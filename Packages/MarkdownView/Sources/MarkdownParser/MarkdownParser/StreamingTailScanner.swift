@@ -36,8 +36,7 @@ struct StreamingTailScanner {
 		// count leaves the end inside a formula. Leave it alone.
 		guard blocks.doubleDollarCount % 2 == 0 else { return unchanged }
 		var tailLines = blocks.tailLines
-		guard !tailLines.isEmpty else { return unchanged }
-		guard !blocks.tailIsIndentedCode else { return unchanged }
+		guard !tailLines.isEmpty, !blocks.tailIsIndentedCode else { return unchanged }
 
 		if let table = repairTableHeader(tailLines, endsWithNewline: endsWithNewline) {
 			return table
@@ -194,8 +193,7 @@ struct StreamingTailScanner {
 		guard headerIndex >= 0 else { return nil }
 		let header = tailLines[headerIndex]
 		// The header starts the block, or follows a heading.
-		guard headerIndex == 0 || (headerIndex == 1 && isATXHeading(tailLines[0])) else { return nil }
-		guard isPipeRow(header), !isDelimiterRow(header) else { return nil }
+		guard headerIndex == 0 || (headerIndex == 1 && isATXHeading(tailLines[0])), isPipeRow(header), !isDelimiterRow(header) else { return nil }
 		let row = "|" + String(repeating: " --- |", count: cellCount(header))
 		if endsWithNewline {
 			return (count, row)
