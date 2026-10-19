@@ -221,11 +221,10 @@ final class BrowserController: NSObject, Identifiable {
 	var closeRequested: (() -> Void)?
 	@ObservationIgnored
 	var promptOwnership: ((WKWebView) -> Bool)?
-	@ObservationIgnored
 	private var isOpeningExternalApplication = false
-	@ObservationIgnored
 	private var pendingLifecycleOperations = 0
 	private var popupDependencyRevision = 0
+	private var attachmentActivityRevision = 0
 	private let livePopupControllers = NSHashTable<BrowserController>.weakObjects()
 	@ObservationIgnored
 	// ponytail: controller-wide two-second throttle; per-origin limits if abuse becomes measurable.
@@ -330,7 +329,7 @@ final class BrowserController: NSObject, Identifiable {
 	/// by BrowserWebView without rebuilding their WebView.
 	var shouldKeepWebViewAttached: Bool {
 		// Re-evaluate the native display-capture probe when activity is refreshed.
-		_ = isRefreshingActivity
+		_ = attachmentActivityRevision
 		return requiresMediaTeardownConfirmation
 			|| isCapturing
 			|| isLoading
@@ -1229,8 +1228,10 @@ final class BrowserController: NSObject, Identifiable {
 		mediaObservationTask = Task { @MainActor [weak self] in
 			while !Task.isCancelled {
 				guard self?.createdWebView != nil else { return }
+				if let self { self.attachmentActivityRevision &+= 1 }
 				let hasActivity = self?.isPlayingMedia == true
 					|| self?.isCapturing == true
+					|| self?.displayCaptureState == true
 					|| self?.isPictureInPictureActive == true
 					|| self?.isEnteringPictureInPicture == true
 				let isDetached = unsafe self?.createdWebView?.window == nil
@@ -1264,7 +1265,7 @@ final class BrowserController: NSObject, Identifiable {
 	func refreshActivity() async -> Bool {
 		guard !isInvalidated, !isRefreshingActivity, let webView = createdWebView else { return false }
 		isRefreshingActivity = true
-		defer { isRefreshingActivity = false }
+		defer { isRefreshingActivity = false; attachmentActivityRevision &+= 1 }
 		let documentID = navigationIdentifier
 		let script = """
 		(() => {
