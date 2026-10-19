@@ -38,67 +38,18 @@ struct BrowserAIChatSidebar: View {
 	@FocusState private var focused: Bool
 
 	var body: some View {
-		VStack(spacing: 12) {
-			ScrollViewReader { reader in
-				ScrollView {
-					LazyVStack(alignment: .leading, spacing: 16) {
-						if chat.messages.isEmpty {
-							VStack(alignment: .leading, spacing: 6) {
-								Text("Work with this page")
-									.font(.title3.weight(.medium))
-								Text("Ask a question, summarise, or change what’s shown. Use @ to add another tab.")
-									.font(.callout)
-									.foregroundStyle(.secondary)
-							}
-							.padding(.vertical, 20)
-						}
-						ForEach(chat.messages) { message in
-							VStack(alignment: .leading, spacing: 10) {
-								if !message.attachments.isEmpty {
-									attachmentRow(message.attachments, removable: false)
-								}
-								if message.isUser {
-									Text(message.text)
-										.textSelection(.enabled)
-										.foregroundStyle(Color.primary.mix(with: browser.theme.tabColor, by: 0.3))
-										.padding(12)
-										.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-										.frame(maxWidth: .infinity, alignment: .trailing)
-								} else {
-									if let calls = message.toolCalls, !calls.isEmpty {
-										BrowserAIChatToolActivity(calls: calls)
-									}
-									if !message.text.isEmpty {
-										chatMarkdown(message.text, streaming: false)
-									}
-									ForEach(message.augmentArtifacts ?? []) { artifact in
-										artifactCard(artifact)
-									}
-								}
-							}
-							.frame(maxWidth: .infinity, alignment: .leading)
-							.id(message.id)
-						}
-						// Streaming responses update many times per second. Keep
-						// that observation in a leaf view so the entire sidebar,
-						// toolbar, composer and historical Markdown views are not
-						// invalidated for each generated token.
-						BrowserAIChatStreamingResponse(
-							chat: chat,
-							browser: browser,
-							hoveredURL: $hoveredURL,
-							hoveredLinkSize: $hoveredLinkSize,
-							hoveredLinkShiftPressed: $hoveredLinkShiftPressed,
-							onPreviewChange: { reader.scrollTo("chat-bottom", anchor: .bottom) },
-							onRetry: { send() }
-						)
-						Color.clear.frame(height: 1).id("chat-bottom")
-					}
-					.padding(.horizontal, 12)
+		BrowserAIChatTranscript(
+			browser: browser,
+			chat: chat,
+			retry: { send() },
+			hover: { url, previous, size, shift in
+				if url != nil || hoveredURL == previous {
+					hoveredURL = url
+					hoveredLinkSize = size
+					hoveredLinkShiftPressed = shift
 				}
-				.onChange(of: chat.messages.count) { _, _ in reader.scrollTo("chat-bottom", anchor: .bottom) }
 			}
-		}
+		)
 		.safeAreaBar(edge: .top) {
 			VStack(spacing: 12) {
 				HStack(spacing: 8) {
@@ -502,7 +453,7 @@ private struct BrowserAIChatToolActivity: View {
 	}
 }
 
-private extension BrowserAIAction {
+extension BrowserAIAction {
 	var chatSystemImage: String {
 		switch self {
 			case .createSpaceFolder, .createBookmarkFolder: "folder.badge.plus"
@@ -657,7 +608,7 @@ private struct BrowserAIChatStreamingResponse: View {
 		}
 	}
 
-	private final class ChatMarkdownView: MarkdownStreamView {
+	final class ChatMarkdownView: MarkdownStreamView {
 		var displayedText = ""
 		var hover: ((URL?, URL?, CGSize, Bool) -> Void)?
 		private var hoveredURL: URL?
@@ -870,7 +821,7 @@ private struct BrowserAIChatStreamingResponse: View {
 
 /// Reuse the same native image object across transcript/composer reflows. Image
 /// bytes and display dimensions are unchanged, preserving existing sampling.
-@MainActor private enum BrowserAIThumbnailCache {
+@MainActor enum BrowserAIThumbnailCache {
 	#if os(macOS)
 		typealias NativeImage = NSImage
 	#else
