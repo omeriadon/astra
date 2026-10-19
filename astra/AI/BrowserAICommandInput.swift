@@ -51,7 +51,7 @@ nonisolated final class BrowserAICommandInput: @unchecked Sendable {
 
 	private func send(_ data: Data) throws {
 		if let setupError { throw setupError }
-		try data.withUnsafeBytes { buffer in
+		try unsafe data.withUnsafeBytes { buffer in
 			var offset = 0
 			while offset < buffer.count {
 				try checkCancellation()

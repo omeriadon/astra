@@ -33,7 +33,7 @@ struct BrowserSidebarItem: Equatable {
 /// Shared AppKit/UIKit geometry. There are no SwiftUI size probes on resize or
 /// scroll. Item metric changes rebuild the index; width changes reuse it.
 struct BrowserSidebarLayoutGeometry {
-	struct Frames: RandomAccessCollection {
+	nonisolated struct Frames: RandomAccessCollection {
 		typealias Index = Int
 		struct Row { let y: CGFloat; let height: CGFloat; let column: Int? }
 		var rows: [Row] = []

@@ -26,14 +26,18 @@ final class MainActorLRUCacheTests: XCTestCase {
 		key: Int,
 		onRelease: @escaping @Sendable () -> Void
 	) {
-		let attachment = TextLabel.Attachment.hold(
-			attrString: NSAttributedString(string: "formula"),
-			size: CGSize(width: 20, height: 12)
-		)
-		let text = attachment.attributedString(attributes: [
-			NSAttributedString.Key("releaseProbe"): ReleaseProbe(onRelease: onRelease),
-		])
-		cache.setValue(text, forKey: key)
+		// Bound Foundation temporaries so release probes observe cache ownership,
+		// rather than the surrounding XCTest autorelease pool's lifetime.
+		autoreleasepool {
+			let attachment = TextLabel.Attachment.hold(
+				attrString: NSAttributedString(string: "formula"),
+				size: CGSize(width: 20, height: 12)
+			)
+			let text = attachment.attributedString(attributes: [
+				NSAttributedString.Key("releaseProbe"): ReleaseProbe(onRelease: onRelease),
+			])
+			cache.setValue(text, forKey: key)
+		}
 	}
 
 	@MainActor
