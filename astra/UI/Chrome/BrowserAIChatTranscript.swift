@@ -64,11 +64,17 @@ struct BrowserAIChatTranscript: NSViewRepresentable {
         private var streamingRevision = ""
         private var poller: Task<Void, Never>?
         private var lastStreaming = false
+        private var resizeTask: Task<Void, Never>?
 
-        private var entries: [Entry] {
-            guard let parent else { return [] }
-            return (parent.chat.messages.isEmpty ? [.welcome] : []) +
-                parent.chat.messages.map { Entry.message($0) } + [.stream]
+        private var rowCount: Int {
+            guard let parent else { return 0 }
+            return parent.chat.messages.count + 1 + (parent.chat.messages.isEmpty ? 1 : 0)
+        }
+
+        private func entry(at index: Int) -> Entry {
+            guard let parent else { return .stream }
+            if parent.chat.messages.isEmpty { return index == 0 ? .welcome : .stream }
+            return index == parent.chat.messages.count ? .stream : .message(parent.chat.messages[index])
         }
 
         func update(_ new: BrowserAIChatTranscript) {
@@ -101,10 +107,10 @@ struct BrowserAIChatTranscript: NSViewRepresentable {
             }
         }
 
-        func numberOfRows(in _: NSTableView) -> Int { entries.count }
+        func numberOfRows(in _: NSTableView) -> Int { rowCount }
 
         func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-            let entry = entries[row]
+            let entry = entry(at: row)
             let width = max(1, tableView.bounds.width - 24)
             if case .message(let message) = entry,
                let height = sizingCache[message.id] { return height }
@@ -119,7 +125,7 @@ struct BrowserAIChatTranscript: NSViewRepresentable {
             let identifier = NSUserInterfaceItemIdentifier("ai-native-row")
             let cell = (tableView.makeView(withIdentifier: identifier, owner: self) as? TranscriptNativeRow) ?? TranscriptNativeRow()
             cell.identifier = identifier
-            configure(cell, entry: entries[row], width: max(1, tableView.bounds.width - 24))
+            configure(cell, entry: entry(at: row), width: max(1, tableView.bounds.width - 24))
             return cell
         }
 
@@ -162,10 +168,24 @@ struct BrowserAIChatTranscript: NSViewRepresentable {
             reloadStream()
         }
 
+        func tableViewColumnDidResize(_: Notification) {
+            resizeTask?.cancel()
+            resizeTask = Task { [weak self] in
+                do { try await Task.sleep(for: .milliseconds(75)) }
+                catch { return }
+                guard let self, let table = self.table else { return }
+                self.lastWidth = max(1, table.bounds.width - 24)
+                self.sizingCache.removeAll(keepingCapacity: true)
+                let wasAtBottom = self.isNearBottom
+                table.reloadData()
+                if wasAtBottom { self.scrollToBottom() }
+            }
+        }
+
         private func reloadStream() {
-            guard let table, !entries.isEmpty else { return }
+            guard let table, rowCount > 0 else { return }
             let atBottom = isNearBottom
-            table.reloadData(forRowIndexes: IndexSet(integer: entries.count - 1),
+            table.reloadData(forRowIndexes: IndexSet(integer: rowCount - 1),
                              columnIndexes: IndexSet(integer: 0))
             table.noteHeightOfRows(withIndexesChanged: IndexSet(integer: entries.count - 1))
             if atBottom { scrollToBottom() }
@@ -185,6 +205,8 @@ struct BrowserAIChatTranscript: NSViewRepresentable {
         }
 
         func stop() {
+            resizeTask?.cancel()
+            resizeTask = nil
             poller?.cancel()
             poller = nil
             parent = nil
