@@ -257,6 +257,8 @@ private struct NativeDownloadsList: NSViewRepresentable {
 		scroll.contentInsets = NSEdgeInsets(top: 35, left: 0, bottom: 48, right: 0)
 		let table = DownloadNativeTable()
 		table.backgroundColor = .clear
+		table.frame = scroll.contentView.bounds
+		table.autoresizingMask = [.width]
 		table.headerView = nil
 		table.intercellSpacing = NSSize(width: 0, height: 6)
 		table.allowsMultipleSelection = true
@@ -275,6 +277,24 @@ private struct NativeDownloadsList: NSViewRepresentable {
 		scroll.documentView = table
 		context.coordinator.table = table
 		context.coordinator.scroll = scroll
+		let empty = NSStackView()
+		empty.orientation = .vertical
+		empty.alignment = .centerX
+		empty.spacing = 8
+		let image = NSImageView(image: NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: nil) ?? NSImage())
+		image.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 36, weight: .regular)
+		let title = NSTextField(labelWithString: "No Downloads")
+		title.font = .systemFont(ofSize: 15, weight: .semibold)
+		title.textColor = .secondaryLabelColor
+		empty.addArrangedSubview(image)
+		empty.addArrangedSubview(title)
+		empty.translatesAutoresizingMaskIntoConstraints = false
+		scroll.addSubview(empty)
+		NSLayoutConstraint.activate([
+			empty.centerXAnchor.constraint(equalTo: scroll.centerXAnchor),
+			empty.centerYAnchor.constraint(equalTo: scroll.centerYAnchor),
+		])
+		context.coordinator.empty = empty
 		return scroll
 	}
 
@@ -287,6 +307,7 @@ private struct NativeDownloadsList: NSViewRepresentable {
 		coordinator.table?.dataSource = nil
 		coordinator.table = nil
 		coordinator.scroll = nil
+		coordinator.empty = nil
 		view.documentView = nil
 	}
 
@@ -294,14 +315,17 @@ private struct NativeDownloadsList: NSViewRepresentable {
 	final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
 		weak var table: DownloadNativeTable?
 		weak var scroll: NSScrollView?
+		weak var empty: NSStackView?
 		private var model: NativeDownloadsList?
 		private var selectedIDs: Set<UUID> = []
 
 		func update(_ new: NativeDownloadsList) {
 			guard let table else { return }
-			let oldIDs = model?.items.map(\.id)
+			let oldItems = model?.items
+			let oldIDs = oldItems?.map(\.id)
 			let changed = model?.items != new.items || model?.suggestedNames != new.suggestedNames || model?.theme != new.theme
 			model = new
+			empty?.isHidden = !new.items.isEmpty
 			guard changed else { return }
 			if oldIDs != new.items.map(\.id) {
 				let selected = selectedIDs
@@ -309,9 +333,7 @@ private struct NativeDownloadsList: NSViewRepresentable {
 				let indexes = IndexSet(new.items.indices.filter { selected.contains(new.items[$0].id) })
 				table.selectRowIndexes(indexes, byExtendingSelection: false)
 			} else {
-				for row in table.rows(in: table.visibleRect).indices {
-					_ = row
-				}
+		
 				let visible = table.rows(in: table.visibleRect)
 				if visible.length > 0 {
 					for row in visible.location ..< (visible.location + visible.length) {
@@ -322,7 +344,16 @@ private struct NativeDownloadsList: NSViewRepresentable {
 						}
 					}
 				}
-				table.noteHeightOfRows(withIndexesChanged: IndexSet(new.items.indices))
+					let old = oldItems
+				let resized = IndexSet(new.items.indices.filter { index in
+					guard let previous = old?[safe: index] else { return true }
+					let current = new.items[index]
+					return previous.status != current.status
+						|| (previous.estimatedFinish != nil) != (current.estimatedFinish != nil)
+						|| previous.statusSummary.components(separatedBy: "\n").count
+							!= current.statusSummary.components(separatedBy: "\n").count
+				})
+				if !resized.isEmpty { table.noteHeightOfRows(withIndexesChanged: resized) }
 			}
 			if let scroll {
 				scroll.documentView?.needsDisplay = true
