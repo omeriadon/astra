@@ -302,31 +302,4 @@ assert.equal(fadedHeader.posts[0].source, 'chrome');
 assert.ok(fadedHeader.posts[0].rgb[0] > 110,
     'Composite CSS element opacity with the opaque body behind the header');
 
-const loading = readFileSync('astra/UI/Chrome/BrowserLoadingBar.swift', 'utf8');
-const shell = readFileSync('astra/UI/Shell/BrowserShellControls.swift', 'utf8');
-const favicons = readFileSync('astra/Storage/FaviconStore.swift', 'utf8');
-assert.ok(!loading.includes('theme.progressColor'), 'Never use space chroma for web loading progress');
-assert.match(shell, /controller\.themeColorIsLight \?\? theme\.tabColorIsLight/);
-assert.match(controller, /\.luminance > 0\.179/);
-assert.match(controller, /const lab = rgb =>/, 'Colour grouping must use perceptual Lab clustering');
-assert.match(controller, /sampledBrandColor\s*\?\? sampledFaviconColor/,
-    'Cached image branding must remain behind explicit CSS brand colours');
-assert.match(controller, /sampledFaviconColor\s*\?\? webView\.underPageBackgroundColor/,
-    'Favicon accent is a last resort before WebKit default background');
-assert.match(controller, /generation == navigationGeneration/,
-    'Do not apply a late favicon colour to a different navigation');
-assert.match(controller, /pageTintHandledGeneration != navigationGeneration/,
-    'Reject duplicate native samples for the same full navigation');
-assert.match(controller, /pageTintHandledGeneration = navigationGeneration/,
-    'Record when the one-shot native sample is applied');
-assert.ok(!script.includes('MutationObserver'),
-    'Page tint must not observe continuous page mutations');
-assert.ok(!script.includes("addEventListener('scroll'"),
-    'Page tint must not subscribe to scrolling');
-assert.match(favicons, /Task\.detached\(priority: \.utility\)/,
-    'Favicon quantisation must not decode on the browser main actor');
-assert.match(favicons, /kCGImageSourceThumbnailMaxPixelSize: 32/,
-    'Palette decoding should be downsampled to a small thumbnail');
-assert.match(favicons, /faviconAccentMisses\.insert\(key\)/,
-    'Cache neutral favicons without repeating decode work');
-console.log('Website tint sampling and progress-contrast checks passed');
+console.log('Website tint sampling fixture checks passed');

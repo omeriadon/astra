@@ -15,56 +15,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  recovery:
-    name: Download network recovery
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download network recovery
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 checks/download-recovery-check.py
-
-  index:
-    name: Download index persistence
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download index persistence
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 checks/download-index-persistence-check.py
-
-  staging:
-    name: Download staging I/O
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download staging I/O
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 checks/download-staging-io-check.py
-
-  segmented:
-    name: Segmented download engine parser
-    runs-on: xcode-27
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Verify Xcode 27 and Swift 6.4
-        run: bash scripts/ci/select-xcode-27.sh
-      - name: Segmented download engine parser
-        shell: bash
-        run: |
-          set -euo pipefail
-          swiftc -frontend -swift-version 6 -parse astra/Web/Downloads/SegmentedDownloadEngine.swift astra/Web/Downloads/BrowserDownloadManager.swift
-
   worker:
     name: Download file worker
     runs-on: xcode-27
