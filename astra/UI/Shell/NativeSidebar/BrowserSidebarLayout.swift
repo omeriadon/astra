@@ -43,9 +43,9 @@ struct BrowserSidebarLayoutGeometry {
 		var endIndex: Int { rows.endIndex }
 		subscript(index: Int) -> CGRect {
 			let row = rows[index]
-			let available = max(0, width - padding * 2)
+			let available = Swift.max(0, width - padding * 2)
 			if let column = row.column {
-				let tileWidth = max(0, (available - 18) / 4)
+				let tileWidth = Swift.max(0, (available - 18) / 4)
 				return CGRect(x: padding + CGFloat(column) * (tileWidth + 6), y: row.y, width: tileWidth, height: row.height)
 			}
 			return CGRect(x: padding, y: row.y, width: available, height: row.height)

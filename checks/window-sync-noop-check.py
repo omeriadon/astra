@@ -8,7 +8,7 @@ received = browser.split("private func receiveSharedState(", 1)[1].split(
     "private func markWorkspaceStructureChanged()", 1
 )[0]
 assert "merged != capturedLocal" in received
-assert "if documentChanged {\n\t\t\tapplySyncDocument(merged)" in received
+assert "if documentChanged {\n\t\t\tapplyPreparedSyncDocument(result.document" in received
 assert "closed != closedHistoryBeforeMerge" in received
 assert "guard documentChanged || closedHistoryChanged else" in received
 assert "browser.shared-state.no-op" in received

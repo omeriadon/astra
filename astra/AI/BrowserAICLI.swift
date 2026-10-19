@@ -647,7 +647,12 @@ nonisolated struct BrowserAICommandResponse {
 			let process = process
 			let directory = directory
 			Task.detached {
+				let forceStop = Task.detached {
+					do { try await Task.sleep(for: .seconds(2)) } catch { return }
+					if process.isRunning { _ = Darwin.kill(process.processIdentifier, SIGKILL) }
+				}
 				if process.isRunning { process.waitUntilExit() }
+				forceStop.cancel()
 				for url in access { url.stopAccessingSecurityScopedResource() }
 				try? FileManager.default.removeItem(at: directory)
 			}

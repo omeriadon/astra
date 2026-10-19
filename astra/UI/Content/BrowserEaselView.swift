@@ -87,8 +87,8 @@ struct BrowserEaselView: View {
 			if !active { commitGesture() }
 		}
 		.onDisappear { commitGesture() }
-		.onChange(of: document) { _, value in
-			guard !isManipulating, value != tab.easelDocument else { return }
+		.onChange(of: isManipulating ? nil : document) { _, value in
+			guard !isManipulating, let value, value != tab.easelDocument else { return }
 			if !tab.updateEasel(value) {
 				document = tab.easelDocument
 				editorError = "This change exceeds the easel's content limits. The previous content has been kept."

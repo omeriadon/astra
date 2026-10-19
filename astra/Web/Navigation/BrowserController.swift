@@ -225,6 +225,7 @@ final class BrowserController: NSObject, Identifiable {
 	private var isOpeningExternalApplication = false
 	@ObservationIgnored
 	private var pendingLifecycleOperations = 0
+	private var popupDependencyRevision = 0
 	private let livePopupControllers = NSHashTable<BrowserController>.weakObjects()
 	@ObservationIgnored
 	// ponytail: controller-wide two-second throttle; per-origin limits if abuse becomes measurable.
@@ -295,7 +296,8 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	private var hasLivePopupDependency: Bool {
-		livePopupControllers.allObjects.contains { $0.isWebViewReady && $0.webViewIfLoaded != nil }
+		_ = popupDependencyRevision
+		return livePopupControllers.allObjects.contains { $0.isWebViewReady && $0.webViewIfLoaded != nil }
 	}
 
 	func beginLifecycleOperation() {
@@ -3717,6 +3719,7 @@ extension BrowserController: WKUIDelegate {
 		guard let popup = popupRequested?(configuration, source, inBackground) else { return nil }
 		if let controller = popup.navigationDelegate as? BrowserController {
 			livePopupControllers.add(controller)
+			popupDependencyRevision &+= 1
 			if isAuthenticationSessionBrowser {
 				controller.isAuthenticationSessionBrowser = true
 			}

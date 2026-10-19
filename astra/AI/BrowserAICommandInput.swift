@@ -16,8 +16,8 @@ nonisolated final class BrowserAICommandInput: @unchecked Sendable {
 		self.handle = handle
 		let flags = fcntl(handle.fileDescriptor, F_GETFL)
 		let configured = flags >= 0 ? fcntl(handle.fileDescriptor, F_SETFL, flags | O_NONBLOCK) : -1
-		setupError = configured < 0 ? POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) : nil
-		_ = fcntl(handle.fileDescriptor, F_SETNOSIGPIPE, 1)
+		let protected = fcntl(handle.fileDescriptor, F_SETNOSIGPIPE, 1)
+		setupError = configured < 0 || protected < 0 ? POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) : nil
 	}
 
 	func write(_ text: String, close: Bool = false) async throws {

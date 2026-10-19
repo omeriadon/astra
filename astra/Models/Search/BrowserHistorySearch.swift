@@ -125,6 +125,7 @@ final class BrowserHistorySearchModel {
 
 	/// Called by a view task, never during body evaluation. SwiftUI cancels it on query changes/disappearance.
 	func update(_ request: Request, scope: Scope, visits: [BrowserVisit]) async {
+		guard !Task.isCancelled else { return }
 		let token = UUID()
 		requests[scope] = token
 		guard !request.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {

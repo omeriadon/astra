@@ -3351,6 +3351,18 @@ final class Browser {
 		}
 	}
 
+	private nonisolated struct SharedMergeResult: Sendable {
+		let document: BrowserSyncDocument
+		let closed: [OpenTab]
+		let documentChanged: Bool
+		let closedChanged: Bool
+		let localPortable: [UUID: OpenTab]
+		let bookmarksChanged: Bool
+		let readingListChanged: Bool
+		let historyChanged: Bool
+		let workspaceChanged: Bool
+	}
+
 	private func mergeSharedState(from source: Browser, sourceSnapshot: BrowserSyncDocument, sourceClosedTabs: [OpenTab]) async {
 		BrowserLog.debug(.sync, "browser.shared-state.receive", metadata: ["window": BrowserLog.id(windowID), "source_window": BrowserLog.id(source.windowID)])
 		guard !isPrivate, !source.isPrivate else { return }
@@ -3375,48 +3387,55 @@ final class Browser {
 		let capturedLocal = localState
 		let historyCutoff = historyClearedAt
 		let worker = Task.detached(priority: .utility) {
-		var localState = capturedLocal
-		var incomingState = sourceSnapshot
-		localState.browser.selectedTabID = selectedTabBeforeMerge
-		localState.browser.selectedTabModifiedAt = selectedTabDateBeforeMerge
-		incomingState.browser.selectedTabID = selectedTabBeforeMerge
-		incomingState.browser.selectedTabModifiedAt = selectedTabDateBeforeMerge
-		if var localWorkspace = localState.workspace {
-			localWorkspace.selectedSpaceID = selectedSpaceBeforeMerge
-			localWorkspace.selectionModifiedAt = selectionDateBeforeMerge
-			for index in localWorkspace.spaces.indices {
-				if let selectedID = selectedTabsBySpace[localWorkspace.spaces[index].id] ?? nil {
-					localWorkspace.spaces[index].selectedTabID = selectedID
+			var localState = capturedLocal
+			var incomingState = sourceSnapshot
+			localState.browser.selectedTabID = selectedTabBeforeMerge
+			localState.browser.selectedTabModifiedAt = selectedTabDateBeforeMerge
+			incomingState.browser.selectedTabID = selectedTabBeforeMerge
+			incomingState.browser.selectedTabModifiedAt = selectedTabDateBeforeMerge
+			if var localWorkspace = localState.workspace {
+				localWorkspace.selectedSpaceID = selectedSpaceBeforeMerge
+				localWorkspace.selectionModifiedAt = selectionDateBeforeMerge
+				for index in localWorkspace.spaces.indices {
+					if let selectedID = selectedTabsBySpace[localWorkspace.spaces[index].id] ?? nil {
+						localWorkspace.spaces[index].selectedTabID = selectedID
+					}
 				}
+				localState.workspace = localWorkspace
 			}
-			localState.workspace = localWorkspace
-		}
-		if var sourceWorkspace = incomingState.workspace {
-			sourceWorkspace.selectedSpaceID = selectedSpaceBeforeMerge
-			sourceWorkspace.selectionModifiedAt = selectionDateBeforeMerge
-			for index in sourceWorkspace.spaces.indices {
-				if let selectedID = selectedTabsBySpace[sourceWorkspace.spaces[index].id] ?? nil {
-					sourceWorkspace.spaces[index].selectedTabID = selectedID
+			if var sourceWorkspace = incomingState.workspace {
+				sourceWorkspace.selectedSpaceID = selectedSpaceBeforeMerge
+				sourceWorkspace.selectionModifiedAt = selectionDateBeforeMerge
+				for index in sourceWorkspace.spaces.indices {
+					if let selectedID = selectedTabsBySpace[sourceWorkspace.spaces[index].id] ?? nil {
+						sourceWorkspace.spaces[index].selectedTabID = selectedID
+					}
 				}
+				incomingState.workspace = sourceWorkspace
 			}
-			incomingState.workspace = sourceWorkspace
+			// The publishing normal window is authoritative for locally stored
+			// blank tabs, including their closure. Preserve other local-only data.
+			var localWithoutBlankTabs = localState
+			localWithoutBlankTabs.tabs.removeAll { $0.isDiscardableNewTab }
+			var merged = localState.merging(incomingState)
+			merged = merged.preservingLocalOnlyData(from: localWithoutBlankTabs)
+			merged = merged.preservingLocalOnlyData(from: incomingState)
+			let openIDs = Set(merged.tabs.map(\.id))
+			let candidates = closedHistoryBeforeMerge + sourceClosedTabs
+			let records = Dictionary(candidates.map { ($0.id, $0) }, uniquingKeysWith: Self.preferredClosedHistoryRecord)
+			let closed = records.values.filter { !openIDs.contains($0.id) && (historyCutoff == .distantPast || $0.modifiedAt > historyCutoff) }.sorted {
+				$0.modifiedAt == $1.modifiedAt ? $0.id.uuidString < $1.id.uuidString : $0.modifiedAt > $1.modifiedAt
+			}
+			let prepared = merged.preservingLocalOnlyData(from: capturedLocal)
+			let portable = Dictionary(capturedLocal.portableProjection().tabs.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+			return SharedMergeResult(document: prepared, closed: closed, documentChanged: merged != capturedLocal,
+			                         closedChanged: closed != closedHistoryBeforeMerge, localPortable: portable,
+			                         bookmarksChanged: prepared.bookmarks != capturedLocal.bookmarks,
+			                         readingListChanged: prepared.readingList != capturedLocal.readingList,
+			                         historyChanged: prepared.history != capturedLocal.history,
+			                         workspaceChanged: prepared.workspace != capturedLocal.workspace)
 		}
-		// The publishing normal window is authoritative for locally stored
-		// blank tabs, including their closure. Preserve other local-only data.
-		var localWithoutBlankTabs = localState
-		localWithoutBlankTabs.tabs.removeAll { $0.isDiscardableNewTab }
-		var merged = localState.merging(incomingState)
-		merged = merged.preservingLocalOnlyData(from: localWithoutBlankTabs)
-		merged = merged.preservingLocalOnlyData(from: incomingState)
-		let openIDs = Set(merged.tabs.map(\.id))
-		let candidates = closedHistoryBeforeMerge + sourceClosedTabs
-		let records = Dictionary(candidates.map { ($0.id, $0) }, uniquingKeysWith: Self.preferredClosedHistoryRecord)
-		let closed = records.values.filter { !openIDs.contains($0.id) && (historyCutoff == .distantPast || $0.modifiedAt > historyCutoff) }.sorted {
-			$0.modifiedAt == $1.modifiedAt ? $0.id.uuidString < $1.id.uuidString : $0.modifiedAt > $1.modifiedAt
-		}
-		return (merged, closed, merged != capturedLocal, closed != closedHistoryBeforeMerge)
-		}
-		let (merged, mergedClosedHistory, documentChanged, closedHistoryChanged) = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
+		let result = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
 		guard !Task.isCancelled else { return }
 		guard syncRevision == generation else {
 			// Retry against fresh local values; never overwrite an edit made during the worker merge.
@@ -3424,8 +3443,13 @@ final class Browser {
 			return
 		}
 
+		let documentChanged = result.documentChanged
+		let closedHistoryChanged = result.closedChanged
+		let mergedClosedHistory = result.closed
 		if documentChanged {
-			applySyncDocument(merged)
+			applyPreparedSyncDocument(result.document, localPortableTabs: result.localPortable,
+			                          bookmarksChanged: result.bookmarksChanged, readingListChanged: result.readingListChanged,
+			                          historyChanged: result.historyChanged, workspaceChanged: result.workspaceChanged)
 		}
 		// The merge has finalized the tab collection. A hash lookup avoids
 		// rescanning all open tabs for each closed-history record and MRU entry.

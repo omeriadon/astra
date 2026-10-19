@@ -61,6 +61,7 @@ actor BrowserLibrarySearchWorker {
 		outputs[scope].flatMap { $0.request == request ? $0.matches : nil } ?? []
 	}
 	func update(_ request: Request, scope: BrowserHistorySearchModel.Scope, entries: () -> [BrowserLibrarySearchEntry]) async {
+		guard !Task.isCancelled else { return }
 		let token = UUID()
 		tokens[scope] = token
 		guard !request.query.isEmpty else { outputs[scope] = nil; return }
