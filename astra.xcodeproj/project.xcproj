@@ -111,6 +111,7 @@
             "Special/Info.plist",
             "Special/astra.icon",
             "UI/Chrome/BrowserAIChatSidebar.swift",
+            "UI/Chrome/BrowserAIChatTranscript.swift",
             "UI/Chrome/BrowserAITabDivider.swift",
             "UI/Chrome/BrowserMediaActivityView.swift",
             "UI/Chrome/BrowserSpacesBar.swift",
