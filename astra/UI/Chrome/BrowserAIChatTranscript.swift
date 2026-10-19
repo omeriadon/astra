@@ -133,6 +133,11 @@ struct BrowserAIChatTranscript: NSViewRepresentable {
                     do { try BrowserWebsiteAugment.open(item, in: browser) }
                     catch { browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error.localizedDescription) }
                 })
+            if case .stream = entry {
+                view.configureStream(chat: parent.chat, width: width, tint: NSColor(parent.browser.theme.tabColor),
+                    open: { [weak browser = parent.browser] url in browser?.openHistoryURL(url, inBackground: false) },
+                    hover: parent.hover, retry: parent.retry)
+            }
         }
 
         private func startPolling() {
@@ -588,7 +593,7 @@ struct BrowserAIChatTranscript: UIViewRepresentable {
             for (index, attachment) in message.attachments.enumerated() {
                 let image = UIImageView(image: attachment.image?.data.flatMap { UIImage(data: $0) } ?? UIImage(systemName: "doc.text"))
                 image.contentMode = .scaleAspectFit
-                image.frame = CGRect(x: index * 88, y: 0, width: 80, height: 64)
+                image.frame = CGRect(x: CGFloat(index) * 88, y: 0, width: 80, height: 64)
                 scroller.addSubview(image)
                 let name = text(attachment.name, size: 10)
                 name.frame = CGRect(x: index * 88, y: 68, width: 80, height: 16)
