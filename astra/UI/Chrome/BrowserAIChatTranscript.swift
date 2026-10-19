@@ -296,7 +296,19 @@ struct BrowserAIChatTranscript: NSViewRepresentable {
         if chat.isResponding {
             if !chat.toolCalls.isEmpty { add(tools(chat.toolCalls), height: CGFloat(chat.toolCalls.count) * 24) }
             if chat.preview.isEmpty {
-                add(label("✧  " + chat.activity, size: 12, secondary: true), height: 24)
+                let line = NSStackView()
+                line.orientation = .horizontal
+                line.alignment = .centerY
+                line.spacing = 8
+                let sparkle = NSImageView(image: NSImage(systemSymbolName: "sparkle", accessibilityDescription: nil) ?? NSImage())
+                sparkle.contentTintColor = tint
+                sparkle.translatesAutoresizingMaskIntoConstraints = false
+                NSLayoutConstraint.activate([sparkle.widthAnchor.constraint(equalToConstant: 18),
+                                             sparkle.heightAnchor.constraint(equalToConstant: 18)])
+                line.addArrangedSubview(sparkle)
+                line.addArrangedSubview(label(chat.activity, size: 12, secondary: true))
+                line.setAccessibilityLabel(chat.activity)
+                add(line, height: 24)
             } else {
                 addMarkdown(chat.preview, width: width, open: open, hover: hover, streaming: true)
             }
@@ -424,11 +436,58 @@ struct BrowserAIChatTranscript: NSViewRepresentable {
 
     private func artifactButton(_ item: BrowserWebsiteAugmentArtifact, tint: NSColor,
                                 action: @escaping (BrowserWebsiteAugmentArtifact) -> Void) -> NSView {
-        let button = TranscriptActionButton(title: item.title, symbol: "rectangle.3.group") { action(item) }
-        button.accessibilityIdentifier = "ai-chat-artifact-\(item.id)"
-        button.setAccessibilityLabel("Open \(item.title)")
-        button.contentTintColor = tint
-        return button
+        let card = TranscriptArtifactCard(item: item, tint: tint) { action(item) }
+        card.setAccessibilityIdentifier("ai-chat-artifact-\(item.id)")
+        card.setAccessibilityLabel("Open \(item.title)")
+        return card
+    }
+}
+
+@MainActor private final class TranscriptArtifactCard: NSVisualEffectView {
+    private let icon = NSImageView()
+    private let titleLabel = NSTextField(wrappingLabelWithString: "")
+    private let subtitleLabel = NSTextField(labelWithString: "")
+    private let arrow = NSImageView()
+    private let actionButton: TranscriptActionButton
+
+    init(item: BrowserWebsiteAugmentArtifact, tint: NSColor, action: @escaping () -> Void) {
+        actionButton = TranscriptActionButton(title: "", symbol: "", action: action)
+        super.init(frame: .zero)
+        material = .hudWindow
+        blendingMode = .withinWindow
+        state = .active
+        wantsLayer = true
+        layer?.cornerRadius = 14
+        layer?.masksToBounds = true
+        icon.image = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: nil)
+        icon.contentTintColor = tint
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        titleLabel.stringValue = item.title
+        titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        titleLabel.maximumNumberOfLines = 2
+        titleLabel.lineBreakMode = .byTruncatingTail
+        subtitleLabel.stringValue = item.sourceURL.host() ?? "Website augment"
+        subtitleLabel.font = .systemFont(ofSize: 11)
+        subtitleLabel.textColor = .secondaryLabelColor
+        subtitleLabel.lineBreakMode = .byTruncatingTail
+        arrow.image = NSImage(systemSymbolName: "arrow.up.right", accessibilityDescription: nil)
+        arrow.contentTintColor = .secondaryLabelColor
+        actionButton.isBordered = false
+        actionButton.image = nil
+        actionButton.title = ""
+        for child in [icon, titleLabel, subtitleLabel, arrow, actionButton] { addSubview(child) }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layout() {
+        super.layout()
+        let width = bounds.width
+        icon.frame = NSRect(x: 14, y: (bounds.height - 24) / 2, width: 24, height: 24)
+        titleLabel.frame = NSRect(x: 50, y: 20, width: max(30, width - 88), height: 35)
+        subtitleLabel.frame = NSRect(x: 50, y: 7, width: max(30, width - 88), height: 14)
+        arrow.frame = NSRect(x: width - 27, y: (bounds.height - 12) / 2, width: 12, height: 12)
+        actionButton.frame = bounds
     }
 }
 
@@ -582,7 +641,20 @@ struct BrowserAIChatTranscript: UIViewRepresentable {
     private func tools(_ calls: [BrowserAIChat.ToolActivity]) {
         for call in calls {
             let action = BrowserAIAction(rawValue: call.name)
-            let line = text((action?.title ?? call.name.replacingOccurrences(of: "_", with: " ").capitalized), size: 12, secondary: true)
+            let line = UIStackView()
+            line.axis = .horizontal
+            line.alignment = .center
+            line.spacing = 5
+            let image = UIImageView(image: UIImage(systemName: action?.chatSystemImage ?? "wrench.and.screwdriver"))
+            image.tintColor = .secondaryLabel
+            image.contentMode = .scaleAspectFit
+            image.widthAnchor.constraint(equalToConstant: 14).isActive = true
+            image.heightAnchor.constraint(equalToConstant: 14).isActive = true
+            line.addArrangedSubview(image)
+            let caption = text((action?.title ?? call.name.replacingOccurrences(of: "_", with: " ").capitalized), size: 12, secondary: true)
+            caption.numberOfLines = 1
+            caption.lineBreakMode = .byTruncatingTail
+            line.addArrangedSubview(caption)
             line.accessibilityIdentifier = "ai-chat-tool-\(call.id)"
             stack.addArrangedSubview(line)
         }
