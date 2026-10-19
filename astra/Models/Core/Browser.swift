@@ -1619,7 +1619,11 @@ final class Browser {
 			pageZoom: saved.pageZoom,
 			scrollPosition: saved.scrollPosition,
 			isHibernated: inBackground,
-			session: session
+			session: session,
+			recordsNavigationHistory: saved.recordsNavigationHistory,
+			restorationState: saved.restorationState,
+			fileAccessBookmark: saved.fileAccessBookmark,
+			easel: saved.easel
 		)
 		configure(tab)
 		if !inBackground {
@@ -3673,7 +3677,8 @@ final class Browser {
 			if !tabIDs.contains(selectedTabID) { tabIDs.append(selectedTabID) }
 			BrowserLaunchCache.includeSelection(
 				tab: .init(id: selectedTabID, url: selectedTab.currentURL.map(BrowserAddress.withoutCredentials), title: String(selectedTab.title.prefix(240)), order: BrowserLaunchCache.maximumTabs - 1, internalPage: selectedTab.internalPage == .easel ? "easel" : nil),
-				space: .init(id: space.id, name: String(space.name.prefix(80)), symbol: space.symbol, theme: space.theme, tabIDs: tabIDs, selectedTabID: selectedTabID))
+				space: .init(id: space.id, name: String(space.name.prefix(80)), symbol: space.symbol, theme: space.theme, tabIDs: tabIDs, selectedTabID: selectedTabID),
+				isFavourite: workspace.favouriteTabIDs.contains(selectedTabID))
 		}
 		let update = BrowserSelectionUpdate(
 			windowID: windowID,

@@ -43,10 +43,12 @@ struct NewTabShaderSurface: View {
 	private var hasTimeVaryingEffect: Bool {
 		switch preset {
 			case .smoke: value("speed") > 0 && value("amount") > 0
-			case .holographic: value("speed") > 0 && value("intensity") > 0
-			case .ripple: value("speed") > 0 && value("amplitude") > 0
+			// The foil shader retains an independent glint even at zero speed.
+			case .holographic: true
+			// Ring centers still drift when wave speed is zero.
+			case .ripple: value("amplitude") > 0
 			case .topographic: value("animate") > 0
-			case .datamosh: value("corruption") > 0 || value("smear") > 0 || value("bleed") > 0
+			case .datamosh: value("corruption") > 0
 		}
 	}
 
@@ -93,13 +95,16 @@ struct NewTabShaderSurface: View {
 
 	var body: some View {
 		GeometryReader { geometry in
+			// Geometry/theme/settings are stable across the inner timeline ticks.
+			let palette = positionedPalette
+			let parameters = Dictionary(uniqueKeysWithValues: NewTabEffectSettings.parameters(preset.rawValue).map { ($0.id, value($0.id)) })
 			TimelineView(.animation(minimumInterval: 1.0 / 45.0, paused: !running)) { context in
 				// Sample the timeline date so shader uniforms change on every scheduled frame.
 				let time = Float(clock.value(at: context.date.timeIntervalSinceReferenceDate))
 				ZStack {
 					baseColor
-					source(size: geometry.size)
-						.layerEffect(effectShader(size: geometry.size, time: time),
+					source(size: geometry.size, palette: palette)
+						.layerEffect(effectShader(size: geometry.size, time: time, parameters: parameters),
 						             maxSampleOffset: sampleOffset)
 				}
 			}
@@ -128,13 +133,13 @@ struct NewTabShaderSurface: View {
 	}
 
 	@ViewBuilder
-	private func source(size: CGSize) -> some View {
+	private func source(size: CGSize, palette: ([Float], [Color])) -> some View {
 		if preset == .topographic, let sourceImage {
 			Image(decorative: sourceImage, scale: 1)
 				.resizable().scaledToFill()
 				.frame(width: size.width, height: size.height).clipped()
 		} else {
-			Rectangle().fill(textureShader(size: size))
+			Rectangle().fill(textureShader(size: size, palette: palette))
 		}
 	}
 
@@ -150,8 +155,8 @@ struct NewTabShaderSurface: View {
 		Float(settings.value(preset.rawValue, key))
 	}
 
-	private func textureShader(size: CGSize) -> Shader {
-		let (locations, colors) = positionedPalette
+	private func textureShader(size: CGSize, palette: ([Float], [Color])) -> Shader {
+		let (locations, colors) = palette
 		return ShaderLibrary.astraNewTabTexture(
 			.float2(size),
 			.float(preset.textureIndex),
@@ -161,8 +166,9 @@ struct NewTabShaderSurface: View {
 		)
 	}
 
-	private func effectShader(size: CGSize, time: Float) -> Shader {
-		switch preset {
+	private func effectShader(size: CGSize, time: Float, parameters: [String: Float]) -> Shader {
+		let value: (String) -> Float = { parameters[$0] ?? 0 }
+		return switch preset {
 			case .smoke:
 				ShaderLibrary.astraSmokeReveal(
 					.float2(size), .float(time * value("speed")),

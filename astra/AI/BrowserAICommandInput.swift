@@ -21,13 +21,12 @@ nonisolated final class BrowserAICommandInput: @unchecked Sendable {
 	}
 
 	func write(_ text: String, close: Bool = false) async throws {
-		let data = Data(text.utf8)
 		try await withTaskCancellationHandler {
 			try Task.checkCancellation()
 			try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
 				queue.async { [self] in
 					do {
-						try send(data)
+						try send(Data(text.utf8))
 						if close { try handle.close() }
 						continuation.resume()
 					} catch { continuation.resume(throwing: error) }

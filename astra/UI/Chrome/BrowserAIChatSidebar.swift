@@ -415,11 +415,11 @@ struct BrowserAIChatSidebar: View {
 						Group {
 							if let data = attachment.image?.data {
 								#if os(macOS)
-									if let image = NSImage(data: data) {
+									if let image = BrowserAIThumbnailCache.image(id: attachment.id, data: data) {
 										Image(nsImage: image).resizable().scaledToFit()
 									}
 								#else
-									if let image = UIImage(data: data) {
+									if let image = BrowserAIThumbnailCache.image(id: attachment.id, data: data) {
 										Image(uiImage: image).resizable().scaledToFit()
 									}
 								#endif
@@ -865,3 +865,28 @@ private struct BrowserAIChatStreamingResponse: View {
 		}
 	}
 #endif
+
+/// Reuse the same native image object across transcript/composer reflows. Image
+/// bytes and display dimensions are unchanged, preserving existing sampling.
+@MainActor private enum BrowserAIThumbnailCache {
+	#if os(macOS)
+	typealias NativeImage = NSImage
+	#else
+	typealias NativeImage = UIImage
+	#endif
+	private static let cache: NSCache<NSString, NativeImage> = {
+		let value = NSCache<NSString, NativeImage>()
+		value.countLimit = 32
+		value.totalCostLimit = 64 * 1024 * 1024
+		return value
+	}()
+	static func image(id: UUID, data: Data) -> NativeImage? {
+		let key = id.uuidString as NSString
+		if let cached = cache.object(forKey: key) { return cached }
+		guard let image = NativeImage(data: data) else { return nil }
+		let pixels = Double(image.size.width) * Double(image.size.height) * 4
+		let cost = pixels.isFinite ? Int(min(max(pixels, Double(data.count)), Double(Int.max / 2))) : data.count
+		cache.setObject(image, forKey: key, cost: cost)
+		return image
+	}
+}

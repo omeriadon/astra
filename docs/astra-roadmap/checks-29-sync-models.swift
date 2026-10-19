@@ -277,7 +277,7 @@ struct BrowserSyncModelCheck {
 		try persistence.savePersistedState(persisted)
 		let stateURL = directory.appendingPathComponent("browser-state.json")
 		var envelope = try JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as! [String: Any]
-		assert(envelope["version"] as? Int == 3)
+		assert(envelope["version"] as? Int == 4)
 		envelope["version"] = 1
 		try JSONSerialization.data(withJSONObject: envelope).write(to: stateURL)
 		let migratedState = try persistence.loadPersistedState()

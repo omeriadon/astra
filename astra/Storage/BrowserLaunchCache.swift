@@ -174,19 +174,22 @@ enum BrowserLaunchCache {
 
 	/// A selection outside the bounded shell only replaces one metadata entry.
 	/// Normal selection writes still touch just the tiny selection journal.
-	static func includeSelection(tab: Tab, space: Space) {
+	static func includeSelection(tab: Tab, space: Space, isFavourite: Bool) {
 		guard var snapshot = lastDecodedSnapshot else { return }
 		if !snapshot.tabs.contains(where: { $0.id == tab.id }) {
 			if snapshot.tabs.count >= maximumTabs { snapshot.tabs.removeLast() }
 			snapshot.tabs.append(tab)
 		}
 		if let index = snapshot.spaces.firstIndex(where: { $0.id == space.id }) {
-			if !snapshot.spaces[index].tabIDs.contains(tab.id) { snapshot.spaces[index].tabIDs.append(tab.id) }
+			if !isFavourite, !snapshot.spaces[index].tabIDs.contains(tab.id) { snapshot.spaces[index].tabIDs.append(tab.id) }
 			snapshot.spaces[index].selectedTabID = tab.id
 		} else {
 			if snapshot.spaces.count >= maximumSpaces { snapshot.spaces.removeLast() }
+			var space = space
+			if isFavourite { space.tabIDs.removeAll { $0 == tab.id } }
 			snapshot.spaces.append(space)
 		}
+		if isFavourite, !snapshot.favouriteTabIDs.contains(tab.id) { snapshot.favouriteTabIDs.append(tab.id) }
 		snapshot.selectedTabID = tab.id; snapshot.selectedSpaceID = space.id
 		snapshot = Snapshot(tabs: snapshot.tabs, spaces: snapshot.spaces, favouriteTabIDs: snapshot.favouriteTabIDs, selectedSpaceID: space.id, selectedTabID: tab.id, favicons: snapshot.favicons)
 		save(snapshot)

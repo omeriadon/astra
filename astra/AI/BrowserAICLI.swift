@@ -113,12 +113,7 @@ enum BrowserAICLI {
 				if codex {
 					input = try json(initialize()) + "\n"
 				} else if !images.isEmpty {
-					var content: [[String: Any]] = [["type": "text", "text": prompt]]
-					for image in images {
-						content.append(["type": "text", "text": "Attached image: " + image.name])
-						content.append(["type": "image", "source": ["type": "base64", "media_type": image.mediaType, "data": image.data.base64EncodedString()]])
-					}
-					input = try json(["type": "user", "session_id": "", "message": ["role": "user", "content": content], "parent_tool_use_id": NSNull()]) + "\n"
+					input = try await encodedPrompt(prompt, images: images)
 				}
 				try Task.checkCancellation()
 				try command.start(input: input, closeInput: !codex)
@@ -155,19 +150,10 @@ enum BrowserAICLI {
 						} else if event["id"] as? Int == 2 {
 							guard let result = event["result"] as? [String: Any],
 							      let thread = result["thread"] as? [String: Any], let id = thread["id"] as? String else { throw BrowserAIError.invalidStream }
-							var content: [[String: Any]] = [["type": "text", "text": prompt]]
-							for image in images {
-								content.append(["type": "image", "url": "data:\(image.mediaType);base64,\(image.data.base64EncodedString())"])
-							}
-							var params: [String: Any] = ["threadId": id, "input": content]
-							if !files.isEmpty {
-								params["sandboxPolicy"] = ["type": "readOnly", "access": ["type": "restricted", "includePlatformDefaults": true, "readableRoots": [command.workingDirectory.path]]]
-							}
-							let effort = request.reasoningEffort ?? "low"
-							if !effort.isEmpty, effort != "provider-default" {
-								params["effort"] = effort
-							}
-							try await command.write(json(["id": 3, "method": "turn/start", "params": params]) + "\n")
+							let input = try await encodedPrompt(prompt, images: images, threadID: id,
+							                                    directory: files.isEmpty ? nil : command.workingDirectory.path,
+							                                    effort: request.reasoningEffort ?? "low")
+							try await command.write(input)
 						} else if let id = event["id"], event["method"] != nil {
 							// Never approve commands or external tool requests on the model's behalf.
 							try await command.write(json(["id": id, "error": ["code": -32601, "message": "Astra does not allow this tool request."]]) + "\n")
@@ -333,7 +319,38 @@ enum BrowserAICLI {
 		}
 	#endif
 
-	private static func json(_ value: [String: Any]) throws -> String {
+	/// Only immutable values cross this boundary; base64 and large JSON payloads
+	/// are prepared off the UI actor before the ordered transport writes them.
+	private nonisolated static func encodedPrompt(_ prompt: String, images: [BrowserAIImage], threadID: String? = nil, directory: String? = nil, effort: String? = nil) async throws -> String {
+		let worker = Task.detached(priority: .userInitiated) {
+			try Task.checkCancellation()
+			var content: [[String: Any]] = [["type": "text", "text": prompt]]
+			for image in images {
+				try Task.checkCancellation()
+				if threadID != nil {
+					content.append(["type": "image", "url": "data:\(image.mediaType);base64,\(image.data.base64EncodedString())"])
+				} else {
+					content.append(["type": "text", "text": "Attached image: " + image.name])
+					content.append(["type": "image", "source": ["type": "base64", "media_type": image.mediaType, "data": image.data.base64EncodedString()]])
+				}
+			}
+			let message: [String: Any]
+			if let threadID {
+				var params: [String: Any] = ["threadId": threadID, "input": content]
+				if let directory { params["sandboxPolicy"] = ["type": "readOnly", "access": ["type": "restricted", "includePlatformDefaults": true, "readableRoots": [directory]]] }
+				if let effort, !effort.isEmpty, effort != "provider-default" { params["effort"] = effort }
+				message = ["id": 3, "method": "turn/start", "params": params]
+			} else {
+				message = ["type": "user", "session_id": "", "message": ["role": "user", "content": content], "parent_tool_use_id": NSNull()]
+			}
+			let result = try json(message) + "\n"
+			try Task.checkCancellation()
+			return result
+		}
+		return try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+	}
+
+	private nonisolated static func json(_ value: [String: Any]) throws -> String {
 		try String(decoding: JSONSerialization.data(withJSONObject: value), as: UTF8.self)
 	}
 }
