@@ -126,6 +126,8 @@ private struct NativeEaselLibrary: NSViewRepresentable {
 		scroll.autohidesScrollers = true
 		let table = EaselLibraryTable()
 		table.backgroundColor = .clear
+		table.frame = scroll.contentView.bounds
+		table.autoresizingMask = [.width]
 		table.headerView = nil
 		table.intercellSpacing = NSSize(width: 0, height: 0)
 		table.selectionHighlightStyle = .none
@@ -246,7 +248,7 @@ private struct NativeEaselLibrary: NSViewRepresentable {
 			alert.addButton(withTitle: "Delete Easel")
 			alert.addButton(withTitle: "Cancel")
 			if let window = table?.window {
-				alert.beginSheetModal(for: window) { [weak model] result in
+				alert.beginSheetModal(for: window) { result in
 					if result == .alertFirstButtonReturn { model?.browser.deleteEasel(id, confirmed: true) }
 				}
 			}
