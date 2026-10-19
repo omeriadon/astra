@@ -162,12 +162,17 @@ private final class DownloadNativeCell: NSTableCellView {
 	func configure(_ item: BrowserDownload, suggestedName: String?, manager: BrowserDownloadManager, theme: BrowserTheme) {
 		let title = suggestedName ?? item.name
 		name = title
+		let ink = NSColor(theme.foregroundColor)
+		titleLabel.textColor = ink
+		hostLabel.textColor = ink.withAlphaComponent(0.65)
+		summaryLabel.textColor = ink.withAlphaComponent(0.65)
+		finishLabel.textColor = ink.withAlphaComponent(0.65)
+		glyph.contentTintColor = ink
 		titleLabel.stringValue = title
 		glyph.image = NSImage(systemSymbolName: item.symbol, accessibilityDescription: nil)
 		hostLabel.stringValue = item.sourceURL?.host ?? ""
 		hostLabel.isHidden = item.sourceURL?.host == nil
 		summaryLabel.stringValue = item.statusSummary
-		summaryLabel.textColor = .secondaryLabelColor
 		let active = [.downloading, .paused, .finalizing].contains(item.status)
 		finishLabel.isHidden = !active || item.estimatedFinish == nil
 		if let finish = item.estimatedFinish {
@@ -191,6 +196,7 @@ private final class DownloadNativeCell: NSTableCellView {
 		func button(_ label: String, _ image: String, _ action: @escaping () -> Void) {
 			let control = DownloadActionButton(symbol: image, label: label, run: action)
 			control.identifier = NSUserInterfaceItemIdentifier("download-\(label.lowercased())-\(item.id.uuidString)")
+			control.contentTintColor = ink
 			controls.addArrangedSubview(control)
 		}
 		if item.status == .downloading {
@@ -516,7 +522,13 @@ private final class DownloadUIKitCell: UITableViewCell {
 	required init?(coder: NSCoder) { nil }
 
 	func configure(_ item: BrowserDownload, name: String?, manager: BrowserDownloadManager, theme: BrowserTheme) {
+		let ink = UIColor(theme.foregroundColor)
 		glyph.image = UIImage(systemName: item.symbol)
+		glyph.tintColor = ink
+		titleLabel.textColor = ink
+		hostLabel.textColor = ink.withAlphaComponent(0.65)
+		summaryLabel.textColor = ink.withAlphaComponent(0.65)
+		finishLabel.textColor = ink.withAlphaComponent(0.65)
 		titleLabel.text = name ?? item.name
 		hostLabel.text = item.sourceURL?.host
 		hostLabel.isHidden = item.sourceURL?.host == nil
@@ -547,6 +559,7 @@ private final class DownloadUIKitCell: UITableViewCell {
 		func add(_ label: String, _ symbol: String, _ operation: @escaping () -> Void) {
 			let button = UIButton(type: .system)
 			button.setImage(UIImage(systemName: symbol), for: .normal)
+			button.tintColor = ink
 			button.accessibilityLabel = label
 			button.accessibilityIdentifier = "download-\(label.lowercased())-\(item.id.uuidString)"
 			button.addAction(UIAction { _ in operation() }, for: .touchUpInside)
