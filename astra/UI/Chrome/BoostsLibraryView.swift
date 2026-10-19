@@ -19,7 +19,7 @@
 		}
 	}
 
-	private final class NativeBoostMenuItem: NSMenuItem {
+	nonisolated private final class NativeBoostMenuItem: NSMenuItem {
 		var run: (() -> Void)?
 		init(_ title: String, symbol: String, action: @escaping () -> Void) {
 			super.init(title: title, action: nil, keyEquivalent: "")
