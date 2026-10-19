@@ -1,6 +1,7 @@
 import Defaults
 import Observation
 import SwiftUI
+import WebKit
 
 struct BrowserContentView: View, Animatable {
 	let browser: Browser
@@ -19,7 +20,7 @@ struct BrowserContentView: View, Animatable {
 			let selectedTab = displayedTabID.flatMap { browser.tab(withID: $0) } ?? browser.selectedTab
 			let hasActiveDuplicate = BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
 			ZStack {
-				KeepAliveWebStack(browser: browser, insets: insets, displayedTabID: selectedTab?.id)
+				BrowserWebStackContent(browser: browser, insets: insets, displayedTabID: selectedTab?.id)
 					.zIndex(0)
 				content(hasActiveDuplicate: hasActiveDuplicate, tab: selectedTab)
 					.zIndex(1)
@@ -131,33 +132,33 @@ private struct InternalPageHost: View {
 	}
 }
 
-private struct KeepAliveWebStack: View {
+/// SwiftUI resolves the active tab and failure overlay; AppKit/UIKit owns
+/// the long-lived WebKit view hierarchy and updates it without a ForEach of
+/// representables on every tab, sidebar or viewport-inset change.
+private struct BrowserWebStackContent: View {
 	let browser: Browser
 	let insets: BrowserViewportInsets
 	let displayedTabID: UUID?
 
 	var body: some View {
 		let selectedTab = displayedTabID.flatMap { browser.tab(withID: $0) } ?? browser.selectedTab
-		// Each WebKit view can have exactly one AppKit parent. A split contains
-		// two BrowserPageViews, so only attach the current pane's web view.
+		// Each WKWebView has exactly one native parent. Split panes must
+		// never retain competing hosts for the other pane's controller.
 		let controllers = browser.isShowingTabSplit
 			? browser.tabResources.controllersForDisplay().filter { $0 === selectedTab?.controller }
 			: browser.tabResources.controllersForDisplay()
+		let entries = controllers.map { controller in
+			let isVisible = controller === selectedTab?.controller && selectedTab?.internalPage == nil
+			let hasPage = isVisible && controller.committedURL != nil && controller.navigationFailure == nil
+			return BrowserNativeWebStack.Entry(
+				controller: controller,
+				isVisible: isVisible,
+				showsPage: hasPage,
+				allowsInteraction: hasPage && selectedTab?.activeController === controller
+			)
+		}
 		ZStack {
-			ForEach(controllers) { controller in
-				BrowserWebView(
-					controller: controller,
-					windowID: browser.windowID,
-					isVisible: controller === selectedTab?.controller && selectedTab?.internalPage == nil,
-					obscuredInsets: controller === selectedTab?.controller ? insets.obscured : EdgeInsets(),
-					minimumViewportInsets: insets.minimum,
-					maximumViewportInsets: insets.maximum
-				)
-				.id(controller.id)
-				.opacity(controller === selectedTab?.controller && selectedTab?.internalPage == nil && controller.committedURL != nil && controller.navigationFailure == nil ? 1 : 0)
-				.allowsHitTesting(controller === selectedTab?.controller && selectedTab?.activeController === controller && controller.committedURL != nil && controller.navigationFailure == nil)
-				.accessibilityHidden(controller !== selectedTab?.controller || selectedTab?.activeController !== controller || controller.committedURL == nil || controller.navigationFailure != nil)
-			}
+			BrowserNativeWebStack(entries: entries, windowID: browser.windowID, insets: insets)
 
 			if let failure = selectedTab?.controller?.navigationFailure, selectedTab?.internalPage == nil {
 				BrowserNavigationErrorView(kind: failure.kind, failedURL: failure.url) {
@@ -166,14 +167,217 @@ private struct KeepAliveWebStack: View {
 			}
 		}
 		.task(id: selectedTab?.id) {
-			// Each side prepares its own WebKit controller, even when the
-			// globally selected tab is the other split pane.
+			// Both panes prepare their own controller, even when the
+			// globally selected tab belongs to the opposite pane.
 			if let controller = selectedTab?.controller, !controller.isWebViewReady {
 				controller.prepareWebView()
 			}
 		}
 	}
 }
+
+/// Only the visible/interactive state is resolved by SwiftUI. Native hosts
+/// persist by controller identity and only change their children on membership
+/// changes, preserving WebKit state through tab switches and split transitions.
+private struct BrowserNativeWebStack {
+	struct Entry: Identifiable {
+		let controller: BrowserController
+		let isVisible: Bool
+		let showsPage: Bool
+		let allowsInteraction: Bool
+
+		var id: UUID { controller.id }
+	}
+
+	let entries: [Entry]
+	let windowID: UUID?
+	let insets: BrowserViewportInsets
+
+	func specification(for entry: Entry) -> BrowserWebView {
+		BrowserWebView(
+			controller: entry.controller,
+			windowID: windowID,
+			isVisible: entry.isVisible,
+			obscuredInsets: entry.isVisible ? insets.obscured : EdgeInsets(),
+			minimumViewportInsets: insets.minimum,
+			maximumViewportInsets: insets.maximum
+		)
+	}
+}
+
+#if os(macOS)
+
+extension BrowserNativeWebStack: NSViewRepresentable {
+	func makeNSView(context _: Context) -> BrowserNativeWebStackNSView {
+		BrowserNativeWebStackNSView()
+	}
+
+	func updateNSView(_ view: BrowserNativeWebStackNSView, context _: Context) {
+		view.update(stack: self)
+	}
+
+	static func dismantleNSView(_ view: BrowserNativeWebStackNSView, coordinator _: ()) {
+		view.removeAllHosts()
+	}
+}
+
+@MainActor
+private final class BrowserNativeWebStackNSView: NSView {
+	private var hosts: [UUID: BrowserWebView.BrowserWebViewHost] = [:]
+	private var allowsWebInteraction = false
+
+	override func hitTest(_ point: NSPoint) -> NSView? {
+		guard allowsWebInteraction else { return nil }
+		return super.hitTest(point)
+	}
+
+	func update(stack: BrowserNativeWebStack) {
+		let requestedIDs = Set(stack.entries.map(\.id))
+		for id in hosts.keys.filter({ !requestedIDs.contains($0) }) {
+			guard let host = hosts.removeValue(forKey: id) else { continue }
+			host.unmountWebView()
+			host.removeFromSuperview()
+		}
+
+		allowsWebInteraction = stack.entries.contains(where: \.allowsInteraction)
+		for entry in stack.entries {
+			let specification = stack.specification(for: entry)
+			let host: BrowserWebView.BrowserWebViewHost
+			if let existing = hosts[entry.id], existing.specification.controller === entry.controller {
+				host = existing
+			} else {
+				if let previous = hosts.removeValue(forKey: entry.id) {
+					previous.unmountWebView()
+					previous.removeFromSuperview()
+				}
+				host = BrowserWebView.BrowserWebViewHost(specification: specification)
+				host.frame = bounds
+				host.autoresizingMask = [.width, .height]
+				host.isHidden = !entry.showsPage
+				addSubview(host)
+				hosts[entry.id] = host
+			}
+			// Reuse BrowserWebViewHost's native handoff, snapshot curtain,
+			// inspector and trackpad-gesture lifecycle, without SwiftUI hosts.
+			host.isHidden = !entry.showsPage
+			host.setAccessibilityHidden(!entry.allowsInteraction)
+			host.update(specification: specification)
+		}
+	}
+
+	func removeAllHosts() {
+		allowsWebInteraction = false
+		for host in hosts.values {
+			host.unmountWebView()
+			host.removeFromSuperview()
+		}
+		hosts.removeAll()
+	}
+}
+
+#elseif os(iOS)
+
+extension BrowserNativeWebStack: UIViewRepresentable {
+	func makeUIView(context _: Context) -> BrowserNativeWebStackUIView {
+		BrowserNativeWebStackUIView()
+	}
+
+	func updateUIView(_ view: BrowserNativeWebStackUIView, context _: Context) {
+		view.update(stack: self)
+	}
+
+	static func dismantleUIView(_ view: BrowserNativeWebStackUIView, coordinator _: ()) {
+		view.removeAllHosts()
+	}
+}
+
+@MainActor
+private final class BrowserNativeWebStackUIView: UIView {
+	private struct MountedPage {
+		let controller: BrowserController
+		let coordinator: BrowserWebView.Coordinator
+	}
+
+	private var pages: [UUID: MountedPage] = [:]
+	private var appliedInsets: [UUID: [EdgeInsets]] = [:]
+	private var allowsWebInteraction = false
+
+	override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+		guard allowsWebInteraction else { return nil }
+		return super.hitTest(point, with: event)
+	}
+
+	override func layoutSubviews() {
+		super.layoutSubviews()
+		for page in pages.values where page.controller.webViewIfLoaded?.superview === self {
+			page.controller.webViewIfLoaded?.frame = bounds
+		}
+	}
+
+	func update(stack: BrowserNativeWebStack) {
+		let requestedIDs = Set(stack.entries.map(\.id))
+		for id in pages.keys.filter({ !requestedIDs.contains($0) }) {
+			removePage(id)
+		}
+		allowsWebInteraction = stack.entries.contains(where: \.allowsInteraction)
+		for entry in stack.entries {
+			let controller = entry.controller
+			if let old = pages[entry.id], old.controller !== controller {
+				removePage(entry.id)
+			}
+			let webView = controller.webView
+			if pages[entry.id] == nil {
+				let coordinator = BrowserWebView.Coordinator()
+				coordinator.attach(to: controller)
+				pages[entry.id] = MountedPage(controller: controller, coordinator: coordinator)
+			}
+			if webView.superview !== self {
+				webView.removeFromSuperview()
+				webView.frame = bounds
+				webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+				addSubview(webView)
+			}
+			webView.isHidden = !entry.showsPage
+			webView.isUserInteractionEnabled = entry.allowsInteraction
+			webView.accessibilityElementsHidden = !entry.allowsInteraction
+
+			// Keep the existing edge-swipe and pull-to-refresh coordinator.
+			// Avoid setting WebKit viewport insets on unrelated UI updates.
+			let obscured = entry.isVisible ? stack.insets.obscured : EdgeInsets()
+			let nextInsets = [obscured, stack.insets.minimum, stack.insets.maximum]
+			if appliedInsets[entry.id] != nextInsets {
+				webView.obscuredContentInsets = UIEdgeInsets(
+					top: obscured.top, left: obscured.leading,
+					bottom: obscured.bottom, right: obscured.trailing
+				)
+				let minimum = stack.insets.minimum
+				let maximum = stack.insets.maximum
+				webView.setMinimumViewportInset(
+					UIEdgeInsets(top: minimum.top, left: minimum.leading, bottom: minimum.bottom, right: minimum.trailing),
+					maximumViewportInset: UIEdgeInsets(top: maximum.top, left: maximum.leading, bottom: maximum.bottom, right: maximum.trailing)
+				)
+				appliedInsets[entry.id] = nextInsets
+			}
+		}
+	}
+
+	private func removePage(_ id: UUID) {
+		guard let page = pages.removeValue(forKey: id) else { return }
+		page.coordinator.detach()
+		if let webView = page.controller.webViewIfLoaded, webView.superview === self {
+			webView.removeFromSuperview()
+			webView.isHidden = true
+		}
+		appliedInsets[id] = nil
+	}
+
+	func removeAllHosts() {
+		allowsWebInteraction = false
+		for id in Array(pages.keys) { removePage(id) }
+	}
+}
+
+#endif
 
 /// Per-browser WebKit attachment policy. The normal warm budget is four
 /// controllers; pressure reduces idle retention without overriding media,
