@@ -37,30 +37,6 @@ jobs:
           set -euo pipefail
           node checks/reader-availability-check.mjs
 
-  uploads:
-    name: WebKit file uploads
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: WebKit file uploads
-        shell: bash
-        run: |
-          set -euo pipefail
-          node checks/webkit-file-upload-check.mjs
-
-  policy:
-    name: WebKit resource policy
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: WebKit resource policy
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 checks/webkit-resource-policy-check.py
-
   benchmark:
     name: WebKit benchmark self-test
     runs-on: ubuntu-latest

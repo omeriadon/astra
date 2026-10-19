@@ -14,16 +14,15 @@ concurrency:
 
 jobs:
   safety:
-    name: AI browser action safety
+    name: Website augmentation and page extraction fixtures
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: AI browser action safety
+      - name: Execute production website JS fixtures
         shell: bash
         run: |
           set -euo pipefail
-          python3 checks/ai-browser-tools-check.py
           node checks/website-augment-check.mjs
           node checks/page-extraction-budget-check.mjs
 

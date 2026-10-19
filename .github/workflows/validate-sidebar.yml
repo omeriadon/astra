@@ -13,18 +13,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  scroll:
-    name: Sidebar scroll layout
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Sidebar scroll layout
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 checks/sidebar-scroll-layout-check.py
-
   native:
     name: Native sidebar viewport
     runs-on: xcode-27

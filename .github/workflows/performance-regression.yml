@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   library:
-    name: Previous-commit library benchmark comparison (informational)
+    name: PR-base library benchmark comparison (informational)
     runs-on: xcode-27
     timeout-minutes: 20
     steps:
@@ -23,15 +23,16 @@ jobs:
         with:
           path: candidate
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Checkout previous compatible revision
+      - name: Checkout pull request base for fair comparison
         uses: actions/checkout@v4
         with:
           path: baseline
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
           fetch-depth: 2
       - name: Select Xcode 27 / Swift 6.4
         run: bash candidate/scripts/ci/select-xcode-27.sh
-      - name: Detach baseline at parent commit
+      - name: Use previous commit for manually dispatched comparisons
+        if: github.event_name == 'workflow_dispatch'
         run: git -C baseline checkout --detach HEAD^
       - name: Validate benchmark parser
         run: python3 candidate/scripts/ci/library_benchmark_report.py --self-test

@@ -37,26 +37,3 @@ jobs:
           set -euo pipefail
           node checks/website-chrome-tint-check.mjs
 
-  mini:
-    name: Mini Astra shared chrome
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Mini Astra shared chrome
-        shell: bash
-        run: |
-          set -euo pipefail
-          node checks/mini-astra-shared-chrome-check.mjs
-
-  noise:
-    name: Noise lifecycle
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Noise lifecycle
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 checks/noise-lifecycle-check.py

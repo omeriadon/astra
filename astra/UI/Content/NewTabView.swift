@@ -1,6 +1,10 @@
 import Defaults
 import Livable
 import SwiftUI
+import QuartzCore
+#if os(iOS)
+	import UIKit
+#endif
 #if os(macOS)
 	import AppKit
 	import UniformTypeIdentifiers
@@ -24,7 +28,6 @@ struct NewTabView: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@Environment(\.scenePhase) private var scenePhase
 	@State private var isPresented = false
-	@State private var entered = false
 	#if os(macOS)
 		@State private var windowCanAnimate = false
 	#endif
@@ -67,10 +70,8 @@ struct NewTabView: View {
 			newTabBackground
 			GeometryReader { geometry in
 				VStack(spacing: 0) {
-					searchHeader
-						.opacity(entered || reduceMotion ? 1 : 0)
-						.scaleEffect(entered || reduceMotion ? 1 : 0.94)
-						.offset(y: entered || reduceMotion ? 0 : 12)
+					NativeNewTabEntrance(content: searchHeader, animationID: browser.selectedTabID,
+					                     animate: !reduceMotion && usesDefaultBackground)
 					if !browser.newTabSearchText.isEmpty {
 						ScrollViewReader { proxy in
 							List {
@@ -128,12 +129,6 @@ struct NewTabView: View {
 		#endif
 		.onAppear { isPresented = true }
 		.onDisappear { isPresented = false }
-		.task(id: browser.selectedTabID) {
-			entered = false
-			await Task.yield()
-			guard !Task.isCancelled else { return }
-			withAnimation(reduceMotion || !usesDefaultBackground ? nil : .smooth(duration: 0.55)) { entered = true }
-		}
 		.task(id: browser.quickSearchFocusRequest) {
 			await Task.yield()
 			isSearchFocused = true
@@ -669,6 +664,162 @@ private struct StartPageVisitRow: View {
 				}
 				let point = convert(event.locationInWindow, from: nil)
 				pointer.location = bounds.contains(point) ? CGPoint(x: point.x, y: point.y) : nil
+			}
+		}
+	}
+#endif
+
+
+/// Animates the search header on its native compositing layer rather than
+/// invalidating the SwiftUI search/results tree on every animation frame.
+/// The hosted search field remains fully interactive and keeps its SwiftUI
+/// bindings, accessibility identifiers and keyboard handling.
+@MainActor
+private enum NativeNewTabEntranceAnimation {
+	static let duration: CFTimeInterval = 0.55
+	static let key = "astra.newTab.headerEntrance"
+
+	static func stop(on layer: CALayer?) {
+		layer?.removeAnimation(forKey: key)
+		layer?.opacity = 1
+		layer?.transform = CATransform3DIdentity
+	}
+
+	static func play(on layer: CALayer?) {
+		guard let layer else { return }
+		stop(on: layer)
+
+		let fade = CABasicAnimation(keyPath: "opacity")
+		fade.fromValue = 0
+		fade.toValue = 1
+
+		let scale = CATransform3DMakeScale(0.94, 0.94, 1)
+		let shifted = CATransform3DConcat(scale, CATransform3DMakeTranslation(0, 12, 0))
+		let move = CABasicAnimation(keyPath: "transform")
+		move.fromValue = NSValue(caTransform3D: shifted)
+		move.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+
+		let group = CAAnimationGroup()
+		group.animations = [fade, move]
+		group.duration = duration
+		group.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0, 0, 1)
+		group.isRemovedOnCompletion = true
+		layer.add(group, forKey: key)
+	}
+}
+
+#if os(macOS)
+	private struct NativeNewTabEntrance<Content: View>: NSViewRepresentable {
+		let content: Content
+		let animationID: UUID?
+		let animate: Bool
+
+		func makeNSView(context _: Context) -> NativeHost {
+			let view = NativeHost(rootView: content)
+			view.wantsLayer = true
+			view.configure(id: animationID, animate: animate)
+			return view
+		}
+
+		func updateNSView(_ view: NativeHost, context _: Context) {
+			view.rootView = content
+			view.configure(id: animationID, animate: animate)
+		}
+
+		final class NativeHost: NSHostingView<Content> {
+			private var lastID: UUID?
+			private var hasConfigured = false
+			private var pendingEntrance = false
+			private var animationsEnabled = false
+
+			func configure(id: UUID?, animate: Bool) {
+				let changed = !hasConfigured || lastID != id
+				lastID = id
+				hasConfigured = true
+				if changed {
+					NativeNewTabEntranceAnimation.stop(on: layer)
+					pendingEntrance = animate
+				} else if animationsEnabled && !animate {
+					pendingEntrance = false
+					NativeNewTabEntranceAnimation.stop(on: layer)
+				}
+				animationsEnabled = animate
+				playIfAttached()
+			}
+
+			override func viewDidMoveToWindow() {
+				super.viewDidMoveToWindow()
+				playIfAttached()
+			}
+
+			private func playIfAttached() {
+				guard unsafe window != nil, pendingEntrance, animationsEnabled else { return }
+				pendingEntrance = false
+				NativeNewTabEntranceAnimation.play(on: layer)
+			}
+		}
+	}
+#elseif os(iOS)
+	private struct NativeNewTabEntrance<Content: View>: UIViewControllerRepresentable {
+		let content: Content
+		let animationID: UUID?
+		let animate: Bool
+
+		func makeUIViewController(context _: Context) -> NativeHost {
+			let controller = NativeHost(rootView: content)
+			controller.view.backgroundColor = .clear
+			controller.configure(id: animationID, animate: animate)
+			return controller
+		}
+
+		func updateUIViewController(_ controller: NativeHost, context _: Context) {
+			controller.rootView = content
+			controller.configure(id: animationID, animate: animate)
+		}
+
+		func sizeThatFits(_ proposal: ProposedViewSize, uiViewController: NativeHost, context _: Context) -> CGSize? {
+			uiViewController.sizeThatFits(in: CGSize(width: proposal.width ?? 680, height: proposal.height ?? 10_000))
+		}
+
+		final class NativeHost: UIHostingController<Content> {
+			override init(rootView: Content) {
+				super.init(rootView: rootView)
+			}
+
+			private var lastID: UUID?
+			private var hasConfigured = false
+			private var pendingEntrance = false
+			private var animationsEnabled = false
+
+			@available(*, unavailable)
+			required dynamic init?(coder _: NSCoder) {
+				fatalError("init(coder:) is unavailable")
+			}
+
+			func configure(id: UUID?, animate: Bool) {
+				let changed = !hasConfigured || lastID != id
+				lastID = id
+				hasConfigured = true
+				if changed {
+					NativeNewTabEntranceAnimation.stop(on: view.layer)
+					pendingEntrance = animate
+				} else if animationsEnabled && !animate {
+					pendingEntrance = false
+					NativeNewTabEntranceAnimation.stop(on: view.layer)
+				}
+				animationsEnabled = animate
+				playIfVisible()
+			}
+
+			override func viewDidAppear(_ animated: Bool) {
+				super.viewDidAppear(animated)
+				playIfVisible()
+			}
+
+			private func playIfVisible() {
+				guard isViewLoaded, view.window != nil, pendingEntrance, animationsEnabled else { return }
+				pendingEntrance = false
+				NativeNewTabEntranceAnimation.play(on: view.layer)
 			}
 		}
 	}
