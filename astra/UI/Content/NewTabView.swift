@@ -148,6 +148,10 @@ struct NewTabView: View {
 			recentVisits = BrowserStartPageProjection.recent(visits, isPrivate: browser.isPrivate)
 			frequentVisits = BrowserStartPageProjection.frequent(visits, isPrivate: browser.isPrivate)
 		}
+		.task(id: browser.librarySearchRequest(query: historySearchRequest.query)) {
+			let request = browser.librarySearchRequest(query: historySearchRequest.query)
+			await browser.updateLibrarySearch(request, scope: .newTab)
+		}
 		.task(id: historySearchRequest) {
 			guard !historySearchRequest.query.isEmpty else { return }
 			await browser.historySearch.update(historySearchRequest, scope: .newTab, visits: browser.historyVisits)
@@ -365,7 +369,7 @@ struct NewTabView: View {
 							Section("Recently Closed") {
 								ForEach(browser.closedHistoryTabs) { tab in
 									Button {
-										browser.reopenClosedTab(tab.id, inBackground: false)
+										Task { await browser.reopenClosedTab(tab.id, inBackground: false) }
 									} label: {
 										Label {
 											VStack(alignment: .leading, spacing: 2) {
@@ -387,7 +391,7 @@ struct NewTabView: View {
 									.accessibilityIdentifier("start-page-closed-\(tab.id.uuidString)")
 									.contextMenu {
 										Button("Reopen in Background", systemImage: "plus.square.on.square") {
-											browser.reopenClosedTab(tab.id, inBackground: true)
+											Task { await browser.reopenClosedTab(tab.id, inBackground: true) }
 										}
 										.accessibilityIdentifier("start-page-closed-background-\(tab.id.uuidString)")
 									}

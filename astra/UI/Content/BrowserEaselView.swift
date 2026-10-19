@@ -23,6 +23,8 @@ struct BrowserEaselView: View {
 	@State private var isDropTargeted = false
 	@State private var linkText = "https://"
 	@State private var baseline: BrowserEaselDocument.Item?
+	@State private var isManipulating = false
+	@GestureState private var gestureActive = false
 	@State private var drawingPoints: [BrowserEaselDocument.Item.Point] = []
 	@State private var canvasOffset = EaselCanvasViewportOffset()
 	private enum Tool { case cursor, pen, eraser }
@@ -81,13 +83,19 @@ struct BrowserEaselView: View {
 			baseline = nil
 			drawingPoints = []
 		}
-		.onChange(of: document) { _, value in
+		.onChange(of: gestureActive) { _, active in
+			if !active { commitGesture() }
+		}
+		.onDisappear { commitGesture() }
+		.onChange(of: isManipulating ? nil : document) { _, value in
+			guard !isManipulating, let value, value != tab.easelDocument else { return }
 			if !tab.updateEasel(value) {
 				document = tab.easelDocument
 				editorError = "This change exceeds the easel's content limits. The previous content has been kept."
 			}
 		}
 		.onChange(of: tab.easelDocument) { _, value in
+			guard !isManipulating else { return }
 			if value != document {
 				document = value
 			}
@@ -190,7 +198,7 @@ struct BrowserEaselView: View {
 		if activeTool == .cursor {
 			surface
 		} else {
-			surface.highPriorityGesture(DragGesture(minimumDistance: 0)
+			surface.highPriorityGesture(DragGesture(minimumDistance: 0).updating($gestureActive) { _, active, _ in active = true }
 				.onChanged { value in
 					if activeTool == .pen, drawingPoints.count < 10000 {
 						drawingPoints.append(.init(x: value.location.x, y: value.location.y))
@@ -338,9 +346,9 @@ struct BrowserEaselView: View {
 					Circle().fill(.tint).frame(width: 12, height: 12)
 						.padding(5)
 						.contentShape(Rectangle())
-						.highPriorityGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
+						.highPriorityGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global).updating($gestureActive) { _, active, _ in active = true }
 							.onChanged { resize(item, translation: $0.translation, canvasWidth: canvasWidth) }
-							.onEnded { _ in baseline = nil })
+							.onEnded { _ in commitGesture(); baseline = nil })
 						.accessibilityLabel("Resize item")
 						.accessibilityIdentifier("easel-resize-\(item.id)")
 				}
@@ -350,9 +358,9 @@ struct BrowserEaselView: View {
 					VStack(spacing: 0) {
 						Circle().fill(.tint).frame(width: 14, height: 14)
 							.contentShape(Rectangle())
-							.highPriorityGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
+							.highPriorityGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global).updating($gestureActive) { _, active, _ in active = true }
 								.onChanged { rotate(item, translation: $0.translation) }
-								.onEnded { _ in baseline = nil })
+								.onEnded { _ in commitGesture(); baseline = nil })
 							.accessibilityLabel("Rotate item")
 							.accessibilityIdentifier("easel-rotate-\(item.id)")
 						Rectangle().fill(.tint).frame(width: 1, height: 14)
@@ -363,12 +371,12 @@ struct BrowserEaselView: View {
 			}
 			.rotationEffect(.degrees(item.rotation))
 			.offset(x: item.x, y: item.y)
-			.gesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
+			.gesture(DragGesture(minimumDistance: 3, coordinateSpace: .global).updating($gestureActive) { _, active, _ in active = true }
 				.onChanged { value in
 					guard activeTool == .cursor, editingTextID != item.id else { return }
 					drag(item, translation: value.translation, canvasWidth: canvasWidth)
 				}
-				.onEnded { _ in baseline = nil; draggedCopy = nil })
+				.onEnded { _ in commitGesture(); baseline = nil; draggedCopy = nil })
 			.onTapGesture {
 				guard activeTool == .cursor else { return }
 				selectedID = item.id
@@ -514,7 +522,8 @@ struct BrowserEaselView: View {
 		let point = item.points[index]
 		return Circle().fill(.tint).frame(width: 12, height: 12)
 			.position(x: point.x, y: point.y)
-			.highPriorityGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global).onChanged { value in
+			.highPriorityGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global).updating($gestureActive) { _, active, _ in active = true }.onChanged { value in
+				isManipulating = true
 				if baseline?.id != item.id {
 					baseline = item
 				}
@@ -525,6 +534,7 @@ struct BrowserEaselView: View {
 				}
 			}.onEnded { _ in
 				edit(item.id) { $0.orderEndpoints() }
+				commitGesture()
 				baseline = nil
 			})
 			.accessibilityElement()
@@ -598,11 +608,22 @@ struct BrowserEaselView: View {
 		guard let index = document.items.firstIndex(where: { $0.id == id }) else { return }
 		var next = document
 		change(&next.items[index])
-		guard next.isValid else {
+		guard (isManipulating ? next.items[index].geometryIsValid : next.isValid) else {
 			editorError = "This change exceeds the easel's content limits."
 			return
 		}
 		document = next
+	}
+
+	private func commitGesture() {
+		guard isManipulating else { return }
+		isManipulating = false
+		baseline = nil
+		draggedCopy = nil
+		if document != tab.easelDocument, !tab.updateEasel(document) {
+			document = tab.easelDocument
+			editorError = "This change exceeds the easel's content limits. The previous content has been kept."
+		}
 	}
 
 	private func reorder(_ id: UUID, front: Bool) {
@@ -629,6 +650,7 @@ struct BrowserEaselView: View {
 
 	/// Erase complete freehand strokes at the pointer; other objects use Delete.
 	private func erase(at point: CGPoint) {
+		isManipulating = true
 		document.items.removeAll { item in
 			guard item.kind == .freehand, item.points.count > 1 else { return false }
 			let local = CGPoint(x: point.x - item.x, y: point.y - item.y)
@@ -656,6 +678,7 @@ struct BrowserEaselView: View {
 	}
 
 	private func drag(_ item: BrowserEaselDocument.Item, translation: CGSize, canvasWidth: CGFloat) {
+		isManipulating = true
 		if baseline?.id != item.id, draggedCopy?.source != item.id {
 			#if os(macOS)
 				let duplicate = optionIsPressed || NSEvent.modifierFlags.contains(.option)
@@ -682,6 +705,7 @@ struct BrowserEaselView: View {
 	}
 
 	private func rotate(_ item: BrowserEaselDocument.Item, translation: CGSize) {
+		isManipulating = true
 		if baseline?.id != item.id {
 			baseline = item
 		}
@@ -692,6 +716,7 @@ struct BrowserEaselView: View {
 	}
 
 	private func move(_ item: BrowserEaselDocument.Item, translation: CGSize, canvasWidth: CGFloat) {
+		isManipulating = true
 		if baseline?.id != item.id {
 			baseline = item
 		}
@@ -703,6 +728,7 @@ struct BrowserEaselView: View {
 	}
 
 	private func resize(_ item: BrowserEaselDocument.Item, translation: CGSize, canvasWidth: CGFloat) {
+		isManipulating = true
 		if baseline?.id != item.id {
 			baseline = item
 		}

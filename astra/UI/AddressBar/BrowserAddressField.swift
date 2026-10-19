@@ -295,6 +295,10 @@ struct BrowserAddressField: View {
 		.onDisappear {
 			browser.addressFieldIsFocused = false
 		}
+		.task(id: browser.librarySearchRequest(query: historySearchRequest.query)) {
+			let request = browser.librarySearchRequest(query: historySearchRequest.query)
+			await browser.updateLibrarySearch(request, scope: .address)
+		}
 		.task(id: historySearchRequest) {
 			guard !historySearchRequest.query.isEmpty else { return }
 			await browser.historySearch.update(historySearchRequest, scope: .address, visits: browser.historyVisits)

@@ -103,9 +103,12 @@ final class BrowserAIChat {
 		isImporting = true
 		defer { isImporting = false }
 		do {
+			guard attachments.count + urls.count <= BrowserAIAttachment.maximumFiles else { throw BrowserAIError.attachmentTooLarge }
 			var imported: [BrowserAIAttachment] = []
 			for url in urls {
+				try Task.checkCancellation()
 				try await imported.append(BrowserAIAttachment.read(url))
+				try BrowserAIAttachment.validateBudget(attachments + imported)
 			}
 			let images = (attachments + imported).compactMap(\.image)
 			guard images.count <= 8, images.reduce(0, { $0 + $1.data.count }) <= 10 * 1024 * 1024 else { throw BrowserAIError.attachmentTooLarge }
@@ -211,16 +214,17 @@ final class BrowserAIChat {
 			}
 			try Task.checkCancellation()
 			let files = messages.flatMap(\.attachments) + newAttachments
+			try BrowserAIAttachment.validateBudget(files)
 			let images = files.compactMap(\.image)
 			guard images.count <= 8, images.reduce(0, { $0 + $1.data.count }) <= 10 * 1024 * 1024 else { throw BrowserAIError.attachmentTooLarge }
 			let conversation = messages.map { "\($0.isUser ? "User" : "Assistant"): \($0.text)" }.joined(separator: "\n")
-			// Keep full page context locally; send a bounded excerpt first. The model
+			// Keep a bounded page excerpt locally; send a smaller excerpt first. The model
 			// can inspect DOM structure or paginate read_page without resending huge lists.
 			let context = contextPages.sorted { $0.key.uuidString < $1.key.uuidString }.map { entry in
 				let page = entry.value
 				let excerpt = BrowserAIPageText(title: page.title, url: page.url, text: String(page.text.prefix(6000)))
 				let identity = tabs.contains(where: { $0.id == entry.key }) ? "tabID=\(entry.key)" : "referenceID=\(entry.key) (attached reference, not an open tab)"
-				return "Context \(identity). Characters shown=\(min(page.text.count, 6000)) total=\(page.text.count). Use read_page offset/limit for more or get_page_structure for augmentation.\n" + excerpt.prompt
+				return "Context \(identity). Characters shown=\(min(page.text.count, 6000)) cached=\(page.text.count). Use read_page offset/limit to expand the bounded excerpt or get_page_structure for augmentation.\n" + excerpt.prompt
 			}.joined(separator: "\n\n")
 			let fileContext = files.map(\.prompt).joined(separator: "\n\n")
 			var toolResults: [BrowserAIToolResult] = []

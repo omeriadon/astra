@@ -48,7 +48,10 @@ struct BrowserTabProcessMemorySnapshot: Sendable {}
 @MainActor final class Browser {
     struct Space { var pinnedTabIDs: [UUID] = [] }
     struct Workspace { var spaces: [Space] = []; var favouriteTabIDs: [UUID] = [] }
-    final class Downloads { var activeProgress: Double? }
+    final class Downloads {
+        var source: TestWebView?
+        func protects(_ view: TestWebView?) -> Bool { view != nil && view === source }
+    }
     final class Session { let downloads = Downloads() }
     var tabs: [BrowserTab]
     var selectedTabID = UUID()
@@ -111,7 +114,7 @@ extension BrowserHibernationManager {
             switch protection {
             case 0: browser.selectedTabID = tab.id
             case 1: tab.controller!.canAutomaticallyHibernate = false
-            case 2: browser.session.downloads.activeProgress = 0.5
+            case 2: browser.session.downloads.source = tab.controller!.webViewIfLoaded
             case 3: browser.workspace.favouriteTabIDs = [tab.id]
             case 4: browser.workspace.spaces = [.init(pinnedTabIDs: [tab.id])]
             case 5: tab.peeks = [1]
@@ -130,6 +133,13 @@ extension BrowserHibernationManager {
             BrowserWindowRegistry.shared.openBrowsers.append(second)
             await manager.exerciseSweep()
             precondition(browser.reclaimed.isEmpty)
+        }
+        // A download in another tab must not prevent idle-page reclamation.
+        do {
+            let (tab, browser, manager) = make()
+            browser.session.downloads.source = TestWebView()
+            await manager.exerciseSweep()
+            precondition(browser.reclaimed == [tab.id])
         }
         // Both split panes must remain protected from automatic hibernation.
         for side in 0..<2 {

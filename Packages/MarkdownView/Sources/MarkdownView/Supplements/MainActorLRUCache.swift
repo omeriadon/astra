@@ -17,7 +17,9 @@ final class MainActorLRUCache<Key: Hashable & Sendable, Value> {
 	) {
 		storage = LRUCache(countLimit: countLimit, clearsOnMemoryPressure: false)
 		self.memoryPressureSource = memoryPressureSource
-		memoryPressureSource.setEventHandler { [weak self] in
+		// Explicit Sendable prevents preconcurrency Dispatch from inheriting
+		// MainActor isolation for a handler delivered on a background queue.
+		memoryPressureSource.setEventHandler { @Sendable [weak self] in
 			Task { @MainActor [weak self] in
 				self?.removeAll()
 			}

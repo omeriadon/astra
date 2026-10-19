@@ -21,8 +21,9 @@ for text in (
     "func isOwned(_ id: UUID) -> Bool {",
     "ownedTabIDs?.contains(id) ?? true",
     "guard let controller, controller.url != nil, seen.insert(controller.id).inserted",
-    "append(tab.controller?.shouldKeepWebViewAttached == true ? tab.controller : nil)",
-    "if peek.controller.shouldKeepWebViewAttached",
+    "withObservationTracking {",
+    "filter { $0.shouldKeepWebViewAttached }",
+    "for (tabID, controllers) in protectedControllers where isOwned(tabID)",
 ):
     assert text in policy, text
 assert "let limit = switch level {" in policy
@@ -32,7 +33,8 @@ for case, expected in (("normal", 4), ("warning", 2), ("critical", 1)):
         f"case .{case}: {expected}" in policy
         or f"case .{case}: limit = {expected}" in policy
     ), f"Expected warm-controller limit {expected} for {case} pressure"
-assert policy.index("for id in browser.recentlyUsedTabIDs") < policy.index("for tab in browser.tabs")
+assert "for tab in browser.tabs where isOwned" not in policy
+assert "observeProtection(of: tab)" in policy
 print("Adaptive WebKit tab resource budget and protected media/peek retention checks passed")
 
 # Startup page attachment must not poll expensive WebKit screenshots without

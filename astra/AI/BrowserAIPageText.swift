@@ -15,16 +15,16 @@ nonisolated struct BrowserAIPageText: Codable, Identifiable, Sendable {
 		"Page title: \(title)\nURL: \(BrowserAddress.withoutCredentials(url).absoluteString)\n<page-text>\n\(text)\n</page-text>"
 	}
 
-	@MainActor static func extract(from controller: BrowserController) async throws -> Self {
+	@MainActor static func extract(from controller: BrowserController, characterBudget: Int = 120000) async throws -> Self {
 		let document = controller.navigationIdentifier
 		guard let webView = controller.webViewIfLoaded, !webView.isLoading else { throw BrowserAIError.pageUnavailable }
-		let page = try await extract(from: webView)
+		let page = try await extract(from: webView, characterBudget: characterBudget)
 		guard !Task.isCancelled, controller.navigationIdentifier == document else { throw BrowserAIError.pageUnavailable }
 		return page
 	}
 
-	@MainActor static func extract(from webView: WKWebView) async throws -> Self {
-		let result = try await webView.callAsyncJavaScript(extractionScript, arguments: [:], in: nil, contentWorld: .defaultClient)
+	@MainActor static func extract(from webView: WKWebView, characterBudget: Int = 120000) async throws -> Self {
+		let result = try await webView.callAsyncJavaScript(extractionScript, arguments: ["characterBudget": min(max(characterBudget, 1), 2_000_000)], in: nil, contentWorld: .defaultClient)
 		guard let value = result as? [String: String], let text = value["text"],
 		      !text.isEmpty, let url = value["url"].flatMap(URL.init(string:)) else { throw BrowserAIError.pageUnavailable }
 		return Self(title: value["title"] ?? url.host ?? "Page", url: url, text: text)
@@ -57,15 +57,35 @@ nonisolated struct BrowserAIPageText: Codable, Identifiable, Sendable {
 	/// Read rendered text, including open shadow roots and same-origin frames. Never serialize HTML or form values.
 	static let extractionScript = #"""
 	const lines = [];
+	let characters = 0, nodes = 0, truncated = false;
+	const maximumCharacters = typeof characterBudget === 'number' ? Math.min(2000000, Math.max(1, characterBudget)) : 120000;
+	const maximumNodes = 30000;
+	const deadline = performance.now() + 1500;
+	let sliceStarted = performance.now();
+	function append(text) {
+	    const remaining = maximumCharacters - characters;
+	    if (text.length > remaining) { text = text.slice(0, remaining); truncated = true; }
+	    characters += text.length;
+	    lines.push(text);
+	}
 	const visited = new WeakSet();
 	const blocks = /^(P|DIV|SECTION|ARTICLE|MAIN|ASIDE|HEADER|FOOTER|NAV|H[1-6]|LI|UL|OL|TABLE|TR|BLOCKQUOTE|PRE|BR|HR)$/;
 	const excluded = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|SVG|CANVAS|INPUT|TEXTAREA|SELECT)$/;
-	function walk(node, depth = 0) {
+	async function walk(node, depth = 0) {
+	    if (truncated) return;
+	    if (++nodes > maximumNodes || performance.now() > deadline) { truncated = true; return; }
+	    if (performance.now() - sliceStarted > 6) {
+	        await new Promise(resolve => setTimeout(resolve, 0));
+	        sliceStarted = performance.now();
+	    }
 	    if (!node || depth > 200 || visited.has(node)) return;
 	    visited.add(node);
 	    if (node.nodeType === 3) {
-	        const text = node.nodeValue.replace(/\s+/g, ' ').trim();
-	        if (text) lines.push(text);
+	        const remaining = maximumCharacters - characters;
+	        const raw = node.nodeValue || '';
+	        const text = raw.slice(0, remaining).replace(/\s+/g, ' ').trim();
+	        if (raw.length > remaining) truncated = true;
+	        if (text) append(text);
 	        return;
 	    }
 	    if (node.nodeType === 1) {
@@ -74,18 +94,21 @@ nonisolated struct BrowserAIPageText: Codable, Identifiable, Sendable {
 	        const style = node.ownerDocument.defaultView.getComputedStyle(node);
 	        if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse'
 	            || style.contentVisibility === 'hidden' || style.opacity === '0') return;
-	        if (blocks.test(node.tagName)) lines.push('\n');
+	        if (blocks.test(node.tagName)) append('\n');
 	        if (node.tagName === 'IFRAME') {
-	            try { walk(node.contentDocument?.body, depth + 1); } catch {}
+	            try { await walk(node.contentDocument?.body, depth + 1); } catch {}
 	        }
-	        if (node.shadowRoot) walk(node.shadowRoot, depth + 1);
+	        if (node.shadowRoot) await walk(node.shadowRoot, depth + 1);
 	    }
-	    for (const child of node.childNodes) walk(child, depth + 1);
-	    if (node.nodeType === 1 && blocks.test(node.tagName)) lines.push('\n');
+	    for (const child of node.childNodes) {
+	        if (truncated) break;
+	        await walk(child, depth + 1);
+	    }
+	    if (node.nodeType === 1 && blocks.test(node.tagName)) append('\n');
 	}
-	walk(document.body);
+	await walk(document.body);
 	const text = lines.join(' ').split('\n').map(line => line.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
-	return { title: document.title.trim(), url: location.href, text };
+	return { title: document.title.slice(0, 4096).trim(), url: location.href, text: text + (truncated ? "\n[Page excerpt truncated. Use page tools to inspect additional content.]" : "") };
 	"""#
 }
 

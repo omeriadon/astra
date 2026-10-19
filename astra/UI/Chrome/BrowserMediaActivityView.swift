@@ -156,6 +156,7 @@ private struct BrowserMediaActivityCard: View {
 private struct PlayingMediaWaveform: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var drawingHeight = false
+	@State private var canAnimate = false
 
 	private let height: CGFloat = 16
 	private let animation = Animation.linear(duration: 0.5).repeatForever(autoreverses: true)
@@ -169,10 +170,7 @@ private struct PlayingMediaWaveform: View {
 			bar(low: 0.5, speed: 1.0)
 		}
 		.frame(width: 18, height: height)
-		.onAppear { drawingHeight = !reduceMotion }
-		.onChange(of: reduceMotion) { _, reduced in
-			drawingHeight = !reduced
-		}
+		.modifier(BrowserAnimationEligibility { value in canAnimate = value; drawingHeight = value })
 		.accessibilityHidden(true)
 	}
 
@@ -181,6 +179,6 @@ private struct PlayingMediaWaveform: View {
 			.fill(.tint)
 			.frame(width: 2, height: (drawingHeight ? 1 : low) * height)
 			.frame(height: height, alignment: .bottom)
-			.animation(reduceMotion ? nil : animation.speed(speed), value: drawingHeight)
+			.animation(canAnimate ? animation.speed(speed) : nil, value: drawingHeight)
 	}
 }

@@ -245,15 +245,21 @@ private struct BrowserSidebarTraits: Equatable {
 	}
 
 	final class BrowserSidebarCollectionLayout: NSCollectionViewLayout {
-		var items: [BrowserSidebarItem] = []
-		var top: CGFloat = 0
-		var padding: CGFloat = 4
-		var spacing: CGFloat = 2
+		var items: [BrowserSidebarItem] = [] { didSet { metricsDirty = true } }
+		var top: CGFloat = 0 { didSet { metricsDirty = true } }
+		var padding: CGFloat = 4 { didSet { metricsDirty = true } }
+		var spacing: CGFloat = 2 { didSet { metricsDirty = true } }
+		private var metricsDirty = true
 		private(set) var geometry = BrowserSidebarLayoutGeometry(items: [], width: 0, top: 0, padding: 0, spacing: 0)
 
 		override func prepare() {
 			super.prepare()
-			geometry = BrowserSidebarLayoutGeometry(items: items, width: collectionView?.bounds.width ?? 0, top: top, padding: padding, spacing: spacing)
+			if metricsDirty {
+				geometry = BrowserSidebarLayoutGeometry(items: items, width: collectionView?.bounds.width ?? 0, top: top, padding: padding, spacing: spacing)
+				metricsDirty = false
+			} else {
+				geometry.resize(width: collectionView?.bounds.width ?? 0)
+			}
 		}
 
 		override var collectionViewContentSize: NSSize {
@@ -427,15 +433,21 @@ private struct BrowserSidebarTraits: Equatable {
 	}
 
 	final class BrowserSidebarCollectionLayout: UICollectionViewLayout {
-		var items: [BrowserSidebarItem] = []
-		var top: CGFloat = 0
-		var padding: CGFloat = 4
-		var spacing: CGFloat = 2
+		var items: [BrowserSidebarItem] = [] { didSet { metricsDirty = true } }
+		var top: CGFloat = 0 { didSet { metricsDirty = true } }
+		var padding: CGFloat = 4 { didSet { metricsDirty = true } }
+		var spacing: CGFloat = 2 { didSet { metricsDirty = true } }
+		private var metricsDirty = true
 		private(set) var geometry = BrowserSidebarLayoutGeometry(items: [], width: 0, top: 0, padding: 0, spacing: 0)
 
 		override func prepare() {
 			super.prepare()
-			geometry = BrowserSidebarLayoutGeometry(items: items, width: collectionView?.bounds.width ?? 0, top: top, padding: padding, spacing: spacing)
+			if metricsDirty {
+				geometry = BrowserSidebarLayoutGeometry(items: items, width: collectionView?.bounds.width ?? 0, top: top, padding: padding, spacing: spacing)
+				metricsDirty = false
+			} else {
+				geometry.resize(width: collectionView?.bounds.width ?? 0)
+			}
 		}
 
 		override var collectionViewContentSize: CGSize {
