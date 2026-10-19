@@ -110,8 +110,7 @@ extension Browser {
 			}
 		}
 		results += historySearchResults(query: query, fromNewTab: includeActions)
-		results += bookmarkSearchResults(normalizedQuery: normalizedQuery)
-		results += openTabSearchResults(normalizedQuery: normalizedQuery)
+		results += librarySearchResults(query: query, scope: includeActions ? .newTab : .address)
 		let suggestions = remoteSuggestions ?? (includeActions ? newTabGoogleSuggestions : [])
 		for (index, suggestion) in suggestions.enumerated()
 			where BrowserSearchMatching.normalized(suggestion) != normalizedQuery
@@ -282,42 +281,37 @@ extension Browser {
 		}
 	}
 
-	private func bookmarkSearchResults(normalizedQuery: String) -> [BrowserSearchResult] {
-		bookmarks.compactMap { bookmark in
-			let match = max(
-				BrowserSearchMatching.score(normalizedQuery: normalizedQuery, in: bookmark.name),
-				BrowserSearchMatching.score(normalizedQuery: normalizedQuery, in: bookmark.url.absoluteString)
-			)
-			guard match > 0 else { return nil }
-			return BrowserSearchResult(
-				id: "bookmark-\(bookmark.id)", kind: .bookmark,
-				title: bookmark.name, detail: "Bookmark · \(bookmark.url.absoluteString)",
-				symbol: "bookmark", score: match + (bookmark.isFavorite ? 0.03 : 0),
-				destination: bookmark.url.absoluteString,
-				perform: { self.openSearchDestination(bookmark.url) }
-			)
+	func librarySearchRequest(query: String) -> BrowserLibrarySearchModel.Request {
+		.init(query: query, revision: libraryChangeRevision, tabRevision: tabSearchRevision)
+	}
+
+	func updateLibrarySearch(_ request: BrowserLibrarySearchModel.Request, scope: BrowserHistorySearchModel.Scope) async {
+		await librarySearch.update(request, scope: scope) {
+			bookmarks.map { .init(id: $0.id, url: $0.url, title: $0.name, isTab: false, bonus: $0.isFavorite ? 0.03 : 0) }
+			+ tabs.compactMap { tab in
+				guard let url = tab.activeController?.url ?? tab.currentURL else { return nil }
+				return .init(id: tab.id, url: url, title: tab.title.isEmpty ? url.host ?? url.absoluteString : tab.title, isTab: true, bonus: 0.04)
+			}
 		}
 	}
 
-	private func openTabSearchResults(normalizedQuery: String) -> [BrowserSearchResult] {
-		tabs.compactMap { tab in
-			guard let url = tab.activeController?.url ?? tab.currentURL else { return nil }
-			let title = tab.title.isEmpty ? url.host ?? url.absoluteString : tab.title
-			let match = max(
-				BrowserSearchMatching.score(normalizedQuery: normalizedQuery, in: title),
-				BrowserSearchMatching.score(normalizedQuery: normalizedQuery, in: url.absoluteString)
-			)
-			guard match > 0 else { return nil }
+	private func librarySearchResults(query: String, scope: BrowserHistorySearchModel.Scope) -> [BrowserSearchResult] {
+		librarySearch.matches(for: librarySearchRequest(query: query), scope: scope).map { match in
+			let entry = match.entry
 			return BrowserSearchResult(
-				id: "tab-\(tab.id)", kind: .openTab,
-				title: title, detail: "Open Tab · \(url.absoluteString)",
-				symbol: "rectangle.on.rectangle", score: match + 0.04,
-				destination: url.absoluteString,
+				id: "\(entry.isTab ? "tab" : "bookmark")-\(entry.id)", kind: entry.isTab ? .openTab : .bookmark,
+				title: entry.title, detail: "\(entry.isTab ? "Open Tab" : "Bookmark") · \(entry.url.absoluteString)",
+				symbol: entry.isTab ? "rectangle.on.rectangle" : "bookmark", score: match.score,
+				destination: entry.url.absoluteString,
 				perform: {
-					guard self.tabs.contains(where: { $0.id == tab.id && ($0.activeController?.url ?? $0.currentURL) == url }) else { return }
-					self.selectTab(tab.id)
-				}
-			)
+					if entry.isTab {
+						guard self.tabs.contains(where: { $0.id == entry.id && ($0.activeController?.url ?? $0.currentURL) == entry.url }) else { return }
+						self.selectTab(entry.id)
+					} else {
+						guard self.bookmarks.contains(where: { $0.id == entry.id && $0.url == entry.url }) else { return }
+						self.openSearchDestination(entry.url)
+					}
+				})
 		}
 	}
 

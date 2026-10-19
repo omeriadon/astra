@@ -18,22 +18,14 @@ enum BrowserRestorationStore {
 		}
 	}
 
-	static func seal(_ data: Data, for url: URL) -> Data? {
-		guard let key else {
-			BrowserLog.error(.persistence, "restoration.seal.missing-key")
-			return nil
-		}
-		guard data.count <= 4 * 1024 * 1024 else {
-			BrowserLog.warning(.persistence, "restoration.seal.input-too-large", metadata: ["bytes": String(data.count)])
-			return nil
-		}
-		do {
-			return try AES.GCM.seal(data, using: key, authenticating: Data(url.absoluteString.utf8)).combined
-		} catch {
-			BrowserLog.error(.persistence, "restoration.seal.failed", metadata: ["path": BrowserLog.path(url), "error": BrowserLog.errorDescription(error)])
-			return nil
+	nonisolated struct Sealer: Sendable {
+		let key: SymmetricKey
+		func seal(_ data: Data, for url: URL) -> Data? {
+			guard data.count <= 4 * 1024 * 1024 else { return nil }
+			return try? AES.GCM.seal(data, using: key, authenticating: Data(url.absoluteString.utf8)).combined
 		}
 	}
+	static var sealer: Sealer? { key.map { Sealer(key: $0) } }
 
 	static func open(_ data: Data, for url: URL) -> Data? {
 		guard let key else {

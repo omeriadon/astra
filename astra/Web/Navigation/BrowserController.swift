@@ -1863,16 +1863,6 @@ final class BrowserController: NSObject, Identifiable {
 		!isInvalidated && createdWebView === webView
 	}
 
-	var encryptedInteractionState: Data? {
-		encryptedInteractionState(from: createdWebView?.interactionState)
-	}
-
-	func encryptedInteractionState(from state: Any?) -> Data? {
-		guard !session.isPrivate, canRecordVisit, let committedURL,
-		      let data = state as? Data else { return nil }
-		return BrowserRestorationStore.seal(data, for: BrowserAddress.withoutCredentials(committedURL))
-	}
-
 	func restoreInteractionState(_ state: Any, historyPrefix: [URL]) {
 		guard !isInvalidated else { return }
 		liveHistoryPrefix = historyPrefix

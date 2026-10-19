@@ -40,12 +40,22 @@ struct NewTabShaderSurface: View {
 			(theme.appearanceMode == .auto && colorScheme == .dark)
 	}
 
+	private var hasTimeVaryingEffect: Bool {
+		switch preset {
+			case .smoke: value("speed") > 0 && value("amount") > 0
+			case .holographic: value("speed") > 0 && value("intensity") > 0
+			case .ripple: value("speed") > 0 && value("amplitude") > 0
+			case .topographic: value("animate") > 0
+			case .datamosh: value("corruption") > 0 || value("smear") > 0 || value("bleed") > 0
+		}
+	}
+
 	private var running: Bool {
 		#if os(macOS)
 			// canAnimate already tracks NSApp activity and the owning window's occlusion.
-			return isVisible && canAnimate && !reduceMotion
+			return hasTimeVaryingEffect && isVisible && canAnimate && !reduceMotion
 		#else
-			return isVisible && canAnimate && !reduceMotion && scenePhase == .active
+			return hasTimeVaryingEffect && isVisible && canAnimate && !reduceMotion && scenePhase == .active
 		#endif
 	}
 

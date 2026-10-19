@@ -25,6 +25,7 @@ final class Browser {
 			tabLookup = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
 			visibleTabMembershipRevision &+= 1
 			tabCollectionRevision &+= 1
+			tabSearchRevision &+= 1
 		}
 	}
 
@@ -91,6 +92,8 @@ final class Browser {
 
 	/// Reuse prepared history on a worker; UI reads only revision/query-matched results.
 	let historySearch = BrowserHistorySearchModel()
+	let librarySearch = BrowserLibrarySearchModel()
+	private(set) var tabSearchRevision = 0
 	@ObservationIgnored private var recentHistoryCache: (revision: Int, value: [BrowserVisit])?
 	@ObservationIgnored private var frequentHistoryCache: (revision: Int, value: [BrowserVisitSummary])?
 	/// Lamport-style local watermark for history tombstones, imports and visits.
@@ -105,6 +108,7 @@ final class Browser {
 	@ObservationIgnored
 	private var lastVisitedDocument: [UUID: Int] = [:]
 	private(set) var closedHistoryTabs: [OpenTab]
+	@ObservationIgnored private var pendingClosedRestoration: [UUID: (Data, URL)] = [:]
 	private(set) var closedTabIDs: Set<UUID>
 	private(set) var deletedBookmarkIDs: Set<UUID>
 	private(set) var closedTabsAt: [UUID: Date]
@@ -177,6 +181,7 @@ final class Browser {
 	}
 
 	@ObservationIgnored private(set) var syncRevision: UInt64 = 0
+	@ObservationIgnored private var sharedMergeTask: Task<Void, Never>?
 	private static var persistenceRevision: UInt64 = 0
 
 	@ObservationIgnored
@@ -1636,13 +1641,20 @@ final class Browser {
 
 	func reopenLastClosedTab() {
 		guard let saved = closedHistoryTabs.first else { return }
-		reopenClosedTab(saved.id, inBackground: false)
+		Task { await reopenClosedTab(saved.id, inBackground: false) }
 	}
 
 	@discardableResult
-	func reopenClosedTab(_ id: UUID, inBackground: Bool) -> BrowserTab? {
-		guard let index = closedHistoryTabs.firstIndex(where: { $0.id == id }) else { return nil }
-		let saved = closedHistoryTabs.remove(at: index)
+	func reopenClosedTab(_ id: UUID, inBackground: Bool) async -> BrowserTab? {
+		guard let summary = closedHistoryTabs.first(where: { $0.id == id }) else { return nil }
+		let saved: OpenTab
+		do {
+			if let persistence, summary.closedArchiveID != nil {
+				saved = try await Task.detached(priority: .userInitiated) { try persistence.loadClosedTab(summary) }.value
+			} else { saved = summary }
+		} catch { persistenceErrorDescription = error.localizedDescription; return nil }
+		guard !Task.isCancelled, let index = closedHistoryTabs.firstIndex(where: { $0.id == id && $0.modifiedAt == summary.modifiedAt }) else { return nil }
+		closedHistoryTabs.remove(at: index)
 		let tab = openHistoryTab(saved, inBackground: inBackground)
 		if let spaceID = saved.closedSpaceID,
 		   let normalIndex = saved.closedNormalIndex,
@@ -2672,6 +2684,7 @@ final class Browser {
 	private func attachPersistence(to tab: BrowserTab) {
 		tab.didChange = { [weak self, id = tab.id] in
 			guard let self else { return }
+			tabSearchRevision &+= 1
 			// Navigation/title/peek metadata changes do not change extension
 			// tab membership. Update the affected tab only, while still
 			// scheduling full cross-window persistence and synchronization.
@@ -3097,6 +3110,7 @@ final class Browser {
 		let snapshots = removedTabs.filter { $0.internalPage == nil }
 			.map { tab in
 				var snapshot = tab.openTab
+				if let input = tab.restorationInput { pendingClosedRestoration[tab.id] = input }
 				snapshot.modifiedAt = .now
 				if let space = workspace.spaces.first(where: { $0.tabIDs.contains(tab.id) }) {
 					snapshot.closedSpaceID = space.id
@@ -3292,7 +3306,7 @@ final class Browser {
 	/// the same source revision, even if applying it changes shared tab models.
 	/// Keep closed-history conflict resolution deterministic without forcing
 	/// the Swift type checker through a deeply nested collection expression.
-	private static func preferredClosedHistoryRecord(_ current: OpenTab, _ incoming: OpenTab) -> OpenTab {
+	private nonisolated static func preferredClosedHistoryRecord(_ current: OpenTab, _ incoming: OpenTab) -> OpenTab {
 		if current.modifiedAt != incoming.modifiedAt {
 			return current.modifiedAt > incoming.modifiedAt ? current : incoming
 		}
@@ -3329,6 +3343,14 @@ final class Browser {
 	private func receiveSharedState(
 		from source: Browser, sourceSnapshot: BrowserSyncDocument, sourceClosedTabs: [OpenTab]
 	) {
+		sharedMergeTask?.cancel()
+		sharedMergeTask = Task { @MainActor [weak self, weak source] in
+			guard let self, let source else { return }
+			await mergeSharedState(from: source, sourceSnapshot: sourceSnapshot, sourceClosedTabs: sourceClosedTabs)
+		}
+	}
+
+	private func mergeSharedState(from source: Browser, sourceSnapshot: BrowserSyncDocument, sourceClosedTabs: [OpenTab]) async {
 		BrowserLog.debug(.sync, "browser.shared-state.receive", metadata: ["window": BrowserLog.id(windowID), "source_window": BrowserLog.id(source.windowID)])
 		guard !isPrivate, !source.isPrivate else { return }
 		let started = BrowserLog.clock()
@@ -3347,7 +3369,12 @@ final class Browser {
 		let selectedTabsBySpace = Dictionary(uniqueKeysWithValues: workspace.spaces.map { ($0.id, $0.selectedTabID) })
 		let recentlyUsedBeforeMerge = recentlyUsedTabIDs
 		let closedHistoryBeforeMerge = closedHistoryTabs
-		var localState = completeLocalSyncDocument(settings: [:])
+		let localState = completeLocalSyncDocument(settings: [:])
+		let generation = syncRevision
+		let capturedLocal = localState
+		let historyCutoff = historyClearedAt
+		let worker = Task.detached(priority: .utility) {
+		var localState = capturedLocal
 		var incomingState = sourceSnapshot
 		localState.browser.selectedTabID = selectedTabBeforeMerge
 		localState.browser.selectedTabModifiedAt = selectedTabDateBeforeMerge
@@ -3380,28 +3407,28 @@ final class Browser {
 		var merged = localState.merging(incomingState)
 		merged = merged.preservingLocalOnlyData(from: localWithoutBlankTabs)
 		merged = merged.preservingLocalOnlyData(from: incomingState)
-		let documentChanged = merged != localState
+		let openIDs = Set(merged.tabs.map(\.id))
+		let candidates = closedHistoryBeforeMerge + sourceClosedTabs
+		let records = Dictionary(candidates.map { ($0.id, $0) }, uniquingKeysWith: Self.preferredClosedHistoryRecord)
+		let closed = records.values.filter { !openIDs.contains($0.id) && (historyCutoff == .distantPast || $0.modifiedAt > historyCutoff) }.sorted {
+			$0.modifiedAt == $1.modifiedAt ? $0.id.uuidString < $1.id.uuidString : $0.modifiedAt > $1.modifiedAt
+		}
+		return (merged, closed, merged != capturedLocal, closed != closedHistoryBeforeMerge)
+		}
+		let (merged, mergedClosedHistory, documentChanged, closedHistoryChanged) = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
+		guard !Task.isCancelled else { return }
+		guard syncRevision == generation else {
+			// Retry against fresh local values; never overwrite an edit made during the worker merge.
+			receiveSharedState(from: source, sourceSnapshot: sourceSnapshot, sourceClosedTabs: sourceClosedTabs)
+			return
+		}
+
 		if documentChanged {
 			applySyncDocument(merged)
 		}
 		// The merge has finalized the tab collection. A hash lookup avoids
 		// rescanning all open tabs for each closed-history record and MRU entry.
 		let openIDs = Set(tabs.map(\.id))
-		let candidates: [OpenTab] = closedHistoryBeforeMerge + sourceClosedTabs
-		let records: [UUID: OpenTab] = Dictionary(
-			candidates.map { ($0.id, $0) },
-			uniquingKeysWith: Self.preferredClosedHistoryRecord
-		)
-		let survivingRecords: [OpenTab] = records.values.filter { saved in
-			!openIDs.contains(saved.id)
-				&& (historyClearedAt == .distantPast || saved.modifiedAt > historyClearedAt)
-		}
-		let mergedClosedHistory: [OpenTab] = survivingRecords.sorted { left, right in
-			left.modifiedAt == right.modifiedAt
-				? left.id.uuidString < right.id.uuidString
-				: left.modifiedAt > right.modifiedAt
-		}
-		let closedHistoryChanged = mergedClosedHistory != closedHistoryTabs
 		if closedHistoryChanged {
 			closedHistoryTabs = mergedClosedHistory
 		}
@@ -3614,7 +3641,7 @@ final class Browser {
 	/// ordinary tab selection path. The checkpoint is merged during hydration.
 	private func persistSelectionOnly() {
 		guard !hydrationFailed, didFinishHydration, !isPrivate, let persistence else { return }
-		persistLaunchCache()
+		BrowserLaunchCache.updateSelection(tabID: selectedTabID, spaceID: workspace.selectedSpaceID)
 		let update = BrowserSelectionUpdate(
 			windowID: windowID,
 			selectedTabID: selectedTabID,
@@ -3660,6 +3687,9 @@ final class Browser {
 		// Persist New Tabs (including URL-less ones) with stable IDs, order,
 		// selection and space membership, just like navigated tabs.
 		let savedTabs = tabs.map(\.openTab)
+		let restorationInputs = Dictionary(uniqueKeysWithValues: tabs.compactMap { tab in tab.restorationInput.map { (tab.id, $0) } })
+		let restorationSealer = BrowserRestorationStore.sealer
+		let closedRestorationInputs = pendingClosedRestoration
 		let savedIDs = Set(savedTabs.map(\.id))
 		var savedWorkspace = workspace
 		savedWorkspace.reconcileMembership(existingTabIDs: savedIDs, unassignedTabIDs: [])
@@ -3702,10 +3732,29 @@ final class Browser {
 		session.persistenceWriteTask = Task.detached(priority: .utility) { [persistence, state, windowID] in
 			await previousWrite?.value
 			do {
+				var state = state
+				for index in state.openTabs.indices {
+					if let input = restorationInputs[state.openTabs[index].id] {
+						state.openTabs[index].restorationState = restorationSealer?.seal(input.0, for: input.1)
+					}
+				}
+				for index in state.closedTabs.indices {
+					if let input = closedRestorationInputs[state.closedTabs[index].id] {
+						state.closedTabs[index].restorationState = restorationSealer?.seal(input.0, for: input.1)
+					}
+				}
+				state.closedTabs = try persistence.compactClosedTabs(state.closedTabs)
 				try persistence.savePersistedState(state, revision: revision)
+				let compactedClosedTabs = state.closedTabs
 				await MainActor.run { [weak self] in
 					guard let self else { return }
 					persistenceErrorDescription = nil
+					for id in closedRestorationInputs.keys { pendingClosedRestoration[id] = nil }
+					let compacted = Dictionary(uniqueKeysWithValues: compactedClosedTabs.map { ($0.id, $0) })
+					closedHistoryTabs = closedHistoryTabs.map { current in
+						guard current.closedArchiveID == nil, let summary = compacted[current.id], summary.modifiedAt == current.modifiedAt else { return current }
+						return summary
+					}
 					guard isStructural else { return }
 					BrowserWindowRegistry.shared.publishSoon(from: self)
 				}
@@ -3724,10 +3773,21 @@ final class Browser {
 
 	private func persistLaunchCache() {
 		guard !isPrivate, !isMini else { return }
+		var launchTabs = Array(tabs.prefix(BrowserLaunchCache.maximumTabs))
+		if let selectedTab, !launchTabs.contains(where: { $0.id == selectedTab.id }) {
+			if !launchTabs.isEmpty { launchTabs.removeLast() }
+			launchTabs.append(selectedTab)
+		}
+		var launchSpaces = Array(workspace.spaces.prefix(BrowserLaunchCache.maximumSpaces))
+		if let selected = workspace.spaces.first(where: { $0.id == workspace.selectedSpaceID }),
+		   !launchSpaces.contains(where: { $0.id == selected.id }) {
+			if !launchSpaces.isEmpty { launchSpaces.removeLast() }
+			launchSpaces.append(selected)
+		}
 		let favicons = session.favicons.favicons
 		var cachedFavicons: [String: Data] = [:]
 		var cachedFaviconBytes = 0
-		let faviconTabOrder = [selectedTab].compactMap(\.self) + tabs.filter { $0.id != selectedTabID }
+		let faviconTabOrder = [selectedTab].compactMap(\.self) + launchTabs.filter { $0.id != selectedTabID }
 		for tab in faviconTabOrder {
 			guard let key = FaviconKey.origin(for: tab.currentURL),
 			      let data = favicons[key],
@@ -3739,7 +3799,7 @@ final class Browser {
 			cachedFaviconBytes += data.count
 		}
 		BrowserLaunchCache.save(BrowserLaunchCache.Snapshot(
-			tabs: tabs.enumerated().map { index, tab in
+			tabs: launchTabs.enumerated().map { index, tab in
 				let url = tab.currentURL.map(BrowserAddress.withoutCredentials)
 				return BrowserLaunchCache.Tab(
 					id: tab.id,
@@ -3749,7 +3809,7 @@ final class Browser {
 					internalPage: tab.internalPage == .easel ? "easel" : nil
 				)
 			},
-			spaces: workspace.spaces.map { space in
+			spaces: launchSpaces.map { space in
 				BrowserLaunchCache.Space(
 					id: space.id,
 					name: String(space.name.prefix(80)),

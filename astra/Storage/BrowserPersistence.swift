@@ -473,6 +473,43 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		return store
 	}
 
+	/// Called only by disk workers. Metadata remains resident; recoverable history,
+	/// peeks, file grants and restoration bytes live in immutable sidecar records.
+	nonisolated func compactClosedTabs(_ tabs: [OpenTab]) throws -> [OpenTab] {
+		let folder = directory.appendingPathComponent("closed-tab-payloads", isDirectory: true)
+		try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+		return try tabs.map { tab in
+			guard tab.closedArchiveID == nil else { return tab }
+			let generation = UUID()
+			let file = folder.appendingPathComponent(generation.uuidString + ".json")
+			try JSONEncoder().encode(tab).write(to: file, options: [.atomic, .completeFileProtectionUnlessOpen])
+			try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+			var summary = tab
+			summary.closedArchiveID = generation
+			summary.history = []; summary.historyIndex = 0; summary.peeks = []
+			summary.restorationState = nil; summary.fileAccessBookmark = nil; summary.easel = nil
+			return summary
+		}
+	}
+
+	nonisolated func loadClosedTab(_ tab: OpenTab) throws -> OpenTab {
+		guard let generation = tab.closedArchiveID else { return tab }
+		let file = directory.appendingPathComponent("closed-tab-payloads").appendingPathComponent(generation.uuidString + ".json")
+		let value = try JSONDecoder().decode(OpenTab.self, from: Data(contentsOf: file))
+		guard value.id == tab.id, value.modifiedAt == tab.modifiedAt else { throw BrowserPersistenceError.invalidSnapshot }
+		return value
+	}
+
+	/// Called after both authoritative checkpoint and privacy-safe backup commit.
+	nonisolated func pruneClosedTabPayloads(keeping tabs: [OpenTab]) throws {
+		let folder = directory.appendingPathComponent("closed-tab-payloads", isDirectory: true)
+		guard FileManager.default.fileExists(atPath: folder.path) else { return }
+		let retained = Set(tabs.compactMap(\.closedArchiveID).map { $0.uuidString + ".json" })
+		for file in try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) where !retained.contains(file.lastPathComponent) {
+			try FileManager.default.removeItem(at: file)
+		}
+	}
+
 	nonisolated func loadPersistedState() throws -> BrowserPersistedState? {
 		let logStarted = BrowserLog.clock()
 		BrowserLog.debug(.persistence, "state.load.begin", metadata: ["directory": BrowserLog.path(directory)])
@@ -482,7 +519,8 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 			guard FileManager.default.fileExists(atPath: url.path) else { continue }
 			hasSnapshot = true
 			do {
-				let state = try applyingScrollUpdates(to: applyingSelectionUpdates(to: decodeSnapshot(Data(contentsOf: url)), loadedFrom: url), loadedFrom: url)
+				var state = try applyingScrollUpdates(to: applyingSelectionUpdates(to: decodeSnapshot(Data(contentsOf: url)), loadedFrom: url), loadedFrom: url)
+				state.closedTabs = try compactClosedTabs(state.closedTabs)
 				BrowserLog.duration(.persistence, "state.load.end", since: logStarted, warnAboveMilliseconds: 250, metadata: ["source": name, "tabs": String(state.openTabs.count), "bookmarks": String(state.bookmarks.count)])
 				return state
 			} catch BrowserPersistenceError.unsupportedVersion {
@@ -927,6 +965,7 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 		try? FileManager.default.removeItem(at: directory.appendingPathComponent("browser-scroll.json"))
 		if privateDataWasRemoved {
 			try data.write(to: backupURL, options: .atomic)
+			try pruneClosedTabPayloads(keeping: state.closedTabs)
 		}
 		// Write the small projection only after the primary checkpoint has
 		// committed. Failure here cannot invalidate a successful full save;

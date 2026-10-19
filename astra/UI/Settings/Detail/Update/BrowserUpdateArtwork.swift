@@ -105,6 +105,7 @@ private struct GlassStarContent: View {
 private struct AboutArtworkStar: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var pulsing = false
+	let canAnimate: Bool
 
 	let index: Int
 
@@ -130,17 +131,19 @@ private struct AboutArtworkStar: View {
 			))
 			.opacity(pulsing ? 0.15 + Double(index) * 0.01 : 1)
 			.animation(
-				.easeInOut(duration: 0.5 + Double(index) * 0.05)
-					.repeatForever(autoreverses: true),
+				canAnimate ? .easeInOut(duration: 0.5 + Double(index) * 0.05).repeatForever(autoreverses: true) : nil,
 				value: pulsing
 			)
-			.onAppear { pulsing = true }
+			.onAppear { pulsing = canAnimate }
+			.onChange(of: canAnimate) { _, value in pulsing = value }
+			.onDisappear { pulsing = false }
 			.accessibilityHidden(true)
 	}
 }
 
 private struct AboutArtworkDustStar: View {
 	@State private var pulsing = false
+	let canAnimate: Bool
 
 	let index: Int
 
@@ -150,11 +153,12 @@ private struct AboutArtworkDustStar: View {
 			.frame(width: CGFloat(1 + index % 3), height: CGFloat(1 + index % 3))
 			.opacity(pulsing ? 0.08 + Double(index) * 0.018 : 0.9)
 			.animation(
-				.easeInOut(duration: 0.525 + Double(index) * 0.06)
-					.repeatForever(autoreverses: true),
+				canAnimate ? .easeInOut(duration: 0.525 + Double(index) * 0.06).repeatForever(autoreverses: true) : nil,
 				value: pulsing
 			)
-			.onAppear { pulsing = true }
+			.onAppear { pulsing = canAnimate }
+			.onChange(of: canAnimate) { _, value in pulsing = value }
+			.onDisappear { pulsing = false }
 			.allowsHitTesting(false)
 			.accessibilityHidden(true)
 	}
@@ -162,6 +166,7 @@ private struct AboutArtworkDustStar: View {
 
 struct BrowserUpdateArtwork: View {
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	@State private var canAnimate = false
 	@State private var localPointerLocation: CGPoint?
 
 	private static let aboutDustStarPositions: [CGPoint] = [
@@ -267,7 +272,7 @@ struct BrowserUpdateArtwork: View {
 				// small background
 
 				GlassStar(
-					tintColor: .white.opacity(0.5)
+					tintColor: .white.opacity(0.5), interactive: canAnimate
 				)
 				.frame(
 					width: 100,
@@ -312,7 +317,7 @@ struct BrowserUpdateArtwork: View {
 					ForEach(Self.aboutDustStarPositions.indices, id: \.self) { index in
 						let point = Self.aboutDustStarPositions[index]
 
-						AboutArtworkDustStar(index: index)
+						AboutArtworkDustStar(canAnimate: canAnimate, index: index)
 							.position(x: width * point.x, y: height * point.y)
 							.offset(parallaxOffset(for: CGFloat(1 + index % 3), in: geo.size))
 					}
@@ -320,7 +325,7 @@ struct BrowserUpdateArtwork: View {
 					ForEach(Self.aboutStarPositions.indices, id: \.self) { index in
 						let point = Self.aboutStarPositions[index]
 
-						AboutArtworkStar(index: index)
+						AboutArtworkStar(canAnimate: canAnimate, index: index)
 							.position(
 								x: width * (point.x - 0.04811) / 0.87623,
 								y: height * point.y / 0.93989
@@ -332,7 +337,7 @@ struct BrowserUpdateArtwork: View {
 				// MARK: Large main star
 
 				GlassStar(
-					tintColor: .white
+					tintColor: .white, interactive: canAnimate
 				)
 				.frame(
 					width: 180,
@@ -347,7 +352,7 @@ struct BrowserUpdateArtwork: View {
 				// small
 
 				GlassStar(
-					tintColor: .white
+					tintColor: .white, interactive: canAnimate
 				)
 				.frame(
 					width: 20,
@@ -360,17 +365,10 @@ struct BrowserUpdateArtwork: View {
 				)
 				.offset(parallaxOffset(for: 20, in: geo.size))
 				.opacity(pulsing1 ? 0.7 : 1.0)
-				.onAppear {
-					withAnimation(
-						.easeInOut(duration: 1.5)
-							.repeatForever(autoreverses: true)
-					) {
-						pulsing1 = true
-					}
-				}
+				.animation(canAnimate ? .easeInOut(duration: 1.5).repeatForever(autoreverses: true) : nil, value: pulsing1)
 
 				GlassStar(
-					tintColor: .white
+					tintColor: .white, interactive: canAnimate
 				)
 				.frame(
 					width: 10,
@@ -383,17 +381,10 @@ struct BrowserUpdateArtwork: View {
 				)
 				.offset(parallaxOffset(for: 10, in: geo.size))
 				.opacity(pulsing2 ? 0.5 : 1.0)
-				.onAppear {
-					withAnimation(
-						.easeInOut(duration: 1.6)
-							.repeatForever(autoreverses: true)
-					) {
-						pulsing2 = true
-					}
-				}
+				.animation(canAnimate ? .easeInOut(duration: 1.6).repeatForever(autoreverses: true) : nil, value: pulsing2)
 
 				GlassStar(
-					tintColor: .white
+					tintColor: .white, interactive: canAnimate
 				)
 				.frame(
 					width: 15,
@@ -407,17 +398,10 @@ struct BrowserUpdateArtwork: View {
 				)
 				.offset(parallaxOffset(for: 15, in: geo.size))
 				.opacity(pulsing3 ? 0.5 : 1.0)
-				.onAppear {
-					withAnimation(
-						.easeInOut(duration: 1.2)
-							.repeatForever(autoreverses: true)
-					) {
-						pulsing3 = true
-					}
-				}
+				.animation(canAnimate ? .easeInOut(duration: 1.2).repeatForever(autoreverses: true) : nil, value: pulsing3)
 
 				GlassStar(
-					tintColor: .white
+					tintColor: .white, interactive: canAnimate
 				)
 				.frame(
 					width: 30,
@@ -430,17 +414,10 @@ struct BrowserUpdateArtwork: View {
 				)
 				.offset(parallaxOffset(for: 30, in: geo.size))
 				.opacity(pulsing4 ? 0.3 : 1.0)
-				.onAppear {
-					withAnimation(
-						.easeInOut(duration: 1.4)
-							.repeatForever(autoreverses: true)
-					) {
-						pulsing4 = true
-					}
-				}
+				.animation(canAnimate ? .easeInOut(duration: 1.4).repeatForever(autoreverses: true) : nil, value: pulsing4)
 
 				GlassStar(
-					tintColor: .white
+					tintColor: .white, interactive: canAnimate
 				)
 				.frame(
 					width: 20,
@@ -452,20 +429,17 @@ struct BrowserUpdateArtwork: View {
 				)
 				.offset(parallaxOffset(for: 20, in: geo.size))
 				.opacity(pulsing5 ? 0.7 : 1.0)
-				.onAppear {
-					withAnimation(
-						.easeInOut(duration: 1.9)
-							.repeatForever(autoreverses: true)
-					) {
-						pulsing5 = true
-					}
-				}
+				.animation(canAnimate ? .easeInOut(duration: 1.9).repeatForever(autoreverses: true) : nil, value: pulsing5)
 			}
 			.animation(
 				.smooth(duration: 1),
 				value: isAboutView ? aboutPointerLocation : localPointerLocation
 			)
 		}
+		.modifier(BrowserAnimationEligibility { value in
+			canAnimate = value
+			pulsing1 = value; pulsing2 = value; pulsing3 = value; pulsing4 = value; pulsing5 = value
+		})
 		.contentShape(Rectangle())
 		.onContinuousHover { phase in
 			guard !isAboutView else { return }

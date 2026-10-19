@@ -103,9 +103,12 @@ final class BrowserAIChat {
 		isImporting = true
 		defer { isImporting = false }
 		do {
+			guard attachments.count + urls.count <= BrowserAIAttachment.maximumFiles else { throw BrowserAIError.attachmentTooLarge }
 			var imported: [BrowserAIAttachment] = []
 			for url in urls {
+				try Task.checkCancellation()
 				try await imported.append(BrowserAIAttachment.read(url))
+				try BrowserAIAttachment.validateBudget(attachments + imported)
 			}
 			let images = (attachments + imported).compactMap(\.image)
 			guard images.count <= 8, images.reduce(0, { $0 + $1.data.count }) <= 10 * 1024 * 1024 else { throw BrowserAIError.attachmentTooLarge }
@@ -211,6 +214,7 @@ final class BrowserAIChat {
 			}
 			try Task.checkCancellation()
 			let files = messages.flatMap(\.attachments) + newAttachments
+			try BrowserAIAttachment.validateBudget(files)
 			let images = files.compactMap(\.image)
 			guard images.count <= 8, images.reduce(0, { $0 + $1.data.count }) <= 10 * 1024 * 1024 else { throw BrowserAIError.attachmentTooLarge }
 			let conversation = messages.map { "\($0.isUser ? "User" : "Assistant"): \($0.text)" }.joined(separator: "\n")

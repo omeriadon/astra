@@ -49,7 +49,7 @@ assert "TimelineView(.animation(minimumInterval: 1.0 / 45.0, paused: !running))"
 assert "context.date.timeIntervalSinceReferenceDate" in surface
 assert "scenePhase == .active" in surface
 assert "clock.setRunning(false" in surface
-assert "return isVisible && canAnimate && !reduceMotion" in surface
+assert "return hasTimeVaryingEffect && isVisible && canAnimate && !reduceMotion" in surface
 assert "float frame = floor(time * rate)" in metal
 assert "float silver = 0.095" in metal
 assert "if (preset == 3.0)" in metal

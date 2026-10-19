@@ -33,18 +33,36 @@ struct BrowserSidebarItem: Equatable {
 /// Shared AppKit/UIKit geometry. There are no SwiftUI size probes on resize or
 /// scroll. Only width or item metrics changes rebuild the inexpensive frame index.
 struct BrowserSidebarLayoutGeometry {
-	private(set) var frames: [CGRect] = []
+	struct Frames: RandomAccessCollection {
+		typealias Index = Int
+		struct Row { let y: CGFloat; let height: CGFloat; let column: Int? }
+		var rows: [Row] = []
+		var width: CGFloat = 0
+		var padding: CGFloat = 0
+		var startIndex: Int { rows.startIndex }
+		var endIndex: Int { rows.endIndex }
+		subscript(index: Int) -> CGRect {
+			let row = rows[index]
+			let available = max(0, width - padding * 2)
+			if let column = row.column {
+				let tileWidth = max(0, (available - 18) / 4)
+				return CGRect(x: padding + CGFloat(column) * (tileWidth + 6), y: row.y, width: tileWidth, height: row.height)
+			}
+			return CGRect(x: padding, y: row.y, width: available, height: row.height)
+		}
+	}
+	private(set) var frames = Frames()
 	private(set) var contentSize = CGSize.zero
 	private var favouriteIndices: Set<Int> = []
 
 	init(items: [BrowserSidebarItem], width: CGFloat, top: CGFloat, padding: CGFloat, spacing: CGFloat) {
 		let width = max(0, width)
-		let available = max(0, width - padding * 2)
-		let tileWidth = max(0, (available - 18) / 4)
+		frames.width = width
+		frames.padding = padding
 		var y = max(0, top) + 4
 		var column = 0
 		var inFavourites = false
-		frames.reserveCapacity(items.count)
+		frames.rows.reserveCapacity(items.count)
 		for item in items {
 			if item.isFavourite {
 				inFavourites = true
@@ -53,7 +71,7 @@ struct BrowserSidebarLayoutGeometry {
 					y += 48
 					column = 0
 				}
-				frames.append(CGRect(x: padding + CGFloat(column) * (tileWidth + 6), y: y, width: tileWidth, height: 42))
+				frames.rows.append(.init(y: y, height: 42, column: column))
 				column += 1
 			} else {
 				if inFavourites {
@@ -61,7 +79,7 @@ struct BrowserSidebarLayoutGeometry {
 					column = 0
 					inFavourites = false
 				}
-				frames.append(CGRect(x: padding, y: y, width: available, height: item.height))
+				frames.rows.append(.init(y: y, height: item.height, column: nil))
 				y += item.height + spacing
 			}
 		}
@@ -69,6 +87,12 @@ struct BrowserSidebarLayoutGeometry {
 			y += 42
 		}
 		contentSize = CGSize(width: width, height: y + 48)
+	}
+
+	/// Width-only native layout never rebuilds the item/vertical index.
+	mutating func resize(width: CGFloat) {
+		frames.width = max(0, width)
+		contentSize.width = frames.width
 	}
 
 	/// O(log n + visible items), including all four tiles on a shared grid line.

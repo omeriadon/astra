@@ -123,7 +123,10 @@ struct BrowserAIChatSidebar: View {
 									}
 									ForEach(history.conversations) { conversation in
 										Button {
-											chat.select(conversation)
+											Task { @MainActor in
+												let currentID = chat.id
+												if let saved = await history.conversation(conversation.id), !chat.isResponding, chat.id == currentID { chat.select(saved) }
+											}
 											showsHistory = false
 										} label: {
 											VStack(alignment: .leading, spacing: 4) {
@@ -452,6 +455,7 @@ private struct BrowserAIChatThinkingIndicator: View {
 	let activity: String
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var glowing = false
+	@State private var canAnimate = false
 
 	var body: some View {
 		HStack(spacing: 8) {
@@ -466,10 +470,8 @@ private struct BrowserAIChatThinkingIndicator: View {
 		.frame(height: 24)
 		.accessibilityElement(children: .combine)
 		.accessibilityLabel(activity)
-		.onAppear {
-			guard !reduceMotion else { glowing = true; return }
-			withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { glowing = true }
-		}
+		.animation(canAnimate ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true) : nil, value: glowing)
+		.modifier(BrowserAnimationEligibility { value in canAnimate = value; glowing = value })
 	}
 }
 
