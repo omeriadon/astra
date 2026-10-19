@@ -196,7 +196,7 @@ struct BrowserNativeLibraryList: NSViewRepresentable {
 			switch entries[index] {
 			case let .header(title):
 				let view = (tableView.makeView(withIdentifier: NSUserInterfaceItemIdentifier("section"), owner: self) as? BrowserNativeLibraryMacLabel)
-					?? BrowserNativeLibraryMacLabel()
+					?? BrowserNativeLibraryMacLabel(frame: .zero)
 				view.identifier = NSUserInterfaceItemIdentifier("section")
 				view.setText(title, isHeader: true)
 				return view
@@ -208,7 +208,7 @@ struct BrowserNativeLibraryList: NSViewRepresentable {
 				return view
 			case let .item(_, row):
 				let view = (tableView.makeView(withIdentifier: NSUserInterfaceItemIdentifier("library-row"), owner: self) as? BrowserNativeLibraryMacRow)
-					?? BrowserNativeLibraryMacRow()
+					?? BrowserNativeLibraryMacRow(frame: .zero)
 				view.identifier = NSUserInterfaceItemIdentifier("library-row")
 				view.configure(row: row, open: { [weak self] background in self?.parent?.open(row, background) },
 				               action: { [weak self] selected in self?.parent?.action(row, selected) })
@@ -426,7 +426,10 @@ struct BrowserNativeLibraryList: UIViewRepresentable {
 				table.setContentOffset(CGPoint(x: 0, y: max(-table.adjustedContentInset.top, min(offset.y, max(-table.adjustedContentInset.top, table.contentSize.height - table.bounds.height)))), animated: false)
 			}
 		}
-		if table.isEditing != isReordering { table.setEditing(isReordering, animated: false) }
+		if table.isEditing != isReordering {
+			table.setEditing(isReordering, animated: false)
+			table.reloadData() // Replace background buttons with the native reorder handles.
+		}
 	}
 
 	static func dismantleUIView(_ table: UITableView, coordinator: Coordinator) {
@@ -535,11 +538,16 @@ struct BrowserNativeLibraryList: UIViewRepresentable {
 			guard parent?.canReorder == true, source.section == destination.section,
 			      sections.indices.contains(source.section) else { return }
 			let section = sections[source.section]
-			var ids = section.rows.map(\.recordID)
-			guard ids.indices.contains(source.row), ids.indices.contains(destination.row) else { return }
-			let id = ids.remove(at: source.row)
-			ids.insert(id, at: destination.row)
-			parent?.reorder(section.title, ids)
+			var rows = section.rows
+			guard rows.indices.contains(source.row), rows.indices.contains(destination.row) else { return }
+			let moved = rows.remove(at: source.row)
+			rows.insert(moved, at: destination.row)
+			// UITableView must see its updated data source immediately after a
+			// reorder, rather than waiting for the debounced library projection.
+			sections[source.section] = BrowserNativeLibrarySection(
+				title: section.title, rows: rows, emptyMessage: section.emptyMessage
+			)
+			parent?.reorder(section.title, rows.map(\.recordID))
 		}
 	}
 }
