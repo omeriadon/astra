@@ -186,7 +186,7 @@ enum BrowserNativeLibraryAction: Int, CaseIterable {
 
 			func tableView(_: NSTableView, heightOfRow row: Int) -> CGFloat {
 				guard entries.indices.contains(row) else { return 0 }
-				switch entries[row] {
+				return switch entries[row] {
 					case .header: 34
 					case .empty: 32
 					case .item: 46

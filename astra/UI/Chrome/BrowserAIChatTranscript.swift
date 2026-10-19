@@ -322,7 +322,7 @@ import SwiftUI
 							add(artifactButton(item, tint: tint, action: artifact), height: 78)
 						}
 					}
-				case .stream:
+				case .stream: break
 					// Live content is supplied by configureStream.
 			}
 			if pieces.isEmpty {
