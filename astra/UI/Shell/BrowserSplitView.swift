@@ -202,10 +202,12 @@ private struct BrowserNativeSplitView<Sidebar: View, Content: View>: NSViewRepre
 		view.setDividerAppearance(colorScheme: environment.colorScheme)
 		// Frame-only drag updates never come through here. Roots retain identity,
 		// focus, menus and local state; semantic changes still propagate normally.
-		view.sidebarHost.rootView = AnyView(sidebar.environment(\.self, environment)
-			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).clipped())
-		view.contentHost.rootView = AnyView(content.environment(\.self, environment)
-			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).clipped())
+		withTransaction(context.transaction) {
+			view.sidebarHost.rootView = AnyView(sidebar.environment(\.self, environment)
+				.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).clipped())
+			view.contentHost.rootView = AnyView(content.environment(\.self, environment)
+				.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).clipped())
+		}
 		view.layoutPanes()
 	}
 
@@ -366,10 +368,12 @@ private struct BrowserNativeSplitView<Sidebar: View, Content: View>: UIViewContr
 	func updateUIViewController(_ controller: BrowserNativeSplitController, context: Context) {
 		controller.state.configuration = configuration
 		controller.state.onWidthChange = onWidthChange
-		controller.sidebarHost.rootView = AnyView(sidebar.environment(\.self, environment)
-			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).clipped())
-		controller.contentHost.rootView = AnyView(content.environment(\.self, environment)
-			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).clipped())
+		withTransaction(context.transaction) {
+			controller.sidebarHost.rootView = AnyView(sidebar.environment(\.self, environment)
+				.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).clipped())
+			controller.contentHost.rootView = AnyView(content.environment(\.self, environment)
+				.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).clipped())
+		}
 		controller.layoutPanes()
 	}
 	static func dismantleUIViewController(_ controller: BrowserNativeSplitController, coordinator: ()) {
