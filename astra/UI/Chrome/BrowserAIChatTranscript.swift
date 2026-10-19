@@ -187,7 +187,7 @@ struct BrowserAIChatTranscript: NSViewRepresentable {
             let atBottom = isNearBottom
             table.reloadData(forRowIndexes: IndexSet(integer: rowCount - 1),
                              columnIndexes: IndexSet(integer: 0))
-            table.noteHeightOfRows(withIndexesChanged: IndexSet(integer: entries.count - 1))
+            table.noteHeightOfRows(withIndexesChanged: IndexSet(integer: rowCount - 1))
             if atBottom { scrollToBottom() }
         }
 
@@ -547,9 +547,9 @@ struct BrowserAIChatTranscript: UIViewRepresentable {
     }
 }
 
-@MainActor private final class TranscriptUIKitCell: UITableViewCell {
+@MainActor private final class TranscriptUIKitCell: UITableViewCell, UITextViewDelegate {
     private let stack = UIStackView()
-    private var actions: [UIAction] = []
+    private var openURL: ((URL) -> Void)?
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         backgroundColor = .clear
@@ -569,7 +569,7 @@ struct BrowserAIChatTranscript: UIViewRepresentable {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     private func reset() {
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        actions.removeAll()
+        openURL = nil
     }
     private func text(_ string: String, size: CGFloat = 14, secondary: Bool = false) -> UILabel {
         let label = UILabel()
@@ -597,8 +597,14 @@ struct BrowserAIChatTranscript: UIViewRepresentable {
         field.attributedText = NSAttributedString((try? AttributedString(markdown: value)) ?? AttributedString(value))
         field.font = .preferredFont(forTextStyle: .body)
         field.dataDetectorTypes = [.link]
-        field.delegate = nil
+        openURL = open
+        field.delegate = self
         stack.addArrangedSubview(field)
+    }
+    func textView(_ textView: UITextView, shouldInteractWith URL: URL,
+                  in characterRange: NSRange, interaction: UITextItemInteraction) -> Bool {
+        openURL?(URL)
+        return false
     }
     func configureWelcome() {
         reset()
