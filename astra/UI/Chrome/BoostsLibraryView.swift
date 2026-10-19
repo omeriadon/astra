@@ -81,7 +81,7 @@
 					.accessibilityIdentifier("boost-create-library")
 				}
 				.padding(10)
-				.background(.regularMaterial)
+				.background(.ultraThinMaterial)
 			}
 			.accessibilityIdentifier("boosts-library")
 		}

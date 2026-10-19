@@ -341,7 +341,7 @@ struct BrowserAddressField: View {
 			.scrollContentBackground(.hidden)
 			.frame(maxWidth: 520)
 			.frame(height: min(max(CGFloat(results.count) * 56, 56), 260))
-			.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+			.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
 			.shadow(radius: 12)
 			.onChange(of: addressSelectionID) { _, selection in
 				if let selection {

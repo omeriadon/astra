@@ -53,7 +53,7 @@ struct BrowserFavouriteTile: View {
 					Image(systemName: side == .left ? "rectangle.lefthalf.filled" : "rectangle.righthalf.filled")
 						.font(.system(size: 10))
 						.padding(3)
-						.background(.regularMaterial, in: Capsule())
+						.background(.ultraThinMaterial, in: Capsule())
 						.allowsHitTesting(false)
 				}
 			}

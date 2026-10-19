@@ -300,7 +300,7 @@ struct NewTabView: View {
 		} label: {
 			Image(systemName: "paintpalette").font(.system(size: 15))
 				.padding(10)
-				.background(.regularMaterial, in: Circle())
+				.background(.ultraThinMaterial, in: Circle())
 		}
 		.menuStyle(.borderlessButton)
 		.accessibilityLabel("Customize new tab background")
@@ -459,7 +459,7 @@ struct NewTabView: View {
 						.fill(.ultraThinMaterial)
 				} else {
 					RoundedRectangle(cornerRadius: 24, style: .continuous)
-						.fill(.regularMaterial)
+						.fill(.ultraThinMaterial)
 				}
 			}
 			.clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))

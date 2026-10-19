@@ -37,9 +37,9 @@ struct NativeSplitCheck {
 
 	@MainActor private static func configuration(leading: Bool = true) -> BrowserNativeSplitConfiguration {
 		.init(preferredWidth: leading ? 224 : 364,
-			limits: leading ? 168 ... 330 : 300 ... 600,
-			minimumContentWidth: 600, leading: leading, overlaysContent: false,
-			shown: true, visibility: 1, reservation: 1)
+		      limits: leading ? 168 ... 330 : 300 ... 600,
+		      minimumContentWidth: 600, leading: leading, overlaysContent: false,
+		      shown: true, visibility: 1, reservation: 1)
 	}
 
 	/// Reference coordinates are copied from the previous GeometryReader/ZStack

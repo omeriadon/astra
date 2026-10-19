@@ -476,7 +476,7 @@ struct BrowserEaselView: View {
 					}
 					.padding(16)
 					.frame(width: item.width, height: item.height)
-					.background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+					.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
 					.accessibilityLabel("Website quote: \(quote.text)")
 					.accessibilityHint("Open source in a peek with the quote highlighted")
 					.accessibilityIdentifier("easel-open-quote-\(item.id)")
@@ -881,7 +881,7 @@ private struct EaselLinkCard: View {
 			Text(url.host ?? url.absoluteString).font(.caption).foregroundStyle(.secondary)
 		}
 		.padding(12)
-		.background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+		.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
 		.task(id: url) {
 			let provider = LPMetadataProvider()
 			provider.timeout = 10

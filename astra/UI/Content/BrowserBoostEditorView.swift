@@ -91,7 +91,7 @@
 									.font(.caption.monospaced())
 									.foregroundStyle(.orange)
 									.padding(8)
-									.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+									.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
 									.padding(12)
 									.allowsHitTesting(false)
 							}

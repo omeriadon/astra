@@ -119,7 +119,7 @@ struct BrowserTabRow: View {
 				isRenaming: isRenaming,
 				isHovered: isHovered,
 				showsCloseButton: isHovered,
-				closeFadeWidth: onSelectTab != nil ? 64 : (isSelected || isHovered ? 36 : 12),
+				closeFadeWidth: onSelectTab != nil ? 64 : (isSelected || isHovered ? 36 : 8),
 				renameText: $renameText,
 				isTitleFocused: $isTitleFocused,
 				onBeginRenaming: beginRenaming,
