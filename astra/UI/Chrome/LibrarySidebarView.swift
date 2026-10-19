@@ -29,6 +29,7 @@ struct LibrarySidebarView: View {
 			} else {
 				NativeEaselLibrary(
 					browser: browser,
+					theme: theme,
 					entries: easelEntries,
 					hasEasels: browser.tabs.contains(where: { $0.internalPage == .easel })
 				)
@@ -113,6 +114,7 @@ private final class EaselLibraryTable: NSTableView {
 
 private struct NativeEaselLibrary: NSViewRepresentable {
 	let browser: Browser
+	let theme: BrowserTheme
 	let entries: [NativeEaselEntry]
 	let hasEasels: Bool
 
@@ -199,7 +201,7 @@ private struct NativeEaselLibrary: NSViewRepresentable {
 				label.identifier = id
 				label.stringValue = name
 				label.font = .systemFont(ofSize: 11, weight: .semibold)
-				label.textColor = .secondaryLabelColor
+				label.textColor = NSColor(model.theme.foregroundColor).withAlphaComponent(0.65)
 				return label
 			case let .easel(id, name):
 				let identifier = NSUserInterfaceItemIdentifier("easel-row")
@@ -211,6 +213,7 @@ private struct NativeEaselLibrary: NSViewRepresentable {
 				button.alignment = .left
 				button.isBordered = false
 				button.font = .systemFont(ofSize: 13)
+				button.contentTintColor = NSColor(model.theme.foregroundColor)
 				button.lineBreakMode = .byTruncatingTail
 				button.target = self
 				button.action = #selector(openEasel(_:))
@@ -288,6 +291,7 @@ private struct NativeLibraryCategoryPicker: UIViewRepresentable {
 
 private struct NativeEaselLibrary: UIViewRepresentable {
 	let browser: Browser
+	let theme: BrowserTheme
 	let entries: [NativeEaselEntry]
 	let hasEasels: Bool
 
@@ -338,12 +342,15 @@ private struct NativeEaselLibrary: UIViewRepresentable {
 			case let .section(title):
 				var configuration = UIListContentConfiguration.groupedHeader()
 				configuration.text = title
+				configuration.textProperties.color = UIColor(model?.theme.foregroundColor ?? .primary).withAlphaComponent(0.65)
 				cell.contentConfiguration = configuration
 				cell.selectionStyle = .none
 			case let .easel(id, title):
 				var configuration = UIListContentConfiguration.cell()
 				configuration.text = title
 				configuration.image = UIImage(systemName: "paintbrush.pointed")
+				configuration.textProperties.color = UIColor(model?.theme.foregroundColor ?? .primary)
+				configuration.imageProperties.tintColor = UIColor(model?.theme.foregroundColor ?? .primary)
 				cell.contentConfiguration = configuration
 				cell.selectionStyle = .default
 				cell.accessibilityIdentifier = "library-easel-\(id.uuidString)"
