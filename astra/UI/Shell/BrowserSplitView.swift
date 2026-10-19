@@ -2,7 +2,7 @@ import SwiftUI
 
 /// SwiftUI supplies semantic content and the existing visibility animation. Native
 /// views own pane frames and live resizing; dragging never writes SwiftUI state.
-struct BrowserSplitView<Sidebar: View, Content: View>: View, Animatable {
+struct BrowserSplitView<Sidebar: View, Content: View>: View, @MainActor Animatable {
 	let sidebarWidth: CGFloat
 	let sidebarWidthRange: ClosedRange<CGFloat>
 	let minimumContentWidth: CGFloat
