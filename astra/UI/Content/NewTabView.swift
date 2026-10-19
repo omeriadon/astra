@@ -1,7 +1,7 @@
 import Defaults
 import Livable
-import SwiftUI
 import QuartzCore
+import SwiftUI
 #if os(iOS)
 	import UIKit
 #endif
@@ -669,7 +669,6 @@ private struct StartPageVisitRow: View {
 	}
 #endif
 
-
 /// Animates the search header on its native compositing layer rather than
 /// invalidating the SwiftUI search/results tree on every animation frame.
 /// The hosted search field remains fully interactive and keeps its SwiftUI
@@ -739,7 +738,7 @@ private enum NativeNewTabEntranceAnimation {
 				if changed {
 					NativeNewTabEntranceAnimation.stop(on: layer)
 					pendingEntrance = animate
-				} else if animationsEnabled && !animate {
+				} else if animationsEnabled, !animate {
 					pendingEntrance = false
 					NativeNewTabEntranceAnimation.stop(on: layer)
 				}
@@ -778,7 +777,7 @@ private enum NativeNewTabEntranceAnimation {
 		}
 
 		func sizeThatFits(_ proposal: ProposedViewSize, uiViewController: NativeHost, context _: Context) -> CGSize? {
-			uiViewController.sizeThatFits(in: CGSize(width: proposal.width ?? 680, height: proposal.height ?? 10_000))
+			uiViewController.sizeThatFits(in: CGSize(width: proposal.width ?? 680, height: proposal.height ?? 10000))
 		}
 
 		final class NativeHost: UIHostingController<Content> {
@@ -792,7 +791,7 @@ private enum NativeNewTabEntranceAnimation {
 			private var animationsEnabled = false
 
 			@available(*, unavailable)
-			required dynamic init?(coder _: NSCoder) {
+			dynamic required init?(coder _: NSCoder) {
 				fatalError("init(coder:) is unavailable")
 			}
 
@@ -803,7 +802,7 @@ private enum NativeNewTabEntranceAnimation {
 				if changed {
 					NativeNewTabEntranceAnimation.stop(on: view.layer)
 					pendingEntrance = animate
-				} else if animationsEnabled && !animate {
+				} else if animationsEnabled, !animate {
 					pendingEntrance = false
 					NativeNewTabEntranceAnimation.stop(on: view.layer)
 				}

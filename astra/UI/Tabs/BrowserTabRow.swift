@@ -378,10 +378,10 @@ extension BrowserTabRow: Equatable {
 	}
 }
 
-// The row's outer SwiftUI modifiers still own glass, matched transitions,
-// shared drag/drop, hover previews and context menus. The frequently updated
-// icon, title/editor and close affordance are real platform controls, never
-// per-row NSHostingView/UIHostingController instances.
+/// The row's outer SwiftUI modifiers still own glass, matched transitions,
+/// shared drag/drop, hover previews and context menus. The frequently updated
+/// icon, title/editor and close affordance are real platform controls, never
+/// per-row NSHostingView/UIHostingController instances.
 private struct TabIconView: View {
 	let tab: BrowserTab
 	let browser: Browser
@@ -398,8 +398,9 @@ private struct TabIconView: View {
 			color: theme.foregroundColor,
 			identifier: "select-tab-\(tab.id.uuidString)",
 			onActivate: {
-				if let onActivate { onActivate() }
-				else {
+				if let onActivate {
+					onActivate()
+				} else {
 					browser.selectTab(tab.id)
 					onSelectTab?(tab.id)
 				}
@@ -440,8 +441,9 @@ private struct TabTitleView: View {
 			tabID: tab.id,
 			canRename: tab.internalPage == nil || tab.internalPage == .easel,
 			onActivate: {
-				if let onActivate { onActivate() }
-				else {
+				if let onActivate {
+					onActivate()
+				} else {
 					browser.selectTab(tab.id)
 					onSelectTab?(tab.id)
 				}
@@ -494,8 +496,8 @@ private struct TabCloseButton: View {
 }
 
 #if os(macOS)
-	// These adapters deliberately do not retain Browser or BrowserTab. Reused
-	// AppKit views receive current values/actions on each SwiftUI update.
+	/// These adapters deliberately do not retain Browser or BrowserTab. Reused
+	/// AppKit views receive current values/actions on each SwiftUI update.
 	private struct NativeTabIconControl: NSViewRepresentable {
 		let symbol: String?
 		let favicon: NSImage?
@@ -503,7 +505,9 @@ private struct TabCloseButton: View {
 		let identifier: String
 		let onActivate: () -> Void
 
-		func makeNSView(context _: Context) -> NativeTabIconButton { NativeTabIconButton(frame: .zero) }
+		func makeNSView(context _: Context) -> NativeTabIconButton {
+			NativeTabIconButton(frame: .zero)
+		}
 
 		func updateNSView(_ view: NativeTabIconButton, context _: Context) {
 			view.activation = onActivate
@@ -524,7 +528,7 @@ private struct TabCloseButton: View {
 	@MainActor
 	private final class NativeTabIconButton: NSButton {
 		var activation: (() -> Void)?
-		override init(frame: NSRect) {
+		override init(frame _: NSRect) {
 			super.init(frame: .zero)
 			isBordered = false
 			imagePosition = .imageOnly
@@ -534,8 +538,15 @@ private struct TabCloseButton: View {
 			action = #selector(activateTab)
 			setAccessibilityLabel("Select Tab")
 		}
-		required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-		@objc private func activateTab() { activation?() }
+
+		@available(*, unavailable)
+		required init?(coder _: NSCoder) {
+			fatalError("init(coder:) has not been implemented")
+		}
+
+		@objc private func activateTab() {
+			activation?()
+		}
 	}
 
 	private struct NativeTabTitleControl: NSViewRepresentable {
@@ -555,7 +566,9 @@ private struct TabCloseButton: View {
 		let onCommitRenaming: () -> Void
 		let onCancelRenaming: () -> Void
 
-		func makeNSView(context _: Context) -> NativeTabTitleView { NativeTabTitleView(frame: .zero) }
+		func makeNSView(context _: Context) -> NativeTabTitleView {
+			NativeTabTitleView(frame: .zero)
+		}
 
 		func updateNSView(_ view: NativeTabTitleView, context _: Context) {
 			view.activate = onActivate
@@ -615,9 +628,19 @@ private struct TabCloseButton: View {
 			fade.endPoint = CGPoint(x: 1, y: 0.5)
 			setAccessibilityRole(.button)
 		}
-		required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-		override var isFlipped: Bool { true }
-		override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 22) }
+
+		@available(*, unavailable)
+		required init?(coder _: NSCoder) {
+			fatalError("init(coder:) has not been implemented")
+		}
+
+		override var isFlipped: Bool {
+			true
+		}
+
+		override var intrinsicContentSize: NSSize {
+			NSSize(width: NSView.noIntrinsicMetric, height: 22)
+		}
 
 		func apply(
 			title: String, textColor: NSColor, isRenaming: Bool, renameText: String,
@@ -640,8 +663,12 @@ private struct TabCloseButton: View {
 			fadeWidth = closeFadeWidth
 			clearWidth = hoverClearWidth
 			focusRequested = focused
-			if editingIdentity != tabID { editingIdentity = tabID; finishing = false }
-			if self.isRenaming != isRenaming { finishing = false }
+			if editingIdentity != tabID {
+				editingIdentity = tabID; finishing = false
+			}
+			if self.isRenaming != isRenaming {
+				finishing = false
+			}
 			self.isRenaming = isRenaming
 			titleLabel.isHidden = isRenaming
 			editField.isHidden = !isRenaming
@@ -649,7 +676,7 @@ private struct TabCloseButton: View {
 			setAccessibilityLabel(title)
 			if isRenaming {
 				editField.setAccessibilityIdentifier("tab-name-\(tabID.uuidString)")
-				if editField.stringValue != renameText && window?.firstResponder !== editField.currentEditor() {
+				if editField.stringValue != renameText, window?.firstResponder !== editField.currentEditor() {
 					editField.stringValue = renameText
 				}
 				if focused, let window, window.firstResponder !== editField.currentEditor() {
@@ -663,19 +690,27 @@ private struct TabCloseButton: View {
 
 		override func viewDidMoveToWindow() {
 			super.viewDidMoveToWindow()
-			if isRenaming && focusRequested {
+			if isRenaming, focusRequested {
 				window?.makeFirstResponder(editField)
 				editField.selectText(nil)
 			}
 		}
+
 		override func hitTest(_ point: NSPoint) -> NSView? {
 			isRenaming ? super.hitTest(point) : bounds.contains(convert(point, from: superview)) ? self : nil
 		}
+
 		override func mouseUp(with event: NSEvent) {
-			if isRenaming { return }
-			if event.clickCount >= 2 { beginRename?() }
-			else { activate?() }
+			if isRenaming {
+				return
+			}
+			if event.clickCount >= 2 {
+				beginRename?()
+			} else {
+				activate?()
+			}
 		}
+
 		override func layout() {
 			super.layout()
 			let naturalWidth = titleLabel.intrinsicContentSize.width
@@ -694,11 +729,18 @@ private struct TabCloseButton: View {
 				layer?.mask = fade
 			}
 		}
-		func controlTextDidChange(_ notification: Notification) { onEdit?(editField.stringValue) }
-		func controlTextDidEndEditing(_ notification: Notification) {
-			if isRenaming && !finishing { finishing = true; commitRename?() }
+
+		func controlTextDidChange(_: Notification) {
+			onEdit?(editField.stringValue)
 		}
-		func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+
+		func controlTextDidEndEditing(_: Notification) {
+			if isRenaming, !finishing {
+				finishing = true; commitRename?()
+			}
+		}
+
+		func control(_: NSControl, textView _: NSTextView, doCommandBy selector: Selector) -> Bool {
 			if selector == #selector(NSResponder.cancelOperation(_:)) {
 				finishing = true
 				cancelRename?()
@@ -718,7 +760,10 @@ private struct TabCloseButton: View {
 		let accessibilityTitle: String
 		let color: Color
 		let onClose: () -> Void
-		func makeNSView(context _: Context) -> NativeTabCloseButton { NativeTabCloseButton(frame: .zero) }
+		func makeNSView(context _: Context) -> NativeTabCloseButton {
+			NativeTabCloseButton(frame: .zero)
+		}
+
 		func updateNSView(_ view: NativeTabCloseButton, context _: Context) {
 			view.onClose = onClose
 			view.setAccessibilityIdentifier(identifier)
@@ -731,7 +776,7 @@ private struct TabCloseButton: View {
 	private final class NativeTabCloseButton: NSButton {
 		var onClose: (() -> Void)?
 		private var tracking: NSTrackingArea?
-		override init(frame: NSRect) {
+		override init(frame _: NSRect) {
 			super.init(frame: .zero)
 			isBordered = false
 			image = NSImage(systemSymbolName: "xmark", accessibilityDescription: nil)
@@ -743,19 +788,33 @@ private struct TabCloseButton: View {
 			target = self
 			action = #selector(close)
 		}
-		required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-		@objc private func close() { onClose?() }
+
+		@available(*, unavailable)
+		required init?(coder _: NSCoder) {
+			fatalError("init(coder:) has not been implemented")
+		}
+
+		@objc private func close() {
+			onClose?()
+		}
+
 		override func updateTrackingAreas() {
-			if let tracking { removeTrackingArea(tracking) }
+			if let tracking {
+				removeTrackingArea(tracking)
+			}
 			let next = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self)
 			addTrackingArea(next)
 			tracking = next
 			super.updateTrackingAreas()
 		}
-		override func mouseEntered(with event: NSEvent) {
+
+		override func mouseEntered(with _: NSEvent) {
 			layer?.backgroundColor = NSColor.textBackgroundColor.withAlphaComponent(0.3).cgColor
 		}
-		override func mouseExited(with event: NSEvent) { layer?.backgroundColor = NSColor.clear.cgColor }
+
+		override func mouseExited(with _: NSEvent) {
+			layer?.backgroundColor = NSColor.clear.cgColor
+		}
 	}
 #elseif os(iOS)
 	private struct NativeTabIconControl: UIViewRepresentable {
@@ -764,7 +823,10 @@ private struct TabCloseButton: View {
 		let color: Color
 		let identifier: String
 		let onActivate: () -> Void
-		func makeUIView(context _: Context) -> NativeTabIconButton { NativeTabIconButton(frame: .zero) }
+		func makeUIView(context _: Context) -> NativeTabIconButton {
+			NativeTabIconButton(frame: .zero)
+		}
+
 		func updateUIView(_ view: NativeTabIconButton, context _: Context) {
 			view.activation = onActivate
 			view.accessibilityIdentifier = identifier
@@ -781,12 +843,19 @@ private struct TabCloseButton: View {
 	@MainActor
 	private final class NativeTabIconButton: UIButton {
 		var activation: (() -> Void)?
-		override init(frame: CGRect) {
+		override init(frame _: CGRect) {
 			super.init(frame: .zero)
 			addTarget(self, action: #selector(selectTab), for: .touchUpInside)
 		}
-		required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-		@objc private func selectTab() { activation?() }
+
+		@available(*, unavailable)
+		required init?(coder _: NSCoder) {
+			fatalError("init(coder:) has not been implemented")
+		}
+
+		@objc private func selectTab() {
+			activation?()
+		}
 	}
 
 	private struct NativeTabTitleControl: UIViewRepresentable {
@@ -805,7 +874,10 @@ private struct TabCloseButton: View {
 		let onBeginRenaming: () -> Void
 		let onCommitRenaming: () -> Void
 		let onCancelRenaming: () -> Void
-		func makeUIView(context _: Context) -> NativeTabTitleView { NativeTabTitleView(frame: .zero) }
+		func makeUIView(context _: Context) -> NativeTabTitleView {
+			NativeTabTitleView(frame: .zero)
+		}
+
 		func updateUIView(_ view: NativeTabTitleView, context _: Context) {
 			view.activate = onActivate
 			view.beginRename = onBeginRenaming
@@ -864,10 +936,27 @@ private struct TabCloseButton: View {
 			isAccessibilityElement = true
 			accessibilityTraits = .button
 		}
-		required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-		@objc private func select() { if !isRenaming { activate?() } }
-		@objc private func rename() { if !isRenaming { beginRename?() } }
-		@objc private func editChanged() { onEdit?(editField.text ?? "") }
+
+		@available(*, unavailable)
+		required init?(coder _: NSCoder) {
+			fatalError("init(coder:) has not been implemented")
+		}
+
+		@objc private func select() {
+			if !isRenaming {
+				activate?()
+			}
+		}
+
+		@objc private func rename() {
+			if !isRenaming {
+				beginRename?()
+			}
+		}
+
+		@objc private func editChanged() {
+			onEdit?(editField.text ?? "")
+		}
 
 		func apply(
 			title: String, color: UIColor, isRenaming: Bool, renameText: String,
@@ -875,7 +964,7 @@ private struct TabCloseButton: View {
 			focused: Bool, reduceMotion: Bool, tabID: UUID, canRename: Bool
 		) {
 			if titleLabel.text != title {
-				if !reduceMotion && titleLabel.text != nil {
+				if !reduceMotion, titleLabel.text != nil {
 					let transition = CATransition()
 					transition.type = .fade
 					transition.duration = 0.2
@@ -900,22 +989,34 @@ private struct TabCloseButton: View {
 				: nil
 			editField.accessibilityIdentifier = "tab-name-\(tabID.uuidString)"
 			if isRenaming {
-				if !editField.isFirstResponder { editField.text = renameText }
-				if focused && window != nil && !editField.isFirstResponder { editField.becomeFirstResponder() }
+				if !editField.isFirstResponder {
+					editField.text = renameText
+				}
+				if focused, window != nil, !editField.isFirstResponder {
+					editField.becomeFirstResponder()
+				}
 			}
 			setNeedsLayout()
 		}
-		@objc private func accessibilityRename() -> Bool { beginRename?(); return true }
+
+		@objc private func accessibilityRename() -> Bool {
+			beginRename?(); return true
+		}
+
 		override func didMoveToWindow() {
 			super.didMoveToWindow()
-			if isRenaming && focusRequested { editField.becomeFirstResponder() }
+			if isRenaming, focusRequested {
+				editField.becomeFirstResponder()
+			}
 		}
+
 		override func layoutSubviews() {
 			super.layoutSubviews()
 			titleLabel.frame = CGRect(x: 0, y: 0, width: max(bounds.width, titleLabel.intrinsicContentSize.width), height: bounds.height)
 			editField.frame = CGRect(x: 0, y: 0, width: max(0, bounds.width - (isHovered ? fadeWidth : 0)), height: bounds.height)
-			if isRenaming { layer.mask = nil }
-			else {
+			if isRenaming {
+				layer.mask = nil
+			} else {
 				let width = max(bounds.width, 1)
 				let gradientWidth = isHovered ? max(0, fadeWidth + 28 - clearWidth) : fadeWidth
 				let clear = isHovered ? clearWidth : 0
@@ -926,8 +1027,16 @@ private struct TabCloseButton: View {
 				layer.mask = fade
 			}
 		}
-		func textFieldShouldReturn(_ textField: UITextField) -> Bool { commitRename?(); return false }
-		func textFieldDidEndEditing(_ textField: UITextField) { if isRenaming { commitRename?() } }
+
+		func textFieldShouldReturn(_: UITextField) -> Bool {
+			commitRename?(); return false
+		}
+
+		func textFieldDidEndEditing(_: UITextField) {
+			if isRenaming {
+				commitRename?()
+			}
+		}
 	}
 
 	private struct NativeTabCloseControl: UIViewRepresentable {
@@ -935,7 +1044,10 @@ private struct TabCloseButton: View {
 		let accessibilityTitle: String
 		let color: Color
 		let onClose: () -> Void
-		func makeUIView(context _: Context) -> NativeTabCloseButton { NativeTabCloseButton(frame: .zero) }
+		func makeUIView(context _: Context) -> NativeTabCloseButton {
+			NativeTabCloseButton(frame: .zero)
+		}
+
 		func updateUIView(_ view: NativeTabCloseButton, context _: Context) {
 			view.onClose = onClose
 			view.accessibilityIdentifier = identifier
@@ -943,10 +1055,11 @@ private struct TabCloseButton: View {
 			view.tintColor = UIColor(color)
 		}
 	}
+
 	@MainActor
 	private final class NativeTabCloseButton: UIButton {
 		var onClose: (() -> Void)?
-		override init(frame: CGRect) {
+		override init(frame _: CGRect) {
 			super.init(frame: .zero)
 			setImage(UIImage(systemName: "xmark"), for: .normal)
 			imageView?.contentMode = .scaleAspectFit
@@ -955,8 +1068,16 @@ private struct TabCloseButton: View {
 			let hover = UIHoverGestureRecognizer(target: self, action: #selector(hoverChanged(_:)))
 			addGestureRecognizer(hover)
 		}
-		required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-		@objc private func closeTab() { onClose?() }
+
+		@available(*, unavailable)
+		required init?(coder _: NSCoder) {
+			fatalError("init(coder:) has not been implemented")
+		}
+
+		@objc private func closeTab() {
+			onClose?()
+		}
+
 		@objc private func hoverChanged(_ gesture: UIHoverGestureRecognizer) {
 			backgroundColor = gesture.state == .began || gesture.state == .changed
 				? UIColor.systemBackground.withAlphaComponent(0.3) : .clear

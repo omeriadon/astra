@@ -186,7 +186,9 @@ private struct BrowserNativeWebStack {
 		let showsPage: Bool
 		let allowsInteraction: Bool
 
-		var id: UUID { controller.id }
+		var id: UUID {
+			controller.id
+		}
 	}
 
 	let entries: [Entry]
@@ -207,175 +209,177 @@ private struct BrowserNativeWebStack {
 
 #if os(macOS)
 
-extension BrowserNativeWebStack: NSViewRepresentable {
-	func makeNSView(context _: Context) -> BrowserNativeWebStackNSView {
-		BrowserNativeWebStackNSView()
-	}
-
-	func updateNSView(_ view: BrowserNativeWebStackNSView, context _: Context) {
-		view.update(stack: self)
-	}
-
-	static func dismantleNSView(_ view: BrowserNativeWebStackNSView, coordinator _: ()) {
-		view.removeAllHosts()
-	}
-}
-
-@MainActor
-private final class BrowserNativeWebStackNSView: NSView {
-	private var hosts: [UUID: BrowserWebView.BrowserWebViewHost] = [:]
-	private var allowsWebInteraction = false
-
-	override func hitTest(_ point: NSPoint) -> NSView? {
-		guard allowsWebInteraction else { return nil }
-		return super.hitTest(point)
-	}
-
-	func update(stack: BrowserNativeWebStack) {
-		let requestedIDs = Set(stack.entries.map(\.id))
-		for id in hosts.keys.filter({ !requestedIDs.contains($0) }) {
-			guard let host = hosts.removeValue(forKey: id) else { continue }
-			host.unmountWebView()
-			host.removeFromSuperview()
+	extension BrowserNativeWebStack: NSViewRepresentable {
+		func makeNSView(context _: Context) -> BrowserNativeWebStackNSView {
+			BrowserNativeWebStackNSView()
 		}
 
-		allowsWebInteraction = stack.entries.contains(where: \.allowsInteraction)
-		for entry in stack.entries {
-			let specification = stack.specification(for: entry)
-			let host: BrowserWebView.BrowserWebViewHost
-			if let existing = hosts[entry.id], existing.specification.controller === entry.controller {
-				host = existing
-			} else {
-				if let previous = hosts.removeValue(forKey: entry.id) {
-					previous.unmountWebView()
-					previous.removeFromSuperview()
-				}
-				host = BrowserWebView.BrowserWebViewHost(specification: specification)
-				host.frame = bounds
-				host.autoresizingMask = [.width, .height]
-				host.isHidden = !entry.showsPage
-				addSubview(host)
-				hosts[entry.id] = host
+		func updateNSView(_ view: BrowserNativeWebStackNSView, context _: Context) {
+			view.update(stack: self)
+		}
+
+		static func dismantleNSView(_ view: BrowserNativeWebStackNSView, coordinator _: ()) {
+			view.removeAllHosts()
+		}
+	}
+
+	@MainActor
+	private final class BrowserNativeWebStackNSView: NSView {
+		private var hosts: [UUID: BrowserWebView.BrowserWebViewHost] = [:]
+		private var allowsWebInteraction = false
+
+		override func hitTest(_ point: NSPoint) -> NSView? {
+			guard allowsWebInteraction else { return nil }
+			return super.hitTest(point)
+		}
+
+		func update(stack: BrowserNativeWebStack) {
+			let requestedIDs = Set(stack.entries.map(\.id))
+			for id in hosts.keys.filter({ !requestedIDs.contains($0) }) {
+				guard let host = hosts.removeValue(forKey: id) else { continue }
+				host.unmountWebView()
+				host.removeFromSuperview()
 			}
-			// Reuse BrowserWebViewHost's native handoff, snapshot curtain,
-			// inspector and trackpad-gesture lifecycle, without SwiftUI hosts.
-			host.isHidden = !entry.showsPage
-			host.setAccessibilityHidden(!entry.allowsInteraction)
-			host.update(specification: specification)
-		}
-	}
 
-	func removeAllHosts() {
-		allowsWebInteraction = false
-		for host in hosts.values {
-			host.unmountWebView()
-			host.removeFromSuperview()
+			allowsWebInteraction = stack.entries.contains(where: \.allowsInteraction)
+			for entry in stack.entries {
+				let specification = stack.specification(for: entry)
+				let host: BrowserWebView.BrowserWebViewHost
+				if let existing = hosts[entry.id], existing.specification.controller === entry.controller {
+					host = existing
+				} else {
+					if let previous = hosts.removeValue(forKey: entry.id) {
+						previous.unmountWebView()
+						previous.removeFromSuperview()
+					}
+					host = BrowserWebView.BrowserWebViewHost(specification: specification)
+					host.frame = bounds
+					host.autoresizingMask = [.width, .height]
+					host.isHidden = !entry.showsPage
+					addSubview(host)
+					hosts[entry.id] = host
+				}
+				// Reuse BrowserWebViewHost's native handoff, snapshot curtain,
+				// inspector and trackpad-gesture lifecycle, without SwiftUI hosts.
+				host.isHidden = !entry.showsPage
+				host.setAccessibilityHidden(!entry.allowsInteraction)
+				host.update(specification: specification)
+			}
 		}
-		hosts.removeAll()
+
+		func removeAllHosts() {
+			allowsWebInteraction = false
+			for host in hosts.values {
+				host.unmountWebView()
+				host.removeFromSuperview()
+			}
+			hosts.removeAll()
+		}
 	}
-}
 
 #elseif os(iOS)
 
-extension BrowserNativeWebStack: UIViewRepresentable {
-	func makeUIView(context _: Context) -> BrowserNativeWebStackUIView {
-		BrowserNativeWebStackUIView()
-	}
+	extension BrowserNativeWebStack: UIViewRepresentable {
+		func makeUIView(context _: Context) -> BrowserNativeWebStackUIView {
+			BrowserNativeWebStackUIView()
+		}
 
-	func updateUIView(_ view: BrowserNativeWebStackUIView, context _: Context) {
-		view.update(stack: self)
-	}
+		func updateUIView(_ view: BrowserNativeWebStackUIView, context _: Context) {
+			view.update(stack: self)
+		}
 
-	static func dismantleUIView(_ view: BrowserNativeWebStackUIView, coordinator _: ()) {
-		view.removeAllHosts()
-	}
-}
-
-@MainActor
-private final class BrowserNativeWebStackUIView: UIView {
-	private struct MountedPage {
-		let controller: BrowserController
-		let coordinator: BrowserWebView.Coordinator
-	}
-
-	private var pages: [UUID: MountedPage] = [:]
-	private var appliedInsets: [UUID: [EdgeInsets]] = [:]
-	private var allowsWebInteraction = false
-
-	override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-		guard allowsWebInteraction else { return nil }
-		return super.hitTest(point, with: event)
-	}
-
-	override func layoutSubviews() {
-		super.layoutSubviews()
-		for page in pages.values where page.controller.webViewIfLoaded?.superview === self {
-			page.controller.webViewIfLoaded?.frame = bounds
+		static func dismantleUIView(_ view: BrowserNativeWebStackUIView, coordinator _: ()) {
+			view.removeAllHosts()
 		}
 	}
 
-	func update(stack: BrowserNativeWebStack) {
-		let requestedIDs = Set(stack.entries.map(\.id))
-		for id in pages.keys.filter({ !requestedIDs.contains($0) }) {
-			removePage(id)
+	@MainActor
+	private final class BrowserNativeWebStackUIView: UIView {
+		private struct MountedPage {
+			let controller: BrowserController
+			let coordinator: BrowserWebView.Coordinator
 		}
-		allowsWebInteraction = stack.entries.contains(where: \.allowsInteraction)
-		for entry in stack.entries {
-			let controller = entry.controller
-			if let old = pages[entry.id], old.controller !== controller {
-				removePage(entry.id)
+
+		private var pages: [UUID: MountedPage] = [:]
+		private var appliedInsets: [UUID: [EdgeInsets]] = [:]
+		private var allowsWebInteraction = false
+
+		override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+			guard allowsWebInteraction else { return nil }
+			return super.hitTest(point, with: event)
+		}
+
+		override func layoutSubviews() {
+			super.layoutSubviews()
+			for page in pages.values where page.controller.webViewIfLoaded?.superview === self {
+				page.controller.webViewIfLoaded?.frame = bounds
 			}
-			let webView = controller.webView
-			if pages[entry.id] == nil {
-				let coordinator = BrowserWebView.Coordinator()
-				coordinator.attach(to: controller)
-				pages[entry.id] = MountedPage(controller: controller, coordinator: coordinator)
+		}
+
+		func update(stack: BrowserNativeWebStack) {
+			let requestedIDs = Set(stack.entries.map(\.id))
+			for id in pages.keys.filter({ !requestedIDs.contains($0) }) {
+				removePage(id)
 			}
-			if webView.superview !== self {
+			allowsWebInteraction = stack.entries.contains(where: \.allowsInteraction)
+			for entry in stack.entries {
+				let controller = entry.controller
+				if let old = pages[entry.id], old.controller !== controller {
+					removePage(entry.id)
+				}
+				let webView = controller.webView
+				if pages[entry.id] == nil {
+					let coordinator = BrowserWebView.Coordinator()
+					coordinator.attach(to: controller)
+					pages[entry.id] = MountedPage(controller: controller, coordinator: coordinator)
+				}
+				if webView.superview !== self {
+					webView.removeFromSuperview()
+					webView.frame = bounds
+					webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+					addSubview(webView)
+				}
+				webView.isHidden = !entry.showsPage
+				webView.isUserInteractionEnabled = entry.allowsInteraction
+				webView.accessibilityElementsHidden = !entry.allowsInteraction
+
+				// Keep the existing edge-swipe and pull-to-refresh coordinator.
+				// Avoid setting WebKit viewport insets on unrelated UI updates.
+				let obscured = entry.isVisible ? stack.insets.obscured : EdgeInsets()
+				let nextInsets = [obscured, stack.insets.minimum, stack.insets.maximum]
+				if appliedInsets[entry.id] != nextInsets {
+					webView.obscuredContentInsets = UIEdgeInsets(
+						top: obscured.top, left: obscured.leading,
+						bottom: obscured.bottom, right: obscured.trailing
+					)
+					let minimum = stack.insets.minimum
+					let maximum = stack.insets.maximum
+					webView.setMinimumViewportInset(
+						UIEdgeInsets(top: minimum.top, left: minimum.leading, bottom: minimum.bottom, right: minimum.trailing),
+						maximumViewportInset: UIEdgeInsets(top: maximum.top, left: maximum.leading, bottom: maximum.bottom, right: maximum.trailing)
+					)
+					appliedInsets[entry.id] = nextInsets
+				}
+			}
+		}
+
+		private func removePage(_ id: UUID) {
+			guard let page = pages.removeValue(forKey: id) else { return }
+			page.coordinator.detach()
+			if let webView = page.controller.webViewIfLoaded, webView.superview === self {
 				webView.removeFromSuperview()
-				webView.frame = bounds
-				webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-				addSubview(webView)
+				webView.isHidden = true
 			}
-			webView.isHidden = !entry.showsPage
-			webView.isUserInteractionEnabled = entry.allowsInteraction
-			webView.accessibilityElementsHidden = !entry.allowsInteraction
+			appliedInsets[id] = nil
+		}
 
-			// Keep the existing edge-swipe and pull-to-refresh coordinator.
-			// Avoid setting WebKit viewport insets on unrelated UI updates.
-			let obscured = entry.isVisible ? stack.insets.obscured : EdgeInsets()
-			let nextInsets = [obscured, stack.insets.minimum, stack.insets.maximum]
-			if appliedInsets[entry.id] != nextInsets {
-				webView.obscuredContentInsets = UIEdgeInsets(
-					top: obscured.top, left: obscured.leading,
-					bottom: obscured.bottom, right: obscured.trailing
-				)
-				let minimum = stack.insets.minimum
-				let maximum = stack.insets.maximum
-				webView.setMinimumViewportInset(
-					UIEdgeInsets(top: minimum.top, left: minimum.leading, bottom: minimum.bottom, right: minimum.trailing),
-					maximumViewportInset: UIEdgeInsets(top: maximum.top, left: maximum.leading, bottom: maximum.bottom, right: maximum.trailing)
-				)
-				appliedInsets[entry.id] = nextInsets
+		func removeAllHosts() {
+			allowsWebInteraction = false
+			for id in Array(pages.keys) {
+				removePage(id)
 			}
 		}
 	}
-
-	private func removePage(_ id: UUID) {
-		guard let page = pages.removeValue(forKey: id) else { return }
-		page.coordinator.detach()
-		if let webView = page.controller.webViewIfLoaded, webView.superview === self {
-			webView.removeFromSuperview()
-			webView.isHidden = true
-		}
-		appliedInsets[id] = nil
-	}
-
-	func removeAllHosts() {
-		allowsWebInteraction = false
-		for id in Array(pages.keys) { removePage(id) }
-	}
-}
 
 #endif
 

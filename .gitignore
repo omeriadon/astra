@@ -1,6 +1,3 @@
-**/xcuserdata/
-Packages/AstraAutomationCore/.swiftpm/xcode/xcuserdata/
-
 # macOS
 .DS_Store
 .AppleDouble

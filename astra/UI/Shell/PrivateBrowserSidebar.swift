@@ -35,8 +35,8 @@ struct PrivateBrowserSidebar: View {
 	}
 }
 
-// Private tabs retain their existing 8-point padding and SwiftUI glass surface,
-// while their interactive row and layout are native platform controls.
+/// Private tabs retain their existing 8-point padding and SwiftUI glass surface,
+/// while their interactive row and layout are native platform controls.
 private struct PrivateBrowserTabRow: View {
 	let tab: BrowserTab
 	let browser: Browser
@@ -68,7 +68,10 @@ private struct PrivateBrowserTabRow: View {
 		let onSelect: () -> Void
 		let onClose: () -> Void
 
-		func makeNSView(context _: Context) -> NativePrivateTabControl { NativePrivateTabControl(frame: .zero) }
+		func makeNSView(context _: Context) -> NativePrivateTabControl {
+			NativePrivateTabControl(frame: .zero)
+		}
+
 		func updateNSView(_ view: NativePrivateTabControl, context _: Context) {
 			view.configure(id: id, title: title, selected: selected, onSelect: onSelect, onClose: onClose)
 		}
@@ -112,8 +115,15 @@ private struct PrivateBrowserTabRow: View {
 				closeButton.heightAnchor.constraint(equalToConstant: 18),
 			])
 		}
-		required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-		override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 18) }
+
+		@available(*, unavailable)
+		required init?(coder _: NSCoder) {
+			fatalError("init(coder:) has not been implemented")
+		}
+
+		override var intrinsicContentSize: NSSize {
+			NSSize(width: NSView.noIntrinsicMetric, height: 18)
+		}
 
 		func configure(id: UUID, title: String, selected: Bool, onSelect: @escaping () -> Void, onClose: @escaping () -> Void) {
 			titleButton.title = title
@@ -125,8 +135,14 @@ private struct PrivateBrowserTabRow: View {
 			closeButton.setAccessibilityIdentifier("private-close-tab-\(id)")
 			closeButton.setAccessibilityLabel("Close Tab")
 		}
-		@objc private func selectTab() { selectAction?() }
-		@objc private func closeTab() { closeAction?() }
+
+		@objc private func selectTab() {
+			selectAction?()
+		}
+
+		@objc private func closeTab() {
+			closeAction?()
+		}
 	}
 #elseif os(iOS)
 	import UIKit
@@ -138,7 +154,10 @@ private struct PrivateBrowserTabRow: View {
 		let onSelect: () -> Void
 		let onClose: () -> Void
 
-		func makeUIView(context _: Context) -> NativePrivateTabControl { NativePrivateTabControl(frame: .zero) }
+		func makeUIView(context _: Context) -> NativePrivateTabControl {
+			NativePrivateTabControl(frame: .zero)
+		}
+
 		func updateUIView(_ view: NativePrivateTabControl, context _: Context) {
 			view.configure(id: id, title: title, selected: selected, onSelect: onSelect, onClose: onClose)
 		}
@@ -180,8 +199,15 @@ private struct PrivateBrowserTabRow: View {
 			])
 			titleButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 		}
-		required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-		override var intrinsicContentSize: CGSize { CGSize(width: UIView.noIntrinsicMetric, height: 18) }
+
+		@available(*, unavailable)
+		required init?(coder _: NSCoder) {
+			fatalError("init(coder:) has not been implemented")
+		}
+
+		override var intrinsicContentSize: CGSize {
+			CGSize(width: UIView.noIntrinsicMetric, height: 18)
+		}
 
 		func configure(id: UUID, title: String, selected: Bool, onSelect: @escaping () -> Void, onClose: @escaping () -> Void) {
 			titleButton.configuration?.title = title
@@ -193,7 +219,13 @@ private struct PrivateBrowserTabRow: View {
 			closeButton.accessibilityIdentifier = "private-close-tab-\(id)"
 			closeButton.accessibilityLabel = "Close Tab"
 		}
-		@objc private func selectTab() { selectAction?() }
-		@objc private func closeTab() { closeAction?() }
+
+		@objc private func selectTab() {
+			selectAction?()
+		}
+
+		@objc private func closeTab() {
+			closeAction?()
+		}
 	}
 #endif

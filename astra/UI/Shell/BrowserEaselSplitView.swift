@@ -162,8 +162,13 @@ private final class BrowserTabContentSplitState {
 		let rightHost = NSHostingView(rootView: AnyView(EmptyView()))
 		private let divider = BrowserNativeTabContentDivider()
 
-		override var isFlipped: Bool { true }
-		override var wantsDefaultClipping: Bool { true }
+		override var isFlipped: Bool {
+			true
+		}
+
+		override var wantsDefaultClipping: Bool {
+			true
+		}
 
 		override init(frame frameRect: NSRect) {
 			super.init(frame: frameRect)
@@ -189,9 +194,15 @@ private final class BrowserTabContentSplitState {
 
 		func layoutPanes() {
 			let geometry = state.geometry(size: bounds.size)
-			if leftHost.frame != geometry.leftFrame { leftHost.frame = geometry.leftFrame }
-			if divider.frame != geometry.dividerFrame { divider.frame = geometry.dividerFrame }
-			if rightHost.frame != geometry.rightFrame { rightHost.frame = geometry.rightFrame }
+			if leftHost.frame != geometry.leftFrame {
+				leftHost.frame = geometry.leftFrame
+			}
+			if divider.frame != geometry.dividerFrame {
+				divider.frame = geometry.dividerFrame
+			}
+			if rightHost.frame != geometry.rightFrame {
+				rightHost.frame = geometry.rightFrame
+			}
 			divider.updateAccessibility(fraction: state.fraction)
 		}
 
@@ -200,7 +211,9 @@ private final class BrowserTabContentSplitState {
 		}
 
 		override func viewWillMove(toWindow window: NSWindow?) {
-			if window == nil { endResize() }
+			if window == nil {
+				endResize()
+			}
 			super.viewWillMove(toWindow: window)
 		}
 	}
@@ -209,9 +222,13 @@ private final class BrowserTabContentSplitState {
 		weak var owner: BrowserNativeTabContentSplitContainer?
 		private var dragStartX: CGFloat?
 
-		override var mouseDownCanMoveWindow: Bool { false }
+		override var mouseDownCanMoveWindow: Bool {
+			false
+		}
 
-		override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
+		override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
+			true
+		}
 
 		override func resetCursorRects() {
 			addCursorRect(bounds, cursor: .resizeLeftRight)
@@ -326,9 +343,15 @@ private final class BrowserTabContentSplitState {
 			loadViewIfNeeded()
 			let geometry = state.geometry(size: view.bounds.size)
 			UIView.performWithoutAnimation {
-				if leftHost.view.frame != geometry.leftFrame { leftHost.view.frame = geometry.leftFrame }
-				if divider.frame != geometry.dividerFrame { divider.frame = geometry.dividerFrame }
-				if rightHost.view.frame != geometry.rightFrame { rightHost.view.frame = geometry.rightFrame }
+				if leftHost.view.frame != geometry.leftFrame {
+					leftHost.view.frame = geometry.leftFrame
+				}
+				if divider.frame != geometry.dividerFrame {
+					divider.frame = geometry.dividerFrame
+				}
+				if rightHost.view.frame != geometry.rightFrame {
+					rightHost.view.frame = geometry.rightFrame
+				}
 				divider.accessibilityValue = "\(Int(state.fraction * 100)) percent"
 			}
 		}

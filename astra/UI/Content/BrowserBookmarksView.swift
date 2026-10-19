@@ -66,7 +66,8 @@ struct BrowserBookmarksView: View {
 				if background {
 					browser.openHistoryURL(row.url, inBackground: true)
 				} else if row.kind == .bookmark,
-				          let bookmark = browser.bookmarks.first(where: { $0.id == row.recordID }) {
+				          let bookmark = browser.bookmarks.first(where: { $0.id == row.recordID })
+				{
 					browser.openBookmark(bookmark)
 				} else {
 					browser.openHistoryURL(row.url, inBackground: false)
@@ -74,29 +75,29 @@ struct BrowserBookmarksView: View {
 			},
 			action: { row, action in
 				switch action {
-				case .editBookmark:
-					editingBookmark = browser.bookmarks.first(where: { $0.id == row.recordID })
-				case .toggleFavorite:
-					if let bookmark = browser.bookmarks.first(where: { $0.id == row.recordID }) {
-						browser.updateBookmark(bookmark.id, name: bookmark.name, folder: bookmark.folder,
-						                       isFavorite: !bookmark.isFavorite, order: bookmark.order)
-					}
-				case .addToReadingList:
-					if browser.canAddToReadingList(row.url) {
-						browser.addToReadingList(row.url, title: row.title)
-					}
-				case .deleteBookmark:
-					browser.removeBookmark(row.recordID)
-				case .openOffline:
-					if let item = browser.readingList.first(where: { $0.id == row.recordID }) {
-						browser.openReadingListItem(item, offline: true)
-					}
-				case .toggleRead:
-					browser.setReadingListRead(row.recordID, isRead: !row.isRead)
-				case .removeReadingList:
-					browser.removeReadingListItem(row.recordID)
-				case .removePageHistory, .removeHistoryVisit:
-					break
+					case .editBookmark:
+						editingBookmark = browser.bookmarks.first(where: { $0.id == row.recordID })
+					case .toggleFavorite:
+						if let bookmark = browser.bookmarks.first(where: { $0.id == row.recordID }) {
+							browser.updateBookmark(bookmark.id, name: bookmark.name, folder: bookmark.folder,
+							                       isFavorite: !bookmark.isFavorite, order: bookmark.order)
+						}
+					case .addToReadingList:
+						if browser.canAddToReadingList(row.url) {
+							browser.addToReadingList(row.url, title: row.title)
+						}
+					case .deleteBookmark:
+						browser.removeBookmark(row.recordID)
+					case .openOffline:
+						if let item = browser.readingList.first(where: { $0.id == row.recordID }) {
+							browser.openReadingListItem(item, offline: true)
+						}
+					case .toggleRead:
+						browser.setReadingListRead(row.recordID, isRead: !row.isRead)
+					case .removeReadingList:
+						browser.removeReadingListItem(row.recordID)
+					case .removePageHistory, .removeHistoryVisit:
+						break
 				}
 			},
 			reorder: { _, ids in browser.reorderBookmarks(ids) }
@@ -236,12 +237,11 @@ struct BrowserBookmarksView: View {
 
 	private var isReordering: Bool {
 		#if os(iOS)
-		editMode?.wrappedValue == .active
+			editMode?.wrappedValue == .active
 		#else
-		false
+			false
 		#endif
 	}
-
 }
 
 private struct BookmarkEditor: View {

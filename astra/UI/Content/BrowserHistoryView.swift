@@ -38,12 +38,12 @@ struct BrowserHistoryView: View {
 			},
 			action: { row, action in
 				switch action {
-				case .removePageHistory:
-					browser.removeHistory(for: row.url)
-				case .removeHistoryVisit:
-					browser.removeHistory([row.recordID])
-				default:
-					break
+					case .removePageHistory:
+						browser.removeHistory(for: row.url)
+					case .removeHistoryVisit:
+						browser.removeHistory([row.recordID])
+					default:
+						break
 				}
 			},
 			reorder: { _, _ in }
