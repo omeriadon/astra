@@ -14,11 +14,6 @@ def source_check() -> None:
     fonts = SOURCE / "Resources/EaselFonts"
     for name in SYSTEM_FONT_FILES:
         assert not (fonts / name).exists(), f"Apple system font should not be bundled: {name}"
-    registration = (SOURCE / "UI/Content/BrowserEaselFonts.swift").read_text()
-    assert all(name not in registration for name in SYSTEM_FONT_FILES)
-    manager = (SOURCE / "Web/Extensions/BrowserExtensionManager.swift").read_text()
-    assert "bundledNames" not in manager, "Extensions must all use the ordinary installed-package path"
-    assert "RecommendedExtension" not in manager, "No special-case recommendations"
 
 
 def bundle_check(app: Path) -> None:

@@ -12,7 +12,7 @@ of an implementation detail is not equivalent to working behaviour.
 ## Scope and changes
 
 Reviewed Astra's **25 GitHub Actions workflows** and the scripts they invoke.
-Removed **24 standalone jobs**, **24 brittle/source-only scripts** and three
+Removed **30 standalone jobs**, **25 brittle/source-only scripts** and three
 workflows whose only activity was checking literal implementation text:
 
 - `validate-persistence.yml`: eight structural assertions; actual sync and
@@ -78,3 +78,15 @@ are not passing performance evidence.
    an actual artifact.
 4. Report measured, skipped, experimental, and failed outcomes distinctly.
 5. Do not rename the required `Validate Release` status without updating rulesets.
+
+## Additional CI consolidation
+
+The Browser Use macOS job no longer compiles the same Debug app once for
+protocol tests and again for experimental WebKit E2E. It builds once and then
+runs both steps with distinct reports. The CI/instrumentation workflow now
+runs its small policy/asset/parser checks in one Ubuntu job and Swift safety
+plus the process-birth executable in one Xcode job, instead of seven separate
+runner allocations. Deleted the workflow diagnostics source-string guard and
+run the real timing-report parser self-test directly. Optional asset checks
+now examine actual source/bundle resources instead of checking for private
+names inside the extension manager.

@@ -28,15 +28,9 @@ jobs:
           python3 scripts/browser-use/test_fixture.py
 
   runtime:
-    name: ${{ matrix.suite }}
+    name: Browser Use protocol and experimental WebKit E2E
     runs-on: xcode-27
     timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        suite:
-          - Protocol, DOM and listener
-          - Live Astra WebKit E2E
     steps:
       - uses: actions/checkout@v4
       - name: Verify Xcode 27 / Swift 6.4
@@ -52,17 +46,15 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             2>&1 | tee "$RUNNER_TEMP/astra-mcp-build.log"
       - name: Protocol, HTTP, DOM and listener regression checks
-        if: matrix.suite == 'Protocol, DOM and listener'
         run: zsh scripts/check_browser_use.sh "$RUNNER_TEMP/AstraMCP/Build/Products/Debug"
       - name: Live Astra WebKit E2E (experimental; nonblocking)
         id: live_e2e
-        if: matrix.suite == 'Live Astra WebKit E2E'
         continue-on-error: true
         env:
           ASTRA_BROWSER_USE_REPORT_DIR: ${{ runner.temp }}/astra-mcp-reports
         run: bash scripts/test-browser-use-e2e.sh "$RUNNER_TEMP/AstraMCP/Build/Products/Debug/astra.app"
       - name: Report live integration test outcome
-        if: matrix.suite == 'Live Astra WebKit E2E' && always()
+        if: always()
         shell: bash
         env:
           E2E_OUTCOME: ${{ steps.live_e2e.outcome }}
@@ -76,7 +68,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: browser-use-${{ strategy.job-index }}-${{ github.run_number }}
+          name: browser-use-runtime-${{ github.run_number }}
           path: |
             ${{ runner.temp }}/astra-mcp-build.log
             ${{ runner.temp }}/astra-mcp-reports
