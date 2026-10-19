@@ -16,37 +16,38 @@ struct BrowserHistoryView: View {
 	@State private var rangeEnd = Date.now
 
 	var body: some View {
-		List {
-			Section("Visited Pages") {
-				ForEach(filteredVisits) { visit in
-					HistoryRow(
-						title: visit.title,
-						detail: "\(visit.url.absoluteString) · \(visitCountsByURL[visit.url, default: 1]) visits",
-						url: visit.url,
-						symbol: "clock.arrow.circlepath",
-						identifier: "history-visit-\(visit.id)",
-						open: { browser.openHistoryURL(visit.url, inBackground: false) },
-						openInBackground: { browser.openHistoryURL(visit.url, inBackground: true) }
-					)
-					.contextMenu {
-						Button("Remove This Page from History", systemImage: "trash", role: .destructive) {
-							browser.removeHistory(for: visit.url)
-						}
-						Button("Remove from History", systemImage: "trash", role: .destructive) {
-							browser.removeHistory([visit.id])
-						}
+		BrowserNativeLibraryList(
+			sections: [
+				BrowserNativeLibrarySection(
+					title: "Visited Pages",
+					rows: filteredVisits.map { visit in
+						BrowserNativeLibraryRow(
+							id: "history-visit-\(visit.id)",
+							recordID: visit.id, kind: .history,
+							title: visit.title,
+							detail: "\(visit.url.absoluteString) · \(visitCountsByURL[visit.url, default: 1]) visits",
+							url: visit.url,
+							symbol: "clock.arrow.circlepath"
+						)
 					}
+				),
+			],
+			canReorder: false,
+			open: { row, background in
+				browser.openHistoryURL(row.url, inBackground: background)
+			},
+			action: { row, action in
+				switch action {
+				case .removePageHistory:
+					browser.removeHistory(for: row.url)
+				case .removeHistoryVisit:
+					browser.removeHistory([row.recordID])
+				default:
+					break
 				}
-				.onDelete { offsets in
-					browser.removeHistory(Set(offsets.map { filteredVisits[$0].id }))
-				}
-			}
-		}
-		#if os(iOS)
-		.listStyle(.insetGrouped)
-		#else
-		.listStyle(.sidebar)
-		#endif
+			},
+			reorder: { _, _ in }
+		)
 		.scrollContentBackground(.hidden)
 		.safeAreaBar(edge: .top) {
 			VStack(alignment: .leading, spacing: 12) {
