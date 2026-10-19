@@ -6,6 +6,7 @@
 import Defaults
 import Foundation
 import Observation
+import QuartzCore
 import SwiftUI
 #if os(macOS)
 	import UniformTypeIdentifiers
