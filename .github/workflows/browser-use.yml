@@ -54,12 +54,24 @@ jobs:
       - name: Protocol, HTTP, DOM and listener regression checks
         if: matrix.suite == 'Protocol, DOM and listener'
         run: zsh scripts/check_browser_use.sh "$RUNNER_TEMP/AstraMCP/Build/Products/Debug"
-      - name: Real Astra and WebKit integration
+      - name: Live Astra WebKit E2E (experimental; nonblocking)
+        id: live_e2e
         if: matrix.suite == 'Live Astra WebKit E2E'
         continue-on-error: true
         env:
           ASTRA_BROWSER_USE_REPORT_DIR: ${{ runner.temp }}/astra-mcp-reports
         run: bash scripts/test-browser-use-e2e.sh "$RUNNER_TEMP/AstraMCP/Build/Products/Debug/astra.app"
+      - name: Report live integration test outcome
+        if: matrix.suite == 'Live Astra WebKit E2E' && always()
+        shell: bash
+        env:
+          E2E_OUTCOME: ${{ steps.live_e2e.outcome }}
+        run: |
+          echo "### Live Astra WebKit E2E (informational)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Result: ${E2E_OUTCOME}. This experimental step is nonblocking and is **not** a passing integration-test guarantee." >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${E2E_OUTCOME}" != "success" ]]; then
+            echo "::warning::Live Astra WebKit E2E did not pass (result: ${E2E_OUTCOME}). Inspect the diagnostics artifact."
+          fi
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
