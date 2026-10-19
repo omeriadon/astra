@@ -253,6 +253,27 @@ final class FaviconStore: NSObject, WKScriptMessageHandler {
 		return Self.swiftUIImage(decoded)
 	}
 
+	/// Share the bounded decoded cache with native AppKit/UIKit tab controls.
+	/// Reading favicons via this accessor also subscribes the SwiftUI adapter
+	/// to changes in the source icon data.
+	#if os(macOS)
+	func nativeImage(for pageURL: URL?) -> NSImage? {
+		guard let key = visibleOrigin(for: pageURL) else { return nil }
+		if let cached = decodedImages.object(forKey: key as NSString) { return cached }
+		guard let data = favicons[key], let decoded = Self.makePlatformImage(data) else { return nil }
+		decodedImages.setObject(decoded, forKey: key as NSString, cost: Self.decodedImageCost(decoded))
+		return decoded
+	}
+	#elseif os(iOS)
+	func nativeImage(for pageURL: URL?) -> UIImage? {
+		guard let key = visibleOrigin(for: pageURL) else { return nil }
+		if let cached = decodedImages.object(forKey: key as NSString) { return cached }
+		guard let data = favicons[key], let decoded = Self.makePlatformImage(data) else { return nil }
+		decodedImages.setObject(decoded, forKey: key as NSString, cost: Self.decodedImageCost(decoded))
+		return decoded
+	}
+	#endif
+
 	/// OpenBrand/Color Tailor-style logo accent fallback, never used when
 	/// Astra can see a painted page surface or explicit theme metadata.
 	/// ImageIO downsamples to 32 px on a detached utility task, and never
