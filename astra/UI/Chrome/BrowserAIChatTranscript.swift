@@ -60,6 +60,7 @@ struct BrowserAIChatTranscript: NSViewRepresentable {
         private var messageIDs: [UUID] = []
         private var conversationID: UUID?
         private var lastWidth: CGFloat = 0
+        private var currentTint: NSColor?
         private var sizingCache: [UUID: CGFloat] = [:]
         private var streamingRevision = ""
         private var poller: Task<Void, Never>?
@@ -87,11 +88,14 @@ struct BrowserAIChatTranscript: NSViewRepresentable {
                 (old == nil)
             let widthChanged = abs(lastWidth - width) > 1
             let streamChanged = lastStreaming != new.chat.isResponding
+            let tint = NSColor(new.browser.theme.tabColor)
+            let tintChanged = currentTint != tint
+            currentTint = tint
             conversationID = new.chat.id
             messageIDs = ids
             lastWidth = width
             lastStreaming = new.chat.isResponding
-            if changed || widthChanged {
+            if changed || widthChanged || tintChanged {
                 if changed { sizingCache.removeAll(keepingCapacity: true) }
                 table.reloadData()
                 if changed { scrollToBottom() }
@@ -703,8 +707,16 @@ struct BrowserAIChatTranscript: UIViewRepresentable {
             stack.addArrangedSubview(scroller)
         }
         if message.isUser {
-            let body = text(message.text)
+            let body = UITextView()
+            body.text = message.text
+            body.font = .preferredFont(forTextStyle: .body)
             body.textColor = UIColor.label.withAlphaComponent(0.85)
+            body.backgroundColor = .clear
+            body.isScrollEnabled = false
+            body.isEditable = false
+            body.isSelectable = true
+            body.textContainerInset = .zero
+            body.textContainer.lineFragmentPadding = 0
             let bubble = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
             bubble.layer.cornerRadius = 16
             bubble.clipsToBounds = true
