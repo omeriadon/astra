@@ -371,12 +371,14 @@ private final class BrowserNativeLibraryMacRow: NSView {
 	override func menu(for event: NSEvent) -> NSMenu? {
 		guard let current else { return nil }
 		let menu = NSMenu()
+		menu.autoenablesItems = false
 		for action in BrowserNativeLibraryAction.available(for: current) {
 			let item = NSMenuItem(title: action.label(for: current), action: #selector(performMenuAction(_:)), keyEquivalent: "")
 			item.tag = action.rawValue
 			item.target = self
 			item.image = NSImage(systemSymbolName: action.icon(for: current), accessibilityDescription: nil)
 			if action == .addToReadingList { item.isEnabled = current.canAddToReadingList }
+			if action == .addToReadingList { item.identifier = NSUserInterfaceItemIdentifier("bookmark-add-reading-list-\(current.recordID.uuidString)") }
 			if action == .openOffline { item.identifier = NSUserInterfaceItemIdentifier("reading-open-offline-\(current.recordID.uuidString)") }
 			if action == .toggleRead { item.identifier = NSUserInterfaceItemIdentifier("reading-toggle-read-\(current.recordID.uuidString)") }
 			if action == .removeReadingList { item.identifier = NSUserInterfaceItemIdentifier("reading-remove-\(current.recordID.uuidString)") }
