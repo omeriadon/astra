@@ -233,7 +233,7 @@ enum BrowserNativeLibraryAction: Int, CaseIterable {
 			func tableView(_ tableView: NSTableView, validateDrop info: any NSDraggingInfo,
 			               proposedRow index: Int, proposedDropOperation operation: NSTableView.DropOperation) -> NSDragOperation
 			{
-				guard parent?.canReorder == true, info.draggingSource === tableView, operation == .above,
+				guard parent?.canReorder == true, (info.draggingSource as? NSTableView) === tableView, operation == .above,
 				      let idString = info.draggingPasteboard.string(forType: Self.dragType),
 				      let id = UUID(uuidString: idString),
 				      let source = entries.first(where: {
