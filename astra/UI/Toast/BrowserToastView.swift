@@ -9,7 +9,7 @@ struct BrowserToastView: View {
 			.fixedSize(horizontal: false, vertical: true)
 			.padding(.horizontal, 12)
 			.padding(.vertical, 8)
-			.background(.regularMaterial, in: Capsule())
+			.background(.ultraThinMaterial, in: Capsule())
 			.shadow(color: .black.opacity(0.2), radius: 12, y: 5)
 			.accessibilityElement(children: .combine)
 			.accessibilityLabel(Text(toast.message))

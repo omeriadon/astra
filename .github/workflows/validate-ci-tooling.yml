@@ -1,0 +1,71 @@
+name: Astra - CI and Instrumentation
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workflow-policy:
+    name: CI runner, asset, target and tooling validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Workflow runner and Swift language policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/ci-toolchain-workflows-check.py
+      - name: Optional assets and font policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/optional-assets-check.py --self-test
+      - name: Startup architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/launch-framework-architecture-check.py
+      - name: Startup scripts and audit tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/benchmark_startup.sh
+          python3 scripts/parse_startup_log.py --self-test
+          bash -n scripts/audit_sparkle_bundle.sh
+          bash -n scripts/ci/select-xcode-27.sh
+      - name: Workflow timing parser self-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/astra_workflow_report.py --self-test
+
+  compiler-policy:
+    name: Strict Swift 6 and native helper validation
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Strict Swift 6 compiler and safety settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/compiler-safety-settings-check.py
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Process birth timestamp
+        shell: bash
+        run: |
+          set -euo pipefail
+          clang -Wall -Wextra -Werror scripts/process_birth.c -o "$RUNNER_TEMP/astra-process-birth"
+          "$RUNNER_TEMP/astra-process-birth"

@@ -230,13 +230,13 @@ struct BrowserWebView {
 		}
 
 		func updateNSView(_ host: BrowserWebViewHost, context _: Context) {
-			host.specification = self
-			host.mountIfReady()
+			host.update(specification: self)
 		}
 
 		static func dismantleNSView(_ host: BrowserWebViewHost, coordinator _: ()) {
 			host.handoffTask?.cancel()
 			host.pageGestures.detach()
+			host.unmountWebView()
 		}
 	}
 
@@ -246,7 +246,7 @@ struct BrowserWebView {
 		let pageGestures = BrowserDesktopPageGestures()
 		private let curtain = NSImageView()
 		private var insets: [EdgeInsets]?
-		private(set) var refreshPullOffset: CGFloat = 0
+		private var appliedVisibility: Bool?
 
 		init(specification: BrowserWebView) {
 			self.specification = specification
@@ -268,39 +268,81 @@ struct BrowserWebView {
 			mountIfReady()
 		}
 
+		override func didAddSubview(_ subview: NSView) {
+			super.didAddSubview(subview)
+			updateDockedInspectorVisibility()
+		}
+
+		override func willRemoveSubview(_ subview: NSView) {
+			updateDockedInspectorVisibility(removing: subview)
+			super.willRemoveSubview(subview)
+		}
+
+		private func updateDockedInspectorVisibility(removing removedSubview: NSView? = nil) {
+			let webView = specification.controller.webViewIfLoaded
+			specification.controller.hasDockedWebInspector = subviews.contains {
+				$0 !== removedSubview && $0 is WKWebView && $0 !== webView
+			}
+		}
+
 		override func viewDidMoveToWindow() {
 			super.viewDidMoveToWindow()
-			if window == nil {
+			if unsafe window == nil {
 				pageGestures.detach()
+				unmountWebView()
 			}
 			mountIfReady()
 		}
 
-		func setRefreshPullOffset(_ offset: CGFloat, animated: Bool = false) {
-			refreshPullOffset = offset
-			let webView = specification.controller.webView
-			guard webView.superview === self else { return }
-			let origin = CGPoint(
-				x: bounds.minX,
-				y: bounds.minY + (isFlipped ? offset : -offset)
-			)
-			if animated {
-				NSAnimationContext.runAnimationGroup { context in
-					context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.25
-					webView.animator().setFrameOrigin(origin)
-				}
-			} else {
-				webView.setFrameOrigin(origin)
+		func update(specification: BrowserWebView) {
+			if self.specification.controller !== specification.controller
+				|| self.specification.windowID != specification.windowID
+			{
+				unmountWebView()
 			}
+			self.specification = specification
+			mountIfReady()
 		}
 
 		func mountIfReady() {
-			guard window != nil, !bounds.isEmpty,
-			      specification.windowID == nil || specification.controller.displayWindowID == specification.windowID else { return }
 			let controller = specification.controller
+			let remainsAttached = specification.isVisible || controller.shouldKeepWebViewAttached
+
+			guard specification.windowID == nil || controller.displayWindowID == specification.windowID else {
+				unmountWebView()
+				return
+			}
+			guard unsafe window != nil, !bounds.isEmpty else {
+				if !remainsAttached {
+					unmountWebView()
+				}
+				return
+			}
+			if !remainsAttached {
+				unmountWebView()
+				return
+			}
+			if !specification.isVisible, controller.webViewIfLoaded == nil {
+				return
+			}
 			let webView = controller.webView
-			if webView.superview !== self {
+			if unsafe webView.superview !== self {
+				// Reparenting an existing WKWebView can itself stall AppKit's
+				// main thread independently of WebKit's initial creation.
+				// Time the synchronous host handoff separately so switching
+				// delays can be attributed to the correct lifecycle stage.
+				let attachStarted = BrowserLog.clock()
+				defer {
+					BrowserLog.duration(
+						.webKit, "webview.host.attach",
+						since: attachStarted,
+						warnAboveMilliseconds: 30,
+						metadata: ["controller": BrowserLog.id(controller.id)]
+					)
+				}
+				appliedVisibility = nil
 				handoffTask?.cancel()
+				handoffTask = nil
 				curtain.frame = bounds
 				curtain.image = controller.windowMirrorSnapshot ?? controller.previewSnapshot
 				curtain.isHidden = !specification.isVisible || curtain.image == nil
@@ -308,26 +350,50 @@ struct BrowserWebView {
 				webView.frame = bounds
 				webView.autoresizingMask = [.width, .height]
 				addSubview(webView, positioned: .below, relativeTo: curtain)
-				handoffTask = Task { @MainActor [weak self, weak webView] in
-					let deadline = ContinuousClock.now + .seconds(1)
-					while !Task.isCancelled, ContinuousClock.now < deadline {
-						if await controller.refreshWindowMirrorSnapshot() {
-							break
+				if webView.responds(to: NSSelectorFromString("_inspector")),
+				   let inspector = unsafe webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
+				   inspector.value(forKey: "isVisible") as? Bool == true,
+				   inspector.responds(to: NSSelectorFromString("attach"))
+				{
+					BrowserDesktopCommands.attachWebInspector(inspector)
+				}
+				// A freshly constructed WebView usually has no snapshot
+				// curtain. Polling WebKit screenshots in that case wastes GPU/CPU
+				// and competes with the first page load for no visual benefit.
+				if !curtain.isHidden {
+					handoffTask = Task { @MainActor [weak self, weak webView] in
+						let deadline = ContinuousClock.now + .seconds(1)
+						while !Task.isCancelled, ContinuousClock.now < deadline {
+							if await controller.refreshWindowMirrorSnapshot() {
+								break
+							}
+							do {
+								try await Task.sleep(for: .milliseconds(75))
+							} catch {
+								return
+							}
 						}
-						do {
-							try await Task.sleep(for: .milliseconds(20))
-						} catch {
-							return
-						}
+						guard !Task.isCancelled, let self, let webView, unsafe webView.superview === self,
+						      specification.windowID == nil || specification.windowID == controller.displayWindowID else { return }
+						curtain.isHidden = true
+						curtain.image = nil
 					}
-					guard !Task.isCancelled, let self, let webView, webView.superview === self,
-					      specification.windowID == nil || specification.windowID == controller.displayWindowID else { return }
-					curtain.isHidden = true
 				}
 			}
-			webView.frame = bounds.offsetBy(dx: 0, dy: isFlipped ? refreshPullOffset : -refreshPullOffset)
-			webView.isHidden = !specification.isVisible
-			webView.setAccessibilityHidden(!specification.isVisible)
+			// WebKit owns the page frame while its inspector is docked in this host.
+			let hasDockedInspector = subviews.contains { $0 is WKWebView && $0 !== webView }
+			specification.controller.hasDockedWebInspector = hasDockedInspector
+			if !hasDockedInspector {
+				let targetFrame = bounds
+				if webView.frame != targetFrame {
+					webView.frame = targetFrame
+				}
+			}
+			if appliedVisibility != specification.isVisible {
+				webView.isHidden = !specification.isVisible
+				webView.setAccessibilityHidden(!specification.isVisible)
+				appliedVisibility = specification.isVisible
+			}
 			if specification.isVisible {
 				pageGestures.attach(to: controller, in: self)
 			} else {
@@ -340,6 +406,21 @@ struct BrowserWebView {
 				insets = nextInsets
 			}
 		}
+
+		func unmountWebView() {
+			curtain.image = nil
+			curtain.isHidden = true
+			handoffTask?.cancel()
+			handoffTask = nil
+			pageGestures.detach()
+			specification.controller.hasDockedWebInspector = false
+			guard let webView = specification.controller.webViewIfLoaded,
+			      unsafe webView.superview === self else { return }
+			webView.removeFromSuperview()
+			webView.isHidden = true
+			webView.setAccessibilityHidden(true)
+			appliedVisibility = nil
+		}
 	}
 
 	@MainActor
@@ -347,7 +428,7 @@ struct BrowserWebView {
 		private weak var host: BrowserWebViewHost?
 		private weak var controller: BrowserController?
 		private var monitor: Any?
-		private var loadingObservation: NSKeyValueObservation?
+		private var nativeRefreshHandler: AnyObject?
 		private let indicator = BrowserDesktopGestureIndicator()
 		private var gestureID = UUID()
 		private var permissions: [Bool]?
@@ -355,12 +436,10 @@ struct BrowserWebView {
 		private var action: Action?
 		private var gaveFeedback = false
 		private var suppressMomentum = false
-		private var refreshing = false
 
 		private enum Action {
 			case back
 			case forward
-			case refresh
 		}
 
 		func attach(to controller: BrowserController, in host: BrowserWebViewHost) {
@@ -369,13 +448,10 @@ struct BrowserWebView {
 			self.controller = controller
 			self.host = host
 			host.addSubview(indicator)
-			loadingObservation = controller.webView.observe(\.isLoading, options: [.new]) { [weak self] webView, _ in
-				MainActor.assumeIsolated {
-					guard let self, !webView.isLoading, self.refreshing else { return }
-					self.refreshing = false
-					self.host?.setRefreshPullOffset(0, animated: true)
-					self.indicator.hide()
-				}
+			if #available(macOS 27.0, *) {
+				// WebKit provides the actual scroll rubber-banding and native
+				// refresh presentation; never move the entire web view beneath chrome.
+				nativeRefreshHandler = BrowserDesktopNativeRefreshHandler(controller: controller, webView: controller.webView)
 			}
 			monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
 				let consumed = MainActor.assumeIsolated {
@@ -391,14 +467,14 @@ struct BrowserWebView {
 				NSEvent.removeMonitor(monitor)
 			}
 			monitor = nil
-			loadingObservation?.invalidate()
-			loadingObservation = nil
+			if #available(macOS 27.0, *) {
+				(nativeRefreshHandler as? BrowserDesktopNativeRefreshHandler)?.detach()
+			}
+			nativeRefreshHandler = nil
 			gestureID = UUID()
 			permissions = nil
 			action = nil
 			suppressMomentum = false
-			refreshing = false
-			host?.setRefreshPullOffset(0)
 			indicator.hide()
 			indicator.removeFromSuperview()
 			host = nil
@@ -407,8 +483,8 @@ struct BrowserWebView {
 
 		private func handle(_ event: NSEvent) -> NSEvent? {
 			guard let host, let controller,
-			      event.window === host.window,
-			      controller.webView.superview === host,
+			      unsafe event.window === host.window,
+			      unsafe controller.webView.superview === host,
 			      !host.isHiddenOrHasHiddenAncestor,
 			      event.hasPreciseScrollingDeltas else { return event }
 
@@ -422,10 +498,9 @@ struct BrowserWebView {
 				action = nil
 				gaveFeedback = false
 				suppressMomentum = false
-				guard !refreshing else { return event }
 				let point = host.convert(event.locationInWindow, from: nil)
 				guard host.bounds.contains(point),
-				      let hitView = host.window?.contentView?.hitTest(event.locationInWindow),
+				      let hitView = unsafe host.window?.contentView?.hitTest(event.locationInWindow),
 				      hitView.isDescendant(of: controller.webView) else { return event }
 				checkPage(at: point)
 			}
@@ -437,26 +512,15 @@ struct BrowserWebView {
 							controller.goBack()
 						case .forward:
 							controller.goForward()
-						case .refresh:
-							refreshing = true
-							host.setRefreshPullOffset(60, animated: true)
-							indicator.show(in: host, progress: 1, back: false, refresh: true, armed: true)
-							indicator.spinner.isIndeterminate = true
-							indicator.spinner.startAnimation(nil)
-							controller.reload()
-							refreshing = controller.webView.isLoading
 					}
 				}
-				if !refreshing {
-					host.setRefreshPullOffset(0, animated: true)
-					indicator.hide()
-				}
+				indicator.hide()
 				gestureID = UUID()
 				permissions = nil
 				action = nil
 				return consumed ? nil : event
 			}
-			guard event.phase.contains(.began) || event.phase.contains(.changed), !refreshing else { return event }
+			guard event.phase.contains(.began) || event.phase.contains(.changed) else { return event }
 			movement.x += event.scrollingDeltaX
 			movement.y += event.scrollingDeltaY
 			guard let permissions else { return event }
@@ -467,9 +531,8 @@ struct BrowserWebView {
 					} else if movement.x < 0, permissions[1], controller.webView.canGoForward {
 						action = .forward
 					}
-				} else if movement.y > abs(movement.x) * 1.5, permissions[2] {
-					action = .refresh
 				}
+
 				// Once the axis is clear, a page-owned gesture stays page-owned until release.
 				if action == nil {
 					self.permissions = nil
@@ -482,21 +545,17 @@ struct BrowserWebView {
 				NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
 				gaveFeedback = true
 			}
-			if action == .refresh {
-				host.setRefreshPullOffset(min(distance * 0.6, host.bounds.height * 0.3))
-			}
 			indicator.show(
 				in: host,
 				progress: min(distance / threshold, 1),
 				back: action == .back,
-				refresh: action == .refresh,
 				armed: armed
 			)
 			return nil
 		}
 
 		private var threshold: CGFloat {
-			action == .refresh ? 100 : 120
+			120
 		}
 
 		private var distance: CGFloat {
@@ -505,8 +564,6 @@ struct BrowserWebView {
 					max(0, movement.x)
 				case .forward:
 					max(0, -movement.x)
-				case .refresh:
-					max(0, movement.y)
 				case nil:
 					0
 			}
@@ -564,27 +621,62 @@ struct BrowserWebView {
 		}
 	}
 
-	private final class BrowserDesktopGestureIndicator: NSVisualEffectView {
+	/// Native pull-to-refresh is owned by WKWebView, which knows the webpage's
+	/// actual scroll view and safe areas. This avoids the old host-frame offset.
+	@available(macOS 27.0, *)
+	@MainActor
+	private final class BrowserDesktopNativeRefreshHandler: NSObject {
+		weak var webView: WKWebView?
+		weak var controller: BrowserController?
+		let refreshController = NSRefreshController()
+		private var loadingObservation: NSKeyValueObservation?
+
+		init(controller: BrowserController, webView: WKWebView) {
+			self.controller = controller
+			self.webView = webView
+			super.init()
+			refreshController.target = self
+			refreshController.action = #selector(refresh)
+			webView.refreshController = refreshController
+			loadingObservation = webView.observe(\.isLoading, options: [.new]) { [weak self] webView, _ in
+				MainActor.assumeIsolated {
+					guard !webView.isLoading else { return }
+					self?.refreshController.endRefreshing()
+				}
+			}
+		}
+
+		@objc private func refresh() {
+			controller?.reload()
+			if webView?.isLoading != true {
+				refreshController.endRefreshing()
+			}
+		}
+
+		func detach() {
+			loadingObservation?.invalidate()
+			loadingObservation = nil
+			if webView?.refreshController === refreshController {
+				webView?.refreshController = nil
+			}
+			refreshController.endRefreshing()
+		}
+	}
+
+	private final class BrowserDesktopGestureIndicator: NSGlassEffectView {
 		private let arrow = NSImageView()
-		let spinner = NSProgressIndicator()
 
 		init() {
 			super.init(frame: .zero)
-			material = .hudWindow
-			blendingMode = .withinWindow
-			state = .active
-			wantsLayer = true
-			layer?.cornerRadius = 22
-			layer?.masksToBounds = true
+			style = .regular
+			cornerRadius = 22
 			alphaValue = 0
 			setAccessibilityHidden(true)
 			setAccessibilityIdentifier("browser.pageGestureIndicator")
 			arrow.imageScaling = .scaleProportionallyDown
-			spinner.style = .spinning
-			spinner.controlSize = .small
-			spinner.isDisplayedWhenStopped = true
-			addSubview(arrow)
-			addSubview(spinner)
+			let content = NSView()
+			contentView = content
+			content.addSubview(arrow)
 		}
 
 		@available(*, unavailable)
@@ -596,31 +688,18 @@ struct BrowserWebView {
 			nil
 		}
 
-		func show(in host: BrowserWebViewHost, progress: CGFloat, back: Bool, refresh: Bool, armed: Bool) {
+		func show(in host: BrowserWebViewHost, progress: CGFloat, back: Bool, armed: Bool) {
 			layer?.removeAllAnimations()
 			let reveal = 56 * progress
-			let insets = host.specification.obscuredInsets
-			let x = refresh ? host.bounds.midX - 22 : back ? -44 + reveal : host.bounds.width - reveal
-			let refreshCenterY = host.isFlipped
-				? insets.top + host.refreshPullOffset / 2
-				: host.bounds.height - insets.top - host.refreshPullOffset / 2
-			frame = CGRect(x: x, y: refresh ? refreshCenterY - 22 : host.bounds.midY - 22, width: 44, height: 44)
+			let x = back ? -44 + reveal : host.bounds.width - reveal
+			frame = CGRect(x: x, y: host.bounds.midY - 22, width: 44, height: 44)
 			alphaValue = min(progress * 2, 1)
-			arrow.isHidden = refresh
-			spinner.isHidden = !refresh
 			arrow.frame = CGRect(x: 11, y: 11, width: 22, height: 22)
 			arrow.image = NSImage(systemSymbolName: back ? "arrow.left" : "arrow.right", accessibilityDescription: nil)
 			arrow.contentTintColor = armed ? .controlAccentColor : .labelColor
-			spinner.frame = CGRect(x: 14, y: 14, width: 16, height: 16)
-			if refresh {
-				spinner.stopAnimation(nil)
-				spinner.isIndeterminate = false
-				spinner.doubleValue = progress * 100
-			}
 		}
 
 		func hide() {
-			spinner.stopAnimation(nil)
 			NSAnimationContext.runAnimationGroup { context in
 				context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.18
 				animator().alphaValue = 0

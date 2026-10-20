@@ -2,24 +2,25 @@ import Defaults
 import Foundation
 import Observation
 
+// stop removing import webkit, it is used by `pageZoom`
+import WebKit
+
 #if os(macOS)
 	import AppKit
 #endif
-
-// stop removing import webkit, it is used by `pageZoom`
-import WebKit
 
 enum BrowserInternalPage: Equatable, CaseIterable {
 	case themeEditor
 	case settings
 	case history
 	case bookmarks
+	case easel
 	#if DEBUG
 		case failedWebsiteState(BrowserNavigationFailure.Kind)
 	#endif
 
 	static var allCases: [Self] {
-		var pages: [Self] = [.themeEditor, .settings, .history, .bookmarks]
+		var pages: [Self] = [.themeEditor, .settings, .history, .bookmarks, .easel]
 		#if DEBUG
 			pages += BrowserNavigationFailure.Kind.allCases.map { .failedWebsiteState($0) }
 		#endif
@@ -32,6 +33,7 @@ enum BrowserInternalPage: Equatable, CaseIterable {
 			case .settings: "settings"
 			case .history: "history"
 			case .bookmarks: "bookmarks"
+			case .easel: "easel"
 			#if DEBUG
 				case let .failedWebsiteState(kind): "failedWebsiteState:\(kind.rawValue)"
 			#endif
@@ -44,6 +46,7 @@ enum BrowserInternalPage: Equatable, CaseIterable {
 			case "settings": self = .settings
 			case "history": self = .history
 			case "bookmarks": self = .bookmarks
+			case "easel": self = .easel
 			default:
 				#if DEBUG
 					if persistenceID.hasPrefix("failedWebsiteState:"),
@@ -69,6 +72,8 @@ enum BrowserInternalPage: Equatable, CaseIterable {
 				"History"
 			case .bookmarks:
 				"Bookmarks"
+			case .easel:
+				"Easel"
 			#if DEBUG
 				case let .failedWebsiteState(kind):
 					String(localized: kind.title)
@@ -86,6 +91,8 @@ enum BrowserInternalPage: Equatable, CaseIterable {
 				"clock.arrow.circlepath"
 			case .bookmarks:
 				"bookmark"
+			case .easel:
+				"paintbrush.pointed"
 			#if DEBUG
 				case let .failedWebsiteState(kind):
 					kind.systemImage
@@ -117,14 +124,49 @@ final class BrowserTab: Identifiable {
 	}
 
 	var title: String {
-		internalPage?.title ?? customTitle ?? pageTitle
+		if internalPage == .easel {
+			return customTitle ?? internalPage?.title ?? pageTitle
+		}
+		return internalPage?.title ?? customTitle ?? pageTitle
+	}
+
+	var canAppearInEaselSplit: Bool {
+		internalPage == .easel || (internalPage == nil && currentURL != nil)
 	}
 
 	var hasCustomTitle: Bool {
 		customTitle != nil
 	}
 
+	var pendingQuotePlacementID: UUID?
+
+	func consumeQuotePlacement(_ id: UUID) {
+		if pendingQuotePlacementID == id {
+			pendingQuotePlacementID = nil
+		}
+	}
+
+	var easelDocument: BrowserEaselDocument {
+		storedEasel ?? .empty
+	}
+
+	@discardableResult
+	func updateEasel(_ document: BrowserEaselDocument) -> Bool {
+		guard internalPage == .easel, document.isValid else { return false }
+		guard storedEasel != document else { return true }
+		storedEasel = document
+		markModified()
+		return true
+	}
+
 	private(set) var controller: BrowserController?
+	private(set) var monitorMatch: BrowserMonitorMatch?
+
+	func setMonitorMatch(_ match: BrowserMonitorMatch?) {
+		monitorMatch = match
+		markModified()
+	}
+
 	private(set) var pictureInPictureReturnControllerID: UUID?
 	var activeController: BrowserController? {
 		if let pictureInPictureReturnControllerID {
@@ -138,12 +180,34 @@ final class BrowserTab: Identifiable {
 		return peeks.last?.controller ?? controller
 	}
 
+	var isDeveloperMode: Bool {
+		guard internalPage == nil else { return false }
+		if Defaults[.developerModeEnabled] {
+			return true
+		}
+		guard let host = (activeController?.url ?? currentURL)?.host else { return false }
+		return host == "localhost"
+			|| host.hasSuffix(".localhost")
+			|| host == "127.0.0.1"
+			|| host == "::1"
+	}
+
 	var isHibernated: Bool {
 		internalPage == nil && controller == nil
 	}
 
 	var currentURL: URL? {
 		controller?.url ?? storedURL
+	}
+
+	/// Scroll journaling needs the saved navigation index without allocating
+	/// an OpenTab (and potentially encrypting WKWebView restoration state).
+	var scrollHistoryIndex: Int {
+		recordsNavigationHistory ? (controller?.historyIndex ?? storedHistoryIndex) : 0
+	}
+
+	var copyableURL: URL? {
+		internalPage == nil ? activeController?.url ?? currentURL : nil
 	}
 
 	private(set) var peeks: [BrowserPeek]
@@ -159,8 +223,13 @@ final class BrowserTab: Identifiable {
 	private var storedPageZoom: Double
 	private var storedScrollPosition: BrowserScrollPosition
 	private var storedPeeks: [OpenPeek]
+	private var storedEasel: BrowserEaselDocument?
 	private(set) var modifiedAt: Date
+	/// Transient activity used by automatic hibernation; restored tabs get a fresh window.
+	private(set) var lastInteractionAt: Date
+	@ObservationIgnored
 	private var restorationBaseline: OpenTab?
+	@ObservationIgnored
 	private var isApplyingSynchronizedMetadata = false
 
 	@ObservationIgnored
@@ -172,7 +241,7 @@ final class BrowserTab: Identifiable {
 
 	/// Scroll-only updates (persisted on a slow debounce, no cross-window fan-out).
 	@ObservationIgnored
-	var didScrollChange: (@MainActor () -> Void)?
+	var didScrollChange: (@MainActor (_ isPeek: Bool) -> Void)?
 
 	@ObservationIgnored
 	private var openTabCache: OpenTab?
@@ -186,6 +255,7 @@ final class BrowserTab: Identifiable {
 			internalPage: internalPage?.persistenceID,
 			pageTitle: pageTitle,
 			customTitle: customTitle,
+			monitorMatch: monitorMatch,
 			url: (controller?.url ?? storedURL).map(BrowserAddress.withoutCredentials),
 			history: recordsNavigationHistory ? (controller?.history ?? storedHistory).map(BrowserAddress.withoutCredentials) : currentURL.map { [BrowserAddress.withoutCredentials($0)] } ?? [],
 			historyIndex: recordsNavigationHistory ? (controller?.historyIndex ?? storedHistoryIndex) : 0,
@@ -193,10 +263,11 @@ final class BrowserTab: Identifiable {
 			scrollPosition: controller?.scrollPosition ?? storedScrollPosition,
 			isHibernated: isHibernated,
 			modifiedAt: modifiedAt,
-			peeks: recordsNavigationHistory ? (isHibernated ? storedPeeks : peeks.map(\.openPeek)) : [],
+			peeks: recordsNavigationHistory ? (isHibernated ? storedPeeks : peeks.filter { !$0.controller.snapshotNavigationOnly }.map(\.openPeek)) : [],
 			recordsNavigationHistory: recordsNavigationHistory,
-			restorationState: recordsNavigationHistory && !session.isPrivate ? controller?.encryptedInteractionState ?? storedRestorationState : nil,
-			fileAccessBookmark: controller?.fileAccessBookmark ?? storedFileAccessBookmark
+			restorationState: recordsNavigationHistory && !session.isPrivate ? storedRestorationState : nil,
+			fileAccessBookmark: controller?.fileAccessBookmark ?? storedFileAccessBookmark,
+			easel: storedEasel
 		)
 		openTabCache = next
 		return next
@@ -207,6 +278,7 @@ final class BrowserTab: Identifiable {
 		internalPage: BrowserInternalPage? = nil,
 		pageTitle: String = "New Tab",
 		customTitle: String? = nil,
+		monitorMatch: BrowserMonitorMatch? = nil,
 		initialURL: URL? = nil,
 		history: [URL] = [],
 		historyIndex: Int = 0,
@@ -220,14 +292,17 @@ final class BrowserTab: Identifiable {
 		recordsNavigationHistory: Bool = true,
 		restorationState: Data? = nil,
 		fileAccessBookmark: Data? = nil,
-		suppressInitialHistoryVisit: Bool = false
+		easel: BrowserEaselDocument? = nil,
+		suppressInitialHistoryVisit: Bool = false,
+		initialRestorationBaseline: OpenTab? = nil
 	) {
 		let session = existingController?.session ?? session ?? .shared
 		self.id = id
-		self.internalPage = internalPage
+		self.internalPage = internalPage ?? (easel == nil ? nil : .easel)
 		self.session = existingController?.session ?? session
 		self.pageTitle = pageTitle
 		self.customTitle = customTitle
+		self.monitorMatch = monitorMatch
 		storedURL = initialURL
 		storedRestorationState = restorationState
 		storedFileAccessBookmark = fileAccessBookmark
@@ -238,9 +313,11 @@ final class BrowserTab: Identifiable {
 		storedPageZoom = initialPageZoom
 		storedScrollPosition = scrollPosition
 		storedPeeks = openPeeks
+		storedEasel = easel
 		self.modifiedAt = modifiedAt
+		lastInteractionAt = .now
 		peeks = isHibernated ? [] : openPeeks.map { BrowserPeek(openPeek: $0, session: session) }
-		controller = if isHibernated || internalPage != nil {
+		controller = if isHibernated || self.internalPage != nil {
 			nil
 		} else {
 			existingController ?? BrowserController(
@@ -261,7 +338,9 @@ final class BrowserTab: Identifiable {
 		for peek in peeks {
 			observe(peek)
 		}
-		restorationBaseline = openTab
+		// Restored tabs already have a fully decoded OpenTab. Reusing it avoids
+		// serializing WebKit interaction state again for every startup tab.
+		restorationBaseline = initialRestorationBaseline ?? openTab
 	}
 
 	convenience init(openTab saved: OpenTab) {
@@ -281,19 +360,47 @@ final class BrowserTab: Identifiable {
 			recordsNavigationHistory: saved.recordsNavigationHistory,
 			restorationState: saved.restorationState,
 			fileAccessBookmark: saved.fileAccessBookmark,
-			suppressInitialHistoryVisit: true
+			easel: saved.easel,
+			suppressInitialHistoryVisit: true,
+			initialRestorationBaseline: saved
 		)
+	}
+
+	@ObservationIgnored private var restorationCapture: (UUID, Int, Data, URL, Int, Int)?
+	/// Capture WebKit once per committed document. Scrolling has its own journal;
+	/// encryption runs in the serialized persistence job, never in openTab.
+	var restorationInput: (Data, URL)? {
+		guard recordsNavigationHistory, !session.isPrivate else { return nil }
+		if let controller {
+			guard controller.hasCurrentPageDocument, let url = controller.committedURL else { return nil }
+			let address = BrowserAddress.withoutCredentials(url)
+			if let cached = restorationCapture, cached.0 == controller.id, cached.1 == controller.navigationIdentifier,
+			   cached.3 == address, cached.4 == controller.history.count, cached.5 == controller.historyIndex
+			{
+				return (cached.2, cached.3)
+			}
+			guard let data = controller.webViewIfLoaded?.interactionState as? Data, data.count <= 4 * 1024 * 1024 else { return nil }
+			restorationCapture = (controller.id, controller.navigationIdentifier, data, address, controller.history.count, controller.historyIndex)
+			return (data, address)
+		}
+		guard let data = storedInteractionState as? Data, let url = currentURL, data.count <= 4 * 1024 * 1024 else { return nil }
+		return (data, BrowserAddress.withoutCredentials(url))
 	}
 
 	var canHibernate: Bool {
 		controller?.canHibernate != false && peeks.allSatisfy(\.controller.canHibernate)
 	}
 
-	func hibernate() {
-		guard internalPage == nil else { return }
-		guard let controller, canHibernate else { return }
-		storedInteractionState = controller.webViewIfLoaded?.interactionState
-		storedRestorationState = controller.encryptedInteractionState
+	func markInteraction() {
+		lastInteractionAt = .now
+	}
+
+	func hibernate(interactionState: Any? = nil) {
+		guard internalPage == nil, let controller, canHibernate else { return }
+		let interactionState = interactionState ?? controller.webViewIfLoaded?.interactionState
+		storedRestorationState = nil
+		storedInteractionState = interactionState
+		restorationCapture = nil
 		storedFileAccessBookmark = controller.fileAccessBookmark
 		storedHistoryPrefix = controller.liveHistoryPrefix
 		storedURL = controller.url
@@ -301,7 +408,7 @@ final class BrowserTab: Identifiable {
 		storedHistoryIndex = controller.historyIndex
 		storedPageZoom = controller.pageZoom
 		storedScrollPosition = controller.scrollPosition
-		storedPeeks = peeks.map(\.openPeek)
+		storedPeeks = peeks.filter { !$0.controller.snapshotNavigationOnly }.map(\.openPeek)
 		restorationBaseline = openTab
 		for peek in peeks {
 			peek.controller.stopForClose()
@@ -321,8 +428,7 @@ final class BrowserTab: Identifiable {
 	}
 
 	func wake() {
-		guard internalPage == nil else { return }
-		guard controller == nil else { return }
+		guard internalPage == nil, controller == nil else { return }
 		let controller = BrowserController(
 			initialURL: storedURL,
 			session: session,
@@ -365,7 +471,7 @@ final class BrowserTab: Identifiable {
 						message: "Closing this peek will stop its media playback.",
 						confirm: "Close Peek"
 					)
-					let window = self?.activeController?.webViewIfLoaded?.window
+					let window = unsafe self?.activeController?.webViewIfLoaded?.window
 					if await BrowserWebsiteUI.present(alert, in: window) == .alertFirstButtonReturn {
 						self?.dismissPeek(id, confirmed: true)
 					}
@@ -439,8 +545,10 @@ final class BrowserTab: Identifiable {
 		isApplyingSynchronizedMetadata = true
 		pageTitle = updated.pageTitle
 		customTitle = updated.customTitle
+		monitorMatch = updated.monitorMatch
 		recordsNavigationHistory = updated.recordsNavigationHistory
 		storedPageZoom = updated.pageZoom
+		storedEasel = updated.easel
 		if !updated.recordsNavigationHistory {
 			storedHistory = currentURL.map { [$0] } ?? []
 			storedHistoryIndex = 0
@@ -468,12 +576,12 @@ final class BrowserTab: Identifiable {
 	}
 
 	func rename(to title: String) {
-		guard internalPage == nil else { return }
+		guard internalPage == nil || internalPage == .easel else { return }
 		customTitle = title
 	}
 
 	func revertTitle() {
-		guard internalPage == nil else { return }
+		guard internalPage == nil || internalPage == .easel else { return }
 		customTitle = nil
 	}
 
@@ -505,7 +613,7 @@ final class BrowserTab: Identifiable {
 			markNavigationModified()
 		}
 		peek.controller.scrollPositionDidChange = { [weak self] in
-			self?.markModifiedForScroll()
+			self?.markModifiedForScroll(isPeek: true)
 		}
 	}
 
@@ -535,28 +643,46 @@ final class BrowserTab: Identifiable {
 	}
 
 	private func markModified() {
-		modifiedAt = .now
+		modifiedAt = BrowserUserDataMutation.nextDate(after: modifiedAt, deletion: .distantPast)
 		openTabCache = nil
 		didChange?()
 	}
 
+	private func hasSameNavigationState(as baseline: OpenTab) -> Bool {
+		// openTab also captures/encrypts WebKit interactionState. The change
+		// detector only compares URL/history/zoom/scroll, so constructing a full
+		// OpenTab here did expensive restoration-state work for no reason.
+		let url = (controller?.url ?? storedURL).map(BrowserAddress.withoutCredentials)
+		let history = recordsNavigationHistory
+			? (controller?.history ?? storedHistory).map(BrowserAddress.withoutCredentials)
+			: url.map { [$0] } ?? []
+		let historyIndex = recordsNavigationHistory
+			? (controller?.historyIndex ?? storedHistoryIndex)
+			: 0
+		return url == baseline.url
+			&& history == baseline.history
+			&& historyIndex == baseline.historyIndex
+			&& (controller?.pageZoom ?? storedPageZoom) == baseline.pageZoom
+			&& (controller?.scrollPosition ?? storedScrollPosition) == baseline.scrollPosition
+	}
+
 	private func markNavigationModified() {
 		openTabCache = nil
-		if let restorationBaseline, openTab.hasSameNavigationState(as: restorationBaseline) {
+		if let restorationBaseline, hasSameNavigationState(as: restorationBaseline) {
 			return
 		}
 		restorationBaseline = nil
 		markModified()
 	}
 
-	private func markModifiedForScroll() {
+	private func markModifiedForScroll(isPeek: Bool = false) {
 		openTabCache = nil
-		if let restorationBaseline, openTab.hasSameNavigationState(as: restorationBaseline) {
+		if let restorationBaseline, hasSameNavigationState(as: restorationBaseline) {
 			return
 		}
 		restorationBaseline = nil
-		modifiedAt = .now
+		modifiedAt = BrowserUserDataMutation.nextDate(after: modifiedAt, deletion: .distantPast)
 		openTabCache = nil
-		didScrollChange?()
+		didScrollChange?(isPeek)
 	}
 }

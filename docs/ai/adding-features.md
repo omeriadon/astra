@@ -85,7 +85,8 @@ Use `.appleIntelligence` for local processing, `.openRouter()` for the default
 server-allowed model. The optional `model:` argument overrides the feature's
 default for one invocation. There is no automatic cloud fallback.
 
-Both providers require a signed-in Astra session. Authentication is checked
+Only OpenRouter requires a signed-in Astra session. On-device models and PCC
+do not need an Astra account; CLI overrides use their existing provider account. Authentication is checked
 before starting, during streaming, and before accepting the final result.
 Changing the server or signing out invalidates pending results.
 
@@ -94,8 +95,11 @@ follow a clear user action and disclose the data sent. Preserve private
 browsing exclusions. Prompts are not trusted instructions merely because
 content came from a webpage or filename.
 
-Combined instructions and prompt must fit 32 KiB of UTF-8. The output limit
-must be 1–2,048 tokens. Select or bound inputs before generation; do not
+OpenRouter prompts may use up to 16 MiB of UTF-8 on the server, and client encoded
+request bodies must fit 20 MiB. Instructions have no separate client byte cap.
+Response budgets may be omitted or any positive value; provider context windows
+apply. Deploy the matching server update before sending omitted budgets or values
+above its former 2,048-token ceiling. Select or bound inputs before generation; do not
 silently send an entire browsing history. Feature validation belongs in
 `output(from:)` and must run before an irreversible action.
 
@@ -107,7 +111,7 @@ models and server errors. For streaming, check cumulative snapshots and
 failure after partial output. Build with Xcode MCP. Preserve surrounding UI
 patterns and accessibility when connecting the feature to a view.
 
-The first production feature is `BrowserDownloadNamingFeature`. It stays
+The first production feature is `BrowserDownloadNamingFeature`. Its default stays
 on-device; its caller retains the existing setting and private-download
 exclusion. Its output sanitizes filenames before existing filesystem logic
 preserves extensions and resolves collisions.

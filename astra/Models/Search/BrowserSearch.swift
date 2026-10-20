@@ -32,8 +32,19 @@ extension Browser {
 		if query.isEmpty {
 			guard includeActions else { return [] }
 			let shortcuts = ["page-history", "page-bookmarks", "page-settings", "page-themeEditor", "reopen-tab", "new-space"]
-			let results = shortcuts.compactMap { id in
+			var results = shortcuts.compactMap { id in
 				actions.first(where: { $0.id == id }).map { actionResult($0, score: 0) }
+			}
+			if let clipboardURL = newTabClipboardURL {
+				results.insert(
+					BrowserSearchResult(
+						id: "clipboard-url", kind: .typed, title: clipboardURL.absoluteString,
+						detail: "Open Clipboard URL", symbol: "link", score: 2,
+						destination: clipboardURL.absoluteString,
+						perform: { self.openSearchDestination(clipboardURL) }
+					),
+					at: 0
+				)
 			}
 			return results.map { result in
 				BrowserSearchResult(
@@ -52,6 +63,7 @@ extension Browser {
 			}
 		}
 
+		let normalizedQuery = BrowserSearchMatching.normalized(query)
 		var results: [BrowserSearchResult] = []
 		if let destination = BrowserAddress.destination(
 			for: query,
@@ -90,19 +102,18 @@ extension Browser {
 		if includeActions {
 			for action in actions {
 				let score = ([action.title] + action.terms).map {
-					BrowserSearchMatching.score(query, in: $0)
+					BrowserSearchMatching.score(normalizedQuery: normalizedQuery, in: $0)
 				}.max() ?? 0
 				if score > 0 {
 					results.append(actionResult(action, score: score + 0.02))
 				}
 			}
 		}
-		results += historySearchResults(for: query)
-		results += bookmarkSearchResults(for: query)
-		results += openTabSearchResults(for: query)
+		results += historySearchResults(query: query, fromNewTab: includeActions)
+		results += librarySearchResults(query: query, scope: includeActions ? .newTab : .address)
 		let suggestions = remoteSuggestions ?? (includeActions ? newTabGoogleSuggestions : [])
 		for (index, suggestion) in suggestions.enumerated()
-			where BrowserSearchMatching.normalized(suggestion) != BrowserSearchMatching.normalized(query)
+			where BrowserSearchMatching.normalized(suggestion) != normalizedQuery
 		{
 			guard let url = configuration.searchURL(for: suggestion, isPrivate: isPrivate) else { continue }
 			results.append(BrowserSearchResult(
@@ -114,7 +125,21 @@ extension Browser {
 			))
 		}
 		let ranked = BrowserSearchResult.ranked(results)
-		return ranked.map { result in
+		let ordered: [BrowserSearchResult]
+		if includeActions, let searchURL = configuration.searchURL(for: query, isPrivate: isPrivate) {
+			let exactSearch = BrowserSearchResult(
+				id: "exact-search", kind: .typed, title: query,
+				detail: "Search \(configuration.engine(isPrivate: isPrivate).title)", symbol: "magnifyingglass",
+				score: 0, destination: searchURL.absoluteString,
+				perform: { self.openSearchDestination(searchURL) }
+			)
+			ordered = BrowserSearchResult.enforceExactSearchSecond(
+				ranked, candidate: exactSearch, destination: searchURL.absoluteString
+			)
+		} else {
+			ordered = ranked
+		}
+		return ordered.map { result in
 			BrowserSearchResult(
 				id: result.id, kind: result.kind, title: result.title,
 				detail: result.detail, symbol: result.symbol,
@@ -152,8 +177,8 @@ extension Browser {
 	}
 
 	private func ownsAddressSuggestionRequest(_ request: BrowserSearchSuggestionsRequest) -> Bool {
-		let controller = selectedTab?.activeController
-		let scope = "address:\(windowID):\(selectedTabID):\(controller?.id.uuidString ?? "none"):\(controller?.navigationIdentifier ?? -1)"
+		let controller = chromeTab?.activeController
+		let scope = "address:\(windowID):\(chromeTab?.id ?? selectedTabID):\(controller?.id.uuidString ?? "none"):\(controller?.navigationIdentifier ?? -1)"
 		guard let provider = browserSearchConfiguration.suggestionsProvider(isPrivate: isPrivate) else { return false }
 		return request.query == addressSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
 			&& request.generation == addressSearchGeneration
@@ -168,7 +193,7 @@ extension Browser {
 
 	func discoverSearchEngineFromAddressBar(template: String) {
 		guard !isPrivate, !isShowingNewTab,
-		      let tab = selectedTab, tab.internalPage == nil,
+		      let tab = chromeTab, tab.internalPage == nil,
 		      let controller = tab.activeController,
 		      controller.hasCurrentPageDocument, !controller.isLoading,
 		      let webView = controller.webViewIfLoaded,
@@ -212,15 +237,15 @@ extension Browser {
 
 	private func isCurrentSearchEngineDiscovery(_ pending: BrowserSearchEngineDiscovery) -> Bool {
 		guard !isPrivate, !isShowingNewTab,
-		      selectedTab?.internalPage == nil,
-		      let controller = selectedTab?.activeController,
+		      chromeTab?.internalPage == nil,
+		      let controller = chromeTab?.activeController,
 		      controller.hasCurrentPageDocument, !controller.isLoading,
 		      controller.navigationFailure == nil,
 		      let webView = controller.webViewIfLoaded,
 		      let pageURL = controller.url,
 		      webView.url == pageURL,
 		      pending.matches(
-		      	tabID: selectedTabID,
+				tabID: chromeTab?.id ?? selectedTabID,
 		      	controllerID: controller.id,
 		      	webViewID: ObjectIdentifier(webView),
 		      	documentID: controller.navigationIdentifier,
@@ -241,69 +266,51 @@ extension Browser {
 		)
 	}
 
-	private func historySearchResults(for query: String) -> [BrowserSearchResult] {
-		let newestVisit = historyVisits.map(\.visitedAt).max() ?? .distantPast
-		let summaries = Dictionary(grouping: historyVisits, by: \.url).compactMap { url, visits -> (URL, BrowserVisit, Int)? in
-			guard let latest = visits.max(by: {
-				$0.visitedAt == $1.visitedAt
-					? $0.id.uuidString > $1.id.uuidString
-					: $0.visitedAt < $1.visitedAt
-			}) else { return nil }
-			return (url, latest, visits.count)
-		}
-		return summaries.compactMap { url, visit, count in
-			let match = max(
-				BrowserSearchMatching.score(query, in: visit.title),
-				BrowserSearchMatching.score(query, in: url.host ?? ""),
-				BrowserSearchMatching.score(query, in: url.absoluteString)
-			)
-			guard match > 0 else { return nil }
-			let age = max(0, newestVisit.timeIntervalSince(visit.visitedAt) / 86400)
-			let recency = 1 / (1 + age / 365)
-			return BrowserSearchResult(
-				id: "history-\(visit.id)", kind: .history, title: visit.title,
-				detail: "History · \(url.absoluteString)", symbol: "clock.arrow.circlepath",
-				score: match + min(Double(count), 20) * 0.002 + recency * 0.02,
-				destination: url.absoluteString,
-				perform: { self.openSearchDestination(url) }
-			)
-		}
-	}
-
-	private func bookmarkSearchResults(for query: String) -> [BrowserSearchResult] {
-		bookmarks.compactMap { bookmark in
-			let match = max(
-				BrowserSearchMatching.score(query, in: bookmark.name),
-				BrowserSearchMatching.score(query, in: bookmark.url.absoluteString)
-			)
-			guard match > 0 else { return nil }
-			return BrowserSearchResult(
-				id: "bookmark-\(bookmark.id)", kind: .bookmark,
-				title: bookmark.name, detail: "Bookmark · \(bookmark.url.absoluteString)",
-				symbol: "bookmark", score: match + (bookmark.isFavorite ? 0.03 : 0),
-				destination: bookmark.url.absoluteString,
-				perform: { self.openSearchDestination(bookmark.url) }
-			)
-		}
-	}
-
-	private func openTabSearchResults(for query: String) -> [BrowserSearchResult] {
-		tabs.compactMap { tab in
-			guard let url = tab.activeController?.url ?? tab.currentURL else { return nil }
-			let title = tab.title.isEmpty ? url.host ?? url.absoluteString : tab.title
-			let match = max(
-				BrowserSearchMatching.score(query, in: title),
-				BrowserSearchMatching.score(query, in: url.absoluteString)
-			)
-			guard match > 0 else { return nil }
-			return BrowserSearchResult(
-				id: "tab-\(tab.id)", kind: .openTab,
-				title: title, detail: "Open Tab · \(url.absoluteString)",
-				symbol: "rectangle.on.rectangle", score: match + 0.04,
-				destination: url.absoluteString,
+	private func historySearchResults(query: String, fromNewTab: Bool) -> [BrowserSearchResult] {
+		let request = BrowserHistorySearchModel.Request(query: query, revision: historyChangeRevision)
+		return historySearch.matches(for: request, scope: fromNewTab ? .newTab : .address).map { match in
+			BrowserSearchResult(
+				id: "history-\(match.id)", kind: .history, title: match.title,
+				detail: "History · \(match.url.absoluteString)", symbol: "clock.arrow.circlepath",
+				score: match.score, destination: match.url.absoluteString,
 				perform: {
-					guard self.tabs.contains(where: { $0.id == tab.id && ($0.activeController?.url ?? $0.currentURL) == url }) else { return }
-					self.selectTab(tab.id)
+					guard self.historyChangeRevision == request.revision else { return }
+					self.openSearchDestination(match.url)
+				}
+			)
+		}
+	}
+
+	func librarySearchRequest(query: String) -> BrowserLibrarySearchModel.Request {
+		.init(query: query, revision: libraryChangeRevision, tabRevision: tabSearchRevision)
+	}
+
+	func updateLibrarySearch(_ request: BrowserLibrarySearchModel.Request, scope: BrowserHistorySearchModel.Scope) async {
+		await librarySearch.update(request, scope: scope) {
+			bookmarks.map { .init(id: $0.id, url: $0.url, title: $0.name, isTab: false, bonus: $0.isFavorite ? 0.03 : 0) }
+				+ tabs.compactMap { tab in
+					guard let url = tab.activeController?.url ?? tab.currentURL else { return nil }
+					return .init(id: tab.id, url: url, title: tab.title.isEmpty ? url.host ?? url.absoluteString : tab.title, isTab: true, bonus: 0.04)
+				}
+		}
+	}
+
+	private func librarySearchResults(query: String, scope: BrowserHistorySearchModel.Scope) -> [BrowserSearchResult] {
+		librarySearch.matches(for: librarySearchRequest(query: query), scope: scope).map { match in
+			let entry = match.entry
+			return BrowserSearchResult(
+				id: "\(entry.isTab ? "tab" : "bookmark")-\(entry.id)", kind: entry.isTab ? .openTab : .bookmark,
+				title: entry.title, detail: "\(entry.isTab ? "Open Tab" : "Bookmark") · \(entry.url.absoluteString)",
+				symbol: entry.isTab ? "rectangle.on.rectangle" : "bookmark", score: match.score,
+				destination: entry.url.absoluteString,
+				perform: {
+					if entry.isTab {
+						guard self.tabs.contains(where: { $0.id == entry.id && ($0.activeController?.url ?? $0.currentURL) == entry.url }) else { return }
+						self.selectTab(entry.id)
+					} else {
+						guard self.bookmarks.contains(where: { $0.id == entry.id && $0.url == entry.url }) else { return }
+						self.openSearchDestination(entry.url)
+					}
 				}
 			)
 		}
@@ -333,7 +340,17 @@ extension Browser {
 	}
 
 	private func openSearchDestination(_ url: URL, fromAddressBar: Bool = false) {
-		let controller = showsQuickSearch ? addTab().controller : selectedTab?.activeController
+		let controller: BrowserController? = if showsQuickSearch {
+			// In an otherwise empty window the anchor *is* the destination.
+			// Reuse it instead of leaving an empty sidebar tab behind.
+			if let selectedTab, selectedTab.openTab.isDiscardableNewTab {
+				selectedTab.controller
+			} else {
+				addTab().controller
+			}
+		} else {
+			chromeTab?.activeController
+		}
 		if fromAddressBar {
 			controller?.loadFromAddressBar(url)
 		} else {

@@ -107,6 +107,24 @@ struct BrowserSyncModelCheck {
 		assert(!outbound.workspace!.spaces[0].tabIDs.contains(localFileTab.id))
 		assert(!outbound.workspace!.spaces[0].pinnedFolders.contains(where: { $0.id == localWorkspace.spaces[0].pinnedFolders[0].id }))
 
+		// New Tabs are durable local session state but must never enter
+		// the portable sync payload or disappear when remote changes apply.
+		let blankTab = OpenTab()
+		var withBlankTab = localOnlyDocument
+		withBlankTab.tabs.append(blankTab)
+		var withBlankWorkspace = withBlankTab.workspace!
+		withBlankWorkspace.spaces[0].tabIDs.append(blankTab.id)
+		withBlankWorkspace.spaces[0].selectedTabID = blankTab.id
+		withBlankTab.workspace = withBlankWorkspace
+		withBlankTab.browser.selectedTabID = blankTab.id
+		assert(blankTab.isDiscardableNewTab)
+		let portableWithBlank = withBlankTab.portableProjection()
+		assert(!portableWithBlank.tabs.contains(where: { $0.id == blankTab.id }))
+		assert(!portableWithBlank.workspace!.spaces[0].tabIDs.contains(blankTab.id))
+		let preservedWithBlank = oldDoc.preservingLocalOnlyData(from: withBlankTab)
+		assert(preservedWithBlank.tabs.contains(where: { $0.id == blankTab.id }))
+		assert(preservedWithBlank.workspace!.spaces[0].tabIDs.contains(blankTab.id))
+
 		let applied = oldDoc.preservingLocalOnlyData(from: localOnlyDocument)
 		let preservedFileTab = applied.tabs.first { $0.id == localFileTab.id }
 		assert(preservedFileTab?.url?.isFileURL == true)
@@ -233,7 +251,10 @@ struct BrowserSyncModelCheck {
 		assert(decoded.version == 2 && decoded.history.isEmpty)
 		var futureFormat = decoded
 		futureFormat.version = 99
-		assert(!futureFormat.hasSupportedVersion)
+		let futureData = try JSONEncoder().encode(futureFormat)
+		let futureDecoded = try JSONDecoder().decode(BrowserSyncDocument.self, from: futureData)
+		assert(futureDecoded.version == 99)
+		assert(futureDecoded.merging(decoded) == futureDecoded)
 
 		let legacyVisit = try JSONDecoder().decode(BrowserVisit.self, from: Data("{\"id\":\"\(visitID.uuidString)\",\"url\":\"https://history.example\",\"title\":\"Page\",\"visitedAt\":0}".utf8))
 		// Packet09 keeps missing update timestamps older than clear/tombstone clocks.
@@ -256,7 +277,7 @@ struct BrowserSyncModelCheck {
 		try persistence.savePersistedState(persisted)
 		let stateURL = directory.appendingPathComponent("browser-state.json")
 		var envelope = try JSONSerialization.jsonObject(with: Data(contentsOf: stateURL)) as! [String: Any]
-		assert(envelope["version"] as? Int == 3)
+		assert(envelope["version"] as? Int == 4)
 		envelope["version"] = 1
 		try JSONSerialization.data(withJSONObject: envelope).write(to: stateURL)
 		let migratedState = try persistence.loadPersistedState()

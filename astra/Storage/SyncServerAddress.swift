@@ -16,9 +16,8 @@ nonisolated enum SyncServerAddress {
 		      !host.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) }),
 		      components.user == nil, components.password == nil,
 		      components.query == nil, components.fragment == nil,
-		      components.port.map({ (1 ... 65535).contains($0) }) ?? true
-		else { return nil }
-		guard scheme == "https" || (allowLocalHTTP && scheme == "http" && ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host.lowercased())) else {
+		      components.port.map({ (1 ... 65535).contains($0) }) ?? true, scheme == "https" || (allowLocalHTTP && scheme == "http" && ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host.lowercased()))
+		else {
 			return nil
 		}
 		components.scheme = scheme

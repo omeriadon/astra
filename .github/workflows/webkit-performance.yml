@@ -1,0 +1,109 @@
+name: Astra - WebKit Performance
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-webkit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  webkit:
+    name: Localhost WebKit process sampling (informational)
+    runs-on: xcode-27
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate benchmark tools and localhost fixture
+        shell: bash
+        run: |
+          python3 scripts/webkit_benchmark.py self-test
+          python3 scripts/ci/webkit_ci_scenario.py --self-test
+      - name: Select Xcode 27
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Install Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+      - name: Build unsigned Release app
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project astra.xcodeproj -scheme astra -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/AstraWebKitDerivedData" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            2>&1 | tee "$RUNNER_TEMP/astra-webkit-release-build.log"
+      - name: Run localhost process snapshots (informational)
+        id: measure
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          python3 scripts/ci/webkit_ci_scenario.py \
+            "$RUNNER_TEMP/AstraWebKitDerivedData/Build/Products/Release/astra.app" \
+            --output-dir results 2>&1 | tee results/webkit-output.log
+      - name: Collect internal workflow-duration diagnostics
+        if: steps.measure.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          log show --last 10m --style compact --info --debug \
+            --predicate 'subsystem == "com.omeriadon.astra"' \
+            > "$RUNNER_TEMP/astra-timing-events.txt"
+          python3 scripts/astra_workflow_report.py \
+            "$RUNNER_TEMP/astra-timing-events.txt" --json \
+            > results/workflow-timings.json
+      - name: Summarise process measurements
+        if: always()
+        shell: bash
+        env:
+          MEASURE_OUTCOME: ${{ steps.measure.outcome }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          output = Path("results")
+          output.mkdir(exist_ok=True)
+          report_file = output / "webkit-summary.md"
+          if report_file.exists():
+              report = report_file.read_text()
+          else:
+              report = (
+                  "## Astra WebKit workload — informational\n\n"
+                  "No runtime measurements were recorded. The hosted macOS runner "
+                  "might not provide a usable GUI session or the app failed to start.\n"
+              )
+          timing_file = output / "workflow-timings.json"
+          if timing_file.exists():
+              import json
+              timings = json.loads(timing_file.read_text())
+              report += (
+                  "\nInstrumented internal workflow durations: "
+                  + str(timings.get("measurements", 0))
+                  + " samples (see workflow-timings.json).\n"
+              )
+          else:
+              report += "\nInternal duration logs were unavailable.\n"
+          if os.environ["MEASURE_OUTCOME"] != "success":
+              report += "\n**Measurement unavailable or incomplete.** Inspect webkit-output.log.\n"
+          print(report)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fp:
+              fp.write(report)
+          PY
+      - name: Upload process snapshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: astra-webkit-performance-${{ github.run_id }}
+          path: |
+            results/
+            ${{ runner.temp }}/astra-webkit-release-build.log
+          if-no-files-found: warn
+          retention-days: 30

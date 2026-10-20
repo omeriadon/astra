@@ -1,0 +1,3 @@
+run,pid,process_birth_to_main_log_ms,process_birth_to_first_window_ms,process_birth_to_first_visible_update_ms,process_birth_to_first_usable_window_ms,process_birth_to_all_windows_ms,process_birth_to_restoration_complete_ms,process_birth_to_deferred_services_ms,first_window_visible,first_window_key,first_window_hydrated,first_window_first_responder
+1,86729,88.9,730.9,1001.3,1017.3,1018.6,1018.9,1001.3,true,true,true,true
+2,88958,57.2,612.5,679.8,,684.3,865.7,679.8,true,false,true,true

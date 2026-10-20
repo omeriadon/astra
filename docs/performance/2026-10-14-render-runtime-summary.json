@@ -1,0 +1,969 @@
+{
+  "artifact_directory": "/Users/omeriadon/Desktop/astra-render-investigation-20261014",
+  "comparison": {
+    "post_first_2_seconds_weighted_mean_percent": {
+      "archive-media-playing-hidden": 32.31599157236665,
+      "archive-release-hidden": 0.1976216442476252,
+      "probe-static-hidden": 0.07003376931429725,
+      "probe-waveform-hidden": 18.91808833824874
+    },
+    "probe_waveform_vs_static_cpu_ratio": 238.06249999999523,
+    "process_weighted_mean_percent": {
+      "archive-media-playing-hidden": 32.123547823569204,
+      "archive-release-hidden": 0.21425997675100866,
+      "probe-static-hidden": 0.09828718659744091,
+      "probe-waveform-hidden": 18.744073230399195
+    },
+    "ranked_patterns": {
+      "archive_media_playing_hidden": {
+        "FlexCoreInteractionModifier.FlexValue": 1.0819999999999916,
+        "FluidSpringAnimation": 0.3130000000000002
+      },
+      "probe_waveform_hidden": {
+        "FlexCoreInteractionModifier.FlexValue": 0.19700000000000015,
+        "FluidSpringAnimation": 0.04300000000000003
+      }
+    }
+  },
+  "excluded_captures": [
+    "probe-window-waveform",
+    "last-2-occluded",
+    "any SIGKILL/CUA-failed launch lacking verified host-window evidence"
+  ],
+  "files": {
+    "analyzer_exports": [
+      "archive-release-hidden-ProcessCPUUsage.xml",
+      "archive-release-hidden-ThreadCPUUsage.xml",
+      "archive-release-hidden-time-profile.xml",
+      "probe-static-hidden-ProcessCPUUsage.xml",
+      "probe-static-hidden-ThreadCPUUsage.xml",
+      "probe-static-hidden-time-profile.xml",
+      "probe-waveform-hidden-ProcessCPUUsage.xml",
+      "probe-waveform-hidden-ThreadCPUUsage.xml",
+      "probe-waveform-hidden-time-profile.xml",
+      "archive-media-playing-hidden-ProcessCPUUsage.xml",
+      "archive-media-playing-hidden-ThreadCPUUsage.xml",
+      "archive-media-playing-hidden-time-profile.xml"
+    ],
+    "toc_exports": [
+      "probe-static-hidden-toc.xml",
+      "probe-waveform-hidden-toc.xml",
+      "archive-media-playing-hidden-toc.xml"
+    ]
+  },
+  "generated_at": "2026-10-14",
+  "instrumentation_metadata": {
+    "observer_caveat": "Process CPU and time-profile sample weights are separate measurements; inclusive stack weights are deduplicated per sample and are not additive CPU.",
+    "processes": "TOC metadata verified the probe captures contain only GlassIdleProbe and archive captures contain the archived astra binary. No DYLD_INSERT_LIBRARIES, SWIFTUI_VIEW_DEBUG, or MTL_DEBUG_LAYER entries were present in the exported TOCs."
+  },
+  "lifecycle_alignment": {
+    "gated_mode": "Not measured; no verified host-window capture is included.",
+    "interpretation": "The later unhide occurred after waveform capture end 22:22:03.272 and does not invalidate the completed waveform interval.",
+    "later_unhide": "2026-10-14T22:22:48.539+08:00",
+    "probe_static_toc": {
+      "end": "2026-10-14T22:20:47.614+08:00",
+      "start": "2026-10-14T22:20:26.745+08:00"
+    },
+    "probe_waveform_toc": {
+      "end": "2026-10-14T22:22:03.272+08:00",
+      "start": "2026-10-14T22:21:42.521+08:00"
+    },
+    "transcript_observation": "Hide at 22:20:15.166 with appHidden=true was observed in the operator transcript; it was not retained in the later short info log."
+  },
+  "limitations": [
+    "Probe static and waveform are controlled composition captures; they isolate the enabled waveform symbol effect within this probe, not a general causal claim about Astra media playback.",
+    "No literal symbolEffect frame name appeared in sampled stacks; FlexValue and FluidSpringAnimation are observed framework stack patterns.",
+    "Thread CPU percentages across all thread rows are not process percentages; main-thread share is reported from CPU seconds."
+  ],
+  "scenarios": {
+    "archive-media-playing-hidden": {
+      "process_cpu": {
+        "covered_window": {
+          "duration_seconds": 30.304871845,
+          "end_seconds": 30.754871845,
+          "start_seconds": 0.45
+        },
+        "cpu_seconds": 9.734999999999934,
+        "post_first_2_seconds": {
+          "cpu_seconds": 9.146999999999906,
+          "weighted_mean_percent": 32.31599157236665
+        },
+        "rows": 3031,
+        "weighted_mean_percent": 32.123547823569204
+      },
+      "thread_cpu": {
+        "cpu_seconds": 9.734999999999934,
+        "cpu_seconds_by_thread": {
+          "JavaScriptCore libpas scavenger (0x19fb0a) (astra, pid: 80552)": 0.008,
+          "Log work queue (0x19a98f) (astra, pid: 80552)": 0.004,
+          "Main Thread (0x19a885) (astra, pid: 80552)": 8.283999999999804,
+          "astra (0x19f6fd) (astra, pid: 80552)": 0.22100000000000017,
+          "astra (0x19f81a) (astra, pid: 80552)": 0.1580000000000001,
+          "astra (0x19fb07) (astra, pid: 80552)": 0.028000000000000018,
+          "astra (0x19fb08) (astra, pid: 80552)": 0.05000000000000004,
+          "astra (0x1a07e3) (astra, pid: 80552)": 0.2710000000000002,
+          "astra (0x1a07f0) (astra, pid: 80552)": 0.05600000000000004,
+          "astra (0x1a07ff) (astra, pid: 80552)": 0.056000000000000036,
+          "astra (0x1a0800) (astra, pid: 80552)": 0.003,
+          "astra (0x1a080d) (astra, pid: 80552)": 0.2810000000000002,
+          "astra (0x1a080e) (astra, pid: 80552)": 0.3150000000000002
+        },
+        "main_thread_cpu_seconds": 8.283999999999804,
+        "main_thread_share_of_thread_cpu": 0.8509501797637247,
+        "post_first_2_seconds": {
+          "cpu_seconds": 9.146999999999935,
+          "weighted_mean_percent": 2.656591858973106
+        },
+        "rows": 35381
+      },
+      "time_profile": {
+        "covered_window": {
+          "duration_seconds": 30.300999834000002,
+          "end_seconds": 30.753558375,
+          "start_seconds": 0.452558541
+        },
+        "pattern_inclusive_weight_seconds": {
+          "FlexCoreInteractionModifier.FlexValue": 1.0819999999999916,
+          "FluidSpringAnimation": 0.3130000000000002
+        },
+        "rows": 9735,
+        "top_binaries": [
+          {
+            "count": 8.487000000000736,
+            "key": "QuartzCore"
+          },
+          {
+            "count": 8.301000000000839,
+            "key": "CoreFoundation"
+          },
+          {
+            "count": 8.286000000000847,
+            "key": "astra"
+          },
+          {
+            "count": 8.283000000000849,
+            "key": "dyld"
+          },
+          {
+            "count": 8.28200000000085,
+            "key": "AppKit"
+          },
+          {
+            "count": 8.28200000000085,
+            "key": "HIToolbox"
+          },
+          {
+            "count": 8.129000000000934,
+            "key": "UpdateCycle"
+          },
+          {
+            "count": 5.951000000000322,
+            "key": "SwiftUICore"
+          },
+          {
+            "count": 5.942000000000319,
+            "key": "SwiftUI"
+          },
+          {
+            "count": 3.0009999999997805,
+            "key": "AttributeGraph"
+          },
+          {
+            "count": 2.2099999999998676,
+            "key": "libdispatch.dylib"
+          },
+          {
+            "count": 2.1019999999998795,
+            "key": "RenderBox"
+          }
+        ],
+        "top_inclusive_symbols": [
+          {
+            "count": 8.28200000000085,
+            "key": "-[NSApplication(NSEventRouting) nextEventMatchingMask:untilDate:inMode:dequeue:]"
+          },
+          {
+            "count": 8.28200000000085,
+            "key": "_BlockUntilNextEventMatchingListInMode"
+          },
+          {
+            "count": 8.28200000000085,
+            "key": "0x1047c2d10"
+          },
+          {
+            "count": 8.28200000000085,
+            "key": "_DPSNextEvent"
+          },
+          {
+            "count": 8.28200000000085,
+            "key": "ReceiveNextEventCommon"
+          },
+          {
+            "count": 8.28200000000085,
+            "key": "-[NSApplication run]"
+          },
+          {
+            "count": 8.28200000000085,
+            "key": "-[NSApplication(NSEventRouting) _nextEventMatchingEventMask:untilDate:inMode:dequeue:]"
+          },
+          {
+            "count": 8.28200000000085,
+            "key": "_DPSBlockUntilNextEventMatchingListInMode"
+          },
+          {
+            "count": 8.28200000000085,
+            "key": "start"
+          },
+          {
+            "count": 8.28200000000085,
+            "key": "0x1047c2cf8"
+          },
+          {
+            "count": 8.27900000000085,
+            "key": "RunCurrentEventLoopInMode"
+          },
+          {
+            "count": 8.274000000000854,
+            "key": "_CFRunLoopRunSpecificWithOptions"
+          },
+          {
+            "count": 8.250000000000867,
+            "key": "__CFRunLoopRun"
+          },
+          {
+            "count": 8.128000000000934,
+            "key": "UC::DriverCore::continueProcessing()"
+          },
+          {
+            "count": 8.093000000000954,
+            "key": "CA::Transaction::flush()"
+          },
+          {
+            "count": 8.090000000000956,
+            "key": "CA::Transaction::commit()"
+          },
+          {
+            "count": 6.608000000000541,
+            "key": "CA::Transaction::run_commit_handlers(CATransactionPhase)"
+          },
+          {
+            "count": 6.190000000000402,
+            "key": "NSDisplayCycleFlush"
+          },
+          {
+            "count": 6.167000000000394,
+            "key": "NSDisplayCycleObserverInvoke"
+          },
+          {
+            "count": 6.06400000000036,
+            "key": "NSPerformVisuallyAtomicChange"
+          }
+        ],
+        "top_leaf_symbols": [
+          {
+            "count": 0.7140000000000005,
+            "key": "AG::Subgraph::update(unsigned int)"
+          },
+          {
+            "count": 0.5480000000000004,
+            "key": "iokit_user_client_trap"
+          },
+          {
+            "count": 0.48100000000000037,
+            "key": "start_wqthread"
+          },
+          {
+            "count": 0.4240000000000003,
+            "key": "mach_msg2_trap"
+          },
+          {
+            "count": 0.2660000000000002,
+            "key": "objc_msgSend"
+          },
+          {
+            "count": 0.22600000000000017,
+            "key": "swift_retain"
+          },
+          {
+            "count": 0.20600000000000016,
+            "key": "AG::Graph::UpdateStack::update()"
+          },
+          {
+            "count": 0.19900000000000015,
+            "key": "AG::Graph::propagate_dirty(AG::AttributeID)"
+          },
+          {
+            "count": 0.16200000000000012,
+            "key": "swift_release"
+          },
+          {
+            "count": 0.1570000000000001,
+            "key": "<deduplicated_symbol>"
+          }
+        ],
+        "weighted_sample_seconds": 9.735000000000044
+      },
+      "toc": {
+        "end": "2026-10-14T22:24:36.039+08:00",
+        "start": "2026-10-14T22:24:05.284+08:00"
+      }
+    },
+    "archive-release-hidden": {
+      "process_cpu": {
+        "covered_window": {
+          "duration_seconds": 30.336977062,
+          "end_seconds": 31.276977062,
+          "start_seconds": 0.94
+        },
+        "cpu_seconds": 0.06500000000000003,
+        "post_first_2_seconds": {
+          "cpu_seconds": 0.056,
+          "weighted_mean_percent": 0.1976216442476252
+        },
+        "rows": 3034,
+        "weighted_mean_percent": 0.21425997675100866
+      },
+      "thread_cpu": {
+        "cpu_seconds": 0.06500000000000003,
+        "cpu_seconds_by_thread": {
+          "JavaScriptCore libpas scavenger (0x19a92a) (astra, pid: 80552)": 0.008,
+          "Main Thread (0x19a885) (astra, pid: 80552)": 0.022000000000000006,
+          "astra (0x19a900) (astra, pid: 80552)": 0.010000000000000002,
+          "astra (0x19b3e1) (astra, pid: 80552)": 0.004,
+          "astra (0x19b3e2) (astra, pid: 80552)": 0.002,
+          "astra (0x19b40b) (astra, pid: 80552)": 0.019000000000000006
+        },
+        "main_thread_cpu_seconds": 0.022000000000000006,
+        "main_thread_share_of_thread_cpu": 0.33846153846153837,
+        "rows": 15454
+      },
+      "time_profile": {
+        "covered_window": {
+          "duration_seconds": 29.124001917,
+          "end_seconds": 30.068826708,
+          "start_seconds": 0.944824791
+        },
+        "rows": 65,
+        "top_binaries": [
+          {
+            "count": 0.04300000000000003,
+            "key": "libsystem_pthread.dylib"
+          },
+          {
+            "count": 0.04100000000000003,
+            "key": "libdispatch.dylib"
+          },
+          {
+            "count": 0.02900000000000002,
+            "key": "CoreFoundation"
+          },
+          {
+            "count": 0.026000000000000016,
+            "key": "astra"
+          },
+          {
+            "count": 0.016000000000000007,
+            "key": "Foundation"
+          },
+          {
+            "count": 0.014000000000000005,
+            "key": "AppKit"
+          },
+          {
+            "count": 0.012000000000000004,
+            "key": "libswift_Concurrency.dylib"
+          },
+          {
+            "count": 0.012000000000000004,
+            "key": "CFNetwork"
+          },
+          {
+            "count": 0.011000000000000003,
+            "key": "libsystem_kernel.dylib"
+          },
+          {
+            "count": 0.011000000000000003,
+            "key": "HIToolbox"
+          },
+          {
+            "count": 0.011000000000000003,
+            "key": "dyld"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "JavaScriptCore"
+          }
+        ],
+        "top_inclusive_symbols": [
+          {
+            "count": 0.035000000000000024,
+            "key": "_dispatch_client_callout"
+          },
+          {
+            "count": 0.03300000000000002,
+            "key": "start_wqthread"
+          },
+          {
+            "count": 0.02900000000000002,
+            "key": "_pthread_wqthread"
+          },
+          {
+            "count": 0.022000000000000013,
+            "key": "_dispatch_workloop_worker_thread"
+          },
+          {
+            "count": 0.022000000000000013,
+            "key": "_dispatch_root_queue_drain_deferred_wlh"
+          },
+          {
+            "count": 0.01900000000000001,
+            "key": "_dispatch_lane_invoke"
+          },
+          {
+            "count": 0.01900000000000001,
+            "key": "_dispatch_lane_serial_drain"
+          },
+          {
+            "count": 0.012000000000000004,
+            "key": "0x1047c2ce0"
+          },
+          {
+            "count": 0.012000000000000004,
+            "key": "completeTaskWithClosure(swift::AsyncContext*, swift::SwiftError*)"
+          },
+          {
+            "count": 0.011000000000000003,
+            "key": "0x1047c2cf8"
+          },
+          {
+            "count": 0.011000000000000003,
+            "key": "ReceiveNextEventCommon"
+          },
+          {
+            "count": 0.011000000000000003,
+            "key": "_DPSBlockUntilNextEventMatchingListInMode"
+          },
+          {
+            "count": 0.011000000000000003,
+            "key": "RunCurrentEventLoopInMode"
+          },
+          {
+            "count": 0.011000000000000003,
+            "key": "_BlockUntilNextEventMatchingListInMode"
+          },
+          {
+            "count": 0.011000000000000003,
+            "key": "0x1047c2d10"
+          },
+          {
+            "count": 0.011000000000000003,
+            "key": "start"
+          },
+          {
+            "count": 0.011000000000000003,
+            "key": "_DPSNextEvent"
+          },
+          {
+            "count": 0.011000000000000003,
+            "key": "_CFRunLoopRunSpecificWithOptions"
+          },
+          {
+            "count": 0.011000000000000003,
+            "key": "-[NSApplication(NSEventRouting) nextEventMatchingMask:untilDate:inMode:dequeue:]"
+          },
+          {
+            "count": 0.011000000000000003,
+            "key": "-[NSApplication run]"
+          }
+        ],
+        "top_leaf_symbols": [
+          {
+            "count": 0.004,
+            "key": "start_wqthread"
+          },
+          {
+            "count": 0.003,
+            "key": "pas_thread_local_cache_for_all"
+          },
+          {
+            "count": 0.003,
+            "key": "objc_msgSend"
+          },
+          {
+            "count": 0.003,
+            "key": "__CFStringHash"
+          },
+          {
+            "count": 0.003,
+            "key": "getMethodNoSuper_nolock(objc_class*, objc_selector*)"
+          },
+          {
+            "count": 0.002,
+            "key": "__kdebug_trace64"
+          },
+          {
+            "count": 0.002,
+            "key": "getMethodFromRelativeList(relative_list_list_t<method_list_t>*, objc_selector*)"
+          },
+          {
+            "count": 0.002,
+            "key": "-[__NSDictionaryM objectForKey:]"
+          },
+          {
+            "count": 0.002,
+            "key": "necp_client_action"
+          },
+          {
+            "count": 0.002,
+            "key": "mach_msg2_trap"
+          }
+        ],
+        "weighted_sample_seconds": 0.06500000000000004
+      },
+      "toc": {
+        "end": "2026-10-14T22:08:14.258+08:00",
+        "start": "2026-10-14T22:07:43.921+08:00"
+      }
+    },
+    "probe-static-hidden": {
+      "process_cpu": {
+        "covered_window": {
+          "duration_seconds": 16.278825912,
+          "end_seconds": 20.868825912,
+          "start_seconds": 4.59
+        },
+        "cpu_seconds": 0.016,
+        "post_first_2_seconds": {
+          "cpu_seconds": 0.01,
+          "weighted_mean_percent": 0.07003376931429725
+        },
+        "rows": 1628,
+        "weighted_mean_percent": 0.09828718659744091
+      },
+      "thread_cpu": {
+        "cpu_seconds": 0.016,
+        "cpu_seconds_by_thread": {
+          "GlassIdleProbe (0x19d367) (GlassIdleProbe, pid: 81411)": 0.004,
+          "GlassIdleProbe (0x19da7c) (GlassIdleProbe, pid: 81411)": 0.003,
+          "Main Thread (0x19cf52) (GlassIdleProbe, pid: 81411)": 0.009000000000000001
+        },
+        "main_thread_cpu_seconds": 0.009000000000000001,
+        "main_thread_share_of_thread_cpu": 0.5625,
+        "post_first_2_seconds": {
+          "cpu_seconds": 0.01,
+          "weighted_mean_percent": 0.041551572729901544
+        },
+        "rows": 2607
+      },
+      "time_profile": {
+        "covered_window": {
+          "duration_seconds": 11.385000167000001,
+          "end_seconds": 15.984846083,
+          "start_seconds": 4.599845916
+        },
+        "pattern_inclusive_weight_seconds": {},
+        "rows": 16,
+        "top_binaries": [
+          {
+            "count": 0.015000000000000006,
+            "key": "AppKit"
+          },
+          {
+            "count": 0.012000000000000004,
+            "key": "CoreFoundation"
+          },
+          {
+            "count": 0.011000000000000003,
+            "key": "libdispatch.dylib"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "SwiftUI"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "HIToolbox"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "GlassIdleProbe"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "dyld"
+          },
+          {
+            "count": 0.007,
+            "key": "libsystem_pthread.dylib"
+          },
+          {
+            "count": 0.006,
+            "key": "libobjc.A.dylib"
+          },
+          {
+            "count": 0.005,
+            "key": "libsystem_platform.dylib"
+          },
+          {
+            "count": 0.004,
+            "key": "libobjcMsgSend1.dylib"
+          },
+          {
+            "count": 0.004,
+            "key": "Foundation"
+          }
+        ],
+        "top_inclusive_symbols": [
+          {
+            "count": 0.010000000000000002,
+            "key": "_dispatch_client_callout"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "main"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "runApp<A>(_:)"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "specialized runApp(_:)"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "NSApplicationMain"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "-[NSApplication(NSEventRouting) nextEventMatchingMask:untilDate:inMode:dequeue:]"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "-[NSApplication run]"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "RunCurrentEventLoopInMode"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "_CFRunLoopRunSpecificWithOptions"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "__CFRunLoopRun"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "start"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "_DPSNextEvent"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "ReceiveNextEventCommon"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "_DPSBlockUntilNextEventMatchingListInMode"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "static App.main()"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "-[NSApplication(NSEventRouting) _nextEventMatchingEventMask:untilDate:inMode:dequeue:]"
+          },
+          {
+            "count": 0.009000000000000001,
+            "key": "_BlockUntilNextEventMatchingListInMode"
+          },
+          {
+            "count": 0.007,
+            "key": "start_wqthread"
+          },
+          {
+            "count": 0.007,
+            "key": "_pthread_wqthread"
+          },
+          {
+            "count": 0.006,
+            "key": "_dispatch_lane_invoke"
+          }
+        ],
+        "top_leaf_symbols": [
+          {
+            "count": 0.005,
+            "key": "_platform_memmove"
+          },
+          {
+            "count": 0.003,
+            "key": "getMethodNoSuper_nolock(objc_class*, objc_selector*)"
+          },
+          {
+            "count": 0.002,
+            "key": "cache_getImp"
+          },
+          {
+            "count": 0.001,
+            "key": "__cons_NSDP_NSDPTypeBool_block_invoke.269"
+          },
+          {
+            "count": 0.001,
+            "key": "xpc_dictionary_create"
+          },
+          {
+            "count": 0.001,
+            "key": "mach_msg2_trap"
+          },
+          {
+            "count": 0.001,
+            "key": "_hash_bucket"
+          },
+          {
+            "count": 0.001,
+            "key": "_dispatch_last_resort_autorelease_pool_pop"
+          },
+          {
+            "count": 0.001,
+            "key": "weak_entry_for_referent"
+          }
+        ],
+        "weighted_sample_seconds": 0.016000000000000007
+      },
+      "toc": {
+        "end": "2026-10-14T22:20:47.614+08:00",
+        "start": "2026-10-14T22:20:26.745+08:00"
+      }
+    },
+    "probe-waveform-hidden": {
+      "process_cpu": {
+        "covered_window": {
+          "duration_seconds": 20.321090049,
+          "end_seconds": 20.751090049,
+          "start_seconds": 0.43
+        },
+        "cpu_seconds": 3.808999999999924,
+        "post_first_2_seconds": {
+          "cpu_seconds": 3.4659999999999314,
+          "weighted_mean_percent": 18.91808833824874
+        },
+        "rows": 2033,
+        "weighted_mean_percent": 18.744073230399195
+      },
+      "thread_cpu": {
+        "cpu_seconds": 3.8089999999998954,
+        "cpu_seconds_by_thread": {
+          "GlassIdleProbe (0x19e4d0) (GlassIdleProbe, pid: 81411)": 0.03800000000000002,
+          "GlassIdleProbe (0x19e4d1) (GlassIdleProbe, pid: 81411)": 0.09100000000000007,
+          "GlassIdleProbe (0x19e4d3) (GlassIdleProbe, pid: 81411)": 0.1320000000000001,
+          "GlassIdleProbe (0x19e4d4) (GlassIdleProbe, pid: 81411)": 0.10300000000000008,
+          "Main Thread (0x19cf52) (GlassIdleProbe, pid: 81411)": 3.4449999999999257
+        },
+        "main_thread_cpu_seconds": 3.4449999999999257,
+        "main_thread_share_of_thread_cpu": 0.9044368600682647,
+        "post_first_2_seconds": {
+          "cpu_seconds": 3.4659999999999083,
+          "weighted_mean_percent": 3.7836176676493247
+        },
+        "rows": 9949
+      },
+      "time_profile": {
+        "covered_window": {
+          "duration_seconds": 20.310999125,
+          "end_seconds": 20.7443755,
+          "start_seconds": 0.433376375
+        },
+        "pattern_inclusive_weight_seconds": {
+          "FlexCoreInteractionModifier.FlexValue": 0.19700000000000015,
+          "FluidSpringAnimation": 0.04300000000000003
+        },
+        "rows": 3809,
+        "top_binaries": [
+          {
+            "count": 3.4449999999997316,
+            "key": "SwiftUI"
+          },
+          {
+            "count": 3.4449999999997316,
+            "key": "HIToolbox"
+          },
+          {
+            "count": 3.4449999999997316,
+            "key": "dyld"
+          },
+          {
+            "count": 3.4449999999997316,
+            "key": "GlassIdleProbe"
+          },
+          {
+            "count": 3.4449999999997316,
+            "key": "AppKit"
+          },
+          {
+            "count": 3.4369999999997325,
+            "key": "CoreFoundation"
+          },
+          {
+            "count": 3.304999999999747,
+            "key": "QuartzCore"
+          },
+          {
+            "count": 3.2109999999997574,
+            "key": "UpdateCycle"
+          },
+          {
+            "count": 1.5709999999999378,
+            "key": "SwiftUICore"
+          },
+          {
+            "count": 1.0859999999999912,
+            "key": "RenderBox"
+          },
+          {
+            "count": 0.9810000000000008,
+            "key": "libdispatch.dylib"
+          },
+          {
+            "count": 0.8070000000000006,
+            "key": "AttributeGraph"
+          }
+        ],
+        "top_inclusive_symbols": [
+          {
+            "count": 3.4449999999997316,
+            "key": "start"
+          },
+          {
+            "count": 3.4449999999997316,
+            "key": "_BlockUntilNextEventMatchingListInMode"
+          },
+          {
+            "count": 3.4449999999997316,
+            "key": "-[NSApplication run]"
+          },
+          {
+            "count": 3.4449999999997316,
+            "key": "_DPSNextEvent"
+          },
+          {
+            "count": 3.4449999999997316,
+            "key": "specialized runApp(_:)"
+          },
+          {
+            "count": 3.4449999999997316,
+            "key": "_DPSBlockUntilNextEventMatchingListInMode"
+          },
+          {
+            "count": 3.4449999999997316,
+            "key": "runApp<A>(_:)"
+          },
+          {
+            "count": 3.4449999999997316,
+            "key": "-[NSApplication(NSEventRouting) nextEventMatchingMask:untilDate:inMode:dequeue:]"
+          },
+          {
+            "count": 3.4449999999997316,
+            "key": "-[NSApplication(NSEventRouting) _nextEventMatchingEventMask:untilDate:inMode:dequeue:]"
+          },
+          {
+            "count": 3.4449999999997316,
+            "key": "ReceiveNextEventCommon"
+          },
+          {
+            "count": 3.4449999999997316,
+            "key": "static App.main()"
+          },
+          {
+            "count": 3.4449999999997316,
+            "key": "main"
+          },
+          {
+            "count": 3.4449999999997316,
+            "key": "NSApplicationMain"
+          },
+          {
+            "count": 3.441999999999732,
+            "key": "RunCurrentEventLoopInMode"
+          },
+          {
+            "count": 3.432999999999733,
+            "key": "_CFRunLoopRunSpecificWithOptions"
+          },
+          {
+            "count": 3.413999999999735,
+            "key": "__CFRunLoopRun"
+          },
+          {
+            "count": 3.206999999999758,
+            "key": "UC::DriverCore::continueProcessing()"
+          },
+          {
+            "count": 3.1569999999997633,
+            "key": "CA::Transaction::flush()"
+          },
+          {
+            "count": 3.1569999999997633,
+            "key": "CA::Transaction::commit()"
+          },
+          {
+            "count": 2.676999999999816,
+            "key": "CA::Transaction::run_commit_handlers(CATransactionPhase)"
+          }
+        ],
+        "top_leaf_symbols": [
+          {
+            "count": 0.2990000000000002,
+            "key": "iokit_user_client_trap"
+          },
+          {
+            "count": 0.2890000000000002,
+            "key": "objc_msgSend"
+          },
+          {
+            "count": 0.2710000000000002,
+            "key": "mach_msg2_trap"
+          },
+          {
+            "count": 0.1350000000000001,
+            "key": "start_wqthread"
+          },
+          {
+            "count": 0.11500000000000009,
+            "key": "AG::Subgraph::update(unsigned int)"
+          },
+          {
+            "count": 0.07700000000000005,
+            "key": "__kdebug_trace64"
+          },
+          {
+            "count": 0.06700000000000005,
+            "key": "_xzm_xzone_malloc_tiny"
+          },
+          {
+            "count": 0.06500000000000004,
+            "key": "<deduplicated_symbol>"
+          },
+          {
+            "count": 0.05400000000000004,
+            "key": "AG::Graph::UpdateStack::update()"
+          },
+          {
+            "count": 0.04300000000000003,
+            "key": "AGGraphGetValue"
+          }
+        ],
+        "weighted_sample_seconds": 3.8089999999996915
+      },
+      "toc": {
+        "end": "2026-10-14T22:22:03.272+08:00",
+        "start": "2026-10-14T22:21:42.521+08:00"
+      }
+    }
+  },
+  "schema_version": 2
+}

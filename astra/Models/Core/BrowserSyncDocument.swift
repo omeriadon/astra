@@ -1,7 +1,7 @@
 import Foundation
 
-struct BrowserSyncDocument: Codable, Equatable, Sendable {
-	var version: Int = 3
+nonisolated struct BrowserSyncDocument: Codable, Equatable, Sendable {
+	var version: Int = 4
 	var tabs: [OpenTab]
 	var workspace: BrowserWorkspace?
 	var bookmarks: [Bookmark]
@@ -9,6 +9,8 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 	var history: [BrowserVisit]
 	var browser: BrowserSnapshot
 	var settings: [String: SyncedSetting]
+	var boosts: [BrowserBoost]
+	var deletedBoostsAt: [UUID: Date]
 
 	init(
 		tabs: [OpenTab],
@@ -17,7 +19,9 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		readingList: [ReadingListItem] = [],
 		history: [BrowserVisit] = [],
 		browser: BrowserSnapshot,
-		settings: [String: SyncedSetting]
+		settings: [String: SyncedSetting],
+		boosts: [BrowserBoost] = [],
+		deletedBoostsAt: [UUID: Date] = [:]
 	) {
 		self.tabs = tabs
 		self.workspace = workspace
@@ -26,10 +30,12 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		self.history = history
 		self.browser = browser
 		self.settings = settings
+		self.boosts = boosts
+		self.deletedBoostsAt = deletedBoostsAt
 	}
 
 	private enum CodingKeys: String, CodingKey {
-		case version, tabs, workspace, bookmarks, readingList, history, browser, settings
+		case version, tabs, workspace, bookmarks, readingList, history, browser, settings, boosts, deletedBoostsAt
 	}
 
 	nonisolated init(from decoder: Decoder) throws {
@@ -42,6 +48,8 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		history = try values.decodeIfPresent([BrowserVisit].self, forKey: .history) ?? []
 		browser = try values.decode(BrowserSnapshot.self, forKey: .browser)
 		settings = try values.decode([String: SyncedSetting].self, forKey: .settings)
+		boosts = try values.decodeIfPresent([BrowserBoost].self, forKey: .boosts) ?? []
+		deletedBoostsAt = try values.decodeIfPresent([UUID: Date].self, forKey: .deletedBoostsAt) ?? [:]
 	}
 
 	nonisolated func encode(to encoder: Encoder) throws {
@@ -54,13 +62,23 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		try values.encode(history, forKey: .history)
 		try values.encode(browser, forKey: .browser)
 		try values.encode(settings, forKey: .settings)
+		try values.encode(boosts, forKey: .boosts)
+		try values.encode(deletedBoostsAt, forKey: .deletedBoostsAt)
 	}
 
 	nonisolated func portableProjection() -> Self {
 		var projected = self
-		let localOnlyTabIDs = Set(tabs.filter { !isPortableSyncTab($0) }.map(\.id))
-		let localOnlyBookmarkIDs = Set(bookmarks.filter { !isPortableSyncURL($0.url) }.map(\.id))
-		let portableTabs = tabs.filter { isPortableSyncTab($0) }
+		var localOnlyTabIDs = Set<UUID>()
+		var portableTabs: [OpenTab] = []
+		portableTabs.reserveCapacity(tabs.count)
+		for tab in tabs {
+			if isPortableSyncTab(tab) {
+				portableTabs.append(tab)
+			} else {
+				localOnlyTabIDs.insert(tab.id)
+			}
+		}
+		var localOnlyBookmarkIDs = Set<UUID>()
 		let portableTabIDs = Set(portableTabs.map(\.id))
 		projected.tabs = portableTabs.map { tab in
 			var tab = tab
@@ -72,7 +90,11 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 			tab.peeks = []
 			return tab
 		}
-		projected.bookmarks = bookmarks.filter { isPortableSyncURL($0.url) }.map { bookmark in
+		projected.bookmarks = bookmarks.compactMap { bookmark in
+			guard isPortableSyncURL(bookmark.url) else {
+				localOnlyBookmarkIDs.insert(bookmark.id)
+				return nil
+			}
 			var bookmark = bookmark
 			bookmark.url = credentialFreeSyncURL(bookmark.url)
 			return bookmark
@@ -116,6 +138,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 			}
 			projected.workspace = workspace
 		}
+		projected.settings.removeValue(forKey: "newTabStyle")
 		if !portableTabIDs.contains(projected.browser.selectedTabID) {
 			projected.browser.selectedTabID = projected.tabs.first?.id ?? BrowserSpace.firstID
 		}
@@ -124,10 +147,17 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 
 	nonisolated func preservingLocalOnlyData(from local: Self) -> Self {
 		var projected = self
-		let localTabs = local.tabs.filter { !isPortableSyncTab($0) && $0.internalPage == nil }
+		let assignedIDs = Set((workspace?.favouriteTabIDs ?? []) + (workspace?.spaces.flatMap(\.tabIDs) ?? []))
+		let unassignedEaselIDs = Set(tabs.filter { $0.internalPage == "easel" && !assignedIDs.contains($0.id) }.map(\.id))
+		let localTabs = local.tabs.filter {
+			// Blank tabs stay on this device and are never part of the
+			// portable sync projection, but must survive a remote merge.
+			$0.isDiscardableNewTab
+				|| ((!isPortableSyncTab($0) && $0.internalPage == nil) || unassignedEaselIDs.contains($0.id))
+		}
 		let localTabIDs = Set(localTabs.map(\.id))
 		var tabsByID = Dictionary(projected.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-		for tab in localTabs {
+		for tab in localTabs where !unassignedEaselIDs.contains(tab.id) {
 			tabsByID[tab.id] = tab
 		}
 		projected.tabs = tabsByID.values.sorted { $0.id.uuidString < $1.id.uuidString }
@@ -156,8 +186,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 				folder.tabIDs = members
 				return folder
 			}
-			guard !localMembers.isEmpty || !localPinned.isEmpty || !localFolders.isEmpty else { continue }
-			guard !isDeleted(
+			guard !localMembers.isEmpty || !localPinned.isEmpty || !localFolders.isEmpty, !isDeleted(
 				localSpace.id,
 				modifiedAt: localSpace.modifiedAt,
 				dates: target.deletedSpacesAt,
@@ -215,18 +244,26 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 	}
 
 	nonisolated var hasSupportedVersion: Bool {
-		(1 ... 3).contains(version)
+		(1 ... 4).contains(version)
 	}
 
 	nonisolated var hasValidStructure: Bool {
 		Set(tabs.map(\.id)).count == tabs.count
 			&& Set(bookmarks.map(\.id)).count == bookmarks.count
 			&& Set(history.map(\.id)).count == history.count
+			&& Set(boosts.map(\.id)).count == boosts.count
+			&& boosts.count <= 512
+			&& boosts.allSatisfy(\.isValidForSync)
+			&& boosts.reduce(0) { $0 + $1.codeByteCount } <= BrowserBoost.maximumCollectionCodeBytes
+			&& deletedBoostsAt.values.allSatisfy { $0.timeIntervalSince1970.isFinite && $0.timeIntervalSince1970 >= 0 && $0.timeIntervalSince1970 < 4_102_444_800 }
 			&& tabs.allSatisfy { tab in
-				tab.internalPage == nil
+				(tab.internalPage == nil || tab.internalPage == "easel")
+					&& (tab.url.map(isSafeSyncURL) ?? true)
 					&& tab.pageZoom.isFinite && (0.25 ... 5).contains(tab.pageZoom)
 					&& tab.restorationState == nil && tab.fileAccessBookmark == nil
-					&& (tab.history + [tab.url].compactMap(\.self) + tab.peeks.compactMap(\.url)).allSatisfy(isSafeSyncURL)
+					&& (tab.easel.map(isValidSyncEasel) ?? true)
+					&& tab.history.allSatisfy(isSafeSyncURL)
+					&& tab.peeks.allSatisfy { $0.url.map(isSafeSyncURL) ?? true }
 					&& tab.modifiedAt.isSaneSyncTimestamp
 			}
 			&& bookmarks.allSatisfy { bookmark in
@@ -280,6 +317,13 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		result.browser.deletedSpacesAt.merge(other.browser.deletedSpacesAt) { max($0, $1) }
 		result.browser.deletedVisitsAt.merge(other.browser.deletedVisitsAt) { max($0, $1) }
 		result.browser.historyClearedAt = max(browser.historyClearedAt, other.browser.historyClearedAt)
+		result.deletedBoostsAt.merge(other.deletedBoostsAt) { max($0, $1) }
+		let boostsByID = Dictionary((boosts + other.boosts).map { ($0.id, $0) }, uniquingKeysWith: { first, next in
+			preferred(first, first.modifiedAt, next, next.modifiedAt)
+		})
+		result.boosts = boostsByID.values.filter {
+			$0.modifiedAt > (result.deletedBoostsAt[$0.id] ?? .distantPast)
+		}.sorted { $0.id.uuidString < $1.id.uuidString }
 		if other.browser.selectedTabModifiedAt > browser.selectedTabModifiedAt
 			|| (other.browser.selectedTabModifiedAt == browser.selectedTabModifiedAt
 				&& other.browser.selectedTabID.uuidString < browser.selectedTabID.uuidString)
@@ -289,10 +333,18 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 		}
 
 		let tabsByID = Dictionary((tabs + other.tabs).map { ($0.id, $0) }, uniquingKeysWith: { first, next in
-			preferred(first, first.modifiedAt, next, next.modifiedAt)
+			// Cached shells and older clients cannot turn an easel into a web tab.
+			if first.internalPage == "easel", next.internalPage != "easel" {
+				return first
+			}
+			if next.internalPage == "easel", first.internalPage != "easel" {
+				return next
+			}
+			return preferred(first, first.modifiedAt, next, next.modifiedAt)
 		})
 		result.tabs = tabsByID.values.filter { tab in
-			!isDeleted(tab.id, modifiedAt: tab.modifiedAt, dates: result.browser.closedTabsAt, legacyIDs: result.browser.closedTabIDs)
+			!tab.isDiscardableNewTab
+				&& !isDeleted(tab.id, modifiedAt: tab.modifiedAt, dates: result.browser.closedTabsAt, legacyIDs: result.browser.closedTabIDs)
 		}.sorted { $0.id.uuidString < $1.id.uuidString }
 
 		let bookmarksByID = Dictionary((bookmarks + other.bookmarks).map { ($0.id, $0) }, uniquingKeysWith: { first, next in
@@ -390,6 +442,7 @@ struct BrowserSyncDocument: Codable, Equatable, Sendable {
 			}
 			result.settings[key] = preferred(incoming, incoming.modifiedAt, current, current.modifiedAt)
 		}
+		result.settings.removeValue(forKey: "newTabStyle")
 		return result
 	}
 }
@@ -400,19 +453,34 @@ private nonisolated func appendUnique(_ existing: [UUID], _ incoming: [UUID]) ->
 }
 
 private nonisolated func isPortableSyncTab(_ tab: OpenTab) -> Bool {
-	tab.internalPage == nil
+	!tab.isDiscardableNewTab
+		&& (tab.internalPage == nil || tab.internalPage == "easel")
 		&& tab.fileAccessBookmark == nil
 		&& (tab.url.map(isPortableSyncURL) ?? true)
+}
+
+private nonisolated func isValidSyncEasel(_ easel: BrowserEaselDocument) -> Bool {
+	easel.isValid
+}
+
+private enum SyncURLValidation {
+	/// Initialized once; immutable across validation calls and concurrency domains.
+	nonisolated static let disallowedHostScalars = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
 }
 
 private nonisolated func isPortableSyncURL(_ url: URL) -> Bool {
 	guard url.absoluteString.utf8.count <= 16384,
 	      let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-	      ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+	      isSyncScheme(components.scheme),
 	      let host = components.host, !host.isEmpty,
 	      components.port.map({ (1 ... 65535).contains($0) }) ?? true,
-	      !host.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) }) else { return false }
+	      !host.unicodeScalars.contains(where: { SyncURLValidation.disallowedHostScalars.contains($0) }) else { return false }
 	return true
+}
+
+private nonisolated func isSyncScheme(_ scheme: String?) -> Bool {
+	guard let scheme else { return false }
+	return scheme.caseInsensitiveCompare("https") == .orderedSame || scheme.caseInsensitiveCompare("http") == .orderedSame
 }
 
 private nonisolated func credentialFreeSyncURL(_ url: URL) -> URL {
@@ -434,11 +502,11 @@ private extension Date {
 private nonisolated func isSafeSyncURL(_ url: URL) -> Bool {
 	guard url.absoluteString.utf8.count <= 16384,
 	      let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-	      ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+	      isSyncScheme(components.scheme),
 	      let host = components.host, !host.isEmpty,
 	      components.user == nil, components.password == nil,
 	      components.port.map({ (1 ... 65535).contains($0) }) ?? true,
-	      !host.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) })
+	      !host.unicodeScalars.contains(where: { SyncURLValidation.disallowedHostScalars.contains($0) })
 	else { return false }
 	return true
 }
@@ -490,7 +558,7 @@ private nonisolated func spaceKey(_ space: BrowserSpace) -> String {
 		.map { "\($0.key)|\($0.value.timeIntervalSince1970)" }
 	return [space.id.uuidString, space.name, space.symbol, String(space.modifiedAt.timeIntervalSince1970),
 	        space.tabIDs.map(\.uuidString).joined(separator: ","), space.pinnedTabIDs.map(\.uuidString).joined(separator: ","),
-	        space.selectedTabID?.uuidString ?? "", folders.joined(separator: ";"), deleted.joined(separator: ";"),
+	        space.selectedTabID?.uuidString ?? "", space.todayTabGroups.map { "\($0.name):\($0.tabIDs.map(\.uuidString).joined(separator: ","))" }.joined(separator: ";"), folders.joined(separator: ";"), deleted.joined(separator: ";"),
 	        themeKey(space.theme)].joined(separator: "|")
 }
 
@@ -525,6 +593,11 @@ private nonisolated func preferred<Value: Codable & Equatable>(
 	if firstDate != secondDate {
 		return firstDate > secondDate ? first : second
 	}
+	// Most ties are the same entity replicated across browser windows.
+	// Preserve the deterministic byte-level tie breaker for actual conflicts.
+	if first == second {
+		return first
+	}
 	return stableData(first).lexicographicallyPrecedes(stableData(second)) ? second : first
 }
 
@@ -544,7 +617,7 @@ nonisolated struct SyncedSetting: Codable, Equatable, Sendable {
 
 	nonisolated var hasValidPropertyListValue: Bool {
 		guard let value else { return true }
-		guard let propertyList = try? PropertyListSerialization.propertyList(from: value, format: nil),
+		guard let propertyList = try? unsafe PropertyListSerialization.propertyList(from: value, format: nil),
 		      let dictionary = propertyList as? [String: Any],
 		      dictionary["value"] != nil
 		else { return false }

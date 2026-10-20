@@ -1,0 +1,26 @@
+{
+  "reference-v2-debug": {
+    "app_bytes": 82900089,
+    "runtime_binary_bytes": 16876000,
+    "runtime_framework_bytes": 16881212,
+    "host_binary_bytes": 40669760
+  },
+  "candidate-v2-debug": {
+    "app_bytes": 77870537,
+    "runtime_binary_bytes": 11846448,
+    "runtime_framework_bytes": 11851660,
+    "host_binary_bytes": 40669760
+  },
+  "reference-v2-release": {
+    "app_bytes": 57042103,
+    "runtime_binary_bytes": 7681728,
+    "runtime_framework_bytes": 7686940,
+    "host_binary_bytes": 24397104
+  },
+  "candidate-v2-release": {
+    "app_bytes": 54736199,
+    "runtime_binary_bytes": 5375824,
+    "runtime_framework_bytes": 5381036,
+    "host_binary_bytes": 24397104
+  }
+}

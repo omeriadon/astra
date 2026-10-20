@@ -24,6 +24,9 @@ public struct HazeEffect<Provider: MaskProvider>: PlatformViewRepresentable {
     /// Lower values can improve performance at the cost of quality.
     private let scale: CGFloat
 
+    /// Respect the enclosing compositing group instead of sampling through it.
+    private let isolatesBackdrop: Bool
+
     /// Initializes a new `HazeEffect`.
     /// - Parameters:
     ///   - maskProvider: The type of mask to use for the variable blur effect.
@@ -32,11 +35,13 @@ public struct HazeEffect<Provider: MaskProvider>: PlatformViewRepresentable {
     public init(
         maskProvider: Provider,
         maxBlurRadius: CGFloat,
-        scale: CGFloat = 0.5
+        scale: CGFloat = 0.5,
+        isolatesBackdrop: Bool = false
     ) {
         self.maskProvider = maskProvider
         self.maxBlurRadius = maxBlurRadius
         self.scale = scale
+        self.isolatesBackdrop = isolatesBackdrop
     }
 
     #if os(iOS)
@@ -66,6 +71,11 @@ public struct HazeEffect<Provider: MaskProvider>: PlatformViewRepresentable {
     }
 
     private func updateView(_ view: HazeEffectView<Provider>, _: Context) {
+        #if os(macOS)
+        view.layer?.setValue(!isolatesBackdrop, forKey: "ignoresOffscreenGroups")
+        #else
+        view.layer.setValue(!isolatesBackdrop, forKey: "ignoresOffscreenGroups")
+        #endif
         view.setMaskProvider(to: maskProvider)
         view.variableBlur.setMaxBlurRadius(to: maxBlurRadius)
         view.setScale(to: scale)

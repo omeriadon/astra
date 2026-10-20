@@ -15,6 +15,7 @@ struct BrowserExtensionsSettingsView: View {
 	var body: some View {
 		NavigationStack {
 			List {
+				BrowserUBlockOriginSettingsSection(browser: browser)
 				Section("Chrome Extensions") {
 					Button("Browse Chrome Web Store", systemImage: "globe") {
 						if let url = URL(string: "https://chromewebstore.google.com/") {
@@ -34,7 +35,7 @@ struct BrowserExtensionsSettingsView: View {
 					}
 					.accessibilityIdentifier("browse-safari-app-store")
 					Button("Find Installed Safari Extensions", systemImage: "arrow.clockwise") {
-						Task { await extensions.refreshSafariExtensions() }
+						Task { await extensions.refreshSafariExtensions(force: true) }
 					}
 					.accessibilityIdentifier("refresh-safari-extensions")
 					extensionRows(source: .safari)
@@ -56,7 +57,7 @@ struct BrowserExtensionsSettingsView: View {
 			.listStyle(.sidebar)
 		}
 		.task {
-			await extensions.prepare()
+			await extensions.prepareAllContexts()
 			await extensions.refreshSafariExtensions()
 		}
 		.onChange(of: scenePhase) { _, phase in
@@ -64,7 +65,7 @@ struct BrowserExtensionsSettingsView: View {
 				Task { await extensions.refreshSafariExtensions() }
 			}
 		}
-		.fileImporter(isPresented: $showsImporter, allowedContentTypes: [.zip]) { result in
+		.browserFileImporter(isPresented: $showsImporter, allowedContentTypes: [.zip]) { result in
 			guard case let .success(url) = result else { return }
 			let source = importSource
 			Task {
@@ -103,7 +104,7 @@ struct BrowserExtensionsSettingsView: View {
 
 	@ViewBuilder
 	private func extensionRows(source: BrowserExtensionManager.Source) -> some View {
-		ForEach(extensions.availableNames.filter { extensions.source(for: $0) == source }, id: \.self) { name in
+		ForEach(extensions.availableNames.filter { extensions.source(for: $0) == source && $0 != extensions.uBlockOriginName }, id: \.self) { name in
 			NavigationLink {
 				BrowserExtensionDetailView(name: name, browser: browser)
 			} label: {

@@ -35,9 +35,7 @@
 				.flatMap(BrowserWebsiteAppPolicy.validatedName) ?? "Website"
 			let controller = BrowserWebsiteAppWindowController(url: url, name: name)
 			controller.browser.navigationIntercept = { [weak self] destination in
-				guard let self, let launchURL else { return false }
-				guard !BrowserWebsiteAppPolicy.shouldStayInWebsiteApp(destination, launchURL: launchURL) else { return false }
-				guard BrowserWebsiteAppPolicy.validatedURL(destination) != nil else { return false }
+				guard let self, let launchURL, !BrowserWebsiteAppPolicy.shouldStayInWebsiteApp(destination, launchURL: launchURL), BrowserWebsiteAppPolicy.validatedURL(destination) != nil else { return false }
 				NSWorkspace.shared.open(destination)
 				return true
 			}
@@ -69,7 +67,7 @@
 			let viewRoot = NSMenuItem(title: "View", action: nil, keyEquivalent: "")
 			viewRoot.submenu = viewMenu
 			main.addItem(viewRoot)
-			let toggle = NSMenuItem(title: "Toggle Top Bar", action: #selector(toggleTopBar(_:)), keyEquivalent: "s")
+			let toggle = NSMenuItem(title: "Toggle Top Bar", action: #selector(toggleTopBar(_:)), keyEquivalent: "d")
 			toggle.keyEquivalentModifierMask = [.command]
 			toggle.target = self
 			viewMenu.addItem(toggle)

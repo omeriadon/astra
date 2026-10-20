@@ -227,10 +227,7 @@ struct BrowserSearchConfiguration: Codable, Equatable, Hashable {
 
 	private func shortcutDestination(for input: String) -> URL? {
 		let pieces = input.split(maxSplits: 1, whereSeparator: \.isWhitespace)
-		guard pieces.count == 2 else {
-			return nil
-		}
-		guard keywordShortcuts.utf8.count <= 4096 else {
+		guard pieces.count == 2, keywordShortcuts.utf8.count <= 4096 else {
 			return nil
 		}
 		let keyword = String(pieces[0]).lowercased()

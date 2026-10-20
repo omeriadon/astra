@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct BrowserTheme: Codable, Equatable, Sendable {
+nonisolated struct BrowserTheme: Codable, Equatable, Sendable {
 	var usesGradient = false
 	var firstColor = BrowserColor(red: 0.25, green: 0.29, blue: 0.34)
 	var secondColor = BrowserColor(red: 0.25, green: 0.29, blue: 0.34)
@@ -19,7 +19,7 @@ struct BrowserTheme: Codable, Equatable, Sendable {
 	var shaderNoiseMonochrome = true
 	var appearanceMode = ThemeAppearanceMode.auto
 
-	nonisolated init() {}
+	init() {}
 
 	private enum CodingKeys: String, CodingKey {
 		case usesGradient
@@ -77,6 +77,11 @@ struct BrowserTheme: Codable, Equatable, Sendable {
 			case .auto: systemScheme == .dark
 		}
 		return (isDark ? Color.black : .white).opacity(0.3)
+	}
+
+	/// Contrast with the space-derived fallback toolbar tint when no page is loaded.
+	var tabColorIsLight: Bool {
+		(nearestMeshColor(to: .zero)?.luminance ?? firstColor.luminance) > 0.179
 	}
 
 	var progressColor: Color {
@@ -194,7 +199,7 @@ enum ThemeAppearanceMode: String, Codable, CaseIterable, Identifiable, Sendable 
 	}
 }
 
-struct ThemeColorPoint: Codable, Equatable, Identifiable, Sendable {
+nonisolated struct ThemeColorPoint: Codable, Equatable, Identifiable, Sendable {
 	static let migratedFirstID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1))
 	static let migratedSecondID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2))
 
@@ -216,7 +221,7 @@ struct ThemeColorPoint: Codable, Equatable, Identifiable, Sendable {
 	}
 }
 
-struct BrowserColor: Codable, Equatable, Sendable {
+nonisolated struct BrowserColor: Codable, Equatable, Sendable {
 	var red: Double
 	var green: Double
 	var blue: Double
@@ -256,7 +261,7 @@ struct BrowserColor: Codable, Equatable, Sendable {
 	}
 }
 
-enum ThemeGradientDirection: String, Codable, CaseIterable, Identifiable, Sendable {
+nonisolated enum ThemeGradientDirection: String, Codable, CaseIterable, Identifiable, Sendable {
 	case top
 	case bottom
 	case leading

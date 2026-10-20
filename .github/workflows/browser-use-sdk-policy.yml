@@ -1,0 +1,22 @@
+name: Astra - MCP SDK dependency policy
+
+on:
+  schedule:
+    - cron: '17 13 * * 1'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify compatible SDK updates and pinned resolution
+        run: python3 checks/browser-use-sdk-policy.py
+      - name: Detect upstream stable SDK updates
+        if: github.event_name == 'schedule'
+        run: python3 checks/browser-use-sdk-policy.py --check-latest

@@ -1,0 +1,58 @@
+name: Astra - Metal Dither
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+    paths:
+      - 'astra/UI/Background/Dither/**'
+      - 'astra/UI/Background/NewTabShader*.swift'
+      - 'astra/UI/Background/NewTabShaderEffects.metal'
+      - 'astra/UI/Content/NewTabView.swift'
+      - 'checks/dither-motion-check.swift'
+      - '.github/workflows/validate-dither.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dither:
+    name: Dither motion and Metal compilation
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Check cursor motion and legacy preference migration
+        run: |
+          swiftc -swift-version 6 astra/UI/Background/Dither/DitherConfiguration.swift \
+            astra/UI/Background/Dither/DitherMotion.swift astra/UI/Background/NewTabShaderSettings.swift \
+            checks/dither-motion-check.swift \
+            -o "$RUNNER_TEMP/dither-check"
+          "$RUNNER_TEMP/dither-check"
+      - name: Install Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+      - name: Compile and link Metal shader
+        run: |
+          xcrun -sdk macosx metal -c astra/UI/Background/Dither/ThemeDither.metal -o "$RUNNER_TEMP/dither.air"
+          xcrun -sdk macosx metallib "$RUNNER_TEMP/dither.air" -o "$RUNNER_TEMP/dither.metallib"
+
+  new-tab-effects:
+    name: New-tab Metal shader compilation
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Install Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+      - name: Compile and link new-tab effects
+        run: |
+          xcrun -sdk macosx metal -c astra/UI/Background/NewTabShaderEffects.metal -o "$RUNNER_TEMP/new-tab.air"
+          xcrun -sdk macosx metallib "$RUNNER_TEMP/new-tab.air" -o "$RUNNER_TEMP/new-tab.metallib"

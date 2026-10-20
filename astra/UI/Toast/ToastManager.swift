@@ -21,7 +21,7 @@ final class ToastManager {
 		toast = BrowserToast(symbol: symbol, message: boundedMessage)
 		AccessibilityNotification.Announcement(boundedMessage).post()
 		dismissalTask = Task { @MainActor [weak self] in
-			try? await Task.sleep(for: .seconds(1))
+			try? await Task.sleep(for: .seconds(symbol == "exclamationmark.triangle" ? 5 : 2))
 			guard !Task.isCancelled else { return }
 			self?.toast = nil
 		}

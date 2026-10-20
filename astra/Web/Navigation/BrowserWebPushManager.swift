@@ -3,11 +3,21 @@
 #endif
 #if os(macOS)
 	import AppKit
-	import UserNotifications
+	@unsafe import UserNotifications
 	import WebKit
 
 	@MainActor
 	final class BrowserWebPushManager: NSObject, UNUserNotificationCenterDelegate {
+		/// WebKit transfers these callback dictionaries for consumption on the main actor.
+		private nonisolated struct PendingMessages: @unchecked Sendable {
+			let values: [[AnyHashable: Any]]
+		}
+
+		/// Delivered notification objects are immutable snapshots from UserNotifications.
+		private nonisolated struct DeliveredNotification: @unchecked Sendable {
+			let value: UNNotification
+		}
+
 		static let shared = BrowserWebPushManager()
 		private static let category = "astra.webpush"
 		private static let prefix = "astra.webpush."
@@ -20,6 +30,7 @@
 		var openRequested: ((URL) -> WKWebView?)?
 
 		func attach(to store: WKWebsiteDataStore, permissions: BrowserSitePermissions) {
+			BrowserLog.info(.permissions, "web-push.attach", metadata: ["persistent": String(store.isPersistent)])
 			guard store.isPersistent else { return }
 			dataStore = store
 			self.permissions = permissions
@@ -48,12 +59,13 @@
 		}
 
 		func requestPermission(origin: WKSecurityOrigin, webView: WKWebView, documentID: Int, controller: BrowserController) async -> Bool {
+			BrowserLog.info(.permissions, "web-push.permission-request", metadata: ["url": BrowserLog.url(Self.originURL(origin)), "controller": BrowserLog.id(controller.id), "document": String(documentID)])
 			guard hasNativeSupport, !controller.session.isPrivate,
 			      let url = Self.originURL(origin), url.scheme == "https",
 			      let originID = BrowserSitePermissions.origin(for: url),
 			      webView.url.flatMap(BrowserSitePermissions.origin(for:)) == originID,
 			      controller.ownsPrompt(in: webView, documentID: documentID),
-			      let window = webView.window, window.isVisible,
+			      let window = unsafe webView.window, window.isVisible,
 			      let permissions else { return false }
 			let decision = permissions.decision(origin: originID, topOrigin: originID, capability: .notifications)
 			if decision == false {
@@ -79,6 +91,7 @@
 			do {
 				granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
 			} catch {
+				BrowserLog.warning(.permissions, "web-push.authorization.failed", metadata: ["error": BrowserLog.errorDescription(error)])
 				return false
 			}
 			guard controller.ownsPrompt(in: webView, documentID: documentID) else { return false }
@@ -91,6 +104,7 @@
 		}
 
 		func permissionsChanged() {
+			BrowserLog.debug(.permissions, "web-push.permissions-changed")
 			Task {
 				let center = UNUserNotificationCenter.current()
 				let identifiers = await center.deliveredNotifications().compactMap { notification -> String? in
@@ -106,6 +120,7 @@
 		}
 
 		func removeDeliveredNotifications() {
+			BrowserLog.notice(.permissions, "web-push.remove-notifications")
 			Task {
 				let center = UNUserNotificationCenter.current()
 				let delivered = await center.deliveredNotifications().map(\.request)
@@ -117,6 +132,7 @@
 		}
 
 		func drainPendingMessages() {
+			BrowserLog.trace(.permissions, "web-push.drain")
 			guard hasNativeSupport, let dataStore else { return }
 			needsAnotherDrain = true
 			guard drainTask == nil else { return }
@@ -124,9 +140,11 @@
 				defer { drainTask = nil }
 				repeat {
 					needsAnotherDrain = false
-					let messages: [[AnyHashable: Any]] = await withCheckedContinuation { continuation in
-						AstraReadPendingWebPush(dataStore) { continuation.resume(returning: $0) }
-					}
+					let messages = await withCheckedContinuation { (continuation: CheckedContinuation<PendingMessages, Never>) in
+						AstraReadPendingWebPush(dataStore) { messages in
+							continuation.resume(returning: PendingMessages(values: messages))
+						}
+					}.values
 					for message in messages {
 						let processed: Bool = await withCheckedContinuation { continuation in
 							AstraProcessWebPush(dataStore, message) { continuation.resume(returning: $0) }
@@ -149,6 +167,7 @@
 
 		@objc(websiteDataStore:showNotification:)
 		func websiteDataStore(_ store: WKWebsiteDataStore, showNotification data: NSObject) {
+			BrowserLog.debug(.permissions, "web-push.show-notification")
 			guard store === dataStore,
 			      ["identifier", "origin", "title", "body", "userInfo"].allSatisfy({ data.responds(to: NSSelectorFromString($0)) }),
 			      let identifier = data.value(forKey: "identifier") as? String,
@@ -173,6 +192,10 @@
 						trigger: nil
 					))
 				} catch {
+					BrowserLog.warning(.permissions, "web-push.delivery.failed", metadata: [
+						"origin": BrowserLog.url(URL(string: origin)),
+						"error": BrowserLog.errorDescription(error),
+					])
 					deliveryFailed = true
 				}
 			}
@@ -187,9 +210,13 @@
 				return
 			}
 			Task {
-				let notifications = await UNUserNotificationCenter.current().deliveredNotifications()
+				let notifications = await withCheckedContinuation { continuation in
+					UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
+						continuation.resume(returning: notifications.map { DeliveredNotification(value: $0) })
+					}
+				}
 				completionHandler(notifications.compactMap { notification in
-					let content = notification.request.content
+					let content = notification.value.request.content
 					guard content.categoryIdentifier == Self.category,
 					      content.userInfo["astraOrigin"] as? String == originID else { return nil }
 					return content.userInfo["astraWebPush"] as? [String: Any]
@@ -199,6 +226,7 @@
 
 		@objc(websiteDataStore:openWindow:fromServiceWorkerOrigin:completionHandler:)
 		func websiteDataStore(_ store: WKWebsiteDataStore, openWindow url: URL, fromServiceWorkerOrigin origin: WKSecurityOrigin, completionHandler: @escaping (WKWebView?) -> Void) {
+			BrowserLog.info(.navigation, "web-push.open-window", metadata: ["url": BrowserLog.url(url), "origin": BrowserLog.url(Self.originURL(origin))])
 			guard store === dataStore, ["https", "http"].contains(url.scheme?.lowercased() ?? ""),
 			      let originID = Self.originURL(origin).flatMap(BrowserSitePermissions.origin(for:)), allows(originID)
 			else {
@@ -210,31 +238,41 @@
 
 		@objc(websiteDataStore:navigateToNotificationActionURL:)
 		func websiteDataStore(_ store: WKWebsiteDataStore, navigateToNotificationActionURL url: URL) {
+			BrowserLog.info(.navigation, "web-push.navigate-action", metadata: ["url": BrowserLog.url(url)])
 			guard store === dataStore, ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return }
 			_ = openRequested?(url)
 		}
 
 		nonisolated func userNotificationCenter(_: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-			await presentationOptions(for: notification)
+			await presentationOptions(for: DeliveredNotification(value: notification))
 		}
 
-		private func presentationOptions(for notification: UNNotification) -> UNNotificationPresentationOptions {
-			guard notification.request.content.categoryIdentifier == Self.category,
-			      let origin = notification.request.content.userInfo["astraOrigin"] as? String, allows(origin) else { return [] }
+		private func presentationOptions(for notification: DeliveredNotification) -> UNNotificationPresentationOptions {
+			if notification.value.request.content.categoryIdentifier == BrowserWebsiteMonitoring.category {
+				return [.banner, .list, .sound]
+			}
+			guard notification.value.request.content.categoryIdentifier == Self.category,
+			      let origin = notification.value.request.content.userInfo["astraOrigin"] as? String, allows(origin) else { return [] }
 			return [.banner, .list, .sound]
 		}
 
 		nonisolated func userNotificationCenter(_: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-			await process(response)
+			await process(DeliveredNotification(value: response.notification), actionIdentifier: response.actionIdentifier)
 		}
 
-		private func process(_ response: UNNotificationResponse) async {
-			let content = response.notification.request.content
+		private func process(_ notification: DeliveredNotification, actionIdentifier: String) async {
+			let content = notification.value.request.content
+			if content.categoryIdentifier == BrowserWebsiteMonitoring.category {
+				if let id = content.userInfo["monitorID"] as? String, actionIdentifier == UNNotificationDefaultActionIdentifier {
+					BrowserWebsiteMonitoring.shared.openNotification(id)
+				}
+				return
+			}
 			guard content.categoryIdentifier == Self.category, let dataStore,
 			      let origin = content.userInfo["astraOrigin"] as? String, allows(origin),
 			      let info = content.userInfo["astraWebPush"] as? [String: Any] else { return }
-			let clicked = response.actionIdentifier == UNNotificationDefaultActionIdentifier
-			guard clicked || response.actionIdentifier == UNNotificationDismissActionIdentifier else { return }
+			let clicked = actionIdentifier == UNNotificationDefaultActionIdentifier
+			guard clicked || actionIdentifier == UNNotificationDismissActionIdentifier else { return }
 			let processed: Bool = await withCheckedContinuation { continuation in
 				AstraProcessWebNotificationResponse(dataStore, info, clicked) { continuation.resume(returning: $0) }
 			}

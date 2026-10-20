@@ -1,0 +1,51 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Xcode user-specific settings
+**/xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# Xcode generated data
+DerivedData/
+**/.build/
+**/.swiftpm/xcode/
+*.xcresult/
+*.xcarchive/
+
+# Compiled applications and symbols
+*.app/
+*.dSYM/
+*.dSYM.zip
+*.ipa
+*.dmg
+*.app.zip
+
+# Build output directories
+/build/
+/dist/
+
+# Profiling and diagnostics
+*.trace/
+*.profraw
+*.profdata
+*.xcactivitylog
+*.log
+
+# Editor temporary files
+.idea/
+*.swp
+*.swo
+*~
+
+# Local environments and secrets
+.env
+.env.*
+!.env.example
+*.p8
+*.p12
+*.mobileprovision

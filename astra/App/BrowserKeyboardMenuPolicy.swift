@@ -15,8 +15,8 @@
 			modifiers: NSEvent.ModifierFlags
 		) -> Bool {
 			let flags = modifiers.intersection(.deviceIndependentFlagsMask)
-			return isFocusedWindow && !hasMarkedText && isKeyDown && keyCode == 48
-				&& flags.contains(.control) && !flags.contains(.command) && !flags.contains(.option)
+			return isFocusedWindow && !hasMarkedText && isKeyDown && (keyCode == 48 || keyCode == 50)
+				&& flags.contains(.control) && !flags.contains(.shift) && !flags.contains(.command) && !flags.contains(.option)
 		}
 
 		static func canCopyURL(_ url: URL?) -> Bool {
