@@ -55,8 +55,7 @@ float3 spaceColor(float2 uv, device const float *points, int pointCount,
 }
 
 // Generate structured, multi-scale illustrations in Metal rather than shipping
-// large bitmaps. The first three presets use the positioned Space mesh palette;
-// the prismatic search-bar texture intentionally stays monochrome.
+// large bitmaps. All presets use the positioned Space mesh palette.
 [[ stitchable ]] half4 astraNewTabTexture(
     float2 position, float2 size, float preset,
     device const float *points, int pointCount,
@@ -66,22 +65,11 @@ float3 spaceColor(float2 uv, device const float *points, int pointCount,
     float2 uv = position / max(size, float2(1.0));
     float aspect = min(size.x / max(size.y, 1.0), 3.0);
     float2 p = float2(uv.x * aspect, uv.y);
-    if (preset == 3.0) {
-        // Embossed foil with enough mid-tones for spectral diffraction.
-        // Fine grain stays metallic rather than becoming busy rainbow hairlines.
-        float2 q = float2(p.x * 0.85, p.y * 1.25);
-        float flow = fbm(q * 2.1 + 2.1, 3);
-        float ribbon = sin(q.x * 6.9 + q.y * 1.75 + flow * 2.1);
-        float silver = 0.095 + 0.29 * smoothstep(-0.65, 0.85, ribbon);
-        silver += 0.13 * pow(max(ribbon, 0.0), 12.0);
-        silver += (noise(p * float2(76.0, 12.0)) - 0.5) * 0.034;
-        return half4(half3(clamp(silver, 0.065, 0.62)), 1.0h);
-    }
     float broad = fbm(p * 2.7 + 2.1, 4);
     float fine = fbm(p * 10.0 + broad * 3.0, 3);
     float2 warp = float2(fbm(p * 3.6 + float2(4.1, 0.8), 3),
                          fbm(p * 3.2 + float2(1.3, 7.7), 3)) - 0.5;
-    float2 twisted = p + warp * (preset == 3.0 ? 0.26 : 0.17);
+    float2 twisted = p + warp * 0.17;
     float path = twisted.x * 1.8 + twisted.y * 0.72 + broad * 0.70;
     float ribbon = sin(path * 30.0 + fine * 7.0);
     float hairline = pow(clamp(1.0 - abs(ribbon), 0.0, 1.0), 12.0);
@@ -96,13 +84,13 @@ float3 spaceColor(float2 uv, device const float *points, int pointCount,
     float3 result;
     float alpha = 1.0;
     if (preset == 0.0) {
-        // Smoke: broad tinted clouds above the dark/light Space foundation,
+        // Topographic: built-in broad artwork above the Space foundation,
         // threaded with crisp metallic veins.
         float mist = smoothstep(0.2, 0.83, broad + 0.25 * contour);
         result = mix(theme * 0.25, mix(theme, second, contour * 0.32),
                      0.36 + mist * 0.82);
         result += float3(0.50) * hairline * 0.42;
-        alpha = 0.64 + 0.32 * mist;
+
     } else if (preset == 1.0) {
         // Ripple: shaded liquid strata, luminous crests and visible details
         // for displacement to refract. The palette stays spatially anchored.
@@ -122,59 +110,6 @@ float3 spaceColor(float2 uv, device const float *points, int pointCount,
     }
     result = clamp(result, 0.0, 1.0);
     return half4(half3(result * alpha), half(alpha));
-}
-
-// Smoke Reveal: adapted from bcs_smokeReveal. The fog itself is now tinted
-// to the Space's light/dark companion color, not the upstream neutral grey.
-[[ stitchable ]] half4 astraSmokeReveal(
-    float2 position, SwiftUI::Layer layer, float2 size, float time,
-    float amount, float scale, float turbulence, half4 fogColor
-) {
-    using namespace astra_newtab;
-    float2 uv = position / max(size, float2(1.0));
-    float2 smokeUV = uv * scale;
-    float wx = fbm(smokeUV + float2(time * 0.45, time * 0.15), 3);
-    float wy = fbm(smokeUV + float2(time * 0.15, -time * 0.3) + 5.2, 3);
-    float density = fbm(smokeUV + float2(wx, wy) * turbulence
-                       + float2(time * 0.22, time * 0.12), 4);
-    density = clamp(density * density * amount * 1.5, 0.0, 1.0);
-    float2 displaced = clamp(position + (float2(wx, wy) - 0.5) * 8.0 * density,
-                             float2(0.0), size);
-    half4 original = layer.sample(position);
-    half4 sampled = layer.sample(displaced);
-    float ray = (sin(uv.x * 8.0 + time * 0.3) * 0.5 + 0.5) *
-                (1.0 - smoothstep(0.2, 1.0, uv.y)) * density * 0.1;
-    half3 fog = half3(fogColor.rgb) +
-                half3((noise(uv * 3.0 + time * 0.2) - 0.5) * 0.09 + ray);
-    return half4(mix(sampled.rgb, fog * sampled.a, half(density)), original.a);
-}
-
-// Holographic / Prismatic: luminance-masked rainbow from bcs_holographic.
-// The only consumer is the dedicated search-bar surface.
-[[ stitchable ]] half4 astraHolographicPrismatic(
-    float2 position, SwiftUI::Layer layer, float2 size, float time,
-    float intensity, float scale, float speed, float angle
-) {
-    float2 uv = position / max(size, float2(1.0));
-    half4 original = layer.sample(position);
-    // A moving spectral phase changes actual pixel output rather than only
-    // the source texture. Independent glints make the foil visibly animate.
-    float projection = uv.x * cos(angle) + uv.y * sin(angle);
-    float phase = projection * scale * 6.2831853
-                  - time * speed * 1.65
-                  + sin(uv.y * 5.5 + time * 0.38) * 0.48;
-    float3 spectrum = 0.5 + 0.5 * sin(float3(0.0, 2.094, 4.189)
-                      + phase * 0.85 + time * speed * 0.42);
-    float sweep = 0.5 + 0.5 * sin(phase * 0.66 + time * speed * 0.95);
-    float glint = pow(sweep, 5.0);
-    float lum = dot(float3(original.rgb), float3(0.299, 0.587, 0.114));
-    float foil = smoothstep(0.08, 0.47, lum);
-    // Preserve a legible dark substrate beneath the white search text.
-    float3 metal = float3(original.rgb) * (0.76 + 0.16 * sweep);
-    float3 refracted = spectrum * (0.22 + 0.22 * foil) * (0.50 + 0.50 * sweep);
-    float3 result = metal + refracted * intensity
-                    + float3(0.16) * glint * foil * intensity;
-    return half4(half3(clamp(result, 0.0, 0.89)), original.a);
 }
 
 // Live Ripple: radially displaced layered rings adapted from bcs_liveRipple.

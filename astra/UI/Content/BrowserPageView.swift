@@ -1,3 +1,4 @@
+import Defaults
 import SwiftUI
 
 struct BrowserPageView: View {
@@ -40,6 +41,7 @@ struct BrowserPageView: View {
 	}
 
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
+	@Default(.zoomOutInPeeks) private var zoomOutInPeeks
 	#if os(macOS)
 		@State private var browserAgentServer = BrowserAgentServer.shared
 	#endif
@@ -54,8 +56,13 @@ struct BrowserPageView: View {
 	var body: some View {
 		let hasActiveDuplicate = BrowserWindowRegistry.shared.hasActiveDuplicate(of: browser)
 		let selectedTab = displayedTab
+		let zoomsOutBackdrop = zoomOutInPeeks
+			&& selectedTab?.activeController !== selectedTab?.controller
+			&& selectedTab?.peeks.contains(where: { !$0.isDismissing }) == true
 		return ZStack(alignment: .top) {
 			BrowserContentView(browser: browser, insets: insets, displayedTabID: selectedTab?.id)
+				.scaleEffect(zoomsOutBackdrop ? 0.95 : 1)
+				.animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: zoomsOutBackdrop)
 			#if os(macOS)
 				.blur(radius: hasActiveDuplicate ? 10 : 0)
 				.allowsHitTesting(!hasActiveDuplicate)

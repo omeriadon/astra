@@ -177,8 +177,8 @@ extension Browser {
 	}
 
 	private func ownsAddressSuggestionRequest(_ request: BrowserSearchSuggestionsRequest) -> Bool {
-		let controller = selectedTab?.activeController
-		let scope = "address:\(windowID):\(selectedTabID):\(controller?.id.uuidString ?? "none"):\(controller?.navigationIdentifier ?? -1)"
+		let controller = chromeTab?.activeController
+		let scope = "address:\(windowID):\(chromeTab?.id ?? selectedTabID):\(controller?.id.uuidString ?? "none"):\(controller?.navigationIdentifier ?? -1)"
 		guard let provider = browserSearchConfiguration.suggestionsProvider(isPrivate: isPrivate) else { return false }
 		return request.query == addressSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
 			&& request.generation == addressSearchGeneration
@@ -193,7 +193,7 @@ extension Browser {
 
 	func discoverSearchEngineFromAddressBar(template: String) {
 		guard !isPrivate, !isShowingNewTab,
-		      let tab = selectedTab, tab.internalPage == nil,
+		      let tab = chromeTab, tab.internalPage == nil,
 		      let controller = tab.activeController,
 		      controller.hasCurrentPageDocument, !controller.isLoading,
 		      let webView = controller.webViewIfLoaded,
@@ -237,15 +237,15 @@ extension Browser {
 
 	private func isCurrentSearchEngineDiscovery(_ pending: BrowserSearchEngineDiscovery) -> Bool {
 		guard !isPrivate, !isShowingNewTab,
-		      selectedTab?.internalPage == nil,
-		      let controller = selectedTab?.activeController,
+		      chromeTab?.internalPage == nil,
+		      let controller = chromeTab?.activeController,
 		      controller.hasCurrentPageDocument, !controller.isLoading,
 		      controller.navigationFailure == nil,
 		      let webView = controller.webViewIfLoaded,
 		      let pageURL = controller.url,
 		      webView.url == pageURL,
 		      pending.matches(
-		      	tabID: selectedTabID,
+				tabID: chromeTab?.id ?? selectedTabID,
 		      	controllerID: controller.id,
 		      	webViewID: ObjectIdentifier(webView),
 		      	documentID: controller.navigationIdentifier,
@@ -349,7 +349,7 @@ extension Browser {
 				addTab().controller
 			}
 		} else {
-			selectedTab?.activeController
+			chromeTab?.activeController
 		}
 		if fromAddressBar {
 			controller?.loadFromAddressBar(url)

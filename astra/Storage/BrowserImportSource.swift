@@ -36,6 +36,7 @@ nonisolated enum BrowserImportSource: String, CaseIterable, Identifiable, Sendab
 	var folderHint: String {
 		switch self {
 			case .safari: "Choose the Safari folder containing Bookmarks.plist and History.db. macOS may require Full Disk Access to read Safari data."
+			case .helium: "Choose ~/Library/Application Support/net.imput.helium, or a profile folder inside it such as Default. Choosing the folder grants Astra access to read Helium’s bookmarks and history."
 			case .firefox: "Choose a Firefox profile folder containing places.sqlite."
 			case .arc: "Choose Arc’s Application Support folder to include pinned tabs, favorites, spaces and folders from StorableSidebar.json."
 			default: "Choose a profile folder containing Bookmarks and History, or the browser’s data folder to select a profile."

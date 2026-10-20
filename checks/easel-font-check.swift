@@ -7,12 +7,19 @@ struct EaselFontCheck {
 	static func main() {
 		let directory = URL(fileURLWithPath: "astra/Resources/EaselFonts", isDirectory: true)
 		let names = ["GeistPixel-Square.ttf", "ThestralNeue-Bold.otf", "Solare_Regular.ttf"]
-		// SF Mono and New York must come from the system, not bundled files.
+		// SF Mono, SF Compact Rounded and New York must come from the system,
+		// not bundled files. Compact Rounded can be unavailable on macOS, so
+		// verify its fallback design is available as well.
 		let mono = NSFont.monospacedSystemFont(ofSize: 15, weight: .regular)
 		let system = NSFont.systemFont(ofSize: 15)
 		let serif = system.fontDescriptor.withDesign(.serif).flatMap { NSFont(descriptor: $0, size: 15) }
+		let compactRoundedFallback = system.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: 15) }
+		let compactRounded = CTFontCreateWithName("SFCompactRounded-Regular" as CFString, 15, nil)
 		precondition(mono.pointSize == 15)
 		precondition(serif != nil)
+		precondition(compactRoundedFallback != nil)
+		let compactRoundedIsAvailable = CTFontCopyPostScriptName(compactRounded) as String == "SFCompactRounded-Regular"
+		print("SF Compact Rounded system face: \(compactRoundedIsAvailable ? "available" : "using rounded system fallback")")
 		let sample = (32 ... 126).compactMap(UnicodeScalar.init).map(String.init).joined()
 		for name in names {
 			let url = directory.appendingPathComponent(name)

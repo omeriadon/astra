@@ -43,15 +43,15 @@ struct BrowserAddressField: View {
 
 	private var isSearch: Bool {
 		BrowserAddress.isSearchURL(
-			browser.selectedTab?.activeController?.url,
+			browser.chromeTab?.activeController?.url,
 			configuration: searchConfiguration,
 			isPrivate: browser.isPrivate
 		)
 	}
 
 	private var addressSuggestionRequest: BrowserSearchSuggestionsRequest {
-		let controller = browser.selectedTab?.activeController
-		let scope = "address:\(browser.windowID):\(browser.selectedTabID):\(controller?.id.uuidString ?? "none"):\(controller?.navigationIdentifier ?? -1)"
+		let controller = browser.chromeTab?.activeController
+		let scope = "address:\(browser.windowID):\(browser.chromeTab?.id ?? browser.selectedTabID):\(controller?.id.uuidString ?? "none"):\(controller?.navigationIdentifier ?? -1)"
 		return BrowserSearchSuggestionsRequest(
 			query: addressText.trimmingCharacters(in: .whitespacesAndNewlines),
 			generation: browser.addressSearchGeneration,
@@ -103,7 +103,7 @@ struct BrowserAddressField: View {
 
 	private var searchEngineDiscoveryScope: String? {
 		guard !browser.isPrivate, !browser.isShowingNewTab,
-		      let tab = browser.selectedTab, tab.internalPage == nil,
+		      let tab = browser.chromeTab, tab.internalPage == nil,
 		      let controller = tab.activeController,
 		      controller.hasCurrentPageDocument, !controller.isLoading,
 		      let url = controller.url, url.scheme?.lowercased() == "https"
@@ -120,7 +120,7 @@ struct BrowserAddressField: View {
 		discoveredSearchEngineTemplate = nil
 		discoveredSearchEngineScope = nil
 		guard let scope = searchEngineDiscoveryScope,
-		      let webView = browser.selectedTab?.activeController?.webViewIfLoaded else { return }
+		      let webView = browser.chromeTab?.activeController?.webViewIfLoaded else { return }
 		do {
 			let outcome = try await BrowserSearchSuggestions.discoverOpenSearchTemplate(in: webView)
 			guard !Task.isCancelled, searchEngineDiscoveryScope == scope,
@@ -138,32 +138,42 @@ struct BrowserAddressField: View {
 
 	var body: some View {
 		HStack(spacing: 6) {
-			AddressTextField(
-				addressText: $addressText,
-				isFocused: $isFocused,
-				isDimmed: isDimmed,
-				isSearch: isSearch,
-				dimmedAddressText: dimmedAddressText,
-				onSubmitAddress: submitAddress,
-				onCompleteAddress: completeAddress,
-				onEscape: {
-					if browser.isShowingNewTab {
-						browser.newTabSearchSelection = "typed"
-					} else {
-						addressSelectionID = nil
+			if let controller = browser.chromeTab?.activeController,
+			   controller.snapshotNavigationOnly, let sourceURL = controller.snapshotSourceURL
+			{
+				Label("Local snapshot · \(sourceURL.host ?? sourceURL.absoluteString)", systemImage: "doc.text")
+					.lineLimit(1)
+					.frame(maxWidth: .infinity, alignment: .leading)
+					.help("Generated local copy of \(BrowserAddress.withoutCredentials(sourceURL).absoluteString)")
+					.accessibilityIdentifier("browser-address")
+			} else {
+				AddressTextField(
+					addressText: $addressText,
+					isFocused: $isFocused,
+					isDimmed: isDimmed,
+					isSearch: isSearch,
+					dimmedAddressText: dimmedAddressText,
+					onSubmitAddress: submitAddress,
+					onCompleteAddress: completeAddress,
+					onEscape: {
+						if browser.isShowingNewTab {
+							browser.newTabSearchSelection = "typed"
+						} else {
+							addressSelectionID = nil
+						}
+						isFocused = false
+					},
+					onMoveSelection: { offset in
+						if browser.isShowingNewTab {
+							guard !browser.newTabSearchResults.isEmpty else { return false }
+							browser.moveNewTabSearchSelection(by: offset)
+							return true
+						} else {
+							return moveAddressSelection(by: offset)
+						}
 					}
-					isFocused = false
-				},
-				onMoveSelection: { offset in
-					if browser.isShowingNewTab {
-						guard !browser.newTabSearchResults.isEmpty else { return false }
-						browser.moveNewTabSearchSelection(by: offset)
-						return true
-					} else {
-						return moveAddressSelection(by: offset)
-					}
-				}
-			)
+				)
+			}
 			if let template = availableSearchEngineTemplate {
 				Button {
 					browser.discoverSearchEngineFromAddressBar(template: template)
@@ -229,12 +239,17 @@ struct BrowserAddressField: View {
 			addressSelectionID = nil
 			updateForSelectedTab()
 		}
+		.onChange(of: browser.chromeTab?.id) { _, _ in
+			isFocused = false
+			addressSelectionID = nil
+			updateForSelectedTab()
+		}
 		.onChange(of: browser.workspace.selectedSpaceID) { _, _ in
 			isFocused = false
 			addressSelectionID = nil
 			updateForSelectedTab()
 		}
-		.onChange(of: browser.selectedTab?.activeController?.showsFind) { _, showsFind in
+		.onChange(of: browser.chromeTab?.activeController?.showsFind) { _, showsFind in
 			if showsFind == true {
 				isFocused = false
 			}
@@ -246,16 +261,16 @@ struct BrowserAddressField: View {
 				isFocused = false
 			}
 		}
-		.onChange(of: browser.selectedTab?.peeks.last?.id) { _, _ in
+		.onChange(of: browser.chromeTab?.peeks.last?.id) { _, _ in
 			isFocused = false
 			updateAddressFromURL()
 		}
-		.onChange(of: browser.selectedTab?.activeController?.id) { _, _ in
+		.onChange(of: browser.chromeTab?.activeController?.id) { _, _ in
 			browser.discardStaleSearchEngineDiscovery()
 			guard !isFocused else { return }
 			updateAddressFromURL()
 		}
-		.onChange(of: browser.selectedTab?.activeController?.url) { _, url in
+		.onChange(of: browser.chromeTab?.activeController?.url) { _, url in
 			browser.discardStaleSearchEngineDiscovery()
 			guard !isFocused else { return }
 			let next = displayString(for: url)
@@ -277,11 +292,11 @@ struct BrowserAddressField: View {
 				addressText = browser.newTabSearchText
 				return
 			}
-			let simpleAddress = displayString(for: browser.selectedTab?.activeController?.url)
+			let simpleAddress = displayString(for: browser.chromeTab?.activeController?.url)
 			if focused {
 				if BrowserSearchMatching.shouldExpandAddressOnFocus(text: addressText, simpleAddress: simpleAddress) {
 					addressText = displayString(
-						for: browser.selectedTab?.activeController?.url,
+						for: browser.chromeTab?.activeController?.url,
 						isEditing: true
 					)
 				}
@@ -311,7 +326,7 @@ struct BrowserAddressField: View {
 	private var dimmedAddressText: AttributedString {
 		var text = AttributedString(addressText)
 		text.foregroundColor = Color.primary.opacity(0.65)
-		guard let url = browser.selectedTab?.activeController?.url else {
+		guard let url = browser.chromeTab?.activeController?.url else {
 			text.foregroundColor = .primary
 			return text
 		}
@@ -365,7 +380,7 @@ struct BrowserAddressField: View {
 			return
 		}
 		let next = displayString(
-			for: browser.selectedTab?.activeController?.url,
+			for: browser.chromeTab?.activeController?.url,
 			isEditing: isFocused
 		)
 		browser.addressSearchText = next
@@ -392,7 +407,7 @@ struct BrowserAddressField: View {
 			configuration: searchConfiguration,
 			isPrivate: browser.isPrivate
 		) else { return }
-		browser.selectedTab?.activeController?.loadFromAddressBar(destination)
+		browser.chromeTab?.activeController?.loadFromAddressBar(destination)
 		addressText = displayString(for: destination)
 		isFocused = false
 	}

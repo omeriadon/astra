@@ -72,7 +72,9 @@ struct BrowserContentView: View, Animatable {
 			Color.clear
 				.allowsHitTesting(false)
 		} else if let tab, tab.isHibernated {
-			HibernatedPlaceholder(browser: browser, tab: tab)
+			Color.clear
+				.allowsHitTesting(false)
+				.task(id: browser.isHydrationFinished) { browser.wakeTabForDisplay(tab.id) }
 		} else if tab != nil {
 			NewTabView(browser: browser)
 		} else {
@@ -497,24 +499,5 @@ final class BrowserTabResourceManager {
 		                    	"warm_budget": String(warmControllerLimit),
 		                    ])
 		return result
-	}
-}
-
-private struct HibernatedPlaceholder: View {
-	let browser: Browser
-	let tab: BrowserTab
-
-	var body: some View {
-		ContentUnavailableView {
-			Label("Tab Hibernated", systemImage: "moon.zzz")
-		} description: {
-			Text("Reopen the tab to restore its page and scroll position.")
-		} actions: {
-			Button("Reopen Tab", systemImage: "arrow.clockwise") {
-				browser.selectTab(tab.id)
-			}
-			.buttonStyle(.glassProminent)
-			.accessibilityIdentifier("reopen-hibernated-tab")
-		}
 	}
 }

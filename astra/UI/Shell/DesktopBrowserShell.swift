@@ -57,7 +57,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	private var topBarColorScheme: ColorScheme {
-		guard let themeColorIsLight = browser.selectedTab?.activeController?.themeColorIsLight else { return colorScheme }
+		guard let themeColorIsLight = browser.chromeTab?.activeController?.themeColorIsLight else { return colorScheme }
 		return themeColorIsLight ? .light : .dark
 	}
 
@@ -97,7 +97,7 @@ struct DesktopBrowserShell: View {
 	}
 
 	private var showsTopBarOnPage: Bool {
-		!browser.isShowingNewTab && browser.selectedTab?.internalPage == nil
+		!browser.isShowingNewTab && browser.chromeTab?.internalPage == nil
 	}
 
 	private var hasVisibleChrome: Bool {
@@ -340,6 +340,11 @@ struct DesktopBrowserShell: View {
 				}
 			} message: { space in
 				Text("Tabs in \(space.name) will move to another Space.")
+			}
+			.overlay {
+				if browser.showsActionPalette {
+					BrowserQuickSearchOverlay(browser: browser)
+				}
 			}
 			.overlay {
 				DownloadFlightOverlay(
@@ -682,7 +687,7 @@ private struct ShellContentColumn: View {
 	#if os(macOS)
 		@State private var isAddressDropTargeted = false
 		@State private var tabSplitDropSide: Browser.SplitSide?
-		@State private var tabSplitDropWidth: CGFloat = 1
+		@State private var tabSplitDropSize = CGSize.zero
 	#endif
 
 	private var topBar: some View {
@@ -709,26 +714,27 @@ private struct ShellContentColumn: View {
 	}
 
 	private var topBarHeight: CGFloat {
-		guard browser.selectedTab?.internalPage == nil, !browser.isShowingNewTab, !(sidebarShown && !showsTopBar), showsTopBar || isTopBarRevealed else { return 0 }
+		guard browser.chromeTab?.internalPage == nil, !browser.isShowingNewTab, !(sidebarShown && !showsTopBar), showsTopBar || isTopBarRevealed else { return 0 }
 		return BrowserChromeMetrics.topBarRegionHeight
 			+ BrowserChromeMetrics.shellEdgePadding
 	}
 
 	var body: some View {
 		ZStack(alignment: .top) {
-			// Never remove the toolbar on hide: its removal previously skipped
-			// the exit animation, and rebuilding animated the address text field.
+			// Keep the toolbar at its full size while it slides out, preserving
+			// the address field and matching the sidebars’ reveal timing.
 			topBar
 				.frame(height: BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding, alignment: .top)
 				.frame(maxWidth: .infinity, alignment: .trailing)
+				.offset(y: topBarHeight - BrowserChromeMetrics.topBarRegionHeight - BrowserChromeMetrics.shellEdgePadding)
 				.opacity(topBarOpacity)
 				.allowsHitTesting(topBarHeight > 0 && topBarOpacity > 0)
 				.accessibilityHidden(topBarHeight == 0)
-				.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsTopBar)
+				.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: topBarHeight)
 			VStack(spacing: 0) {
 				Spacer(minLength: 0)
 					.frame(height: topBarHeight)
-					.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsTopBar)
+					.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: topBarHeight)
 				Group {
 					if browser.isShowingTabSplit,
 					   let leftID = browser.splitLeftTabID,
@@ -747,13 +753,11 @@ private struct ShellContentColumn: View {
 							}
 					}
 				}
-				.padding(.top, hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
-				.padding([.bottom, .horizontal], hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
 				#if os(macOS)
-					.onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tabSplitDropWidth = $0 }
+					.onGeometryChange(for: CGSize.self) { $0.size } action: { tabSplitDropSize = $0 }
 					.onDrop(of: [UTType(exportedAs: "com.omeriadon.astra.tab", conformingTo: .data)],
-					        delegate: TabSplitDropDelegate(browser: browser, width: tabSplitDropWidth, side: $tabSplitDropSide))
+					        delegate: TabSplitDropDelegate(browser: browser, size: tabSplitDropSize, side: $tabSplitDropSide))
 					.overlay {
 						if let side = tabSplitDropSide {
 							HStack(spacing: 0) {
@@ -777,8 +781,11 @@ private struct ShellContentColumn: View {
 						}
 					}
 				#endif
+				.padding(.top, hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
+				.padding([.bottom, .horizontal], hasVisibleChrome ? BrowserChromeMetrics.shellEdgePadding : 0)
 			}
 		}
+		.clipped()
 		.animation(nil, value: browser.selectedTabID)
 		.onChange(of: browser.selectedSpace.id) { _, _ in
 			topBarTransitionGeneration += 1
@@ -806,7 +813,7 @@ private struct ShellContentColumn: View {
 						? BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding
 						: 6
 					let shouldReveal = !sidebarShown
-						&& browser.selectedTab?.internalPage == nil
+						&& browser.chromeTab?.internalPage == nil
 						&& !browser.isShowingNewTab
 						&& !showsTopBar && location.y < revealHeight
 					guard shouldReveal != isTopBarRevealed else { return }
@@ -828,17 +835,17 @@ private struct ShellContentColumn: View {
 	#if os(macOS)
 		private func acceptAddressDrop(_ providers: [NSItemProvider]) -> Bool {
 			guard let provider = providers.first,
-			      let controller = browser.selectedTab?.activeController
+			      let controller = browser.chromeTab?.activeController
 			else { return false }
-			let tabID = browser.selectedTabID
+			let tabID = browser.chromeTab?.id
 			let type = provider.hasItemConformingToTypeIdentifier(UTType.url.identifier)
 				? UTType.url.identifier
 				: UTType.plainText.identifier
 			guard provider.hasItemConformingToTypeIdentifier(type) else { return false }
 			let applyDrop: @Sendable (String?) -> Void = { text in
 				Task { @MainActor in
-					guard browser.selectedTabID == tabID,
-					      browser.selectedTab?.activeController === controller,
+					guard browser.chromeTab?.id == tabID,
+					      browser.chromeTab?.activeController === controller,
 					      let text,
 					      text.utf8.count <= 8192,
 					      let destination = BrowserAddress.destination(
@@ -866,14 +873,21 @@ private struct ShellContentColumn: View {
 }
 
 #if os(macOS)
-	/// Tab-only drop receiver: ordinary website text/URL drops are not intercepted.
+	/// Only the middle-left and middle-right thirds of the tab content accept a split drag.
+	/// Ordinary website text/URL drops are not intercepted.
 	private struct TabSplitDropDelegate: DropDelegate {
 		let browser: Browser
-		let width: CGFloat
+		let size: CGSize
 		@Binding var side: Browser.SplitSide?
 
-		private func desiredSide(at point: CGPoint) -> Browser.SplitSide {
-			point.x < width / 2 ? .left : .right
+		private func desiredSide(at point: CGPoint) -> Browser.SplitSide? {
+			guard size.width > 0, size.height > 0,
+			      point.x >= 0, point.x <= size.width,
+			      point.y >= size.height / 3, point.y <= size.height * 2 / 3
+			else { return nil }
+			if point.x < size.width / 3 { return .left }
+			if point.x > size.width * 2 / 3 { return .right }
+			return nil
 		}
 
 		func validateDrop(info: DropInfo) -> Bool {
@@ -883,12 +897,12 @@ private struct ShellContentColumn: View {
 		}
 
 		func dropEntered(info: DropInfo) {
-			side = desiredSide(at: info.location)
+			side = validateDrop(info: info) ? desiredSide(at: info.location) : nil
 		}
 
 		func dropUpdated(info: DropInfo) -> DropProposal? {
-			side = desiredSide(at: info.location)
-			return DropProposal(operation: .move)
+			side = validateDrop(info: info) ? desiredSide(at: info.location) : nil
+			return DropProposal(operation: side == nil ? .forbidden : .move)
 		}
 
 		func dropExited(info _: DropInfo) {
@@ -898,10 +912,11 @@ private struct ShellContentColumn: View {
 		func performDrop(info: DropInfo) -> Bool {
 			defer { side = nil }
 			guard validateDrop(info: info),
+			      let dropSide = desiredSide(at: info.location),
 			      let anchorID = browser.selectedTab?.id,
 			      let provider = info.itemProviders(for: ["com.omeriadon.astra.tab"]).first
 			else { return false }
-			let onLeft = desiredSide(at: info.location) == .left
+			let onLeft = dropSide == .left
 			_ = provider.loadDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab") { data, _ in
 				guard let data, let raw = String(data: data, encoding: .utf8),
 				      let id = UUID(uuidString: raw) else { return }

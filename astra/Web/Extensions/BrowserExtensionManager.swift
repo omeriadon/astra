@@ -33,6 +33,11 @@ private nonisolated enum BrowserExtensionFileWorker {
 		}
 	}
 
+	static func replaceArchive(from source: URL, at destination: URL) throws {
+		// Both the existing and replacement ZIP have been validated before committing.
+		try Data(contentsOf: source).write(to: destination, options: .atomic)
+	}
+
 	static func unpackChromeArchive(from download: URL, to destination: URL) throws {
 		guard let size = try download.resourceValues(forKeys: [.fileSizeKey]).fileSize,
 		      size <= 50_000_000 else { throw ChromeExtensionPackage.PackageError.invalid }
@@ -91,6 +96,8 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 
 	private(set) var enabledNames: Set<String> = []
 	private(set) var installedNames: [String] = []
+	private(set) var uBlockOriginName: String?
+	private(set) var updatingNames: Set<String> = []
 	private(set) var safariNames: Set<String> = []
 	private(set) var safariAppExtensions: [SafariExtensionCandidate] = []
 	@ObservationIgnored private var safariDiscoveryTask: (id: UUID, task: Task<[SafariExtensionCandidate], Never>)?
@@ -126,6 +133,9 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 			UUID(uuidString: $0) != nil
 		}
 		installedNames = savedNames
+		if let name = UserDefaults.standard.string(forKey: "uBlockOriginExtension"), savedNames.contains(name) {
+			uBlockOriginName = name
+		}
 		safariBundlePaths = UserDefaults.standard.dictionary(forKey: "safariExtensionBundles") as? [String: String] ?? [:]
 		unpinnedNames = Set(UserDefaults.standard.stringArray(forKey: "unpinnedExtensions") ?? [])
 		safariNames = Set(UserDefaults.standard.stringArray(forKey: "safariExtensions") ?? [])
@@ -547,12 +557,12 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 
 	func action(for name: String, in browser: Browser) -> WKWebExtension.Action? {
 		guard !browser.isPrivate, let context = contexts[name], context.isLoaded else { return nil }
-		return context.action(for: extensionTab(for: browser.selectedTabID, in: browser))
+		return context.action(for: extensionTab(for: browser.chromeTab?.id ?? browser.selectedTabID, in: browser))
 	}
 
 	func performAction(_ name: String, in browser: Browser) {
 		guard !browser.isPrivate, let context = contexts[name], context.isLoaded else { return }
-		if !allowsAllSites(name), let url = browser.selectedTab?.currentURL,
+		if !allowsAllSites(name), let url = browser.chromeTab?.currentURL,
 		   url.scheme == "https" || url.scheme == "http"
 		{
 			context.setPermissionStatus(.grantedExplicitly, for: url, expirationDate: Date.now.addingTimeInterval(300))
@@ -563,7 +573,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 				return
 			}
 		#endif
-		let tab = extensionTab(for: browser.selectedTabID, in: browser)
+		let tab = extensionTab(for: browser.chromeTab?.id ?? browser.selectedTabID, in: browser)
 		Task { [weak self] in
 			do {
 				if context.webExtension.hasBackgroundContent {
@@ -732,6 +742,80 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		}
 	}
 
+	/// Updates retain WebKit's unique identifier, website access, pin state, and data.
+	/// New permissions are never silently approved by an update.
+	func installUBlockOriginArchive(from archive: URL, replacing name: String?) async throws -> String {
+		try await Task.detached(priority: .utility) {
+			try BrowserExtensionFileWorker.validateArchive(at: archive)
+		}.value
+		let checked = try await WKWebExtension(resourceBaseURL: archive)
+		guard checked.manifestVersion == 2, checked.displayName == "uBlock Origin" else {
+			throw UBlockOriginRelease.InstallError.invalidDownload
+		}
+		guard let name else {
+			let installed = try await installArchive(from: archive, source: .chrome)
+			uBlockOriginName = installed
+			UserDefaults.standard.set(installed, forKey: "uBlockOriginExtension")
+			return installed
+		}
+		guard name == uBlockOriginName, installedNames.contains(name),
+		      !updatingNames.contains(name), let destination = archiveURL(for: name)
+		else { throw CancellationError() }
+		updatingNames.insert(name)
+		defer { updatingNames.remove(name) }
+		let old = try await prepareContext(for: name)
+		let backup = destination.deletingLastPathComponent().appendingPathComponent("\(UUID().uuidString).backup.zip")
+		try await Task.detached(priority: .utility) {
+			try BrowserExtensionFileWorker.copyArchive(from: destination, to: backup)
+		}.value
+		var removeBackup = true
+		defer {
+			if removeBackup {
+				Task.detached(priority: .utility) { BrowserExtensionFileWorker.remove(backup) }
+			}
+		}
+		// Keep the old package active until replacement is ready. Parse the durable
+		// installed URL, since WebKit may read resources after the download is deleted.
+		let wasEnabled = isEnabled(name)
+		if old.isLoaded { try controller.unload(old) }
+		let replacement: WKWebExtension
+		do {
+			try await Task.detached(priority: .utility) {
+				try BrowserExtensionFileWorker.replaceArchive(from: archive, at: destination)
+			}.value
+			replacement = try await WKWebExtension(resourceBaseURL: destination)
+		} catch {
+			let installError = error
+			do {
+				try await Task.detached(priority: .utility) {
+					try BrowserExtensionFileWorker.replaceArchive(from: backup, at: destination)
+				}.value
+			} catch {
+				// Retain the recovery package if the filesystem also rejects rollback.
+				removeBackup = false
+				throw error
+			}
+			if wasEnabled { try controller.load(old) }
+			throw installError
+		}
+		#if os(macOS)
+			popupWindows.removeValue(forKey: ObjectIdentifier(old))?.close()
+		#endif
+		let context = WKWebExtensionContext(for: replacement)
+		context.uniqueIdentifier = name
+		context.baseURL = old.baseURL
+		contexts[name] = context
+		cacheDisplayName(replacement.displayName, for: name)
+		let permissionsUnchanged = old.webExtension.requestedPermissions == replacement.requestedPermissions
+			&& Set(old.webExtension.requestedPermissionMatchPatterns.map(\.string)) == Set(replacement.requestedPermissionMatchPatterns.map(\.string))
+		if !permissionsUnchanged {
+			UserDefaults.standard.removeObject(forKey: "extension.\(name).approvedPermissions")
+		}
+		setEnabled(isEnabled(name) && permissionsUnchanged, for: name)
+		actionsRevision += 1
+		return name
+	}
+
 	func installFromChromeStore(_ listing: URL) async {
 		BrowserLog.info(.extensions, "extension.install-store", metadata: ["listing": BrowserLog.url(listing)])
 		guard !isInstallingFromStore, let id = ChromeExtensionPackage.extensionID(from: listing) else { return }
@@ -776,7 +860,7 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 
 	func removeInstalled(_ name: String) {
 		BrowserLog.info(.extensions, "extension.remove", metadata: ["name": BrowserLog.value(name)])
-		guard installedNames.contains(name) else { return }
+		guard installedNames.contains(name), !updatingNames.contains(name) else { return }
 		let url = archiveURL(for: name)
 		setEnabled(false, for: name)
 		guard contexts[name]?.isLoaded != true else { return }
@@ -786,6 +870,10 @@ final class BrowserExtensionManager: NSObject, WKWebExtensionControllerDelegate 
 		cachedDisplayNames.removeValue(forKey: name)
 		UserDefaults.standard.set(cachedDisplayNames, forKey: "extensionDisplayNames")
 		installedNames.removeAll { $0 == name }
+		if uBlockOriginName == name {
+			uBlockOriginName = nil
+			UserDefaults.standard.removeObject(forKey: "uBlockOriginExtension")
+		}
 		safariBundlePaths.removeValue(forKey: name)
 		UserDefaults.standard.set(safariBundlePaths, forKey: "safariExtensionBundles")
 		UserDefaults.standard.set(installedNames, forKey: "installedExtensions")

@@ -1,12 +1,11 @@
 import SwiftUI
 
 /// Native Metal fill, with no WebView, per-square SwiftUI views, texture readback, or event timer.
-/// Example: DitherBackground(theme: browser.theme, configuration: .init(gridSize: 4, gridSpacing: 1))
 struct DitherBackground: View {
-	/// Current space theme; positions, colours, and mesh opacity update with the space.
+	/// Current Space theme; positions and colours update with the Space.
 	let theme: BrowserTheme
-	/// All visual and motion controls, documented on DitherConfiguration.
-	var configuration = DitherConfiguration()
+	/// Immutable visual and motion preset.
+	private let configuration = DitherConfiguration()
 	/// Optional input shared with an ancestor to track hover over foreground controls.
 	var pointer: DitherPointerInput?
 	/// Owning new-tab window visibility; defaults to true for standalone previews.
@@ -29,6 +28,7 @@ struct DitherBackground: View {
 
 	var body: some View {
 		let settings = configuration
+		let palette = positionedPalette
 		GeometryReader { geometry in
 			TimelineView(.animation(
 				minimumInterval: 1 / settings.safe(settings.framesPerSecond, 15 ... 120, fallback: 30),
@@ -36,7 +36,7 @@ struct DitherBackground: View {
 			)) { context in
 				let now = context.date.timeIntervalSinceReferenceDate
 				Rectangle()
-					.fill(shader(size: geometry.size, time: clock.value(at: now), now: now))
+					.fill(shader(size: geometry.size, time: clock.value(at: now), now: now, palette: palette))
 					.opacity(settings.safe(settings.opacity, 0 ... 1))
 			}
 			.onContinuousHover { phase in
@@ -80,17 +80,22 @@ struct DitherBackground: View {
 		            fade: configuration.safe(configuration.cursorFadeDuration, 0.1 ... 2, fallback: 0.5))
 	}
 
-	private func shader(size: CGSize, time: Double, now: Double) -> Shader {
-		let c = configuration
+	private var positionedPalette: ([Float], [Color]) {
 		// The theme uses at most four points. Keep positions and colours paired and bounded.
 		let points = Array(theme.meshColorPoints.prefix(4))
 		let positions = points.flatMap { point in
-			[Float(c.safe(point.x, 0 ... 1)), Float(c.safe(point.y, 0 ... 1))]
+			[Float(configuration.safe(point.x, 0 ... 1)), Float(configuration.safe(point.y, 0 ... 1))]
 		}
 		let colors = points.map { point in
-			Color(.sRGB, red: c.safe(point.color.red, 0 ... 1), green: c.safe(point.color.green, 0 ... 1),
-			      blue: c.safe(point.color.blue, 0 ... 1))
+			Color(.sRGB, red: configuration.safe(point.color.red, 0 ... 1), green: configuration.safe(point.color.green, 0 ... 1),
+			      blue: configuration.safe(point.color.blue, 0 ... 1))
 		}
+		return (positions, colors)
+	}
+
+	private func shader(size: CGSize, time: Double, now: Double, palette: ([Float], [Color])) -> Shader {
+		let c = configuration
+		let (positions, colors) = palette
 		let gridSize = c.safe(c.gridSize, 1 ... 24, fallback: 3)
 		let trail = running && c.cursorInteractionEnabled
 			? motion.trail(at: now,
@@ -105,7 +110,7 @@ struct DitherBackground: View {
 			.float4(c.safe(c.colorLevels, 2 ... 16, fallback: 5.4), c.safe(c.ditherStrength, 0 ... 1),
 			        c.safe(c.contrast, 0.25 ... 3, fallback: 1), c.safe(c.brightness, -0.5 ... 0.5)),
 			.float4(c.safe(c.minimumIntensity, 0 ... 0.5), c.safe(c.themeColorAmount, 0 ... 1),
-			        c.safe(theme.meshOpacity, 0 ... 1), Double(min(max(c.noiseOctaves, 1), 5))),
+			        1, Double(min(max(c.noiseOctaves, 1), 5))),
 			.float4(c.safe(c.cursorRadius, 0.05 ... 1.5, fallback: 0.6), c.safe(c.cursorStrength, -2 ... 2),
 			        c.safe(c.cursorWarp, 0 ... 0.3), 0),
 			.color(dark ? .black : .white),
@@ -115,18 +120,5 @@ struct DitherBackground: View {
 }
 
 #Preview("Theme Dither") {
-	@Previewable @State var configuration = DitherConfiguration()
-	let theme: BrowserTheme = {
-		var theme = BrowserTheme()
-		theme.meshColorPoints = [
-			ThemeColorPoint(color: BrowserColor(red: 0.3, green: 0.2, blue: 0.9), x: 0.2, y: 0.2),
-			ThemeColorPoint(color: BrowserColor(red: 0.1, green: 0.8, blue: 0.7), x: 0.8, y: 0.8),
-		]
-		return theme
-	}()
-	HStack(spacing: 0) {
-		DitherBackground(theme: theme, configuration: configuration)
-		DitherControls(configuration: $configuration).frame(width: 320)
-	}
-	.frame(width: 1000, height: 650)
+	DitherBackground(theme: BrowserTheme()).frame(width: 1000, height: 650)
 }

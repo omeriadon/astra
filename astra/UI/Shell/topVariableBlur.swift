@@ -134,6 +134,7 @@ private struct SidebarScrollOpacityFadeModifier: ViewModifier {
 				faded.clipShape(Rectangle())
 			#endif
 		}
+		.environment(\.sidebarScrollIndicatorBottomInset, bottom)
 		.onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
 			lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
 		}

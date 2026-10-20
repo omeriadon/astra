@@ -16,17 +16,17 @@ struct ShellTopBarView: View {
 	@Default(.developerModeEnabled) private var developerModeEnabled
 
 	private var showsDeveloperMode: Bool {
-		developerModeEnabled || browser.selectedTab?.isDeveloperMode == true
+		developerModeEnabled || browser.chromeTab?.isDeveloperMode == true
 	}
 
 	var body: some View {
-		if browser.selectedTab?.internalPage == nil, !browser.isShowingNewTab {
+		if browser.chromeTab?.internalPage == nil, !browser.isShowingNewTab {
 			websiteControls
 				.transition(.identity)
 				.frame(height: isCompact ? BrowserChromeMetrics.topBarRegionHeight * 2 : BrowserChromeMetrics.topBarRegionHeight)
 				.background {
 					ZStack {
-						browser.selectedTab?.activeController?.themeColor ?? theme.tabColor
+						browser.chromeTab?.activeController?.themeColor ?? theme.tabColor
 						if showsDeveloperMode {
 							Canvas { context, size in
 								for x in stride(from: -size.height, through: size.width, by: 24) {
@@ -47,7 +47,7 @@ struct ShellTopBarView: View {
 	}
 
 	private var controlsColorScheme: ColorScheme {
-		if let isLight = browser.selectedTab?.activeController?.themeColorIsLight {
+		if let isLight = browser.chromeTab?.activeController?.themeColorIsLight {
 			return isLight ? .light : .dark
 		}
 		return theme.foregroundColor == .black ? .light : .dark
@@ -90,11 +90,11 @@ struct ShellTopBarView: View {
 			.environment(\.colorScheme, controlsColorScheme)
 			.foregroundStyle(.primary)
 			.overlay(alignment: .bottom) {
-				if let controller = browser.selectedTab?.activeController {
+				if let controller = browser.chromeTab?.activeController {
 					ShellTopBarLoadingBar(
 						controller: controller,
 						theme: theme,
-						tabID: browser.selectedTabID
+						tabID: browser.chromeTab?.id ?? browser.selectedTabID
 					)
 				}
 			}
@@ -133,7 +133,7 @@ private struct ShellWebsiteNavigationControls: View {
 	@Default(.usageLimitsProvider) private var usageLimitsProvider
 
 	var body: some View {
-		if let controller = browser.selectedTab?.activeController {
+		if let controller = browser.chromeTab?.activeController {
 			BrowserNavigationControls(
 				controller: controller,
 				browser: browser,
@@ -147,7 +147,7 @@ private struct ShellWebsiteNavigationControls: View {
 			.id(ObjectIdentifier(controller))
 			BrowserAgentControls(browser: browser)
 			#if os(macOS)
-				if developerModeEnabled || browser.selectedTab?.isDeveloperMode == true {
+				if developerModeEnabled || browser.chromeTab?.isDeveloperMode == true {
 					Button("Inspect Element", systemImage: "cursorarrow.rays") {
 						BrowserDesktopCommands.showWebInspector(controller, selectingElement: true)
 					}
@@ -162,7 +162,7 @@ private struct ShellWebsiteNavigationControls: View {
 				BrowserSiteInformationButton(controller: controller)
 					.id(ObjectIdentifier(controller))
 			#endif
-			if developerModeEnabled || browser.selectedTab?.isDeveloperMode == true, usageLimitsProvider != .none, !browser.isPrivate {
+			if developerModeEnabled || browser.chromeTab?.isDeveloperMode == true, usageLimitsProvider != .none, !browser.isPrivate {
 				BrowserUsageLimitsButton(browser: browser)
 			}
 			#if os(iOS)
@@ -259,7 +259,7 @@ struct ShellExtensionControls: View {
 
 	var body: some View {
 		if !browser.isPrivate {
-			if let listing = browser.selectedTab?.activeController?.url,
+			if let listing = browser.chromeTab?.activeController?.url,
 			   ChromeExtensionPackage.extensionID(from: listing) != nil
 			{
 				Button("Install Extension", systemImage: "square.and.arrow.down") {

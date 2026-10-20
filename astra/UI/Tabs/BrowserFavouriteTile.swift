@@ -29,6 +29,7 @@ struct BrowserFavouriteTile: View {
 		.buttonStyle(.plain)
 		#if os(macOS)
 			.onDrag {
+				BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
 				let data = tab.id.uuidString.data(using: .utf8) ?? Data()
 				let provider = NSItemProvider()
 				provider.registerDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab", visibility: .ownProcess) { completion in

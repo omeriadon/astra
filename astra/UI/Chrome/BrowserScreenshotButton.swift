@@ -47,12 +47,12 @@
 		}
 
 		private func capture(framed: Bool) async {
-			guard !isCapturing, browser.selectedTab?.activeController === controller else { return }
+			guard !isCapturing, browser.chromeTab?.activeController === controller else { return }
 			isCapturing = true
 			defer { isCapturing = false }
 			do {
 				let capture = try await controller.captureScreenshot()
-				guard browser.selectedTab?.activeController === controller else { return }
+				guard browser.chromeTab?.activeController === controller else { return }
 				if framed {
 					screenshot = capture
 					showsEditor = true

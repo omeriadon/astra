@@ -7,7 +7,7 @@ struct BrowserSidebarHeader: View {
 	let acceptsFocusRequests: Bool
 
 	private var controller: BrowserController? {
-		browser.selectedTab?.activeController
+		browser.chromeTab?.activeController
 	}
 
 	var body: some View {

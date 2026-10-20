@@ -34,12 +34,18 @@ nonisolated struct BrowserEaselDocument: Codable, Equatable, Sendable {
 		var height: Double = 120
 		var rotation: Double = 0
 		var text: String = ""
+		/// nil denotes a legacy text box: preserve its saved wrapping width.
+		/// New text grows naturally until the viewport limit; a width drag fixes it.
+		var textWidthIsFixed: Bool?
 		var font: Font = .sfMono
 		var size: Size = .medium
 		var background: Background = .none
 		var points: [Point] = []
 		var url: URL?
 		var imageData: Data?
+		/// Optional to keep older saved Easel documents decodable. Nil preserves
+		/// the original square image corners.
+		var roundedCorners: Bool?
 		var quote: BrowserEaselQuote?
 
 		nonisolated enum Kind: String, Codable, CaseIterable, Sendable {
@@ -48,6 +54,7 @@ nonisolated struct BrowserEaselDocument: Codable, Equatable, Sendable {
 
 		nonisolated enum Font: String, Codable, CaseIterable, Sendable {
 			case sfMono = "SFMono-Regular"
+			case sfCompactRounded = "SFCompactRounded-Regular"
 			case newYork = "NewYorkSmall-Regular"
 			case geistPixel = "GeistPixel-Square"
 			case thestralNeue = "ThestralNeue-Bold"
@@ -56,6 +63,7 @@ nonisolated struct BrowserEaselDocument: Codable, Equatable, Sendable {
 			var displayName: String {
 				switch self {
 					case .sfMono: "SF Mono"
+					case .sfCompactRounded: "SF Compact Rounded"
 					case .newYork: "New York"
 					case .geistPixel: "Geist Pixel"
 					case .thestralNeue: "Thestral Neue"
@@ -105,7 +113,7 @@ nonisolated struct BrowserEaselDocument: Codable, Equatable, Sendable {
 			x.isFinite && (0 ... 10000).contains(x)
 				&& y.isFinite && (0 ... 1_000_000).contains(y)
 				&& width.isFinite && (32 ... 10000).contains(width)
-				&& height.isFinite && (0.01 ... 10000).contains(height)
+				&& height.isFinite && (0.01 ... (kind == .text ? 3_000_000 : 10000)).contains(height)
 				&& rotation.isFinite && (-360 ... 360).contains(rotation)
 				&& points.count <= 10000
 				&& points.allSatisfy { $0.x.isFinite && $0.y.isFinite && abs($0.x) <= 10000 && abs($0.y) <= 10000 }
@@ -115,6 +123,43 @@ nonisolated struct BrowserEaselDocument: Codable, Equatable, Sendable {
 			if constrained, [.rectangle, .ellipse].contains(kind) {
 				height = width
 			}
+		}
+
+		/// Builds a transient preview or completed shape in canvas coordinates.
+		/// The document is changed only after the pointer is released.
+		static func drawnShape(kind: Kind, from start: Point, to end: Point,
+		                       constrained: Bool, withinWidth canvasWidth: Double) -> Self? {
+			guard [.rectangle, .ellipse, .line, .arrow].contains(kind),
+			      start.x.isFinite, start.y.isFinite, end.x.isFinite, end.y.isFinite,
+			      canvasWidth.isFinite else { return nil }
+			let limitX = min(10000, max(32, canvasWidth))
+			let origin = Point(x: min(limitX, max(0, start.x)), y: min(1_000_000, max(0, start.y)))
+			var dx = min(10000, max(-10000, end.x - origin.x))
+			var dy = min(10000, max(-10000, end.y - origin.y))
+			guard hypot(dx, dy) >= 3 else { return nil }
+			let isBox = [.rectangle, .ellipse].contains(kind)
+			if constrained, isBox {
+				let side = max(32, abs(dx), abs(dy))
+				dx = dx < 0 ? -side : side
+				dy = dy < 0 ? -side : side
+			}
+			var destination = Point(x: min(limitX, max(0, origin.x + dx)), y: min(1_000_000, max(0, origin.y + dy)))
+			if constrained, isBox {
+				let side = min(abs(destination.x - origin.x), abs(destination.y - origin.y))
+				guard side >= 32 else { return nil }
+				destination = Point(x: origin.x + (dx < 0 ? -side : side), y: origin.y + (dy < 0 ? -side : side))
+			}
+			guard hypot(destination.x - origin.x, destination.y - origin.y) >= 3 else { return nil }
+			var item = Self(kind: kind)
+			item.x = min(origin.x, destination.x)
+			item.y = min(origin.y, destination.y)
+			item.width = max(32, abs(destination.x - origin.x))
+			item.height = max(1, abs(destination.y - origin.y))
+			if !isBox {
+				// Keep press-to-release direction, including for arrows drawn in reverse.
+				item.points = [origin, destination].map { Point(x: $0.x - item.x, y: $0.y - item.y) }
+			}
+			return item.geometryIsValid ? item : nil
 		}
 
 		mutating func moveEndpoint(_ index: Int, by translation: Point, withinWidth canvasWidth: Double) {
@@ -150,7 +195,7 @@ nonisolated struct BrowserEaselDocument: Codable, Equatable, Sendable {
 			guard item.x.isFinite, (0 ... 10000).contains(item.x),
 			      item.y.isFinite, (0 ... 1_000_000).contains(item.y),
 			      item.width.isFinite, (32 ... 10000).contains(item.width),
-			      item.height.isFinite, (0.01 ... 10000).contains(item.height),
+			      item.height.isFinite, (0.01 ... (item.kind == .text ? 3_000_000 : 10000)).contains(item.height),
 			      item.rotation.isFinite, (-360 ... 360).contains(item.rotation),
 			      item.text.utf8.count <= 80000, item.points.count <= 10000,
 			      item.points.allSatisfy({ $0.x.isFinite && $0.y.isFinite && abs($0.x) <= 10000 && abs($0.y) <= 10000 })

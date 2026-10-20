@@ -887,9 +887,19 @@
 			browser.requestNewTab()
 		}
 
+		@objc private func showActionPalette(_: Any?) {
+			guard activeMiniWindow == nil, activeAuthenticationBrowser == nil,
+			      let browser = activeBrowser else { return }
+			browser.showsActionPalette.toggle()
+		}
+
 		@objc private func closeTab(_: Any?) {
 			if BrowserSettingsWindowController.shared.isKeyWindow {
 				NSApp.keyWindow?.performClose(nil)
+				return
+			}
+			if let browser = activeBrowser, browser.showsActionPalette {
+				browser.showsActionPalette = false
 				return
 			}
 			if let browser = activeBrowser, browser.showsQuickSearch {
@@ -905,6 +915,7 @@
 				return
 			}
 			guard let browser = activeBrowser else { return }
+			if browser.closeSelectedSidebarTabs() { return }
 			browser.closeTab(browser.selectedTabID)
 		}
 
@@ -1367,6 +1378,9 @@
 			if menuItem.action == #selector(toggleTopBar(_:)) {
 				return activeBrowser != nil
 			}
+			if menuItem.action == #selector(showActionPalette(_:)) {
+				return activeBrowser != nil && activeMiniWindow == nil && activeAuthenticationBrowser == nil
+			}
 			if menuItem.action == #selector(toggleSidebar(_:)) {
 				return activeBrowser?.isMini == false
 			}
@@ -1552,6 +1566,7 @@
 			mainMenu.addItem(menuRoot("View", submenu: viewMenu))
 			viewMenu.addItem(item("Show Reader", action: #selector(toggleReader(_:)), key: "r", modifiers: [.command, .option]))
 			viewMenu.addItem(item("Zap Element", action: #selector(toggleZapElement(_:))))
+			viewMenu.addItem(item("Action Palette", action: #selector(showActionPalette(_:)), key: "p", modifiers: [.command, .shift]))
 			viewMenu.addItem(item("Toggle Sidebar", action: #selector(toggleSidebar(_:)), key: "s"))
 			viewMenu.addItem(item("Toggle Top Bar", action: #selector(toggleTopBar(_:)), key: "d"))
 			viewMenu.addItem(item("Toggle AI Sidebar", action: #selector(toggleAISidebar(_:)), key: "l", modifiers: [.command, .option]))

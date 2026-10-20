@@ -7,6 +7,9 @@ import WebKit
 @MainActor
 @Observable
 final class Browser {
+	#if os(macOS)
+		let sidebarTabSelection = BrowserSidebarTabSelection()
+	#endif
 	private static var didApplyStartupBehavior = false
 	private static var launchMetadataTask: Task<Bool?, Never>?
 	private static var launchHydrationTask: Task<HydratedState, Error>?
@@ -148,6 +151,8 @@ final class Browser {
 		}
 	}
 
+	var pendingPageSummary = false
+	var showsActionPalette = false
 	var showsQuickSearch = false
 	var quickSearchFocusRequest = 0
 	var newTabSearchSelection: String?
@@ -1293,6 +1298,7 @@ final class Browser {
 		newTabSearchText = ""
 		newTabSearchSelection = nil
 		showsQuickSearch = false
+		showsActionPalette = false
 		_ = addTab()
 		quickSearchFocusRequest += 1
 	}
@@ -1450,6 +1456,20 @@ final class Browser {
 		isShowingTabSplit && splitRightTabID.flatMap { tab(withID: $0)?.internalPage } == .easel
 	}
 
+	/// Browser chrome follows the website beside a focused easel, while selection
+	/// remains on the easel so editing and tab commands retain their usual target.
+	var chromeTab: BrowserTab? {
+		guard let selectedTab, selectedTab.internalPage == .easel,
+		      isShowingTabSplit,
+		      selectedTabID == splitLeftTabID || selectedTabID == splitRightTabID
+		else { return selectedTab }
+		let companionID = selectedTabID == splitLeftTabID ? splitRightTabID : splitLeftTabID
+		guard let companionID, let companion = tab(withID: companionID),
+		      companion.internalPage == nil
+		else { return selectedTab }
+		return companion
+	}
+
 	enum SplitSide: Sendable, Equatable {
 		case left, right
 	}
@@ -1475,6 +1495,12 @@ final class Browser {
 		else { return }
 		closeEaselSplit()
 		selectTab(anchorID)
+		// Both panes become visible, even though only the anchor is selected.
+		if tab.isHibernated {
+			tab.wake()
+			configure(tab)
+			schedulePersistence(fullState: true)
+		}
 		splitLeftTabID = onLeft ? id : anchorID
 		splitRightTabID = onLeft ? anchorID : id
 	}
@@ -1572,22 +1598,20 @@ final class Browser {
 		selectTab(easelID)
 	}
 
-	func openEaselQuote(_ quote: BrowserEaselQuote, in tab: BrowserTab) {
+	func openEaselQuote(_ quote: BrowserEaselQuote, in tab: BrowserTab, activationScreenPoint: CGPoint? = nil) {
 		guard tab.internalPage == .easel, quote.isValid else { return }
 		selectTab(tab.id)
 		let peek = BrowserPeek(url: quote.url, depth: tab.peeks.count + 1,
-		                       source: .trailing, parentZoom: 1,
+		                       source: .center, activationScreenPoint: activationScreenPoint, parentZoom: 1,
 		                       zoomsOut: Defaults[.zoomOutInPeeks], session: session, easelQuote: quote)
-		configure(peek, in: tab)
-		tab.addPeek(peek)
+		presentPeek(peek, in: tab)
 	}
 
-	func openEaselLink(_ url: URL, in tab: BrowserTab) {
+	func openEaselLink(_ url: URL, in tab: BrowserTab, activationScreenPoint: CGPoint? = nil) {
 		guard tab.internalPage == .easel, BrowserEaselDocument.isSafeLink(url) else { return }
 		selectTab(tab.id)
-		let peek = BrowserPeek(url: url, depth: tab.peeks.count + 1, source: .trailing, parentZoom: 1, zoomsOut: Defaults[.zoomOutInPeeks], session: session)
-		configure(peek, in: tab)
-		tab.addPeek(peek)
+		let peek = BrowserPeek(url: url, depth: tab.peeks.count + 1, source: .center, activationScreenPoint: activationScreenPoint, parentZoom: 1, zoomsOut: Defaults[.zoomOutInPeeks], session: session)
+		presentPeek(peek, in: tab)
 	}
 
 	func closeEaselSplit() {
@@ -1730,6 +1754,7 @@ final class Browser {
 			tab.setMonitorMatch(nil)
 		}
 		showsQuickSearch = false
+		showsActionPalette = false
 		previousTab?.activeController?.clearHoveredLink()
 		tab.activeController?.clearHoveredLink()
 		tab.clearPictureInPictureReturnController()
@@ -1760,6 +1785,11 @@ final class Browser {
 		}
 
 		let didWake = tab.isHibernated
+		// Restore the controller before publishing selection so the first frame
+		// already follows the normal website-loading path.
+		if didWake {
+			tab.wake()
+		}
 		newTabSearchText = ""
 		newTabSearchSelection = nil
 		newTabGoogleSuggestions = []
@@ -1782,12 +1812,7 @@ final class Browser {
 
 		BrowserWindowRegistry.shared.claimSelectedTab(in: self)
 		if didWake {
-			Task { @MainActor [weak self, weak tab] in
-				await Task.yield()
-				guard let self, let tab, selectedTabID == id else { return }
-				tab.wake()
-				configure(tab)
-			}
+			configure(tab)
 		}
 
 		recentlyUsedTabIDs.removeAll { $0 == id }
@@ -1802,6 +1827,17 @@ final class Browser {
 		// Waking rebuilds the controller (open-tabs changed); pure selection
 		// only needs workspace+snapshot.
 		schedulePersistence(fullState: didWake)
+	}
+
+	/// Recover a dormant visible pane after hydration or an explicit hibernate.
+	/// Crossfading outgoing pages and background tabs must remain dormant.
+	func wakeTabForDisplay(_ id: UUID) {
+		guard isHydrationFinished,
+		      selectedTabID == id || (isShowingTabSplit && (splitLeftTabID == id || splitRightTabID == id)),
+		      let tab = tab(withID: id), tab.isHibernated else { return }
+		tab.wake()
+		configure(tab)
+		schedulePersistence(fullState: true)
 	}
 
 	func switchCandidates(forward: Bool) -> [UUID] {
@@ -2312,7 +2348,7 @@ final class Browser {
 		automaticHibernationManager?.handleMemoryPressure(level)
 	}
 
-	func promotePeek(in source: BrowserTab, id: UUID) {
+	func promotePeek(in source: BrowserTab, id: UUID, splitSide: SplitSide? = nil) {
 		guard let sourceIndex = tabs.firstIndex(where: { $0 === source }),
 		      let peek = source.takePeekForPromotion(id) else { return }
 		let webView = peek.controller.webViewIfLoaded
@@ -2342,6 +2378,9 @@ final class Browser {
 		}
 		markWorkspaceStructureChanged()
 		selectTab(tab.id)
+		if let splitSide {
+			openSplit(tab.id, beside: source.id, onLeft: splitSide == .left)
+		}
 		assert(tab.controller === peek.controller)
 		assert(tab.controller?.navigationIdentifier == navigationIdentifier)
 		if let webView {
@@ -2354,6 +2393,22 @@ final class Browser {
 		guard let index = normalIDs.firstIndex(of: id), index > 0 else { return }
 		removeTabs(Set(normalIDs[..<index]), selecting: id)
 	}
+
+	#if os(macOS)
+		func closeSelectedSidebarTabs() -> Bool {
+			let selection = sidebarTabSelection
+			guard selection.tabIDs.count > 1,
+			      selection.area == .normal,
+			      selection.spaceID == workspace.selectedSpaceID else { return false }
+			let ids = Set(selection.tabIDs.filter { id in
+				workspace.selectedSpace.tabIDs.contains(id)
+					&& !workspace.selectedSpace.pinnedTabIDs.contains(id)
+			})
+			guard ids.count > 1 else { return false }
+			removeTabs(ids, selecting: selectedTabID)
+			return true
+		}
+	#endif
 
 	func closeTabsBelow(_ id: UUID) {
 		let normalIDs = normalTabs.map(\.id)
@@ -2854,6 +2909,11 @@ final class Browser {
 			zoomsOut: Defaults[.zoomOutInPeeks],
 			session: session
 		)
+		presentPeek(peek, in: tab)
+	}
+
+	/// Use the same display ownership and callbacks for local previews as for link peeks.
+	func presentPeek(_ peek: BrowserPeek, in tab: BrowserTab) {
 		configure(peek, in: tab)
 		tab.addPeek(peek)
 	}
@@ -3074,6 +3134,11 @@ final class Browser {
 		let closedWebIDs = Set(removedTabs.filter { isSyncableTab($0.openTab) }.map(\.id))
 		releaseAfterTabUpdate(removedTabs)
 		tabs.removeAll { ids.contains($0.id) }
+		#if os(macOS)
+			if !sidebarTabSelection.tabIDs.isDisjoint(with: ids) {
+				sidebarTabSelection.clear()
+			}
+		#endif
 		closedTabIDs.formUnion(closedWebIDs)
 		for id in closedWebIDs {
 			closedTabsAt[id] = .now

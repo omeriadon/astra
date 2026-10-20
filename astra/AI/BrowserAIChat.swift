@@ -149,7 +149,7 @@ final class BrowserAIChat {
 		augmentingTabID = nil
 	}
 
-	func send(in browser: Browser) async {
+	func send(in browser: Browser, activationScreenPoint: CGPoint? = nil) async {
 		guard !browser.isPrivate, !isResponding, !isImporting else { return }
 		let entered = draft.trimmingCharacters(in: .whitespacesAndNewlines)
 		guard !entered.isEmpty || !attachments.isEmpty || !pendingPages.isEmpty else { return }
@@ -159,6 +159,7 @@ final class BrowserAIChat {
 		let spaceID = browser.selectedSpace.id
 		let model = effectiveModel
 		let sendID = UUID()
+		let userMessage = Message(isUser: true, text: question, attachments: newAttachments)
 		let started = BrowserLog.clock()
 		var answerCommitted = false
 		attemptedBrowserAction = false
@@ -170,6 +171,10 @@ final class BrowserAIChat {
 		error = nil
 		canRetry = false
 		preview = ""
+		// Publish the submitted turn before access checks, page extraction, or any
+		// provider work can suspend. Keep its identity so failure/cancellation can
+		// remove the provisional row while leaving the composer draft available.
+		messages.append(userMessage)
 		activity = "Checking AI Access"
 		BrowserLog.info(.ai, "ai.chat.send", metadata: [
 			"id": BrowserLog.id(sendID), "conversation": BrowserLog.id(conversationID),
@@ -213,7 +218,7 @@ final class BrowserAIChat {
 				])
 			}
 			try Task.checkCancellation()
-			let files = messages.flatMap(\.attachments) + newAttachments
+			let files = messages.flatMap(\.attachments)
 			try BrowserAIAttachment.validateBudget(files)
 			let images = files.compactMap(\.image)
 			guard images.count <= 8, images.reduce(0, { $0 + $1.data.count }) <= 10 * 1024 * 1024 else { throw BrowserAIError.attachmentTooLarge }
@@ -244,7 +249,7 @@ final class BrowserAIChat {
 					"id": BrowserLog.id(sendID), "round": String(round + 1),
 					"tool_result_count": String(toolResults.count),
 				])
-				let (turn, results) = try await streamTurn(input: .init(context: context + "\n" + fileContext + "\n<conversation>\n" + conversation + "\n</conversation>\n" + BrowserAITools.inventory(browser), question: question, catalog: BrowserAITools.catalog(), images: images, reasoning: selectedReasoning.isEmpty ? "provider-default" : selectedReasoning, files: files.compactMap(\.file), toolResults: toolResults), model: model, browser: browser, spaceID: spaceID)
+				let (turn, results) = try await streamTurn(input: .init(context: context + "\n" + fileContext + "\n<conversation>\n" + conversation + "\n</conversation>\n" + BrowserAITools.inventory(browser), question: question, catalog: BrowserAITools.catalog(), images: images, reasoning: selectedReasoning.isEmpty ? "provider-default" : selectedReasoning, files: files.compactMap(\.file), toolResults: toolResults), model: model, browser: browser, spaceID: spaceID, activationScreenPoint: activationScreenPoint)
 				BrowserLog.debug(.ai, "ai.chat.turn-complete", metadata: [
 					"id": BrowserLog.id(sendID), "round": String(round + 1),
 					"action_count": String(turn.actions.count),
@@ -264,7 +269,6 @@ final class BrowserAIChat {
 			try Task.checkCancellation()
 			guard id == conversationID else { return }
 			pages = contextPages
-			messages.append(Message(isUser: true, text: question, attachments: newAttachments))
 			messages.append(Message(isUser: false, text: answer, augmentArtifacts: turnArtifacts.isEmpty ? nil : turnArtifacts, toolCalls: toolCalls.isEmpty ? nil : toolCalls))
 			answerCommitted = true
 			if messages.count == 2 {
@@ -302,13 +306,14 @@ final class BrowserAIChat {
 		} catch {
 			// A completed augmentation remains reopenable even if a later provider round fails.
 			if !answerCommitted, !turnArtifacts.isEmpty, id == conversationID {
-				messages.append(Message(isUser: true, text: question, attachments: newAttachments))
 				messages.append(Message(isUser: false, text: "Website Augment created. The follow-up response did not finish.", augmentArtifacts: turnArtifacts, toolCalls: toolCalls))
 				draft = ""
 				attachments = []
 				pendingPages = []
 				linkedTabIDs = []
 				try? await save()
+			} else if !answerCommitted, id == conversationID {
+				messages.removeAll { $0.id == userMessage.id }
 			}
 			preview = ""
 			if !Task.isCancelled {
@@ -329,7 +334,7 @@ final class BrowserAIChat {
 		}
 	}
 
-	private func streamTurn(input: BrowserAIChatTurnFeature.Input, model: BrowserAIModel, browser: Browser, spaceID: UUID) async throws -> (BrowserAIChatTurnFeature.Turn, [BrowserAIToolResult]) {
+	private func streamTurn(input: BrowserAIChatTurnFeature.Input, model: BrowserAIModel, browser: Browser, spaceID: UUID, activationScreenPoint: CGPoint?) async throws -> (BrowserAIChatTurnFeature.Turn, [BrowserAIToolResult]) {
 		let feature = BrowserAIChatTurnFeature()
 		var lastPublished: ContinuousClock.Instant?
 		// Validate the entire model response before executing any actions. A completed
@@ -363,7 +368,7 @@ final class BrowserAIChat {
 				let result = try await BrowserAITools.execute(call, browser: browser, spaceID: spaceID, model: model) { artifact in
 					self.turnArtifacts.append(artifact)
 					// Keep the artifact even if a tab vanished while opening its peek.
-					try BrowserWebsiteAugment.open(artifact, in: browser)
+					try BrowserWebsiteAugment.open(artifact, in: browser, activationScreenPoint: activationScreenPoint)
 				}
 				toolCalls[index].status = "Completed"
 				toolCalls[index].detail = String(result.prefix(2000))

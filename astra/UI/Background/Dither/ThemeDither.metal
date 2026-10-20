@@ -90,7 +90,7 @@ float bayer(int2 cell) {
 	float levels = max(tones.x - 1.0, 1.0);
 	float quantized = floor(clamp(field + bayer(int2(cell)) * tones.y / levels, 0.0, 1.0) * levels + 0.5) / levels;
 	quantized = clamp(quantized, 0.0, 1.0);
-	float intensity = mix(max(style.x, 0.14), 1.0, quantized);
+	float intensity = mix(style.x, 1.0, quantized);
 
 	// Same inverse-square weights and 0.015 softness used to build Astra's 10x10 mesh.
 	// Sampling the continuous field keeps colours anchored to their theme positions as waves move.
@@ -108,7 +108,7 @@ float bayer(int2 cell) {
 	// Expose dark Space colours without replacing their hue.
 	float peak = max(mesh.r, max(mesh.g, mesh.b));
 	float gain = mix(2.85, 1.2, smoothstep(0.12, 0.85, peak));
-	float3 litMesh = clamp(mesh * gain + float3(0.045), 0.0, 1.0);
+	float3 litMesh = clamp(mesh * gain + float3(0.24), 0.0, 1.0);
 	float3 tint = mix(float3(1.0), litMesh, style.y);
 	float highlight = pow(smoothstep(0.55, 0.98, quantized), 2.0);
 	float3 litSquare = clamp(tint * (intensity + highlight * 0.14), 0.0, 1.0);

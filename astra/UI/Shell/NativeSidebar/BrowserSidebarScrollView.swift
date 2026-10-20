@@ -1,5 +1,42 @@
 import SwiftUI
 
+private struct SidebarScrollIndicatorBottomInsetKey: EnvironmentKey {
+	nonisolated static let defaultValue: CGFloat = 0
+}
+
+extension EnvironmentValues {
+	/// The same measured bottom reservation used by the sidebar's edge fade.
+	var sidebarScrollIndicatorBottomInset: CGFloat {
+		get { self[SidebarScrollIndicatorBottomInsetKey.self] }
+		set { self[SidebarScrollIndicatorBottomInsetKey.self] = newValue }
+	}
+}
+
+/// Interpolate the header reservation before crossing into native layout, just
+/// as BrowserSplitView does for pane visibility. Native representables otherwise
+/// receive only the destination metric and jump when the top bar is toggled.
+struct BrowserSidebarScrollView<Revision: Equatable, Row: View>: View, @MainActor Animatable {
+	let items: [BrowserSidebarItem]
+	let revision: Revision
+	var top: CGFloat = 0
+	var padding: CGFloat = BrowserChromeMetrics.shellEdgePadding
+	var spacing: CGFloat = 2
+	var move: (([UUID], SidebarTabCollection, UUID?) -> Void)?
+	@ViewBuilder let row: (BrowserSidebarItem) -> Row
+
+	var animatableData: CGFloat {
+		get { top }
+		set { top = newValue }
+	}
+
+	var body: some View {
+		BrowserSidebarNativeScrollViewRepresentable(
+			items: items, revision: revision, top: top,
+			padding: padding, spacing: spacing, move: move, row: row
+		)
+	}
+}
+
 /// Only semantic changes refresh hosted roots. In particular a new proposed
 /// width must only resize the visible native cells, not replace their contents.
 private struct BrowserSidebarTraits: Equatable {
@@ -35,7 +72,7 @@ private struct BrowserSidebarTraits: Equatable {
 #if os(macOS)
 	import AppKit
 
-	struct BrowserSidebarScrollView<Revision: Equatable, Row: View>: NSViewRepresentable {
+	private struct BrowserSidebarNativeScrollViewRepresentable<Revision: Equatable, Row: View>: NSViewRepresentable {
 		let items: [BrowserSidebarItem]
 		let revision: Revision
 		var top: CGFloat = 0
@@ -84,6 +121,7 @@ private struct BrowserSidebarTraits: Equatable {
 			coordinator.collection?.dataSource = nil
 			coordinator.collection = nil
 			coordinator.parent = nil
+			coordinator.pendingUpdate = nil
 			scroll.documentView = nil
 		}
 
@@ -99,16 +137,33 @@ private struct BrowserSidebarTraits: Equatable {
 
 			let layout = BrowserSidebarCollectionLayout()
 			weak var collection: NSCollectionView?
-			var parent: BrowserSidebarScrollView?
+			var parent: BrowserSidebarNativeScrollViewRepresentable?
 			private var traits: BrowserSidebarTraits?
+			private var animatingFolder = false
+			fileprivate var pendingUpdate: BrowserSidebarNativeScrollViewRepresentable?
 
-			func update(_ new: BrowserSidebarScrollView, scroll: NSScrollView) {
+			func update(_ new: BrowserSidebarNativeScrollViewRepresentable, scroll: NSScrollView) {
 				guard let collection else { return }
 				let old = parent
+				if animatingFolder {
+					pendingUpdate = new
+					if old?.items != new.items || old?.top != new.top || old?.padding != new.padding || old?.spacing != new.spacing { return }
+				}
+				let folderTransition = !animatingFolder && !new.environment.accessibilityReduceMotion
+					? old.flatMap { BrowserSidebarFolderTransition(from: $0.items, to: new.items) } : nil
+				if folderTransition != nil { collection.layoutSubtreeIfNeeded() }
 				let newTraits = BrowserSidebarTraits(new.environment)
 				let structureChanged = old?.items != new.items
 				let contentChanged = old?.revision != new.revision || traits != newTraits
 				let metricsChanged = structureChanged || old?.top != new.top || old?.padding != new.padding || old?.spacing != new.spacing
+				// Keep the scroller outside the blur without insetting the clip view.
+				// `top` is the interpolated header reservation, not its destination.
+				if old?.top != new.top || old?.environment.sidebarScrollIndicatorBottomInset != new.environment.sidebarScrollIndicatorBottomInset {
+					scroll.scrollerInsets = NSEdgeInsets(
+						top: max(0, new.top), left: 0,
+						bottom: max(0, new.environment.sidebarScrollIndicatorBottomInset), right: 0
+					)
+				}
 				// Anchor structural changes to the first visible item rather than jumping
 				// when AI inserts groups, folders collapse, or a tab above it closes.
 				let origin = scroll.contentView.bounds.origin
@@ -116,17 +171,49 @@ private struct BrowserSidebarTraits: Equatable {
 					guard structureChanged, origin.y > 0, let old, old.items.indices.contains(index) else { return nil }
 					return (old.items[index].id, origin.y - layout.geometry.frames[index].minY)
 				}
-				parent = new
-				traits = newTraits
-				if metricsChanged {
-					layout.items = new.items
-					layout.top = new.top
-					layout.padding = new.padding
-					layout.spacing = new.spacing
-					layout.invalidateLayout()
+				let applyModel = {
+					self.parent = new
+					self.traits = newTraits
+					if metricsChanged {
+						if structureChanged { self.layout.items = new.items }
+						self.layout.top = new.top
+						self.layout.padding = new.padding
+						self.layout.spacing = new.spacing
+						self.layout.invalidateLayout()
+					}
 				}
-				if structureChanged {
-					collection.reloadData()
+				if let folderTransition {
+					layout.disappearingFolderFrames = Dictionary(uniqueKeysWithValues: folderTransition.deleted.map {
+						(IndexPath(item: $0, section: 0), layout.geometry.frames[$0])
+					})
+					layout.appearingFolderPaths = Set(folderTransition.inserted.map { IndexPath(item: $0, section: 0) })
+					animatingFolder = true
+					NSAnimationContext.runAnimationGroup { animation in
+						animation.duration = 0.22
+						collection.performBatchUpdates {
+							applyModel()
+							collection.deleteItems(at: Set(folderTransition.deleted.map { IndexPath(item: $0, section: 0) }))
+							collection.insertItems(at: self.layout.appearingFolderPaths)
+						} completionHandler: { [weak self, weak scroll] _ in
+							guard let self else { return }
+							self.animatingFolder = false
+							self.layout.appearingFolderPaths = []
+							self.layout.disappearingFolderFrames = [:]
+							if let pending = self.pendingUpdate, let scroll, self.collection != nil {
+								self.pendingUpdate = nil
+								self.update(pending, scroll: scroll)
+							}
+						}
+					}
+				} else {
+					applyModel()
+					if structureChanged { collection.reloadData() }
+				}
+				if let folderTransition {
+					let path = IndexPath(item: folderTransition.inserted.lowerBound - 1, section: 0)
+					if let cell = collection.item(at: path) as? BrowserSidebarHostingItem {
+						configure(cell, item: new.items[path.item])
+					}
 				}
 				if contentChanged, !structureChanged {
 					for path in collection.indexPathsForVisibleItems() {
@@ -245,22 +332,10 @@ private struct BrowserSidebarTraits: Equatable {
 	}
 
 	final class BrowserSidebarCollectionLayout: NSCollectionViewLayout {
-		var items: [BrowserSidebarItem] = [] {
-			didSet { metricsDirty = true }
-		}
-
-		var top: CGFloat = 0 {
-			didSet { metricsDirty = true }
-		}
-
-		var padding: CGFloat = 4 {
-			didSet { metricsDirty = true }
-		}
-
-		var spacing: CGFloat = 2 {
-			didSet { metricsDirty = true }
-		}
-
+		var items: [BrowserSidebarItem] = [] { didSet { metricsDirty = true } }
+		var top: CGFloat = 0
+		var padding: CGFloat = 4 { didSet { if oldValue != padding { metricsDirty = true } } }
+		var spacing: CGFloat = 2 { didSet { if oldValue != spacing { metricsDirty = true } } }
 		private var metricsDirty = true
 		private(set) var geometry = BrowserSidebarLayoutGeometry(items: [], width: 0, top: 0, padding: 0, spacing: 0)
 
@@ -270,6 +345,7 @@ private struct BrowserSidebarTraits: Equatable {
 				geometry = BrowserSidebarLayoutGeometry(items: items, width: collectionView?.bounds.width ?? 0, top: top, padding: padding, spacing: spacing)
 				metricsDirty = false
 			} else {
+				geometry.updateTop(top)
 				geometry.resize(width: collectionView?.bounds.width ?? 0)
 			}
 		}
@@ -289,17 +365,32 @@ private struct BrowserSidebarTraits: Equatable {
 			return attributes
 		}
 
-		override func layoutAttributesForInterItemGap(before indexPath: IndexPath) -> NSCollectionViewLayoutAttributes? {
-			guard !geometry.frames.isEmpty else { return nil }
-			let index = min(indexPath.item, geometry.frames.count - 1)
-			let frame = geometry.frames[index]
-			let attributes = NSCollectionViewLayoutAttributes(forInterItemGapBefore: indexPath)
-			if items[index].isFavourite, indexPath.item < geometry.frames.count {
-				attributes.frame = NSRect(x: frame.minX - 3, y: frame.minY, width: 2, height: frame.height)
-			} else {
-				let y = indexPath.item >= geometry.frames.count ? frame.maxY : frame.minY - spacing / 2
-				attributes.frame = NSRect(x: frame.minX, y: y, width: frame.width, height: 2)
+		var appearingFolderPaths: Set<IndexPath> = []
+		var disappearingFolderFrames: [IndexPath: CGRect] = [:]
+
+		override func initialLayoutAttributesForAppearingItem(at itemIndexPath: IndexPath) -> NSCollectionViewLayoutAttributes? {
+			guard appearingFolderPaths.contains(itemIndexPath), let attributes = layoutAttributesForItem(at: itemIndexPath) else {
+				return super.initialLayoutAttributesForAppearingItem(at: itemIndexPath)
 			}
+			attributes.alpha = 0
+			attributes.frame.origin.y -= 8
+			return attributes
+		}
+
+		override func finalLayoutAttributesForDisappearingItem(at itemIndexPath: IndexPath) -> NSCollectionViewLayoutAttributes? {
+			guard let frame = disappearingFolderFrames[itemIndexPath] else {
+				return super.finalLayoutAttributesForDisappearingItem(at: itemIndexPath)
+			}
+			let attributes = NSCollectionViewLayoutAttributes(forItemWith: itemIndexPath)
+			attributes.frame = frame.offsetBy(dx: 0, dy: -8)
+			attributes.alpha = 0
+			return attributes
+		}
+
+		override func layoutAttributesForInterItemGap(before indexPath: IndexPath) -> NSCollectionViewLayoutAttributes? {
+			guard let frame = geometry.insertionIndicator(before: indexPath.item, spacing: spacing) else { return nil }
+			let attributes = NSCollectionViewLayoutAttributes(forInterItemGapBefore: indexPath)
+			attributes.frame = frame
 			return attributes
 		}
 
@@ -319,7 +410,7 @@ private struct BrowserSidebarTraits: Equatable {
 #if os(iOS)
 	import UIKit
 
-	struct BrowserSidebarScrollView<Revision: Equatable, Row: View>: UIViewRepresentable {
+	private struct BrowserSidebarNativeScrollViewRepresentable<Revision: Equatable, Row: View>: UIViewRepresentable {
 		let items: [BrowserSidebarItem]
 		let revision: Revision
 		var top: CGFloat = 0
@@ -337,6 +428,7 @@ private struct BrowserSidebarTraits: Equatable {
 			let collection = UICollectionView(frame: .zero, collectionViewLayout: context.coordinator.layout)
 			collection.backgroundColor = .clear
 			collection.contentInsetAdjustmentBehavior = .never
+			collection.automaticallyAdjustsScrollIndicatorInsets = false
 			collection.alwaysBounceVertical = true
 			collection.allowsSelection = false
 			collection.register(UICollectionViewCell.self, forCellWithReuseIdentifier: "sidebar-hosted-row")
@@ -348,28 +440,76 @@ private struct BrowserSidebarTraits: Equatable {
 		}
 
 		func updateUIView(_ collection: UICollectionView, context: Context) {
-			let coordinator = context.coordinator
+			update(collection, coordinator: context.coordinator)
+		}
+
+		private func update(_ collection: UICollectionView, coordinator: Coordinator) {
 			let old = coordinator.parent
+			if coordinator.animatingFolder {
+				coordinator.pendingUpdate = self
+				if old?.items != items || old?.top != top || old?.padding != padding || old?.spacing != spacing { return }
+			}
+			let folderTransition = !coordinator.animatingFolder && !environment.accessibilityReduceMotion
+				? old.flatMap { BrowserSidebarFolderTransition(from: $0.items, to: items) } : nil
+			if folderTransition != nil { collection.layoutIfNeeded() }
 			let traits = BrowserSidebarTraits(environment)
 			let structureChanged = old?.items != items
 			let contentChanged = old?.revision != revision || coordinator.traits != traits
 			let metricsChanged = structureChanged || old?.top != top || old?.padding != padding || old?.spacing != spacing
+			// Indicator-only insets leave row geometry and scroll range unchanged.
+			if old?.top != top || old?.environment.sidebarScrollIndicatorBottomInset != environment.sidebarScrollIndicatorBottomInset {
+				collection.verticalScrollIndicatorInsets = UIEdgeInsets(
+					top: max(0, top), left: 0,
+					bottom: max(0, environment.sidebarScrollIndicatorBottomInset), right: 0
+				)
+			}
 			let origin = collection.contentOffset
 			let anchor = coordinator.layout.geometry.visibleIndices(in: collection.bounds).first.flatMap { index -> (String, CGFloat)? in
 				guard structureChanged, origin.y > 0, let old, old.items.indices.contains(index) else { return nil }
 				return (old.items[index].id, origin.y - coordinator.layout.geometry.frames[index].minY)
 			}
-			coordinator.parent = self
-			coordinator.traits = traits
-			if metricsChanged {
-				coordinator.layout.items = items
-				coordinator.layout.top = top
-				coordinator.layout.padding = padding
-				coordinator.layout.spacing = spacing
-				coordinator.layout.invalidateLayout()
+			let applyModel = {
+				coordinator.parent = self
+				coordinator.traits = traits
+				if metricsChanged {
+					if structureChanged { coordinator.layout.items = items }
+					coordinator.layout.top = top
+					coordinator.layout.padding = padding
+					coordinator.layout.spacing = spacing
+					coordinator.layout.invalidateLayout()
+				}
 			}
-			if structureChanged {
-				collection.reloadData()
+			if let folderTransition {
+				coordinator.layout.disappearingFolderFrames = Dictionary(uniqueKeysWithValues: folderTransition.deleted.map {
+					(IndexPath(item: $0, section: 0), coordinator.layout.geometry.frames[$0])
+				})
+				coordinator.layout.appearingFolderPaths = Set(folderTransition.inserted.map { IndexPath(item: $0, section: 0) })
+				coordinator.animatingFolder = true
+				UIView.animate(withDuration: 0.22) {
+					collection.performBatchUpdates {
+						applyModel()
+						collection.deleteItems(at: folderTransition.deleted.map { IndexPath(item: $0, section: 0) })
+						collection.insertItems(at: Array(coordinator.layout.appearingFolderPaths))
+					} completion: { [weak coordinator, weak collection] _ in
+						guard let coordinator else { return }
+						coordinator.animatingFolder = false
+						coordinator.layout.appearingFolderPaths = []
+						coordinator.layout.disappearingFolderFrames = [:]
+						if let pending = coordinator.pendingUpdate, let collection, coordinator.parent != nil {
+							coordinator.pendingUpdate = nil
+							pending.update(collection, coordinator: coordinator)
+						}
+					}
+				}
+			} else {
+				applyModel()
+				if structureChanged { collection.reloadData() }
+			}
+			if let folderTransition {
+				let path = IndexPath(item: folderTransition.inserted.lowerBound - 1, section: 0)
+				if let cell = collection.cellForItem(at: path) {
+					coordinator.configure(cell, item: items[path.item])
+				}
 			}
 			if contentChanged, !structureChanged {
 				for path in collection.indexPathsForVisibleItems {
@@ -393,13 +533,16 @@ private struct BrowserSidebarTraits: Equatable {
 			collection.dragDelegate = nil
 			collection.dropDelegate = nil
 			coordinator.parent = nil
+			coordinator.pendingUpdate = nil
 		}
 
 		@MainActor
 		final class Coordinator: NSObject, UICollectionViewDataSource, UICollectionViewDragDelegate, UICollectionViewDropDelegate {
 			let layout = BrowserSidebarCollectionLayout()
-			var parent: BrowserSidebarScrollView?
+			var parent: BrowserSidebarNativeScrollViewRepresentable?
 			fileprivate var traits: BrowserSidebarTraits?
+			fileprivate var animatingFolder = false
+			fileprivate var pendingUpdate: BrowserSidebarNativeScrollViewRepresentable?
 
 			func collectionView(_: UICollectionView, numberOfItemsInSection _: Int) -> Int {
 				parent?.items.count ?? 0
@@ -445,22 +588,10 @@ private struct BrowserSidebarTraits: Equatable {
 	}
 
 	final class BrowserSidebarCollectionLayout: UICollectionViewLayout {
-		var items: [BrowserSidebarItem] = [] {
-			didSet { metricsDirty = true }
-		}
-
-		var top: CGFloat = 0 {
-			didSet { metricsDirty = true }
-		}
-
-		var padding: CGFloat = 4 {
-			didSet { metricsDirty = true }
-		}
-
-		var spacing: CGFloat = 2 {
-			didSet { metricsDirty = true }
-		}
-
+		var items: [BrowserSidebarItem] = [] { didSet { metricsDirty = true } }
+		var top: CGFloat = 0
+		var padding: CGFloat = 4 { didSet { if oldValue != padding { metricsDirty = true } } }
+		var spacing: CGFloat = 2 { didSet { if oldValue != spacing { metricsDirty = true } } }
 		private var metricsDirty = true
 		private(set) var geometry = BrowserSidebarLayoutGeometry(items: [], width: 0, top: 0, padding: 0, spacing: 0)
 
@@ -470,6 +601,7 @@ private struct BrowserSidebarTraits: Equatable {
 				geometry = BrowserSidebarLayoutGeometry(items: items, width: collectionView?.bounds.width ?? 0, top: top, padding: padding, spacing: spacing)
 				metricsDirty = false
 			} else {
+				geometry.updateTop(top)
 				geometry.resize(width: collectionView?.bounds.width ?? 0)
 			}
 		}
@@ -486,6 +618,28 @@ private struct BrowserSidebarTraits: Equatable {
 			guard geometry.frames.indices.contains(indexPath.item) else { return nil }
 			let attributes = UICollectionViewLayoutAttributes(forCellWith: indexPath)
 			attributes.frame = geometry.frames[indexPath.item]
+			return attributes
+		}
+
+		var appearingFolderPaths: Set<IndexPath> = []
+		var disappearingFolderFrames: [IndexPath: CGRect] = [:]
+
+		override func initialLayoutAttributesForAppearingItem(at itemIndexPath: IndexPath) -> UICollectionViewLayoutAttributes? {
+			guard appearingFolderPaths.contains(itemIndexPath), let attributes = layoutAttributesForItem(at: itemIndexPath) else {
+				return super.initialLayoutAttributesForAppearingItem(at: itemIndexPath)
+			}
+			attributes.alpha = 0
+			attributes.frame.origin.y -= 8
+			return attributes
+		}
+
+		override func finalLayoutAttributesForDisappearingItem(at itemIndexPath: IndexPath) -> UICollectionViewLayoutAttributes? {
+			guard let frame = disappearingFolderFrames[itemIndexPath] else {
+				return super.finalLayoutAttributesForDisappearingItem(at: itemIndexPath)
+			}
+			let attributes = UICollectionViewLayoutAttributes(forCellWith: itemIndexPath)
+			attributes.frame = frame.offsetBy(dx: 0, dy: -8)
+			attributes.alpha = 0
 			return attributes
 		}
 

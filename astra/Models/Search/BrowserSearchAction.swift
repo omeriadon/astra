@@ -1,5 +1,8 @@
 import Defaults
 import Foundation
+#if os(macOS)
+	import AppKit
+#endif
 
 struct BrowserSearchAction: Identifiable {
 	let id: String
@@ -8,6 +11,59 @@ struct BrowserSearchAction: Identifiable {
 	let terms: [String]
 	let detail: String
 	let perform: @MainActor () -> Void
+
+	/// A local command list: never runs a web search or creates a tab on presentation.
+	@MainActor
+	static func paletteCatalogue(for browser: Browser) -> [Self] {
+		var actions = catalogue(for: browser).filter { $0.detail == "Browser Action" }
+		func add(_ id: String, _ title: String, _ symbol: String, _ terms: [String] = [], perform: @escaping @MainActor () -> Void) {
+			actions.append(Self(id: id, title: title, symbol: symbol, terms: terms, detail: "Browser Action", perform: perform))
+		}
+		add("close-tab", "Close Tab", "xmark", ["close current tab"]) { browser.closeTab(browser.selectedTabID) }
+		add("duplicate-tab", "Duplicate Tab", "plus.square.on.square") { _ = browser.duplicateTab(browser.selectedTabID) }
+		#if os(macOS)
+			add("toggle-top-bar", "Toggle Top Bar", "rectangle.topthird.inset.filled", ["toolbar", "address bar"]) {
+				NotificationCenter.default.post(name: .toggleBrowserTopBar, object: browser.windowID)
+			}
+			add("quit", "Quit Astra", "power") { NSApp.terminate(nil) }
+		#endif
+		if let controller = browser.selectedTab?.activeController {
+			add("zoom-in", "Zoom In", "plus.magnifyingglass", ["increase zoom"]) { controller.zoomIn() }
+			add("zoom-out", "Zoom Out", "minus.magnifyingglass", ["decrease zoom"]) { controller.zoomOut() }
+			add("reset-zoom", "Reset Zoom", "arrow.counterclockwise", ["actual size", "100%"]) { controller.resetZoom() }
+			add("reload", "Reload Page", "arrow.clockwise", ["refresh"]) { controller.reload() }
+			if controller.canGoBack { add("back", "Go Back", "arrow.left") { controller.goBack() } }
+			if controller.canGoForward { add("forward", "Go Forward", "arrow.right") { controller.goForward() } }
+		}
+		if !browser.isPrivate, !browser.isMini,
+		   let current = browser.selectedTab, current.canAppearInEaselSplit,
+		   let other = browser.visibleTabs.first(where: { $0.id != current.id && $0.canAppearInEaselSplit }) {
+			actions.append(Self(id: "split-current-tab", title: "Add Current Tab to Split",
+			                    symbol: "rectangle.split.2x1", terms: ["split view", "split screen"],
+			                    detail: "Split with \(other.title)", perform: {
+				                    browser.openSplit(current.id, beside: other.id, onLeft: false)
+			                    }))
+		}
+		if browser.isShowingTabSplit {
+			add("close-split", "Close Split", "rectangle") { browser.closeEaselSplit() }
+		}
+		if Defaults[.aiFeaturesEnabled], Defaults[.aiSidebar], browser.canShowAISidebar,
+		   !browser.isPrivate, !browser.aiChat.isResponding, !browser.aiChat.isImporting,
+		   browser.aiChat.draft.isEmpty {
+			add("summarise-page", "Summarise Page", "text.alignleft", ["summarize", "summary", "AI"]) {
+				browser.showsAISidebar = true
+				browser.pendingPageSummary = true
+			}
+		}
+		return actions.map { action in
+			guard action.id == "toggle-sidebar" || action.id == "toggle-ai-sidebar" else { return action }
+			let left = action.id == "toggle-sidebar"
+			return Self(id: action.id, title: left ? "Toggle Left Sidebar" : "Toggle Right Sidebar",
+			            symbol: left ? "sidebar.left" : "sidebar.right",
+			            terms: action.terms + [left ? "left bar" : "right bar", action.title],
+			            detail: action.detail, perform: action.perform)
+		}
+	}
 
 	/// Add browser commands here. Settings destinations come from the settings catalogue.
 	@MainActor

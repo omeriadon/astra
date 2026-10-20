@@ -103,7 +103,7 @@
 			let panel = NSOpenPanel()
 			panel.allowedContentTypes = [.html, .pdf, .image, .plainText, UTType(filenameExtension: "webarchive") ?? .data]
 			panel.allowsMultipleSelection = true
-			panel.beginSheetModal(for: window) { response in
+			BrowserFilePanels.present(panel, in: window) { response in
 				guard response == .OK else { return }
 				for url in panel.urls {
 					let tab = browser.addTab()
@@ -186,10 +186,11 @@
 				case .source:
 					return
 			}
-			panel.beginSheetModal(for: window) { response in
+			BrowserFilePanels.present(panel, in: window) { response in
 				guard response == .OK, let destination = panel.url else { return }
+				let scoped = destination.startAccessingSecurityScopedResource()
 				Task { @MainActor in
-					defer { destination.stopAccessingSecurityScopedResource() }
+					defer { if scoped { destination.stopAccessingSecurityScopedResource() } }
 					guard owner.isCurrent() else { return }
 					var createdDestination = false
 					do {

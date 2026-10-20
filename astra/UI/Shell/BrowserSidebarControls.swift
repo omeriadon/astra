@@ -23,7 +23,7 @@ struct ShellSidebarListView: View {
 	@State private var cleanupAction: String?
 	@State private var todayGroupsUndo: [BrowserTabGroupingFeature.Group]?
 	@Namespace private var sidebarTransitions
-	@State private var sidebarSelection = BrowserSidebarTabSelection()
+	private var sidebarSelection: BrowserSidebarTabSelection { browser.sidebarTabSelection }
 	@State private var projectionCache = SidebarProjectionCache()
 	@State private var collapsedFolderIDs: Set<UUID> = []
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -63,7 +63,7 @@ struct ShellSidebarListView: View {
 		let splitIDs = Set([splitTabs?.0.id, splitTabs?.1.id].compactMap(\.self))
 		let projection = projectionCache.excluding(splitIDs, from: baseProjection)
 		let normalTabs = projection.normalTabs
-		let items = nativeItems(projection: projection, splitTabs: splitTabs)
+		let items = nativeItems(projection: baseProjection, splitTabs: splitTabs)
 		let revision = SidebarContentRevision(
 			space: space, theme: theme, favourites: favouriteTabIDs, active: isActiveSpace,
 			openElsewhere: openElsewhereIDs, split: [splitTabs?.0.id, splitTabs?.1.id].compactMap(\.self),
@@ -192,9 +192,6 @@ struct ShellSidebarListView: View {
 
 	private func nativeItems(projection: SidebarProjectionCache.Projection, splitTabs: (BrowserTab, BrowserTab)?) -> [BrowserSidebarItem] {
 		var items: [BrowserSidebarItem] = []
-		if let splitTabs {
-			items.append(.init(id: "split-\(splitTabs.0.id)-\(splitTabs.1.id)", kind: .split, height: 28))
-		}
 		if projection.favouriteTabs.isEmpty {
 			items.append(.init(id: "empty-favourites", kind: .emptyFavourites, height: 14, collection: .favourite))
 		} else {
@@ -202,7 +199,7 @@ struct ShellSidebarListView: View {
 		}
 		items.append(.init(id: "pinned-header", kind: .pinnedHeader, height: 20, collection: .pinned))
 		for folder in space.pinnedFolders {
-			items.append(.init(id: "folder-\(folder.id)", kind: .folder(folder.id), height: 24, collection: .folder(folder.id)))
+			items.append(.init(id: "folder-\(folder.id)", kind: .folder(folder.id), height: 24, isExpanded: !collapsedFolderIDs.contains(folder.id), collection: .folder(folder.id)))
 			if !collapsedFolderIDs.contains(folder.id) {
 				items += (projection.folderTabs[folder.id] ?? []).map { .init(id: $0.id.uuidString, tabID: $0.id, collection: .folder(folder.id)) }
 			}
@@ -218,7 +215,8 @@ struct ShellSidebarListView: View {
 		}
 		items += projection.ungroupedNormalTabs.map { .init(id: $0.id.uuidString, tabID: $0.id, collection: .normal) }
 		items.append(.init(id: "new-tab", kind: .newTab, collection: .normal))
-		return items
+		guard let splitTabs else { return items }
+		return BrowserSidebarSplitProjection.collapse(items, leftID: splitTabs.0.id, rightID: splitTabs.1.id)
 	}
 
 	private func applyNativeReorder(_ sources: [UUID], _ destination: SidebarTabCollection, _ beforeID: UUID?) {
