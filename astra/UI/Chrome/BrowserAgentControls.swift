@@ -8,7 +8,7 @@ struct BrowserAgentControls: View {
 
 	var body: some View {
 		#if os(macOS)
-			if let tab = browser.selectedTab, server.isEnabled {
+			if let tab = browser.chromeTab, server.isEnabled {
 				if server.isControlled(tab.id) {
 					controlledControls(tabID: tab.id)
 				} else if canShare(tab) {

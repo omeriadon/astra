@@ -18,11 +18,6 @@ struct NewTabView: View {
 	@FocusState private var isSearchFocused: Bool
 	@Namespace private var transitions
 	@AppStorage("astra.newTabBackgroundStyle") private var backgroundStyle = "default"
-	@AppStorage("astra.newTabDitherConfiguration") private var ditherConfigurationData = Data()
-	@State private var editingDither = false
-	@State private var editingEffect = false
-	@AppStorage("astra.newTabEffectSettings") private var effectSettingsData = Data()
-	@AppStorage("astra.newTabTopographicImage") private var topographicImageID = ""
 	@State private var ditherPointer = DitherPointerInput()
 	@Environment(\.colorScheme) private var colorScheme
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -103,7 +98,7 @@ struct NewTabView: View {
 		}
 		.overlay {
 			#if os(macOS)
-				if backgroundStyle == "dither" {
+				if backgroundStyle == "dither", animatesBackground {
 					NewTabPointerTracker(pointer: ditherPointer)
 						.frame(maxWidth: .infinity, maxHeight: .infinity)
 						.allowsHitTesting(false)
@@ -127,7 +122,11 @@ struct NewTabView: View {
 			NewTabWindowActivity { windowCanAnimate = $0 }
 		}
 		#endif
-		.onAppear { isPresented = true }
+		.onAppear {
+			backgroundStyle = NewTabBackgroundPreferences.migratedStyle(backgroundStyle)
+			NewTabBackgroundPreferences.removeLegacyParameters()
+			isPresented = true
+		}
 		.onDisappear { isPresented = false }
 		.task(id: browser.quickSearchFocusRequest) {
 			await Task.yield()
@@ -188,8 +187,8 @@ struct NewTabView: View {
 
 	private var usesDefaultBackground: Bool {
 		switch backgroundStyle {
-			case "float", "dither", "smoke", "ripple", "datamosh", "topographic": false
-			case "default", "solid", "image", "holographic": true
+			case "float", "dither", "ripple", "datamosh", "topographic": false
+			case "default": true
 			default: true
 		}
 	}
@@ -230,33 +229,21 @@ struct NewTabView: View {
 	private var newTabBackground: some View {
 		ZStack {
 			// Every preset has the same dynamic light/dark foundation as Default.
-			// Legacy image styles resolve to Default. Topographic owns its source image.
+			// Removed and legacy image styles resolve to Default.
 			defaultBackgroundColor
 			if backgroundStyle == "dither" {
-				DitherBackground(theme: browser.theme, configuration: DitherConfiguration.decode(ditherConfigurationData),
+				DitherBackground(theme: browser.theme,
 				                 pointer: ditherPointer, canAnimate: animatesBackground)
-			} else if let preset = NewTabShaderPreset(rawValue: backgroundStyle), preset != .holographic {
-				NewTabShaderSurface(theme: browser.theme, preset: preset, canAnimate: animatesBackground,
-				                    settings: effectSettings.wrappedValue, imageID: topographicImageID)
-					.opacity(preset == .ripple ? effectSettings.wrappedValue.value("ripple", "opacity") : 1)
+			} else if let preset = NewTabShaderPreset(rawValue: backgroundStyle) {
+				NewTabShaderSurface(theme: browser.theme, preset: preset, canAnimate: animatesBackground)
 			} else if backgroundStyle == "float" {
 				Rectangle().fill(browser.theme.firstColor.color)
-					.livable(palette: livingPalette, isAnimated: animatesBackground, speed: Float(effectSettings.wrappedValue.value("float", "speed")))
-					.blur(radius: effectSettings.wrappedValue.value("float", "blur"))
+					.livable(palette: livingPalette, isAnimated: animatesBackground, speed: NewTabEffectSettings.floatSpeed, framesPerSecond: 30)
+					.blur(radius: NewTabEffectSettings.floatBlur)
 					.overlay(defaultBackgroundColor.opacity(0.08))
 			}
 		}
 		.clipped()
-	}
-
-	private var effectSettings: Binding<NewTabEffectSettings> {
-		Binding(get: { NewTabEffectSettings.decode(effectSettingsData) },
-		        set: { effectSettingsData = $0.encoded })
-	}
-
-	private var ditherConfiguration: Binding<DitherConfiguration> {
-		Binding(get: { DitherConfiguration.decode(ditherConfigurationData) },
-		        set: { ditherConfigurationData = $0.encoded })
 	}
 
 	private var backgroundPicker: some View {
@@ -270,18 +257,10 @@ struct NewTabView: View {
 			Button { backgroundStyle = "float" } label: {
 				Label("Float", systemImage: backgroundStyle == "float" ? "checkmark" : "water.waves")
 			}
-			Button("Use Theme Dither", systemImage: "square.grid.3x3.fill") { backgroundStyle = "dither" }
-			Button("Configure Dither…", systemImage: "slider.horizontal.3") {
-				backgroundStyle = "dither"
-				editingDither = true
+			Button { backgroundStyle = "dither" } label: {
+				Label("Theme Dither", systemImage: backgroundStyle == "dither" ? "checkmark" : "square.grid.3x3.fill")
 			}
 			Divider()
-			Button { backgroundStyle = "smoke" } label: {
-				Label("Smoke Reveal", systemImage: backgroundStyle == "smoke" ? "checkmark" : "smoke")
-			}
-			Button { backgroundStyle = "holographic" } label: {
-				Label("Holographic Prismatic (Search Bar)", systemImage: backgroundStyle == "holographic" ? "checkmark" : "sparkles")
-			}
 			Button { backgroundStyle = "ripple" } label: {
 				Label("Live Ripple", systemImage: backgroundStyle == "ripple" ? "checkmark" : "drop")
 			}
@@ -292,10 +271,6 @@ struct NewTabView: View {
 			Button { backgroundStyle = "topographic" } label: {
 				Label("Topographic", systemImage: backgroundStyle == "topographic" ? "checkmark" : "map")
 			}
-			Divider()
-			if !NewTabEffectSettings.parameters(backgroundStyle).isEmpty {
-				Button("Configure Effect…", systemImage: "slider.horizontal.3") { editingEffect = true }
-			}
 		} label: {
 			Image(systemName: "paintpalette").font(.system(size: 15))
 				.padding(10)
@@ -303,13 +278,6 @@ struct NewTabView: View {
 		}
 		.menuStyle(.borderlessButton)
 		.accessibilityLabel("Customize new tab background")
-		.popover(isPresented: $editingEffect) {
-			NewTabEffectControls(effect: backgroundStyle, settings: effectSettings, imageID: $topographicImageID)
-				.frame(width: 360, height: 560)
-		}
-		.popover(isPresented: $editingDither) {
-			DitherControls(configuration: ditherConfiguration).frame(width: 360, height: 600)
-		}
 	}
 
 	@ViewBuilder
@@ -416,7 +384,7 @@ struct NewTabView: View {
 				Image(systemName: "magnifyingglass")
 					.accessibilityHidden(true)
 				TextField("Search or type a URL", text: $browser.newTabSearchText,
-				          prompt: Text("Search or type a URL").foregroundColor(backgroundStyle == "holographic" ? .white : .secondary))
+				          prompt: Text("Search or type a URL").foregroundColor(.secondary))
 					.focused($isSearchFocused)
 					.textFieldStyle(.plain)
 				#if os(macOS)
@@ -446,23 +414,11 @@ struct NewTabView: View {
 			.padding(.horizontal, 22)
 			.padding(.vertical, 20)
 			.background {
-				if backgroundStyle == "holographic" {
-					NewTabShaderSurface(theme: browser.theme, preset: .holographic, canAnimate: animatesBackground,
-					                    settings: effectSettings.wrappedValue)
-						.overlay {
-							RoundedRectangle(cornerRadius: 24, style: .continuous)
-								.strokeBorder(.white.opacity(0.24), lineWidth: 1)
-						}
-				} else if usesDefaultBackground {
-					RoundedRectangle(cornerRadius: 24, style: .continuous)
-						.fill(.ultraThinMaterial)
-				} else {
-					RoundedRectangle(cornerRadius: 24, style: .continuous)
-						.fill(.ultraThinMaterial)
-				}
+				RoundedRectangle(cornerRadius: 24, style: .continuous)
+					.fill(.ultraThinMaterial)
 			}
 			.clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-			.foregroundStyle(backgroundStyle == "holographic" ? Color.white : Color.primary)
+			.foregroundStyle(Color.primary)
 		}
 		.padding(.horizontal, 10)
 		.padding(.top, 10)
@@ -560,7 +516,8 @@ private struct StartPageVisitRow: View {
 				super.viewDidMoveToWindow()
 				stopObserving()
 				for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification,
-				             NSWindow.didDeminiaturizeNotification, NSApplication.didBecomeActiveNotification,
+				             NSWindow.didDeminiaturizeNotification, NSWindow.didBecomeKeyNotification,
+				             NSWindow.didResignKeyNotification, NSApplication.didBecomeActiveNotification,
 				             NSApplication.didResignActiveNotification]
 				{
 					tokens.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -579,7 +536,7 @@ private struct StartPageVisitRow: View {
 
 			private func publish() {
 				let owningWindow = unsafe window
-				let visible = owningWindow.map { $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible) } ?? false
+				let visible = owningWindow.map { $0.isVisible && $0.isKeyWindow && !$0.isMiniaturized && $0.occlusionState.contains(.visible) } ?? false
 				onChange(NSApp.isActive && visible)
 			}
 		}

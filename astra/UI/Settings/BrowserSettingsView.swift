@@ -112,7 +112,7 @@ struct BrowserSettingsView: View {
 						symbol: "puzzlepiece.extension",
 						section: .advanced,
 						identifier: "settings-extensions",
-						terms: ["Chrome", "Safari", "Web Store", "Dark Reader", "uBlock Origin Lite", "Import ZIP"]
+						terms: ["Chrome", "Safari", "Web Store", "Dark Reader", "Get uBlock Origin", "Check for Updates", "Import ZIP"]
 					)
 				#if os(macOS)
 					case .websiteApps:
@@ -176,6 +176,21 @@ struct BrowserSettingsView: View {
 	}
 
 	var body: some View {
+		#if os(macOS)
+			// Settings has a fixed sidebar, so it does not need the split view's
+			// automatic toolbar, sidebar toggle, or column separator.
+			HStack(spacing: 0) {
+				sidebar
+					.frame(width: BrowserChromeMetrics.settingsSidebarWidth)
+				detail
+			}
+			.monospaced()
+		#else
+			compactLayout
+		#endif
+	}
+
+	private var compactLayout: some View {
 		NavigationSplitView {
 			sidebar
 				.navigationSplitViewColumnWidth(BrowserChromeMetrics.settingsSidebarWidth)
@@ -239,19 +254,15 @@ struct BrowserSettingsView: View {
 			.padding(.bottom, 12)
 		}
 		.safeAreaBar(edge: .bottom) {
-			VStack(spacing: 0) {
-				Divider()
-
-				VStack(spacing: 8) {
-					ForEach(
-						pages.filter { $0.definition.section == nil },
-						id: \.self
-					) { page in
-						row(for: page)
-					}
+			VStack(spacing: 8) {
+				ForEach(
+					pages.filter { $0.definition.section == nil },
+					id: \.self
+				) { page in
+					row(for: page)
 				}
-				.padding(.vertical, 8)
 			}
+			.padding(.vertical, 8)
 		}
 		.foregroundStyle(theme.foregroundColor)
 	}
@@ -305,6 +316,13 @@ struct BrowserSettingsView: View {
 					#endif
 				}
 			}
+			// Keep the bar on the selected scroll content, inside the reader.
+			// A bar outside the reader/padding becomes detached from its scroll edge.
+			.safeAreaBar(edge: .top) {
+				if selectedPage != .about {
+					BrowserSettingsTitleView(page: selectedPage)
+				}
+			}
 			.id(selectedPage)
 			.task(id: browser.settingsScrollTarget) {
 				guard let target = browser.settingsScrollTarget else {
@@ -326,11 +344,6 @@ struct BrowserSettingsView: View {
 			maxHeight: .infinity,
 			alignment: .topLeading
 		)
-		.safeAreaBar(edge: .top) {
-			if selectedPage != .about {
-				BrowserSettingsTitleView(page: selectedPage)
-			}
-		}
 	}
 
 	private func row(for page: Page) -> some View {

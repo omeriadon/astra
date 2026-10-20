@@ -121,7 +121,7 @@ nonisolated struct BrowserAIToolResult: Sendable {
 		}
 
 		func request(for input: Input) -> BrowserAIRequest {
-			let payload = (try? JSONSerialization.data(withJSONObject: ["referenceContext": input.context, "userRequest": input.question, "toolResults": input.toolResults.map(\.payload)], options: [.sortedKeys])) ?? Data()
+			let payload = (try? JSONSerialization.data(withJSONObject: ["referenceContext": input.context, "userRequest": input.question, "enabledTools": input.catalog, "toolResults": input.toolResults.map(\.payload)], options: [.sortedKeys])) ?? Data()
 			return .init(instructions: BrowserAIPrompts.chatTools + "\nEnabled tools and arguments (all argument values are strings):\n" + input.catalog,
 			             prompt: String(decoding: payload, as: UTF8.self), maximumResponseTokens: 8192,
 			             images: input.images.isEmpty ? nil : input.images, reasoningEffort: input.reasoning, files: input.files.isEmpty ? nil : input.files)
@@ -330,7 +330,7 @@ enum BrowserAITools {
 					try Task.checkCancellation()
 					guard !browser.isPrivate, browser.selectedSpace.id == spaceID else { throw BrowserAIError.toolDenied }
 					try onArtifact?(artifact)
-					return "Created Website Augment artifact \(artifact.id): \(artifact.title). It is available in this chat."
+					return "Created Website Augment artifact \(artifact.id): \(artifact.title). \(artifact.summary ?? "") It is available in this chat."
 				#endif
 			case .webSearch:
 				guard let query = arguments["query"], !query.isEmpty else { throw BrowserAIError.invalidRequest }

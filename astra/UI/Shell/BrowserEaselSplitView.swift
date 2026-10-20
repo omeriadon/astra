@@ -38,25 +38,27 @@ struct BrowserEaselSplitView: View {
 
 	private var rightContent: some View {
 		VStack(spacing: 0) {
-			HStack {
-				Text(rightTab.title).font(.headline).lineLimit(1)
-				Spacer(minLength: 0)
-				Button("Open Tab Alone", systemImage: "arrow.up.left.and.arrow.down.right") {
-					browser.closeEaselSplit()
-					browser.selectTab(rightTab.id)
+			if rightTab.internalPage != .easel {
+				HStack {
+					Text(rightTab.title).font(.headline).lineLimit(1)
+					Spacer(minLength: 0)
+					Button("Open Tab Alone", systemImage: "arrow.up.left.and.arrow.down.right") {
+						browser.closeEaselSplit()
+						browser.selectTab(rightTab.id)
+					}
+					.labelStyle(.iconOnly)
+					.accessibilityIdentifier("split-open-alone")
+					Button("Close Split", systemImage: "xmark") {
+						browser.closeEaselSplit()
+						browser.selectTab(leftTab.id)
+					}
+					.labelStyle(.iconOnly)
+					.accessibilityIdentifier("split-close")
 				}
-				.labelStyle(.iconOnly)
-				.accessibilityIdentifier("split-open-alone")
-				Button("Close Split", systemImage: "xmark") {
-					browser.closeEaselSplit()
-					browser.selectTab(leftTab.id)
-				}
-				.labelStyle(.iconOnly)
-				.accessibilityIdentifier("split-close")
+				.padding(8)
 			}
-			.padding(8)
 			if rightTab.internalPage == .easel {
-				BrowserEaselView(browser: browser, tab: rightTab)
+				BrowserEaselView(browser: browser, tab: rightTab, toolbarAlignment: .bottomLeading)
 					.id(rightTab.id)
 			} else {
 				BrowserPageView(browser: browser, cornerRadius: cornerRadius, tabID: rightTab.id)

@@ -7,6 +7,16 @@ nonisolated enum BrowserProfileImporter {
 		let warnings: [String]
 	}
 
+	// Keep the selected ancestor's grant alive for the entire detached operation,
+	// including SQLite's reads of History-wal and History-shm.
+	static func withFolderAccess<T>(to directory: URL?, _ operation: () throws -> T) rethrows -> T {
+		let accessed = directory?.startAccessingSecurityScopedResource() ?? false
+		defer {
+			if accessed { directory?.stopAccessingSecurityScopedResource() }
+		}
+		return try operation()
+	}
+
 	static func profiles(for source: BrowserImportSource, in directory: URL? = nil) throws -> [BrowserImportProfile] {
 		BrowserLog.info(.persistence, "profile-import.scan", metadata: ["source": String(describing: source), "directory": BrowserLog.path(directory)])
 		let root = directory ?? FileManager.default.homeDirectoryForCurrentUser
@@ -17,11 +27,17 @@ nonisolated enum BrowserProfileImporter {
 		if source == .safari {
 			return [BrowserImportProfile(source: source, directory: root, name: "Safari", sidebar: nil)]
 		}
-		func hasData(_ folder: URL) -> Bool {
-			let names = source == .firefox ? ["places.sqlite"] : ["Bookmarks", "History"]
-			return names.contains { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) }
+		func contents(_ folder: URL) throws -> [URL] {
+			try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
 		}
-		if hasData(root) {
+		func hasData(_ files: [URL]) -> Bool {
+			let names = source == .firefox ? ["places.sqlite"] : ["Bookmarks", "History"]
+			return files.contains { names.contains($0.lastPathComponent) }
+		}
+		// fileExists returns false for inaccessible files too. Listing the selected
+		// directory preserves permission errors so the picker can offer recovery.
+		let rootContents = try contents(root)
+		if hasData(rootContents) {
 			return [BrowserImportProfile(source: source, directory: root, name: root.lastPathComponent, sidebar: sidebar)]
 		}
 		var profileRoot = root
@@ -31,17 +47,27 @@ nonisolated enum BrowserProfileImporter {
 				profileRoot = nested
 			}
 		}
-		let folders = try FileManager.default.contentsOfDirectory(at: profileRoot, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
+		let folders = profileRoot == root ? rootContents : try contents(profileRoot)
 		let localState = profileRoot.appendingPathComponent("Local State")
 		let metadata = (try? JSONSerialization.jsonObject(with: Data(contentsOf: localState))) as? [String: Any]
 		let info = (metadata?["profile"] as? [String: Any])?["info_cache"] as? [String: [String: Any]]
-		let results = folders.filter(hasData).map { folder in
-			let label = info?[folder.lastPathComponent]?["name"] as? String
-			return BrowserImportProfile(source: source, directory: folder, name: label.map { "\($0) (\(folder.lastPathComponent))" } ?? folder.lastPathComponent, sidebar: sidebar)
-		}.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+		var results: [BrowserImportProfile] = []
+		var discoveryError: Error?
+		for folder in folders {
+			do {
+				guard try folder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true,
+				      hasData(try contents(folder)) else { continue }
+				let label = info?[folder.lastPathComponent]?["name"] as? String
+				results.append(BrowserImportProfile(source: source, directory: folder, name: label.map { "\($0) (\(folder.lastPathComponent))" } ?? folder.lastPathComponent, sidebar: sidebar))
+			} catch {
+				discoveryError = discoveryError ?? error
+			}
+		}
+		results.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
 		if results.isEmpty, let sidebar {
 			return [BrowserImportProfile(source: source, directory: profileRoot, name: "Arc Sidebar", sidebar: sidebar)]
 		}
+		if results.isEmpty, let discoveryError { throw discoveryError }
 		return results
 	}
 

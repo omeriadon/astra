@@ -95,14 +95,15 @@
 				topBar
 					.frame(height: BrowserChromeMetrics.topBarRegionHeight + BrowserChromeMetrics.shellEdgePadding, alignment: .top)
 					.frame(maxWidth: .infinity, alignment: .trailing)
-					.opacity(topBarHeight > 0 ? 1 : 0)
+					.offset(y: topBarHeight - BrowserChromeMetrics.topBarRegionHeight - BrowserChromeMetrics.shellEdgePadding)
+					.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: topBarHeight)
 					.allowsHitTesting(topBarHeight > 0)
 					.accessibilityHidden(topBarHeight == 0)
 
 				VStack(spacing: 0) {
 					Spacer(minLength: 0)
 						.frame(height: topBarHeight)
-						.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: showsTopBar)
+						.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: topBarHeight)
 					BrowserPageView(
 						browser: browser,
 						cornerRadius: topBarHeight > 0
@@ -114,6 +115,7 @@
 					.frame(maxWidth: .infinity, maxHeight: .infinity)
 				}
 			}
+			.clipped()
 			.background {
 				BrowserThemeBackground(theme: Self.miniTheme)
 			}
@@ -129,7 +131,9 @@
 							isTopBarRevealed = shouldReveal
 						}
 					case .ended:
-						isTopBarRevealed = false
+						withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+							isTopBarRevealed = false
+						}
 				}
 			}
 			.onReceive(NotificationCenter.default.publisher(for: .toggleBrowserTopBar)) { notification in

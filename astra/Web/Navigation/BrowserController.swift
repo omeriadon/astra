@@ -236,6 +236,8 @@ final class BrowserController: NSObject, Identifiable {
 	var snapshotNavigationOnly = false
 	@ObservationIgnored
 	var snapshotSourceURL: URL?
+	@ObservationIgnored
+	private var snapshotHTML: String?
 	var pictureInPictureRestoreRequested: (() -> Void)?
 
 	var isCapturing: Bool {
@@ -268,7 +270,8 @@ final class BrowserController: NSObject, Identifiable {
 			isPlayingMedia: isPlayingMedia || hasActiveVideoPlayback,
 			hasPausedMedia: hasPausedMedia
 		)
-			&& !isCapturing && !hasUnsavedChanges && !isLoading
+			// Local snapshot HTML belongs to this controller and cannot be restored from its URL.
+			&& !snapshotNavigationOnly && !isCapturing && !hasUnsavedChanges && !isLoading
 			&& (createdWebView == nil || (createdWebView?.cameraCaptureState == WKMediaCaptureState.none
 					&& createdWebView?.microphoneCaptureState == WKMediaCaptureState.none))
 	}
@@ -1760,6 +1763,7 @@ final class BrowserController: NSObject, Identifiable {
 		resetReader()
 		clearHoveredLink()
 		isInvalidated = true
+		snapshotHTML = nil
 		removeAppliedContentRuleList()
 		promptOwnership = nil
 		if let connectivityObserver {
@@ -2228,6 +2232,24 @@ final class BrowserController: NSObject, Identifiable {
 		navigate(URLRequest(url: url))
 	}
 
+	/// Retain the local document for reload and WebKit process recovery. Reloading
+	/// an about:blank URL cannot reconstruct a document loaded with loadHTMLString.
+	func loadWebsiteSnapshot(_ html: String, sourceURL: URL) {
+		guard !isInvalidated else { return }
+		snapshotNavigationOnly = true
+		snapshotSourceURL = sourceURL
+		snapshotHTML = html
+		createdWebView?.stopLoading()
+		pendingRequest = nil
+		pendingWebArchive = nil
+		pendingLocalFile = nil
+		pendingInteractionState = nil
+		pendingEncryptedInteractionState = nil
+		navigationFailure = nil
+		awaitsNavigationCommit = true
+		currentNavigation = webView.loadHTMLString(html, baseURL: nil)
+	}
+
 	func loadWebArchive(_ data: Data, baseURL: URL) {
 		guard !isInvalidated, !snapshotNavigationOnly,
 		      let safeURL = BrowserHomepage.validURL(baseURL.absoluteString) else { return }
@@ -2313,6 +2335,10 @@ final class BrowserController: NSObject, Identifiable {
 
 	func reload() {
 		BrowserLog.info(.navigation, "navigation.reload", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url), "failure": String(navigationFailure != nil)])
+		if snapshotNavigationOnly {
+			reload(usingOrigin: false)
+			return
+		}
 		historyVisitPolicy.userInitiatedNavigation()
 		if let navigationFailure {
 			load(failedRequest ?? URLRequest(url: navigationFailure.url))
@@ -2322,7 +2348,12 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	private func reload(usingOrigin: Bool) {
-		guard !snapshotNavigationOnly else { return }
+		if snapshotNavigationOnly {
+			if let snapshotHTML, let snapshotSourceURL {
+				loadWebsiteSnapshot(snapshotHTML, sourceURL: snapshotSourceURL)
+			}
+			return
+		}
 		if !hasCurrentPageDocument {
 			if let pendingRequest {
 				load(pendingRequest)

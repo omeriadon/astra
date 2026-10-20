@@ -38,6 +38,14 @@ jobs:
             checks/native-split-check.swift \
             -o "$RUNNER_TEMP/native-split-check"
           "$RUNNER_TEMP/native-split-check"
+      - name: Verify split sidebar order
+        run: |
+          swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
+            astra/UI/Shell/NativeSidebar/BrowserSidebarLayout.swift \
+            astra/UI/Shell/NativeSidebar/BrowserSidebarSplitProjection.swift \
+            checks/sidebar-split-order-check.swift \
+            -o "$RUNNER_TEMP/sidebar-split-order-check"
+          "$RUNNER_TEMP/sidebar-split-order-check"
       - name: Typecheck production UIKit split against the simulator SDK
         run: |
           SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"

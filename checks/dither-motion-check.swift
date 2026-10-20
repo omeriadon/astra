@@ -56,10 +56,32 @@ import Foundation
 		clock.setRunning(true, at: 100)
 		precondition(clock.value(at: 101) == 3, "Background time must not advance the animation")
 
-		var configuration = DitherConfiguration(gridSize: 5, gridSpacing: 2, cornerRadius: 1)
-		configuration.cursorInteractionEnabled = false
-		precondition(DitherConfiguration.decode(configuration.encoded) == configuration)
-		precondition(DitherConfiguration.decode(Data("invalid".utf8)) == DitherConfiguration())
+		let configuration = DitherConfiguration()
+		precondition(configuration.gridSize == 7 && configuration.waveSpeed == 0.03)
+		precondition(configuration.framesPerSecond == 30 && configuration.minimumIntensity == 0)
+		// Migration must preserve valid choices and discard every removed/unknown style.
+		for style in ["default", "float", "dither", "ripple", "datamosh", "topographic"] {
+			precondition(NewTabBackgroundPreferences.migratedStyle(style) == style)
+		}
+		for style in ["smoke", "holographic", "solid", "image", "", "future-style"] {
+			precondition(NewTabBackgroundPreferences.migratedStyle(style) == "default")
+		}
+		let suite = "astra.preset-check.\(UUID().uuidString)"
+		let defaults = UserDefaults(suiteName: suite)!
+		defer { defaults.removePersistentDomain(forName: suite) }
+		let payloads: [Any] = [Data("{\"values\":{\"float\":{\"speed\":4}}}".utf8), "invalid", 100]
+		for payload in payloads {
+			for key in ["astra.newTabDitherConfiguration", "astra.newTabEffectSettings", "astra.newTabTopographicImage"] {
+				defaults.set(payload, forKey: key)
+			}
+			defaults.set("ripple", forKey: "astra.newTabBackgroundStyle")
+			NewTabBackgroundPreferences.removeLegacyParameters(in: defaults)
+			NewTabBackgroundPreferences.removeLegacyParameters(in: defaults)
+			precondition(defaults.object(forKey: "astra.newTabEffectSettings") == nil)
+			precondition(defaults.object(forKey: "astra.newTabDitherConfiguration") == nil)
+			precondition(defaults.object(forKey: "astra.newTabTopographicImage") == nil)
+			precondition(defaults.string(forKey: "astra.newTabBackgroundStyle") == "ripple")
+		}
 		precondition(configuration.safe(.nan, 1 ... 24, fallback: 3) == 3)
 		precondition(configuration.safe(-100, 1 ... 24) == 1)
 		precondition(configuration.safe(100, 1 ... 24) == 24)

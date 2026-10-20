@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 struct BrowserEaselView: View {
 	let browser: Browser
 	let tab: BrowserTab
+	let toolbarAlignment: Alignment
 	@State private var document: BrowserEaselDocument
 	@State private var selectedID: UUID?
 	@State private var importingImage = false
@@ -25,9 +26,12 @@ struct BrowserEaselView: View {
 	@State private var baseline: BrowserEaselDocument.Item?
 	@State private var isManipulating = false
 	@GestureState private var gestureActive = false
+	@GestureState private var pressedItemID: UUID? = nil
 	@State private var drawingPoints: [BrowserEaselDocument.Item.Point] = []
 	@State private var canvasOffset = EaselCanvasViewportOffset()
-	private enum Tool { case cursor, pen, eraser }
+	@State private var textViewportWidth: CGFloat = 800
+	private enum Tool: Equatable { case cursor, pen, eraser, shape(BrowserEaselDocument.Item.Kind) }
+	@State private var shapeDraft: BrowserEaselDocument.Item?
 	@State private var activeTool: Tool = .cursor
 	#if os(macOS)
 		@FocusState private var canvasFocused: Bool
@@ -37,38 +41,54 @@ struct BrowserEaselView: View {
 	@Namespace private var transitions
 	@Environment(\.colorScheme) private var colorScheme
 
-	init(browser: Browser, tab: BrowserTab) {
+	init(browser: Browser, tab: BrowserTab, toolbarAlignment: Alignment = .bottomTrailing) {
 		BrowserEaselFonts.register()
 		self.browser = browser
 		self.tab = tab
+		self.toolbarAlignment = toolbarAlignment
 		_document = State(initialValue: tab.easelDocument)
 	}
 
 	var body: some View {
+		let selectedItem = document.items.first(where: { $0.id == selectedID })
 		ZStack(alignment: .topLeading) {
 			GeometryReader { geometry in
-				ScrollView([.horizontal, .vertical]) {
+				ScrollView(.vertical) {
 					canvasContents(width: canvasWidth(geometry.size.width), viewportHeight: geometry.size.height)
 				}
 				.onScrollGeometryChange(for: CGPoint.self, of: { $0.contentOffset }) { _, offset in
 					canvasOffset.point = CGPoint(x: max(0, offset.x), y: max(0, offset.y))
 				}
+				.overlayPreferenceValue(EaselSelectedItemBounds.self) { anchor in
+					GeometryReader { viewport in
+						if let anchor,
+						   let item = selectedItem,
+						   ![.image, .link, .quote].contains(item.kind),
+						   viewport[anchor].intersects(CGRect(origin: .zero, size: viewport.size)) {
+							EaselSelectionControlsLayout(itemBounds: viewport[anchor]) {
+								selectionControls(item)
+							}
+						}
+					}
+				}
 				.scrollDisabled(activeTool != .cursor)
-				.onAppear { centerPendingQuote(in: geometry.size) }
+				.onAppear {
+					updateTextViewport(geometry.size.width, includeFixedText: true)
+					centerPendingQuote(in: geometry.size)
+				}
+				.onChange(of: geometry.size.width) { _, width in updateTextViewport(width) }
 				.onChange(of: tab.pendingQuotePlacementID) { _, _ in
 					centerPendingQuote(in: geometry.size)
 				}
 			}
-			if let item = document.items.first(where: { $0.id == selectedID }) {
-				selectionControls(item).padding(12)
-			}
 		}
-		.overlay(alignment: .bottomTrailing) {
+		.overlay(alignment: toolbarAlignment) {
 			toolbar.padding(12)
 		}
 		#if os(macOS)
 		.focusable()
 		.focused($canvasFocused)
+		.focusEffectDisabled()
 		.onDeleteCommand { deleteSelectedItem() }
 		.onExitCommand {
 			selectedID = nil
@@ -76,19 +96,27 @@ struct BrowserEaselView: View {
 			activeTool = .cursor
 			baseline = nil
 			drawingPoints = []
+			shapeDraft = nil
 		}
 		#endif
 		.onChange(of: activeTool) { _, _ in
 			editingTextID = nil
 			baseline = nil
 			drawingPoints = []
+			shapeDraft = nil
 		}
 		.onChange(of: gestureActive) { _, active in
 			if !active {
 				commitGesture()
+				shapeDraft = nil
 			}
 		}
-		.onDisappear { commitGesture() }
+		.onChange(of: pressedItemID) { _, id in
+			if let id, let item = document.items.first(where: { $0.id == id }) {
+				selectItem(item)
+			}
+		}
+		.onDisappear { commitGesture(); shapeDraft = nil; drawingPoints = [] }
 		.onChange(of: isManipulating ? nil : document) { _, value in
 			guard !isManipulating, let value, value != tab.easelDocument else { return }
 			if !tab.updateEasel(value) {
@@ -100,6 +128,7 @@ struct BrowserEaselView: View {
 			guard !isManipulating else { return }
 			if value != document {
 				document = value
+				updateTextViewport(textViewportWidth, includeFixedText: true)
 			}
 		}
 		.background {
@@ -116,7 +145,7 @@ struct BrowserEaselView: View {
 		#endif
 		.disabled(!browser.isHydrationFinished)
 		.accessibilityIdentifier("easel-editor")
-		.fileImporter(isPresented: $importingImage, allowedContentTypes: [.image], onCompletion: importImage)
+		.browserFileImporter(isPresented: $importingImage, allowedContentTypes: [.image], onCompletion: importImage)
 		.alert("Easel", isPresented: Binding(
 			get: { editorError != nil },
 			set: {
@@ -175,13 +204,19 @@ struct BrowserEaselView: View {
 	}
 
 	/// Selection leaves scrolling and object drags to the underlying canvas.
-	/// Ink gestures only run while the pen or eraser tool is active.
+	/// Drawing gestures use canvas coordinates, including when vertically scrolled.
 	@ViewBuilder
 	private func canvasContents(width: CGFloat, viewportHeight: CGFloat) -> some View {
 		let surface = ZStack(alignment: .topLeading) {
 			Color.clear.contentShape(Rectangle()).onTapGesture { selectedID = nil; editingTextID = nil }
 			ForEach(document.items) { item in
 				itemView(item, canvasWidth: width)
+			}
+			if let shapeDraft {
+				itemContent(shapeDraft, canvasWidth: width)
+					.frame(width: shapeDraft.width, height: shapeDraft.height, alignment: .topLeading)
+					.offset(x: shapeDraft.x, y: shapeDraft.y)
+					.allowsHitTesting(false)
 			}
 			if !drawingPoints.isEmpty {
 				smoothPath(drawingPoints)
@@ -190,6 +225,7 @@ struct BrowserEaselView: View {
 			}
 		}
 		.frame(width: width, height: canvasHeight(viewportHeight), alignment: .topLeading)
+		.coordinateSpace(name: "easel-drawing-canvas")
 		.contentShape(Rectangle())
 		.accessibilityElement(children: .contain)
 		.accessibilityLabel("Easel canvas")
@@ -200,16 +236,23 @@ struct BrowserEaselView: View {
 		if activeTool == .cursor {
 			surface
 		} else {
-			surface.highPriorityGesture(DragGesture(minimumDistance: 0).updating($gestureActive) { _, active, _ in active = true }
+			surface.highPriorityGesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("easel-drawing-canvas")).updating($gestureActive) { _, active, _ in active = true }
 				.onChanged { value in
-					if activeTool == .pen, drawingPoints.count < 10000 {
+					if case .shape = activeTool {
+						updateShapeDraft(start: value.startLocation, end: value.location, canvasWidth: width)
+					} else if activeTool == .pen, drawingPoints.count < 10000 {
 						drawingPoints.append(.init(x: value.location.x, y: value.location.y))
 					} else if activeTool == .eraser {
 						erase(at: value.location)
 					}
 				}
-				.onEnded {
-					_ in if activeTool == .pen {
+				.onEnded { value in
+					if case .shape = activeTool {
+						updateShapeDraft(start: value.startLocation, end: value.location, canvasWidth: width)
+						if let shapeDraft { append(shapeDraft) }
+						shapeDraft = nil
+						activeTool = .cursor
+					} else if activeTool == .pen {
 						finishDrawing()
 					}
 				})
@@ -241,14 +284,18 @@ struct BrowserEaselView: View {
 			}
 			.matchedTransitionSource(id: "add-link", in: transitions)
 			.accessibilityIdentifier("easel-add-link")
-			Button("Rectangle", systemImage: "rectangle") { activeTool = .cursor; add(.rectangle) }
+			Button("Rectangle", systemImage: "rectangle") { armShapeTool(.rectangle) }
 				.accessibilityIdentifier("easel-add-rectangle")
-			Button("Ellipse", systemImage: "circle") { activeTool = .cursor; add(.ellipse) }
+				.tint(activeTool == .shape(.rectangle) ? .accentColor : .primary)
+			Button("Ellipse", systemImage: "circle") { armShapeTool(.ellipse) }
 				.accessibilityIdentifier("easel-add-ellipse")
-			Button("Line", systemImage: "line.diagonal") { activeTool = .cursor; add(.line) }
+				.tint(activeTool == .shape(.ellipse) ? .accentColor : .primary)
+			Button("Line", systemImage: "line.diagonal") { armShapeTool(.line) }
 				.accessibilityIdentifier("easel-add-line")
-			Button("Arrow", systemImage: "arrow.up.right") { activeTool = .cursor; add(.arrow) }
+				.tint(activeTool == .shape(.line) ? .accentColor : .primary)
+			Button("Arrow", systemImage: "arrow.up.right") { armShapeTool(.arrow) }
 				.accessibilityIdentifier("easel-add-arrow")
+				.tint(activeTool == .shape(.arrow) ? .accentColor : .primary)
 		}
 		.labelStyle(.iconOnly)
 		.buttonStyle(.plain)
@@ -266,8 +313,8 @@ struct BrowserEaselView: View {
 						value.font = fonts[((fonts.firstIndex(of: value.font) ?? 0) + 1) % fonts.count]
 					}
 				}
-				.help(item.font.displayName)
-				.accessibilityValue(item.font.displayName)
+				.help(BrowserEaselSystemFonts.displayName(for: item.font))
+				.accessibilityValue(BrowserEaselSystemFonts.displayName(for: item.font))
 				.accessibilityIdentifier("easel-font")
 				Button("Smaller Text", systemImage: "minus") { adjustSize(item, by: -1) }
 					.disabled(item.size == .small)
@@ -313,7 +360,7 @@ struct BrowserEaselView: View {
 	}
 
 	private func canvasHeight(_ viewport: CGFloat) -> CGFloat {
-		min(1_000_000, max(1200, viewport, document.items.map { $0.y + $0.height + 400 }.max() ?? 0))
+		min(4_000_000, max(1200, viewport, document.items.map { $0.y + $0.height + 400 }.max() ?? 0))
 	}
 
 	private var linkableTabs: [BrowserTab] {
@@ -334,24 +381,28 @@ struct BrowserEaselView: View {
 	}
 
 	private func itemView(_ item: BrowserEaselDocument.Item, canvasWidth: CGFloat) -> some View {
+		let hasEndpointHandles = item.kind == .line || item.kind == .arrow
 		itemContent(item, canvasWidth: canvasWidth)
 			.frame(width: item.width, height: item.height, alignment: .topLeading)
-			.contentShape(Rectangle())
+			.anchorPreference(key: EaselSelectedItemBounds.self, value: .bounds) { bounds in
+				selectedID == item.id ? bounds : nil
+			}
+			.contentShape(EaselImageMask(isRounded: item.kind == .image && item.roundedCorners == true))
 			.overlay {
-				if selectedID == item.id {
+				if selectedID == item.id, !hasEndpointHandles {
 					RoundedRectangle(cornerRadius: 6).strokeBorder(.tint, lineWidth: 1)
 						.allowsHitTesting(false)
 				}
 			}
-			.overlay(alignment: .bottomTrailing) {
-				if selectedID == item.id {
+			.overlay(alignment: item.kind == .text ? .trailing : .bottomTrailing) {
+				if selectedID == item.id, !hasEndpointHandles {
 					Circle().fill(.tint).frame(width: 12, height: 12)
 						.padding(5)
 						.contentShape(Rectangle())
 						.highPriorityGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global).updating($gestureActive) { _, active, _ in active = true }
 							.onChanged { resize(item, translation: $0.translation, canvasWidth: canvasWidth) }
 							.onEnded { _ in commitGesture(); baseline = nil })
-						.accessibilityLabel("Resize item")
+						.accessibilityLabel(item.kind == .text ? "Resize text width" : "Resize item")
 						.accessibilityIdentifier("easel-resize-\(item.id)")
 				}
 			}
@@ -379,32 +430,33 @@ struct BrowserEaselView: View {
 					drag(item, translation: value.translation, canvasWidth: canvasWidth)
 				}
 				.onEnded { _ in commitGesture(); baseline = nil; draggedCopy = nil })
-			.onTapGesture {
-				guard activeTool == .cursor else { return }
-				selectedID = item.id
-				if editingTextID != item.id {
-					editingTextID = nil
-				}
-				browser.selectTab(tab.id)
-				if item.kind == .quote, let quote = item.quote {
-					browser.openEaselQuote(quote, in: tab)
-				}
-				#if os(macOS)
-					if editingTextID == nil {
-						canvasFocused = true
-					}
-				#endif
-			}
+			.onTapGesture { activateItem(item, activationScreenPoint: BrowserPeek.currentActivationScreenPoint()) }
 			.highPriorityGesture(TapGesture(count: 2).onEnded {
 				guard activeTool == .cursor else { return }
-				selectedID = item.id
+				selectItem(item)
 				if item.kind == .text {
 					editingTextID = item.id
 				} else if item.kind == .link, let url = item.url {
-					browser.openEaselLink(url, in: tab)
+					browser.openEaselLink(url, in: tab, activationScreenPoint: BrowserPeek.currentActivationScreenPoint())
 				}
 			})
+			// Observe the press alongside the move and double-tap recognizers. A
+			// single tap must otherwise wait for mouse-up and double-tap failure.
+			// Keeping this simultaneous lets text selection, handles, scrolling,
+			// context menus and the existing 3-point move threshold keep working.
+			// GestureState reports each press once and resets even on cancellation;
+			// later movement must not reselect an Option-drag's original item.
+			.simultaneousGesture(DragGesture(minimumDistance: 0).updating($pressedItemID) { _, id, _ in
+				id = item.id
+			})
 			.contextMenu {
+				if item.kind == .image {
+					Button(item.roundedCorners == true ? "Square Image Corners" : "Round Image Corners",
+					       systemImage: item.roundedCorners == true ? "rectangle" : "rectangle.roundedtop") {
+						setImageRoundedCorners(item.id, rounded: item.roundedCorners != true)
+					}
+					Divider()
+				}
 				Button("Bring to Front", systemImage: "square.2.layers.3d.top.filled") {
 					reorder(item.id, front: true)
 				}
@@ -419,6 +471,27 @@ struct BrowserEaselView: View {
 			.allowsHitTesting(activeTool == .cursor)
 			.accessibilityElement(children: .contain)
 			.accessibilityIdentifier("easel-item-\(item.id)")
+			.accessibilityAction { activateItem(item) }
+	}
+
+	/// Selection never edits or saves the document, decodes media, or waits for
+	/// tap recognition. An already active browser tab needs no selection work.
+	private func selectItem(_ item: BrowserEaselDocument.Item) {
+		guard activeTool == .cursor else { return }
+		if selectedID != item.id { selectedID = item.id }
+		if editingTextID != nil, editingTextID != item.id { editingTextID = nil }
+		if browser.selectedTabID != tab.id { browser.selectTab(tab.id) }
+		#if os(macOS)
+			if editingTextID == nil, !canvasFocused { canvasFocused = true }
+		#endif
+	}
+
+	private func activateItem(_ item: BrowserEaselDocument.Item, activationScreenPoint: CGPoint? = nil) {
+		guard activeTool == .cursor else { return }
+		selectItem(item)
+		if item.kind == .quote, let quote = item.quote {
+			browser.openEaselQuote(quote, in: tab, activationScreenPoint: activationScreenPoint)
+		}
 	}
 
 	@ViewBuilder
@@ -429,9 +502,10 @@ struct BrowserEaselView: View {
 					if editingTextID == item.id {
 						textEditor(item)
 					} else {
-						Text(item.text.isEmpty ? "Double-click to edit" : item.text)
+						Text(item.text)
 							.font(BrowserEaselSystemFonts.swiftUIFont(for: item.font, size: CGFloat(item.size.rawValue)))
-							.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+							.fixedSize(horizontal: false, vertical: true)
+							.frame(maxWidth: .infinity, alignment: .topLeading)
 					}
 				}
 				.foregroundStyle(ink(item))
@@ -457,12 +531,12 @@ struct BrowserEaselView: View {
 					.frame(height: item.height)
 			case .image:
 				if let data = item.imageData {
-					EaselImageView(data: data)
+					EaselImageView(data: data, roundedCorners: item.roundedCorners == true)
 						.frame(height: item.height)
 				}
 			case .link:
 				if let url = item.url {
-					EaselLinkCard(url: url)
+					EaselLinkCard(url: url, width: item.width, height: item.height)
 						.frame(width: item.width, height: item.height, alignment: .topLeading)
 						.clipped()
 						.accessibilityLabel("Easel link to \(url.host ?? url.absoluteString)")
@@ -516,7 +590,6 @@ struct BrowserEaselView: View {
 			TextField("Text", text: binding, axis: .vertical)
 				.textFieldStyle(.plain)
 				.font(BrowserEaselSystemFonts.swiftUIFont(for: item.font, size: CGFloat(item.size.rawValue)))
-				.lineSpacing(CGFloat(item.size.rawValue) * 0.5)
 		#endif
 	}
 
@@ -576,14 +649,33 @@ struct BrowserEaselView: View {
 		}
 	}
 
+	private func armShapeTool(_ kind: BrowserEaselDocument.Item.Kind) {
+		activeTool = .shape(kind)
+		selectedID = nil
+		editingTextID = nil
+		shapeDraft = nil
+		#if os(macOS)
+			canvasFocused = true
+		#endif
+	}
+
+	private func updateShapeDraft(start: CGPoint, end: CGPoint, canvasWidth: CGFloat) {
+		guard case let .shape(kind) = activeTool else { return }
+		shapeDraft = BrowserEaselDocument.Item.drawnShape(
+			kind: kind, from: .init(x: start.x, y: start.y), to: .init(x: end.x, y: end.y),
+			constrained: constrainsShape || shiftIsPressed, withinWidth: canvasWidth
+		)
+	}
+
 	private func add(_ kind: BrowserEaselDocument.Item.Kind) {
 		var item = BrowserEaselDocument.Item(kind: kind)
 		item.y += Double(document.items.count) * 30
-		item.constrainShape(constrainsShape || shiftIsPressed)
-		if [.line, .arrow].contains(kind) {
-			item.points = [.init(x: 0, y: 0), .init(x: 240, y: 120)]
+		if kind == .text {
+			item.textWidthIsFixed = false
+			EaselTextLayout.fit(&item, viewportWidth: textViewportWidth)
 		}
 		append(item)
+		if kind == .text, selectedID == item.id { editingTextID = item.id }
 	}
 
 	private func append(_ item: BrowserEaselDocument.Item) {
@@ -610,7 +702,14 @@ struct BrowserEaselView: View {
 		guard let index = document.items.firstIndex(where: { $0.id == id }) else { return }
 		var next = document
 		change(&next.items[index])
-		guard isManipulating ? next.items[index].geometryIsValid : next.isValid else {
+		let previous = document.items[index]
+		let changed = next.items[index]
+		if changed.kind == .text,
+		   previous.text != changed.text || previous.font != changed.font || previous.size != changed.size
+			|| previous.width != changed.width || previous.textWidthIsFixed != changed.textWidthIsFixed {
+			EaselTextLayout.fit(&next.items[index], viewportWidth: textViewportWidth)
+		}
+		guard (isManipulating ? next.items[index].geometryIsValid : next.isValid) else {
 			editorError = "This change exceeds the easel's content limits."
 			return
 		}
@@ -632,6 +731,13 @@ struct BrowserEaselView: View {
 		guard let index = document.items.firstIndex(where: { $0.id == id }) else { return }
 		let item = document.items.remove(at: index)
 		document.items.insert(item, at: front ? document.items.count : 0)
+	}
+
+	private func setImageRoundedCorners(_ id: UUID, rounded: Bool) {
+		edit(id) { item in
+			guard item.kind == .image else { return }
+			item.roundedCorners = rounded
+		}
 	}
 
 	private func deleteItem(_ id: UUID) {
@@ -671,6 +777,18 @@ struct BrowserEaselView: View {
 		if let selectedID, !document.items.contains(where: { $0.id == selectedID }) {
 			self.selectedID = nil
 		}
+	}
+
+	/// Called for viewport changes/restoration only. Keystrokes measure one item in edit().
+	private func updateTextViewport(_ width: CGFloat, includeFixedText: Bool = false) {
+		guard width.isFinite, width > 0 else { return }
+		textViewportWidth = width
+		var next = document
+		for index in next.items.indices where next.items[index].kind == .text
+			&& (includeFixedText || next.items[index].textWidthIsFixed == false) {
+			EaselTextLayout.fit(&next.items[index], viewportWidth: width)
+		}
+		if next != document { document = next }
 	}
 
 	private func adjustSize(_ item: BrowserEaselDocument.Item, by offset: Int) {
@@ -737,11 +855,16 @@ struct BrowserEaselView: View {
 		guard let baseline else { return }
 		edit(item.id) {
 			$0.x = baseline.x
-			$0.width = min(max(32, baseline.width + translation.width), min(10000, max(32, canvasWidth - item.x)))
+			// A link needs room for both a readable title and its site name.
+			let minimumWidth: Double = item.kind == .link ? 140 : 32
+			$0.width = min(max(minimumWidth, baseline.width + translation.width), min(10000, max(minimumWidth, canvasWidth - item.x)))
 			if item.kind == .image {
 				$0.height = min(10000, max(1, baseline.height * $0.width / baseline.width))
+			} else if item.kind == .text {
+				$0.textWidthIsFixed = true
 			} else {
-				$0.height = min(max([.text, .quote].contains(item.kind) ? 40 : 1, baseline.height + translation.height), 10000)
+				let minimumHeight: Double = item.kind == .link ? 72 : (item.kind == .quote ? 40 : 1)
+				$0.height = min(max(minimumHeight, baseline.height + translation.height), 10000)
 				if [.freehand, .line, .arrow].contains(item.kind) {
 					let scaleX = $0.width / baseline.width
 					let scaleY = $0.height / baseline.height
@@ -784,9 +907,8 @@ struct BrowserEaselView: View {
 			_ = provider.loadObject(ofClass: NSURL.self) { object, _ in
 				guard let url = object as? URL else { return }
 				if url.isFileURL {
-					let data = try? Data(contentsOf: url)
 					Task { @MainActor in
-						if let data {
+						if let data = try? await Self.readImageFile(url), !Task.isCancelled {
 							await addImageData(data, at: location)
 						}
 					}
@@ -812,16 +934,8 @@ struct BrowserEaselView: View {
 		Task { @MainActor in
 			do {
 				let url = try result.get()
-				let access = url.startAccessingSecurityScopedResource()
-				defer {
-					if access {
-						url.stopAccessingSecurityScopedResource()
-					}
-				}
-				// Security-scoped access is held until the detached read completes.
-				let data = try await Task.detached(priority: .userInitiated) {
-					try Data(contentsOf: url)
-				}.value
+				let data = try await Self.readImageFile(url)
+				guard !Task.isCancelled else { return }
 				await addImageData(data)
 			} catch {
 				if (error as NSError).code != NSUserCancelledError {
@@ -829,6 +943,19 @@ struct BrowserEaselView: View {
 				}
 			}
 		}
+	}
+
+	/// Sandbox-extension acquisition/release can synchronously wait on system
+	/// services too. Keep the complete scoped operation off the UI actor, with
+	/// release guaranteed on both success and failure before resuming the caller.
+	private nonisolated static func readImageFile(_ url: URL) async throws -> Data {
+		try await Task.detached(priority: .userInitiated) {
+			let access = url.startAccessingSecurityScopedResource()
+			defer {
+				if access { url.stopAccessingSecurityScopedResource() }
+			}
+			return try Data(contentsOf: url)
+		}.value
 	}
 
 	private nonisolated struct PreparedImage: Sendable {
@@ -894,31 +1021,64 @@ struct BrowserEaselView: View {
 
 private struct EaselLinkCard: View {
 	let url: URL
+	let width: Double
+	let height: Double
 	@State private var title: String?
-	@State private var imageData: Data?
+	@State private var previewImage: Image?
 
 	var body: some View {
-		VStack(alignment: .leading, spacing: 8) {
-			#if os(macOS)
-				if let imageData, let image = NSImage(data: imageData) {
-					Image(nsImage: image).resizable().scaledToFill().frame(height: 100).clipped()
+		let contentWidth = max(0, width - 24)
+		let contentHeight = max(0, height - 24)
+		// Wide, short cards share their width with the image. Taller cards give
+		// the image the remaining height after reserving readable metadata.
+		let horizontal = width >= 240 && height < 180
+		let titleLines = contentHeight >= 70 ? 2 : 1
+		let fontSize = min(20, max(13, width / 22), max(13, (contentHeight - 26) / (1.3 * Double(titleLines))))
+		let metadataHeight = fontSize * 1.3 * Double(titleLines) + 26
+		let imageHeight = horizontal ? contentHeight : max(0, contentHeight - metadataHeight - 10)
+		let showsImage = previewImage != nil && imageHeight >= 44
+
+		Group {
+			if horizontal {
+				HStack(alignment: .center, spacing: 12) {
+					if showsImage {
+						preview(width: min(120, contentWidth * 0.34), height: imageHeight)
+					}
+					metadata(fontSize: fontSize, titleLines: titleLines)
 				}
-			#endif
-			Label(title ?? url.host ?? "Web Page", systemImage: "link")
-				.font(.headline).lineLimit(2)
-			Text(url.host ?? url.absoluteString).font(.caption).foregroundStyle(.secondary)
+			} else {
+				VStack(alignment: .leading, spacing: 10) {
+					if showsImage {
+						preview(width: contentWidth, height: imageHeight)
+					}
+					metadata(fontSize: fontSize, titleLines: titleLines)
+					if !showsImage { Spacer(minLength: 0) }
+				}
+			}
 		}
+		.frame(width: contentWidth, height: contentHeight, alignment: .topLeading)
 		.padding(12)
+		.frame(width: width, height: height)
 		.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+		.clipShape(RoundedRectangle(cornerRadius: 12))
 		.task(id: url) {
 			let provider = LPMetadataProvider()
 			provider.timeout = 10
 			do {
 				let metadata = try await provider.startFetchingMetadata(for: url)
+				guard !Task.isCancelled else { return }
 				title = metadata.title
 				if let image = metadata.imageProvider {
 					image.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
-						Task { @MainActor in imageData = data }
+						Task { @MainActor in
+							// Decode once when metadata arrives, never during resize/layout.
+							guard let data else { return }
+							#if os(macOS)
+								previewImage = NSImage(data: data).map { Image(nsImage: $0) }
+							#else
+								previewImage = UIImage(data: data).map { Image(uiImage: $0) }
+							#endif
+						}
 					}
 				}
 			} catch {
@@ -926,9 +1086,62 @@ private struct EaselLinkCard: View {
 			}
 		}
 	}
+
+	private func preview(width: Double, height: Double) -> some View {
+		previewImage?.resizable().scaledToFit()
+			.frame(width: width, height: height)
+			.accessibilityHidden(true)
+	}
+
+	private func metadata(fontSize: Double, titleLines: Int) -> some View {
+		VStack(alignment: .leading, spacing: 6) {
+			Label(title ?? url.host ?? "Web Page", systemImage: "link")
+				.font(.system(size: fontSize, weight: .semibold))
+				.lineLimit(titleLines)
+				.fixedSize(horizontal: false, vertical: true)
+			Text(url.host ?? url.absoluteString)
+				.font(.system(size: min(14, max(11, fontSize - 3))))
+				.foregroundStyle(.secondary)
+				.lineLimit(1)
+		}
+		.frame(maxWidth: .infinity, alignment: .leading)
+	}
 }
 
 /// A reference-type snapshot avoids invalidating the Easel view on every scroll frame.
 private final class EaselCanvasViewportOffset {
 	var point: CGPoint = .zero
+}
+
+/// Only the selected item contributes an anchor; scrolling resolves it in the viewport
+/// without publishing scroll positions or measuring every item into view state.
+private struct EaselSelectedItemBounds: PreferenceKey {
+	static var defaultValue: Anchor<CGRect>? { nil }
+
+	static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+		if let next = nextValue() { value = next }
+	}
+}
+
+/// Measure the actual controls in the same layout pass that positions them.
+private struct EaselSelectionControlsLayout: Layout {
+	let itemBounds: CGRect
+
+	func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+		proposal.replacingUnspecifiedDimensions()
+	}
+
+	func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+		guard let controls = subviews.first else { return }
+		let size = controls.sizeThatFits(.unspecified)
+		let margin: CGFloat = 12
+		let gap: CGFloat = 12
+		let below = itemBounds.maxY + gap
+		let preferredY = below + size.height <= bounds.height - margin
+			? below : itemBounds.minY - gap - size.height
+		// When neither side fits, keep the controls reachable inside the viewport.
+		let x = min(max(margin, itemBounds.midX - size.width / 2), max(margin, bounds.width - margin - size.width))
+		let y = min(max(margin, preferredY), max(margin, bounds.height - margin - size.height))
+		controls.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY + y), anchor: .topLeading, proposal: ProposedViewSize(size))
+	}
 }

@@ -8,9 +8,6 @@ import Foundation
 import Observation
 import QuartzCore
 import SwiftUI
-#if os(macOS)
-	import UniformTypeIdentifiers
-#endif
 
 struct BrowserTabRow: View {
 	let tab: BrowserTab
@@ -40,8 +37,7 @@ struct BrowserTabRow: View {
 	#if os(macOS)
 		@State private var hoverFrame = CGRect.zero
 		@State private var hoverPreviewStarted = false
-		@State private var splitDropSide: Browser.SplitSide?
-		@State private var splitDropWidth: CGFloat = 1
+		@State private var dragPreviewWidth: CGFloat = 1
 	#endif
 	@State private var renameText = ""
 	@Default(.developerModeEnabled) private var developerModeEnabled
@@ -246,9 +242,9 @@ struct BrowserTabRow: View {
 		}
 		#endif
 		#if os(macOS)
-		// Drag the whole tab, not merely its title or icon. Tab and page drop
-		// zones consume the same in-process tab identity.
-		.onGeometryChange(for: CGFloat.self) { $0.size.width } action: { splitDropWidth = $0 }
+		// Drag the whole tab, not merely its title or icon. The content split
+		// receiver and sidebar reorder consume the same in-process tab identity.
+		.onGeometryChange(for: CGFloat.self) { $0.size.width } action: { dragPreviewWidth = $0 }
 		.onDrag {
 			BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
 			let data = tab.id.uuidString.data(using: .utf8) ?? Data()
@@ -265,22 +261,8 @@ struct BrowserTabRow: View {
 				Spacer(minLength: 0)
 			}
 			.padding(.horizontal, 10)
-			.frame(width: max(splitDropWidth, 140), height: 28)
+			.frame(width: max(dragPreviewWidth, 140), height: 28)
 			.glassEffect(.regular, in: RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
-		}
-		.onDrop(of: [UTType(exportedAs: "com.omeriadon.astra.tab", conformingTo: .data)],
-		        delegate: BrowserTabRowSplitDropDelegate(
-		        	browser: browser, anchorID: tab.id, width: splitDropWidth, side: $splitDropSide
-		        ))
-		.overlay {
-			if let splitDropSide {
-				HStack(spacing: 0) {
-					splitDropSide == .left ? Color.accentColor.opacity(0.19) : Color.clear
-					(splitDropSide == .right ? Color.accentColor.opacity(0.19) : Color.clear)
-				}
-				.clipShape(RoundedRectangle(cornerRadius: BrowserChromeMetrics.tabWindowCornerRadiusWithSidebar))
-				.allowsHitTesting(false)
-			}
 		}
 		#endif
 		.contextMenu {
@@ -1444,57 +1426,6 @@ private struct SidebarSelectedTabsContextMenu: View {
 
 		private nonisolated static func formatBytes(_ bytes: UInt64) -> String {
 			ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
-		}
-	}
-#endif
-
-#if os(macOS)
-	private struct BrowserTabRowSplitDropDelegate: DropDelegate {
-		let browser: Browser
-		let anchorID: UUID
-		let width: CGFloat
-		@Binding var side: Browser.SplitSide?
-
-		private func locationSide(_ info: DropInfo) -> Browser.SplitSide {
-			info.location.x < width / 2 ? .left : .right
-		}
-
-		func validateDrop(info: DropInfo) -> Bool {
-			!browser.isPrivate && !browser.isMini
-				&& browser.tab(withID: anchorID)?.canAppearInEaselSplit == true
-				&& info.hasItemsConforming(to: ["com.omeriadon.astra.tab"])
-		}
-
-		func dropEntered(info: DropInfo) {
-			guard validateDrop(info: info) else { return }
-			side = locationSide(info)
-			BrowserTabHoverPreviewCoordinator.shared.dismiss(for: browser.windowID)
-		}
-
-		func dropUpdated(info: DropInfo) -> DropProposal? {
-			guard validateDrop(info: info) else { return DropProposal(operation: .forbidden) }
-			side = locationSide(info)
-			return DropProposal(operation: .move)
-		}
-
-		func dropExited(info _: DropInfo) {
-			side = nil
-		}
-
-		func performDrop(info: DropInfo) -> Bool {
-			defer { side = nil }
-			guard validateDrop(info: info),
-			      let provider = info.itemProviders(for: ["com.omeriadon.astra.tab"]).first
-			else { return false }
-			let onLeft = locationSide(info) == .left
-			_ = provider.loadDataRepresentation(forTypeIdentifier: "com.omeriadon.astra.tab") { data, _ in
-				guard let data, let raw = String(data: data, encoding: .utf8),
-				      let id = UUID(uuidString: raw), id != anchorID else { return }
-				Task { @MainActor in
-					browser.openSplit(id, beside: anchorID, onLeft: onLeft)
-				}
-			}
-			return true
 		}
 	}
 #endif

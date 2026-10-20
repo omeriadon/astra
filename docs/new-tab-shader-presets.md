@@ -1,82 +1,53 @@
 # New-tab Shader Presets
 
-The palette provides procedural Metal/SwiftUI effects and the translucent
-Default background. Image imports and image loading have been removed; saved
-legacy image styles render the Default foundation.
+The background menu offers Default, Float, Theme Dither, Live Ripple, Datamosh,
+and Topographic. Each effect is a fixed product preset at full effect opacity.
+There are no parameter controls or image pickers. Topographic always uses the
+built-in, deterministic procedural artwork; it never reads imported images.
 
-| Preset | Scope | Surface |
+| Preset | Fixed settings | Maximum scheduled rate |
 | --- | --- | --- |
-| Smoke Reveal | Full new-tab page | Dark/light Space-color foundation with semi-transparent, marbled Space-color wisps and colored smoke |
-| Holographic Prismatic | Search bar **only** | Brighter embossed silver ribbons and a moving diffraction spectrum; white text and placeholder |
-| Live Ripple | Full new-tab page | Animated refraction over Space-mesh liquid; reduced to 56% opacity over the Default foundation |
-| Datamosh | Full new-tab page | Hard-edged Space-mesh color strata with periodically smeared 16-point codec blocks and RGB bleed |
+| Float | Speed 0.66, blur 63 points | 30 fps |
+| Theme Dither | Speed 0.03, squares 7, spacing 0.77, corners 1.8, frequency 2.7, scale 0.3, five layers, levels 3.7, strength 0.21, contrast 1.88, brightness -0.5, minimum intensity 0, theme color 1 | 30 fps |
+| Live Ripple | Amplitude 33, frequency 50, speed 2.3, damping 2.4, three rings | 30 fps |
+| Datamosh | Corruption 0.015, smear 60, color bleed 0.95, glitch rate 0.7 | 30 fps |
+| Topographic | Line count 17, width 0.06, color 0, animation 0.13 | 60 fps |
 
-## Theme handling
+Dither cursor radius is 0.5, response 0.28, trail 0.7 seconds, fade 0.8 seconds,
+and swirl 0.15. The internal octave amplitude remains 0.37. Black Space colors
+receive a neutral exposure floor so animated squares remain visible, while zero
+minimum intensity still allows truly black wave regions. Colors remain anchored
+to the current Space mesh positions. Dither does not inherit mesh transparency.
 
-The three full-page effects sample up to four current Space mesh points in
-their original positions. The procedural source image uses inverse-distance
-weights instead of choosing just the first Space color; its light/dark
-foundation is derived from the Space appearance setting. Switching Space
-recomputes the palette without copying or modifying a static image.
+Saved Smoke Reveal, Holographic, legacy image styles and unrecognized choices
+migrate to Default. Previous parameter payloads and the imported Topographic
+image selection are removed regardless of their payload type. The old image
+files are no longer read. Migration is idempotent and retains valid style choices.
 
-Holographic uses broad, animated spectral reflections over embossed metal,
-without covering the search text with busy rainbow hairlines. The page behind it is Default, and its search text and prompt are
-explicitly white. Default uses an ultraThinMaterial search bar; the other
-full-page effects use regularMaterial at full strength.
+Only the displayed effect mounts a timeline. Animation clocks freeze on tab
+switching, window minimization/occlusion, app inactivity, window focus loss and
+Reduce Motion. The Dither pointer monitor mounts only while its animation is
+active; it observes events above controls without consuming them. Float has a
+30 fps scheduling cap, and Topographic now schedules up to 60 fps rather than 45.
+The renderer may deliver fewer frames according to the display and system load.
 
-Effects remain exclusive with Float and Theme Dither. Float retains its 30-point blur but uses exposure-corrected Space colours
-and strong, drifting bright and dark folds. No effect loads a background image; the selected preset persists using
-`astra.newTabBackgroundStyle`.
+## Licensing
 
-## Animation and interaction
-
-Source artwork is deterministic and resolution-independent. The 45 fps holographic timeline
-uses each frame's date as the shader clock. On macOS, the actual
-window's activity and occlusion are authoritative, and animation time pauses
-when the page becomes inactive or Reduce Motion is enabled.
-
-Ripples remain continuous. Datamosh now updates codec blocks at 12 Hz and
-drifts smoothly between updates. Dither's wave travels visibly, and a
-non-consuming macOS pointer monitor tracks motion above the search field and
-suggestions list without blocking controls. It is scoped to the Dither view.
-
-## Upstream and licensing
-
-Shaders adapt **Smoke Reveal, Holographic / Prismatic, Live Ripple and
-Datamosh** from Kris Puckett's
-[SwiftUIShaders](https://github.com/krispuckett/SwiftUIShaders), licensed MIT.
-The upstream algorithms are selectively adapted to Astra's own generated
-artwork and color-space theme model; the copyright and complete MIT permission,
-warranty and liability notice appear at the top of
-`astra/UI/Background/NewTabShaderEffects.metal`.
-No entire upstream package or additional dependency is vendored.
+Live Ripple and Datamosh adapt Kris Puckett's SwiftUIShaders (MIT); the complete
+copyright and license notice remain in `NewTabShaderEffects.metal`.
 
 ## Validation
 
-`checks/new-tab-shaders-check.py` checks picker routing, positioned Space
-palette propagation, animation frame date, pointer tracking, material search
-fields, bitmap removal, all five Metal entry points and attribution.
-The existing `Astra - Metal Dither` workflow now checks that integration
-and compiles/links the additional Metal source with Xcode 27.
+`checks/new-tab-shaders-check.py` checks routing, fixed uniforms, migration wiring,
+Space palette propagation and lifecycle gates. `checks/dither-motion-check.swift`
+checks clock pausing, cursor continuity and old-preference removal, including
+invalid payloads and repeated migration. The Metal Dither CI workflow compiles
+these Swift checks and compiles/links both Metal files on Xcode 27.
 
-**Mac acceptance steps**
-
-1. Select every preset on an otherwise blank tab, then type in the search
-   field; verify cursor and keyboard input remain uninterrupted.
-2. Give two Spaces visibly different four-point color meshes and alternate
-   between them in Smoke, Ripple and Datamosh. Check each background responds.
-3. Switch between light/dark/auto Space appearance and confirm the Smoke
-   foundation's contrast changes. Holographic must only change the search bar.
-4. Confirm Float is visibly blurred, Default uses ultraThinMaterial, and
-   no preset offers an image import or shows an image from old preferences.
-5. Verify all shader presets visibly move while the window is active; move
-   the cursor above controls in Dither and verify the delayed wake. Toggle
-   Reduce Motion, minimize/occlude, switch tabs/Spaces and verify motion pauses.
-6. Test large and small window sizes, full-screen, 100%/200% display scaling.
-   Check the marbling and ripple edges for cropping, aliasing and readability.
-7. Profile GPU Frame Capture, Energy Log and SwiftUI template at 30 fps,
-   especially on integrated GPUs. Use the default background as an idle
-   baseline. Do not infer performance wins from passing source checks.
-
-Metal shader appearance, battery use and accessibility have not been
-visually verified in this non-macOS execution environment.
+Mac acceptance still requires checking each effect at small/large window sizes,
+light/dark/auto appearance, black/gray/colorful Spaces, cursor tracking above
+search results, and pausing when switching tabs/windows, minimizing and enabling
+Reduce Motion. Confirm Topographic cannot access previous imported artwork.
+No GPU time, memory, battery, or visual measurements were made in this Linux
+editing environment. Scheduling caps and lifecycle gates are implementation
+constraints, not measured performance results.

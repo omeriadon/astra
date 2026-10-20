@@ -59,11 +59,55 @@ struct EaselDocumentCheck {
 		shape.height = 100
 		shape.constrainShape(true)
 		precondition(shape.width == shape.height)
+		// Pointer geometry must preserve press/release direction and canvas positions.
+		let dragStart = BrowserEaselDocument.Item.Point(x: 260, y: 840)
+		let dragEnd = BrowserEaselDocument.Item.Point(x: 60, y: 720)
+		for kind in [BrowserEaselDocument.Item.Kind.rectangle, .ellipse, .line, .arrow] {
+			let drawn = BrowserEaselDocument.Item.drawnShape(kind: kind, from: dragStart, to: dragEnd,
+			                                               constrained: false, withinWidth: 1000)!
+			precondition(drawn.x == 60 && drawn.y == 720 && drawn.width == 200 && drawn.height == 120)
+			precondition(BrowserEaselDocument(items: [drawn]).isValid)
+			if [.line, .arrow].contains(kind) {
+				precondition(drawn.points == [.init(x: 200, y: 120), .init(x: 0, y: 0)])
+			}
+			precondition(BrowserEaselDocument.Item.drawnShape(kind: kind, from: dragStart, to: dragStart,
+			                                                constrained: false, withinWidth: 1000) == nil)
+		}
+		let square = BrowserEaselDocument.Item.drawnShape(kind: .ellipse, from: dragStart, to: dragEnd,
+		                                                 constrained: true, withinWidth: 1000)!
+		precondition(square.x == 60 && square.y == 640 && square.width == square.height)
+		for end in [BrowserEaselDocument.Item.Point(x: 260, y: 1000), .init(x: 500, y: 840)] {
+			let axisLine = BrowserEaselDocument.Item.drawnShape(kind: .line, from: dragStart, to: end,
+			                                                  constrained: false, withinWidth: 1000)!
+			precondition(axisLine.x + axisLine.points[1].x == end.x)
+			precondition(axisLine.y + axisLine.points[1].y == end.y)
+			precondition(BrowserEaselDocument(items: [axisLine]).isValid)
+		}
+		let clipped = BrowserEaselDocument.Item.drawnShape(kind: .arrow, from: dragStart,
+		                                                  to: .init(x: -1000, y: -1000),
+		                                                  constrained: false, withinWidth: 1000)!
+		precondition(clipped.x == 0 && clipped.y == 0)
+		precondition(BrowserEaselDocument(items: [clipped]).isValid)
+		precondition(BrowserEaselDocument.Item.drawnShape(kind: .line, from: dragStart,
+		                                                to: .init(x: .infinity, y: 0),
+		                                                constrained: false, withinWidth: 1000) == nil)
 		var image = BrowserEaselDocument.Item(kind: .image)
 		image.constrainShape(true)
 		precondition(image.height == 120)
 		image.imageData = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==")!
 		precondition(BrowserEaselDocument(items: [image]).isValid)
+		image.roundedCorners = true
+		let roundedDocument = BrowserEaselDocument(items: [image])
+		let roundedData = try JSONEncoder().encode(roundedDocument)
+		let restoredRoundedDocument = try JSONDecoder().decode(BrowserEaselDocument.self, from: roundedData)
+		precondition(restoredRoundedDocument == roundedDocument)
+		var legacyJSON = try JSONSerialization.jsonObject(with: roundedData) as! [String: Any]
+		var legacyItems = legacyJSON["items"] as! [[String: Any]]
+		legacyItems[0].removeValue(forKey: "roundedCorners")
+		legacyJSON["items"] = legacyItems
+		let legacyData = try JSONSerialization.data(withJSONObject: legacyJSON)
+		let legacyDocument = try JSONDecoder().decode(BrowserEaselDocument.self, from: legacyData)
+		precondition(legacyDocument.items[0].roundedCorners == nil && legacyDocument.isValid)
 		image.imageData = Data([0, 1, 2, 3])
 		precondition(!BrowserEaselDocument(items: [image]).isValid)
 		// Every tool must create a valid item before SwiftUI observes the document.

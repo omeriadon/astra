@@ -17,7 +17,7 @@ import SwiftUI
 		}
 
 		func makeNSView(context: Context) -> NSScrollView {
-			let scroll = NSScrollView()
+			let scroll = TranscriptScrollView()
 			scroll.drawsBackground = false
 			scroll.contentView.drawsBackground = false
 			scroll.hasVerticalScroller = true
@@ -40,6 +40,7 @@ import SwiftUI
 			scroll.documentView = table
 			context.coordinator.table = table
 			context.coordinator.scroll = scroll
+			scroll.viewportDidResize = { [weak coordinator = context.coordinator] in coordinator?.scheduleResize() }
 			context.coordinator.update(self)
 			return scroll
 		}
@@ -49,6 +50,7 @@ import SwiftUI
 		}
 
 		static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
+			(scroll as? TranscriptScrollView)?.viewportDidResize = nil
 			coordinator.stop()
 			coordinator.table?.delegate = nil
 			coordinator.table?.dataSource = nil
@@ -69,12 +71,15 @@ import SwiftUI
 			private var lastStreaming = false
 			private var resizeTask: Task<Void, Never>?
 
-			private var rowCount: Int {
+			private var transcriptRowCount: Int {
 				guard let parent else { return 0 }
 				return parent.chat.messages.count + 1 + (parent.chat.messages.isEmpty ? 1 : 0)
 			}
 
+			private var rowCount: Int { transcriptRowCount + 1 }
+
 			private func entry(at index: Int) -> Entry {
+				if index == transcriptRowCount { return .overscroll }
 				guard let parent else { return .stream }
 				if parent.chat.messages.isEmpty {
 					return index == 0 ? .welcome : .stream
@@ -84,9 +89,11 @@ import SwiftUI
 
 			func update(_ new: BrowserAIChatTranscript) {
 				let old = parent
+				let wasAtBottom = isNearBottom
 				parent = new
 				guard let table else { return }
 				let ids = new.chat.messages.map(\.id)
+				let messageIDsBeforeUpdate = messageIDs
 				let width = max(1, table.bounds.width - 24)
 				let sameConversation = conversationID == new.chat.id
 				let appended = sameConversation && ids.count >= messageIDs.count &&
@@ -108,7 +115,8 @@ import SwiftUI
 						sizingCache.removeAll(keepingCapacity: true)
 					}
 					table.reloadData()
-					if changed {
+					let submitted = appended && ids.count > messageIDsBeforeUpdate.count && new.chat.messages.last?.isUser == true
+					if changed, !sameConversation || wasAtBottom || submitted {
 						scrollToBottom()
 					}
 				} else if streamChanged {
@@ -129,6 +137,7 @@ import SwiftUI
 
 			func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
 				let entry = entry(at: row)
+				if case .overscroll = entry { return max(1, (scroll?.contentView.bounds.height ?? 0) * 0.5) }
 				let width = max(1, tableView.bounds.width - 24)
 				if case let .message(message) = entry,
 				   let height = sizingCache[message.id]
@@ -158,9 +167,9 @@ import SwiftUI
 				               open: { [weak browser = parent.browser] url in browser?.openHistoryURL(url, inBackground: false) },
 				               hover: parent.hover, retry: parent.retry,
 				               artifact: { [weak browser = parent.browser] item in
-				               	guard let browser else { return }
-				               	do { try BrowserWebsiteAugment.open(item, in: browser) }
-				               	catch { browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error.localizedDescription) }
+				               guard let browser else { return }
+				               do { try BrowserWebsiteAugment.open(item, in: browser, activationScreenPoint: BrowserPeek.currentActivationScreenPoint()) }
+				               catch { browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error.localizedDescription) }
 				               })
 				if case .stream = entry {
 					view.configureStream(chat: parent.chat, width: width, tint: NSColor(parent.browser.theme.tabColor),
@@ -195,7 +204,7 @@ import SwiftUI
 				scheduleResize()
 			}
 
-			private func scheduleResize() {
+			func scheduleResize() {
 				resizeTask?.cancel()
 				resizeTask = Task { [weak self] in
 					do { try await Task.sleep(for: .milliseconds(75)) }
@@ -214,9 +223,9 @@ import SwiftUI
 			private func reloadStream() {
 				guard let table, rowCount > 0 else { return }
 				let atBottom = isNearBottom
-				table.reloadData(forRowIndexes: IndexSet(integer: rowCount - 1),
+				table.reloadData(forRowIndexes: IndexSet(integer: transcriptRowCount - 1),
 				                 columnIndexes: IndexSet(integer: 0))
-				table.noteHeightOfRows(withIndexesChanged: IndexSet(integer: rowCount - 1))
+				table.noteHeightOfRows(withIndexesChanged: IndexSet(integer: transcriptRowCount - 1))
 				if atBottom {
 					scrollToBottom()
 				}
@@ -224,14 +233,23 @@ import SwiftUI
 
 			private var isNearBottom: Bool {
 				guard let scroll else { return true }
-				let documentHeight = scroll.documentView?.bounds.height ?? 0
-				return scroll.contentView.bounds.maxY >= documentHeight - 48
+				// Follow the actual transcript end, excluding the extra scroll range.
+				// Scrolling into that range intentionally moves the answer upward.
+				let latestOffset = max(0, transcriptBottom - scroll.contentView.bounds.height)
+				return abs(scroll.contentView.bounds.minY - latestOffset) <= 48
+			}
+
+			private var transcriptBottom: CGFloat {
+				guard let table, table.numberOfRows > 1 else { return 0 }
+				// Use the displayed rows: the observed model may already include a
+				// new message before the table has reloaded its data source.
+				return table.rect(ofRow: table.numberOfRows - 2).maxY
 			}
 
 			private func scrollToBottom() {
 				guard let table, let scroll, table.numberOfRows > 0 else { return }
 				table.layoutSubtreeIfNeeded()
-				scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, table.bounds.height - scroll.contentView.bounds.height)))
+				scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, transcriptBottom - scroll.contentView.bounds.height)))
 				scroll.reflectScrolledClipView(scroll.contentView)
 			}
 
@@ -248,7 +266,18 @@ import SwiftUI
 				case welcome
 				case message(BrowserAIChat.Message)
 				case stream
+				case overscroll
 			}
+		}
+	}
+
+	@MainActor private final class TranscriptScrollView: NSScrollView {
+		var viewportDidResize: (() -> Void)?
+
+		override func setFrameSize(_ newSize: NSSize) {
+			let changed = frame.size != newSize
+			super.setFrameSize(newSize)
+			if changed { viewportDidResize?() }
 		}
 	}
 
@@ -322,7 +351,7 @@ import SwiftUI
 							add(artifactButton(item, tint: tint, action: artifact), height: 78)
 						}
 					}
-				case .stream: break
+				case .stream, .overscroll: break
 					// Live content is supplied by configureStream.
 			}
 			if pieces.isEmpty {
@@ -597,7 +626,7 @@ import SwiftUI
 		}
 
 		func makeUIView(context: Context) -> UITableView {
-			let table = UITableView(frame: .zero, style: .plain)
+			let table = TranscriptTableView(frame: .zero, style: .plain)
 			table.backgroundColor = .clear
 			table.separatorStyle = .none
 			table.estimatedRowHeight = 100
@@ -626,13 +655,19 @@ import SwiftUI
 			private var polling: Task<Void, Never>?
 
 			func update(_ value: BrowserAIChatTranscript) {
-				parent = value
+				let wasAtBottom = isNearBottom
+				let sameConversation = value.chat.id == conversationID
 				let newIDs = value.chat.messages.map(\.id)
-				if newIDs != ids || value.chat.id != conversationID {
+				let submitted = sameConversation && newIDs.count > ids.count &&
+					newIDs.prefix(ids.count).elementsEqual(ids) && value.chat.messages.last?.isUser == true
+				parent = value
+				if newIDs != ids || !sameConversation {
 					ids = newIDs
 					conversationID = value.chat.id
 					table?.reloadData()
-					scrollToBottom()
+					if !sameConversation || wasAtBottom || submitted {
+						scrollToBottom()
+					}
 				}
 				if value.chat.isResponding, polling == nil {
 					polling = Task { [weak self] in
@@ -665,8 +700,8 @@ import SwiftUI
 					cell.configure(parent.chat.messages[index], tint: UIColor(parent.browser.theme.tabColor),
 					               open: { parent.browser.openHistoryURL($0, inBackground: false) },
 					               artifact: { item in
-					               	do { try BrowserWebsiteAugment.open(item, in: parent.browser) }
-					               	catch { parent.browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error.localizedDescription) }
+					               do { try BrowserWebsiteAugment.open(item, in: parent.browser, activationScreenPoint: BrowserPeek.currentActivationScreenPoint()) }
+					               catch { parent.browser.session.toastManager.show(symbol: "exclamationmark.triangle", message: error.localizedDescription) }
 					               })
 				}
 				return cell
@@ -679,21 +714,38 @@ import SwiftUI
 					chat.toolCalls.map(\.status).joined() + (chat.error ?? "")
 				guard value != streamRevision else { return }
 				streamRevision = value
-				let nearBottom = table.contentOffset.y + table.bounds.height >= table.contentSize.height - 48
+				let nearBottom = isNearBottom
 				table.reloadRows(at: [IndexPath(row: table.numberOfRows(inSection: 0) - 1, section: 0)], with: .none)
 				if nearBottom {
 					scrollToBottom()
 				}
 			}
 
+			private var isNearBottom: Bool {
+				guard let table else { return true }
+				let latestOffset = max(-table.adjustedContentInset.top, table.contentSize.height - table.bounds.height)
+				return abs(table.contentOffset.y - latestOffset) <= 48
+			}
+
 			private func scrollToBottom() {
 				guard let table, table.numberOfRows(inSection: 0) > 0 else { return }
 				table.layoutIfNeeded()
-				table.scrollToRow(at: IndexPath(row: table.numberOfRows(inSection: 0) - 1, section: 0), at: .bottom, animated: false)
+				let latestOffset = max(-table.adjustedContentInset.top, table.contentSize.height - table.bounds.height)
+				table.setContentOffset(CGPoint(x: 0, y: latestOffset), animated: false)
 			}
 
 			func stop() {
 				polling?.cancel(); polling = nil; parent = nil; table?.dataSource = nil; table?.delegate = nil
+			}
+		}
+	}
+
+	@MainActor private final class TranscriptTableView: UITableView {
+		override func layoutSubviews() {
+			super.layoutSubviews()
+			let extraScrollRange = bounds.height * 0.5
+			if contentInset.bottom != extraScrollRange {
+				contentInset.bottom = extraScrollRange
 			}
 		}
 	}

@@ -67,14 +67,38 @@ assert.throws(()=>run([{action:'javascript',code:"document.querySelector('li').s
 assert.throws(()=>run([{action:'unknown',selector:'li'}]), /Unknown/);
 assert.throws(()=>run([{action:'remove',selector:'missing'}]), /matched no/);
 assert.throws(()=>run([{action:'filter',selector:'li'}]), /contains/);
+assert.throws(()=>run([{action:'filter',selector:'li',contains:'   '}]), /nonempty/);
+assert.throws(()=>run([{action:'filter',selector:'li',contains:'Apple'}], page(['Apple red','Apple gold'])), /changed no items/);
+assert.throws(()=>run([{action:'filter',selector:'li',contains:'Philosophy'}]), /remove all/);
+const container = page();
+const list = new Element('ul', 'Apple red Pear green Apple gold');
+list.children = container.elements;
+list.parentElement = container.doc.body;
+for (const el of list.children) el.parentElement = list;
+container.doc.body.children = [list];
+assert.throws(()=>run([{action:'filter',selector:'ul',contains:'Apple'}], container), /list container/);
+assert.equal(container.elements.filter(n=>n.isConnected).length, 3);
 
-function validate(edited, original = page()) {
+function validate(edited, original = page(), operations = []) {
   return vm.runInNewContext('(function(){'+finalize+'})()',{
-    html:'original',result:'edited',source:'https://example.com/articles/',URL,
+    html:'original',result:'edited',source:'https://example.com/articles/',operations,URL,
     DOMParser:class{parseFromString(value){return value === 'original' ? original.doc : edited.doc;}},
   });
 }
-assert.ok(validate(page()).includes('Content-Security-Policy'));
+assert.throws(()=>validate(page()), /made no changes/);
+const filtered = page(); filtered.elements[1].remove();
+const checked = JSON.parse(validate(filtered, page(), [{action:'filter',selector:'li',contains:'Apple'}]));
+assert.match(checked.html, /Content-Security-Policy/);
+assert.match(checked.summary, /3 source items, 2 remaining/);
+const checkedLongList = JSON.parse(validate(longList, page(Array.from({length: 838}, (_, i) => i === 700 ? 'Philosophy' : 'Other unit')), [{action:'filter',selector:'li',contains:'philosophy'}]));
+assert.match(checkedLongList.summary, /838 source items, 1 remaining/);
+const renamed = page(); renamed.elements[0].textContent = 'Changed';
+assert.match(JSON.parse(validate(renamed)).html, /Changed/);
+const reordered = page(); reordered.doc.body.children.reverse();
+assert.match(JSON.parse(validate(reordered)).summary, /7 source elements, 7 result elements/);
+const noOp = run([{action:'javascript',code:'document.querySelectorAll("missing");'}]);
+assert.throws(()=>validate(noOp), /made no changes/);
+
 const forged = page(); forged.style.textContent = 'body{display:none}';
 assert.throws(()=>validate(forged),/CSS/);
 const active = page(); active.doc.body.children.push(new Element('script','fetch("/mutate")'));
@@ -91,7 +115,8 @@ assert.match(source,/Task\.sleep\(for: \.seconds\(12\)\)/);
 // Browser.configure(peek) can replace navigationIntercept; the snapshot policy
 // must survive that callback wiring and run before external or popup handlers.
 const controller = fs.readFileSync('astra/Web/Navigation/BrowserController.swift', 'utf8');
-assert.match(source, /controller\.snapshotNavigationOnly = true/);
+assert.match(source, /controller\.loadWebsiteSnapshot\(artifact\.html, sourceURL: artifact\.sourceURL\)/);
+assert.match(controller, /snapshotNavigationOnly = true/);
 assert.match(controller, /var snapshotNavigationOnly = false/);
 function guardedBefore(start, boundary, guard, sideEffect) {
   const body = controller.slice(controller.indexOf(start), controller.indexOf(boundary, controller.indexOf(start)));

@@ -4,10 +4,14 @@ struct PeekCardView: View {
 	let peek: BrowserPeek
 	var windowID: UUID?
 	let viewportSize: CGSize
+	var activationPoint: CGPoint?
 	let isTopmost: Bool
 	let canPromote: Bool
+	let canSplit: Bool
 	let onDismiss: () -> Void
 	let onPromote: () -> Void
+	let onSplitLeft: () -> Void
+	let onSplitRight: () -> Void
 	let onDismissCompleted: () -> Void
 
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -16,6 +20,7 @@ struct PeekCardView: View {
 	@State private var showsPlaceholder = true
 
 	private var sourcePoint: CGPoint {
+		if let activationPoint { return activationPoint }
 		if peek.depth == 1 {
 			return CGPoint(
 				x: viewportSize.width * peek.source.x,
@@ -89,11 +94,27 @@ struct PeekCardView: View {
 			)
 			.offset(x: -controlSize - 15, y: 16)
 		}
+		.overlay(alignment: .topTrailing) {
+			PeekSplitControlsOverlay(
+				isTopmost: isTopmost,
+				showsPlaceholder: showsPlaceholder,
+				controlSize: controlSize,
+				controlsAnimation: controlsAnimation,
+				controlsNamespace: controlsNamespace,
+				depth: peek.depth,
+				canSplit: canSplit,
+				onSplitLeft: { split(onSplitLeft) },
+				onSplitRight: { split(onSplitRight) }
+			)
+			.offset(x: controlSize + 15, y: 16)
+		}
 //			.shadow(color: .black.opacity(0.38), radius: 32, y: 18)
 		.position(x: cardRect.midX, y: cardRect.midY)
 		.allowsHitTesting(showsWebContent && isTopmost && !peek.isDismissing)
 		.accessibilityHidden(!isTopmost)
-		.task {
+		.task(id: activationPoint) {
+			// Resolve native screen coordinates in the viewport before starting the spring.
+			guard peek.activationScreenPoint == nil || activationPoint != nil else { return }
 			guard !peek.hasPresented else {
 				await Task.yield()
 				guard !Task.isCancelled else { return }
@@ -176,6 +197,17 @@ struct PeekCardView: View {
 			onPromote()
 		}
 	}
+
+	private func split(_ action: @escaping () -> Void) {
+		withAnimation(.easeOut(duration: reduceMotion ? 0.01 : 0.2), completionCriteria: .removed) {
+			showsPlaceholder = true
+		} completion: {
+			withAnimation(nil) {
+				showsWebContent = false
+			}
+			action()
+		}
+	}
 }
 
 private struct PeekWebContent: View {
@@ -241,6 +273,46 @@ private struct PeekControlsOverlay: View {
 							action: onPromote
 						)
 					}
+				}
+			}
+		}
+		.animation(controlsAnimation, value: isTopmost)
+	}
+}
+
+private struct PeekSplitControlsOverlay: View {
+	let isTopmost: Bool
+	let showsPlaceholder: Bool
+	let controlSize: CGFloat
+	let controlsAnimation: Animation
+	let controlsNamespace: Namespace.ID
+	let depth: Int
+	let canSplit: Bool
+	let onSplitLeft: () -> Void
+	let onSplitRight: () -> Void
+
+	var body: some View {
+		GlassEffectContainer(spacing: 10) {
+			VStack(spacing: 10) {
+				if isTopmost, !showsPlaceholder, canSplit {
+					PeekControlButton(
+						title: "Split Peek to Left",
+						symbol: "rectangle.lefthalf.inset.filled",
+						identifier: "split-peek-left",
+						depth: depth,
+						controlSize: controlSize,
+						controlsNamespace: controlsNamespace,
+						action: onSplitLeft
+					)
+					PeekControlButton(
+						title: "Split Peek to Right",
+						symbol: "rectangle.righthalf.inset.filled",
+						identifier: "split-peek-right",
+						depth: depth,
+						controlSize: controlSize,
+						controlsNamespace: controlsNamespace,
+						action: onSplitRight
+					)
 				}
 			}
 		}

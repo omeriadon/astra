@@ -15,7 +15,7 @@ struct BrowserImportView: View {
 	@State private var isLoading = false
 	@State private var preview: BrowserProfileImporter.Preview?
 	@State private var message: String?
-	@State private var folder: URL?
+	@State private var folder: (source: BrowserImportSource, url: URL)?
 	@State private var discoveryID = UUID()
 
 	private var selectedScope: BrowserImportScope {
@@ -130,32 +130,36 @@ struct BrowserImportView: View {
 		#else
 			.listStyle(.sidebar)
 		#endif
-			.task(id: source) { await discoverProfiles() }
+			.task(id: source) {
+				await discoverProfiles(in: folder?.source == source ? folder?.url : nil)
+			}
 			.onChange(of: source) { _, _ in preview = nil }
 			.onChange(of: selectedProfile) { _, _ in preview = nil }
 			.onChange(of: importsBookmarks) { _, _ in preview = nil }
 			.onChange(of: importsHistory) { _, _ in preview = nil }
-			.fileImporter(isPresented: $showsFilePicker, allowedContentTypes: scope == .history ? [.json] : [.html, .json]) { result in
+			.browserFileImporter(isPresented: $showsFilePicker, allowedContentTypes: scope == .history ? [.json] : [.html, .json]) { result in
 				switch result {
 					case let .success(url): readFile(url)
 					case let .failure(error): message = error.localizedDescription
 				}
 			}
 		#if os(macOS)
-			.fileImporter(isPresented: $showsFolderPicker, allowedContentTypes: [.folder]) { result in
+			.browserFileImporter(isPresented: $showsFolderPicker, allowedContentTypes: [.folder]) { result in
 				switch result {
 					case let .success(url):
-						folder?.stopAccessingSecurityScopedResource()
-						_ = url.startAccessingSecurityScopedResource()
-						folder = url
-						Task { await discoverProfiles(in: url) }
+						let selectedSource = source
+						folder = (selectedSource, url)
+						profiles = []
+						selectedProfile = nil
+						preview = nil
+						Task {
+							guard source == selectedSource else { return }
+							await discoverProfiles(in: url)
+						}
 					case let .failure(error): message = error.localizedDescription
 				}
 			}
 		#endif
-			.onDisappear {
-				folder?.stopAccessingSecurityScopedResource()
-			}
 	}
 
 	private func discoverProfiles(in directory: URL? = nil) async {
@@ -168,7 +172,9 @@ struct BrowserImportView: View {
 			preview = nil
 			do {
 				let found = try await Task.detached(priority: .userInitiated) {
-					try BrowserProfileImporter.profiles(for: source, in: directory)
+					try BrowserProfileImporter.withFolderAccess(to: directory) {
+						try BrowserProfileImporter.profiles(for: source, in: directory)
+					}
 				}.value
 				guard !Task.isCancelled, self.source == source, discoveryID == requestID else { return }
 				profiles = found
@@ -184,13 +190,16 @@ struct BrowserImportView: View {
 	private func readProfile() {
 		guard canImport, let profile = profiles.first(where: { $0.id == selectedProfile }) else { return }
 		let scope = selectedScope
+		let accessFolder = folder?.source == profile.source ? folder?.url : nil
 		isLoading = true
 		preview = nil
 		message = nil
 		Task {
 			do {
 				preview = try await Task.detached(priority: .userInitiated) {
-					try BrowserProfileImporter.read(profile, scope: scope)
+					try BrowserProfileImporter.withFolderAccess(to: accessFolder) {
+						try BrowserProfileImporter.read(profile, scope: scope)
+					}
 				}.value
 			} catch {
 				message = error.localizedDescription

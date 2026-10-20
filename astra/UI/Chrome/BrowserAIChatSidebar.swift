@@ -17,6 +17,7 @@ struct BrowserAIChatSidebar: View {
 	@State private var hoveredLinkSize = CGSize.zero
 	@State private var hoveredLinkShiftPressed = false
 	@State private var requestID: UUID?
+	@State private var requestActivationScreenPoint: CGPoint?
 	@State private var showsHistory = false
 	@State private var historySelection = UUID()
 	@State private var showsFileImporter = false
@@ -245,6 +246,7 @@ struct BrowserAIChatSidebar: View {
 			focused = isVisible
 			if isVisible {
 				chat.includeCurrentTab(in: browser)
+				consumePageSummary()
 			}
 		}
 		.onChange(of: isVisible) { _, visible in
@@ -254,7 +256,11 @@ struct BrowserAIChatSidebar: View {
 			}
 			if visible {
 				chat.includeCurrentTab(in: browser)
+				consumePageSummary()
 			}
+		}
+		.onChange(of: browser.pendingPageSummary) { _, pending in
+			if pending { consumePageSummary() }
 		}
 		.onChange(of: chat.error) { _, error in
 			if let error {
@@ -267,7 +273,7 @@ struct BrowserAIChatSidebar: View {
 			}
 		}
 		.task { await history.load() }
-		.fileImporter(isPresented: $showsFileImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+		.browserFileImporter(isPresented: $showsFileImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
 			switch result {
 				case let .success(urls): Task { await chat.importFiles(urls) }
 				case let .failure(error): chat.reportImportError(error)
@@ -282,7 +288,7 @@ struct BrowserAIChatSidebar: View {
 		}
 		.task(id: "\(requestID?.uuidString ?? "")|\(isVisible)") {
 			guard isVisible, requestID != nil else { return }
-			await chat.send(in: browser)
+			await chat.send(in: browser, activationScreenPoint: requestActivationScreenPoint)
 			if !Task.isCancelled {
 				requestID = nil
 			}
@@ -354,8 +360,18 @@ struct BrowserAIChatSidebar: View {
 		.scrollIndicators(.hidden)
 	}
 
+	private func consumePageSummary() {
+		guard isVisible, browser.pendingPageSummary else { return }
+		browser.pendingPageSummary = false
+		guard !chat.isResponding, !chat.isImporting, chat.draft.isEmpty else { return }
+		chat.includeCurrentTab(in: browser)
+		chat.draft = "Summarise the current page."
+		send()
+	}
+
 	private func send() {
 		guard !chat.isResponding, canSend else { return }
+		requestActivationScreenPoint = BrowserPeek.currentActivationScreenPoint()
 		requestID = UUID()
 	}
 }

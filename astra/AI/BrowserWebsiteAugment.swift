@@ -9,6 +9,7 @@ nonisolated struct BrowserWebsiteAugmentArtifact: Codable, Identifiable, Sendabl
 	let sourceURL: URL
 	let html: String
 	let createdAt: Date
+	var summary: String? = nil
 }
 
 #if !ASTRA_WEBSITE_APP_RUNTIME
@@ -45,21 +46,19 @@ nonisolated struct BrowserWebsiteAugmentArtifact: Codable, Identifiable, Sendabl
 			guard !Task.isCancelled, tab.activeController === controller, controller.navigationIdentifier == generation,
 			      browser.visibleTabs.contains(where: { $0 === tab }) else { throw BrowserAIError.pageUnavailable }
 			let title = String((arguments["title"] ?? "Augmented \(tab.title)").prefix(200))
-			return BrowserWebsiteAugmentArtifact(id: UUID(), title: title, sourceURL: BrowserAddress.withoutCredentials(sourceURL), html: result, createdAt: Date())
+			return BrowserWebsiteAugmentArtifact(id: UUID(), title: title, sourceURL: BrowserAddress.withoutCredentials(sourceURL), html: result.html, createdAt: Date(), summary: result.summary)
 		}
 
-		static func open(_ artifact: BrowserWebsiteAugmentArtifact, in browser: Browser) throws {
+		static func open(_ artifact: BrowserWebsiteAugmentArtifact, in browser: Browser, activationScreenPoint: CGPoint? = nil) throws {
 			guard let tab = browser.selectedTab, artifact.html.utf8.count <= 12_000_000 else { throw BrowserAIError.pageUnavailable }
 			let configuration = WKWebViewConfiguration()
 			configuration.defaultWebpagePreferences.allowsContentJavaScript = false
 			let controller = BrowserController(session: BrowserWebSession(isPrivate: true), configuration: configuration)
 			// A fresh private session ensures remote images/styles cannot inherit website cookies.
 			// The artifact CSP disables page scripts, forms, frames and outbound connections.
-			controller.snapshotNavigationOnly = true
-			controller.snapshotSourceURL = artifact.sourceURL
-			controller.webView.loadHTMLString(artifact.html, baseURL: nil)
-			let peek = BrowserPeek(depth: tab.peeks.count + 1, source: .trailing, parentZoom: 1, zoomsOut: false, existingController: controller)
-			tab.addPeek(peek)
+			let peek = BrowserPeek(depth: tab.peeks.count + 1, source: .center, activationScreenPoint: activationScreenPoint, parentZoom: 1, zoomsOut: false, existingController: controller)
+			browser.presentPeek(peek, in: tab)
+			controller.loadWebsiteSnapshot(artifact.html, sourceURL: artifact.sourceURL)
 		}
 
 		static let structureScript = #"""
@@ -171,9 +170,16 @@ nonisolated struct BrowserWebsiteAugmentArtifact: Codable, Identifiable, Sendabl
 		            doc.body.querySelectorAll('*').forEach(n => { if (!retained.has(n) && !n.matches('style,link[rel~="stylesheet"]') && !n.querySelector('style,link[rel~="stylesheet"]')) n.remove(); });
 		            break;
 		        }
-		        case 'filter':
-		            if (typeof op.contains !== 'string') throw new Error('Filter requires contains');
-		            nodes.forEach(n => { if (n.textContent.toLocaleLowerCase().includes(op.contains.toLocaleLowerCase()) === !!op.exclude) n.remove(); }); break;
+		        case 'filter': {
+		            if (typeof op.contains !== 'string' || !op.contains.trim()) throw new Error('Filter requires nonempty contains text');
+		            // A container containing one match is not itself a matching list item.
+		            // Return actionable evidence instead of saving an unchanged whole list.
+		            if (nodes.some(n => !n.matches('li,tr,[role="listitem"],[role="row"]') && n.querySelector('li,tr,[role="listitem"],[role="row"]'))) throw new Error('Filter selected a list container. Inspect get_page_structure and use its itemSelector to filter individual rows.');
+		            const removed = nodes.filter(n => n.textContent.toLocaleLowerCase().includes(op.contains.toLocaleLowerCase()) === !!op.exclude);
+		            if (!removed.length) throw new Error('Filter changed no items: all ' + nodes.length + ' selected items already satisfy it. Inspect the row selector and matching text before retrying.');
+		            if (removed.length === nodes.length) throw new Error('Filter would remove all ' + nodes.length + ' selected items. Inspect matching text with get_page_structure contains before retrying.');
+		            removed.forEach(n => n.remove()); break;
+		        }
 		        case 'replace':
 		            if (typeof op.text === 'string') nodes.forEach(n => n.textContent = op.text);
 		            else if (typeof op.html === 'string') nodes.forEach(n => { const template = doc.createElement('template'); template.innerHTML = op.html; n.replaceWith(template.content.cloneNode(true)); });
@@ -193,6 +199,10 @@ nonisolated struct BrowserWebsiteAugmentArtifact: Codable, Identifiable, Sendabl
 		static let finalizeScript = #"""
 		const doc = new DOMParser().parseFromString(result, 'text/html');
 		const original = new DOMParser().parseFromString(html, 'text/html');
+		if (doc.documentElement.outerHTML === original.documentElement.outerHTML) throw new Error('Augmentation made no changes. Inspect the page structure and choose selectors and operations that change the requested items.');
+		const originalElements = original.querySelectorAll('*').length;
+		const resultElements = doc.querySelectorAll('*').length;
+		const filters = operations.filter(op => op.action === 'filter').map(op => ({selector: op.selector, before: original.querySelectorAll(op.selector).length, after: doc.querySelectorAll(op.selector).length}));
 		const styles = d => [...d.querySelectorAll('style,link[rel~="stylesheet"]')].map(n => n.outerHTML).sort();
 		if (JSON.stringify(styles(doc)) !== JSON.stringify(styles(original))) throw new Error('Existing CSS must be preserved');
 		const available = new Map();
@@ -213,19 +223,23 @@ nonisolated struct BrowserWebsiteAugmentArtifact: Codable, Identifiable, Sendabl
 		policy.content = "default-src 'none'; script-src 'none'; style-src https: http: 'unsafe-inline'; img-src https: http: data:; font-src https: http: data:; media-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri https: http:";
 		doc.head.prepend(policy);
 		const referrer = doc.createElement('meta'); referrer.name = 'referrer'; referrer.content = 'no-referrer'; doc.head.prepend(referrer);
-		return '<!doctype html>' + doc.documentElement.outerHTML;
+		return JSON.stringify({html: '<!doctype html>' + doc.documentElement.outerHTML, summary: 'Verified changed snapshot: ' + originalElements + ' source elements, ' + resultElements + ' result elements.' + filters.map(f => ' Filter ' + f.selector + ': ' + f.before + ' source items, ' + f.after + ' remaining.').join('')});
 		"""#
 	}
 
 	/// Generated code never runs in the source tab, preview, or a browser-session web view.
 	@MainActor
 	private final class BrowserWebsiteAugmentRunner: NSObject, WKNavigationDelegate {
+		nonisolated struct Transformation: Decodable, Sendable {
+			let html: String
+			let summary: String
+		}
 		private var view: WKWebView?
-		private var continuation: CheckedContinuation<String, Error>?
+		private var continuation: CheckedContinuation<Transformation, Error>?
 		private var inputs: [String: Any] = [:]
 		private var timeout: Task<Void, Never>?
 
-		func transform(html: String, source: URL, operations: [[String: Any]]) async throws -> String {
+		func transform(html: String, source: URL, operations: [[String: Any]]) async throws -> Transformation {
 			let configuration = WKWebViewConfiguration()
 			configuration.websiteDataStore = .nonPersistent()
 			let rules = #"[{"trigger":{"url-filter":".*"},"action":{"type":"block"}}]"#
@@ -252,7 +266,7 @@ nonisolated struct BrowserWebsiteAugmentArtifact: Codable, Identifiable, Sendabl
 			}
 		}
 
-		private func finish(_ result: Result<String, Error>) {
+		private func finish(_ result: Result<Transformation, Error>) {
 			timeout?.cancel(); timeout = nil
 			view?.stopLoading(); view?.navigationDelegate = nil; view = nil
 			inputs = [:]
@@ -279,8 +293,10 @@ nonisolated struct BrowserWebsiteAugmentArtifact: Codable, Identifiable, Sendabl
 							switch checked {
 								case let .failure(error): finish(.failure(error))
 								case let .success(output):
-									guard let html = output as? String, html.utf8.count <= 12_000_000 else { finish(.failure(BrowserAIError.invalidRequest)); return }
-									finish(.success(html))
+									guard let payload = output as? String, let data = payload.data(using: .utf8),
+									      let transformed = try? JSONDecoder().decode(Transformation.self, from: data),
+									      transformed.html.utf8.count <= 12_000_000 else { finish(.failure(BrowserAIError.invalidRequest)); return }
+									finish(.success(transformed))
 							}
 						}
 				}

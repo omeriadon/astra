@@ -237,10 +237,10 @@ enum BrowserNativeLibraryAction: Int, CaseIterable {
 				      let idString = info.draggingPasteboard.string(forType: Self.dragType),
 				      let id = UUID(uuidString: idString),
 				      let source = entries.first(where: {
-				      	if case let .item(_, row) = $0 {
-				      		return row.recordID == id && row.kind == .bookmark
-				      	}
-				      	return false
+					if case let .item(_, row) = $0 {
+						return row.recordID == id && row.kind == .bookmark
+					}
+					return false
 				      }),
 				      case let .item(folder, _) = source else { return [] }
 				if index == entries.count {

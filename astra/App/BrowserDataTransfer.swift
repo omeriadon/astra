@@ -11,16 +11,17 @@
 			let panel = NSOpenPanel()
 			panel.allowedContentTypes = [.json, .html]
 			panel.allowsMultipleSelection = false
-			panel.beginSheetModal(for: window) { response in
+			BrowserFilePanels.present(panel, in: window) { response in
 				guard response == .OK, let url = panel.url else { return }
+				let scoped = url.startAccessingSecurityScopedResource()
 				guard isCurrent() else {
-					url.stopAccessingSecurityScopedResource()
+					if scoped { url.stopAccessingSecurityScopedResource() }
 					return
 				}
 				Task { @MainActor in
 					do {
 						let document = try await Task.detached(priority: .userInitiated) {
-							defer { url.stopAccessingSecurityScopedResource() }
+							defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 							return try BrowserUserData.decode(
 								Data(contentsOf: url),
 								isHTML: url.pathExtension.lowercased() == "html" || url.pathExtension.lowercased() == "htm"
@@ -72,17 +73,18 @@
 			let panel = NSSavePanel()
 			panel.allowedContentTypes = bookmarksOnly ? [.html] : [.json]
 			panel.nameFieldStringValue = bookmarksOnly ? "Astra Bookmarks.html" : "Astra Browsing Data.json"
-			panel.beginSheetModal(for: window) { response in
+			BrowserFilePanels.present(panel, in: window) { response in
 				guard response == .OK, let url = panel.url else { return }
+				let scoped = url.startAccessingSecurityScopedResource()
 				guard isCurrent() else {
-					url.stopAccessingSecurityScopedResource()
+					if scoped { url.stopAccessingSecurityScopedResource() }
 					return
 				}
 				let document = BrowserUserData(bookmarks: browser.bookmarks, history: browser.historyVisits, readingList: browser.readingList)
 				Task { @MainActor in
 					do {
 						try await Task.detached(priority: .utility) {
-							defer { url.stopAccessingSecurityScopedResource() }
+							defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 							let data = try bookmarksOnly ? document.encodedHTML() : JSONEncoder().encode(document)
 							try data.write(to: url, options: .atomic)
 						}.value
