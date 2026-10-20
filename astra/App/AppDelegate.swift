@@ -61,8 +61,8 @@
 		func applicationWillFinishLaunching(_: Notification) {
 			BrowserPerformanceBenchmark.install()
 			startupStartedAt = BrowserLog.mainEntryUptime ?? BrowserLog.clock()
-			unsafe BrowserLog.info(.lifecycle, "app.will-finish-launching", metadata: [
-				"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
+			BrowserLog.info(.lifecycle, "app.will-finish-launching", metadata: [
+				"elapsed_ms": BrowserLog.fixedDecimal((BrowserLog.clock() - startupStartedAt) * 1000),
 			])
 			#if DEBUG
 				if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
@@ -250,8 +250,8 @@
 							continuation.yield(())
 							continuation.finish()
 							guard let self else { return }
-							unsafe BrowserLog.notice(.lifecycle, "startup.first-visible-window-update", metadata: [
-								"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
+							BrowserLog.notice(.lifecycle, "startup.first-visible-window-update", metadata: [
+								"elapsed_ms": BrowserLog.fixedDecimal((BrowserLog.clock() - startupStartedAt) * 1000),
 							])
 							scheduleDeferredStartupServices(trigger: "first-window-update")
 							Task { @MainActor in
@@ -275,7 +275,7 @@
 									"hydrated": String(foreground.browser.isHydrationFinished),
 									"first_responder": String(foreground.window.firstResponder != nil),
 									"observed_update": "true",
-									"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - self.startupStartedAt) * 1000)
+									"elapsed_ms": BrowserLog.fixedDecimal((BrowserLog.clock() - self.startupStartedAt) * 1000)
 								]
 								BrowserLog.notice(.lifecycle, "startup.first-window-readiness", metadata: readiness)
 								BrowserPerformanceBenchmark.recordForegroundReadiness(window: foreground.window, browser: foreground.browser)
@@ -298,8 +298,8 @@
 						foreground.showWindow()
 						NSApp.activate()
 					}
-					unsafe BrowserLog.notice(.lifecycle, "startup.first-window-presented", metadata: [
-						"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
+					BrowserLog.notice(.lifecycle, "startup.first-window-presented", metadata: [
+						"elapsed_ms": BrowserLog.fixedDecimal((BrowserLog.clock() - startupStartedAt) * 1000),
 						"records": String(records.count),
 					])
 					let didUpdate = await withTaskGroup(of: Bool.self) { group in
@@ -317,8 +317,8 @@
 						group.cancelAll()
 						return updated
 					}
-					unsafe BrowserLog.notice(.lifecycle, "startup.first-window-frame-gate", metadata: [
-						"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
+					BrowserLog.notice(.lifecycle, "startup.first-window-frame-gate", metadata: [
+						"elapsed_ms": BrowserLog.fixedDecimal((BrowserLog.clock() - startupStartedAt) * 1000),
 						"observed_update": String(didUpdate),
 					])
 					// Restore the selected cached website after the shell's first
@@ -333,8 +333,8 @@
 					// Keep all restored windows visible without stealing key focus.
 					controller.window.orderBack(nil)
 				}
-				unsafe BrowserLog.notice(.lifecycle, "startup.windows-presented", metadata: [
-					"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
+				BrowserLog.notice(.lifecycle, "startup.windows-presented", metadata: [
+					"elapsed_ms": BrowserLog.fixedDecimal((BrowserLog.clock() - startupStartedAt) * 1000),
 					"windows": String(windows.count),
 					"records": String(records.count),
 				])
@@ -370,9 +370,9 @@
 		private func scheduleDeferredStartupServices(trigger: String) {
 			guard !didScheduleDeferredStartupServices else { return }
 			didScheduleDeferredStartupServices = true
-			unsafe BrowserLog.notice(.lifecycle, "startup.deferred-services-scheduled", metadata: [
+			BrowserLog.notice(.lifecycle, "startup.deferred-services-scheduled", metadata: [
 				"trigger": trigger,
-				"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
+				"elapsed_ms": BrowserLog.fixedDecimal((BrowserLog.clock() - startupStartedAt) * 1000),
 			])
 			Task { @MainActor in
 				try? await Task.sleep(for: .milliseconds(350))
@@ -553,8 +553,8 @@
 		}
 
 		private func finishStartupWindowRestoration() {
-			unsafe BrowserLog.notice(.lifecycle, "startup.restoration-complete", metadata: [
-				"elapsed_ms": String(format: "%.1f", (BrowserLog.clock() - startupStartedAt) * 1000),
+			BrowserLog.notice(.lifecycle, "startup.restoration-complete", metadata: [
+				"elapsed_ms": BrowserLog.fixedDecimal((BrowserLog.clock() - startupStartedAt) * 1000),
 				"windows": String(windows.count),
 				"tabs": String(windows.reduce(0) { $0 + $1.browser.tabs.count }),
 			])

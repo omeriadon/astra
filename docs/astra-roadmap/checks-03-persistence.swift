@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 
 @main
@@ -42,6 +43,37 @@ struct BrowserPersistenceCheck {
 		}
 		let burstRestored = try orderedPersistence.loadPersistedState()
 		precondition(burstRestored?.bookmarks.first?.name == "Revision 60")
+		// Race full-state commits from separate instances, as multiple windows do.
+		// The maximum capture revision must win regardless of lock arrival order.
+		let concurrentDirectory = directory.appendingPathComponent("concurrent-revisions", isDirectory: true)
+		try FileManager.default.createDirectory(at: concurrentDirectory, withIntermediateDirectories: true)
+		let concurrentBase = latest
+		DispatchQueue.concurrentPerform(iterations: 64) { index in
+			let writer = BrowserPersistence(directory: concurrentDirectory)
+			var snapshot = concurrentBase
+			snapshot.bookmarks[0].name = "Concurrent \(index)"
+			do {
+				try writer.savePersistedState(snapshot, revision: UInt64(index))
+			} catch {
+				preconditionFailure("Concurrent checkpoint failed: \(error)")
+			}
+		}
+		let concurrentReader = BrowserPersistence(directory: concurrentDirectory)
+		let concurrentRestored = try concurrentReader.loadPersistedState()
+		precondition(concurrentRestored?.bookmarks.first?.name == "Concurrent 63")
+		// A failed transaction must release the mutex and preserve the last
+		// committed revision, allowing a valid retry with that same revision.
+		var invalidConcurrent = concurrentBase
+		invalidConcurrent.windowRecords = [BrowserWindowRecord(
+			windowID: UUID(), tabIDs: [], selectedTabID: tab.id
+		)]
+		do {
+			try concurrentReader.savePersistedState(invalidConcurrent, revision: 64)
+			preconditionFailure("Invalid window checkpoint accepted")
+		} catch BrowserPersistenceError.invalidSnapshot {}
+		try concurrentReader.savePersistedState(concurrentBase, revision: 64)
+		let retriedConcurrent = try concurrentReader.loadPersistedState()
+		precondition(retriedConcurrent?.bookmarks.first?.name == "Newest")
 		let windowSidecar = directory.appendingPathComponent("browser-windows.json")
 		precondition(FileManager.default.fileExists(atPath: windowSidecar.path))
 		let indexedRecords = try persistence.loadWindowRecords()

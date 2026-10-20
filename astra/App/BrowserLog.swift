@@ -1,6 +1,7 @@
 import Dispatch
 import Foundation
 import OSLog
+import Synchronization
 
 /// Central structured logging for Astra.
 ///
@@ -67,19 +68,21 @@ enum BrowserLog {
 		}
 	)
 
-	private nonisolated static let stateLock = NSLock()
-	private nonisolated(unsafe) static var bootstrapped = false
-	private nonisolated(unsafe) static var watchdogTimer: DispatchSourceTimer?
-	private nonisolated(unsafe) static var lastMainAckNanoseconds = DispatchTime.now().uptimeNanoseconds
-	private nonisolated(unsafe) static var lastStallReportNanoseconds: UInt64 = 0
+	private nonisolated struct WatchdogState {
+		var bootstrapped = false
+		var timer: DispatchSourceTimer?
+		var lastMainAckNanoseconds = DispatchTime.now().uptimeNanoseconds
+		var lastStallReportNanoseconds: UInt64 = 0
+	}
+
+	private nonisolated static let watchdogState = Mutex(WatchdogState())
 
 	nonisolated static func bootstrap() {
-		stateLock.lock()
-		let shouldStart = unsafe !bootstrapped
-		if shouldStart {
-			unsafe bootstrapped = true
+		let shouldStart = watchdogState.withLock { state in
+			guard !state.bootstrapped else { return false }
+			state.bootstrapped = true
+			return true
 		}
-		stateLock.unlock()
 		guard shouldStart else { return }
 
 		let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
@@ -101,6 +104,21 @@ enum BrowserLog {
 			]
 		)
 		startMainThreadWatchdog()
+	}
+
+	/// Fixed printf-compatible diagnostics. Keep the nil-locale Foundation
+	/// formatter's rounding, negative zero and nonfinite spelling unchanged.
+	/// A closed precision set and concrete Double remove the format/type
+	/// mismatch hazard from callers; only this C-varargs boundary is unsafe.
+	nonisolated enum DecimalPlaces: Int32, Sendable {
+		case whole = 0
+		case tenths = 1
+		case hundredths = 2
+		case thousandths = 3
+	}
+
+	nonisolated static func fixedDecimal(_ value: Double, places: DecimalPlaces = .tenths) -> String {
+		unsafe String(format: "%.*f", places.rawValue, value)
 	}
 
 	nonisolated static func trace(
@@ -235,13 +253,13 @@ enum BrowserLog {
 		let milliseconds = max(0, (clock() - started) * 1000)
 		if milliseconds >= warnAboveMilliseconds {
 			var values = metadata()
-			values["elapsed_ms"] = unsafe String(format: "%.1f", milliseconds)
+			values["elapsed_ms"] = BrowserLog.fixedDecimal(milliseconds)
 			warning(category, event, metadata: values)
 			return
 		}
 		#if DEBUG
 			var values = metadata()
-			values["elapsed_ms"] = unsafe String(format: "%.1f", milliseconds)
+			values["elapsed_ms"] = BrowserLog.fixedDecimal(milliseconds)
 			debug(category, event, metadata: values)
 		#endif
 	}
@@ -531,36 +549,36 @@ enum BrowserLog {
 	}
 
 	private nonisolated static func startMainThreadWatchdog() {
-		stateLock.lock()
-		guard unsafe watchdogTimer == nil else {
-			stateLock.unlock()
-			return
-		}
-		unsafe lastMainAckNanoseconds = DispatchTime.now().uptimeNanoseconds
-		let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "com.omeriadon.astra.watchdog", qos: .utility))
-		unsafe watchdogTimer = timer
-		stateLock.unlock()
-
 		#if DEBUG
-			timer.schedule(deadline: .now() + .milliseconds(250), repeating: .milliseconds(250), leeway: .milliseconds(50))
 			let intervalMilliseconds = "250"
 		#else
-			timer.schedule(deadline: .now() + .seconds(1), repeating: .seconds(1), leeway: .milliseconds(100))
 			let intervalMilliseconds = "1000"
 		#endif
-		timer.setEventHandler {
-			watchdogTick()
+		let started = watchdogState.withLock { state in
+			guard state.timer == nil else { return false }
+			state.lastMainAckNanoseconds = DispatchTime.now().uptimeNanoseconds
+			let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "com.omeriadon.astra.watchdog", qos: .utility))
+			state.timer = timer
+			#if DEBUG
+				timer.schedule(deadline: .now() + .milliseconds(250), repeating: .milliseconds(250), leeway: .milliseconds(50))
+			#else
+				timer.schedule(deadline: .now() + .seconds(1), repeating: .seconds(1), leeway: .milliseconds(100))
+			#endif
+			timer.setEventHandler {
+				watchdogTick()
+			}
+			timer.resume()
+			return true
 		}
-		timer.resume()
+		guard started else { return }
 		debug(.performance, "watchdog.started", metadata: ["interval_ms": intervalMilliseconds])
 	}
 
 	private nonisolated static func watchdogTick() {
 		let now = DispatchTime.now().uptimeNanoseconds
-		stateLock.lock()
-		let acknowledged = unsafe lastMainAckNanoseconds
-		let lastReport = unsafe lastStallReportNanoseconds
-		stateLock.unlock()
+		let (acknowledged, lastReport) = watchdogState.withLock { state in
+			(state.lastMainAckNanoseconds, state.lastStallReportNanoseconds)
+		}
 
 		#if DEBUG
 			let threshold: UInt64 = 500_000_000
@@ -572,18 +590,14 @@ enum BrowserLog {
 			fault(
 				.performance,
 				"main-thread.stall",
-				metadata: ["unresponsive_ms": unsafe String(format: "%.0f", milliseconds)]
+				metadata: ["unresponsive_ms": BrowserLog.fixedDecimal(milliseconds, places: .whole)]
 			)
-			stateLock.lock()
-			unsafe lastStallReportNanoseconds = now
-			stateLock.unlock()
+			watchdogState.withLock { $0.lastStallReportNanoseconds = now }
 		}
 
 		DispatchQueue.main.async {
 			let acknowledged = DispatchTime.now().uptimeNanoseconds
-			stateLock.lock()
-			unsafe lastMainAckNanoseconds = acknowledged
-			stateLock.unlock()
+			watchdogState.withLock { $0.lastMainAckNanoseconds = acknowledged }
 		}
 	}
 }

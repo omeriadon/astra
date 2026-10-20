@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import Synchronization
 
 @MainActor
 final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
@@ -22,8 +23,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		"upgrade",
 	]
 
-	private let progressThrottle = NSLock()
-	private nonisolated(unsafe) var lastProgressHop: [String: Date] = [:]
+	private nonisolated let lastProgressHop = Mutex<[String: Date]>([:])
 	private var startTokens: [UUID: UUID] = [:]
 
 	private var replayHeaders: [UUID: [String: String]] = [:]
@@ -385,15 +385,13 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		// manager coalesces values too, this just avoids the MainActor hop.
 		let key = downloadTask.taskDescription ?? ""
 		let now = Date()
-		progressThrottle.lock()
-		let due: Bool
-		if let last = unsafe lastProgressHop[key], now.timeIntervalSince(last) < 0.1 {
-			due = false
-		} else {
-			unsafe lastProgressHop[key] = now
-			due = true
+		let due = lastProgressHop.withLock { hops in
+			if let last = hops[key], now.timeIntervalSince(last) < 0.1 {
+				return false
+			}
+			hops[key] = now
+			return true
 		}
-		progressThrottle.unlock()
 		guard due else { return }
 
 		let taskID = downloadTask.taskIdentifier
@@ -412,9 +410,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 	) {
 		guard let (itemID, index) = Self.identify(downloadTask) else { return }
 		if let description = downloadTask.taskDescription {
-			progressThrottle.lock()
-			unsafe lastProgressHop[description] = nil
-			progressThrottle.unlock()
+			lastProgressHop.withLock { $0[description] = nil }
 		}
 
 		let taskID = downloadTask.taskIdentifier
@@ -454,9 +450,7 @@ final class SegmentedDownloadEngine: NSObject, URLSessionDownloadDelegate {
 		      let (itemID, index) = Self.identify(task)
 		else { return }
 		if let description = task.taskDescription {
-			progressThrottle.lock()
-			unsafe lastProgressHop[description] = nil
-			progressThrottle.unlock()
+			lastProgressHop.withLock { $0[description] = nil }
 		}
 
 		let taskID = task.taskIdentifier

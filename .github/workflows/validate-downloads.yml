@@ -29,3 +29,5 @@ jobs:
           set -euo pipefail
           swiftc  -swift-version 6 astra/Models/Library/BrowserDownload.swift astra/Web/Downloads/BrowserDownloadedFile.swift astra/Web/Downloads/BrowserDownloadFileWorker.swift checks/download-file-worker-check.swift -o "$RUNNER_TEMP/worker"
           "$RUNNER_TEMP/worker"
+      - name: Concurrent progress throttle and formatting compatibility
+        run: python3 checks/unsafe-cleanup-check.py

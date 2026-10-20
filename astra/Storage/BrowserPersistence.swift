@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 @MainActor
 private enum BrowserPersistenceDirectoryCache {
@@ -194,7 +195,7 @@ nonisolated enum BrowserPersistenceError: LocalizedError, Equatable {
 	}
 }
 
-final nonisolated class BrowserPersistence: @unchecked Sendable {
+final nonisolated class BrowserPersistence: Sendable {
 	private let directory: URL
 	private var readingArchiveDirectory: URL {
 		directory.appendingPathComponent("reading-list", isDirectory: true)
@@ -206,22 +207,22 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 	private static let maxReadingArchiveTotalBytes = 256 * 1024 * 1024
 	// ponytail: one process-wide lock keeps the archive caps exact across windows; per-directory locks only if contention matters.
 	private nonisolated static let readingArchiveLock = NSLock()
-	/// Serializes full-state commits and selection checkpoints across all windows.
-	private nonisolated static let selectionJournalLock = NSLock()
-	/// Process-local capture sequence; serialized by selectionJournalLock.
-	/// Not part of the persisted schema, so installed versions remain compatible.
-	private nonisolated(unsafe) static var committedRevisions: [String: UInt64] = [:]
+	/// Serializes full-state commits and selection/scroll checkpoints across all
+	/// windows. Revision ordering and cache access share the entire transaction.
+	private nonisolated static let selectionJournal = Mutex(JournalState())
 
-	/// A volatile, memory-bounded process cache of the last committed primary
-	/// checkpoint. The inode/size/mtime tuple is checked before every reuse:
-	/// restores, external edits and atomic replacements cannot reuse stale data.
-	/// The global selectionJournalLock serializes its callers.
-	private nonisolated(unsafe) static let checkpointCache: NSCache<NSString, CachedCheckpoint> = {
-		let cache = NSCache<NSString, CachedCheckpoint>()
-		cache.countLimit = 2
-		cache.totalCostLimit = 24 * 1024 * 1024
-		return cache
-	}()
+	private nonisolated struct JournalState {
+		/// Process-local capture sequence; not part of the persisted schema.
+		var committedRevisions: [String: UInt64] = [:]
+		/// Volatile and memory-bounded. Every reuse checks inode/size/mtime so
+		/// restores, external edits and atomic replacements invalidate the entry.
+		let checkpointCache: NSCache<NSString, CachedCheckpoint> = {
+			let cache = NSCache<NSString, CachedCheckpoint>()
+			cache.countLimit = 2
+			cache.totalCostLimit = 24 * 1024 * 1024
+			return cache
+		}()
+	}
 
 	private nonisolated struct CheckpointSignature: Equatable, Codable {
 		let fileNumber: UInt64
@@ -665,20 +666,20 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 	/// tabs, history, bookmarks, favicons, or webview state.
 	nonisolated func saveSelectionUpdate(_ update: BrowserSelectionUpdate) throws {
 		let started = BrowserLog.clock()
-		Self.selectionJournalLock.lock()
-		defer { Self.selectionJournalLock.unlock() }
-		var updates = try readSelectionJournal()?.updates ?? [:]
-		let key = update.windowID.uuidString
-		if let previous = updates[key], previous.selectedTabModifiedAt >= update.selectedTabModifiedAt {
-			return
+		try Self.selectionJournal.withLock { _ in
+			var updates = try readSelectionJournal()?.updates ?? [:]
+			let key = update.windowID.uuidString
+			if let previous = updates[key], previous.selectedTabModifiedAt >= update.selectedTabModifiedAt {
+				return
+			}
+			updates[key] = update
+			guard updates.count <= 256 else { throw BrowserPersistenceError.invalidSnapshot }
+			let journal = SelectionJournal(version: 1, updates: updates, writtenAt: .now)
+			let data = try JSONEncoder().encode(journal)
+			guard data.count <= 512 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
+			try data.write(to: directory.appendingPathComponent("browser-selection.json"), options: .atomic)
+			BrowserLog.duration(.persistence, "selection.save.end", since: started, warnAboveMilliseconds: 40, metadata: ["bytes": String(data.count)])
 		}
-		updates[key] = update
-		guard updates.count <= 256 else { throw BrowserPersistenceError.invalidSnapshot }
-		let journal = SelectionJournal(version: 1, updates: updates, writtenAt: .now)
-		let data = try JSONEncoder().encode(journal)
-		guard data.count <= 512 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
-		try data.write(to: directory.appendingPathComponent("browser-selection.json"), options: .atomic)
-		BrowserLog.duration(.persistence, "selection.save.end", since: started, warnAboveMilliseconds: 40, metadata: ["bytes": String(data.count)])
 	}
 
 	private nonisolated func readSelectionJournal() throws -> SelectionJournal? {
@@ -704,33 +705,33 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 	nonisolated func saveScrollUpdates(_ changes: [BrowserScrollUpdate]) throws {
 		guard !changes.isEmpty else { return }
 		let started = BrowserLog.clock()
-		Self.selectionJournalLock.lock()
-		defer { Self.selectionJournalLock.unlock() }
-		let primary = directory.appendingPathComponent("browser-state.json")
-		guard let signature = CheckpointSignature(at: primary) else {
-			throw BrowserPersistenceError.invalidSnapshot
-		}
-		let existing = try readScrollJournal()
-		var updates = existing?.baseSignature == signature ? (existing?.updates ?? [:]) : [:]
-		for change in changes {
-			guard change.position.x.isFinite, change.position.y.isFinite,
-			      abs(change.position.x) <= 1_000_000_000,
-			      abs(change.position.y) <= 1_000_000_000 else { continue }
-			let key = change.tabID.uuidString
-			if let old = updates[key], old.modifiedAt > change.modifiedAt {
-				continue
+		try Self.selectionJournal.withLock { _ in
+			let primary = directory.appendingPathComponent("browser-state.json")
+			guard let signature = CheckpointSignature(at: primary) else {
+				throw BrowserPersistenceError.invalidSnapshot
 			}
-			updates[key] = change
+			let existing = try readScrollJournal()
+			var updates = existing?.baseSignature == signature ? (existing?.updates ?? [:]) : [:]
+			for change in changes {
+				guard change.position.x.isFinite, change.position.y.isFinite,
+				      abs(change.position.x) <= 1_000_000_000,
+				      abs(change.position.y) <= 1_000_000_000 else { continue }
+				let key = change.tabID.uuidString
+				if let old = updates[key], old.modifiedAt > change.modifiedAt {
+					continue
+				}
+				updates[key] = change
+			}
+			guard updates.count <= 4096 else { throw BrowserPersistenceError.invalidSnapshot }
+			let encoded = try JSONEncoder().encode(ScrollJournal(
+				version: 1, baseSignature: signature, updates: updates
+			))
+			guard encoded.count <= 512 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
+			try encoded.write(to: directory.appendingPathComponent("browser-scroll.json"), options: .atomic)
+			BrowserLog.duration(.persistence, "scroll.save.end", since: started,
+			                    warnAboveMilliseconds: 40,
+			                    metadata: ["bytes": String(encoded.count), "tabs": String(changes.count)])
 		}
-		guard updates.count <= 4096 else { throw BrowserPersistenceError.invalidSnapshot }
-		let encoded = try JSONEncoder().encode(ScrollJournal(
-			version: 1, baseSignature: signature, updates: updates
-		))
-		guard encoded.count <= 512 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
-		try encoded.write(to: directory.appendingPathComponent("browser-scroll.json"), options: .atomic)
-		BrowserLog.duration(.persistence, "scroll.save.end", since: started,
-		                    warnAboveMilliseconds: 40,
-		                    metadata: ["bytes": String(encoded.count), "tabs": String(changes.count)])
 	}
 
 	private nonisolated func readScrollJournal() throws -> ScrollJournal? {
@@ -750,14 +751,14 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 	private nonisolated func applyingScrollUpdates(
 		to original: BrowserPersistedState, loadedFrom snapshotURL: URL
 	) throws -> BrowserPersistedState {
-		Self.selectionJournalLock.lock()
-		defer { Self.selectionJournalLock.unlock() }
-		guard let signature = CheckpointSignature(at: snapshotURL),
-		      let journal = try? readScrollJournal(),
-		      journal.baseSignature == signature else { return original }
-		var state = original
-		mergeScrollUpdates(journal, into: &state)
-		return state
+		Self.selectionJournal.withLock { _ in
+			guard let signature = CheckpointSignature(at: snapshotURL),
+			      let journal = try? readScrollJournal(),
+			      journal.baseSignature == signature else { return original }
+			var state = original
+			mergeScrollUpdates(journal, into: &state)
+			return state
+		}
 	}
 
 	private nonisolated func mergeScrollUpdates(
@@ -777,11 +778,11 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 	}
 
 	private nonisolated func selectionUpdates(newerThan snapshotURL: URL) throws -> SelectionJournal? {
-		Self.selectionJournalLock.lock()
-		defer { Self.selectionJournalLock.unlock() }
-		guard let journal = try readSelectionJournal() else { return nil }
-		let snapshotTime = (try? snapshotURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-		return journal.writtenAt > snapshotTime ? journal : nil
+		try Self.selectionJournal.withLock { _ in
+			guard let journal = try readSelectionJournal() else { return nil }
+			let snapshotTime = (try? snapshotURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+			return journal.writtenAt > snapshotTime ? journal : nil
+		}
 	}
 
 	private nonisolated func applyingSelectionUpdates(
@@ -833,191 +834,191 @@ final nonisolated class BrowserPersistence: @unchecked Sendable {
 	}
 
 	nonisolated func savePersistedState(_ state: BrowserPersistedState, revision: UInt64? = nil) throws {
-		Self.selectionJournalLock.lock()
-		defer { Self.selectionJournalLock.unlock() }
-		let revisionKey = directory.standardizedFileURL.path
-		if let revision, let committed = unsafe Self.committedRevisions[revisionKey], revision <= committed {
-			BrowserLog.debug(.persistence, "state.save.stale", metadata: ["revision": String(revision), "committed_revision": String(committed)])
-			return
-		}
-		// Never silently overwrite a checkpoint written by a newer release.
-		// A corrupt checkpoint can be ignored: the full snapshot is authoritative.
-		let selectionJournal: SelectionJournal?
-		do {
-			selectionJournal = try readSelectionJournal()
-		} catch BrowserPersistenceError.unsupportedVersion {
-			throw BrowserPersistenceError.unsupportedVersion
-		} catch {
-			BrowserLog.warning(.persistence, "selection-journal.ignored", metadata: ["error": BrowserLog.errorDescription(error)])
-			selectionJournal = nil
-		}
-		let scrollJournal: ScrollJournal?
-		do {
-			scrollJournal = try readScrollJournal()
-		} catch BrowserPersistenceError.unsupportedVersion {
-			throw BrowserPersistenceError.unsupportedVersion
-		} catch {
-			BrowserLog.warning(.persistence, "scroll-journal.ignored", metadata: ["error": BrowserLog.errorDescription(error)])
-			scrollJournal = nil
-		}
-		let logStarted = BrowserLog.clock()
-		BrowserLog.debug(.persistence, "state.save.begin", metadata: ["tabs": String(state.openTabs.count), "bookmarks": String(state.bookmarks.count), "reading_list": String(state.readingList.count), "history": String(state.historyVisits?.count ?? 0)])
-		try validateWindowRecords(state.windowRecords ?? [])
-		let currentURL = directory.appendingPathComponent("browser-state.json")
-		let backupURL = directory.appendingPathComponent("browser-state.backup.json")
-		let previousReadStarted = BrowserLog.clock()
-		// A full-state save needs the old state to detect privacy deletions.
-		// Decode it once; do not reread and decode the same 50,000-visit JSON
-		// document during schema checking and again for backup comparison.
-		let cacheKey = currentURL.standardizedFileURL.path as NSString
-		let currentSignature = CheckpointSignature(at: currentURL)
-		let cached = currentSignature.flatMap { signature -> CachedCheckpoint? in
-			guard let candidate = unsafe Self.checkpointCache.object(forKey: cacheKey),
-			      candidate.signature == signature else { return nil }
-			return candidate
-		}
-		// A cold start or an externally replaced checkpoint still receives the
-		// original full schema/privacy validation. Normal consecutive saves
-		// reuse only the confirmed prior checkpoint's compact privacy index.
-		let previousData = cached?.originalData ?? (try? Data(contentsOf: currentURL))
-		let previousIndex: PrivacyDeletionIndex?
-		if let cached {
-			previousIndex = cached.privacy
-			BrowserLog.trace(.persistence, "state.previous-cache.hit")
-		} else if let previousData {
+		try Self.selectionJournal.withLock { journal in
+			let revisionKey = directory.standardizedFileURL.path
+			if let revision, let committed = journal.committedRevisions[revisionKey], revision <= committed {
+				BrowserLog.debug(.persistence, "state.save.stale", metadata: ["revision": String(revision), "committed_revision": String(committed)])
+				return
+			}
+			// Never silently overwrite a checkpoint written by a newer release.
+			// A corrupt checkpoint can be ignored: the full snapshot is authoritative.
+			let selectionJournal: SelectionJournal?
 			do {
-				previousIndex = try PrivacyDeletionIndex(decodeSnapshot(previousData))
+				selectionJournal = try readSelectionJournal()
 			} catch BrowserPersistenceError.unsupportedVersion {
 				throw BrowserPersistenceError.unsupportedVersion
 			} catch {
-				BrowserLog.warning(.persistence, "state.previous-cache.rejected", metadata: ["error": BrowserLog.errorDescription(error)])
+				BrowserLog.warning(.persistence, "selection-journal.ignored", metadata: ["error": BrowserLog.errorDescription(error)])
+				selectionJournal = nil
+			}
+			let scrollJournal: ScrollJournal?
+			do {
+				scrollJournal = try readScrollJournal()
+			} catch BrowserPersistenceError.unsupportedVersion {
+				throw BrowserPersistenceError.unsupportedVersion
+			} catch {
+				BrowserLog.warning(.persistence, "scroll-journal.ignored", metadata: ["error": BrowserLog.errorDescription(error)])
+				scrollJournal = nil
+			}
+			let logStarted = BrowserLog.clock()
+			BrowserLog.debug(.persistence, "state.save.begin", metadata: ["tabs": String(state.openTabs.count), "bookmarks": String(state.bookmarks.count), "reading_list": String(state.readingList.count), "history": String(state.historyVisits?.count ?? 0)])
+			try validateWindowRecords(state.windowRecords ?? [])
+			let currentURL = directory.appendingPathComponent("browser-state.json")
+			let backupURL = directory.appendingPathComponent("browser-state.backup.json")
+			let previousReadStarted = BrowserLog.clock()
+			// A full-state save needs the old state to detect privacy deletions.
+			// Decode it once; do not reread and decode the same 50,000-visit JSON
+			// document during schema checking and again for backup comparison.
+			let cacheKey = currentURL.standardizedFileURL.path as NSString
+			let currentSignature = CheckpointSignature(at: currentURL)
+			let cached = currentSignature.flatMap { signature -> CachedCheckpoint? in
+				guard let candidate = journal.checkpointCache.object(forKey: cacheKey),
+				      candidate.signature == signature else { return nil }
+				return candidate
+			}
+			// A cold start or an externally replaced checkpoint still receives the
+			// original full schema/privacy validation. Normal consecutive saves
+			// reuse only the confirmed prior checkpoint's compact privacy index.
+			let previousData = cached?.originalData ?? (try? Data(contentsOf: currentURL))
+			let previousIndex: PrivacyDeletionIndex?
+			if let cached {
+				previousIndex = cached.privacy
+				BrowserLog.trace(.persistence, "state.previous-cache.hit")
+			} else if let previousData {
+				do {
+					previousIndex = try PrivacyDeletionIndex(decodeSnapshot(previousData))
+				} catch BrowserPersistenceError.unsupportedVersion {
+					throw BrowserPersistenceError.unsupportedVersion
+				} catch {
+					BrowserLog.warning(.persistence, "state.previous-cache.rejected", metadata: ["error": BrowserLog.errorDescription(error)])
+					previousIndex = nil
+				}
+			} else {
 				previousIndex = nil
 			}
-		} else {
-			previousIndex = nil
-		}
-		// A backup already validated by the most recent successful commit
-		// needs only an inode/size/mtime check. Unknown or externally replaced
-		// backups are read and schema-checked before any files are overwritten.
-		let backupSignature = CheckpointSignature(at: backupURL)
-		let knownBackupUnchanged = cached != nil && cached?.backupSignature == backupSignature
-		let backupData = knownBackupUnchanged ? nil : (try? Data(contentsOf: backupURL))
-		if let backupData {
-			try rejectUnsupportedEnvelopeVersion(backupData)
-		}
-		let backupPrevious: PrivacyDeletionIndex? = if previousIndex == nil, let backupData {
-			(try? decodeSnapshot(backupData)).map(PrivacyDeletionIndex.init)
-		} else {
-			nil
-		}
-		BrowserLog.duration(.persistence, "state.previous-decode.end",
-		                    since: previousReadStarted,
-		                    warnAboveMilliseconds: 125,
-		                    metadata: ["recovery_baseline": String(backupPrevious != nil)])
-		let encodeStarted = BrowserLog.clock()
-		var state = state
-		if let selectionJournal {
-			mergeSelectionUpdates(selectionJournal, into: &state)
-		}
-		if let scrollJournal, scrollJournal.baseSignature == currentSignature {
-			mergeScrollUpdates(scrollJournal, into: &state)
-		}
-		state.windowRecords = (state.windowRecords ?? []).sorted { $0.windowID.uuidString < $1.windowID.uuidString }
-		try validatePersistedState(state)
-		let data = try JSONEncoder().encode(Envelope(version: Self.currentVersion, state: state))
-		guard data.count <= 64 * 1024 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
-		BrowserLog.duration(.persistence, "state.encode.end",
-		                    since: encodeStarted,
-		                    warnAboveMilliseconds: 125,
-		                    metadata: ["bytes": String(data.count)])
-		let previousPrimaryWasUnavailable = previousIndex == nil
-		var privateDataWasRemoved = false
-		if let previous = previousIndex ?? backupPrevious {
-			privateDataWasRemoved = previous.hasPrivacyRemoval(comparedTo: state)
-			if privateDataWasRemoved {
-				// If we restored from the backup because the primary was
-				// damaged, repair the primary first: never remove the last
-				// recoverable copy until another valid one is committed.
-				if previousPrimaryWasUnavailable, backupPrevious != nil,
-				   let backupData
-				{
-					try backupData.write(to: currentURL, options: .atomic)
-				}
-				// Keep a valid current snapshot while removing any stale backup.
-				// Once deletion is committed, restoration can never fall back
-				// to a backup that resurrects the removed private information.
-				if FileManager.default.fileExists(atPath: backupURL.path) {
-					try FileManager.default.removeItem(at: backupURL)
-				}
-			} else if let previousData, previousPrimaryWasUnavailable == false {
-				try previousData.write(to: backupURL, options: .atomic)
+			// A backup already validated by the most recent successful commit
+			// needs only an inode/size/mtime check. Unknown or externally replaced
+			// backups are read and schema-checked before any files are overwritten.
+			let backupSignature = CheckpointSignature(at: backupURL)
+			let knownBackupUnchanged = cached != nil && cached?.backupSignature == backupSignature
+			let backupData = knownBackupUnchanged ? nil : (try? Data(contentsOf: backupURL))
+			if let backupData {
+				try rejectUnsupportedEnvelopeVersion(backupData)
 			}
-		}
-		let commitStarted = BrowserLog.clock()
-		try data.write(to: currentURL, options: .atomic)
-		if let revision {
-			unsafe Self.committedRevisions[revisionKey] = revision
-		}
-		// The full snapshot includes all window selections captured at commit time.
-		// A crash before this cleanup is safe: loader ignores older journals.
-		try? FileManager.default.removeItem(at: directory.appendingPathComponent("browser-selection.json"))
-		// The primary now contains every valid pending scroll change. A crash
-		// before removal is harmless because the sidecar signature is stale.
-		try? FileManager.default.removeItem(at: directory.appendingPathComponent("browser-scroll.json"))
-		if privateDataWasRemoved {
-			try data.write(to: backupURL, options: .atomic)
-			try pruneClosedTabPayloads(keeping: state.closedTabs)
-		}
-		// Write the small projection only after the primary checkpoint has
-		// committed. Failure here cannot invalidate a successful full save;
-		// the startup loader falls back to the original state envelope.
-		if let signature = CheckpointSignature(at: currentURL) {
-			let sidecar = WindowRecordsSidecar(
-				version: 1, signature: signature, records: state.windowRecords ?? []
-			)
-			if let sidecarBytes = try? JSONEncoder().encode(sidecar),
-			   sidecarBytes.count <= 256 * 1024
-			{
-				do {
-					try sidecarBytes.write(
-						to: directory.appendingPathComponent("browser-windows.json"),
-						options: .atomic
-					)
-				} catch {
-					BrowserLog.warning(.persistence, "window-records.sidecar-write-failed",
-					                   metadata: ["error": BrowserLog.errorDescription(error)])
-				}
-			}
-		}
-		BrowserLog.duration(.persistence, "state.commit.end",
-		                    since: commitStarted,
-		                    warnAboveMilliseconds: 125,
-		                    metadata: ["bytes": String(data.count), "private_data_removed": String(privateDataWasRemoved)])
-		BrowserLog.duration(.persistence, "state.save.end", since: logStarted, warnAboveMilliseconds: 250, metadata: ["bytes": String(data.count), "private_data_removed": String(privateDataWasRemoved)])
-		for name in ["bookmarks.json", "favourites.json", "open-tabs.json", "closed-tabs.json", "workspace.json", "browser-snapshot.json"] {
-			let legacyURL = directory.appendingPathComponent(name)
-			if FileManager.default.fileExists(atPath: legacyURL.path) {
-				try FileManager.default.removeItem(at: legacyURL)
-			}
-		}
-		if let signature = CheckpointSignature(at: currentURL) {
-			let cacheCost = min(
-				Int.max / 2,
-				data.count + (state.historyVisits?.count ?? 0) * 144
-					+ state.openTabs.count * 512 + state.bookmarks.count * 128
-					+ state.readingList.count * 128
-			)
-			if cacheCost <= 24 * 1024 * 1024 {
-				unsafe Self.checkpointCache.setObject(
-					CachedCheckpoint(
-						signature: signature, backupSignature: CheckpointSignature(at: backupURL),
-						data: data, privacy: PrivacyDeletionIndex(state)
-					),
-					forKey: cacheKey,
-					cost: cacheCost
-				)
+			let backupPrevious: PrivacyDeletionIndex? = if previousIndex == nil, let backupData {
+				(try? decodeSnapshot(backupData)).map(PrivacyDeletionIndex.init)
 			} else {
-				unsafe Self.checkpointCache.removeObject(forKey: cacheKey)
+				nil
+			}
+			BrowserLog.duration(.persistence, "state.previous-decode.end",
+			                    since: previousReadStarted,
+			                    warnAboveMilliseconds: 125,
+			                    metadata: ["recovery_baseline": String(backupPrevious != nil)])
+			let encodeStarted = BrowserLog.clock()
+			var state = state
+			if let selectionJournal {
+				mergeSelectionUpdates(selectionJournal, into: &state)
+			}
+			if let scrollJournal, scrollJournal.baseSignature == currentSignature {
+				mergeScrollUpdates(scrollJournal, into: &state)
+			}
+			state.windowRecords = (state.windowRecords ?? []).sorted { $0.windowID.uuidString < $1.windowID.uuidString }
+			try validatePersistedState(state)
+			let data = try JSONEncoder().encode(Envelope(version: Self.currentVersion, state: state))
+			guard data.count <= 64 * 1024 * 1024 else { throw BrowserPersistenceError.invalidSnapshot }
+			BrowserLog.duration(.persistence, "state.encode.end",
+			                    since: encodeStarted,
+			                    warnAboveMilliseconds: 125,
+			                    metadata: ["bytes": String(data.count)])
+			let previousPrimaryWasUnavailable = previousIndex == nil
+			var privateDataWasRemoved = false
+			if let previous = previousIndex ?? backupPrevious {
+				privateDataWasRemoved = previous.hasPrivacyRemoval(comparedTo: state)
+				if privateDataWasRemoved {
+					// If we restored from the backup because the primary was
+					// damaged, repair the primary first: never remove the last
+					// recoverable copy until another valid one is committed.
+					if previousPrimaryWasUnavailable, backupPrevious != nil,
+					   let backupData
+					{
+						try backupData.write(to: currentURL, options: .atomic)
+					}
+					// Keep a valid current snapshot while removing any stale backup.
+					// Once deletion is committed, restoration can never fall back
+					// to a backup that resurrects the removed private information.
+					if FileManager.default.fileExists(atPath: backupURL.path) {
+						try FileManager.default.removeItem(at: backupURL)
+					}
+				} else if let previousData, previousPrimaryWasUnavailable == false {
+					try previousData.write(to: backupURL, options: .atomic)
+				}
+			}
+			let commitStarted = BrowserLog.clock()
+			try data.write(to: currentURL, options: .atomic)
+			if let revision {
+				journal.committedRevisions[revisionKey] = revision
+			}
+			// The full snapshot includes all window selections captured at commit time.
+			// A crash before this cleanup is safe: loader ignores older journals.
+			try? FileManager.default.removeItem(at: directory.appendingPathComponent("browser-selection.json"))
+			// The primary now contains every valid pending scroll change. A crash
+			// before removal is harmless because the sidecar signature is stale.
+			try? FileManager.default.removeItem(at: directory.appendingPathComponent("browser-scroll.json"))
+			if privateDataWasRemoved {
+				try data.write(to: backupURL, options: .atomic)
+				try pruneClosedTabPayloads(keeping: state.closedTabs)
+			}
+			// Write the small projection only after the primary checkpoint has
+			// committed. Failure here cannot invalidate a successful full save;
+			// the startup loader falls back to the original state envelope.
+			if let signature = CheckpointSignature(at: currentURL) {
+				let sidecar = WindowRecordsSidecar(
+					version: 1, signature: signature, records: state.windowRecords ?? []
+				)
+				if let sidecarBytes = try? JSONEncoder().encode(sidecar),
+				   sidecarBytes.count <= 256 * 1024
+				{
+					do {
+						try sidecarBytes.write(
+							to: directory.appendingPathComponent("browser-windows.json"),
+							options: .atomic
+						)
+					} catch {
+						BrowserLog.warning(.persistence, "window-records.sidecar-write-failed",
+						                   metadata: ["error": BrowserLog.errorDescription(error)])
+					}
+				}
+			}
+			BrowserLog.duration(.persistence, "state.commit.end",
+			                    since: commitStarted,
+			                    warnAboveMilliseconds: 125,
+			                    metadata: ["bytes": String(data.count), "private_data_removed": String(privateDataWasRemoved)])
+			BrowserLog.duration(.persistence, "state.save.end", since: logStarted, warnAboveMilliseconds: 250, metadata: ["bytes": String(data.count), "private_data_removed": String(privateDataWasRemoved)])
+			for name in ["bookmarks.json", "favourites.json", "open-tabs.json", "closed-tabs.json", "workspace.json", "browser-snapshot.json"] {
+				let legacyURL = directory.appendingPathComponent(name)
+				if FileManager.default.fileExists(atPath: legacyURL.path) {
+					try FileManager.default.removeItem(at: legacyURL)
+				}
+			}
+			if let signature = CheckpointSignature(at: currentURL) {
+				let cacheCost = min(
+					Int.max / 2,
+					data.count + (state.historyVisits?.count ?? 0) * 144
+						+ state.openTabs.count * 512 + state.bookmarks.count * 128
+						+ state.readingList.count * 128
+				)
+				if cacheCost <= 24 * 1024 * 1024 {
+					journal.checkpointCache.setObject(
+						CachedCheckpoint(
+							signature: signature, backupSignature: CheckpointSignature(at: backupURL),
+							data: data, privacy: PrivacyDeletionIndex(state)
+						),
+						forKey: cacheKey,
+						cost: cacheCost
+					)
+				} else {
+					journal.checkpointCache.removeObject(forKey: cacheKey)
+				}
 			}
 		}
 	}
