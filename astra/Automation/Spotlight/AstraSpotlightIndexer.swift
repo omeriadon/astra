@@ -57,7 +57,7 @@
 			let fresh = Dictionary(uniqueKeysWithValues: records.map { record in
 				let bytes = Data((record.title + "\u{0}" + record.detail + "\u{0}"
 						+ record.url + "\u{0}" + record.kind).utf8)
-				let digest = SHA256.hash(data: bytes).map { unsafe String(format: "%02x", $0) }.joined()
+				let digest = SHA256.hash(data: bytes).map { ($0 < 16 ? "0" : "") + String($0, radix: 16) }.joined()
 				return (record.identifier, digest)
 			})
 			if fingerprints == nil {

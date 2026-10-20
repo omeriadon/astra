@@ -149,7 +149,7 @@ nonisolated enum BrowserContentBlockingRuleSource {
 			}
 		}
 
-		let digest = SHA256.hash(data: data).map { unsafe String(format: "%02x", $0) }.joined()
+		let digest = SHA256.hash(data: data).map { ($0 < 16 ? "0" : "") + String($0, radix: 16) }.joined()
 		return Validated(
 			data: data,
 			ruleCount: rules.count,

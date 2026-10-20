@@ -1,4 +1,4 @@
-name: Astra - macOS Debug Build
+name: Astra - macOS Builds
 
 on:
   pull_request:
@@ -16,7 +16,11 @@ concurrency:
 
 jobs:
   mac-build:
-    name: macOS Debug Build
+    name: macOS ${{ matrix.configuration }} Build
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
     runs-on: xcode-27
     timeout-minutes: 20
     steps:
@@ -25,21 +29,21 @@ jobs:
         run: bash scripts/ci/select-xcode-27.sh
       - name: Install Metal Toolchain
         run: xcodebuild -downloadComponent MetalToolchain
-      - name: Build Astra Debug
+      - name: Build Astra ${{ matrix.configuration }}
         shell: bash
         run: |
           set -euo pipefail
-          xcodebuild build -project astra.xcodeproj -scheme astra -configuration Debug \
+          xcodebuild build -project astra.xcodeproj -scheme astra -configuration "${{ matrix.configuration }}" \
             -destination 'platform=macOS' -derivedDataPath "$RUNNER_TEMP/AstraDerivedData" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             2>&1 | tee "$RUNNER_TEMP/astra-mac-build.log"
       - name: Audit Sparkle link and embedding
-        run: bash scripts/audit_sparkle_bundle.sh "$RUNNER_TEMP/AstraDerivedData/Build/Products/Debug/astra.app" --unsigned
+        run: bash scripts/audit_sparkle_bundle.sh "$RUNNER_TEMP/AstraDerivedData/Build/Products/${{ matrix.configuration }}/astra.app" --unsigned
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: astra-mac-build-log-${{ github.run_number }}
+          name: astra-mac-build-log-${{ matrix.configuration }}-${{ github.run_number }}
           path: ${{ runner.temp }}/astra-mac-build.log
           if-no-files-found: warn
           retention-days: 7

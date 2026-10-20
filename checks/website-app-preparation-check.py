@@ -94,17 +94,28 @@ def main() -> None:
         source += """
 
 import CoreServices
+import Synchronization
 
 // Intercept Launch Services so validation can verify registration and errors
 // without mutating the CI runner's system registration database.
-enum RegistrationProbe {
-    nonisolated(unsafe) static var calls = 0
-    nonisolated(unsafe) static var failureStatus: OSStatus?
+nonisolated enum RegistrationProbe {
+    nonisolated struct State {
+        var calls = 0
+        var failureStatus: OSStatus?
+    }
+    static let state = Mutex(State())
+    static var calls: Int { state.withLock { $0.calls } }
+    static var failureStatus: OSStatus? {
+        get { state.withLock { $0.failureStatus } }
+        set { state.withLock { $0.failureStatus = newValue } }
+    }
 }
 
 func LSRegisterURL(_ url: CFURL, _ update: Bool) -> OSStatus {
-    RegistrationProbe.calls += 1
-    return RegistrationProbe.failureStatus ?? noErr
+    RegistrationProbe.state.withLock { state in
+        state.calls += 1
+        return state.failureStatus ?? noErr
+    }
 }
 
 extension AstraWebsiteAppInstallerApp {
