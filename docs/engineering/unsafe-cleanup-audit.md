@@ -108,6 +108,6 @@ Attempted, blocked by missing platform tools:
 - Full website-app preparation: no codesign.
 - Full compiler/toolchain check: no xcrun.
 
-Existing PR CI supplies macOS Debug and Release archive builds, sync/persistence integration, website-app preparation, download worker and compiler configuration verification. The download workflow additionally runs the new production-extracted throttle/bootstrap stress and printf/hex equivalence check in Onone, O, and Thread Sanitizer modes. The persistence fixture adds parallel commits across instances plus failure/retry unlock coverage.
+The macOS build workflow now requests both Debug and Release configurations. Existing PR CI also supplies sync/persistence integration, website-app preparation, download worker and compiler configuration verification; the separate Release archive workflow remains unchanged. The download workflow additionally runs the new production-extracted throttle/bootstrap stress and printf/hex equivalence check in Onone, O, and Thread Sanitizer modes. The persistence fixture adds parallel commits across instances plus failure/retry unlock coverage.
 
 These Swift tests are added, not locally passed. Runtime race/deadlock, pixel/animation and performance regressions have not been ruled out by execution on this host; macOS CI and interactive validation remain required. The refactor preserves the existing transaction boundaries, task hops, timer cadence, cache policy and UI source.
