@@ -1,27 +1,48 @@
 import AppKit
+import CoreServices
 import Foundation
+import OSLog
 import Security
 
 @main
 enum AstraWebsiteAppInstallerApp {
+	private static let logger = Logger(subsystem: "com.omeriadon.astra", category: "website-app-installer")
 	@MainActor
 	static func main() {
 		let application = NSApplication.shared
 		application.setActivationPolicy(.prohibited)
 		application.finishLaunching()
 		guard CommandLine.arguments.count == 4,
-		      CommandLine.arguments[1] == "--pin",
+		      ["--pin", "--prepare"].contains(CommandLine.arguments[1]),
 		      let response = validatedResponse(CommandLine.arguments[3])
-		else { return }
+		else {
+			logger.error("installer.invalid-invocation arguments-or-response-path-rejected")
+			return
+		}
+		logger.info("installer.start operation=\(CommandLine.arguments[1], privacy: .public) app=\(CommandLine.arguments[2], privacy: .private)")
 
 		let message: String
 		do {
-			try pin(URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true))
+			let appURL = URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true)
+			if CommandLine.arguments[1] == "--pin" {
+				try pin(appURL)
+			} else {
+				let websiteApp = try prepareWebsiteApp(at: appURL)
+				try registerWebsiteApp(at: websiteApp.url)
+			}
+			logger.info("installer.success operation=\(CommandLine.arguments[1], privacy: .public) app=\(appURL.path, privacy: .private)")
 			message = ""
 		} catch {
+			logger.error("installer.error operation=\(CommandLine.arguments[1], privacy: .public) message=\(error.localizedDescription, privacy: .private)")
 			message = error.localizedDescription
 		}
-		try? JSONEncoder().encode(message).write(to: response, options: .atomic)
+		do {
+			try JSONEncoder().encode(message).write(to: response, options: .atomic)
+			logger.info("installer.response status=\(message.isEmpty ? 0 : 1, privacy: .public) path=\(response.path, privacy: .private)")
+		} catch {
+			let nsError = error as NSError
+			logger.error("installer.response-write-failed domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) message=\(nsError.localizedDescription, privacy: .private)")
+		}
 	}
 
 	private static var installationRoot: URL {
@@ -43,21 +64,8 @@ enum AstraWebsiteAppInstallerApp {
 
 	@MainActor
 	private static func pin(_ appURL: URL) throws {
-		let appURL = appURL.standardizedFileURL
-		guard appURL.deletingLastPathComponent().resolvingSymlinksInPath().path == installationRoot.path,
-		      appURL.resolvingSymlinksInPath().path == appURL.path,
-		      appURL.pathExtension == "app",
-		      let info = NSDictionary(contentsOf: appURL.appendingPathComponent("Contents/Info.plist")) as? [String: Any],
-		      let identifier = info["CFBundleIdentifier"] as? String,
-		      identifier.hasPrefix("dev.omeriadon.astra.website."),
-		      let name = info["CFBundleDisplayName"] as? String
-		else { throw failure("Astra refused to pin an app outside its website-app directory.") }
-
-		var code: SecStaticCode?
-		let createStatus = SecStaticCodeCreateWithPath(appURL as CFURL, [], &code)
-		guard createStatus == errSecSuccess, let code,
-		      SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), nil) == errSecSuccess
-		else { throw failure("The website app's signature is invalid.") }
+		let websiteApp = try prepareWebsiteApp(at: appURL)
+		try registerWebsiteApp(at: websiteApp.url)
 
 		let defaults = UserDefaults.standard
 		defaults.synchronize()
@@ -67,7 +75,7 @@ enum AstraWebsiteAppInstallerApp {
 
 		func matches(_ tile: [String: Any]) -> Bool {
 			guard let data = tile["tile-data"] as? [String: Any] else { return false }
-			if data["bundle-identifier"] as? String == identifier {
+			if data["bundle-identifier"] as? String == websiteApp.identifier {
 				return true
 			}
 			guard let file = data["file-data"] as? [String: Any],
@@ -75,7 +83,7 @@ enum AstraWebsiteAppInstallerApp {
 			let url = (file["_CFURLStringType"] as? Int == 0)
 				? URL(fileURLWithPath: value)
 				: URL(string: value)
-			return url?.standardizedFileURL.path == appURL.path
+			return url?.standardizedFileURL.path == websiteApp.url.path
 		}
 
 		// Follow Chromium's dock.mm: preserve existing tiles, remove the matching
@@ -86,11 +94,11 @@ enum AstraWebsiteAppInstallerApp {
 				"tile-type": "file-tile",
 				"tile-data": [
 					"file-data": [
-						"_CFURLString": appURL.absoluteString,
+						"_CFURLString": websiteApp.url.absoluteString,
 						"_CFURLStringType": 15,
 					],
-					"file-label": name,
-					"bundle-identifier": identifier,
+					"file-label": websiteApp.name,
+					"bundle-identifier": websiteApp.identifier,
 				],
 			])
 			preferences["persistent-apps"] = apps
@@ -116,6 +124,73 @@ enum AstraWebsiteAppInstallerApp {
 		}
 		guard kill(dock.processIdentifier, SIGTERM) == 0 else {
 			throw failure("The website app was pinned, but the Dock could not refresh.")
+		}
+	}
+
+	private static func prepareWebsiteApp(at inputURL: URL) throws -> (url: URL, identifier: String, name: String) {
+		let appURL = inputURL.standardizedFileURL
+		guard appURL.deletingLastPathComponent().resolvingSymlinksInPath().path == installationRoot.path,
+		      appURL.resolvingSymlinksInPath().path == appURL.path,
+		      appURL.pathExtension == "app",
+		      let info = NSDictionary(contentsOf: appURL.appendingPathComponent("Contents/Info.plist")) as? [String: Any],
+		      let identifier = info["CFBundleIdentifier"] as? String,
+		      identifier.hasPrefix("dev.omeriadon.astra.website."),
+		      let name = info["CFBundleDisplayName"] as? String,
+		      let executable = info["CFBundleExecutable"] as? String,
+		      !executable.isEmpty, !executable.contains("/"), executable != ".", executable != ".."
+		else { throw failure("Astra refused to prepare an app outside its website-app directory.") }
+		logger.info("installer.validation-success app=\(appURL.path, privacy: .private)")
+		let executableURL = appURL.appendingPathComponent("Contents/MacOS").appendingPathComponent(executable)
+		guard executableURL.resolvingSymlinksInPath().path.hasPrefix(appURL.path + "/") else {
+			throw failure("Astra refused to prepare an app with an executable outside its bundle.")
+		}
+		var code: SecStaticCode?
+		let createStatus = unsafe SecStaticCodeCreateWithPath(appURL as CFURL, [], &code)
+		logger.info("installer.signature-create-status status=\(createStatus, privacy: .public)")
+
+		guard createStatus == errSecSuccess, let code else {
+			logger.error("installer.signature-create-failed status=\(createStatus, privacy: .public)")
+			throw failure("The website app's signature is invalid.")
+		}
+
+		let validityStatus = SecStaticCodeCheckValidity(
+			code,
+			SecCSFlags(rawValue: kSecCSStrictValidate),
+			nil
+		)
+
+		logger.info("installer.signature-validity-status status=\(validityStatus, privacy: .public)")
+
+		guard validityStatus == errSecSuccess else {
+			logger.error("installer.signature-invalid status=\(validityStatus, privacy: .public)")
+			throw failure("The website app's signature is invalid.")
+		}
+
+		try removeQuarantineMetadata(
+			from: appURL,
+			executableURL: executableURL
+		)
+
+		return (appURL, identifier, name)
+	}
+
+	/// Astra is sandboxed. Launch Services registration must run in this separate,
+	/// non-sandboxed, signed helper, after bundle/path/signature validation.
+	/// Chromium likewise registers the final published app rather than its staging copy.
+	private static func registerWebsiteApp(at url: URL) throws {
+		let status = LSRegisterURL(url as CFURL, true)
+		guard status == noErr else {
+			logger.error("installer.registration-failed status=\(status, privacy: .public) app=\(url.path, privacy: .private)")
+			throw failure("macOS could not register the website app (\(status)).")
+		}
+	}
+
+	private static func removeQuarantineMetadata(from appURL: URL, executableURL: URL) throws {
+		for path in [appURL, executableURL] where unsafe removexattr(path.path, "com.apple.quarantine", XATTR_NOFOLLOW) != 0 {
+			let code = errno
+			guard code == ENOATTR else {
+				throw failure("Astra could not remove website app quarantine metadata: \(unsafe String(cString: strerror(code))).")
+			}
 		}
 	}
 

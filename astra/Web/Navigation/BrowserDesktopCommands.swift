@@ -1,5 +1,7 @@
 #if os(macOS)
 	import AppKit
+	import Darwin
+	import Defaults
 	import UniformTypeIdentifiers
 	import WebKit
 
@@ -16,7 +18,7 @@
 
 			func isCurrent() -> Bool {
 				guard let browser, let controller, let webView, let window else { return false }
-				return BrowserPageExportPolicy.ownsDocument(
+				return unsafe BrowserPageExportPolicy.ownsDocument(
 					capturedGeneration: documentID,
 					currentGeneration: controller.navigationIdentifier,
 					capturedURL: url,
@@ -39,12 +41,69 @@
 			case source
 		}
 
+		static func configureWebInspector(_ webView: WKWebView, enabled: Bool) {
+			webView.isInspectable = enabled
+			let preferences = webView.configuration.preferences
+			if preferences.responds(to: NSSelectorFromString("_setDeveloperExtrasEnabled:")) {
+				preferences.setValue(enabled, forKey: "developerExtrasEnabled")
+			}
+			if !enabled,
+			   webView.responds(to: NSSelectorFromString("_inspector")),
+			   let inspector = unsafe webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
+			   inspector.responds(to: NSSelectorFromString("close"))
+			{
+				unsafe inspector.perform(NSSelectorFromString("close"))
+			}
+		}
+
+		static func showWebInspector(_ controller: BrowserController, selectingElement: Bool = false) {
+			guard let webView = controller.webViewIfLoaded,
+			      controller.hasCurrentPageDocument else { return }
+			// Persist docking preferences only when opening, outside the defaults observer path.
+			UserDefaults.standard.set(1, forKey: "__WebInspectorPageGroupLevel1__.WebKit2InspectorAttachmentSide")
+			UserDefaults.standard.set(true, forKey: "__WebInspectorPageGroupLevel1__.WebKit2InspectorStartsAttached")
+			Defaults[.webInspectorEnabled] = true
+			configureWebInspector(webView, enabled: true)
+			guard webView.responds(to: NSSelectorFromString("_inspector")),
+			      let inspector = unsafe webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
+			      inspector.responds(to: NSSelectorFromString("show")),
+			      inspector.responds(to: NSSelectorFromString("close")),
+			      inspector.responds(to: NSSelectorFromString("attach"))
+			else {
+				controller.session.toastManager.show(
+					symbol: "exclamationmark.triangle",
+					message: "This WebKit version cannot open Astra’s Web Inspector. Inspect this page from Safari’s Develop menu."
+				)
+				return
+			}
+			if selectingElement {
+				guard inspector.responds(to: NSSelectorFromString("toggleElementSelection")) else {
+					controller.session.toastManager.show(symbol: "exclamationmark.triangle", message: "Element selection is unavailable in this WebKit version.")
+					return
+				}
+				if inspector.value(forKey: "isElementSelectionActive") as? Bool != true {
+					// Connect without showing the inspector until an element has been selected.
+					unsafe inspector.perform(NSSelectorFromString("toggleElementSelection"))
+				}
+			} else {
+				let isVisible = inspector.value(forKey: "isVisible") as? Bool == true
+				unsafe inspector.perform(NSSelectorFromString(isVisible ? "close" : "show"))
+			}
+		}
+
+		static func attachWebInspector(_ inspector: NSObject) {
+			// The C entry point preserves the configured side; Objective-C attach defaults to bottom.
+			guard let symbol = unsafe dlsym(UnsafeMutableRawPointer(bitPattern: -2), "WKInspectorAttach") else { return }
+			let attach = unsafe unsafeBitCast(symbol, to: (@convention(c) (UnsafeRawPointer) -> Void).self)
+			unsafe attach(UnsafeRawPointer(Unmanaged.passUnretained(inspector).toOpaque()))
+		}
+
 		static func openFile(in browser: Browser, window: NSWindow?) {
 			guard let window else { return }
 			let panel = NSOpenPanel()
 			panel.allowedContentTypes = [.html, .pdf, .image, .plainText, UTType(filenameExtension: "webarchive") ?? .data]
 			panel.allowsMultipleSelection = true
-			panel.beginSheetModal(for: window) { response in
+			BrowserFilePanels.present(panel, in: window) { response in
 				guard response == .OK else { return }
 				for url in panel.urls {
 					let tab = browser.addTab()
@@ -58,12 +117,12 @@
 			      controller.hasCurrentPageDocument,
 			      !controller.isLoading,
 			      let window,
-			      webView.window === window
+			      unsafe webView.window === window
 			else { return }
 			let operation = webView.printOperation(with: .shared)
 			operation.showsPrintPanel = true
 			operation.showsProgressPanel = true
-			operation.runModal(
+			unsafe operation.runModal(
 				for: window,
 				delegate: nil,
 				didRun: nil,
@@ -127,10 +186,11 @@
 				case .source:
 					return
 			}
-			panel.beginSheetModal(for: window) { response in
+			BrowserFilePanels.present(panel, in: window) { response in
 				guard response == .OK, let destination = panel.url else { return }
+				let scoped = destination.startAccessingSecurityScopedResource()
 				Task { @MainActor in
-					defer { destination.stopAccessingSecurityScopedResource() }
+					defer { if scoped { destination.stopAccessingSecurityScopedResource() } }
 					guard owner.isCurrent() else { return }
 					var createdDestination = false
 					do {

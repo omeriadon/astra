@@ -1,0 +1,28 @@
+name: Astra - Browser Use MCP
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+  push:
+    branches: ['main']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixture:
+    name: Browser Use deterministic fixture and tool registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Browser Use deterministic fixture and tool registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/browser-use/test_fixture.py

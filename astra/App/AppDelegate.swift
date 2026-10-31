@@ -6,11 +6,13 @@
 //
 
 #if os(macOS)
+	import AppIntents
 	import AppKit
 	import AuthenticationServices
 	import Carbon
+	import CoreSpotlight
 	import Defaults
-	import Sparkle
+	import SwiftUI
 	import WebKit
 
 	@MainActor
@@ -22,9 +24,17 @@
 		private var lastClosedNormalWindow: BrowserWindowRecord?
 		private var wasLaunchedForWebPush = false
 		private var startupWindowRestorationFinished = false
+		private var startupStartedAt = BrowserLog.mainEntryUptime ?? BrowserLog.clock()
 		private var queuedStartupURLs: [URL] = []
+		private var queuedHandoffActivity: NSUserActivity?
 		private var shouldReopenAfterStartup = false
+		private var lastExternalForegroundApplication: NSRunningApplication?
+		private var lastActivationUptime: TimeInterval?
 		private var memoryPressureSource: DispatchSourceMemoryPressure?
+		private var didScheduleDeferredStartupServices = false
+		#if DEBUG
+			private var didInstallDebugPagesMenu = false
+		#endif
 
 		private var pictureInPictureController: BrowserController? {
 			for browser in allBrowsers {
@@ -49,24 +59,42 @@
 		}
 
 		func applicationWillFinishLaunching(_: Notification) {
+			BrowserPerformanceBenchmark.install()
+			startupStartedAt = BrowserLog.mainEntryUptime ?? BrowserLog.clock()
+			BrowserLog.info(.lifecycle, "app.will-finish-launching", metadata: [
+				"elapsed_ms": BrowserLog.fixedDecimal((BrowserLog.clock() - startupStartedAt) * 1000),
+			])
 			#if DEBUG
 				if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
 					return
 				}
 			#endif
+			if let foreground = NSWorkspace.shared.frontmostApplication,
+			   foreground.processIdentifier != ProcessInfo.processInfo.processIdentifier
+			{
+				lastExternalForegroundApplication = foreground
+			}
+			NSWorkspace.shared.notificationCenter.addObserver(
+				self,
+				selector: #selector(workspaceApplicationDidActivate(_:)),
+				name: NSWorkspace.didActivateApplicationNotification,
+				object: nil
+			)
+			BrowserAICLI.startModelCatalogRefresh()
 			installMainMenu()
+			NSApp.servicesProvider = AstraServicesProvider.shared
 			NSAppleEventManager.shared().setEventHandler(
 				self,
 				andSelector: #selector(handleURLEvent(_:withReplyEvent:)),
 				forEventClass: AEEventClass(kInternetEventClass),
 				andEventID: AEEventID(kAEGetURL)
 			)
-			_ = BrowserWebSession.shared
+			// Initialize the full WebKit session only when the first Browser is constructed.
 			BrowserController.addressPromptOwner = { [weak self] controller, webView, documentID in
 				guard let self,
 				      let browser = activeBrowser,
 				      let keyWindow = NSApp.keyWindow,
-				      BrowserKeyboardMenuPolicy.canPromptForAddressAction(
+				      unsafe BrowserKeyboardMenuPolicy.canPromptForAddressAction(
 				      	isFocusedBrowser: keyWindow.isKeyWindow && activeBrowser === browser,
 				      	isSelectedController: browser.selectedTab?.activeController === controller,
 				      	isSameSession: browser.session === controller.session,
@@ -101,7 +129,37 @@
 			MiniAstraShortcut.shared.update()
 		}
 
+		func applicationDidBecomeActive(_: Notification) {
+			lastActivationUptime = BrowserLog.clock()
+		}
+
+		@objc private func workspaceApplicationDidActivate(_ notification: Notification) {
+			guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+			      application.processIdentifier != ProcessInfo.processInfo.processIdentifier
+			else { return }
+			lastExternalForegroundApplication = application
+		}
+
+		/// An external URL can reactivate Astra before AppKit dispatches the open
+		/// event. Yield activation back to the source application before presenting
+		/// the nonactivating Mini Astra panel, not a normal browser window.
+		private func restoreExternalFocusForMiniAstra(force: Bool = false) {
+			guard let application = lastExternalForegroundApplication,
+			      !application.isTerminated,
+			      application.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+			      NSApp.isActive
+			else { return }
+			if !force {
+				guard let lastActivationUptime,
+				      BrowserLog.clock() - lastActivationUptime < 2
+				else { return }
+			}
+			NSApp.yieldActivation(to: application)
+			_ = application.activate(from: .current)
+		}
+
 		@objc private func applicationWillSleep(_: Notification) {
+			BrowserLog.notice(.lifecycle, "system.will-sleep")
 			for controller in windows {
 				controller.saveWindowFrame()
 			}
@@ -111,12 +169,14 @@
 		}
 
 		@objc private func applicationDidWake(_: Notification) {
+			BrowserLog.notice(.lifecycle, "system.did-wake")
 			guard let keyWindow = NSApp.keyWindow,
 			      let browser = windows.first(where: { $0.window === keyWindow })?.browser else { return }
 			BrowserWindowRegistry.shared.activate(browser)
 		}
 
 		func applicationDidFinishLaunching(_: Notification) {
+			BrowserLog.info(.lifecycle, "app.did-finish-launching")
 			#if DEBUG
 				if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
 					return
@@ -124,14 +184,25 @@
 			#endif
 			let authentication = ASWebAuthenticationSessionWebBrowserSessionManager.shared
 			authentication.sessionHandler = BrowserAuthenticationSessionHandler.shared
-			Task { await BrowserExtensionManager.shared.prepare() }
-			UpdateManager.shared.start()
-			BrowserDownloadManager.shared.resumeAvailableDownloads()
-			BrowserController.prewarmSharedProcess()
-			let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+			#if DEBUG
+				if BrowserAgentTestBootstrap.startIfRequested(delegate: self) {
+					return
+				}
+			#endif
+			// Defer noncritical services until the first visible window has updated,
+			// with a bounded fallback for headless Web Push/authentication launches.
+			Task { @MainActor [weak self] in
+				try? await Task.sleep(for: .seconds(2))
+				self?.scheduleDeferredStartupServices(trigger: "fallback")
+			}
+			let source = DispatchSource.makeMemoryPressureSource(eventMask: [.normal, .warning, .critical], queue: .main)
 			source.setEventHandler {
+				let level = BrowserHibernationManager.PressureLevel(rawValue: source.data)
+				BrowserLog.info(.performance, "memory-pressure", metadata: ["level": String(describing: level)])
 				Task { @MainActor in
 					for browser in BrowserWindowRegistry.shared.openBrowsers {
+						browser.handleMemoryPressure(level)
+						guard level != .normal else { continue }
 						for tab in browser.tabs {
 							tab.controller?.discardPreviewSnapshot()
 							for peek in tab.peeks {
@@ -148,27 +219,183 @@
 				guard let self else { return }
 				defer { finishStartupWindowRestoration() }
 				guard !authentication.wasLaunchedByAuthenticationServices else { return }
-				let persistence = try? BrowserPersistence()
+				let persistence: BrowserPersistence?
+				do {
+					persistence = try BrowserPersistence.makeShared()
+				} catch {
+					BrowserLog.error(.persistence, "startup.window-record-store.failed", metadata: ["error": BrowserLog.errorDescription(error)])
+					persistence = nil
+				}
 				let records = await Task.detached(priority: .utility) {
-					(try? persistence?.loadPersistedState()?.windowRecords) ?? []
+					do {
+						return try persistence?.loadWindowRecords() ?? []
+					} catch {
+						BrowserLog.error(.persistence, "startup.window-records-load.failed", metadata: ["error": BrowserLog.errorDescription(error)])
+						return []
+					}
 				}.value
 				BrowserWindowRegistry.shared.beginWindowRestoration(records)
-				for record in records where !windows.contains(where: { $0.browser.windowID == record.windowID }) {
-					openBrowserWindow(restorationRecord: record)
+				// Preserve the old foreground window (the last restored record)
+				// while presenting it before constructing secondary NSHostingViews.
+				if let record = records.last,
+				   !windows.contains(where: { $0.browser.windowID == record.windowID })
+				{
+					openBrowserWindow(restorationRecord: record, showImmediately: false)
+				} else if windows.isEmpty, !wasLaunchedForWebPush {
+					openBrowserWindow(showImmediately: false)
 				}
-				if windows.isEmpty, !wasLaunchedForWebPush {
-					openBrowserWindow()
+				if let foreground = windows.first {
+					let firstWindowUpdates = AsyncStream<Void> { continuation in
+						foreground.onFirstVisibleUpdate = { [weak self, weak foreground] in
+							continuation.yield(())
+							continuation.finish()
+							guard let self else { return }
+							BrowserLog.notice(.lifecycle, "startup.first-visible-window-update", metadata: [
+								"elapsed_ms": BrowserLog.fixedDecimal((BrowserLog.clock() - startupStartedAt) * 1000),
+							])
+							scheduleDeferredStartupServices(trigger: "first-window-update")
+							Task { @MainActor in
+								guard let foreground else { return }
+								let deadline = BrowserLog.clock() + 10
+								while !Task.isCancelled,
+								      BrowserLog.clock() < deadline,
+								      !(foreground.window.isVisible
+								      	&& foreground.window.canBecomeKey
+								      	&& foreground.browser.isHydrationFinished
+								      	&& foreground.window.firstResponder != nil)
+								{
+									try? await Task.sleep(for: .milliseconds(25))
+								}
+								guard !Task.isCancelled else { return }
+								// swiftformat:disable:next spaceAroundBrackets
+								let readiness: [String: String] = unsafe [
+									"visible": String(foreground.window.isVisible),
+									"key": String(foreground.window.isKeyWindow),
+									"can_become_key": String(foreground.window.canBecomeKey),
+									"hydrated": String(foreground.browser.isHydrationFinished),
+									"first_responder": String(foreground.window.firstResponder != nil),
+									"observed_update": "true",
+									"elapsed_ms": BrowserLog.fixedDecimal((BrowserLog.clock() - self.startupStartedAt) * 1000)
+								]
+								BrowserLog.notice(.lifecycle, "startup.first-window-readiness", metadata: readiness)
+								BrowserPerformanceBenchmark.recordForegroundReadiness(window: foreground.window, browser: foreground.browser)
+								if foreground.window.isVisible,
+								   foreground.window.canBecomeKey,
+								   foreground.browser.isHydrationFinished,
+								   foreground.window.firstResponder != nil
+								{
+									BrowserLog.notice(.lifecycle, "startup.first-usable-window", metadata: readiness)
+								}
+							}
+						}
+					}
+					// When launched by a link, keep the restored workspace behind
+					// other applications; only Mini Astra should be brought forward.
+					let launchIntoMini = Defaults[.miniAstraEnabled] && !queuedStartupURLs.isEmpty
+					if launchIntoMini {
+						foreground.window.orderBack(nil)
+					} else {
+						foreground.showWindow()
+						NSApp.activate()
+					}
+					BrowserLog.notice(.lifecycle, "startup.first-window-presented", metadata: [
+						"elapsed_ms": BrowserLog.fixedDecimal((BrowserLog.clock() - startupStartedAt) * 1000),
+						"records": String(records.count),
+					])
+					let didUpdate = await withTaskGroup(of: Bool.self) { group in
+						group.addTask {
+							for await _ in firstWindowUpdates {
+								return true
+							}
+							return false
+						}
+						group.addTask {
+							try? await Task.sleep(for: .milliseconds(400))
+							return false
+						}
+						let updated = await group.next() ?? false
+						group.cancelAll()
+						return updated
+					}
+					BrowserLog.notice(.lifecycle, "startup.first-window-frame-gate", metadata: [
+						"elapsed_ms": BrowserLog.fixedDecimal((BrowserLog.clock() - startupStartedAt) * 1000),
+						"observed_update": String(didUpdate),
+					])
+					// Restore the selected cached website after the shell's first
+					// update, not in NSWindow activation. If disk hydration has
+					// already restored its controller, no extra work is needed.
+					if foreground.browser.selectedTab?.isHibernated == true {
+						foreground.browser.selectTab(foreground.browser.selectedTabID)
+					}
 				}
+				for record in records.dropLast() where !windows.contains(where: { $0.browser.windowID == record.windowID }) {
+					let controller = openBrowserWindow(restorationRecord: record, showImmediately: false)
+					// Keep all restored windows visible without stealing key focus.
+					controller.window.orderBack(nil)
+				}
+				BrowserLog.notice(.lifecycle, "startup.windows-presented", metadata: [
+					"elapsed_ms": BrowserLog.fixedDecimal((BrowserLog.clock() - startupStartedAt) * 1000),
+					"windows": String(windows.count),
+					"records": String(records.count),
+				])
+				await Task.yield()
+
+				// Keep the restoration ownership gate until each Browser has actually
+				// merged its persisted state, but do not make visibility depend on it.
 				for controller in windows {
 					while !controller.browser.isHydrationFinished {
 						try? await Task.sleep(for: .milliseconds(25))
 					}
 				}
-				BrowserWindowRegistry.shared.finishWindowRestoration()
+				if let foreground = windows.first {
+					await BrowserPerformanceBenchmark.seedTabsIfRequested(in: foreground.browser)
+				}
+				#if !ASTRA_WEBSITE_APP_RUNTIME && !ASTRA_WEBSITE_APP_HELPER
+					// Focus switches once after restoration; user navigation stays free.
+					if let raw = UserDefaults.standard.string(forKey: AstraFocusSpaceIntent.pendingSpaceKey),
+					   let id = UUID(uuidString: raw),
+					   let browser = windows.first(where: {
+					   	!$0.browser.isPrivate && $0.browser.workspace.spaces.contains(where: { $0.id == id })
+					   })?.browser
+					{
+						browser.selectSpace(id)
+						UserDefaults.standard.removeObject(forKey: AstraFocusSpaceIntent.pendingSpaceKey)
+					}
+				#endif
+			}
+		}
+
+		/// Schedule optional services after first visible AppKit window update.
+		/// A fallback handles launches that never display a browser window.
+		private func scheduleDeferredStartupServices(trigger: String) {
+			guard !didScheduleDeferredStartupServices else { return }
+			didScheduleDeferredStartupServices = true
+			BrowserLog.notice(.lifecycle, "startup.deferred-services-scheduled", metadata: [
+				"trigger": trigger,
+				"elapsed_ms": BrowserLog.fixedDecimal((BrowserLog.clock() - startupStartedAt) * 1000),
+			])
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(350))
+				await BrowserExtensionManager.shared.prepare()
+			}
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(900))
+				UpdateManager.shared.start()
+				BrowserDownloadManager.shared.resumeAvailableDownloads()
+			}
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(1500))
+				BrowserWebsiteMonitoring.shared.start()
+			}
+			Task { @MainActor in
+				try? await Task.sleep(for: .milliseconds(2200))
+				AstraAppShortcuts.updateAppShortcutParameters()
+				AstraSpotlightIndexer.scheduleRefresh()
 			}
 		}
 
 		func applicationWillTerminate(_: Notification) {
+			BrowserLog.notice(.lifecycle, "app.will-terminate", metadata: ["windows": String(BrowserWindowRegistry.shared.openBrowsers.count)])
 			memoryPressureSource?.cancel()
 			memoryPressureSource = nil
 		}
@@ -268,25 +495,78 @@
 			for url in urls where ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
 				openAfterStartupRestoration(url)
 			}
+			for url in urls where url.scheme == "astra" {
+				Task { @MainActor in await AstraSystemActions.openSpotlightURL(url) }
+			}
 		}
 
-		private func openAfterStartupRestoration(_ url: URL) {
+		func application(
+			_: NSApplication,
+			continue userActivity: NSUserActivity,
+			restorationHandler _: @escaping ([any NSUserActivityRestoring]) -> Void
+		) -> Bool {
+			if BrowserHandoff.reference(from: userActivity) != nil {
+				// AppKit may deliver Handoff before window/session hydration. Keep the
+				// identity intact and resolve it only after restored windows are ready.
+				guard startupWindowRestorationFinished else {
+					queuedHandoffActivity = userActivity
+					return true
+				}
+				openHandoff(userActivity)
+				return true
+			}
+
+			guard userActivity.activityType == CSSearchableItemActionType,
+			      let identifier = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String
+			else { return false }
+			let parts = identifier.split(separator: ":", maxSplits: 1)
+			guard parts.count == 2,
+			      ["bookmark", "reading", "space"].contains(String(parts[0])),
+			      UUID(uuidString: String(parts[1])) != nil,
+			      let url = URL(string: "astra://" + String(parts[0]) + "/" + String(parts[1]))
+			else { return false }
+			Task { @MainActor in await AstraSystemActions.openSpotlightURL(url) }
+			return true
+		}
+
+		private func openHandoff(_ activity: NSUserActivity) {
+			let destination = windows.first { $0.window.isKeyWindow && !$0.browser.isPrivate }
+				?? windows.first { !$0.browser.isPrivate }
+				?? openBrowserWindow()
+			destination.showWindow()
+			NSApp.activate()
+			_ = BrowserHandoff.shared.continueActivity(activity, in: destination.browser)
+		}
+
+		private func openAfterStartupRestoration(_ url: URL, wasQueuedAtStartup: Bool = false) {
+			BrowserLog.debug(.lifecycle, "startup.open-after-restoration", metadata: ["url": BrowserLog.url(url)])
 			guard startupWindowRestorationFinished else {
 				queuedStartupURLs.append(url)
 				return
 			}
 			if Defaults[.miniAstraEnabled] {
-				openMiniAstra(url: url)
+				restoreExternalFocusForMiniAstra(force: wasQueuedAtStartup)
+				openMiniAstra(url: url, floatsOverSourceApplication: true)
 			} else {
 				open(url)
 			}
 		}
 
 		private func finishStartupWindowRestoration() {
+			BrowserLog.notice(.lifecycle, "startup.restoration-complete", metadata: [
+				"elapsed_ms": BrowserLog.fixedDecimal((BrowserLog.clock() - startupStartedAt) * 1000),
+				"windows": String(windows.count),
+				"tabs": String(windows.reduce(0) { $0 + $1.browser.tabs.count }),
+			])
+			// Every initial window has completed hydration before this is called,
+			// so the shared launch decode can be released. A later Dock reopen
+			// with no live windows must read the then-current persisted state.
+			Browser.finishLaunchHydrationSharing()
 			BrowserWindowRegistry.shared.finishWindowRestoration()
 			startupWindowRestorationFinished = true
 			BrowserWebPushManager.shared.drainPendingMessages()
-			if shouldReopenAfterStartup {
+			let openingQueuedMini = Defaults[.miniAstraEnabled] && !queuedStartupURLs.isEmpty
+			if shouldReopenAfterStartup, !openingQueuedMini {
 				shouldReopenAfterStartup = false
 				if let controller = windows.first {
 					controller.showWindow()
@@ -297,11 +577,34 @@
 					openBrowserWindow()
 				}
 			}
+			shouldReopenAfterStartup = false
 			let urls = queuedStartupURLs
 			queuedStartupURLs.removeAll()
 			for url in urls {
-				openAfterStartupRestoration(url)
+				openAfterStartupRestoration(url, wasQueuedAtStartup: true)
 			}
+			if let activity = queuedHandoffActivity {
+				queuedHandoffActivity = nil
+				openHandoff(activity)
+			}
+		}
+
+		/// App Intents can arrive during the launch of an AppKit-managed process.
+		/// They must not mutate the placeholder model before restoration completes.
+		func awaitSystemActionsReady() async -> Bool {
+			for _ in 0 ..< 200 {
+				if startupWindowRestorationFinished {
+					return true
+				}
+				try? await Task.sleep(for: .milliseconds(50))
+			}
+			return startupWindowRestorationFinished
+		}
+
+		func focusSystemBrowser(_ browser: Browser) {
+			guard let controller = windows.first(where: { $0.browser === browser }) else { return }
+			controller.showWindow()
+			NSApp.activate()
 		}
 
 		func requestQuit() {
@@ -326,8 +629,10 @@
 		@discardableResult
 		func openBrowserWindow(
 			isPrivate: Bool = false,
-			restorationRecord: BrowserWindowRecord? = nil
+			restorationRecord: BrowserWindowRecord? = nil,
+			showImmediately: Bool = true
 		) -> BrowserWindowController {
+			BrowserLog.info(.lifecycle, "window.open-request", metadata: ["private": String(isPrivate), "restoring": String(restorationRecord != nil), "show_immediately": String(showImmediately)])
 			let record = isPrivate ? nil : restorationRecord
 			let controller = BrowserWindowController(browser: Browser(isPrivate: isPrivate, windowRecord: record))
 			controller.onClose = { [weak self, weak controller] in
@@ -344,8 +649,10 @@
 			}
 
 			windows.append(controller)
-			controller.showWindow()
-			NSApp.activate()
+			if showImmediately {
+				controller.showWindow()
+				NSApp.activate()
+			}
 			return controller
 		}
 
@@ -383,25 +690,38 @@
 			focusedMiniWindow
 		}
 
-		private var mainWindow: BrowserWindowController {
-			windows.first { $0.browser === BrowserWindowRegistry.shared.activeBrowser }
-				?? windows.first
-				?? openBrowserWindow()
+		/// Resolve a normal window lazily so opening a Mini panel never raises another window.
+		private var miniDestinationWindow: BrowserWindowController {
+			windows.first { $0.browser === BrowserWindowRegistry.shared.activeBrowser && !$0.browser.isPrivate }
+				?? windows.first { !$0.browser.isPrivate }
+				?? openBrowserWindow(showImmediately: false)
 		}
 
-		func openMiniAstra(url: URL? = nil) {
+		func openMiniAstra(url: URL? = nil, floatsOverSourceApplication: Bool = false) {
 			let controller = MiniAstraWindowController(url: url)
+			if floatsOverSourceApplication {
+				controller.window.level = .floating
+			}
 			controller.onClose = { [weak self, weak controller] in
 				guard let self, let controller else { return }
 				miniWindows.removeAll { $0 === controller }
 			}
-			controller.onPromote = { [weak self] tab in
+			controller.resolveSpaceBrowser = { [weak self] in self?.miniDestinationWindow.browser }
+			controller.revealSpaceBrowser = { [weak self] in
 				guard let self else { return }
-				let destination = mainWindow
+				miniDestinationWindow.showWindow()
+				NSApp.activate()
+			}
+			controller.onPromote = { [weak self] tab, spaceID in
+				guard let self else { return }
+				let destination = miniDestinationWindow
 				#if DEBUG
 					let webView = tab.controller?.webViewIfLoaded
 				#endif
 				destination.browser.adoptMiniTab(tab)
+				if let spaceID, destination.browser.workspace.spaces.contains(where: { $0.id == spaceID }) {
+					destination.browser.moveTab(tab.id, to: .normal, in: spaceID)
+				}
 				destination.showWindow()
 				NSApp.activate()
 				#if DEBUG
@@ -437,6 +757,85 @@
 			return tab.controller?.webView
 		}
 
+		#if !ASTRA_WEBSITE_APP_RUNTIME && !ASTRA_WEBSITE_APP_HELPER
+
+			// MARK: - Dock actions
+
+			func applicationDockMenu(_: NSApplication) -> NSMenu? {
+				let menu = NSMenu(title: "Astra")
+				func add(_ title: String, _ action: Selector) {
+					let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
+					entry.target = self
+					menu.addItem(entry)
+				}
+				add("New Tab", #selector(dockNewTab(_:)))
+				add("New Window", #selector(newWindow(_:)))
+				add("New Private Window", #selector(newPrivateWindow(_:)))
+				add("New Mini Astra", #selector(newMiniAstra(_:)))
+				if let normal = windows.first(where: { !$0.browser.isPrivate && !$0.browser.isMini })?.browser {
+					let spaces = NSMenu(title: "Switch Space")
+					for space in normal.workspace.spaces {
+						let entry = NSMenuItem(title: space.name, action: #selector(dockSwitchSpace(_:)), keyEquivalent: "")
+						entry.target = self
+						entry.representedObject = space.id.uuidString
+						entry.state = space.id == normal.workspace.selectedSpaceID ? .on : .off
+						spaces.addItem(entry)
+					}
+					if !spaces.items.isEmpty {
+						let parent = NSMenuItem(title: "Switch Space", action: nil, keyEquivalent: "")
+						parent.submenu = spaces
+						menu.addItem(parent)
+					}
+				}
+				menu.addItem(.separator())
+				add("Downloads", #selector(dockShowDownloads(_:)))
+				add("History", #selector(dockShowHistory(_:)))
+				add("Settings…", #selector(dockOpenSettings(_:)))
+				return menu
+			}
+
+			@objc private func dockNewTab(_: Any?) {
+				let controller = windows.first(where: { $0.window.isKeyWindow && !$0.browser.isPrivate })
+					?? windows.first(where: { !$0.browser.isPrivate })
+					?? openBrowserWindow()
+				controller.browser.requestNewTab()
+				controller.showWindow()
+				NSApp.activate()
+			}
+
+			@objc private func dockSwitchSpace(_ sender: NSMenuItem) {
+				guard let raw = sender.representedObject as? String, let id = UUID(uuidString: raw),
+				      let controller = windows.first(where: { !$0.browser.isPrivate && $0.browser.workspace.spaces.contains(where: { $0.id == id }) })
+				else { return }
+				controller.browser.selectSpace(id)
+				controller.showWindow()
+				NSApp.activate()
+			}
+
+			@objc private func dockShowDownloads(_: Any?) {
+				let controller = windows.first(where: { !$0.browser.isPrivate }) ?? openBrowserWindow()
+				controller.showWindow()
+				NSApp.activate()
+				NotificationCenter.default.post(name: .showBrowserDownloads, object: controller.browser.windowID,
+				                                userInfo: ["librarySelection": 0])
+			}
+
+			@objc private func dockShowHistory(_: Any?) {
+				let controller = windows.first(where: { !$0.browser.isPrivate }) ?? openBrowserWindow()
+				controller.browser.openInternalPage(.history)
+				controller.showWindow()
+				NSApp.activate()
+			}
+
+			@objc private func dockOpenSettings(_: Any?) {
+				let controller = windows.first(where: { !$0.browser.isPrivate }) ?? openBrowserWindow()
+				controller.browser.openInternalPage(.settings)
+				controller.showWindow()
+				NSApp.activate()
+			}
+
+		#endif
+
 		// MARK: - Browser actions
 
 		@objc private func newPrivateWindow(_: Any?) {
@@ -444,7 +843,31 @@
 		}
 
 		@objc private func newWindow(_: Any?) {
-			openBrowserWindow(isPrivate: activeAuthenticationBrowser == nil && activeBrowser?.isPrivate == true)
+			openBrowserWindow()
+		}
+
+		@objc private func createEasel(_: Any?) {
+			activeBrowser?.createEasel()
+		}
+
+		@objc private func createSiteBoost(_: Any?) {
+			guard let browser = activeBrowser, !browser.isPrivate,
+			      let host = browser.selectedTab?.currentURL?.host else { return }
+			let boost = BrowserBoostStore.shared.create(domain: host)
+			BrowserBoostEditorWindowController.open(boost.id)
+		}
+
+		@objc private func createGlobalBoost(_: Any?) {
+			let boost = BrowserBoostStore.shared.create(domain: nil)
+			BrowserBoostEditorWindowController.open(boost.id)
+		}
+
+		@objc private func openBoostsLibrary(_: Any?) {
+			guard let browser = activeBrowser, !browser.isMini, !browser.isPrivate else { return }
+			NotificationCenter.default.post(
+				name: .showBrowserDownloads, object: browser.windowID,
+				userInfo: ["librarySelection": 2]
+			)
 		}
 
 		@objc private func newTab(_: Any?) {
@@ -464,7 +887,21 @@
 			browser.requestNewTab()
 		}
 
+		@objc private func showActionPalette(_: Any?) {
+			guard activeMiniWindow == nil, activeAuthenticationBrowser == nil,
+			      let browser = activeBrowser else { return }
+			browser.showsActionPalette.toggle()
+		}
+
 		@objc private func closeTab(_: Any?) {
+			if BrowserSettingsWindowController.shared.isKeyWindow {
+				NSApp.keyWindow?.performClose(nil)
+				return
+			}
+			if let browser = activeBrowser, browser.showsActionPalette {
+				browser.showsActionPalette = false
+				return
+			}
 			if let browser = activeBrowser, browser.showsQuickSearch {
 				browser.dismissQuickSearch()
 				return
@@ -478,6 +915,7 @@
 				return
 			}
 			guard let browser = activeBrowser else { return }
+			if browser.closeSelectedSidebarTabs() { return }
 			browser.closeTab(browser.selectedTabID)
 		}
 
@@ -495,17 +933,56 @@
 			activeBrowser?.sidebarShown.toggle()
 		}
 
+		@objc private func toggleTopBar(_: Any?) {
+			guard let browser = activeBrowser else { return }
+			NotificationCenter.default.post(name: .toggleBrowserTopBar, object: browser.windowID)
+		}
+
+		@objc private func toggleAISidebar(_: Any?) {
+			guard let browser = activeBrowser, browser.canShowAISidebar else { return }
+			withAnimation(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .smooth(duration: 0.3)) {
+				browser.showsAISidebar.toggle()
+			}
+		}
+
+		@objc private func previousSpace(_: Any?) {
+			guard let controller = focusedBrowserWindow else { return }
+			NotificationCenter.default.post(
+				name: .cycleBrowserSpace,
+				object: controller.browser.windowID,
+				userInfo: ["direction": -1]
+			)
+		}
+
+		@objc private func nextSpace(_: Any?) {
+			guard let controller = focusedBrowserWindow else { return }
+			NotificationCenter.default.post(
+				name: .cycleBrowserSpace,
+				object: controller.browser.windowID,
+				userInfo: ["direction": 1]
+			)
+		}
+
 		@objc private func editSpace(_: Any?) {
 			guard activeAuthenticationBrowser == nil else { return }
 			activeBrowser?.openInternalPage(.themeEditor)
 		}
 
-		@objc private func openSettings(_: Any?) {
-			let browser: Browser = if activeAuthenticationBrowser == nil, let focusedBrowserWindow {
-				focusedBrowserWindow.browser
-			} else {
-				openBrowserWindow().browser
+		private var settingsBrowser: Browser {
+			if activeAuthenticationBrowser == nil, let browser = focusedBrowserWindow?.browser {
+				return browser
 			}
+			if let browser = BrowserSettingsWindowController.shared.browser {
+				return browser
+			}
+			// Reuse a normal session when no browser window has focus. Opening
+			// Settings should not raise an unrelated browser window.
+			return windows.first(where: { !$0.browser.isPrivate })?.browser
+				?? openBrowserWindow(showImmediately: false).browser
+		}
+
+		@objc private func openSettings(_: Any?) {
+			let browser = settingsBrowser
 			browser.openInternalPage(.settings)
 		}
 
@@ -560,6 +1037,22 @@
 		#endif
 
 		func menuWillOpen(_ menu: NSMenu) {
+			#if DEBUG
+				if menu.title == "astra", !didInstallDebugPagesMenu {
+					didInstallDebugPagesMenu = true
+					menu.insertItem(.separator(), at: 1)
+					let heading = NSMenuItem(title: "Internal Pages", action: nil, keyEquivalent: "")
+					heading.isEnabled = false
+					menu.insertItem(heading, at: 2)
+					for (index, page) in BrowserInternalPage.allCases.enumerated() {
+						let menuItem = item(page.title, action: #selector(openDebugPage(_:)))
+						menuItem.representedObject = page.persistenceID
+						menuItem.image = NSImage(systemSymbolName: page.symbol, accessibilityDescription: page.title)
+						menu.insertItem(menuItem, at: 3 + index)
+					}
+					menu.insertItem(.separator(), at: 3 + BrowserInternalPage.allCases.count)
+				}
+			#endif
 			if menu.title == "Bookmarks" {
 				for item in menu.items where item.tag == 17018 {
 					menu.removeItem(item)
@@ -632,23 +1125,19 @@
 		}
 
 		@objc private func showAbout(_: Any?) {
-			let browser: Browser = if activeAuthenticationBrowser == nil, let focusedBrowserWindow {
-				focusedBrowserWindow.browser
-			} else {
-				openBrowserWindow().browser
-			}
+			let browser = settingsBrowser
 			browser.settingsPage = .about
 			browser.openInternalPage(.settings)
 		}
 
 		@objc private func checkForUpdates(_: Any?) {
-			UpdateManager.shared.updater.checkForUpdates()
+			UpdateManager.shared.checkForUpdates()
 		}
 
 		@objc private func openLocation(_: Any?) {
 			guard let browser = activeBrowser else { return }
 			if browser.selectedTab?.internalPage != nil {
-				browser.addTab()
+				browser.requestNewTab()
 			} else {
 				browser.addressFocusRequest += 1
 			}
@@ -702,6 +1191,16 @@
 			exportPage(.source)
 		}
 
+		@objc private func showWebInspector(_: Any?) {
+			guard activeAuthenticationBrowser == nil,
+			      let controller = activeBrowser?.selectedTab?.activeController else { return }
+			BrowserDesktopCommands.showWebInspector(controller)
+		}
+
+		@objc private func toggleDeveloperMode(_: Any?) {
+			Defaults[.developerModeEnabled].toggle()
+		}
+
 		private func exportPage(_ format: BrowserDesktopCommands.ExportFormat) {
 			guard let browser = activeBrowser,
 			      let controller = browser.selectedTab?.activeController
@@ -749,6 +1248,29 @@
 			activeBrowser?.selectedTab?.activeController?.resetZoom()
 		}
 
+		@objc private func toggleReader(_: Any?) {
+			activeBrowser?.selectedTab?.activeController?.toggleReader()
+		}
+
+		@objc private func toggleZapElement(_: Any?) {
+			activeBrowser?.selectedTab?.activeController?.toggleZap()
+		}
+
+		@objc private func translatePage(_: Any?) {
+			guard let browser = activeBrowser else { return }
+			NotificationCenter.default.post(name: .astraTranslatePage, object: browser)
+		}
+
+		@objc private func monitorWebsite(_: Any?) {
+			guard let browser = activeBrowser else { return }
+			NotificationCenter.default.post(name: .astraMonitorWebsite, object: browser)
+		}
+
+		@objc private func editSiteUserAgent(_: Any?) {
+			guard let browser = activeBrowser else { return }
+			NotificationCenter.default.post(name: .astraEditSiteUserAgent, object: browser)
+		}
+
 		@objc private func enterPictureInPicture(_: Any?) {
 			activeBrowser?.selectedTab?.activeController?.enterPictureInPicture()
 		}
@@ -773,9 +1295,8 @@
 		}
 
 		@objc private func copyURL(_: Any?) {
-			guard let url = activeBrowser?.selectedTab?.activeController?.url else { return }
-			NSPasteboard.general.clearContents()
-			NSPasteboard.general.setString(BrowserAddress.withoutCredentials(url).absoluteString, forType: .string)
+			guard let browser = activeBrowser, let tab = browser.selectedTab else { return }
+			browser.copyURL(for: tab)
 		}
 
 		@objc private func toggleFullScreen(_: Any?) {
@@ -787,10 +1308,45 @@
 		}
 
 		func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+			if menuItem.action == #selector(createSiteBoost(_:)) {
+				return activeBrowser?.isPrivate == false && activeBrowser?.selectedTab?.currentURL?.host != nil
+			}
+			if menuItem.action == #selector(openBoostsLibrary(_:)) {
+				return activeBrowser?.isPrivate == false && activeBrowser?.isMini == false
+			}
+			if menuItem.action == #selector(createEasel(_:)) {
+				return activeAuthenticationBrowser == nil && activeBrowser?.isPrivate == false && activeBrowser?.isMini == false
+			}
+			if menuItem.action == #selector(translatePage(_:)) {
+				guard activeAuthenticationBrowser == nil,
+				      let browser = activeBrowser,
+				      let controller = browser.selectedTab?.activeController,
+				      controller.hasCurrentPageDocument, !controller.isLoading,
+				      controller.navigationFailure == nil,
+				      let url = controller.committedURL else { return false }
+				return BrowserTranslationPolicy.translationURL(for: url, language: "en", isPrivate: browser.isPrivate) != nil
+			}
+			if menuItem.action == #selector(monitorWebsite(_:)) {
+				return activeAuthenticationBrowser == nil
+					&& activeBrowser?.canShowAISidebar == true
+					&& activeBrowser?.selectedTab?.activeController?.hasCurrentPageDocument == true
+					&& Defaults[.aiFeaturesEnabled] && Defaults[.aiWebsiteMonitoring]
+			}
+			if menuItem.action == #selector(editSiteUserAgent(_:)) {
+				guard activeAuthenticationBrowser == nil,
+				      let controller = activeBrowser?.selectedTab?.activeController,
+				      let url = controller.committedURL else { return false }
+				return BrowserSitePermissions.origin(for: url) != nil
+					&& !controller.session.sitePreferences.isLocalDataReadOnly
+			}
+			if menuItem.action == #selector(toggleDeveloperMode(_:)) {
+				menuItem.state = Defaults[.developerModeEnabled] ? .on : .off
+				return true
+			}
 			let pageActions: Set<Selector> = [
 				#selector(printPage(_:)), #selector(sharePage(_:)), #selector(savePDF(_:)), #selector(saveWebArchive(_:)),
 				#selector(saveSource(_:)), #selector(findInPage(_:)), #selector(findNext(_:)),
-				#selector(findPrevious(_:)),
+				#selector(findPrevious(_:)), #selector(showWebInspector(_:)),
 			]
 			let dataActions: Set<Selector> = [#selector(importBrowsingData(_:)), #selector(exportBrowsingData(_:)), #selector(exportBookmarks(_:))]
 			if let action = menuItem.action, pageActions.contains(action) {
@@ -815,6 +1371,15 @@
 			}
 			if menuItem.action == #selector(openLocation(_:)) {
 				return activeBrowser != nil
+			}
+			if menuItem.action == #selector(toggleAISidebar(_:)) {
+				return activeBrowser?.canShowAISidebar == true && Defaults[.aiFeaturesEnabled] && Defaults[.aiSidebar]
+			}
+			if menuItem.action == #selector(toggleTopBar(_:)) {
+				return activeBrowser != nil
+			}
+			if menuItem.action == #selector(showActionPalette(_:)) {
+				return activeBrowser != nil && activeMiniWindow == nil && activeAuthenticationBrowser == nil
 			}
 			if menuItem.action == #selector(toggleSidebar(_:)) {
 				return activeBrowser?.isMini == false
@@ -853,7 +1418,7 @@
 				return browser.historyVisits.contains(where: { $0.id == id })
 			}
 			if menuItem.action == #selector(closeTab(_:)) {
-				return activeBrowser != nil || activeMiniWindow != nil
+				return activeBrowser != nil || activeMiniWindow != nil || BrowserSettingsWindowController.shared.isKeyWindow
 			}
 			if menuItem.action == #selector(closeWindow(_:)) || menuItem.action == #selector(toggleFullScreen(_:)) {
 				return NSApp.keyWindow != nil
@@ -868,7 +1433,22 @@
 				return BrowserKeyboardMenuPolicy.canResetZoom(activeBrowser?.selectedTab?.activeController?.pageZoom)
 			}
 			if menuItem.action == #selector(copyURL(_:)) {
-				return BrowserKeyboardMenuPolicy.canCopyURL(activeBrowser?.selectedTab?.activeController?.url)
+				return BrowserKeyboardMenuPolicy.canCopyURL(activeBrowser?.selectedTab?.copyableURL)
+			}
+			if menuItem.action == #selector(toggleZapElement(_:)) {
+				guard activeAuthenticationBrowser == nil,
+				      activeBrowser?.selectedTab?.internalPage == nil,
+				      let controller = activeBrowser?.selectedTab?.activeController else { return false }
+				menuItem.title = controller.isZapping ? "Cancel Zap Element" : "Zap Element"
+				return controller.hasCurrentPageDocument && controller.navigationFailure == nil
+			}
+			if menuItem.action == #selector(toggleReader(_:)) {
+				let controller = activeBrowser?.selectedTab?.activeController
+				menuItem.title = controller?.readerHTML == nil ? "Show Reader" : "Hide Reader"
+				return activeAuthenticationBrowser == nil
+					&& activeBrowser?.selectedTab?.internalPage == nil
+					&& controller?.isPreparingReader == false
+					&& (controller?.isReaderAvailable == true || controller?.readerHTML != nil)
 			}
 			if menuItem.action == #selector(enterPictureInPicture(_:)) {
 				guard activeAuthenticationBrowser == nil,
@@ -891,21 +1471,13 @@
 		private func installMainMenu() {
 			let mainMenu = NSMenu()
 
-			let appMenu = NSMenu()
+			let appMenu = NSMenu(title: "astra")
 			mainMenu.addItem(menuRoot("astra", submenu: appMenu))
 			appMenu.addItem(item("About astra", action: #selector(showAbout(_:))))
 			#if DEBUG
-				appMenu.addItem(.separator())
-				let heading = NSMenuItem(title: "Internal Pages", action: nil, keyEquivalent: "")
-				heading.isEnabled = false
-				appMenu.addItem(heading)
-				for page in BrowserInternalPage.allCases {
-					let menuItem = item(page.title, action: #selector(openDebugPage(_:)))
-					menuItem.representedObject = page.persistenceID
-					menuItem.image = NSImage(systemSymbolName: page.symbol, accessibilityDescription: page.title)
-					appMenu.addItem(menuItem)
-				}
-				appMenu.addItem(.separator())
+				// SF Symbol decoding for debug-only internal pages need not run
+				// before the first window is visible.
+				appMenu.delegate = self
 			#endif
 			appMenu.addItem(item("Check for Updates…", action: #selector(checkForUpdates(_:))))
 			appMenu.addItem(.separator())
@@ -938,6 +1510,7 @@
 			privateWindowItem.keyEquivalentModifierMask = [.command, .shift]
 			fileMenu.addItem(privateWindowItem)
 			fileMenu.addItem(item("New Tab", action: #selector(newTab(_:)), key: "t"))
+			fileMenu.addItem(item("Create Easel", action: #selector(createEasel(_:))))
 			fileMenu.addItem(item("New Mini Astra", action: #selector(newMiniAstra(_:))))
 			fileMenu.addItem(.separator())
 			fileMenu.addItem(item("Close Tab", action: #selector(closeTab(_:)), key: "w"))
@@ -991,8 +1564,32 @@
 
 			let viewMenu = NSMenu(title: "View")
 			mainMenu.addItem(menuRoot("View", submenu: viewMenu))
+			viewMenu.addItem(item("Show Reader", action: #selector(toggleReader(_:)), key: "r", modifiers: [.command, .option]))
+			viewMenu.addItem(item("Zap Element", action: #selector(toggleZapElement(_:))))
+			viewMenu.addItem(item("Action Palette", action: #selector(showActionPalette(_:)), key: "p", modifiers: [.command, .shift]))
 			viewMenu.addItem(item("Toggle Sidebar", action: #selector(toggleSidebar(_:)), key: "s"))
+			viewMenu.addItem(item("Toggle Top Bar", action: #selector(toggleTopBar(_:)), key: "d"))
+			viewMenu.addItem(item("Toggle AI Sidebar", action: #selector(toggleAISidebar(_:)), key: "l", modifiers: [.command, .option]))
 			viewMenu.addItem(item("Edit Space", action: #selector(editSpace(_:))))
+			viewMenu.addItem(item("Previous Space", action: #selector(previousSpace(_:)), key: "←", modifiers: [.control, .option]))
+			viewMenu.addItem(item("Next Space", action: #selector(nextSpace(_:)), key: "→", modifiers: [.control, .option]))
+			viewMenu.addItem(.separator())
+			viewMenu.addItem(item("Translate Page…", action: #selector(translatePage(_:))))
+			viewMenu.addItem(item("Monitor Website…", action: #selector(monitorWebsite(_:))))
+			viewMenu.addItem(.separator())
+			viewMenu.addItem(item("Custom User Agent…", action: #selector(editSiteUserAgent(_:))))
+			viewMenu.addItem(item(
+				"Web Inspector",
+				action: #selector(showWebInspector(_:)),
+				key: "i",
+				modifiers: [.command, .option]
+			))
+			let developerModeItem = item(
+				"Developer Mode",
+				action: #selector(toggleDeveloperMode(_:))
+			)
+			developerModeItem.identifier = NSUserInterfaceItemIdentifier("developer-mode-toggle")
+			viewMenu.addItem(developerModeItem)
 			viewMenu.addItem(.separator())
 			viewMenu.addItem(item(
 				"Enter Full Screen",
@@ -1006,7 +1603,7 @@
 			navigationMenu.delegate = self
 			navigationMenu.addItem(item("History", action: #selector(openHistory(_:)), key: "y"))
 			navigationMenu.addItem(.separator())
-			navigationMenu.addItem(item("Show Downloads", action: #selector(showDownloads(_:)), key: "l", modifiers: [.command, .option]))
+			navigationMenu.addItem(item("Show Library", action: #selector(showDownloads(_:)), key: "j"))
 			navigationMenu.addItem(item("Open Location", action: #selector(openLocation(_:)), key: "l"))
 			navigationMenu.addItem(item("Back", action: #selector(goBack(_:)), key: "["))
 			navigationMenu.addItem(item("Forward", action: #selector(goForward(_:)), key: "]"))
@@ -1028,13 +1625,20 @@
 
 			let tabMenu = NSMenu(title: "Tab")
 			mainMenu.addItem(menuRoot("Tab", submenu: tabMenu))
-			tabMenu.addItem(item("Duplicate Tab", action: #selector(duplicateTab(_:)), key: "d"))
+			tabMenu.addItem(item("Duplicate Tab", action: #selector(duplicateTab(_:)), key: "d", modifiers: [.command, .shift]))
 			tabMenu.addItem(item(
 				"Copy URL",
 				action: #selector(copyURL(_:)),
 				key: "c",
 				modifiers: [.option]
 			))
+
+			let boostsMenu = NSMenu(title: "Boosts")
+			mainMenu.addItem(menuRoot("Boosts", submenu: boostsMenu))
+			boostsMenu.addItem(item("Create Boost for This Site", action: #selector(createSiteBoost(_:))))
+			boostsMenu.addItem(item("Create Global Boost", action: #selector(createGlobalBoost(_:))))
+			boostsMenu.addItem(.separator())
+			boostsMenu.addItem(item("Show Boosts Library", action: #selector(openBoostsLibrary(_:))))
 
 			let windowMenu = NSMenu(title: "Window")
 			mainMenu.addItem(menuRoot("Window", submenu: windowMenu))
@@ -1051,6 +1655,7 @@
 			NSApp.helpMenu = helpMenu
 
 			NSApp.mainMenu = mainMenu
+			BrowserShortcutRegistry.shared.attach(menu: mainMenu)
 		}
 
 		@objc private func quitFromMenu(_: Any?) {

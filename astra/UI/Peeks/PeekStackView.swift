@@ -47,6 +47,7 @@ private struct PeekLayerView: View {
 	let viewportSize: CGSize
 	let isTopmost: Bool
 	let isVisible: Bool
+	@State private var activationPoint: CGPoint?
 
 	var body: some View {
 		PeekInputShield(
@@ -54,6 +55,15 @@ private struct PeekLayerView: View {
 			onDismiss: dismissTopPeek
 		)
 		.frame(width: viewportSize.width, height: viewportSize.height)
+		#if os(macOS)
+			.background {
+				if let point = peek.activationScreenPoint {
+					PeekActivationOriginReader(screenPoint: point) { point in
+						if activationPoint == nil { activationPoint = point }
+					}
+				}
+			}
+		#endif
 		.opacity(peek.isPresented && isVisible ? 1 : 0)
 		.accessibilityLabel("Dismiss Peek")
 		.accessibilityIdentifier("dismiss-peek-\(peek.depth)")
@@ -62,14 +72,25 @@ private struct PeekLayerView: View {
 			peek: peek,
 			windowID: browser.windowID,
 			viewportSize: viewportSize,
+			activationPoint: activationPoint,
 			isTopmost: isTopmost,
 			canPromote: peek.id == tab.peeks.last?.id,
+			canSplit: peek.id == tab.peeks.last?.id
+				&& tab.canAppearInEaselSplit
+				&& !browser.isPrivate
+				&& !browser.isMini,
 			onDismiss: {
 				guard tab.activeController === peek.controller else { return }
 				dismissTopPeek()
 			},
 			onPromote: {
 				browser.promotePeek(in: tab, id: peek.id)
+			},
+			onSplitLeft: {
+				browser.promotePeek(in: tab, id: peek.id, splitSide: .left)
+			},
+			onSplitRight: {
+				browser.promotePeek(in: tab, id: peek.id, splitSide: .right)
 			},
 			onDismissCompleted: {
 				tab.dismissPeek(peek.id)
@@ -88,6 +109,47 @@ private struct PeekLayerView: View {
 
 #if os(macOS)
 	import AppKit
+
+	/// Convert through the real viewport so window chrome, sidebar widths, split
+	/// panes and AppKit's inverted Y axis cannot shift the animation's origin.
+	private struct PeekActivationOriginReader: NSViewRepresentable {
+		let screenPoint: CGPoint
+		let onResolve: (CGPoint) -> Void
+
+		func makeNSView(context _: Context) -> OriginView { OriginView() }
+
+		func updateNSView(_ view: OriginView, context _: Context) {
+			view.screenPoint = screenPoint
+			view.onResolve = onResolve
+			view.resolve()
+		}
+
+		final class OriginView: NSView {
+			var screenPoint = CGPoint.zero
+			var onResolve: ((CGPoint) -> Void)?
+			private var reportedPoint: CGPoint?
+			override var isFlipped: Bool { true }
+			override func hitTest(_: NSPoint) -> NSView? { nil }
+
+			override func viewDidMoveToWindow() {
+				super.viewDidMoveToWindow()
+				resolve()
+			}
+
+			override func layout() {
+				super.layout()
+				resolve()
+			}
+
+			func resolve() {
+				guard let window = unsafe window, bounds.width > 0, bounds.height > 0 else { return }
+				let point = convert(window.convertPoint(fromScreen: screenPoint), from: nil)
+				guard point != reportedPoint, let onResolve else { return }
+				reportedPoint = point
+				Task { @MainActor in onResolve(point) }
+			}
+		}
+	}
 
 	private struct PeekInputShield: NSViewRepresentable {
 		let isTopmost: Bool
@@ -126,11 +188,11 @@ private struct PeekLayerView: View {
 					NSEvent.removeMonitor(escapeMonitor)
 					self.escapeMonitor = nil
 				}
-				guard window != nil else { return }
+				guard unsafe window != nil else { return }
 				escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
 					guard let self,
 					      isTopmost,
-					      let window,
+					      let window = unsafe window,
 					      event.window === window,
 					      event.keyCode == 53
 					else { return event }

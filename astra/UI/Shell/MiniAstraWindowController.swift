@@ -8,7 +8,9 @@
 		let browser = Browser(isMini: true)
 		let window: NSPanel
 		var onClose: (() -> Void)?
-		var onPromote: ((BrowserTab) -> Void)?
+		var onPromote: ((BrowserTab, UUID?) -> Void)?
+		var resolveSpaceBrowser: (() -> Browser?)?
+		var revealSpaceBrowser: (() -> Void)?
 		private var isOpening = false
 		private var isPromoting = false
 		private let openingOrigin: NSPoint
@@ -37,20 +39,25 @@
 			window.titleVisibility = .hidden
 			window.titlebarAppearsTransparent = true
 			window.titlebarSeparatorStyle = .none
-			window.contentMinSize = NSSize(width: 480, height: 320)
+			window.contentMinSize = NSSize(width: BrowserChromeMetrics.minimumPageWidth(isSettings: false), height: 320)
 			window.tabbingMode = .disallowed
 			window.collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace]
 			window.isReleasedWhenClosed = false
 			window.hidesOnDeactivate = false
 			window.becomesKeyOnlyIfNeeded = false
-			(window as? MiniAstraWindow)?.onPromote = { [weak self] in self?.promote() }
+			(window as? MiniAstraWindow)?.onPromote = { [weak self] in self?.promote(toSpace: nil) }
 			let zoomButton = window.standardWindowButton(.zoomButton)
 			zoomButton?.target = self
-			zoomButton?.action = #selector(promote)
+			zoomButton?.action = #selector(promoteFromWindow)
 			zoomButton?.toolTip = "Move to Workspace"
 			zoomButton?.setAccessibilityLabel("Move to Workspace")
 			zoomButton?.setAccessibilityIdentifier("mini-astra-window-promote")
-			let root = MiniAstraView(browser: browser)
+			let root = MiniAstraView(
+				browser: browser,
+				resolveSpaceBrowser: { [weak self] in self?.resolveSpaceBrowser?() },
+				onOpenInSpace: { [weak self] spaceID in self?.promote(toSpace: spaceID) },
+				onRevealSpaceBrowser: { [weak self] in self?.revealSpaceBrowser?() }
+			)
 			window.contentView = BrowserContentHostView(hostingView: NSHostingView(rootView: root))
 			if let url {
 				browser.selectedTab?.controller?.load(url)
@@ -79,12 +86,24 @@
 			window.orderFrontRegardless()
 		}
 
-		@objc func promote() {
-			guard let tab = browser.selectedTab, let onPromote else { return }
+		func windowDidResignKey(_: Notification) {
+			// External-link panels only float while they are being used.
+			// Switching to another app should not leave Mini Astra always on top.
+			if window.level == .floating {
+				window.level = .normal
+			}
+		}
+
+		@objc func promoteFromWindow() {
+			promote(toSpace: nil)
+		}
+
+		func promote(toSpace spaceID: UUID?) {
+			guard !isPromoting, let tab = browser.selectedTab, let onPromote else { return }
 			isPromoting = true
 			// Detach the hosted web view before the main window mounts the same controller.
 			window.contentView = nil
-			onPromote(tab)
+			onPromote(tab, spaceID)
 			window.close()
 		}
 
@@ -110,6 +129,7 @@
 		}
 
 		func windowWillClose(_: Notification) {
+			BrowserSettingsWindowController.shared.close(for: browser)
 			if !isPromoting {
 				for tab in browser.tabs {
 					tab.stopForClose()
@@ -121,6 +141,19 @@
 
 	private final class MiniAstraWindow: NSPanel {
 		var onPromote: (() -> Void)?
+
+		/// Mini panels do not become main windows, so the regular File > Close
+		/// menu may target a background browser window instead of this panel.
+		override func performKeyEquivalent(with event: NSEvent) -> Bool {
+			if event.type == .keyDown,
+			   event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+			   event.charactersIgnoringModifiers?.lowercased() == "w"
+			{
+				performClose(nil)
+				return true
+			}
+			return super.performKeyEquivalent(with: event)
+		}
 
 		override var canBecomeKey: Bool {
 			true

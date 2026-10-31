@@ -81,7 +81,7 @@ import WebKit
 		) async -> BrowserSitePermissions.PromptResponse {
 			let alert = alert(title: title, message: message, confirm: "Allow Once", cancel: "Don't Allow")
 			alert.addButton(withTitle: "Always Allow")
-			return switch await present(alert, in: webView.window, isCurrent: isCurrent) {
+			return switch await present(alert, in: unsafe webView.window, isCurrent: isCurrent) {
 				case .alertFirstButtonReturn: BrowserSitePermissions.PromptResponse.allowOnce
 				case .alertSecondButtonReturn: BrowserSitePermissions.PromptResponse.deny
 				case .alertThirdButtonReturn: BrowserSitePermissions.PromptResponse.allowAlways
@@ -151,14 +151,16 @@ import WebKit
 			completionHandler: @escaping () -> Void
 		) {
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				let alert = BrowserWebsiteUI.alert(
 					title: frame.securityOrigin.host,
 					message: message,
 					confirm: "OK",
 					cancel: nil
 				)
-				_ = await BrowserWebsiteUI.present(alert, in: webView.window) { [self] in
+				_ = await BrowserWebsiteUI.present(alert, in: unsafe webView.window) { [self] in
 					ownsPrompt(in: webView, documentID: documentID)
 				}
 				completionHandler()
@@ -172,9 +174,11 @@ import WebKit
 			completionHandler: @escaping (Bool) -> Void
 		) {
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				let alert = BrowserWebsiteUI.alert(title: frame.securityOrigin.host, message: message, confirm: "OK")
-				let response = await BrowserWebsiteUI.present(alert, in: webView.window) { [self] in
+				let response = await BrowserWebsiteUI.present(alert, in: unsafe webView.window) { [self] in
 					ownsPrompt(in: webView, documentID: documentID)
 				}
 				completionHandler(response == .alertFirstButtonReturn && ownsPrompt(in: webView, documentID: documentID))
@@ -189,14 +193,16 @@ import WebKit
 			completionHandler: @escaping (String?) -> Void
 		) {
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				let alert = BrowserWebsiteUI.alert(title: frame.securityOrigin.host, message: prompt, confirm: "OK")
 				let field = NSTextField(string: defaultText ?? "")
 				field.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
 				field.setAccessibilityLabel(prompt)
 				alert.accessoryView = field
 				alert.window.initialFirstResponder = field
-				let response = await BrowserWebsiteUI.present(alert, in: webView.window) { [self] in
+				let response = await BrowserWebsiteUI.present(alert, in: unsafe webView.window) { [self] in
 					ownsPrompt(in: webView, documentID: documentID)
 				}
 				completionHandler(response == .alertFirstButtonReturn && ownsPrompt(in: webView, documentID: documentID) ? field.stringValue : nil)
@@ -210,14 +216,16 @@ import WebKit
 			completionHandler: @escaping (Bool) -> Void
 		) {
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				let alert = BrowserWebsiteUI.alert(
 					title: "Leave \(frame.securityOrigin.host)?",
 					message: "Changes you made may not be saved.",
 					confirm: "Leave",
 					cancel: "Stay"
 				)
-				let response = await BrowserWebsiteUI.present(alert, in: webView.window) { [self] in
+				let response = await BrowserWebsiteUI.present(alert, in: unsafe webView.window) { [self] in
 					ownsPrompt(in: webView, documentID: documentID)
 				}
 				completionHandler(response == .alertFirstButtonReturn)
@@ -230,28 +238,37 @@ import WebKit
 			initiatedByFrame frame: WKFrameInfo,
 			completionHandler: @escaping ([URL]?) -> Void
 		) {
-			guard let window = webView.window,
-			      ownsPrompt(in: webView, documentID: navigationIdentifier)
+			let documentID = navigationIdentifier
+			guard let window = unsafe webView.window,
+			      ownsFileUpload(in: webView, documentID: documentID, window: window)
 			else {
 				completionHandler(nil)
 				return
 			}
-			let documentID = navigationIdentifier
+			#if !ASTRA_WEBSITE_APP_HELPER
+				if let urls = BrowserAgentUploadScopes.shared.consume(controller: self, parameters: parameters) {
+					retainPanelUploadAccess(for: urls)
+					completionHandler(urls.isEmpty ? nil : urls)
+					return
+				}
+			#endif
+			beginLifecycleOperation()
 			let panel = NSOpenPanel()
 			panel.message = "Choose files for \(frame.securityOrigin.host)"
 			panel.allowsMultipleSelection = parameters.allowsMultipleSelection
 			panel.canChooseDirectories = parameters.allowsDirectories
-			panel.canChooseFiles = true
+			panel.canChooseFiles = !parameters.allowsDirectories
 			var completed = false
 			var monitor: Task<Void, Never>?
 			let finish: ([URL]?) -> Void = { urls in
 				guard !completed else { return }
 				completed = true
+				self.endLifecycleOperation()
 				completionHandler(urls)
 			}
 			monitor = Task { @MainActor [weak self, weak window] in
 				while let window, window.attachedSheet != nil {
-					guard let self, ownsPrompt(in: webView, documentID: documentID), window.isVisible else {
+					guard let self, ownsFileUpload(in: webView, documentID: documentID, window: window), window.isVisible else {
 						finish(nil)
 						return
 					}
@@ -262,30 +279,22 @@ import WebKit
 						return
 					}
 				}
-				guard let window else {
-					finish(nil)
-					return
-				}
-				guard let self, ownsPrompt(in: webView, documentID: documentID), window.isVisible else {
+				guard let window, let self, ownsFileUpload(in: webView, documentID: documentID, window: window), window.isVisible else {
 					finish(nil)
 					return
 				}
 				panel.beginSheetModal(for: window) { [weak self, weak window] response in
 					monitor?.cancel()
-					let current = self?.ownsPrompt(in: webView, documentID: documentID) == true && window?.isVisible == true
+					let current = window.map { self?.ownsFileUpload(in: webView, documentID: documentID, window: $0) == true } ?? false
 					let selectedURLs = response == .OK ? panel.urls : []
 					let urls = response == .OK && current ? selectedURLs : nil
 					if current {
 						self?.retainPanelUploadAccess(for: selectedURLs)
-					} else {
-						for url in selectedURLs {
-							url.stopAccessingSecurityScopedResource()
-						}
 					}
 					finish(urls)
 				}
 				while !Task.isCancelled {
-					guard ownsPrompt(in: webView, documentID: documentID),
+					guard ownsFileUpload(in: webView, documentID: documentID, window: window),
 					      window.isVisible
 					else {
 						panel.cancel(nil)
@@ -295,6 +304,7 @@ import WebKit
 					do {
 						try await Task.sleep(for: .milliseconds(100))
 					} catch {
+						finish(nil)
 						return
 					}
 				}
@@ -344,9 +354,12 @@ import WebKit
 			didReceive challenge: URLAuthenticationChallenge,
 			completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
 		) {
+			recordProxyAuthenticationChallenge(challenge, in: webView)
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
-				let response = await BrowserWebsiteUI.authenticate(challenge, in: webView.window) { [self] in
+				defer { endLifecycleOperation() }
+				let response = await BrowserWebsiteUI.authenticate(challenge, in: unsafe webView.window) { [self] in
 					ownsPrompt(in: webView, documentID: documentID)
 				}
 				guard ownsPrompt(in: webView, documentID: documentID) else {
@@ -567,7 +580,9 @@ import WebKit
 			completionHandler: @escaping () -> Void
 		) {
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				_ = await BrowserWebsiteUI.javascriptDialog(
 					title: frame.securityOrigin.host,
 					message: message,
@@ -587,7 +602,9 @@ import WebKit
 			completionHandler: @escaping (Bool) -> Void
 		) {
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				let result = await BrowserWebsiteUI.javascriptDialog(
 					title: frame.securityOrigin.host,
 					message: message,
@@ -608,7 +625,9 @@ import WebKit
 			completionHandler: @escaping (String?) -> Void
 		) {
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				let result = await BrowserWebsiteUI.javascriptDialog(
 					title: frame.securityOrigin.host,
 					message: prompt,
@@ -628,8 +647,11 @@ import WebKit
 			didReceive challenge: URLAuthenticationChallenge,
 			completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
 		) {
+			recordProxyAuthenticationChallenge(challenge, in: webView)
 			let documentID = navigationIdentifier
+			beginLifecycleOperation()
 			Task { @MainActor in
+				defer { endLifecycleOperation() }
 				let response = await BrowserWebsiteUI.authenticate(challenge, in: webView) { [weak self, weak webView] in
 					guard let self, let webView else { return false }
 					return ownsPrompt(in: webView, documentID: documentID)
@@ -732,6 +754,8 @@ extension BrowserController {
 		topOrigin: String,
 		in webView: WKWebView
 	) async -> WKPermissionDecision {
+		beginLifecycleOperation()
+		defer { endLifecycleOperation() }
 		let documentID = navigationIdentifier
 		guard ownsPrompt(in: webView, documentID: documentID) else { return .deny }
 		let permissions = session.permissions
@@ -771,8 +795,7 @@ extension BrowserController {
 		guard ownsPrompt(in: webView, documentID: documentID),
 		      permissions.revision == requestRevision,
 		      let currentTopURL = committedURL ?? webView.url,
-		      BrowserSitePermissions.origin(for: currentTopURL) == topOrigin else { return .deny }
-		guard let permissionDecision = BrowserSitePermissions.Decision(response: choice) else { return .deny }
+		      BrowserSitePermissions.origin(for: currentTopURL) == topOrigin, let permissionDecision = BrowserSitePermissions.Decision(response: choice) else { return .deny }
 		if permissionDecision == .deny {
 			for capability in pendingCapabilities {
 				permissions.set(.deny, origin: originID, topOrigin: topOrigin, capability: capability)

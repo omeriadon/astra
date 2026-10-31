@@ -1,7 +1,7 @@
 import Foundation
 
 struct BrowserDiagnosticReport: Codable, Equatable {
-	static let schemaVersion = 1
+	static let schemaVersion = 2
 	static let maximumEncodedBytes = 32768
 	static let maximumEvents = 64
 
@@ -19,6 +19,22 @@ struct BrowserDiagnosticReport: Codable, Equatable {
 		let ageSeconds: Int
 	}
 
+	struct Memory: Codable, Equatable {
+		let measuredControllers: Int
+		let controllerCount: Int
+		let uniqueProcessCount: Int
+		let uniqueProcessBytes: UInt64?
+		let webContentBytes: UInt64?
+		let graphicsBytes: UInt64?
+		let networkBytes: UInt64?
+		let modelBytes: UInt64?
+		let webContentMappingCount: Int
+		let webContentUnavailableCount: Int
+		let sharedWebContentProcessCount: Int
+		let webContentAttribution: String
+		let unavailableControllerCount: Int
+	}
+
 	let schema: Int
 	let applicationVersion: String
 	let applicationBuild: String
@@ -30,6 +46,7 @@ struct BrowserDiagnosticReport: Codable, Equatable {
 	let hibernatedTabCount: Int?
 	let loadingTabCount: Int?
 	let navigationFailures: [String: Int]?
+	var memory: Memory? = nil
 	let events: [Event]
 
 	func encoded() -> Data? {
@@ -62,6 +79,7 @@ final class BrowserDiagnosticEventStore {
 	private var events: [StoredEvent] = []
 
 	func record(_ category: BrowserDiagnosticReport.Event.Category, code rawCode: String, isPrivate: Bool) {
+		BrowserLog.debug(.diagnostics, "diagnostic-event.record", metadata: ["category": category.rawValue, "code": rawCode, "private": String(isPrivate)])
 		guard !isPrivate, let code = BrowserDiagnosticReport.sanitizedCode(rawCode) else { return }
 		events.append(StoredEvent(category: category, code: code, date: .now))
 		if events.count > BrowserDiagnosticReport.maximumEvents {

@@ -10,6 +10,7 @@ import SwiftUI
 import WebKit
 #if os(macOS)
 	import AppKit
+	import Darwin
 #elseif os(iOS)
 	import UIKit
 #endif
@@ -20,18 +21,97 @@ import WebKit
 		let browser: Browser
 		let window: NSWindow
 	}
+
 #endif
 
 @MainActor
 @Observable
 final class BrowserController: NSObject, Identifiable {
 	#if os(macOS)
+		var hasDockedWebInspector = false
+	#endif
+	#if os(macOS)
+		static func logReclamation(for before: BrowserTabProcessMemorySnapshot) async -> BrowserMemoryReclamationSnapshot {
+			try? await Task.sleep(for: .seconds(2))
+			let sampled = await BrowserTabProcessMemorySnapshot.resample(before.processes)
+			func after(_ process: BrowserTabProcessMemorySnapshot.Process?) -> BrowserTabProcessMemorySnapshot.Process? {
+				guard let process else { return nil }
+				return sampled[process.identity]
+			}
+			let afterSnapshot: BrowserTabProcessMemorySnapshot? = {
+				let webContent = after(before.webContent)
+				let graphics = after(before.graphics)
+				let network = after(before.network)
+				let model = after(before.model)
+				guard webContent != nil || graphics != nil || network != nil || model != nil else { return nil }
+				return BrowserTabProcessMemorySnapshot(webContent: webContent, graphics: graphics, network: network, model: model)
+			}()
+			let result = BrowserMemoryReclamationSnapshot(before: before, after: afterSnapshot)
+			BrowserLog.info(.diagnostics, "webkit.memory.reclamation", metadata: [
+				"before_bytes": result.beforeObservedBytes.map(String.init) ?? "unavailable",
+				"after_bytes": result.afterObservedBytes.map(String.init) ?? "unavailable",
+				"identity_changed": String(result.processIdentityChanged),
+				"unavailable_processes": String(result.unavailableProcessCount),
+			])
+			return result
+		}
+
+		static func tabProcessMemorySnapshots(for controllers: [BrowserController]) async -> [UUID: BrowserTabProcessMemorySnapshot] {
+			struct Request {
+				let controller: BrowserController
+				let webView: WKWebView
+				let generation: Int
+				let webContentPID: pid_t?
+				let graphicsPID: pid_t?
+				let networkPID: pid_t?
+				let modelPID: pid_t?
+			}
+
+			let requests = controllers.compactMap { controller -> Request? in
+				guard let webView = controller.createdWebView, controller.owns(webView) else { return nil }
+				return Request(
+					controller: controller,
+					webView: webView,
+					generation: controller.navigationGeneration,
+					webContentPID: privateProcessIdentifier("_webProcessIdentifier", on: webView),
+					graphicsPID: privateProcessIdentifier("_gpuProcessIdentifier", on: webView),
+					networkPID: privateProcessIdentifier("_networkProcessIdentifier", on: webView.configuration.websiteDataStore),
+					modelPID: privateProcessIdentifier("_modelProcessIdentifier", on: webView)
+				)
+			}
+			let processIDs = Set(requests.flatMap { [$0.webContentPID, $0.graphicsPID, $0.networkPID, $0.modelPID].compactMap(\.self) })
+			guard !processIDs.isEmpty else { return [:] }
+			let sampled = await Task.detached(priority: .utility) {
+				Self.sampleProcessMemory(for: Array(processIDs))
+			}.value
+			var result: [UUID: BrowserTabProcessMemorySnapshot] = [:]
+			for request in requests {
+				guard request.controller.owns(request.webView), request.generation == request.controller.navigationGeneration,
+				      privateProcessIdentifier("_webProcessIdentifier", on: request.webView) == request.webContentPID,
+				      privateProcessIdentifier("_gpuProcessIdentifier", on: request.webView) == request.graphicsPID,
+				      privateProcessIdentifier("_networkProcessIdentifier", on: request.webView.configuration.websiteDataStore) == request.networkPID,
+				      privateProcessIdentifier("_modelProcessIdentifier", on: request.webView) == request.modelPID
+				else { continue }
+				let snapshot = BrowserTabProcessMemorySnapshot(
+					webContent: request.webContentPID.flatMap { sampled[$0] },
+					graphics: request.graphicsPID.flatMap { sampled[$0] },
+					network: request.networkPID.flatMap { sampled[$0] },
+					model: request.modelPID.flatMap { sampled[$0] }
+				)
+				guard snapshot.knownProcessBytes != nil else { continue }
+				result[request.controller.id] = snapshot
+			}
+			return result
+		}
+
 		static var addressPromptOwner: ((BrowserController, WKWebView, Int) -> BrowserAddressPromptOwner?)?
 	#endif
 	let id = UUID()
 	let session: BrowserWebSession
 	private let suppliedConfiguration: WKWebViewConfiguration?
 	private var pendingInteractionState: Data?
+	@ObservationIgnored
+	private var pendingEncryptedInteractionState: (data: Data, url: URL)?
 	@ObservationIgnored
 	private var securityScopedFile: URL?
 	@ObservationIgnored
@@ -48,11 +128,20 @@ final class BrowserController: NSObject, Identifiable {
 	#if os(macOS)
 		@ObservationIgnored
 		private var webInspectorObserver: NSObjectProtocol?
+		@ObservationIgnored
+		private var observedWebInspectorEnabled = false
 	#endif
 	@ObservationIgnored
 	var displayWindowID: UUID?
+	/// The Browser/window whose callbacks are currently installed on this
+	/// controller. Separate from displayWindowID because display ownership is
+	/// updated before callback configuration during a tab switch.
 	@ObservationIgnored
-	private var isInvalidated = false
+	var browserConfigurationWindowID: UUID?
+	@ObservationIgnored
+	private(set) var isInvalidated = false
+	@ObservationIgnored
+	private var navigationLogStartedAt: TimeInterval?
 	private(set) var isPlayingMedia = false
 	private var hasActiveVideoPlayback = false
 	private(set) var hasPausedMedia = false
@@ -70,6 +159,36 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var committedSecurityNavigationID: Int?
 	private(set) var hoveredLinkURL: URL?
 	private(set) var hoveredLinkUsesTrailingCorner = false
+	private(set) var hoveredLinkRect = CGRect.zero
+	private(set) var hoveredLinkID = ""
+	private(set) var hoveredLinkShiftPressed = false
+	private(set) var aiPreviewDismissal = 0
+	@ObservationIgnored var aiLinkPreviewCache: [URL: (summary: BrowserLinkSummaryFeature.Summary, page: BrowserAIPageText)] = [:]
+	@ObservationIgnored private var aiLinkPreviewCacheOrder: [URL] = []
+
+	/// Page text can be large. Keep a small FIFO cache rather than allowing
+	/// previews of many links on one site to retain unbounded page snapshots.
+	func cacheAILinkPreview(summary: BrowserLinkSummaryFeature.Summary, page: BrowserAIPageText, for url: URL) {
+		if aiLinkPreviewCache[url] == nil {
+			if aiLinkPreviewCacheOrder.count >= 12 {
+				let oldest = aiLinkPreviewCacheOrder.removeFirst()
+				aiLinkPreviewCache.removeValue(forKey: oldest)
+			}
+			aiLinkPreviewCacheOrder.append(url)
+		}
+		aiLinkPreviewCache[url] = (summary, page)
+	}
+
+	private func clearAILinkPreviewCache() {
+		aiLinkPreviewCache.removeAll()
+		aiLinkPreviewCacheOrder.removeAll()
+	}
+
+	private(set) var isReaderAvailable = false
+	private(set) var readerHTML: String?
+	private(set) var isPreparingReader = false
+	private var readerGeneration = 0
+
 	var showsFind = false
 	var findText = "" {
 		didSet {
@@ -93,16 +212,32 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var mediaCaptureStateDocumentID: Int?
 	var popupRequested: ((WKWebViewConfiguration, UnitPoint, Bool?) -> WKWebView?)?
 	var newTabRequested: ((URLRequest, Bool) -> Void)?
+	@ObservationIgnored
+	var easelQuoteDestinations: (() -> [BrowserEaselQuoteDestination])?
+	@ObservationIgnored
+	var addQuoteToEasel: ((UUID, BrowserEaselQuote) -> Void)?
+	@ObservationIgnored
+	var easelQuoteHighlight: BrowserEaselQuote?
 	var closeRequested: (() -> Void)?
 	@ObservationIgnored
 	var promptOwnership: ((WKWebView) -> Bool)?
-	@ObservationIgnored
 	private var isOpeningExternalApplication = false
+	private var pendingLifecycleOperations = 0
+	private var popupDependencyRevision = 0
+	private var attachmentActivityRevision = 0
+	private let livePopupControllers = NSHashTable<BrowserController>.weakObjects()
 	@ObservationIgnored
 	// ponytail: controller-wide two-second throttle; per-origin limits if abuse becomes measurable.
 	private var lastExternalApplicationRequestTime: TimeInterval?
 	@ObservationIgnored
 	var navigationIntercept: ((URL) -> Bool)?
+	/// Saved website snapshots retain their local document and cannot open destinations.
+	@ObservationIgnored
+	var snapshotNavigationOnly = false
+	@ObservationIgnored
+	var snapshotSourceURL: URL?
+	@ObservationIgnored
+	private var snapshotHTML: String?
 	var pictureInPictureRestoreRequested: (() -> Void)?
 
 	var isCapturing: Bool {
@@ -135,9 +270,50 @@ final class BrowserController: NSObject, Identifiable {
 			isPlayingMedia: isPlayingMedia || hasActiveVideoPlayback,
 			hasPausedMedia: hasPausedMedia
 		)
-			&& !isCapturing && !hasUnsavedChanges && !isLoading
+			// Local snapshot HTML belongs to this controller and cannot be restored from its URL.
+			&& !snapshotNavigationOnly && !isCapturing && !hasUnsavedChanges && !isLoading
 			&& (createdWebView == nil || (createdWebView?.cameraCaptureState == WKMediaCaptureState.none
 					&& createdWebView?.microphoneCaptureState == WKMediaCaptureState.none))
+	}
+
+	/// Automatic hibernation must not detach a page that still has an operation
+	/// whose completion handler or prompt can arrive after the view is detached.
+	var canAutomaticallyHibernate: Bool {
+		guard !isAuthenticationSessionBrowser,
+		      suppliedConfiguration == nil,
+		      !isOpeningExternalApplication,
+		      !isDownloadHandoff,
+		      pendingLifecycleOperations == 0,
+		      !hasLivePopupDependency,
+		      !isPreparingReader,
+		      pendingRequest == nil,
+		      !awaitsNavigationCommit,
+		      canHibernate, createdWebView == nil || displayCaptureState == false else { return false }
+		#if os(macOS)
+			guard unsafe createdWebView?.window?.attachedSheet == nil else { return false }
+		#endif
+		return true
+	}
+
+	private var hasLivePopupDependency: Bool {
+		_ = popupDependencyRevision
+		return livePopupControllers.allObjects.contains { $0.isWebViewReady && $0.webViewIfLoaded != nil }
+	}
+
+	func beginLifecycleOperation() {
+		pendingLifecycleOperations += 1
+	}
+
+	func endLifecycleOperation() {
+		pendingLifecycleOperations = max(0, pendingLifecycleOperations - 1)
+	}
+
+	private var displayCaptureState: Bool? {
+		guard let webView = createdWebView,
+		      webView.responds(to: NSSelectorFromString("_displayCaptureState"))
+		else { return createdWebView == nil ? false : nil }
+		guard let value = webView.value(forKey: "_displayCaptureState") as? NSNumber else { return nil }
+		return value.intValue != 0
 	}
 
 	var requiresMediaTeardownConfirmation: Bool {
@@ -149,10 +325,26 @@ final class BrowserController: NSObject, Identifiable {
 		)
 	}
 
+	/// An inactive page stays attached while WebKit reports activity that a
+	/// detached host could interrupt. Ordinary retained pages can be detached
+	/// by BrowserWebView without rebuilding their WebView.
+	var shouldKeepWebViewAttached: Bool {
+		// Re-evaluate the native display-capture probe when activity is refreshed.
+		_ = attachmentActivityRevision
+		return requiresMediaTeardownConfirmation
+			|| isCapturing
+			|| isLoading
+			|| hasUnsavedChanges
+			|| pendingLifecycleOperations > 0
+			|| hasLivePopupDependency
+			|| isOpeningExternalApplication
+			|| displayCaptureState == true
+	}
+
 	private static var cachedSafariUserAgentSuffix: String?
 	@ObservationIgnored
 	private var isApplyingSiteZoom = false
-	private var appliedContentRuleList: WKContentRuleList?
+	private var appliedContentRuleLists: [WKContentRuleList] = []
 
 	private static func compatibilityUserAgentOverride(for url: URL?) -> String? {
 		guard let url,
@@ -198,6 +390,7 @@ final class BrowserController: NSObject, Identifiable {
 	/// (Since macOS 12 all configurations share one process pool, so merely
 	/// creating a throwaway WKWebView is enough to warm it.)
 	static func prewarmSharedProcess() {
+		BrowserLog.debug(.webKit, "webkit.prewarm")
 		_ = safariUserAgentSuffix()
 		Task { @MainActor in
 			// Thrown away; existence warms the shared WebKit processes.
@@ -207,6 +400,7 @@ final class BrowserController: NSObject, Identifiable {
 
 	private static let scrollPositionMessageName = "scrollPositionChanged"
 	private static let topEdgeMessageName = "topEdgeChanged"
+	private static let pageTintMessageName = "pageTintChanged"
 	private static let zapFinishedMessageName = "zapFinished"
 	private static let zapScript = """
 	(() => {
@@ -265,49 +459,376 @@ final class BrowserController: NSObject, Identifiable {
 	private static let topEdgeScript = """
 	(() => {
 		let scheduled = false;
+		let mutationScheduled = false;
+		let lastCheck = 0;
 		let previous;
+		const samples = 16;
+		const threshold = Math.ceil(samples * 0.7);
+		const minimumInterval = 100;
+		const selector =
+			'header, nav, [role="navigation"], [class*="header" i], [id*="header" i], ' +
+			'[class*="nav" i], [id*="nav" i], [class*="toolbar" i], [id*="toolbar" i]';
+
 		const check = () => {
 			scheduled = false;
-			if (window.scrollY < 0) return;
+			lastCheck = performance.now();
+			if (document.hidden || window.scrollY < 0 || innerWidth <= 0) return;
+
+			// This probe does multiple hit-tests and layout/style reads. Top-edge
+			// occupancy is browser chrome state, not animation state, so cap it
+			// around 10 Hz instead of doing the work on every scroll frame.
 			const counts = new Map();
-			const samples = 20;
 			for (let index = 0; index < samples; index++) {
 				const x = innerWidth * (index + 0.5) / samples;
+				const seenAtPoint = new Set();
 				for (const element of document.elementsFromPoint(x, 2)) {
-					if (element === document.body || element === document.documentElement) continue;
-					const rect = element.getBoundingClientRect();
-					const style = getComputedStyle(element);
-					const isPageChrome = element.matches(
-						'header, nav, [role="navigation"], [class*="header" i], [id*="header" i], ' +
-						'[class*="nav" i], [id*="nav" i], [class*="toolbar" i], [id*="toolbar" i]'
-					);
-					if (!isPageChrome && style.position !== 'fixed' && style.position !== 'sticky') continue;
-					if (rect.top > 3 || rect.bottom < 20 || rect.height > 160 ||
-						rect.width < innerWidth * 0.5 || style.visibility === 'hidden' ||
-						Number(style.opacity) < 0.05) continue;
+					if (element === document.body || element === document.documentElement ||
+						seenAtPoint.has(element)) continue;
+					seenAtPoint.add(element);
 					counts.set(element, (counts.get(element) || 0) + 1);
 				}
 			}
-			const occupied = [...counts.values()].some(count => count >= samples * 0.7);
+
+			let occupied = false;
+			for (const [element, count] of counts) {
+				if (count < threshold) continue;
+				const rect = element.getBoundingClientRect();
+				const style = getComputedStyle(element);
+				const isPageChrome = element.matches(selector);
+				if (!isPageChrome && style.position !== 'fixed' && style.position !== 'sticky') continue;
+				if (rect.top > 3 || rect.bottom < 20 || rect.height > 160 ||
+					rect.width < innerWidth * 0.5 || style.visibility === 'hidden' ||
+					Number(style.opacity) < 0.05) continue;
+				occupied = true;
+				break;
+			}
+
 			if (occupied !== previous) {
 				previous = occupied;
 				window.webkit.messageHandlers.topEdgeChanged.postMessage(occupied);
 			}
 		};
-		const schedule = () => {
-			if (scheduled) return;
+
+		const schedule = (immediate = false) => {
+			if (document.hidden || scheduled) return;
 			scheduled = true;
-			requestAnimationFrame(check);
+			const delay = immediate ? 0 : Math.max(0, minimumInterval - (performance.now() - lastCheck));
+			setTimeout(() => requestAnimationFrame(check), delay);
 		};
-		addEventListener('scroll', schedule, { passive: true });
-		addEventListener('resize', schedule);
-		new MutationObserver(schedule).observe(document.documentElement, {
-			subtree: true, childList: true, attributes: true
-		});
-		schedule();
+		const scheduleMutation = () => {
+			if (mutationScheduled) return;
+			mutationScheduled = true;
+			setTimeout(() => {
+				mutationScheduled = false;
+				schedule();
+			}, 250);
+		};
+
+		addEventListener('scroll', () => schedule(), { passive: true });
+		addEventListener('resize', () => schedule(true));
+		const observer = new MutationObserver(scheduleMutation);
+		const updateVisibility = () => {
+			observer.disconnect();
+			if (document.hidden) return;
+			observer.observe(document.documentElement, {
+				subtree: true,
+				childList: true,
+				attributes: true,
+				attributeFilter: ['class', 'style', 'hidden', 'id', 'role']
+			});
+			schedule(true);
+		};
+		document.addEventListener('visibilitychange', updateVisibility);
+		updateVisibility();
 	})();
 	"""
 
+	/// Live, bounded page-surface sampling inspired by Safari 26's edge tinting.
+	/// Runs in WebKit, not on the app's main actor. No network calls or image decoding.
+	private static let pageTintScript = #"""
+	(() => {
+		if (globalThis.__astraPageTintInstalled) return;
+		globalThis.__astraPageTintInstalled = true;
+		const canvas = document.createElement('canvas');
+		canvas.width = canvas.height = 1;
+		const context = canvas.getContext('2d', { willReadFrequently: true });
+		if (!context) return;
+		const cache = new Map(), gradients = new Map();
+		const header = 'header, nav, [role="banner"], [role="navigation"], ' +
+			'[class*="header" i], [id*="header" i], [class*="navbar" i], [id*="navbar" i]';
+		let queued = false, loaded = false, sampled = false;
+		const pixels = css => {
+			if (cache.has(css)) return cache.get(css);
+			let rgba = null;
+			if (css && css !== 'transparent') {
+				try {
+					if (globalThis.CSS?.supports && !CSS.supports('color', css)) return null;
+					context.clearRect(0, 0, 1, 1);
+					context.fillStyle = '#010203';
+					context.fillStyle = css;
+					// Canvas silently ignores unrecognised CSS colours.
+					if (context.fillStyle === '#010203' && !/^(#010203|rgb\(1,\s*2,\s*3\))$/i.test(css.trim()))
+						return null;
+					context.fillRect(0, 0, 1, 1);
+					rgba = Array.from(context.getImageData(0, 0, 1, 1).data);
+				} catch (_) {}
+			}
+			// Animations can create arbitrarily many CSS values; bound both caches.
+			if (cache.size >= 128) cache.clear();
+			cache.set(css, rgba);
+			return rgba;
+		};
+		// Inspired by Chromalift's gradient parsing, but only examines a hit-tested
+		// surface. No document-wide palette crawl or screenshot readback.
+		const split = value => {
+			let depth = 0, start = 0;
+			const parts = [];
+			for (let i = 0; i < value.length; i++) {
+				if (value[i] === '(') depth++;
+				else if (value[i] === ')') depth--;
+				else if (value[i] === ',' && depth === 0) {
+					parts.push(value.slice(start, i).trim());
+					start = i + 1;
+				}
+			}
+			parts.push(value.slice(start).trim());
+			return parts;
+		};
+		const gradient = css => {
+			if (gradients.has(css)) return gradients.get(css);
+			let result = null;
+			const match = /^(?:repeating-)?linear-gradient\((.*)\)$/is.exec(css);
+			if (match && !css.includes('url(')) {
+				let stops = split(match[1]), angle = 180;
+				if (/^to (top|bottom|left|right)/i.test(stops[0])) {
+					const dir = stops.shift().toLowerCase();
+					if (dir.includes('top') && dir.includes('right')) angle = 45;
+					else if (dir.includes('bottom') && dir.includes('right')) angle = 135;
+					else if (dir.includes('bottom') && dir.includes('left')) angle = 225;
+					else if (dir.includes('top') && dir.includes('left')) angle = 315;
+					else if (dir.includes('top')) angle = 0;
+					else if (dir.includes('right')) angle = 90;
+					else if (dir.includes('left')) angle = 270;
+				} else if (/^-?[\d.]+deg$/i.test(stops[0])) {
+					angle = Number(stops.shift().slice(0, -3));
+				} else if (/^-?[\d.]+turn$/i.test(stops[0])) {
+					angle = Number(stops.shift().slice(0, -4)) * 360;
+				}
+				const parsed = stops.map(stop => {
+					const color = /^(#[\da-f]{3,8}|(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^)]*\)|[a-z-]+)/i.exec(stop);
+					if (!color) return null;
+					const rgba = pixels(color[1]);
+					if (!rgba || rgba[3] === 0) return null;
+					const position = /^\s*(\d+(?:\.\d+)?)%/.exec(stop.slice(color[0].length));
+					return { rgba, position: position ? Number(position[1]) / 100 : null };
+				});
+				if (parsed.length >= 2 && parsed.length <= 8 && parsed.every(Boolean)) {
+					parsed[0].position ??= 0;
+					parsed[parsed.length - 1].position ??= 1;
+					// Distribute implicit CSS stop positions between fixed positions.
+					for (let i = 1; i < parsed.length - 1; i++) {
+						if (parsed[i].position !== null) continue;
+						let next = i + 1;
+						while (next < parsed.length && parsed[next].position === null) next++;
+						for (let n = i; n < next; n++)
+							parsed[n].position = parsed[i - 1].position +
+								(parsed[next].position - parsed[i - 1].position) * (n - i + 1) / (next - i + 1);
+						i = next - 1;
+					}
+					result = { stops: parsed, radians: angle * Math.PI / 180 };
+				}
+			}
+			if (gradients.size >= 32) gradients.clear();
+			gradients.set(css, result);
+			return result;
+		};
+		const gradientPixel = (css, rect, x, y) => {
+			const parsed = gradient(css);
+			if (!parsed || rect.width <= 0 || rect.height <= 0) return null;
+			const dx = (x - rect.left) / rect.width - .5;
+			const dy = (y - rect.top) / rect.height - .5;
+			const t = Math.max(0, Math.min(1, .5 +
+				dx * Math.sin(parsed.radians) - dy * Math.cos(parsed.radians)));
+			let left = parsed.stops[0], right = parsed.stops[parsed.stops.length - 1];
+			for (let i = 1; i < parsed.stops.length; i++) {
+				if (t <= parsed.stops[i].position) {
+					left = parsed.stops[i - 1]; right = parsed.stops[i]; break;
+				}
+			}
+			const ratio = Math.max(0, Math.min(1,
+				(t - left.position) / (right.position - left.position || 1)));
+			return left.rgba.map((channel, i) => Math.round(channel +
+				(right.rgba[i] - channel) * ratio));
+		};
+		const sample = (x, y, layoutCache) => {
+			let element = document.elementFromPoint(x, y);
+			let edge = false, gradientAnchor = null, covered = 0;
+			const mixed = [0, 0, 0];
+			for (let depth = 0; element && depth < 14; depth++, element = element.parentElement) {
+				let layout = layoutCache.get(element);
+				if (!layout) {
+					// Defer layout reads until a genuinely painted ancestor is found.
+					layout = { style: getComputedStyle(element), rect: null };
+					layoutCache.set(element, layout);
+				}
+				const { style } = layout;
+				if (style.visibility === 'hidden') return null;
+				const opacity = Number(style.opacity);
+				if (opacity < .01) continue;
+				const image = style.backgroundImage;
+				let rgba = pixels(style.backgroundColor);
+				if (image && image !== 'none') {
+					// A background image cannot be faithfully inferred from CSS.
+					// A simple CSS linear gradient can be sampled analytically.
+					layout.rect ??= element.getBoundingClientRect();
+					rgba = gradientPixel(image, layout.rect, x, y);
+					if (!rgba) return null;
+					gradientAnchor ??= element;
+				}
+				if (!rgba || rgba[3] === 0) continue;
+				layout.rect ??= element.getBoundingClientRect();
+				const rect = layout.rect;
+				if (element !== document.body && element !== document.documentElement &&
+					rect.width >= innerWidth * .7 && rect.height >= 10 &&
+					rect.height <= 260 && rect.top <= 8 && rect.bottom >= y &&
+					(element.matches(header) || style.position === 'fixed' ||
+					 style.position === 'sticky' || rect.width >= innerWidth * .9)) edge = true;
+				// CSS opacity applies to the entire layer, not just its fill.
+				// Exact compositing of nested opacity groups requires rendering;
+				// this bounded estimate avoids treating a faded bar as opaque.
+				const contribution = (rgba[3] / 255) * (Number.isFinite(opacity) ? opacity : 1) * (1 - covered);
+				for (let channel = 0; channel < 3; channel++)
+					mixed[channel] += rgba[channel] * contribution;
+				covered += contribution;
+				if (covered >= .98)
+					return { color: mixed.map(v => Math.round(v / covered)), edge, gradientAnchor };
+			}
+			return null;
+		};
+		// Chromalift-style perceptual clustering: DeltaE groups adjacent shades
+		// across RGB bucket boundaries without enumerating the page's palette.
+		const lab = rgb => {
+			const [r, g, b] = rgb.map(channel => {
+				const c = channel / 255;
+				return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4;
+			});
+			const x = (.4124564 * r + .3575761 * g + .1804375 * b) / .95047;
+			const y = .2126729 * r + .7151522 * g + .0721750 * b;
+			const z = (.0193339 * r + .1191920 * g + .9503041 * b) / 1.08883;
+			const f = v => v > .008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116;
+			const fx = f(x), fy = f(y), fz = f(z);
+			return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+		};
+		const add = (groups, item) => {
+			const colourLab = item.gradientAnchor ? null : lab(item.color);
+			let group = groups.find(candidate =>
+				item.gradientAnchor
+					? candidate.anchor === item.gradientAnchor
+					: !candidate.anchor && candidate.lab.every((value, index) =>
+						Math.abs(value - colourLab[index]) <= 12) &&
+					  Math.hypot(...candidate.lab.map((value, index) =>
+						  value - colourLab[index])) <= 12
+			);
+			if (!group) {
+				group = { count: 0, sum: [0, 0, 0], anchor: item.gradientAnchor, lab: colourLab };
+				groups.push(group);
+			}
+			group.count++;
+			for (let i = 0; i < 3; i++) group.sum[i] += item.color[i];
+			if (colourLab && group.count > 1)
+				for (let i = 0; i < 3; i++)
+					group.lab[i] += (colourLab[i] - group.lab[i]) / group.count;
+		};
+		const winner = groups => groups.reduce((best, candidate) =>
+			!best || candidate.count > best.count ? candidate : best, null);
+		// OpenBrand's secondary branding metadata and CSS brand tokens can help
+		// when a page provides no reliable visible surface or WebKit theme.
+		// Never let them override painted page chrome or native theme-color.
+		const brand = () => {
+			const meta = document.querySelector?.('meta[name="msapplication-TileColor" i]');
+			let rgba = pixels(meta?.content);
+			if (rgba && rgba[3] === 255) return rgba.slice(0, 3);
+			for (const root of [document.documentElement, document.body]) {
+				if (!root) continue;
+				const style = getComputedStyle(root);
+				if (!style) continue;
+				for (const key of [
+					'--theme-color', '--brand-color', '--color-brand', '--primary-color',
+					'--color-primary', '--accent-color', '--color-accent'
+				]) {
+					rgba = pixels(style.getPropertyValue?.(key)?.trim());
+					if (rgba && rgba[3] === 255) return rgba.slice(0, 3);
+				}
+			}
+			return null;
+		};
+		const run = () => {
+			// One colour extraction per document. Full navigations install
+			// a new user script; scroll, SPA mutations and CSS changes do not.
+			if (sampled || document.hidden) return;
+			sampled = true;
+			if (innerWidth < 80 || innerHeight < 20) return;
+			const edges = [], surfaces = [], layoutCache = new Map();
+			const rows = [3, 16, 34, 56].filter(y => y < innerHeight);
+			const scan = columns => {
+				for (const y of rows) for (const i of columns) {
+					const item = sample(innerWidth * (i + .5) / 10, y, layoutCache);
+					if (!item) continue;
+					add(item.edge ? edges : surfaces, item);
+				}
+			};
+			// Sample 16 uniformly distributed points first. Only take the
+			// remaining 24 of the original grid when the result is uncertain.
+			scan([1, 4, 5, 8]);
+			let total = rows.length * 4;
+			let chrome = winner(edges), body = winner(surfaces);
+			if (Math.max(chrome?.count ?? 0, body?.count ?? 0) < total * .75) {
+				scan([0, 2, 3, 6, 7, 9]);
+				total = rows.length * 10;
+				chrome = winner(edges);
+				body = winner(surfaces);
+			}
+			const selected = chrome && chrome.count >= total * .45
+				? { count: chrome, source: 'chrome' }
+				: body && body.count >= total * .5
+				? { count: body, source: 'surface' } : null;
+			const fallback = selected ? null : brand();
+			const rgb = selected
+				? selected.count.sum.map(value => Math.round(value / selected.count.count))
+				: fallback;
+			const source = selected?.source || (fallback ? 'brand' : 'none');
+			window.webkit.messageHandlers.pageTintChanged.postMessage({ url: location.href, source, rgb });
+		};
+		const schedule = () => {
+			if (!loaded || queued || sampled || document.hidden) return;
+			queued = true;
+			// The single extraction yields to page paint and user input.
+			const execute = () => {
+				queued = false;
+				run();
+			};
+			if (typeof requestIdleCallback === 'function')
+				requestIdleCallback(execute, { timeout: 1200 });
+			else
+				setTimeout(execute, 0);
+		};
+		const onLoad = () => {
+			loaded = true;
+			schedule();
+		};
+		// At documentEnd, wait for stylesheet/image load completion.
+		// Documents that already loaded (e.g. restored) execute once.
+		if (document.readyState === 'complete')
+			onLoad();
+		else
+			addEventListener('load', onLoad, { once: true });
+		// A background tab loaded while hidden is sampled only when
+		// first shown; it is never sampled again after that.
+		document.addEventListener('visibilitychange', () => {
+			if (!document.hidden) schedule();
+		});
+	})();
+	"""#
 	@ObservationIgnored
 	private var createdWebView: WKWebView?
 
@@ -382,9 +903,18 @@ final class BrowserController: NSObject, Identifiable {
 		createdWebView?.canGoForward ?? false
 	}
 
-	var url: URL?
+	var url: URL? {
+		didSet {
+			if oldValue.flatMap(BrowserSitePermissions.origin(for:)) != url.flatMap(BrowserSitePermissions.origin(for:)) {
+				clearAILinkPreviewCache()
+			}
+		}
+	}
+
 	private(set) var isLoading = false
 	private(set) var estimatedProgress = 0.0
+	@ObservationIgnored
+	private var encounteredProxyAuthentication = false
 	private(set) var navigationFailure: BrowserNavigationFailure? {
 		didSet {
 			guard let failure = navigationFailure, !isAuthenticationSessionBrowser else { return }
@@ -400,6 +930,13 @@ final class BrowserController: NSObject, Identifiable {
 	private(set) var hasTopEdgeContent = false
 	private(set) var themeColor: Color?
 	private(set) var themeColorIsLight: Bool?
+	@ObservationIgnored private var sampledChromeColor: PlatformColor?
+	@ObservationIgnored private var sampledSurfaceColor: PlatformColor?
+	@ObservationIgnored private var sampledBrandColor: PlatformColor?
+	@ObservationIgnored private var sampledFaviconColor: PlatformColor?
+	@ObservationIgnored private var pageTintHandledGeneration: Int?
+	@ObservationIgnored private var faviconTintTask: Task<Void, Never>?
+	@ObservationIgnored private var faviconTintAttemptedGeneration: Int?
 	private var pendingDownloadSource: UnitPoint?
 	private var pendingDownloadSiteURL: URL?
 	@ObservationIgnored
@@ -408,6 +945,11 @@ final class BrowserController: NSObject, Identifiable {
 	private var pageURLBeforeDownload: URL?
 	#if os(macOS)
 		private(set) var previewSnapshot: NSImage?
+		@ObservationIgnored private var previewSnapshotGeneration: Int?
+		var hasCurrentPreviewSnapshot: Bool {
+			previewSnapshot != nil && previewSnapshotGeneration == navigationGeneration
+		}
+
 		private(set) var windowMirrorSnapshot: NSImage?
 	#endif
 
@@ -465,12 +1007,14 @@ final class BrowserController: NSObject, Identifiable {
 		!isInvalidated && !awaitsNavigationCommit && committedURL != nil
 	}
 
+	var hasRenderedWebView: Bool {
+		!isInvalidated && createdWebView != nil
+	}
+
 	var canApplySitePreferencesToCurrentPage: Bool {
 		hasCurrentPageDocument && navigationFailure == nil
 	}
 
-	@ObservationIgnored
-	private var hasDeclaredThemeColor = false
 	@ObservationIgnored
 	private var pendingRequest: URLRequest?
 	private var pendingWebArchive: (data: Data, baseURL: URL)?
@@ -513,7 +1057,8 @@ final class BrowserController: NSObject, Identifiable {
 		self.fileAccessBookmark = fileAccessBookmark
 		historyVisitPolicy = BrowserVisitPolicy(suppressInitialVisit: suppressInitialHistoryVisit)
 		if !session.isPrivate, let initialURL, let restorationState {
-			pendingInteractionState = BrowserRestorationStore.open(restorationState, for: initialURL)
+			// Unopened restored tabs shouldn't decrypt WebKit history at launch.
+			pendingEncryptedInteractionState = (restorationState, initialURL)
 		}
 		suppliedConfiguration = configuration
 		liveHistoryPrefix = Array(restoredHistory.entries.prefix(restoredHistory.index))
@@ -522,32 +1067,7 @@ final class BrowserController: NSObject, Identifiable {
 		self.scrollPosition = scrollPosition
 		restoredScrollPosition = scrollPosition == .zero ? nil : scrollPosition
 		super.init()
-		_ = BrowserNavigationConnectivity.shared
-		connectivityObserver = NotificationCenter.default.addObserver(
-			forName: BrowserNavigationConnectivity.didChangeNotification,
-			object: nil,
-			queue: .main
-		) { [weak self] notification in
-			guard notification.object as? Bool == true else { return }
-			Task { @MainActor [weak self] in
-				self?.retryOfflineGETAfterConnectivityReturns()
-			}
-		}
-		#if os(macOS)
-			webInspectorObserver = NotificationCenter.default.addObserver(
-				forName: UserDefaults.didChangeNotification,
-				object: nil,
-				queue: .main
-			) { [weak self] _ in
-				Task { @MainActor [weak self] in
-					self?.updateWebInspectorAvailability(Defaults[.webInspectorEnabled])
-				}
-			}
-		#endif
 		updateThemeColor(url == nil ? .black : .white)
-		#if os(macOS)
-			startPreviewSnapshotRefresh()
-		#endif
 
 		if let url {
 			#if os(macOS)
@@ -557,6 +1077,7 @@ final class BrowserController: NSObject, Identifiable {
 						securityScopedFile = resolved.startAccessingSecurityScopedResource() ? resolved : nil
 						pendingLocalFile = resolved
 						if resolved != url {
+							pendingEncryptedInteractionState = nil
 							pendingInteractionState = nil
 							self.url = resolved
 							historyManager = BrowserHistory(initialURL: resolved)
@@ -573,35 +1094,95 @@ final class BrowserController: NSObject, Identifiable {
 
 	private static let linkHoverScript = """
 	(() => {
-		let previous = '', x = 0, y = 0;
-		const report = (link, clientX, clientY) => {
+		let previous = '', x = 0, y = 0, current = null, previewLink = null, sequence = 0, shift = false;
+		let lastHref = '', lastTrailing = false, lastShift = false;
+		let pointerFrame = 0, pendingLink = null, scrollFrame = 0;
+
+		const report = (link, clientX, clientY, forceLayout = false) => {
 			let href = '';
 			try { if (link) href = new URL(link.getAttribute('href'), link.baseURI).href; } catch {}
+			const linkChanged = link !== current;
+			if (linkChanged) {
+				if (current !== previewLink) current?.removeAttribute('data-astra-ai-preview-hover');
+				current = link;
+				sequence++;
+			}
+			if (current && /^https?:/.test(href)) {
+				if (!document.getElementById('astra-ai-hover-style')) {
+					const style = document.createElement('style');
+					style.id = 'astra-ai-hover-style';
+					style.textContent = '[data-astra-ai-preview-hover] { background-color: rgba(128,128,128,0.25); border-radius: 3px; } [data-astra-ai-preview-hover=thinking] { animation: astra-ai-thinking 1s ease-in-out infinite alternate; } @keyframes astra-ai-thinking { from { background-color: rgba(128,128,128,0.12); } to { background-color: rgba(128,128,128,0.4); } } @media (prefers-reduced-motion: reduce) { [data-astra-ai-preview-hover=thinking] { animation: none; } }';
+					(document.head || document.documentElement).append(style);
+				}
+			}
 			const trailing = clientX < innerWidth / 2 && clientY > innerHeight - 72;
-			const key = href + ':' + trailing;
+			if (!forceLayout && !linkChanged && href === lastHref && trailing === lastTrailing && shift === lastShift) return;
+			const rect = link?.getBoundingClientRect();
+			const key = href + ':' + trailing + ':' + sequence + ':' + (rect?.top ?? 0) + ':' + (rect?.width ?? 0) + ':' + (rect?.height ?? 0) + ':' + shift;
+			lastHref = href;
+			lastTrailing = trailing;
+			lastShift = shift;
 			if (key === previous) return;
 			previous = key;
-			window.webkit.messageHandlers.linkHoverChanged.postMessage({ href, trailing });
+			window.webkit.messageHandlers.linkHoverChanged.postMessage({ href, trailing, id: String(sequence), x: rect?.left ?? clientX, y: rect?.top ?? clientY, width: rect?.width ?? 0, height: rect?.height ?? 0, shift });
 		};
+
+		const schedulePointerReport = link => {
+			pendingLink = link;
+			if (pointerFrame) return;
+			pointerFrame = requestAnimationFrame(() => {
+				pointerFrame = 0;
+				report(pendingLink, x, y);
+			});
+		};
+
+		globalThis.astraSetAIHover = (enabled, thinking) => {
+			const target = enabled ? (current || previewLink) : null;
+			if (previewLink !== target) previewLink?.removeAttribute('data-astra-ai-preview-hover');
+			previewLink = target;
+			previewLink?.setAttribute('data-astra-ai-preview-hover', thinking ? 'thinking' : '');
+		};
+		document.addEventListener('keydown', event => { shift = event.shiftKey; report(current, x, y); }, true);
+		document.addEventListener('keyup', event => { shift = event.shiftKey; report(current, x, y); }, true);
 		document.addEventListener('pointermove', event => {
+			shift = event.shiftKey;
 			x = event.clientX;
 			y = event.clientY;
 			const link = event.composedPath().find(node => node.matches?.('a[href], area[href]'));
-			report(link, x, y);
+			schedulePointerReport(link);
 		}, true);
-		document.addEventListener('mouseleave', () => report(null, 0, 0));
-		window.addEventListener('blur', () => report(null, 0, 0));
-		window.addEventListener('pagehide', () => report(null, 0, 0));
+		document.addEventListener('mouseleave', () => {
+			pendingLink = null;
+			report(null, 0, 0, true);
+		});
+		window.addEventListener('blur', () => report(null, 0, 0, true));
+		window.addEventListener('pagehide', () => report(null, 0, 0, true));
 		document.addEventListener('scroll', () => {
-			const link = document.elementFromPoint(x, y)?.closest('a[href], area[href]');
-			report(link, x, y);
+			if (scrollFrame) return;
+			scrollFrame = requestAnimationFrame(() => {
+				scrollFrame = 0;
+				window.webkit.messageHandlers.linkHoverChanged.postMessage({ dismissPreview: true });
+				const link = document.elementFromPoint(x, y)?.closest('a[href], area[href]');
+				report(link, x, y, true);
+			});
 		}, true);
 	})();
 	"""
 
+	func updateAIHoverHighlight(enabled: Bool = false, thinking: Bool = false) {
+		createdWebView?.evaluateJavaScript(
+			"globalThis.astraSetAIHover?.(\(enabled), \(thinking));",
+			in: nil,
+			in: .defaultClient
+		) { _ in }
+	}
+
 	func clearHoveredLink() {
 		hoveredLinkURL = nil
 		hoveredLinkUsesTrailingCorner = false
+		hoveredLinkID = ""
+		hoveredLinkRect = .zero
+		hoveredLinkShiftPressed = false
 	}
 
 	private static let activityScript = """
@@ -609,6 +1190,12 @@ final class BrowserController: NSObject, Identifiable {
 		const report = value => window.webkit.messageHandlers.pageActivityChanged.postMessage(value);
 		document.addEventListener('input', event => {
 			if (event.isTrusted && (event.target.matches('input:not([type="search"]), textarea, select') || event.target.closest('[contenteditable]'))) report('dirty');
+		}, true);
+		document.addEventListener('drop', event => {
+			if (event.isTrusted && event.dataTransfer?.files?.length) report('dirty');
+		}, true);
+		document.addEventListener('pointerdown', event => {
+			if (event.isTrusted && event.target.closest?.('canvas')) report('dirty');
 		}, true);
 		document.addEventListener('submit', () => report('submitted'), true);
 		for (const event of ['playing', 'pause', 'ended', 'emptied', 'volumechange', 'loadeddata']) {
@@ -619,11 +1206,11 @@ final class BrowserController: NSObject, Identifiable {
 
 	private static let pictureInPictureScript = """
 	(() => {
-		window.__astraSupportsPictureInPicture = video => !video.disablePictureInPicture && !video.ended && video.readyState >= 2 &&
+		window.__astraSupportsPictureInPicture = video => !video.ended && video.readyState >= 2 &&
 			video.videoWidth > 0 && video.videoHeight > 0 &&
-			(typeof video.webkitSupportsPresentationMode === 'function'
-				? typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode('picture-in-picture')
-				: document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function');
+			((typeof video.webkitSupportsPresentationMode === 'function' &&
+				typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode('picture-in-picture')) ||
+				(document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function'));
 		const report = () => {
 			const videos = [...document.querySelectorAll('video')];
 			window.webkit.messageHandlers.pictureInPictureChanged.postMessage({
@@ -642,10 +1229,34 @@ final class BrowserController: NSObject, Identifiable {
 		mediaObservationTask = Task { @MainActor [weak self] in
 			while !Task.isCancelled {
 				guard self?.createdWebView != nil else { return }
-				await self?.refreshActivity()
+				if let self {
+					attachmentActivityRevision &+= 1
+				}
+				let hasActivity = self?.isPlayingMedia == true
+					|| self?.isCapturing == true
+					|| self?.displayCaptureState == true
+					|| self?.isPictureInPictureActive == true
+					|| self?.isEnteringPictureInPicture == true
+				let isDetached = unsafe self?.createdWebView?.window == nil
+				#if os(macOS)
+					let isBackground = isDetached || self?.previewSnapshotRefreshSuspended == true
+				#else
+					let isBackground = isDetached
+				#endif
+				// Do not wake an idle background page merely to rediscover inactivity.
+				if !isBackground || hasActivity {
+					await self?.refreshActivity()
+				}
 				guard !Task.isCancelled else { return }
+				let fallbackInterval: TimeInterval = if hasActivity {
+					5
+				} else if isBackground {
+					90
+				} else {
+					20
+				}
 				do {
-					try await Task.sleep(for: .seconds(1))
+					try await Task.sleep(for: .seconds(fallbackInterval))
 				} catch {
 					return
 				}
@@ -653,53 +1264,107 @@ final class BrowserController: NSObject, Identifiable {
 		}
 	}
 
-	func refreshActivity() async {
-		guard !isInvalidated, !isRefreshingActivity, let webView = createdWebView else { return }
+	@discardableResult
+	func refreshActivity() async -> Bool {
+		guard !isInvalidated, !isRefreshingActivity, let webView = createdWebView else { return false }
 		isRefreshingActivity = true
-		defer { isRefreshingActivity = false }
+		defer { isRefreshingActivity = false; attachmentActivityRevision &+= 1 }
 		let documentID = navigationIdentifier
 		let script = """
 		(() => {
 			const media = [...document.querySelectorAll('audio, video')];
-			const audible = element => !element.muted && element.volume > 0 &&
-				(element.tagName === 'AUDIO' || element.webkitAudioDecodedByteCount > 0 || element.audioTracks?.length > 0);
 			return {
 				videoPlaying: media.some(element => element.tagName === 'VIDEO' && !element.paused && !element.ended && element.readyState >= 2 && element.videoWidth > 0 && element.videoHeight > 0),
-				playing: media.some(element => audible(element) && !element.paused && !element.ended && element.readyState >= 2),
-				paused: media.some(element => audible(element) && element.paused && !element.ended && element.currentTime > 0),
+				playing: media.some(element => !element.paused && !element.ended && element.readyState >= 2),
+				audible: media.some(element => !element.paused && !element.ended && element.readyState >= 2 && !element.muted && element.volume > 0),
+				paused: media.some(element => element.paused && !element.ended && element.currentTime > 0),
 				title: navigator.mediaSession?.metadata?.title ?? '',
 				artist: navigator.mediaSession?.metadata?.artist ?? ''
 			};
 		})()
 		"""
-		let value = try? await webView.evaluateJavaScript(script, in: nil, in: .defaultClient)
+		let value = try? await webView.evaluateJavaScript(script)
 		guard owns(webView), documentID == navigationIdentifier,
-		      let state = value as? [String: Any] else { return }
-		isPlayingMedia = state["playing"] as? Bool == true
-		hasActiveVideoPlayback = state["videoPlaying"] as? Bool == true
-		hasPausedMedia = state["paused"] as? Bool == true
+		      let state = value as? [String: Any],
+		      let videoPlaying = state["videoPlaying"] as? Bool,
+		      let playing = state["playing"] as? Bool,
+		      let audible = state["audible"] as? Bool,
+		      let paused = state["paused"] as? Bool,
+		      let title = state["title"] as? String,
+		      let artist = state["artist"] as? String
+		else { return false }
+		let playbackState = await webView.requestMediaPlaybackState()
+		guard owns(webView), documentID == navigationIdentifier else { return false }
+		// A muted looping background video is not a Now Playing session. WebKit's
+		// aggregate playback state also includes silent page decoration; use the
+		// element state to disambiguate, while retaining cross-origin iframe audio.
+		isPlayingMedia = audible || (!playing && playbackState == .playing)
+		hasActiveVideoPlayback = videoPlaying
+		hasPausedMedia = paused || playbackState == .paused || playbackState == .suspended
 		cameraCaptureState = webView.cameraCaptureState
 		microphoneCaptureState = webView.microphoneCaptureState
 		mediaCaptureStateDocumentID = committedSecurityNavigationID
 		if isPlayingMedia || !hasPausedMedia {
 			pausedFromBrowser = false
 		}
-		mediaTitle = (state["title"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
-		mediaArtist = (state["artist"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(500)) }
-		await refreshPictureInPictureEligibility(in: webView, documentID: documentID)
-		guard owns(webView), documentID == navigationIdentifier else { return }
-		webView.configuration.preferences.inactiveSchedulingPolicy = isPictureInPictureActive || isEnteringPictureInPicture || isPlayingMedia || hasActiveVideoPlayback ? .none : .throttle
+		mediaTitle = title.isEmpty ? nil : String(title.prefix(500))
+		mediaArtist = artist.isEmpty ? nil : String(artist.prefix(500))
+		guard owns(webView), documentID == navigationIdentifier else { return false }
+		// pictureInPictureScript reports eligibility/active changes directly on
+		// video lifecycle events; do not run a second DOM query on every poll.
+		updateInactiveSchedulingPolicy()
+		return true
+	}
+
+	func refreshHibernationSafety() async -> Bool {
+		guard await refreshActivity(), canAutomaticallyHibernate,
+		      let webView = createdWebView else { return false }
+		let documentID = navigationIdentifier
+		let script = """
+		(() => {
+			return [...document.querySelectorAll('input:not([type="hidden"]), textarea, select')].some(element => {
+				if (element.tagName === 'SELECT') {
+					const options = [...element.options];
+					if (!element.multiple && !options.some(option => option.defaultSelected)) {
+						const initialIndex = element.size > 1 ? -1 : options.findIndex(option => !option.disabled);
+						return element.selectedIndex !== initialIndex;
+					}
+					return options.some(option => option.selected !== option.defaultSelected);
+				}
+				if (element.type === 'checkbox' || element.type === 'radio') return element.checked !== element.defaultChecked;
+				return element.value !== element.defaultValue;
+			});
+		})()
+		"""
+		let value: Bool? = await withCheckedContinuation { continuation in
+			webView.evaluateJavaScript(script, in: nil, in: .defaultClient) { result in
+				continuation.resume(returning: (try? result.get()) as? Bool)
+			}
+		}
+		guard owns(webView), documentID == navigationIdentifier,
+		      value == false else { return false }
+		return canAutomaticallyHibernate
+	}
+
+	private func updateInactiveSchedulingPolicy() {
+		guard let webView = createdWebView else { return }
+		let requiresContinuousScheduling = isPictureInPictureActive
+			|| isEnteringPictureInPicture
+			|| isPlayingMedia
+			|| hasActiveVideoPlayback
+		// Suspension could interrupt unobservable page or extension operations.
+		webView.configuration.preferences.inactiveSchedulingPolicy = requiresContinuousScheduling ? .none : .throttle
 	}
 
 	private func refreshPictureInPictureEligibility(in webView: WKWebView, documentID: Int) async {
 		let script = """
 		(() => {
 			const videos = [...document.querySelectorAll('video')];
-			const supports = video => !video.disablePictureInPicture && !video.ended && video.readyState >= 2 &&
+			const supports = video => !video.ended && video.readyState >= 2 &&
 				video.videoWidth > 0 && video.videoHeight > 0 &&
-				(typeof video.webkitSupportsPresentationMode === 'function'
-				? typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode('picture-in-picture')
-				: document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function');
+				((typeof video.webkitSupportsPresentationMode === 'function' &&
+				typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode('picture-in-picture')) ||
+				(document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function'));
 			return {
 				active: Boolean(document.pictureInPictureElement) || videos.some(video => video.webkitPresentationMode === 'picture-in-picture'),
 			eligible: typeof supports === 'function' && videos.some(supports)
@@ -732,26 +1397,37 @@ final class BrowserController: NSObject, Identifiable {
 		isEnteringPictureInPicture = true
 		let documentID = navigationIdentifier
 		webView.callAsyncJavaScript("""
-		return (() => {
-			const supports = video => !video.disablePictureInPicture && !video.ended && video.readyState >= 2 &&
+		return (async () => {
+			const supports = video => !video.ended && video.readyState >= 2 &&
 				video.videoWidth > 0 && video.videoHeight > 0 &&
-				(typeof video.webkitSupportsPresentationMode === 'function'
-				? typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode('picture-in-picture')
-				: document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function');
-			if (typeof supports !== 'function') return false;
+				((typeof video.webkitSupportsPresentationMode === 'function' &&
+				typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode('picture-in-picture')) ||
+				(document.pictureInPictureEnabled && typeof video.requestPictureInPicture === 'function'));
 			const video = [...document.querySelectorAll('video')].find(supports);
 			if (!video) return false;
-			if (typeof video.webkitSetPresentationMode === 'function') {
-				video.webkitSetPresentationMode(video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
-				return new Promise(resolve => {
-					const finish = () => resolve(video.webkitPresentationMode === 'picture-in-picture');
-					video.addEventListener('enterpictureinpicture', finish, { once: true });
-					video.addEventListener('leavepictureinpicture', finish, { once: true });
-					setTimeout(finish, 2000);
-				});
+			// The browser's explicit user action overrides the page's PiP hint for this request.
+			const disabled = video.disablePictureInPicture;
+			video.disablePictureInPicture = false;
+			try {
+				if (typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode?.('picture-in-picture')) {
+					return await new Promise(resolve => {
+						const finish = () => {
+							video.removeEventListener('webkitpresentationmodechanged', finish);
+							resolve(video.webkitPresentationMode === 'picture-in-picture');
+						};
+						video.addEventListener('webkitpresentationmodechanged', finish);
+						video.webkitSetPresentationMode('picture-in-picture');
+						setTimeout(finish, 2000);
+					});
+				}
+				await video.requestPictureInPicture();
+				return true;
+			} catch {
+				return false;
+			} finally {
+				video.disablePictureInPicture = disabled;
 			}
-			return video.requestPictureInPicture().then(() => true).catch(() => false);
-		})()
+		})();
 		""", arguments: [:], in: nil, in: .defaultClient) { [weak self, weak webView] result in
 			guard let self, let webView, owns(webView), documentID == navigationIdentifier else { return }
 			isEnteringPictureInPicture = false
@@ -779,7 +1455,7 @@ final class BrowserController: NSObject, Identifiable {
 		if active {
 			pictureInPictureControlUnavailable = false
 		}
-		createdWebView?.configuration.preferences.inactiveSchedulingPolicy = active ? .none : .throttle
+		updateInactiveSchedulingPolicy()
 	}
 
 	private static let findScript = #"""
@@ -837,6 +1513,7 @@ final class BrowserController: NSObject, Identifiable {
 	"""#
 
 	func presentFind() {
+		readerHTML = nil
 		showsFind = true
 		findFocusRequest += 1
 	}
@@ -880,7 +1557,7 @@ final class BrowserController: NSObject, Identifiable {
 		findText = ""
 		findNext()
 		#if os(macOS)
-			createdWebView?.window?.makeFirstResponder(createdWebView)
+			unsafe createdWebView?.window?.makeFirstResponder(createdWebView)
 		#endif
 	}
 
@@ -894,6 +1571,7 @@ final class BrowserController: NSObject, Identifiable {
 			pendingWebArchive = nil
 			pendingRequest = nil
 			pendingLocalFile = url
+			pendingEncryptedInteractionState = nil
 			pendingInteractionState = nil
 			currentNavigation = nil
 			_ = webView
@@ -997,14 +1675,27 @@ final class BrowserController: NSObject, Identifiable {
 		}
 	}
 
+	#if os(macOS)
+		/// The browser stays responsible for a file upload while its open panel
+		/// is active. Unlike JavaScript dialogs, file pickers legitimately move
+		/// key-window focus to AppKit's sheet and its auxiliary panels.
+		func ownsFileUpload(in webView: WKWebView, documentID: Int, window: NSWindow) -> Bool {
+			guard owns(webView), navigationIdentifier == documentID,
+			      promptOwnership?(webView) == true,
+			      unsafe webView.window === window,
+			      window.isVisible else { return false }
+			return true
+		}
+	#endif
+
 	func ownsPrompt(in webView: WKWebView, documentID: Int) -> Bool {
 		guard owns(webView), navigationIdentifier == documentID,
 		      promptOwnership?(webView) == true else { return false }
 		#if os(macOS)
-			guard let window = webView.window, window.isVisible else { return false }
+			guard let window = unsafe webView.window, window.isVisible else { return false }
 			return window.isKeyWindow || window.attachedSheet?.isKeyWindow == true
 		#else
-			guard let window = webView.window, !window.isHidden,
+			guard let window = unsafe webView.window, !window.isHidden,
 			      window.windowScene?.activationState == .foregroundActive else { return false }
 			return true
 		#endif
@@ -1023,15 +1714,56 @@ final class BrowserController: NSObject, Identifiable {
 				isSameSession: owner.browser.session === session,
 				isCurrentWebView: webViewIfLoaded === webView && owns(webView),
 				isSameNavigation: navigationIdentifier == documentID && !isInvalidated,
-				webViewMatchesOwnerWindow: webView.window == nil || webView.window === owner.window
+				webViewMatchesOwnerWindow: unsafe webView.window == nil || (unsafe webView.window === owner.window)
 			)
 		}
 	#endif
 
+	func toggleReader() {
+		BrowserLog.info(.navigation, "reader.toggle", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
+		if readerHTML != nil {
+			readerHTML = nil
+			return
+		}
+		guard isReaderAvailable, !isPreparingReader, hasCurrentPageDocument,
+		      navigationFailure == nil, let webView = createdWebView else { return }
+		isPreparingReader = true
+		let documentID = navigationIdentifier
+		let generation = readerGeneration
+		let pageURL = webView.url
+		webView.evaluateJavaScript("globalThis.astraExtractReader?.()", in: nil, in: .defaultClient) { [weak self, weak webView] result in
+			guard let self, let webView, owns(webView), hasCurrentPageDocument,
+			      documentID == navigationIdentifier, generation == readerGeneration,
+			      pageURL == webView.url else { return }
+			isPreparingReader = false
+			guard case let .success(value) = result,
+			      let article = value as? [String: String],
+			      let content = article["content"], !content.isEmpty,
+			      content.utf8.count <= 5 * 1024 * 1024
+			else {
+				isReaderAvailable = false
+				return
+			}
+			showsFind = false
+			readerHTML = BrowserReaderScript.document(article: article)
+		}
+	}
+
+	private func resetReader() {
+		readerGeneration += 1
+		isReaderAvailable = false
+		isPreparingReader = false
+		readerHTML = nil
+	}
+
 	func stopForClose() {
+		BrowserLog.info(.webKit, "controller.stop-for-close", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		guard !isInvalidated else { return }
+		clearAILinkPreviewCache()
+		resetReader()
 		clearHoveredLink()
 		isInvalidated = true
+		snapshotHTML = nil
 		removeAppliedContentRuleList()
 		promptOwnership = nil
 		if let connectivityObserver {
@@ -1046,6 +1778,7 @@ final class BrowserController: NSObject, Identifiable {
 		#endif
 		currentRequest = nil
 		failedRequest = nil
+		currentNavigation = nil
 		pendingRequest = nil
 		pendingWebArchive = nil
 		navigationFailure = nil
@@ -1060,13 +1793,18 @@ final class BrowserController: NSObject, Identifiable {
 		releaseUploadAccess()
 		mediaObservationTask?.cancel()
 		mediaObservationTask = nil
+		pendingLifecycleOperations = 0
+		livePopupControllers.removeAllObjects()
 		pictureInPictureControlUnavailable = false
 		faviconTask?.cancel()
 		faviconTask = nil
+		faviconTintTask?.cancel()
+		faviconTintTask = nil
 		#if os(macOS)
 			previewSnapshotRefreshTask?.cancel()
 			previewSnapshotRefreshTask = nil
 			previewSnapshot = nil
+			previewSnapshotGeneration = nil
 			windowMirrorSnapshot = nil
 		#endif
 		createdWebView?.navigationDelegate = nil
@@ -1076,14 +1814,29 @@ final class BrowserController: NSObject, Identifiable {
 		createdWebView?.setAllMediaPlaybackSuspended(true, completionHandler: nil)
 		stopCapture()
 		(createdWebView as? PeekSourceWebView)?.onEscape = nil
+		#if os(macOS)
+			(createdWebView as? PeekSourceWebView)?.quoteDestinations = nil
+			(createdWebView as? PeekSourceWebView)?.onQuoteRequested = nil
+		#endif
+		easelQuoteDestinations = nil
+		addQuoteToEasel = nil
 		(createdWebView as? PeekSourceWebView)?.onLayout = nil
 		(createdWebView as? PeekSourceWebView)?.onZoomIn = nil
 		(createdWebView as? PeekSourceWebView)?.onZoomOut = nil
 		(createdWebView as? PeekSourceWebView)?.onResetZoom = nil
-		for name in [Self.scrollPositionMessageName, Self.topEdgeMessageName, Self.zapFinishedMessageName, "pageActivityChanged", "pictureInPictureChanged", "linkHoverChanged", "faviconChanged"] {
+		for name in [Self.scrollPositionMessageName, Self.topEdgeMessageName, Self.zapFinishedMessageName, Self.pageTintMessageName, "pageActivityChanged", "pictureInPictureChanged", "linkHoverChanged", "faviconChanged", "readerAvailabilityChanged"] {
 			createdWebView?.configuration.userContentController.removeScriptMessageHandler(forName: name, contentWorld: .defaultClient)
 		}
 		createdWebView?.configuration.userContentController.removeAllUserScripts()
+		createdWebView?.removeFromSuperview()
+		createdWebView = nil
+		isWebViewReady = false
+		isRefreshingActivity = false
+		#if os(macOS)
+			screenshotReaderWebView = nil
+			isRefreshingPreviewSnapshot = false
+		#endif
+		appliedContentRuleLists.removeAll()
 		navigationDidChange = nil
 		zoomDidChange = nil
 		historyVisitDidCommit = nil
@@ -1100,7 +1853,12 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func retainPanelUploadAccess(for urls: [URL]) {
-		uploadSecurityScopedFiles.append(contentsOf: urls)
+		// Only balance security scopes that were successfully opened. Keep the
+		// selected files accessible while WebKit reads the upload, then release
+		// them on the next navigation or when the controller is invalidated.
+		for url in urls where url.startAccessingSecurityScopedResource() {
+			uploadSecurityScopedFiles.append(url)
+		}
 	}
 
 	private func releaseUploadAccess() {
@@ -1114,12 +1872,6 @@ final class BrowserController: NSObject, Identifiable {
 		!isInvalidated && createdWebView === webView
 	}
 
-	var encryptedInteractionState: Data? {
-		guard !session.isPrivate, canRecordVisit, let committedURL,
-		      let data = createdWebView?.interactionState as? Data else { return nil }
-		return BrowserRestorationStore.seal(data, for: BrowserAddress.withoutCredentials(committedURL))
-	}
-
 	func restoreInteractionState(_ state: Any, historyPrefix: [URL]) {
 		guard !isInvalidated else { return }
 		liveHistoryPrefix = historyPrefix
@@ -1128,18 +1880,59 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func prepareWebView() {
+		BrowserLog.debug(.webKit, "webview.prepare", metadata: ["controller": BrowserLog.id(id), "has_webview": String(createdWebView != nil)])
 		_ = webView
 	}
 
 	#if os(macOS)
 		func updateWebInspectorAvailability(_ enabled: Bool) {
-			createdWebView?.isInspectable = enabled
+			if let createdWebView {
+				BrowserDesktopCommands.configureWebInspector(createdWebView, enabled: enabled)
+			}
 		}
 	#endif
 
+	private func startWebViewEventObservations() {
+		guard connectivityObserver == nil else { return }
+		// Restored-but-unopened tabs don't need network notifications or
+		// Web Inspector defaults observation until a WKWebView exists.
+		_ = BrowserNavigationConnectivity.shared
+		connectivityObserver = NotificationCenter.default.addObserver(
+			forName: BrowserNavigationConnectivity.didChangeNotification,
+			object: nil,
+			queue: .main
+		) { [weak self] notification in
+			guard notification.object as? Bool == true else { return }
+			Task { @MainActor [weak self] in
+				self?.retryOfflineGETAfterConnectivityReturns()
+			}
+		}
+		#if os(macOS)
+			observedWebInspectorEnabled = Defaults[.webInspectorEnabled]
+			webInspectorObserver = NotificationCenter.default.addObserver(
+				forName: UserDefaults.didChangeNotification,
+				object: UserDefaults.standard,
+				queue: .main
+			) { [weak self] _ in
+				MainActor.assumeIsolated {
+					guard let self else { return }
+					let enabled = Defaults[.webInspectorEnabled]
+					guard enabled != self.observedWebInspectorEnabled else { return }
+					self.observedWebInspectorEnabled = enabled
+					self.updateWebInspectorAvailability(enabled)
+				}
+			}
+		#endif
+	}
+
 	private func makeWebView() -> WKWebView {
+		let webViewLogStarted = BrowserLog.clock()
+		BrowserLog.info(.webKit, "webview.create.begin", metadata: ["controller": BrowserLog.id(id), "private": String(session.isPrivate)])
+		var webViewStageStarted = BrowserLog.clock()
 		let configuration = suppliedConfiguration ?? WKWebViewConfiguration()
 		if suppliedConfiguration != nil {
+			// Popup configurations inherit the opener's settings; give this page its own
+			// controller before installing handlers that stopForClose will remove.
 			configuration.userContentController = WKUserContentController()
 		}
 		configuration.websiteDataStore = session.dataStore
@@ -1156,17 +1949,33 @@ final class BrowserController: NSObject, Identifiable {
 			configuration.allowsPictureInPictureMediaPlayback = true
 		#endif
 		#if os(macOS)
+			// macOS WebKit defaults PiP playback off and exposes its opt-in only through SPI.
+			if configuration.preferences.responds(to: NSSelectorFromString("_setAllowsPictureInPictureMediaPlayback:")) {
+				configuration.preferences.setValue(true, forKey: "allowsPictureInPictureMediaPlayback")
+			}
 			_ = AstraConfigureWebPushPreferences(configuration.preferences, !session.isPrivate && BrowserWebPushManager.shared.hasNativeSupport)
 		#endif
 		if let suffix = Self.safariUserAgentSuffix() {
 			configuration.applicationNameForUserAgent = suffix
 		}
 		session.favicons.configureFaviconObservation(in: configuration.userContentController)
+		BrowserLog.duration(.webKit, "webview.create.configuration", since: webViewStageStarted, warnAboveMilliseconds: 40, metadata: ["controller": BrowserLog.id(id)])
+		webViewStageStarted = BrowserLog.clock()
 		let webView = PeekSourceWebView(frame: .zero, configuration: configuration)
 		#if os(macOS)
-			webView.isInspectable = Defaults[.webInspectorEnabled]
+			webView.quoteDestinations = { [weak self] in self?.easelQuoteDestinations?() ?? [] }
+			webView.onQuoteRequested = { [weak self] destinationID in
+				self?.captureEaselQuote(for: destinationID)
+			}
+			BrowserDesktopCommands.configureWebInspector(webView, enabled: Defaults[.webInspectorEnabled])
 		#endif
 		createdWebView = webView
+		startWebViewEventObservations()
+		#if os(macOS)
+			startPreviewSnapshotRefresh()
+		#endif
+		BrowserLog.duration(.webKit, "webview.create.instance", since: webViewStageStarted, warnAboveMilliseconds: 50, metadata: ["controller": BrowserLog.id(id)])
+		webViewStageStarted = BrowserLog.clock()
 		let scrollHandler = WeakScriptMessageHandler(delegate: self)
 		webView.configuration.userContentController.add(
 			scrollHandler,
@@ -1181,6 +1990,11 @@ final class BrowserController: NSObject, Identifiable {
 		webView.configuration.userContentController.add(
 			scrollHandler,
 			contentWorld: .defaultClient,
+			name: Self.pageTintMessageName
+		)
+		webView.configuration.userContentController.add(
+			scrollHandler,
+			contentWorld: .defaultClient,
 			name: Self.zapFinishedMessageName
 		)
 		#if os(macOS)
@@ -1190,6 +2004,12 @@ final class BrowserController: NSObject, Identifiable {
 			)
 		#endif
 		webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "pageActivityChanged")
+		if let script = BrowserReaderScript.source {
+			webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "readerAvailabilityChanged")
+			webView.configuration.userContentController.addUserScript(
+				WKUserScript(source: script, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient)
+			)
+		}
 		webView.configuration.userContentController.add(scrollHandler, contentWorld: .defaultClient, name: "pictureInPictureChanged")
 		webView.configuration.userContentController.addUserScript(
 			WKUserScript(source: Self.pictureInPictureScript, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient)
@@ -1213,6 +2033,13 @@ final class BrowserController: NSObject, Identifiable {
 				in: .defaultClient
 			)
 		)
+		webView.configuration.userContentController.addUserScript(
+			WKUserScript(source: Self.pageTintScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient)
+		)
+		// Install Boosts after Astra's own scripts and before navigation.
+		if !session.isPrivate {
+			BrowserBoostStore.shared.register(webView)
+		}
 		webView.navigationDelegate = self
 		webView.uiDelegate = self
 		webView.onEscape = escapeRequested
@@ -1224,6 +2051,8 @@ final class BrowserController: NSObject, Identifiable {
 		webView.onResetZoom = { [weak self] in self?.resetZoom() }
 		webView.pageZoom = CGFloat(pageZoom)
 		updateThemeColor(url == nil ? .black : webView.underPageBackgroundColor ?? .white)
+		BrowserLog.duration(.webKit, "webview.create.handlers", since: webViewStageStarted, warnAboveMilliseconds: 40, metadata: ["controller": BrowserLog.id(id)])
+		webViewStageStarted = BrowserLog.clock()
 
 		observations = [
 			webView.observe(\.hasOnlySecureContent, options: [.initial, .new]) { [weak self] webView, _ in
@@ -1251,10 +2080,13 @@ final class BrowserController: NSObject, Identifiable {
 			},
 			webView.observe(\.url, options: [.initial, .new]) { [weak self] webView, change in
 				MainActor.assumeIsolated {
-					guard let self else { return }
-					guard !self.awaitsNavigationCommit else { return }
-					guard !self.isDownloadHandoff else { return }
-					guard let url = change.newValue ?? webView.url else { return }
+					guard let self, self.owns(webView),
+					      let url = change.newValue ?? webView.url else { return }
+					self.finishFragmentNavigationIfNeeded(to: url)
+					guard !self.awaitsNavigationCommit, !self.isDownloadHandoff else { return }
+					if self.url != url {
+						self.aiPreviewDismissal += 1
+					}
 					self.url = url
 					if !webView.isLoading {
 						if webView.consumeRecentClick() == true {
@@ -1267,13 +2099,15 @@ final class BrowserController: NSObject, Identifiable {
 			webView.observe(\.themeColor, options: [.initial, .new]) { [weak self] webView, change in
 				MainActor.assumeIsolated {
 					guard let self else { return }
-					guard let color = change.newValue ?? webView.themeColor else {
-						self.hasDeclaredThemeColor = false
-						return
+					let color = change.newValue ?? webView.themeColor
+					if let color {
+						webView.underPageBackgroundColor = color.withAlphaComponent(1)
 					}
-					self.hasDeclaredThemeColor = true
-					webView.underPageBackgroundColor = color.withAlphaComponent(1)
-					self.updateThemeColor(color)
+					// Once the document's one-shot sample has arrived,
+					// live metadata changes must not retint the toolbar.
+					if self.pageTintHandledGeneration != self.navigationGeneration {
+						self.resolveThemeColor(in: webView)
+					}
 				}
 			},
 			webView.observe(\.title, options: [.initial, .new]) { [weak self] webView, change in
@@ -1292,11 +2126,15 @@ final class BrowserController: NSObject, Identifiable {
 				}
 			},
 		]
+		BrowserLog.duration(.webKit, "webview.create.observers", since: webViewStageStarted, warnAboveMilliseconds: 30, metadata: ["controller": BrowserLog.id(id)])
+		webViewStageStarted = BrowserLog.clock()
 		startMediaObservation()
 		isWebViewReady = true
 		extensionWebViewDidChange?()
 		// Start deferred navigation immediately once startup rule restoration is ready.
 		contentBlockingDidBecomeReady()
+		BrowserLog.duration(.webKit, "webview.create.finalize", since: webViewStageStarted, warnAboveMilliseconds: 30, metadata: ["controller": BrowserLog.id(id)])
+		BrowserLog.duration(.webKit, "webview.create.end", since: webViewLogStarted, warnAboveMilliseconds: 150, metadata: ["controller": BrowserLog.id(id)])
 		return webView
 	}
 
@@ -1317,19 +2155,20 @@ final class BrowserController: NSObject, Identifiable {
 
 	private func refreshContentBlocking(forOrigin origin: String?) {
 		guard let webView = createdWebView, owns(webView) else { return }
-		let nextRuleList = session.contentBlocking.ruleList(for: origin, sitePreferences: session.sitePreferences)
-		guard appliedContentRuleList?.identifier != nextRuleList?.identifier else { return }
+		let nextRuleLists = session.contentBlocking.ruleLists(for: origin, sitePreferences: session.sitePreferences)
+		guard appliedContentRuleLists.map(\.identifier) != nextRuleLists.map(\.identifier) else { return }
 		removeAppliedContentRuleList()
-		if let nextRuleList {
+		for nextRuleList in nextRuleLists {
 			webView.configuration.userContentController.add(nextRuleList)
-			appliedContentRuleList = nextRuleList
 		}
+		appliedContentRuleLists = nextRuleLists
 	}
 
 	private func removeAppliedContentRuleList() {
-		guard let appliedContentRuleList else { return }
-		createdWebView?.configuration.userContentController.remove(appliedContentRuleList)
-		self.appliedContentRuleList = nil
+		for list in appliedContentRuleLists {
+			createdWebView?.configuration.userContentController.remove(list)
+		}
+		appliedContentRuleLists.removeAll()
 	}
 
 	private func updateContentBlocking(
@@ -1349,7 +2188,7 @@ final class BrowserController: NSObject, Identifiable {
 		refreshContentBlocking(forOrigin: origin)
 	}
 
-	deinit {
+	isolated deinit {
 		if let connectivityObserver {
 			NotificationCenter.default.removeObserver(connectivityObserver)
 		}
@@ -1360,6 +2199,7 @@ final class BrowserController: NSObject, Identifiable {
 		#endif
 		mediaObservationTask?.cancel()
 		faviconTask?.cancel()
+		faviconTintTask?.cancel()
 		observations.forEach { $0.invalidate() }
 		#if os(macOS)
 			previewSnapshotRefreshTask?.cancel()
@@ -1367,15 +2207,17 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func load(_ url: URL) {
+		BrowserLog.info(.navigation, "navigation.load-url", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		load(url, isExplicitAddressRequest: false)
 	}
 
 	func loadFromAddressBar(_ url: URL) {
+		BrowserLog.info(.navigation, "navigation.address-submit", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		load(url, isExplicitAddressRequest: true)
 	}
 
 	private func load(_ url: URL, isExplicitAddressRequest: Bool) {
-		guard !isInvalidated else { return }
+		guard !isInvalidated, !snapshotNavigationOnly else { return }
 		if BrowserAddress.externalApplicationScheme(for: url) != nil,
 		   handleExternalLink(
 		   	url,
@@ -1390,8 +2232,26 @@ final class BrowserController: NSObject, Identifiable {
 		navigate(URLRequest(url: url))
 	}
 
+	/// Retain the local document for reload and WebKit process recovery. Reloading
+	/// an about:blank URL cannot reconstruct a document loaded with loadHTMLString.
+	func loadWebsiteSnapshot(_ html: String, sourceURL: URL) {
+		guard !isInvalidated else { return }
+		snapshotNavigationOnly = true
+		snapshotSourceURL = sourceURL
+		snapshotHTML = html
+		createdWebView?.stopLoading()
+		pendingRequest = nil
+		pendingWebArchive = nil
+		pendingLocalFile = nil
+		pendingInteractionState = nil
+		pendingEncryptedInteractionState = nil
+		navigationFailure = nil
+		awaitsNavigationCommit = true
+		currentNavigation = webView.loadHTMLString(html, baseURL: nil)
+	}
+
 	func loadWebArchive(_ data: Data, baseURL: URL) {
-		guard !isInvalidated,
+		guard !isInvalidated, !snapshotNavigationOnly,
 		      let safeURL = BrowserHomepage.validURL(baseURL.absoluteString) else { return }
 		historyVisitPolicy.userInitiatedNavigation()
 		createdWebView?.stopLoading()
@@ -1399,6 +2259,7 @@ final class BrowserController: NSObject, Identifiable {
 		currentRequest = nil
 		pendingRequest = nil
 		pendingLocalFile = nil
+		pendingEncryptedInteractionState = nil
 		pendingInteractionState = nil
 		failedRequest = nil
 		retriedAfterConnectivityReturn = true
@@ -1416,8 +2277,8 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func navigate(_ request: URLRequest) {
-		guard !isInvalidated else { return }
-		guard let url = request.url else { return }
+		BrowserLog.info(.navigation, "navigation.request", metadata: ["controller": BrowserLog.id(id), "request": BrowserLog.request(request)])
+		guard !isInvalidated, !snapshotNavigationOnly, let url = request.url else { return }
 		historyVisitPolicy.userInitiatedNavigation()
 		createdWebView?.stopLoading()
 		createdWebView?.closeAllMediaPresentations(completionHandler: nil)
@@ -1431,31 +2292,39 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func goBack() {
+		BrowserLog.debug(.navigation, "navigation.back", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		guard let webView = createdWebView, webView.canGoBack else { return }
+		clearAILinkPreviewCache()
+		aiPreviewDismissal += 1
 		invalidateFindResults()
 		historyVisitPolicy.userInitiatedNavigation()
 		currentRequest = nil
-		awaitsNavigationCommit = true
+		awaitsNavigationCommit = !isCurrentDocumentFragmentURL(webView.backForwardList.backItem?.url)
 		currentNavigation = webView.goBack()
 	}
 
 	func goForward() {
+		BrowserLog.debug(.navigation, "navigation.forward", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		guard let webView = createdWebView, webView.canGoForward else { return }
+		clearAILinkPreviewCache()
+		aiPreviewDismissal += 1
 		invalidateFindResults()
 		historyVisitPolicy.userInitiatedNavigation()
 		currentRequest = nil
-		awaitsNavigationCommit = true
+		awaitsNavigationCommit = !isCurrentDocumentFragmentURL(webView.backForwardList.forwardItem?.url)
 		currentNavigation = webView.goForward()
 	}
 
 	func go(toHistoryIndex index: Int) {
 		guard history.indices.contains(index), index != historyIndex else { return }
+		clearAILinkPreviewCache()
+		aiPreviewDismissal += 1
 		historyVisitPolicy.userInitiatedNavigation()
 		if let webView = createdWebView,
 		   let item = webView.backForwardList.item(at: index - historyIndex)
 		{
 			currentRequest = nil
-			awaitsNavigationCommit = true
+			awaitsNavigationCommit = !isCurrentDocumentFragmentURL(item.url)
 			currentNavigation = webView.go(to: item)
 		} else {
 			// URL records from an earlier launch can be revisited; live navigation
@@ -1465,19 +2334,56 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func reload() {
+		BrowserLog.info(.navigation, "navigation.reload", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url), "failure": String(navigationFailure != nil)])
+		if snapshotNavigationOnly {
+			reload(usingOrigin: false)
+			return
+		}
 		historyVisitPolicy.userInitiatedNavigation()
 		if let navigationFailure {
 			load(failedRequest ?? URLRequest(url: navigationFailure.url))
 			return
 		}
+		reload(usingOrigin: false)
+	}
+
+	private func reload(usingOrigin: Bool) {
+		if snapshotNavigationOnly {
+			if let snapshotHTML, let snapshotSourceURL {
+				loadWebsiteSnapshot(snapshotHTML, sourceURL: snapshotSourceURL)
+			}
+			return
+		}
+		if !hasCurrentPageDocument {
+			if let pendingRequest {
+				load(pendingRequest)
+				return
+			}
+			if pendingWebArchive != nil || pendingLocalFile != nil || pendingInteractionState != nil || pendingEncryptedInteractionState != nil {
+				loadPendingRequest()
+				return
+			}
+		}
 		if let createdWebView {
-			createdWebView.reload()
+			if !hasCurrentPageDocument,
+			   let request = currentRequest ?? url.map({ URLRequest(url: $0) }),
+			   createdWebView.url == nil || createdWebView.url?.absoluteString == "about:blank"
+			{
+				load(request)
+				return
+			}
+			awaitsNavigationCommit = true
+			currentNavigation = usingOrigin ? createdWebView.reloadFromOrigin() : createdWebView.reload()
+			if currentNavigation == nil, let request = currentRequest ?? url.map({ URLRequest(url: $0) }) {
+				load(request)
+			}
 		} else if let url {
 			load(URLRequest(url: url))
 		}
 	}
 
 	func stopLoading() {
+		BrowserLog.notice(.navigation, "navigation.stop", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(url)])
 		createdWebView?.stopLoading()
 		pendingRequest = nil
 		pendingLocalFile = nil
@@ -1495,11 +2401,7 @@ final class BrowserController: NSObject, Identifiable {
 			reload()
 			return
 		}
-		if let createdWebView {
-			createdWebView.reloadFromOrigin()
-		} else if let url {
-			load(URLRequest(url: url))
-		}
+		reload(usingOrigin: true)
 	}
 
 	func zoomIn() {
@@ -1519,7 +2421,8 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	func loadFaviconIfMissing() {
-		guard let url, let webView = createdWebView else { return }
+		guard let url, let webView = createdWebView,
+		      !session.favicons.hasCachedFavicon(for: url) else { return }
 		loadFavicon(for: url, in: webView)
 	}
 
@@ -1529,12 +2432,15 @@ final class BrowserController: NSObject, Identifiable {
 			guard let self, let webView, owns(webView) else { return }
 			await session.favicons.loadFavicon(for: url, from: webView, onlyIfMissing: true)
 			guard owns(webView) else { return }
+			faviconTintAttemptedGeneration = nil
+			refreshCachedFaviconTint(in: webView)
 		}
 	}
 
 	#if os(macOS)
 		func discardPreviewSnapshot() {
 			previewSnapshot = nil
+			previewSnapshotGeneration = nil
 			windowMirrorSnapshot = nil
 		}
 
@@ -1551,14 +2457,102 @@ final class BrowserController: NSObject, Identifiable {
 		func refreshPreviewSnapshot() async {
 			guard let webView = createdWebView, owns(webView) else { return }
 			let generation = navigationGeneration
-			guard let image = await takeSnapshot() else { return }
-			guard owns(webView), generation == navigationGeneration else { return }
+			guard let image = await takeSnapshot(), owns(webView), generation == navigationGeneration else { return }
 			previewSnapshot = image
+			previewSnapshotGeneration = generation
 		}
+
+		func tabProcessMemorySnapshot() async -> BrowserTabProcessMemorySnapshot? {
+			guard let webView = createdWebView, owns(webView) else { return nil }
+			let generation = navigationGeneration
+
+			let webContentPID = Self.privateProcessIdentifier("_webProcessIdentifier", on: webView)
+			let graphicsPID = Self.privateProcessIdentifier("_gpuProcessIdentifier", on: webView)
+			let modelPID = Self.privateProcessIdentifier("_modelProcessIdentifier", on: webView)
+			let networkPID = Self.privateProcessIdentifier(
+				"_networkProcessIdentifier",
+				on: webView.configuration.websiteDataStore
+			)
+
+			let descriptors = [webContentPID, graphicsPID, networkPID, modelPID].compactMap(\.self)
+			guard !descriptors.isEmpty else { return nil }
+			let sampled = await Task.detached(priority: .utility) {
+				Self.sampleProcessMemory(for: descriptors)
+			}.value
+			guard owns(webView), generation == navigationGeneration,
+			      Self.privateProcessIdentifier("_webProcessIdentifier", on: webView) == webContentPID,
+			      Self.privateProcessIdentifier("_gpuProcessIdentifier", on: webView) == graphicsPID,
+			      Self.privateProcessIdentifier("_modelProcessIdentifier", on: webView) == modelPID,
+			      Self.privateProcessIdentifier("_networkProcessIdentifier", on: webView.configuration.websiteDataStore) == networkPID
+			else { return nil }
+			let snapshot = BrowserTabProcessMemorySnapshot(
+				webContent: webContentPID.flatMap { sampled[$0] },
+				graphics: graphicsPID.flatMap { sampled[$0] },
+				network: networkPID.flatMap { sampled[$0] },
+				model: modelPID.flatMap { sampled[$0] }
+			)
+			return snapshot.knownProcessBytes == nil ? nil : snapshot
+		}
+
+		private static func privateProcessIdentifier(_ key: String, on object: NSObject) -> pid_t? {
+			let selector = NSSelectorFromString(key)
+			guard object.responds(to: selector),
+			      let number = object.value(forKey: key) as? NSNumber
+			else { return nil }
+			let processIdentifier = number.int32Value
+			return processIdentifier > 0 ? processIdentifier : nil
+		}
+
+		private nonisolated static func sampleProcessMemory(for processIdentifiers: [pid_t]) -> [pid_t: BrowserTabProcessMemorySnapshot.Process] {
+			Dictionary(uniqueKeysWithValues: Set(processIdentifiers).map { pid in
+				(pid, BrowserTabProcessMemorySnapshot.sample(pid))
+			})
+		}
+
 	#endif
+
+	private func isCurrentDocumentFragmentURL(_ destination: URL?) -> Bool {
+		guard hasCurrentPageDocument, committedSecurityNavigationID == navigationIdentifier,
+		      let committedURL, let destination, committedURL != destination,
+		      var previous = URLComponents(url: committedURL, resolvingAgainstBaseURL: false),
+		      var next = URLComponents(url: destination, resolvingAgainstBaseURL: false),
+		      previous.fragment != next.fragment else { return false }
+		previous.fragment = nil
+		next.fragment = nil
+		return previous == next
+	}
+
+	private func finishFragmentNavigationIfNeeded(to destination: URL) {
+		// Same-document fragment loads report their URL through KVO without
+		// necessarily sending didCommit or didFinish. Only release the gate for
+		// the exact requested URL while the previously committed document lives.
+		guard awaitsNavigationCommit, !isInvalidated, !isDownloadHandoff,
+		      committedSecurityNavigationID == navigationIdentifier,
+		      let committedURL, committedURL != destination,
+		      var previous = URLComponents(url: committedURL, resolvingAgainstBaseURL: false),
+		      var next = URLComponents(url: destination, resolvingAgainstBaseURL: false),
+		      previous.fragment != next.fragment else { return }
+		previous.fragment = nil
+		next.fragment = nil
+		guard previous == next else { return }
+		if let request = currentRequest {
+			guard request.url == destination, (request.httpMethod ?? "GET") == "GET",
+			      request.httpBody == nil, request.httpBodyStream == nil else { return }
+		} else {
+			// Back/Forward traversals have no URLRequest. WebKit's current
+			// history item identifies their destination without rebuilding it
+			// as a GET request (which would lose POST restoration semantics).
+			guard createdWebView?.backForwardList.currentItem?.url == destination else { return }
+		}
+		awaitsNavigationCommit = false
+	}
 
 	private func updateHistory(reportSameDocumentVisit: Bool = true) {
 		guard let currentURL = createdWebView?.url else { return }
+		if committedURL != currentURL {
+			resetReader()
+			createdWebView?.evaluateJavaScript("globalThis.astraProbeReader?.(true)", in: nil, in: .defaultClient, completionHandler: nil)
+		}
 		url = currentURL
 		if let list = createdWebView?.backForwardList, let current = list.currentItem {
 			let entries = liveHistoryPrefix + list.backList.map(\.url) + [current.url] + list.forwardList.map(\.url)
@@ -1585,9 +2579,7 @@ final class BrowserController: NSObject, Identifiable {
 		      	currentDocumentID: navigationIdentifier,
 		      	isNavigating: awaitsNavigationCommit,
 		      	isFailure: navigationFailure != nil
-		      )
-		else { return }
-		guard let committedURL else { return }
+		      ), let committedURL else { return }
 
 		committedHasOnlySecureContent = webView.hasOnlySecureContent
 		committedCertificateSummary = webView.serverTrust.flatMap {
@@ -1610,7 +2602,8 @@ final class BrowserController: NSObject, Identifiable {
 	}
 
 	private func load(_ request: URLRequest, resetConnectivityRetry: Bool = true) {
-		guard !isInvalidated else { return }
+		BrowserLog.debug(.navigation, "navigation.dispatch", metadata: ["controller": BrowserLog.id(id), "request": BrowserLog.request(request), "reset_retry": String(resetConnectivityRetry), "content_blocker_ready": String(session.contentBlocking.isReadyForNavigation)])
+		guard !isInvalidated, !snapshotNavigationOnly else { return }
 		pendingWebArchive = nil
 		pendingLocalFile = nil
 		awaitsNavigationCommit = true
@@ -1619,26 +2612,41 @@ final class BrowserController: NSObject, Identifiable {
 		if resetConnectivityRetry {
 			retriedAfterConnectivityReturn = false
 		}
-		guard session.contentBlocking.isReadyForNavigation else {
-			pendingRequest = request
-			return
-		}
-		guard let webView = createdWebView else {
+		guard session.contentBlocking.isReadyForNavigation, let webView = createdWebView else {
 			pendingRequest = request
 			return
 		}
 		pendingRequest = nil
 		webView.customUserAgent = userAgentOverride(for: request.url)
-		currentNavigation = webView.load(request)
+		guard let navigation = webView.load(request) else {
+			currentNavigation = nil
+			awaitsNavigationCommit = false
+			historyManager.cancelVisit()
+			if let requestURL = request.url {
+				navigationFailure = BrowserNavigationFailure(kind: .other, url: requestURL)
+			}
+			navigationDidChange?()
+			return
+		}
+		currentNavigation = navigation
 	}
 
 	private func loadPendingRequest() {
 		guard session.contentBlocking.isReadyForNavigation else { return }
+		if let encrypted = pendingEncryptedInteractionState, createdWebView != nil {
+			pendingEncryptedInteractionState = nil
+			let startedAt = BrowserLog.clock()
+			pendingInteractionState = BrowserRestorationStore.open(encrypted.data, for: encrypted.url)
+			BrowserLog.duration(.webKit, "restoration.decrypt", since: startedAt, warnAboveMilliseconds: 30)
+		}
 		if let state = pendingInteractionState, let webView = createdWebView {
 			pendingInteractionState = nil
-			liveHistoryPrefix = []
+			let savedHistory = history
+			let savedIndex = historyIndex
 			webView.interactionState = state
 			if webView.backForwardList.currentItem != nil {
+				let prefixCount = max(0, savedIndex - webView.backForwardList.backList.count)
+				liveHistoryPrefix = Array(savedHistory.prefix(prefixCount))
 				pendingRequest = nil
 				pendingLocalFile = nil
 				updateHistory()
@@ -1674,9 +2682,56 @@ final class BrowserController: NSObject, Identifiable {
 		load(pendingRequest)
 	}
 
+	private func resolveThemeColor(in webView: WKWebView) {
+		// Visible full-width page chrome wins. Explicit site metadata takes
+		// precedence over ordinary body colour; background is the last fallback.
+		let color = sampledChromeColor
+			?? webView.themeColor
+			?? sampledSurfaceColor
+			?? sampledBrandColor
+			?? sampledFaviconColor
+			?? webView.underPageBackgroundColor
+			?? PlatformColor.white
+		updateThemeColor(color)
+	}
+
+	/// Only a pre-existing cached favicon is eligible. Its palette extraction
+	/// runs off the main actor and never blocks scrolling or adds network work.
+	private func refreshCachedFaviconTint(in webView: WKWebView) {
+		guard owns(webView), !isInvalidated,
+		      sampledChromeColor == nil, sampledSurfaceColor == nil,
+		      sampledBrandColor == nil, webView.themeColor == nil,
+		      faviconTintTask == nil,
+		      faviconTintAttemptedGeneration != navigationGeneration,
+		      session.favicons.hasCachedFavicon(for: webView.url)
+		else { return }
+		let generation = navigationGeneration
+		let pageURL = webView.url
+		faviconTintAttemptedGeneration = generation
+		faviconTintTask = Task { @MainActor [weak self, weak webView] in
+			guard let self, let webView else { return }
+			let accent = await session.favicons.cachedAccentColor(for: pageURL)
+			guard owns(webView), generation == navigationGeneration,
+			      webView.url == pageURL
+			else { return }
+			faviconTintTask = nil
+			guard sampledChromeColor == nil, sampledSurfaceColor == nil,
+			      sampledBrandColor == nil, webView.themeColor == nil
+			else { return }
+			sampledFaviconColor = accent.map {
+				PlatformColor(
+					red: CGFloat($0.0), green: CGFloat($0.1),
+					blue: CGFloat($0.2), alpha: 1
+				)
+			}
+			resolveThemeColor(in: webView)
+		}
+	}
+
 	private func updateThemeColor(_ color: PlatformColor) {
 		#if os(macOS)
-			guard let color = color.usingColorSpace(.deviceRGB) else {
+			// WCAG luminance is defined in sRGB, not device-dependent RGB.
+			guard let color = color.usingColorSpace(.sRGB) else {
 				return
 			}
 		#endif
@@ -1685,19 +2740,50 @@ final class BrowserController: NSObject, Identifiable {
 		var blue: CGFloat = 0
 		var alpha: CGFloat = 0
 		#if os(iOS)
-			guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+			guard unsafe color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
 				return
 			}
 		#elseif os(macOS)
-			color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+			unsafe color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
 		#endif
 
-		themeColor = Color(color)
-		themeColorIsLight = red + green + blue > 1.5
+		let nextColor = Color(color.withAlphaComponent(1))
+		// WCAG contrast: black is the higher-contrast choice above 0.179 luminance.
+		let nextIsLight = BrowserColor(red: Double(red), green: Double(green), blue: Double(blue)).luminance > 0.179
+		// Avoid invalidating SwiftUI chrome on unchanged fallback/probe events.
+		if themeColor != nextColor {
+			themeColor = nextColor
+		}
+		if themeColorIsLight != nextIsLight {
+			themeColorIsLight = nextIsLight
+		}
 	}
 
+	#if os(macOS)
+		weak var screenshotReaderWebView: WKWebView?
+
+		func captureScreenshot() async throws -> BrowserScreenshot {
+			let view = readerHTML == nil ? createdWebView : screenshotReaderWebView
+			guard let view, !view.bounds.isEmpty else {
+				throw CocoaError(.coderInvalidValue)
+			}
+			let documentID = navigationIdentifier
+			let wasReader = readerHTML != nil
+			let configuration = WKSnapshotConfiguration()
+			configuration.rect = view.bounds
+			let scale = unsafe view.window?.backingScaleFactor ?? 2
+			let image = try await view.takeSnapshot(configuration: configuration)
+			guard !isInvalidated, navigationIdentifier == documentID,
+			      wasReader == (readerHTML != nil)
+			else {
+				throw CocoaError(.userCancelled)
+			}
+			return BrowserScreenshot(image: image, scale: scale)
+		}
+	#endif
+
 	private func takeSnapshot(snapshotWidth: CGFloat = 180) async -> SnapshotImage? {
-		guard !isInvalidated, url != nil, let webView = createdWebView, !webView.bounds.isEmpty else { return nil }
+		guard !isInvalidated, hasCurrentPageDocument, let webView = createdWebView, !webView.bounds.isEmpty else { return nil }
 		#if os(macOS)
 			guard !isRefreshingPreviewSnapshot else { return nil }
 			isRefreshingPreviewSnapshot = true
@@ -1718,11 +2804,13 @@ final class BrowserController: NSObject, Identifiable {
 
 		#if os(macOS)
 			previewSnapshot = image
+			previewSnapshotGeneration = generation
 		#endif
 	}
 
 	#if os(macOS)
 		private func startPreviewSnapshotRefresh() {
+			guard previewSnapshotRefreshTask == nil else { return }
 			previewSnapshotRefreshTask = Task { @MainActor [weak self] in
 				while !Task.isCancelled {
 					do {
@@ -1745,11 +2833,22 @@ extension BrowserController: WKNavigationDelegate {
 		_ webView: WKWebView,
 		decidePolicyFor navigationAction: WKNavigationAction,
 		preferences: WKWebpagePreferences,
-		decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
+		decisionHandler: @escaping @MainActor (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
 	) {
 		guard owns(webView) else {
 			decisionHandler(.cancel, preferences)
 			return
+		}
+		if snapshotNavigationOnly {
+			let isSnapshotLoad = navigationAction.targetFrame?.isMainFrame == true
+				&& navigationAction.navigationType == .other
+				&& navigationAction.request.url?.absoluteString == "about:blank"
+			decisionHandler(isSnapshotLoad ? .allow : .cancel, preferences)
+			return
+		}
+		if navigationAction.targetFrame?.isMainFrame == true, navigationAction.navigationType == .backForward {
+			clearAILinkPreviewCache()
+			aiPreviewDismissal += 1
 		}
 		if navigationAction.targetFrame?.isMainFrame == true,
 		   let origin = navigationAction.request.url.flatMap(BrowserSitePermissions.origin(for:)),
@@ -1875,7 +2974,7 @@ extension BrowserController: WKNavigationDelegate {
 	func webView(
 		_ webView: WKWebView,
 		decidePolicyFor navigationResponse: WKNavigationResponse,
-		decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+		decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void
 	) {
 		guard owns(webView) else {
 			decisionHandler(.cancel)
@@ -1973,7 +3072,13 @@ extension BrowserController: WKNavigationDelegate {
 		handleNavigationFailure(navigation, error: error)
 	}
 
+	func recordProxyAuthenticationChallenge(_ challenge: URLAuthenticationChallenge, in webView: WKWebView) {
+		guard owns(webView), challenge.protectionSpace.isProxy() else { return }
+		encounteredProxyAuthentication = true
+	}
+
 	private func handleNavigationFailure(_ navigation: WKNavigation!, error: Error) {
+		BrowserLog.error(.navigation, "navigation.failure.callback", metadata: ["controller": BrowserLog.id(id), "error": BrowserLog.errorDescription(error), "url": BrowserLog.url(url)])
 		guard navigation === currentNavigation else { return }
 		let error = error as NSError
 		if isDownloadHandoff,
@@ -1990,7 +3095,20 @@ extension BrowserController: WKNavigationDelegate {
 		historyManager.cancelVisit()
 		failedRequest = isAuthenticationSessionBrowser ? nil : currentRequest
 		if let failedURL = error.userInfo[NSURLErrorFailingURLErrorKey] as? URL ?? url {
-			navigationFailure = BrowserNavigationFailure(error: error, url: failedURL)
+			let failure = BrowserNavigationFailure(
+				error: error,
+				url: failedURL,
+				encounteredProxyAuthentication: encounteredProxyAuthentication
+			)
+			navigationFailure = failure
+			if failure.isProxyFailure {
+				BrowserLog.notice(.navigation, "navigation.proxy-failure", metadata: [
+					"controller": BrowserLog.id(id),
+					"kind": failure.kind.rawValue,
+					"error_domain": error.domain,
+					"error_code": String(error.code),
+				])
+			}
 		}
 	}
 
@@ -2008,7 +3126,9 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+		BrowserLog.fault(.webKit, "webcontent.terminated", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(webView.url ?? url)])
 		guard owns(webView) else { return }
+		resetReader()
 		pictureInPictureControlUnavailable = false
 		canEnterPictureInPicture = false
 		isEnteringPictureInPicture = false
@@ -2021,7 +3141,10 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+		navigationLogStartedAt = BrowserLog.clock()
+		BrowserLog.info(.navigation, "navigation.did-start", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(webView.url ?? url)])
 		guard owns(webView) else { return }
+		resetReader()
 		clearHoveredLink()
 		invalidateFindResults()
 		if isPictureInPictureActive || isEnteringPictureInPicture {
@@ -2039,12 +3162,20 @@ extension BrowserController: WKNavigationDelegate {
 		hasPausedMedia = false
 		areMediaElementsMuted = false
 		currentNavigation = navigation
+		encounteredProxyAuthentication = false
 		failedRequest = nil
 		navigationFailure = nil
 		awaitsNavigationCommit = true
 		session.permissions.removeTemporaryDecisions(controllerID: id)
 		navigationGeneration += 1
-		hasDeclaredThemeColor = false
+		sampledChromeColor = nil
+		sampledSurfaceColor = nil
+		sampledBrandColor = nil
+		sampledFaviconColor = nil
+		pageTintHandledGeneration = nil
+		faviconTintTask?.cancel()
+		faviconTintTask = nil
+		faviconTintAttemptedGeneration = nil
 		hasTopEdgeContent = false
 		webView.underPageBackgroundColor = nil
 	}
@@ -2070,7 +3201,12 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+		BrowserLog.info(.navigation, "navigation.did-commit", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(webView.url)])
 		guard owns(webView), navigation === currentNavigation else { return }
+		// The document can change without changing origins (reloads and
+		// same-site links). Preview text from the previous page must not
+		// survive a successful main-frame navigation.
+		clearAILinkPreviewCache()
 		releaseUploadAccess()
 		pictureInPictureControlUnavailable = false
 		committedURL = webView.url
@@ -2102,17 +3238,55 @@ extension BrowserController: WKNavigationDelegate {
 	}
 
 	func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+		if let navigationLogStartedAt {
+			BrowserLog.duration(.navigation, "navigation.did-finish", since: navigationLogStartedAt, warnAboveMilliseconds: 1500, metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(webView.url)])
+			self.navigationLogStartedAt = nil
+		} else {
+			BrowserLog.info(.navigation, "navigation.did-finish", metadata: ["controller": BrowserLog.id(id), "url": BrowserLog.url(webView.url)])
+		}
 		guard owns(webView), navigation === currentNavigation else { return }
+		// Fragment navigation can finish without didCommit because WebKit keeps
+		// the existing document. A successful finish of the current navigation
+		// must release the readiness gate set by load(_:), too.
+		awaitsNavigationCommit = false
+		#if os(macOS)
+			if BrowserPerformanceBenchmark.enabled,
+			   BrowserPerformanceBenchmark.shouldMeasureNavigation(webView)
+			{
+				BrowserPerformanceBenchmark.recordNavigationFinished(
+					controllerID: id,
+					webView: webView,
+					webContentPID: Self.privateProcessIdentifier("_webProcessIdentifier", on: webView),
+					graphicsPID: Self.privateProcessIdentifier("_gpuProcessIdentifier", on: webView),
+					networkPID: Self.privateProcessIdentifier("_networkProcessIdentifier", on: webView.configuration.websiteDataStore)
+				)
+				let generation = navigationGeneration
+				webView.callAsyncJavaScript(
+					"await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(document.readyState))))",
+					arguments: [:],
+					in: nil,
+					in: .page
+				) { [weak self, weak webView] result in
+					Task { @MainActor in
+						guard case .success = result,
+						      let self,
+						      let webView,
+						      self.navigationGeneration == generation,
+						      self.owns(webView)
+						else { return }
+						BrowserPerformanceBenchmark.recordTwoRAF(controllerID: self.id)
+					}
+				}
+			}
+		#endif
 		refreshContentBlocking(for: webView.url)
+		applyEaselQuoteHighlight(in: webView)
+		webView.evaluateJavaScript("globalThis.astraProbeReader?.(true)", in: nil, in: .defaultClient, completionHandler: nil)
 		updateHistory()
 		if showsFind, !findText.isEmpty {
 			findNext()
 		}
-		if !hasDeclaredThemeColor,
-		   let pageBackgroundColor = webView.underPageBackgroundColor
-		{
-			updateThemeColor(pageBackgroundColor)
-		}
+		resolveThemeColor(in: webView)
 		restoreScrollPositionIfNeeded(in: webView)
 		let generation = navigationGeneration
 		if let url {
@@ -2141,7 +3315,22 @@ extension BrowserController: WKNavigationDelegate {
 extension BrowserController: WKScriptMessageHandler {
 	func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
 		guard !isInvalidated else { return }
+		if message.name == "readerAvailabilityChanged" {
+			guard message.frameInfo.isMainFrame, let webView = message.webView,
+			      owns(webView), hasCurrentPageDocument, navigationFailure == nil,
+			      let value = message.body as? [String: Any],
+			      let pageURL = value["url"] as? String, pageURL == webView.url?.absoluteString,
+			      let available = value["available"] as? Bool else { return }
+			isReaderAvailable = available
+			return
+		}
 		if message.name == "linkHoverChanged" {
+			if let value = message.body as? [String: Any], value["dismissPreview"] as? Bool == true,
+			   let webView = message.webView, owns(webView)
+			{
+				aiPreviewDismissal += 1
+				return
+			}
 			guard !awaitsNavigationCommit, let webView = message.webView,
 			      owns(webView), !webView.isHidden,
 			      let value = message.body as? [String: Any],
@@ -2152,6 +3341,18 @@ extension BrowserController: WKScriptMessageHandler {
 			}
 			hoveredLinkURL = BrowserAddress.withoutCredentials(url)
 			hoveredLinkUsesTrailingCorner = value["trailing"] as? Bool == true
+			if message.frameInfo.isMainFrame,
+			   let x = value["x"] as? Double, let y = value["y"] as? Double,
+			   let width = value["width"] as? Double, let height = value["height"] as? Double,
+			   [x, y, width, height].allSatisfy(\.isFinite), width >= 0, height >= 0
+			{
+				hoveredLinkRect = CGRect(x: x, y: y, width: width, height: height)
+				hoveredLinkID = value["id"] as? String ?? ""
+				hoveredLinkShiftPressed = value["shift"] as? Bool == true
+			} else {
+				hoveredLinkID = ""
+			}
+
 			return
 		}
 		if message.name == "pageActivityChanged" {
@@ -2186,6 +3387,35 @@ extension BrowserController: WKScriptMessageHandler {
 			return
 		}
 
+		if message.name == Self.pageTintMessageName {
+			guard pageTintHandledGeneration != navigationGeneration,
+			      message.frameInfo.isMainFrame, let webView = message.webView,
+			      owns(webView), hasCurrentPageDocument, navigationFailure == nil,
+			      let result = message.body as? [String: Any],
+			      let urlString = result["url"] as? String, urlString == webView.url?.absoluteString,
+			      let source = result["source"] as? String
+			else { return }
+			let color: PlatformColor? = if let rgb = result["rgb"] as? [NSNumber], rgb.count == 3,
+			                               rgb.allSatisfy({ $0.doubleValue.isFinite && (0 ... 255).contains($0.doubleValue) })
+			{
+				PlatformColor(
+					red: CGFloat(rgb[0].doubleValue / 255),
+					green: CGFloat(rgb[1].doubleValue / 255),
+					blue: CGFloat(rgb[2].doubleValue / 255),
+					alpha: 1
+				)
+			} else {
+				nil
+			}
+			pageTintHandledGeneration = navigationGeneration
+			sampledChromeColor = source == "chrome" ? color : nil
+			sampledSurfaceColor = source == "surface" ? color : nil
+			sampledBrandColor = source == "brand" ? color : nil
+			resolveThemeColor(in: webView)
+			refreshCachedFaviconTint(in: webView)
+			return
+		}
+
 		if message.name == Self.topEdgeMessageName {
 			if let occupied = message.body as? Bool {
 				hasTopEdgeContent = occupied
@@ -2211,7 +3441,84 @@ extension BrowserController: WKScriptMessageHandler {
 	}
 }
 
+extension BrowserController {
+	#if os(macOS)
+		/// Query at action time, avoiding races between WebKit's contextmenu event
+		/// and AppKit's synchronous willOpenMenu callback.
+		private func captureEaselQuote(for destinationID: UUID) {
+			guard !session.isPrivate,
+			      easelQuoteDestinations?().contains(where: { $0.id == destinationID }) == true,
+			      hasCurrentPageDocument, let webView = createdWebView,
+			      let url = webView.url.map(BrowserAddress.withoutCredentials),
+			      BrowserEaselDocument.isSafeLink(url) else { return }
+			let documentID = navigationIdentifier
+			let script = """
+			(() => {
+			  const sel = window.getSelection();
+			  if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+			  const text = sel.toString().trim();
+			  if (!text || text.length > 8192) return null;
+			  let prefix = '', suffix = '';
+			  try {
+			    const range = sel.getRangeAt(0);
+			    if (document.body?.contains(range.startContainer) &&
+			        document.body?.contains(range.endContainer)) {
+			      const before = document.createRange();
+			      before.selectNodeContents(document.body);
+			      before.setEnd(range.startContainer, range.startOffset);
+			      prefix = before.toString().slice(-48);
+			      const after = document.createRange();
+			      after.selectNodeContents(document.body);
+			      after.setStart(range.endContainer, range.endOffset);
+			      suffix = after.toString().slice(0, 48);
+			    }
+			  } catch (_) {}
+			  return {text, prefix, suffix};
+			})()
+			"""
+			webView.evaluateJavaScript(script, in: nil, in: .defaultClient) { [weak self, weak webView] result in
+				guard let self, let webView, owns(webView),
+				      navigationIdentifier == documentID, hasCurrentPageDocument,
+				      let currentURL = webView.url.map(BrowserAddress.withoutCredentials),
+				      currentURL == url, case let .success(value) = result,
+				      let capture = value as? [String: String],
+				      let text = capture["text"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+				else { return }
+				let quote = BrowserEaselQuote(url: url, text: text,
+				                              prefix: String((capture["prefix"] ?? "").suffix(48)),
+				                              suffix: String((capture["suffix"] ?? "").prefix(48)))
+				guard quote.isValid,
+				      easelQuoteDestinations?().contains(where: { $0.id == destinationID }) == true else { return }
+				addQuoteToEasel?(destinationID, quote)
+			}
+		}
+	#endif
+
+	private func applyEaselQuoteHighlight(in webView: WKWebView) {
+		guard let quote = easelQuoteHighlight, quote.isValid, let url = webView.url,
+		      var current = URLComponents(url: url, resolvingAgainstBaseURL: false),
+		      var original = URLComponents(url: quote.url, resolvingAgainstBaseURL: false) else { return }
+		current.fragment = nil
+		original.fragment = nil
+		guard current.url == original.url,
+		      let payload = try? JSONSerialization.data(withJSONObject: [
+		      	"text": quote.text, "prefix": quote.prefix, "suffix": quote.suffix,
+		      ]),
+		      let json = String(data: payload, encoding: .utf8) else { return }
+		let script = BrowserEaselQuote.highlightScript.replacingOccurrences(of: "__ASTRA_QUOTE__", with: json)
+		webView.evaluateJavaScript(script, in: nil, in: .defaultClient, completionHandler: nil)
+	}
+}
+
 extension BrowserController: WKUIDelegate {
+	#if os(macOS)
+		@objc(_webViewFullscreenMayReturnToInline:)
+		func webViewFullscreenMayReturnToInline(_ webView: WKWebView) {
+			guard owns(webView) else { return }
+			returnToPictureInPictureSource()
+		}
+	#endif
+
 	#if os(iOS)
 		func webView(
 			_ webView: WKWebView,
@@ -2299,7 +3606,7 @@ extension BrowserController: WKUIDelegate {
 							guard let self, let webView,
 							      ownsPrompt(in: webView, documentID: documentID),
 							      let url = BrowserSearchConfiguration.decode(Defaults[.browserSearchConfiguration])
-							      .destination(for: selectedText, isPrivate: session.isPrivate)
+							      	.destination(for: selectedText, isPrivate: session.isPrivate)
 							else { return }
 							newTabRequested?(URLRequest(url: url), false)
 						}
@@ -2338,7 +3645,7 @@ extension BrowserController: WKUIDelegate {
 		for navigationAction: WKNavigationAction,
 		windowFeatures _: WKWindowFeatures
 	) -> WKWebView? {
-		guard owns(webView) else { return nil }
+		guard owns(webView), !snapshotNavigationOnly else { return nil }
 		if BrowserAuthenticationPolicy.canInterceptCallback(
 			isSourceMainFrame: navigationAction.sourceFrame.isMainFrame,
 			targetsMainFrame: navigationAction.targetFrame?.isMainFrame == true,
@@ -2433,10 +3740,12 @@ extension BrowserController: WKUIDelegate {
 		inBackground: Bool?
 	) -> WKWebView? {
 		guard let popup = popupRequested?(configuration, source, inBackground) else { return nil }
-		if isAuthenticationSessionBrowser,
-		   let controller = popup.navigationDelegate as? BrowserController
-		{
-			controller.isAuthenticationSessionBrowser = true
+		if let controller = popup.navigationDelegate as? BrowserController {
+			livePopupControllers.add(controller)
+			popupDependencyRevision &+= 1
+			if isAuthenticationSessionBrowser {
+				controller.isAuthenticationSessionBrowser = true
+			}
 		}
 		return popup
 	}
@@ -2473,6 +3782,7 @@ extension BrowserController: WKUIDelegate {
 		isExplicitAddressRequest: Bool = false,
 		in webView: WKWebView
 	) -> Bool {
+		guard !snapshotNavigationOnly else { return true }
 		guard let scheme = BrowserAddress.externalApplicationScheme(for: url) else { return false }
 		let documentID = navigationIdentifier
 		#if os(macOS)
@@ -2525,20 +3835,25 @@ extension BrowserController: WKUIDelegate {
 				?? origin.url.flatMap(BrowserSitePermissions.origin(for:))
 				?? "This page"
 			isOpeningExternalApplication = true
-			Task { @MainActor in
-				defer { isOpeningExternalApplication = false }
+			Task { @MainActor [weak self, weak webView] in
+				guard let webView, self?.owns(webView) == true else { return }
+				defer { self?.isOpeningExternalApplication = false }
 				let promptWindow: NSWindow
 				let promptOwnerIsCurrent: @MainActor () -> Bool
 				if let explicitOwner {
-					guard ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: explicitOwner) else { return }
+					guard self?.ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: explicitOwner) == true else { return }
 					promptWindow = explicitOwner.window
-					promptOwnerIsCurrent = { [self, webView] in
-						ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: explicitOwner)
+					promptOwnerIsCurrent = { [weak self, weak webView] in
+						guard let self, let webView else { return false }
+						return ownsExplicitAddressPrompt(in: webView, documentID: documentID, owner: explicitOwner)
 					}
 				} else {
-					guard let window = webView.window else { return }
+					guard let window = unsafe webView.window else { return }
 					promptWindow = window
-					promptOwnerIsCurrent = { [self, webView] in ownsPrompt(in: webView, documentID: documentID) }
+					promptOwnerIsCurrent = { [weak self, weak webView] in
+						guard let self, let webView else { return false }
+						return ownsPrompt(in: webView, documentID: documentID)
+					}
 				}
 				let alert = BrowserWebsiteUI.alert(
 					title: "Open \(applicationName)?",
@@ -2548,13 +3863,13 @@ extension BrowserController: WKUIDelegate {
 				let response = await BrowserWebsiteUI.present(alert, in: promptWindow, isCurrent: promptOwnerIsCurrent)
 				guard promptOwnerIsCurrent(),
 				      response == .alertFirstButtonReturn else { return }
-				lastExternalApplicationRequestTime = ProcessInfo.processInfo.systemUptime
+				self?.lastExternalApplicationRequestTime = ProcessInfo.processInfo.systemUptime
 				let configuration = NSWorkspace.OpenConfiguration()
 				configuration.addsToRecentItems = false
 				do {
 					_ = try await NSWorkspace.shared.open([url], withApplicationAt: applicationURL, configuration: configuration)
 				} catch {
-					session.toastManager.show(symbol: "exclamationmark.triangle", message: "\(applicationName) could not open this link")
+					self?.session.toastManager.show(symbol: "exclamationmark.triangle", message: "\(applicationName) could not open this link")
 				}
 			}
 		#elseif os(iOS)
@@ -2580,6 +3895,35 @@ extension BrowserController: WKUIDelegate {
 }
 
 private final class PeekSourceWebView: WKWebView {
+	#if os(macOS)
+		var quoteDestinations: (() -> [BrowserEaselQuoteDestination])?
+		var onQuoteRequested: ((UUID) -> Void)?
+
+		override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+			super.willOpenMenu(menu, with: event)
+			guard menu.items.contains(where: {
+				$0.identifier?.rawValue == "WKMenuItemIdentifierCopy" || $0.title == "Copy"
+			}), let destinations = quoteDestinations?(), !destinations.isEmpty else { return }
+			let submenu = NSMenu(title: "Add to Easel")
+			for destination in destinations {
+				let option = NSMenuItem(title: destination.title, action: #selector(addSelectedQuote(_:)), keyEquivalent: "")
+				option.target = self
+				option.representedObject = destination.id.uuidString
+				submenu.addItem(option)
+			}
+			menu.addItem(.separator())
+			let item = NSMenuItem(title: "Add to Easel", action: nil, keyEquivalent: "")
+			item.submenu = submenu
+			menu.addItem(item)
+		}
+
+		@objc private func addSelectedQuote(_ sender: NSMenuItem) {
+			guard let identifier = sender.representedObject as? String,
+			      let id = UUID(uuidString: identifier) else { return }
+			onQuoteRequested?(id)
+		}
+	#endif
+
 	var onEscape: (() -> Void)?
 	var onLayout: (() -> Void)?
 	var onZoomIn: (() -> Void)?
@@ -2652,7 +3996,7 @@ private final class PeekSourceWebView: WKWebView {
 			let target = super.hitTest(point)
 			if target != nil,
 			   let event = NSApp.currentEvent,
-			   event.window === window,
+			   unsafe event.window === window,
 			   event.type == .leftMouseDown || event.type == .otherMouseDown
 			{
 				recordSource(at: convert(event.locationInWindow, from: nil))

@@ -1,5 +1,4 @@
 import Defaults
-import Sparkle
 import SwiftUI
 
 #if os(macOS)
@@ -10,16 +9,13 @@ let addressDisplayStyleSpacing: CGFloat = 8
 
 struct BrowserGeneralSettingsView: View {
 	@Bindable private var updates = UpdateManager.shared
-	@Default(.newTabStyle) private var newTabStyle
 	@Default(.addressDisplayStyle) private var addressDisplayStyle
 	@Default(.defaultPageZoom) private var defaultPageZoom
 	@Default(.peekLevel) private var peekLevel
 	@Default(.zoomOutInPeeks) private var zoomOutInPeeks
-	@Default(.renameDownloadsWithAppleIntelligence) private var renameDownloadsWithAppleIntelligence
 	@Default(.downloadsAskWhereToSave) private var downloadsAskWhereToSave
-	@Default(.startupBehavior) private var startupBehavior
-	@Default(.homepageURL) private var homepageURL
 	@Default(.browserSearchConfiguration) private var browserSearchConfigurationValue
+	@Default(.automaticHibernationEnabled) private var automaticHibernationEnabled
 
 	#if os(macOS)
 		@State private var isDefaultBrowser = false
@@ -27,7 +23,6 @@ struct BrowserGeneralSettingsView: View {
 		@State private var defaultBrowserError: String?
 		@Default(.miniAstraEnabled) private var miniAstraEnabled
 		@Default(.miniAstraWindowAnimation) private var miniAstraWindowAnimation
-		@Default(.miniAstraShortcutEnabled) private var miniAstraShortcutEnabled
 	#endif
 
 	var body: some View {
@@ -75,39 +70,6 @@ struct BrowserGeneralSettingsView: View {
 				.accessibilityIdentifier("address-display-style-picker")
 				.id("Address Bar")
 			}
-
-			Section("New Tab") {
-				VStack(spacing: addressDisplayStyleSpacing) {
-					ForEach(BrowserNewTabStyle.allCases) { style in
-						Button {
-							newTabStyle = style
-						} label: {
-							HStack(spacing: 12) {
-								Label(style.title, systemImage: style.symbol)
-									.frame(width: 140, alignment: .leading)
-								Text(style.description)
-									.font(.caption)
-									.frame(maxWidth: .infinity, alignment: .leading)
-							}
-							.padding(12)
-							.contentShape(RoundedRectangle(cornerRadius: 15))
-							.background(Color.primary.opacity(newTabStyle == style ? 0.2 : 0), in: RoundedRectangle(cornerRadius: 15))
-							.overlay {
-								RoundedRectangle(cornerRadius: 15)
-									.strokeBorder(.white.opacity(newTabStyle == style ? 0.6 : 0.3), lineWidth: 1)
-							}
-						}
-						.buttonStyle(.plain)
-						.accessibilityLabel(style.title)
-						.accessibilityValue(newTabStyle == style ? "Selected" : "Not selected")
-						.accessibilityIdentifier("new-tab-style-\(style.rawValue)")
-					}
-				}
-				.padding(5)
-				.background(Color.primary.opacity(0.1), in: RoundedRectangle(cornerRadius: 20))
-				.accessibilityIdentifier("new-tab-style-picker")
-			}
-			.id("New Tab")
 
 			Section("Search") {
 				Picker("Normal browsing", selection: engineBinding(isPrivate: false)) {
@@ -178,21 +140,16 @@ struct BrowserGeneralSettingsView: View {
 			}
 			.id("Page Zoom")
 
-			Section("Startup") {
-				Picker("When Astra opens", selection: $startupBehavior) {
-					Text("Restore previous session").tag(BrowserStartupBehavior.restore)
-					Text("Open a blank tab").tag(BrowserStartupBehavior.blank)
-					Text("Open homepage").tag(BrowserStartupBehavior.homepage)
-				}
-				.accessibilityIdentifier("startup-behavior-picker")
-
-				if startupBehavior == .homepage {
-					TextField("Homepage URL", text: $homepageURL)
-						.accessibilityLabel("Homepage URL")
-						.accessibilityIdentifier("homepage-url")
-				}
+			Section("Performance") {
+				Toggle("Automatically hibernate inactive tabs", isOn: $automaticHibernationEnabled)
+					.accessibilityLabel("Automatically hibernate inactive tabs")
+					.accessibilityHint("Releases WebKit resources from inactive tabs after a period of inactivity")
+					.accessibilityIdentifier("automatic-hibernation-enabled")
+				Text("Inactive tabs are released after about 30 minutes. Memory pressure can shorten this period.")
+					.font(.caption)
+					.foregroundStyle(.secondary)
 			}
-			.id("Startup")
+			.id("Performance")
 
 			#if os(macOS)
 				Section("Mini Astra") {
@@ -206,20 +163,6 @@ struct BrowserGeneralSettingsView: View {
 						Text("Expands the window from the pointer position. Respects Reduce Motion.")
 							.font(.caption)
 							.foregroundStyle(.secondary)
-					}
-
-					Toggle("Enable global shortcut: ⌃⌥⌘N", isOn: $miniAstraShortcutEnabled)
-						.accessibilityLabel("Enable global Mini Astra shortcut: Control Option Command N")
-						.accessibilityIdentifier("mini-astra-shortcut-enabled")
-						.onChange(of: miniAstraShortcutEnabled) { _, _ in
-							MiniAstraShortcut.shared.update()
-						}
-					Text("Opens a blank Mini Astra window from any app while Astra is running.")
-						.font(.caption)
-						.foregroundStyle(.secondary)
-					if MiniAstraShortcut.shared.registrationFailed {
-						Text("The shortcut could not be registered. Disable any conflicting shortcut, then enable it again.")
-							.foregroundStyle(.red)
 					}
 				}
 
@@ -265,11 +208,6 @@ struct BrowserGeneralSettingsView: View {
 					}
 				#endif
 
-				Toggle("Rename downloads with Apple Intelligence", isOn: $renameDownloadsWithAppleIntelligence)
-					.accessibilityLabel("Rename downloads with Apple Intelligence")
-					.accessibilityIdentifier("rename-downloads-with-apple-intelligence")
-					.id("Rename downloads with Apple Intelligence")
-
 				ZStack {}
 			}
 			.id("Downloads")
@@ -280,7 +218,7 @@ struct BrowserGeneralSettingsView: View {
 					.id("Automatically check for updates")
 
 				Toggle("Automatically install updates", isOn: $updates.automaticInstalls)
-					.disabled(!updates.automaticChecks || !updates.updater.allowsAutomaticUpdates)
+					.disabled(!updates.automaticChecks || !updates.allowsAutomaticUpdates)
 					.accessibilityIdentifier("automatically-install-updates")
 					.id("Automatically install updates")
 			}

@@ -1,39 +1,16 @@
-//
-//  CheckForUpdatesView.swift
-//  astra
-//
-//  Created by Adon Omeri on 25/9/2026.
-//
-
-import Combine
-import Sparkle
 import SwiftUI
 
-final class CheckForUpdatesViewModel: ObservableObject {
-	@Published var canCheckForUpdates = false
+#if os(macOS)
+	struct CheckForUpdatesView: View {
+		let updates: UpdateManager
 
-	init(updater: SPUUpdater) {
-		updater.publisher(for: \.canCheckForUpdates)
-			.assign(to: &$canCheckForUpdates)
-	}
-}
-
-struct CheckForUpdatesView: View {
-	@ObservedObject private var viewModel: CheckForUpdatesViewModel
-
-	private let updater: SPUUpdater
-
-	init(updater: SPUUpdater) {
-		self.updater = updater
-		viewModel = CheckForUpdatesViewModel(updater: updater)
-	}
-
-	var body: some View {
-		Button("Check for Updates…", systemImage: "arrow.triangle.2.circlepath") {
-			updater.checkForUpdates()
+		var body: some View {
+			Button("Check for Updates…", systemImage: "arrow.triangle.2.circlepath") {
+				updates.checkForUpdates()
+			}
+			.buttonStyle(.glass)
+			.disabled(!updates.canCheckForUpdates)
+			.accessibilityIdentifier("check-for-updates")
 		}
-		.buttonStyle(.glass)
-		.disabled(!viewModel.canCheckForUpdates)
-		.accessibilityIdentifier("check-for-updates")
 	}
-}
+#endif

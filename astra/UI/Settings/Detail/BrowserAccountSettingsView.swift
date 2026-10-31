@@ -42,20 +42,26 @@ struct BrowserAccountSettingsView: View {
 					.id("Sign in with Apple")
 				}
 
-				#if DEBUG
-					Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") {
-						Task { await sync.syncNow() }
-					}
-					.disabled(!sync.isSignedIn || sync.isSyncing)
-					.accessibilityIdentifier("debug-sync-now")
-					.id("Sync Now")
-				#endif
+				Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") {
+					Task { await sync.syncNow() }
+				}
+				.disabled(!sync.canSync || sync.isSyncing)
+				.accessibilityIdentifier("sync-now")
+				.accessibilityHint("Pull and merge changes from your other devices and send pending changes")
+				.id("Sync Now")
+
+				if sync.hasPendingChanges {
+					Label("Changes pending sync", systemImage: "clock")
+						.font(.caption)
+						.foregroundStyle(.secondary)
+						.accessibilityIdentifier("sync-pending")
+				}
 
 				if sync.isSyncing {
 					ProgressView("Syncing")
 				} else if let lastSync = sync.lastSync {
-					LabeledContent("Last Sync") {
-						Text(lastSync, style: .relative)
+					LabeledContent("Last Synced") {
+						Text(lastSync.formatted(date: .abbreviated, time: .shortened))
 					}
 				}
 

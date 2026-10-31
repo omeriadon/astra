@@ -76,7 +76,9 @@ final class BrowserSitePreferences {
 				object: defaults,
 				queue: .main
 			) { [weak self] _ in
-				Task { @MainActor [weak self] in
+				// Notification delivery is already on the main queue; avoid a
+				// new main-actor task for every unrelated UserDefaults write.
+				MainActor.assumeIsolated {
 					self?.reloadZoomFromDefaults()
 				}
 			}
@@ -159,8 +161,7 @@ final class BrowserSitePreferences {
 	}
 
 	func setNativeContentBlockingDisabled(_ disabled: Bool, for origin: String) {
-		guard !isLocalDataReadOnly, let canonicalOrigin = Self.canonicalOrigin(origin) else { return }
-		guard disablesNativeContentBlocking(for: canonicalOrigin) != disabled else { return }
+		guard !isLocalDataReadOnly, let canonicalOrigin = Self.canonicalOrigin(origin), disablesNativeContentBlocking(for: canonicalOrigin) != disabled else { return }
 		var preference = localDocument.entries[canonicalOrigin] ?? BrowserLocalSitePreference()
 		preference.nativeContentBlockingDisabled = disabled ? true : nil
 		setLocalPreference(preference, for: canonicalOrigin)
@@ -209,8 +210,7 @@ final class BrowserSitePreferences {
 	}
 
 	private func persistLocalDocument() {
-		guard let data = localDocument.encoded() else { return }
-		guard !isPrivate else { return }
+		guard let data = localDocument.encoded(), !isPrivate else { return }
 		defaults.set(data, forKey: BrowserLocalSitePreferencesDocument.defaultsKey)
 	}
 
@@ -251,7 +251,7 @@ final class BrowserSitePreferences {
 		return BrowserSiteOrigin.canonical(for: url)
 	}
 
-	deinit {
+	isolated deinit {
 		if let defaultsObserver {
 			NotificationCenter.default.removeObserver(defaultsObserver)
 		}

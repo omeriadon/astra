@@ -1,0 +1,38 @@
+name: Astra - Browser Chrome
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  favicon:
+    name: Favicon observer
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Favicon observer
+        shell: bash
+        run: |
+          set -euo pipefail
+          node checks/favicon-observer-check.mjs
+
+  tint:
+    name: Site-derived chrome tint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Site-derived chrome tint
+        shell: bash
+        run: |
+          set -euo pipefail
+          node checks/website-chrome-tint-check.mjs

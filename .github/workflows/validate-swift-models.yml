@@ -1,0 +1,99 @@
+name: Astra - Swift Models
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  boosts:
+    name: Boosts model
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Boosts model
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc  -swift-version 6 astra/Models/Library/BrowserBoost.swift checks/boosts-model-check.swift -o "$RUNNER_TEMP/boosts"
+          "$RUNNER_TEMP/boosts"
+
+  bookmark:
+    name: Bookmark projection
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Bookmark projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc  -swift-version 6 astra/Models/Library/Bookmark.swift checks/bookmark-projection-check.swift -o "$RUNNER_TEMP/bookmark"
+          "$RUNNER_TEMP/bookmark"
+
+  windows:
+    name: Window ownership model
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Window ownership model
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc  -swift-version 6 astra/Models/Core/BrowserWindowRegistry.swift checks/window-ownership-check.swift -o "$RUNNER_TEMP/windows"
+          "$RUNNER_TEMP/windows"
+
+  history:
+    name: History search cancellation
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: History search cancellation
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc  -swift-version 6 astra/Models/Tabs/BrowserVisit.swift checks/history-search-cancellation-check.swift -o "$RUNNER_TEMP/history"
+          "$RUNNER_TEMP/history"
+      - name: Prepared history ranking and stale-result safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 6 \
+            astra/Models/Tabs/BrowserVisit.swift \
+            astra/Models/Search/BrowserSearchConfiguration.swift \
+            astra/Models/Search/BrowserSearchMatching.swift \
+            astra/Models/Search/BrowserHistorySearch.swift \
+            checks/prepared-history-search-check.swift -o "$RUNNER_TEMP/prepared-history"
+          "$RUNNER_TEMP/prepared-history"
+
+  hibernation:
+    name: Automatic hibernation policy
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 and Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
+      - name: Automatic hibernation policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 checks/automatic-hibernation-runtime-check.py

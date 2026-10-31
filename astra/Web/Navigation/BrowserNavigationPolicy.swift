@@ -1,6 +1,6 @@
 import Foundation
 
-enum BrowserNavigationPolicy {
+nonisolated enum BrowserNavigationPolicy {
 	private static let restrictedExternalHandoffSchemes: Set<String> = [
 		"about", "blob", "chrome", "chrome-extension", "data", "devtools", "file", "http", "https",
 		"javascript", "moz-extension", "resource", "safari-extension", "view-source",

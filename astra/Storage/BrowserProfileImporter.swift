@@ -7,7 +7,18 @@ nonisolated enum BrowserProfileImporter {
 		let warnings: [String]
 	}
 
+	// Keep the selected ancestor's grant alive for the entire detached operation,
+	// including SQLite's reads of History-wal and History-shm.
+	static func withFolderAccess<T>(to directory: URL?, _ operation: () throws -> T) rethrows -> T {
+		let accessed = directory?.startAccessingSecurityScopedResource() ?? false
+		defer {
+			if accessed { directory?.stopAccessingSecurityScopedResource() }
+		}
+		return try operation()
+	}
+
 	static func profiles(for source: BrowserImportSource, in directory: URL? = nil) throws -> [BrowserImportProfile] {
+		BrowserLog.info(.persistence, "profile-import.scan", metadata: ["source": String(describing: source), "directory": BrowserLog.path(directory)])
 		let root = directory ?? FileManager.default.homeDirectoryForCurrentUser
 			.appendingPathComponent("Library/" + source.libraryPath)
 		let sidebarRoot = root.lastPathComponent == "User Data" ? root.deletingLastPathComponent() : root
@@ -16,11 +27,17 @@ nonisolated enum BrowserProfileImporter {
 		if source == .safari {
 			return [BrowserImportProfile(source: source, directory: root, name: "Safari", sidebar: nil)]
 		}
-		func hasData(_ folder: URL) -> Bool {
-			let names = source == .firefox ? ["places.sqlite"] : ["Bookmarks", "History"]
-			return names.contains { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) }
+		func contents(_ folder: URL) throws -> [URL] {
+			try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
 		}
-		if hasData(root) {
+		func hasData(_ files: [URL]) -> Bool {
+			let names = source == .firefox ? ["places.sqlite"] : ["Bookmarks", "History"]
+			return files.contains { names.contains($0.lastPathComponent) }
+		}
+		// fileExists returns false for inaccessible files too. Listing the selected
+		// directory preserves permission errors so the picker can offer recovery.
+		let rootContents = try contents(root)
+		if hasData(rootContents) {
 			return [BrowserImportProfile(source: source, directory: root, name: root.lastPathComponent, sidebar: sidebar)]
 		}
 		var profileRoot = root
@@ -30,21 +47,32 @@ nonisolated enum BrowserProfileImporter {
 				profileRoot = nested
 			}
 		}
-		let folders = try FileManager.default.contentsOfDirectory(at: profileRoot, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
+		let folders = profileRoot == root ? rootContents : try contents(profileRoot)
 		let localState = profileRoot.appendingPathComponent("Local State")
 		let metadata = (try? JSONSerialization.jsonObject(with: Data(contentsOf: localState))) as? [String: Any]
 		let info = (metadata?["profile"] as? [String: Any])?["info_cache"] as? [String: [String: Any]]
-		let results = folders.filter(hasData).map { folder in
-			let label = info?[folder.lastPathComponent]?["name"] as? String
-			return BrowserImportProfile(source: source, directory: folder, name: label.map { "\($0) (\(folder.lastPathComponent))" } ?? folder.lastPathComponent, sidebar: sidebar)
-		}.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+		var results: [BrowserImportProfile] = []
+		var discoveryError: Error?
+		for folder in folders {
+			do {
+				guard try folder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true,
+				      hasData(try contents(folder)) else { continue }
+				let label = info?[folder.lastPathComponent]?["name"] as? String
+				results.append(BrowserImportProfile(source: source, directory: folder, name: label.map { "\($0) (\(folder.lastPathComponent))" } ?? folder.lastPathComponent, sidebar: sidebar))
+			} catch {
+				discoveryError = discoveryError ?? error
+			}
+		}
+		results.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
 		if results.isEmpty, let sidebar {
 			return [BrowserImportProfile(source: source, directory: profileRoot, name: "Arc Sidebar", sidebar: sidebar)]
 		}
+		if results.isEmpty, let discoveryError { throw discoveryError }
 		return results
 	}
 
 	static func read(_ profile: BrowserImportProfile, scope: BrowserImportScope) throws -> Preview {
+		BrowserLog.info(.persistence, "profile-import.read.begin", metadata: ["source": String(describing: profile.source), "profile": BrowserLog.value(profile.name), "directory": BrowserLog.path(profile.directory)])
 		var bookmarks: [Bookmark] = []
 		var history: [BrowserVisit] = []
 		var warnings: [String] = []
@@ -64,12 +92,19 @@ nonisolated enum BrowserProfileImporter {
 						}
 				}
 			} catch {
+				BrowserLog.warning(.persistence, "profile-import.bookmarks.failed", metadata: [
+					"source": String(describing: profile.source), "directory": BrowserLog.path(profile.directory),
+					"error": BrowserLog.errorDescription(error),
+				])
 				warnings.append("Bookmarks could not be read: \(error.localizedDescription)")
 			}
 			if profile.source == .arc, let sidebar = profile.sidebar {
 				do {
 					bookmarks += try arcBookmarks(readFile(sidebar))
 				} catch {
+					BrowserLog.warning(.persistence, "profile-import.arc-sidebar.failed", metadata: [
+						"file": BrowserLog.path(sidebar), "error": BrowserLog.errorDescription(error),
+					])
 					warnings.append("Arc sidebar could not be read: \(error.localizedDescription)")
 				}
 			}
@@ -97,13 +132,17 @@ nonisolated enum BrowserProfileImporter {
 						epoch = -11_644_473_600
 						divisor = 1_000_000
 				}
-				try rows(in: profile.directory.appendingPathComponent(filename), query: query) { statement in
-					guard let url = portableURL(string(statement, 0)) else { return }
-					let date = Date(timeIntervalSince1970: sqlite3_column_double(statement, 2) / divisor + epoch)
+				try unsafe rows(in: profile.directory.appendingPathComponent(filename), query: query) { statement in
+					guard let url = portableURL(unsafe string(statement, 0)) else { return }
+					let date = Date(timeIntervalSince1970: unsafe sqlite3_column_double(statement, 2) / divisor + epoch)
 					guard date.timeIntervalSince1970.isFinite, date >= Date(timeIntervalSince1970: -2_208_988_800), date <= Date.now.addingTimeInterval(300) else { return }
-					history.append(BrowserVisit(url: url, title: String(string(statement, 1).prefix(4096)), visitedAt: date, modifiedAt: .now))
+					history.append(BrowserVisit(url: url, title: String(unsafe string(statement, 1).prefix(4096)), visitedAt: date, modifiedAt: .now))
 				}
 			} catch {
+				BrowserLog.warning(.persistence, "profile-import.history.failed", metadata: [
+					"source": String(describing: profile.source), "directory": BrowserLog.path(profile.directory),
+					"error": BrowserLog.errorDescription(error),
+				])
 				history = []
 				warnings.append("History could not be read: \(error.localizedDescription)")
 			}
@@ -113,10 +152,12 @@ nonisolated enum BrowserProfileImporter {
 		}
 		let document = BrowserUserData(bookmarks: bookmarks, history: history)
 		let validated = try BrowserUserData.decode(JSONEncoder().encode(document), isHTML: false)
+		BrowserLog.info(.persistence, "profile-import.read.end", metadata: ["bookmarks": String(validated.bookmarks.count), "history": String(validated.history.count), "warnings": String(warnings.count)])
 		return Preview(document: validated, warnings: warnings)
 	}
 
 	static func readFile(_ url: URL) throws -> Data {
+		BrowserLog.trace(.persistence, "profile-import.read-file", metadata: ["file": BrowserLog.path(url)])
 		let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
 		guard size <= 16 * 1024 * 1024 else { throw BrowserUserData.ImportError.tooLarge }
 		return try Data(contentsOf: url)
@@ -148,7 +189,7 @@ nonisolated enum BrowserProfileImporter {
 	}
 
 	static func safariBookmarks(_ data: Data) throws -> [Bookmark] {
-		guard let root = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+		guard let root = try unsafe PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
 		      root["Children"] is [[String: Any]] else { throw BrowserUserData.ImportError.invalidFile }
 		var results: [Bookmark] = []
 		func visit(_ node: [String: Any], path: [String], depth: Int) throws {
@@ -173,12 +214,12 @@ nonisolated enum BrowserProfileImporter {
 	static func firefoxBookmarks(_ url: URL) throws -> [Bookmark] {
 		var nodes: [Int64: (parent: Int64, title: String, isTags: Bool)] = [:]
 		var links: [(parent: Int64, title: String, url: URL)] = []
-		try rows(in: url, query: "SELECT b.id, b.parent, COALESCE(b.title, ''), COALESCE(p.url, ''), b.type, b.guid FROM moz_bookmarks b LEFT JOIN moz_places p ON p.id = b.fk ORDER BY b.position, b.id") { statement in
-			let parent = sqlite3_column_int64(statement, 1)
-			let title = string(statement, 2)
-			if sqlite3_column_int(statement, 4) == 2 {
-				nodes[sqlite3_column_int64(statement, 0)] = (parent, title, string(statement, 5) == "tags________")
-			} else if let address = portableURL(string(statement, 3)) {
+		try unsafe rows(in: url, query: "SELECT b.id, b.parent, COALESCE(b.title, ''), COALESCE(p.url, ''), b.type, b.guid FROM moz_bookmarks b LEFT JOIN moz_places p ON p.id = b.fk ORDER BY b.position, b.id") { statement in
+			let parent = unsafe sqlite3_column_int64(statement, 1)
+			let title = unsafe string(statement, 2)
+			if unsafe sqlite3_column_int(statement, 4) == 2 {
+				nodes[unsafe sqlite3_column_int64(statement, 0)] = (parent, title, unsafe string(statement, 5) == "tags________")
+			} else if let address = portableURL(unsafe string(statement, 3)) {
 				links.append((parent, title, address))
 			}
 		}
@@ -306,35 +347,35 @@ nonisolated enum BrowserProfileImporter {
 	}
 
 	private static func string(_ statement: OpaquePointer, _ column: Int32) -> String {
-		sqlite3_column_text(statement, column).map { String(cString: $0) } ?? ""
+		unsafe sqlite3_column_text(statement, column).map { unsafe String(cString: $0) } ?? ""
 	}
 
 	private static func rows(in url: URL, query: String, read: (OpaquePointer) throws -> Void) throws {
 		var database: OpaquePointer?
-		guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let database else {
-			let message = database.map { String(cString: sqlite3_errmsg($0)) } ?? "Cannot open database"
-			if let database {
-				sqlite3_close(database)
+		guard unsafe sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let database = unsafe database else {
+			let message = unsafe database.map { unsafe String(cString: sqlite3_errmsg($0)) } ?? "Cannot open database"
+			if let database = unsafe database {
+				unsafe sqlite3_close(database)
 			}
 			throw ReadError.unavailable(message + ". Close the source browser and check file access.")
 		}
-		defer { sqlite3_close(database) }
-		sqlite3_busy_timeout(database, 1500)
+		defer { unsafe sqlite3_close(database) }
+		unsafe sqlite3_busy_timeout(database, 1500)
 		// One read transaction includes committed WAL rows without modifying source records.
 		var statement: OpaquePointer?
-		guard sqlite3_prepare_v2(database, query + " LIMIT 100001", -1, &statement, nil) == SQLITE_OK, let statement else {
-			throw ReadError.unavailable(String(cString: sqlite3_errmsg(database)))
+		guard unsafe sqlite3_prepare_v2(database, query + " LIMIT 100001", -1, &statement, nil) == SQLITE_OK, let statement = unsafe statement else {
+			throw ReadError.unavailable(unsafe String(cString: sqlite3_errmsg(database)))
 		}
-		defer { sqlite3_finalize(statement) }
+		defer { unsafe sqlite3_finalize(statement) }
 		var count = 0
-		var step = sqlite3_step(statement)
+		var step = unsafe sqlite3_step(statement)
 		while step == SQLITE_ROW {
 			count += 1
 			guard count <= 100_000 else { throw BrowserUserData.ImportError.tooLarge }
-			try read(statement)
-			step = sqlite3_step(statement)
+			try unsafe read(statement)
+			step = unsafe sqlite3_step(statement)
 		}
-		guard step == SQLITE_DONE else { throw ReadError.unavailable(String(cString: sqlite3_errmsg(database))) }
+		guard step == SQLITE_DONE else { throw ReadError.unavailable(unsafe String(cString: sqlite3_errmsg(database))) }
 	}
 
 	enum ReadError: LocalizedError {

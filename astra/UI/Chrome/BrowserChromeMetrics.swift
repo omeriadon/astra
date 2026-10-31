@@ -1,18 +1,62 @@
-import SwiftUI
+import Foundation
 
 enum BrowserChromeMetrics {
-	static let topBarRegionHeight: CGFloat = 33
+	static let topBarRegionHeight: CGFloat = 24.5
 	static let expandedSidebarWidth: CGFloat = 224
+	static let sidebarWidthRange: ClosedRange<CGFloat> = 168 ... 330
+	static let aiSidebarWidthRange: ClosedRange<CGFloat> = 300 ... 600
+	static let minimumContentWidth: CGFloat = 270
+	static let settingsSidebarWidth: CGFloat = 230
+	static let settingsDetailPadding: CGFloat = 16
+
+	static func minimumPageWidth(isSettings: Bool) -> CGFloat {
+		max(minimumContentWidth + shellEdgePadding * 2, 600)
+			+ (isSettings ? settingsSidebarWidth + settingsDetailPadding * 2 + 1 : 0)
+	}
+
+	static func minimumWindowWidth(
+		sidebarShown: Bool,
+		aiSidebarShown: Bool,
+		minimumContentWidth: CGFloat = minimumContentWidth
+	) -> CGFloat {
+		minimumContentWidth
+			+ (sidebarShown ? sidebarWidthRange.lowerBound : 0)
+			+ (aiSidebarShown ? aiSidebarWidthRange.lowerBound : 0)
+	}
+
+	static func sidebarFits(
+		availableWidth: CGFloat,
+		minimumContentWidth: CGFloat,
+		limits: ClosedRange<CGFloat>
+	) -> Bool {
+		availableWidth >= minimumContentWidth + limits.lowerBound
+	}
+
+	static func sidebarWidth(
+		preferred: CGFloat,
+		limits: ClosedRange<CGFloat>,
+		availableWidth: CGFloat,
+		minimumContentWidth: CGFloat
+	) -> CGFloat {
+		max(limits.lowerBound, min(preferred, limits.upperBound, availableWidth - minimumContentWidth))
+	}
 
 	static let topBarContentHeight: CGFloat = 20
+	static let topBarButtonWidth: CGFloat = 22
+	static let historyGroupSpacerWidth: CGFloat = topBarButtonWidth * 0.6 - 12
+	static let topBarLeadingInset: CGFloat = 2
+	static let topBarTrailingInset: CGFloat = 3
 
 	// macos 27 window radius is 20
 
 	// Includes the space reserved for macOS window controls.
+	static let windowControlsAreaWidth: CGFloat = 80
 	static let persistentControlsAreaWidth: CGFloat = 160
 	static let shellEdgePadding: CGFloat = 4
 	static let tabWindowCornerRadiusWithSidebar: CGFloat = 12.5
 	static let tabWindowCornerRadiusWithoutSidebar: CGFloat = 16
+
+	static let tabCornerRadius: CGFloat = 18
 
 	static let compactTabWindowCornerRadius: CGFloat = 28
 

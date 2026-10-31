@@ -26,6 +26,7 @@ nonisolated struct BrowserUserData: Codable, Sendable {
 	}
 
 	static func decode(_ data: Data, isHTML: Bool) throws -> Self {
+		BrowserLog.debug(.persistence, "user-data.decode", metadata: ["bytes": String(data.count), "html": String(isHTML)])
 		guard data.count <= 16 * 1024 * 1024 else { throw ImportError.tooLarge }
 		if isHTML {
 			guard let html = String(data: data, encoding: .utf8) else { throw ImportError.invalidFile }
@@ -47,29 +48,29 @@ nonisolated struct BrowserUserData: Codable, Sendable {
 		      document.readingList.count <= 100_000,
 		      Set(document.bookmarks.map(\.id)).count == document.bookmarks.count,
 		      Set(document.history.map(\.id)).count == document.history.count,
-		      Set(document.readingList.map(\.id)).count == document.readingList.count else { throw ImportError.invalidFile }
-		guard document.bookmarks.allSatisfy({ bookmark in
-			isPortableURL(bookmark.url)
-				&& bookmark.name.utf8.count <= 16384
-				&& bookmark.folder.utf8.count <= 4096
-				&& (bookmark.order == Int.min || (0 ... 100_000).contains(bookmark.order))
-				&& isSaneDate(bookmark.modifiedAt)
-		}), document.readingList.allSatisfy({ item in
-			isPortableURL(item.url)
-				&& item.title.utf8.count <= 16384
-				&& isSaneDate(item.addedAt)
-				&& isSaneDate(item.modifiedAt)
-		}), document.history.allSatisfy({ visit in
-			isPortableURL(visit.url)
-				&& visit.title.utf8.count <= 16384
-				&& isSaneDate(visit.visitedAt)
-				&& isSaneDate(visit.modifiedAt)
-		}) else { throw ImportError.invalidFile }
+		      Set(document.readingList.map(\.id)).count == document.readingList.count, document.bookmarks.allSatisfy({ bookmark in
+		      	isPortableURL(bookmark.url)
+		      		&& bookmark.name.utf8.count <= 16384
+		      		&& bookmark.folder.utf8.count <= 4096
+		      		&& (bookmark.order == Int.min || (0 ... 100_000).contains(bookmark.order))
+		      		&& isSaneDate(bookmark.modifiedAt)
+		      }), document.readingList.allSatisfy({ item in
+		      	isPortableURL(item.url)
+		      		&& item.title.utf8.count <= 16384
+		      		&& isSaneDate(item.addedAt)
+		      		&& isSaneDate(item.modifiedAt)
+		      }), document.history.allSatisfy({ visit in
+		      	isPortableURL(visit.url)
+		      		&& visit.title.utf8.count <= 16384
+		      		&& isSaneDate(visit.visitedAt)
+		      		&& isSaneDate(visit.modifiedAt)
+		      }) else { throw ImportError.invalidFile }
 		document.bookmarks = Bookmark.preservingLegacyOrder(document.bookmarks)
 		return document
 	}
 
 	func encodedHTML() -> Data {
+		BrowserLog.debug(.persistence, "user-data.encode-html", metadata: ["bookmarks": String(bookmarks.count)])
 		let groups = Dictionary(grouping: bookmarks, by: \.folder)
 		let entries = groups.keys.sorted().flatMap { folder in
 			let items = (groups[folder] ?? []).sorted { $0.order == $1.order ? $0.id.uuidString < $1.id.uuidString : $0.order < $1.order }

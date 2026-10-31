@@ -30,7 +30,7 @@ struct BrowserExtensionDetailView: View {
 				Text(extensions.description(for: name))
 				LabeledContent("Version", value: extensions.version(for: name))
 				LabeledContent("ID", value: name)
-				LabeledContent("Source", value: extensions.source(for: name) == .chrome ? "Chrome" : "Safari")
+				LabeledContent("Source", value: name == extensions.uBlockOriginName ? "Official uBlock Origin release" : (extensions.source(for: name) == .chrome ? "Chrome" : "Safari"))
 				Text(extensions.sourcePath(for: name))
 					.font(.caption)
 					.foregroundStyle(.secondary)
@@ -77,10 +77,12 @@ struct BrowserExtensionDetailView: View {
 					Button("Remove Extension", systemImage: "trash", role: .destructive) {
 						showsRemoveConfirmation = true
 					}
+					.disabled(extensions.updatingNames.contains(name))
 					.accessibilityIdentifier("extension-remove-\(name)")
 				}
 			}
 		}
+		.disabled(extensions.updatingNames.contains(name))
 		.listStyle(.sidebar)
 		.scrollContentBackground(.hidden)
 		.navigationTitle(extensions.title(for: name))

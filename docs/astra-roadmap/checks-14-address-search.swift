@@ -75,6 +75,58 @@ struct AddressSearchChecks {
 		precondition(configuration.query(for: URL(string: "https://www.google.com/search?q=word+with+spaces")!) == "word with spaces")
 		precondition(configuration.query(for: URL(string: "https://google.com.evil/search?q=word")!) == nil)
 		precondition(configuration.query(for: URL(string: "https://www.google.co.uk/search?q=word")!) == "word")
+		let encodedDisplayURL = URL(string: "https://user:pass@example.com/path%20with?q=one%20two#fragment%20part")!
+		precondition(BrowserAddress.displayString(
+			for: encodedDisplayURL,
+			style: .simple,
+			isEditing: false,
+			configuration: configuration
+		) == "example.com/path with")
+		let dimmedDisplay = BrowserAddress.displayString(
+			for: encodedDisplayURL,
+			style: .dimmed,
+			isEditing: false,
+			configuration: configuration
+		)
+		precondition(dimmedDisplay == "https://example.com/path with?q=one two#fragment part")
+		let dimmedRanges = BrowserAddress.primaryTextRanges(
+			for: encodedDisplayURL,
+			displayedText: dimmedDisplay,
+			configuration: configuration
+		)
+		precondition(dimmedRanges.map { String(dimmedDisplay[$0]) } == ["example.com", "/path with"])
+		precondition(BrowserAddress.displayString(
+			for: URL(string: "https://example.com/path%2520with")!,
+			style: .simple,
+			isEditing: false,
+			configuration: configuration
+		) == "example.com/path%2520with")
+		precondition(BrowserAddress.displayString(
+			for: encodedDisplayURL,
+			style: .full,
+			isEditing: false,
+			configuration: configuration
+		) == "https://example.com/path%20with?q=one%20two#fragment%20part")
+		precondition(BrowserAddress.displayString(
+			for: encodedDisplayURL,
+			style: .dimmed,
+			isEditing: true,
+			configuration: configuration
+		) == "https://example.com/path%20with?q=one%20two#fragment%20part")
+		let literalQueryURL = URL(string: "https://www.google.com/search?q=%2520")!
+		let literalQueryDisplay = BrowserAddress.displayString(
+			for: literalQueryURL,
+			style: .dimmed,
+			isEditing: false,
+			configuration: configuration
+		)
+		precondition(literalQueryDisplay == "https://www.google.com/search?q=%20")
+		let literalQueryRange = BrowserAddress.primaryTextRanges(
+			for: literalQueryURL,
+			displayedText: literalQueryDisplay,
+			configuration: configuration
+		).first
+		precondition(literalQueryRange.map { String(literalQueryDisplay[$0]) } == "%20")
 
 		var custom = configuration
 		custom.normalEngine = .custom

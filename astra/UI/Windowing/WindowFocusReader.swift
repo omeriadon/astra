@@ -32,7 +32,7 @@
 
 			override func viewDidMoveToWindow() {
 				super.viewDidMoveToWindow()
-				onWindow(window)
+				onWindow(unsafe window)
 			}
 		}
 	}

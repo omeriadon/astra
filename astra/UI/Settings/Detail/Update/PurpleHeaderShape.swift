@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-struct PurpleHeaderShape: Shape {
+nonisolated struct PurpleHeaderShape: Shape {
 	func path(in rect: CGRect) -> Path {
 		let w = rect.width
 		let h = rect.height

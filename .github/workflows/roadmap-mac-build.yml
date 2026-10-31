@@ -1,61 +1,47 @@
-name: Roadmap Mac Build
+name: Astra - macOS Builds
 
 on:
+  pull_request:
+    branches: [main, 'release/**']
   push:
-    branches:
-      - astra/roadmap/integration
-    paths:
-      - 'astra/**'
-      - 'astra.xcodeproj/**'
-      - 'Packages/**'
-      - '*.xcconfig'
+    branches: ['astra/roadmap/integration', 'fix/download-network-recovery', 'feat/split-view-easel-workflow']
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: roadmap-mac-build-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   mac-build:
-    name: macOS Debug Build
+    name: macOS Release Build
     runs-on: xcode-27
-    timeout-minutes: 15
-
+    timeout-minutes: 20
     steps:
-      - name: Check out integration branch
-        uses: actions/checkout@v4
-
-      - name: Select Xcode 27.2 beta
-        shell: bash
-        run: |
-          sudo xcode-select -s /Applications/Xcode_27.2_beta.app/Contents/Developer
-          xcodebuild -version
-
+      - uses: actions/checkout@v4
+      - name: Verify Xcode 27 / Swift 6.4
+        run: bash scripts/ci/select-xcode-27.sh
       - name: Install Metal Toolchain
-        shell: bash
         run: xcodebuild -downloadComponent MetalToolchain
-
-      - name: Build Astra for macOS
+      - name: Build Astra Release
         shell: bash
         run: |
-          set -o pipefail
-          xcodebuild build \
-            -project astra.xcodeproj \
-            -scheme astra \
-            -configuration Debug \
-            -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/AstraDerivedData" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
+          set -euo pipefail
+          xcodebuild build -project astra.xcodeproj -scheme astra -configuration "Release" \
+            -destination 'platform=macOS' -derivedDataPath "$RUNNER_TEMP/AstraDerivedData" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             2>&1 | tee "$RUNNER_TEMP/astra-mac-build.log"
-
+      - name: Audit Sparkle link and embedding
+        run: bash scripts/audit_sparkle_bundle.sh "$RUNNER_TEMP/AstraDerivedData/Build/Products/Release/astra.app" --unsigned
+      - name: Browser Use protocol, HTTP, DOM and listener regression checks
+        run: zsh scripts/check_browser_use.sh "$RUNNER_TEMP/AstraDerivedData/Build/Products/Release"
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: astra-mac-build-log-${{ github.run_number }}
+          name: astra-mac-build-log-Release-${{ github.run_number }}
           path: ${{ runner.temp }}/astra-mac-build.log
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7

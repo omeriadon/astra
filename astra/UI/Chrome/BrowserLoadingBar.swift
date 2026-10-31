@@ -3,7 +3,7 @@ import SwiftUI
 struct BrowserLoadingBar: View {
 	let isLoading: Bool
 	let estimatedProgress: Double
-	let theme: BrowserTheme
+	let barColor: Color
 
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@State private var displayedProgress = 0.0
@@ -12,7 +12,7 @@ struct BrowserLoadingBar: View {
 
 	var body: some View {
 		Rectangle()
-			.fill(theme.progressColor)
+			.fill(barColor)
 			.scaleEffect(x: displayedProgress, anchor: .leading)
 			.opacity(isVisible ? 1 : 0)
 			.accessibilityElement(children: .ignore)

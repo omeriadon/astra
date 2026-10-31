@@ -1,4 +1,3 @@
-import Noise
 import SwiftUI
 #if os(macOS)
 	import MaterialView
@@ -6,8 +5,7 @@ import SwiftUI
 
 struct BrowserThemeBackground: View {
 	let theme: BrowserTheme
-	var transitionFromTheme: BrowserTheme?
-	var transitionProgress = 1.0
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	#if os(macOS)
 		private static let blurStyle = NSMaterialView.Effect.MaterialStyle(
 			backgroundColor: .clear,
@@ -49,14 +47,8 @@ struct BrowserThemeBackground: View {
 				Color.gray
 			#endif
 
-			if let transitionFromTheme {
-				ThemeSurface(theme: transitionFromTheme)
-					.opacity(1 - transitionProgress)
-				ThemeSurface(theme: theme)
-					.opacity(transitionProgress)
-			} else {
-				ThemeSurface(theme: theme)
-			}
+			ThemeSurface(theme: theme)
+				.animation(reduceMotion ? nil : .smooth(duration: 0.3), value: theme)
 		}
 	}
 }

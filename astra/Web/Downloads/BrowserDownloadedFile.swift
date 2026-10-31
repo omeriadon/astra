@@ -2,7 +2,7 @@
 	import CoreServices
 	import Foundation
 
-	enum BrowserDownloadedFile {
+	nonisolated enum BrowserDownloadedFile {
 		static func quarantine(_ url: URL, downloadURL: URL?, sourceURL: URL?) throws {
 			var properties: [String: Any] = [
 				kLSQuarantineAgentNameKey as String: "Astra",
