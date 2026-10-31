@@ -33,7 +33,7 @@ struct EaselImageView: View {
 
 /// Shared by image rendering and the parent Easel item's pointer hit region so
 /// transparent corner pixels do not intercept pointer selection.
-struct EaselImageMask: Shape {
+nonisolated struct EaselImageMask: Shape {
 	var isRounded: Bool
 
 	func path(in rect: CGRect) -> Path {

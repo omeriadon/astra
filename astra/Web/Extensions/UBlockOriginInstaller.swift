@@ -25,7 +25,7 @@ final class UBlockOriginInstaller {
 		installedName = nil
 		let operation = UUID()
 		operationID = operation
-		task = Task {
+		task = Task { [self] in
 			defer {
 				isBusy = false
 				isInstalling = false
@@ -46,8 +46,8 @@ final class UBlockOriginInstaller {
 				status = "Downloading uBlock Origin \(release.tag_name)…"
 				let delegate = UBlockOriginDownloadProgress { [weak self] fraction in
 					Task { @MainActor in
-						guard let self, operationID == operation, isBusy, !isInstalling else { return }
-						progress = fraction
+						guard let self, self.operationID == operation, self.isBusy, !self.isInstalling else { return }
+						self.progress = fraction
 					}
 				}
 				let asset = try release.chromiumAsset()

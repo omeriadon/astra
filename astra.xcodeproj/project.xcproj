@@ -131,6 +131,7 @@
             "UI/Shell/MiniAstraWindowController.swift",
             "UI/Shell/NativeSidebar/BrowserSidebarLayout.swift",
             "UI/Shell/NativeSidebar/BrowserSidebarScrollView.swift",
+            "UI/Shell/NativeSidebar/BrowserSidebarSplitProjection.swift",
             "UI/Shell/PrivateBrowserSidebar.swift",
             "UI/Shell/topVariableBlur.swift",
             "UI/Tabs/BrowserTabRow.swift",
