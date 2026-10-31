@@ -33,6 +33,9 @@ excluded = set(next(item["exclusions"] for item in astra_folder["membership-exce
 browser_only = {
     "App/AppDelegate.swift", "App/browserApp.swift", "AI/BrowserAIChat.swift",
     "UI/Shell/BrowserSidebarControls.swift", "UI/Shell/MiniAstraWindowController.swift",
+    "UI/Shell/NativeSidebar/BrowserSidebarLayout.swift",
+    "UI/Shell/NativeSidebar/BrowserSidebarScrollView.swift",
+    "UI/Shell/NativeSidebar/BrowserSidebarSplitProjection.swift",
 }
 present = {path for path in browser_only if (root / "astra" / path).is_file()}
 assert present.issubset(excluded), f"Browser-only files leaked into website runtime: {present - excluded}"

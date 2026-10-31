@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// Native cells contain the existing SwiftUI controls, never a tall hosting view
 /// around a LazyVStack (which would lose its SwiftUI ScrollView's virtualization).

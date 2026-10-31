@@ -1,8 +1,8 @@
 #!/bin/zsh
 set -euo pipefail
 
-# Run after an Xcode MCP build; supply its Build/Products/Debug directory.
-SDK_PRODUCTS=${1:?Supply the Xcode Build/Products/Debug directory}
+# Run after an Xcode MCP build; supply its Build/Products/<configuration> directory.
+SDK_PRODUCTS=${1:?Supply the Xcode Build/Products directory for the built configuration}
 TASK_ROOT=${0:A:h:h}
 TASK_OUTPUT=$(mktemp -d /tmp/astra-browser-use-checks.XXXXXX)
 trap 'rm -rf "$TASK_OUTPUT"' EXIT

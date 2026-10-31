@@ -2401,8 +2401,8 @@ final class Browser {
 			      selection.area == .normal,
 			      selection.spaceID == workspace.selectedSpaceID else { return false }
 			let ids = Set(selection.tabIDs.filter { id in
-				workspace.selectedSpace.tabIDs.contains(id)
-					&& !workspace.selectedSpace.pinnedTabIDs.contains(id)
+				selectedSpace.tabIDs.contains(id)
+					&& !selectedSpace.pinnedTabIDs.contains(id)
 			})
 			guard ids.count > 1 else { return false }
 			removeTabs(ids, selecting: selectedTabID)

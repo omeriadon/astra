@@ -158,10 +158,13 @@ private struct BrowserSidebarTraits: Equatable {
 				let metricsChanged = structureChanged || old?.top != new.top || old?.padding != new.padding || old?.spacing != new.spacing
 				// Keep the scroller outside the blur without insetting the clip view.
 				// `top` is the interpolated header reservation, not its destination.
-				if old?.top != new.top || old?.environment.sidebarScrollIndicatorBottomInset != new.environment.sidebarScrollIndicatorBottomInset {
+				let indicatorTop = max(0, new.top)
+				let indicatorBottom = max(0, new.environment.sidebarScrollIndicatorBottomInset)
+				// Stored representables share live environment storage; compare installed insets.
+				if scroll.scrollerInsets.top != indicatorTop || scroll.scrollerInsets.bottom != indicatorBottom {
 					scroll.scrollerInsets = NSEdgeInsets(
-						top: max(0, new.top), left: 0,
-						bottom: max(0, new.environment.sidebarScrollIndicatorBottomInset), right: 0
+						top: indicatorTop, left: 0,
+						bottom: indicatorBottom, right: 0
 					)
 				}
 				// Anchor structural changes to the first visible item rather than jumping
@@ -457,10 +460,12 @@ private struct BrowserSidebarTraits: Equatable {
 			let contentChanged = old?.revision != revision || coordinator.traits != traits
 			let metricsChanged = structureChanged || old?.top != top || old?.padding != padding || old?.spacing != spacing
 			// Indicator-only insets leave row geometry and scroll range unchanged.
-			if old?.top != top || old?.environment.sidebarScrollIndicatorBottomInset != environment.sidebarScrollIndicatorBottomInset {
+			let indicatorTop = max(0, top)
+			let indicatorBottom = max(0, environment.sidebarScrollIndicatorBottomInset)
+			if collection.verticalScrollIndicatorInsets.top != indicatorTop || collection.verticalScrollIndicatorInsets.bottom != indicatorBottom {
 				collection.verticalScrollIndicatorInsets = UIEdgeInsets(
-					top: max(0, top), left: 0,
-					bottom: max(0, environment.sidebarScrollIndicatorBottomInset), right: 0
+					top: indicatorTop, left: 0,
+					bottom: indicatorBottom, right: 0
 				)
 			}
 			let origin = collection.contentOffset

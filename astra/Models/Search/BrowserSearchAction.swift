@@ -21,7 +21,7 @@ struct BrowserSearchAction: Identifiable {
 		}
 		add("close-tab", "Close Tab", "xmark", ["close current tab"]) { browser.closeTab(browser.selectedTabID) }
 		add("duplicate-tab", "Duplicate Tab", "plus.square.on.square") { _ = browser.duplicateTab(browser.selectedTabID) }
-		#if os(macOS)
+		#if os(macOS) && !ASTRA_WEBSITE_APP_RUNTIME
 			add("toggle-top-bar", "Toggle Top Bar", "rectangle.topthird.inset.filled", ["toolbar", "address bar"]) {
 				NotificationCenter.default.post(name: .toggleBrowserTopBar, object: browser.windowID)
 			}
@@ -47,6 +47,7 @@ struct BrowserSearchAction: Identifiable {
 		if browser.isShowingTabSplit {
 			add("close-split", "Close Split", "rectangle") { browser.closeEaselSplit() }
 		}
+		#if !ASTRA_WEBSITE_APP_RUNTIME
 		if Defaults[.aiFeaturesEnabled], Defaults[.aiSidebar], browser.canShowAISidebar,
 		   !browser.isPrivate, !browser.aiChat.isResponding, !browser.aiChat.isImporting,
 		   browser.aiChat.draft.isEmpty {
@@ -55,6 +56,7 @@ struct BrowserSearchAction: Identifiable {
 				browser.pendingPageSummary = true
 			}
 		}
+		#endif
 		return actions.map { action in
 			guard action.id == "toggle-sidebar" || action.id == "toggle-ai-sidebar" else { return action }
 			let left = action.id == "toggle-sidebar"
