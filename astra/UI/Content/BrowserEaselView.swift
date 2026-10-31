@@ -382,7 +382,7 @@ struct BrowserEaselView: View {
 
 	private func itemView(_ item: BrowserEaselDocument.Item, canvasWidth: CGFloat) -> some View {
 		let hasEndpointHandles = item.kind == .line || item.kind == .arrow
-		itemContent(item, canvasWidth: canvasWidth)
+		return itemContent(item, canvasWidth: canvasWidth)
 			.frame(width: item.width, height: item.height, alignment: .topLeading)
 			.anchorPreference(key: EaselSelectedItemBounds.self, value: .bounds) { bounds in
 				selectedID == item.id ? bounds : nil

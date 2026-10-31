@@ -198,7 +198,9 @@ struct NewTabView: View {
 		}
 		.sheet(isPresented: $isDitherSettingsPresented) {
 			NewTabDitherSettingsView(configuration: $ditherConfiguration, theme: browser.theme)
+				#if !os(macOS)
 				.navigationTransition(.zoom(sourceID: "dither-settings", in: transitions))
+				#endif
 		}
 	}
 
