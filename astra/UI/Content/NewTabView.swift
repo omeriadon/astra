@@ -18,11 +18,14 @@ struct NewTabView: View {
 	@FocusState private var isSearchFocused: Bool
 	@Namespace private var transitions
 	@AppStorage("astra.newTabBackgroundStyle") private var backgroundStyle = "default"
+	@AppStorage("astra.newTabDitherConfiguration") private var ditherConfigurationData = Data()
 	@State private var ditherPointer = DitherPointerInput()
 	@Environment(\.colorScheme) private var colorScheme
 	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 	@Environment(\.scenePhase) private var scenePhase
 	@State private var isPresented = false
+	@State private var ditherConfiguration = DitherConfiguration()
+	@State private var isDitherSettingsPresented = false
 	#if os(macOS)
 		@State private var windowCanAnimate = false
 	#endif
@@ -124,6 +127,7 @@ struct NewTabView: View {
 		#endif
 		.onAppear {
 			backgroundStyle = NewTabBackgroundPreferences.migratedStyle(backgroundStyle)
+			ditherConfiguration = NewTabBackgroundPreferences.loadDitherConfiguration()
 			NewTabBackgroundPreferences.removeLegacyParameters()
 			isPresented = true
 		}
@@ -183,6 +187,19 @@ struct NewTabView: View {
 				// Local suggestions and submitting the query remain available offline.
 			}
 		}
+		.onChange(of: ditherConfigurationData) { _, _ in
+			let saved = NewTabBackgroundPreferences.loadDitherConfiguration()
+			if saved != ditherConfiguration {
+				ditherConfiguration = saved
+			}
+		}
+		.onChange(of: ditherConfiguration) { _, value in
+			NewTabBackgroundPreferences.saveDitherConfiguration(value)
+		}
+		.sheet(isPresented: $isDitherSettingsPresented) {
+			NewTabDitherSettingsView(configuration: $ditherConfiguration, theme: browser.theme)
+				.navigationTransition(.zoom(sourceID: "dither-settings", in: transitions))
+		}
 	}
 
 	private var usesDefaultBackground: Bool {
@@ -233,6 +250,7 @@ struct NewTabView: View {
 			defaultBackgroundColor
 			if backgroundStyle == "dither" {
 				DitherBackground(theme: browser.theme,
+				                 configuration: ditherConfiguration,
 				                 pointer: ditherPointer, canAnimate: animatesBackground)
 			} else if let preset = NewTabShaderPreset(rawValue: backgroundStyle) {
 				NewTabShaderSurface(theme: browser.theme, preset: preset, canAnimate: animatesBackground)
@@ -260,6 +278,19 @@ struct NewTabView: View {
 			Button { backgroundStyle = "dither" } label: {
 				Label("Theme Dither", systemImage: backgroundStyle == "dither" ? "checkmark" : "square.grid.3x3.fill")
 			}
+			#if os(macOS)
+				if backgroundStyle == "dither" {
+					Divider()
+					Button {
+						isDitherSettingsPresented = true
+					} label: {
+						Label("Configure Dither", systemImage: "slider.horizontal.3")
+					}
+					.accessibilityLabel("Configure dither")
+					.accessibilityIdentifier("new-tab-configure-dither")
+					.matchedTransitionSource(id: "dither-settings", in: transitions)
+				}
+			#endif
 			Divider()
 			Button { backgroundStyle = "ripple" } label: {
 				Label("Live Ripple", systemImage: backgroundStyle == "ripple" ? "checkmark" : "drop")
